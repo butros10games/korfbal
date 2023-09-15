@@ -1,0 +1,101 @@
+body {
+    display: block;
+    padding: 0;
+    margin: 0;
+}
+
+.background-color {
+    width: 100%;
+    background-color: var(--primary_color);
+}
+
+/* Container for the form */
+.container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    width: 90%;
+    max-width: 1536px;
+    height: calc(80vh - 64px);
+    margin: 0 auto;
+    margin-top: 64px;
+
+    color: var(--text-color);
+}
+
+/* Row class to structure the content */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-right: -15px;
+    margin-left: -15px;
+}
+
+/* Column class to structure the form width */
+.col-md-6 {
+    max-width: 50%;
+    box-sizing: border-box;
+}
+
+/* Style for the form group */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+/* Label style */
+.form-group label {
+    display: inline-block;
+    margin-bottom: .5rem;
+}
+
+/* Input field style */
+.form-control {
+    display: block;
+    width: calc(100% - 26px);
+    padding: 6px 12px;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+}
+
+/* Button style */
+.button {
+    -webkit-appearance: button;
+    -moz-appearance: button;
+    appearance: button;
+
+    text-decoration: none;
+
+    border: 1px solid var(--button-color);
+    height: 32px;
+    width: 100%;
+    color: var(--button-color) !important;
+
+    border-radius: 4px;
+
+    background: linear-gradient(to right, var(--button-color) 50%, var(--primary_color) 50%);
+    background-size: 200% 100%;
+    background-position: right bottom;
+    transition: all .5s ease-out;
+
+    cursor: pointer;
+}
+
+.button:hover {
+    color: var(--secondary_color) !important;
+    background-position: left bottom;
+}
+
+@media screen and (max-width: 768px) {
+    .col-md-6 {
+        max-width: calc(100% - 24px);
+        box-sizing: border-box;
+    }
+}

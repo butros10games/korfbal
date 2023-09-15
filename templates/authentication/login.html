@@ -1,0 +1,129 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Login</title>
+        <meta name="description" content="Registration">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        
+        <link rel="stylesheet" href="/static/css/authentication/login_registration.css">
+        <link rel="stylesheet" href="/static/css/color/color.css">
+
+        <link rel="stylesheet" href="https://use.typekit.net/pbm5dyg.css">
+    </head>
+    <body class="background-color">
+        {% if device.is_mobile %}
+        {% include 'overlays/navbar.html' %}
+
+            <div class="CHK2">
+                <div class="CHK2-row">
+                    <div class="CHK2-text" style="flex-basis: calc(100% - 24px);">
+                        <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
+                            <img src="/static/images/icon/BJG.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                        </div>
+                        
+                        <div class="flex-column" style="margin-bottom: 32px;">
+                            <h1 class="CHK2-H" style="margin: 0;">Hello again!</h1>
+                            <div>
+                                <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                            </div>
+                        </div>
+    
+                        <form method="post" action="">
+                            {% csrf_token %}
+    
+                            <div class="flex-column">
+                                <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
+                            </div>
+    
+                            <div class="flex-column">
+                                <input type="password" id="password" name="password" placeholder="Password..." class="CHK2-text-input" >
+
+                                <div class="flex-row">
+                                    <div class="flex-row" style="justify-content: flex-start; width: 156px;">
+                                        <input type="checkbox" id="remember" name="remember" class="CHK2-checkbox" style="width: 16px; margin: 6px;">
+                                        <label for="remember" class="CHK2-P" style="margin: auto;">Remember me</label>
+                                    </div>
+                                    <a class="CHK2-P" style="color: #24A0ED; margin-right: 6px;" href="/password_reset/">Recover Password</a>
+                                </div>
+                            </div>
+    
+                            <input type="submit" class="CHK2-button" name="Login" value="Login">
+                        </form>
+    
+                        {% for message in messages %}
+                            <p class="CHK2-P">{{ message }}</p>
+                        {% endfor %}
+    
+                        {{form.errors}}
+                        {% if error_message %}
+                            <p class="CHK2-P">{{ error_message|safe }}</p>
+                        {% endif %}
+    
+                        <p class="CHK2-P">Don't have an account yet? <a href="{% url 'register' %}" style="color: #24A0ED; margin-left: 12px;">Sign Up</a></p>
+                        
+                    </div>
+                </div>
+            </div>
+
+        {% else %}
+        {% include 'overlays/navbar.html' %}
+        
+        <div class="CHK2">
+            <div class="CHK2-row">
+                <div class="CHK2-text" style="flex-basis: 456px;">
+                    <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
+                        <img src="/static/images/icon/BJG.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                    </div>
+                    
+                    <div class="flex-column" style="margin-bottom: 32px;">
+                        <h1 class="CHK2-H" style="margin: 0;">Hello again!</h1>
+                        <div>
+                            <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                        </div>
+                    </div>
+
+                    <form method="post" action="" style="width: 100%;">
+                        <div class="flex-column">
+                            <div class="flex-row" style="justify-content: center; width: 100%;">
+                                <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
+                            </div>
+                        </div>
+
+                        <div class="flex-column" style="width: 100%;">
+                            <div class="flex-row" style="justify-content: center; width: 100%;">
+                                <input type="password" id="password" name="password" placeholder="Password..." class="CHK2-text-input" >
+                            </div>
+                            <div class="flex-row" style="width: 100%; justify-content: space-between;">
+                                <div class="flex-row" style="justify-content: flex-start; width: 156px;">
+                                    <input type="checkbox" id="remember" name="remember" class="CHK2-checkbox" style="width: 16px; height: 16px; margin: 6px;" checked>
+                                    <label for="remember" class="CHK2-P">Remember me</label>
+                                </div>
+                                <a class="CHK2-P" style="color: var(--button-color); margin-right: 6px;" href="/password_reset/">Reset Password</a>
+                            </div>
+                        </div>
+
+                        <input type="submit" class="CHK2-button" name="Login" value="Login">
+                    </form>
+
+                    {% for message in messages %}
+                        <p class="CHK2-P">{{ message }}</p>
+                    {% endfor %}
+
+                    {{form.errors}}
+                    {% if error_message %}
+                        <p class="CHK2-P">{{ error_message|safe }}</p>
+                    {% endif %}
+
+                    <p class="CHK2-P">Don't have an account yet? <a href="/register" style="color: var(--button-color); margin-left: 12px;">Sign Up</a></p>
+                    
+                </div>
+            </div>
+        </div>
+
+        {% include 'overlays/footer.html' %}
+        {% endif %}
+    </body>
+</html>

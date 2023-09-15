@@ -1,0 +1,111 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Registration</title>
+        <meta name="description" content="Registration">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        
+        <link rel="stylesheet" href="/static/css/authentication/login_registration.css">
+        <link rel="stylesheet" href="/static/css/color/color.css">
+
+        <link rel="stylesheet" href="https://use.typekit.net/pbm5dyg.css">
+    </head>
+    <body class="background-color">
+        {% if device.is_mobile %}
+        {% include 'overlays/navbar.html' %}
+
+            <div class="CHK2">
+                <div class="CHK2-row">
+                    <div class="CHK2-text" style="flex-basis: calc(100% - 24px);">
+                        <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
+                            <img src="/static/images/Logo/Profile_Picture_Final.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                        </div>
+
+                        <div class="flex-column" style="margin-bottom: 32px;">
+                            <h1 class="CHK2-H" style="margin: 0;">Welcome!</h1>
+                            <div>
+                                <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                            </div>
+                        </div>
+    
+                        <form method="post" action="">
+                            {% csrf_token %}
+
+                            <div>
+                                <input type="text" id="id_username" name="username" maxlength="150" autofocus="" required="" class="CHK2-text-input" placeholder="Username...">
+                            </div>
+    
+                            <div>
+                                <input type="email" id="id_email" name="email" maxlength="254" class="CHK2-text-input" placeholder="Email...">
+                            </div>
+    
+                            <div>
+                                <input type="password" id="id_password1" name="password1" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Password...">
+                            </div>
+    
+                            <div>
+                                <input type="password" id="id_password2" name="password2" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Confirm password...">
+                            </div>
+    
+                            <input type="submit" class="CHK2-button" name="Create User" value="Create User">
+                        </form>    
+    
+                        <p class="CHK2-P">{{form.errors}}</p>
+    
+                        <p class="CHK2-P">Already an account? <a href="{% url 'login' %}" style="color: #24A0ED; margin-left: 12px;">login</a></p>
+                        <p class="CHK2-P">have you forgotten your <a href="/password_reset/" style="color: #24A0ED; margin-left: 12px;">Password?</a><p>
+                    </div>
+                </div>
+            </div>
+
+        {% else %}
+        {% include 'overlays/navbar.html' %}
+
+        <div class="CHK2">
+            <div class="CHK2-row">
+                <div class="CHK2-text" style="flex-basis: 456px;">
+                    <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
+                        <img src="/static/images/icon/BJG.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                    </div>
+                    
+                    <div class="flex-column" style="margin-bottom: 32px;">
+                        <h1 class="CHK2-H" style="margin: 0;">Hello again!</h1>
+                        <div>
+                            <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                        </div>
+                    </div>
+
+                    <form method="post" action="">
+
+                        <div>
+                            <input type="text" id="id_username" name="username" maxlength="150" autofocus="" required="" class="CHK2-text-input" placeholder="Username...">
+                        </div>
+
+                        <div>
+                            <input type="email" id="id_email" name="email" maxlength="254" class="CHK2-text-input" placeholder="Email...">
+                        </div>
+
+                        <div>
+                            <input type="password" id="id_password1" name="password1" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Password...">
+                        </div>
+
+                        <div>
+                            <input type="password" id="id_password2" name="password2" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Confirm password...">
+                        </div>
+
+                        <input type="submit" class="CHK2-button" name="Create User" value="Create User">
+                    </form>    
+
+                    <p class="CHK2-P">Already an account? <a href="/login" style="color: var(--button-color); margin-left: 12px;">login</a></p>
+                    <p class="CHK2-P">have you forgotten your <a href="/password_reset" style="color: var(--button-color); margin-left: 12px;">Password?</a><p>
+                </div>
+            </div>
+        </div>
+        
+        {% include 'overlays/footer.html' %}
+        {% endif %}
+    </body>
+</html>
