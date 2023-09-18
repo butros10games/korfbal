@@ -6,14 +6,45 @@
         <title>{{ title }}</title>
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/static/css/index.css">
+        <link rel="stylesheet" href="/static/css/teams/index.css">
         <link rel="stylesheet" href="/static/css/color/color.css">
     </head>
     <body>
         {% include 'overlays/navbar.html' %}
 
-        <div>
-            
+        <div class="flex-column" style="margin-top: 64px; margin: 64px 8px 0 8px;">
+            <div class="flex-row">
+                <h1 style="font-size: 24px;">Teams</h1>
+                <div style="background: #D9D9D9; padding: 4px; border-radius: 4px; height: 24px;">
+                    <img style="height: 24px; width: 24px;" alt="search" src="/static/images/search.svg">
+                </div>
+            </div>
+
+            <div class="teams-container" style="margin-top: 16px; margin-bottom: 8px;">
+                {% if teams %}
+                <h2 style="margin: 0; font-size: 16px;">Playing</h2>
+                {% endif %}
+                
+                {% for team in teams %}
+                <a href="/team/{{ team.id_uuid }}" class="flex-column" style="width: 100%; min-height: 156px; background: #D9D9D9; border-radius: 4px; justify-content: flex-end;">
+                    <div class="flex-row" style="background-color: rgba(0, 0, 0, 0.3); width: 100%; border-radius: 0 0 4px 4px; height: 48px; justify-content: center">
+                        <p style="font-weight: 600; ">{{ team.name }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+
+                {% if following_teams %}
+                <h2 style="margin: 0; font-size: 16px;">Following</h2>
+                {% endif %}
+
+                {% for team in following_teams %}
+                <a href="/team/{{ team.id_uuid }}" class="flex-column" style="width: 100%; min-height: 156px; background: #D9D9D9; border-radius: 4px; justify-content: flex-end;">
+                    <div class="flex-row" style="background-color: rgba(0, 0, 0, 0.3); width: 100%; border-radius: 0 0 4px 4px; height: 48px; justify-content: center">
+                        <p style="font-weight: 600; ">{{ team.name }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
         </div>
     </body>
 </html>

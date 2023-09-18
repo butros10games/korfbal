@@ -1,0 +1,39 @@
+body {
+    margin: 0;
+    font-family: termina, sans-serif;
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+}
+
+h1 {
+    margin: 0;
+}
+
+.teams-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    height: calc(100vh - 203px);
+    overflow-y: scroll;
+}
+
+a {
+    text-decoration: none;
+    color: black;
+}

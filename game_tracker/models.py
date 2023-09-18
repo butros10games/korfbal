@@ -6,22 +6,34 @@ import uuid
 class Club(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, unique=True)
+    
+    def __str__(self):
+        return str(self.name)
 
 class Team(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, unique=True)
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name='teams')
     
+    def __str__(self):
+        return str(self.name)
+    
 class TeamData(models.Model):
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
-    coach = models.ManyToManyField('Player', related_name='team_data_as_coach')
-    players = models.ManyToManyField('Player', related_name='team_data_as_player')
+    coach = models.ManyToManyField('Player', related_name='team_data_as_coach', blank=True)
+    players = models.ManyToManyField('Player', related_name='team_data_as_player', blank=True)
     season = models.ForeignKey('Season', on_delete=models.CASCADE, related_name='team_data')
+    
+    def __str__(self):
+        return str(self.team.name)
 
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ManyToManyField(User, related_name='players')
-    team_follow = models.ManyToManyField('Team', related_name='Follow')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
+    team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
+    
+    def __str__(self):
+        return str(self.user.username)
 
 class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -65,6 +77,9 @@ class Goal(models.Model):
 class GoalType(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, unique=True)
+    
+    def __str__(self):
+        return str(self.name)
 
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -77,4 +92,7 @@ class Season(models.Model):
     name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField()
     end_date = models.DateField()
+    
+    def __str__(self):
+        return str(self.name)
     
