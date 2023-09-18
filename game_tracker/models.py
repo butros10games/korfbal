@@ -31,6 +31,7 @@ class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
     team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
+    profile_picture = models.ImageField(upload_to='media/profile_pictures/', blank=True)
     
     def __str__(self):
         return str(self.user.username)

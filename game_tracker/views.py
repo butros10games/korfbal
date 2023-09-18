@@ -31,4 +31,15 @@ def team_detail(request, team_id):
     return render(request, "teams/detail.html", {"team": team})
 
 def profile(request):
-    return render(request, "profile/index.html")
+    user = request.user
+    
+    if not user.is_authenticated:
+        return redirect('login')
+    
+    player = Player.objects.get(user=user)
+    
+    context = {
+        "player": player,
+    }
+    
+    return render(request, "profile/index.html", context)
