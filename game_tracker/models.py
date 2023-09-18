@@ -14,9 +14,9 @@ class Team(models.Model):
     
 class TeamData(models.Model):
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
-    coach = models.ManyToManyField('Player', related_name='teams')
-    players = models.ManyToManyField('Player', related_name='teams')
-    Season = models.ForeignKey('Season', on_delete=models.CASCADE, related_name='teams')
+    coach = models.ManyToManyField('Player', related_name='team_data_as_coach')
+    players = models.ManyToManyField('Player', related_name='team_data_as_player')
+    season = models.ForeignKey('Season', on_delete=models.CASCADE, related_name='team_data')
 
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -69,7 +69,7 @@ class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
     time = models.IntegerField()
-    active = models.BooleanField()
+    active = models.BooleanField(default=True)
 
 class Season(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
