@@ -11,12 +11,16 @@ class Team(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, unique=True)
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name='teams')
+    
+class TeamData(models.Model):
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
     coach = models.ManyToManyField('Player', related_name='teams')
+    players = models.ManyToManyField('Player', related_name='teams')
+    Season = models.ForeignKey('Season', on_delete=models.CASCADE, related_name='teams')
 
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    users = models.ManyToManyField(User, related_name='players')
-    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='players')
+    user = models.ManyToManyField(User, related_name='players')
 
 class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -65,3 +69,11 @@ class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
     time = models.IntegerField()
+    active = models.BooleanField()
+
+class Season(models.Model):
+    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255, unique=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    
