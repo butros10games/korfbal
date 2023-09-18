@@ -1,0 +1,25 @@
+:root {
+    --primary_color: #1b1b1b;
+    --secondary_color: #ffff;
+
+    --button-color: #4169E1;
+    --button-color-hover: #3555b4;
+
+    --button-color-logout: #ff0000;
+
+    --text-color: #ffff;
+    --text-color-off: #b8b8b8;
+
+    --blog-color: #ffffff;
+    --blog-color-hover: #ffffff;
+    --blog-back-color: #2b2b2b;
+}
+
+.dark-theme {
+    --primary_color: #1b1b1b;
+    --secondary_color: #ffff;
+
+    --button-color: #4169E1;
+
+    --text-color: #ffff;
+}
