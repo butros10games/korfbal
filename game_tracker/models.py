@@ -21,6 +21,7 @@ class TeamData(models.Model):
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ManyToManyField(User, related_name='players')
+    team_follow = models.ManyToManyField('Team', related_name='Follow')
 
 class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
