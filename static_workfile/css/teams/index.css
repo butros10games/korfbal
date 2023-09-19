@@ -20,6 +20,14 @@ body {
     align-items: center;
 }
 
+.flex-center {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+}
+
 h1 {
     margin: 0;
 }
@@ -36,4 +44,26 @@ h1 {
 a {
     text-decoration: none;
     color: black;
+}
+
+.active {
+    background: #1DA1F2;
+}
+
+.player-container {
+    width: calc(100vw * 1/3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 156px;
+}
+
+.player-profile-pic {
+    width: 96px;
+    border-radius: 50%;
+}
+
+.player-name {
+    margin: 8px;
 }

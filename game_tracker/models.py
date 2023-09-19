@@ -44,6 +44,7 @@ class Match(models.Model):
     away_score = models.IntegerField()
     start_time = models.DateTimeField()
     length = models.IntegerField()
+    finished = models.BooleanField(default=False)
 
     def get_winner(self):
         if self.home_score > self.away_score:
@@ -74,6 +75,7 @@ class Goal(models.Model):
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='goals')
     time = models.IntegerField()
     goal_type = models.ForeignKey('GoalType', on_delete=models.CASCADE, related_name='goals')
+    for_team = models.BooleanField(default=True)
 
 class GoalType(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
