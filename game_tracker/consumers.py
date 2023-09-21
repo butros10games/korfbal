@@ -58,22 +58,39 @@ class team_data(AsyncWebsocketConsumer):
                 }))
                 
             elif command == "team_stats":
-                all_matches = await sync_to_async(Match.objects.filter)(Q(home_team=self.team) | Q(away_team=self.team))
-        
+                all_matches = await sync_to_async(Match.objects.filter)(Q(home_team=self.team, finished=True) | Q(away_team=self.team, finished=True))
+                all_matches_list = await sync_to_async(list)(all_matches.prefetch_related('home_team', 'away_team'))
+                
                 goal_types = await sync_to_async(list)(GoalType.objects.all())
 
                 goal_stats = {}
+                scoring_types = []
+                played_matches = await sync_to_async(all_matches.count)()
+                total_goals_for = 0
+                total_goals_against = 0
+                
                 for goal_type in goal_types:
                     goals_for = await sync_to_async(Goal.objects.filter(match__in=all_matches, goal_type=goal_type, for_team=True).count)()
                     goals_against = await sync_to_async(Goal.objects.filter(match__in=all_matches, goal_type=goal_type, for_team=False).count)()
+            
                     goal_stats[goal_type.name] = {
                         "goals_for": goals_for,
                         "goals_against": goals_against
                     }
+                    
+                    scoring_types.append(goal_type.name)
+                    
+                for match in all_matches_list:
+                    total_goals_for += match.home_score if match.home_team == self.team else match.away_score
+                    total_goals_against += match.away_score if match.home_team == self.team else match.home_score
                 
                 await self.send(text_data=json.dumps({
                     'command': 'goal_stats',
                     'goal_stats': goal_stats,
+                    'scoring_types': scoring_types,
+                    'played_matches': played_matches,
+                    'total_goals_for': total_goals_for,
+                    'total_goals_against': total_goals_against,
                 }))
                 
             elif command == "spelers":

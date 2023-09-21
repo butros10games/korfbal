@@ -53,6 +53,9 @@ class Match(models.Model):
             return self.away_team
         else:
             return None
+        
+    def __str__(self):
+        return str(self.home_team.name + " - " + self.away_team.name)
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
