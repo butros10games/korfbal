@@ -9,6 +9,10 @@
     <ul>
         <li><a href="{% url 'index' %}"><img src="/static/images/navbar/home.svg"></a></li>
         <li><a href="{% url 'teams' %}"><img src="/static/images/navbar/group.svg"></a></li>
-        <li><a href="{% url 'profile' %}"><img src="/static/images/navbar/profile.svg"></a></li>
+        {% if user.is_authenticated %}
+            <li><a href="{{ profile_url }}"><img src="/static/images/navbar/profile.svg"></a></li>
+        {% else %}
+            <li><a href="{% url 'login' %}"><img src="/static/images/navbar/login.svg"></a></li>
+        {% endif %}
     </ul>
 </div>

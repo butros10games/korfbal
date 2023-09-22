@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User  # Assuming you're using the built-in User model
+from django.urls import reverse
 
 import uuid
 
@@ -18,6 +19,9 @@ class Team(models.Model):
     def __str__(self):
         return str(self.name)
     
+    def get_absolute_url(self):
+        return reverse('team_detail', kwargs={'team_id': self.id_uuid})
+    
 class TeamData(models.Model):
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
     coach = models.ManyToManyField('Player', related_name='team_data_as_coach', blank=True)
@@ -31,10 +35,13 @@ class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
     team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
-    profile_picture = models.ImageField(upload_to='media/profile_pictures/', blank=True)
+    profile_picture = models.ImageField(upload_to='media/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
     
     def __str__(self):
         return str(self.user.username)
+    
+    def get_absolute_url(self):
+        return reverse('profile_detail', kwargs={'player_id': self.id_uuid})
 
 class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -56,6 +63,9 @@ class Match(models.Model):
         
     def __str__(self):
         return str(self.home_team.name + " - " + self.away_team.name)
+    
+    def get_absolute_url(self):
+        return reverse('match_detail', kwargs={'match_id': self.id_uuid})
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

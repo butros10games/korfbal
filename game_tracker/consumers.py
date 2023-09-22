@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer, WebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from .models import Team, Match, Goal, GoalType, Season, TeamData
+from .models import Team, Match, Goal, GoalType, Season, TeamData, Player
 
 import json
 import traceback
@@ -18,6 +18,9 @@ class team_data(AsyncWebsocketConsumer):
         team_id = self.scope['url_route']['kwargs']['id']
         self.team = await sync_to_async(Team.objects.get)(id_uuid=team_id)
         await self.accept()
+        
+    async def disconnect(self, close_code):
+        pass
         
     async def receive(self, text_data):
         try:
@@ -50,6 +53,7 @@ class team_data(AsyncWebsocketConsumer):
                         'length': wedstrijd.length,
                         'finished': wedstrijd.finished,
                         'winner': wedstrijd.get_winner().name if wedstrijd.get_winner() else None,
+                        'get_absolute_url': str(wedstrijd.get_absolute_url())
                     })
                 
                 await self.send(text_data=json.dumps({
@@ -132,13 +136,14 @@ class team_data(AsyncWebsocketConsumer):
                         'id': str(player.id_uuid),
                         'name': player.user.username,
                         'profile_picture': player.profile_picture.url if player.profile_picture else None,
+                        'get_absolute_url': str(player.get_absolute_url())
                     }
                     for player in players_in_team_season_list
                 ]
 
                 await self.send(text_data=json.dumps({
                     'command': 'spelers',
-                    'spelers': players_in_team_season_dict,
+                    'spelers':players_in_team_season_dict,
                 }))
                 
         except Exception as e:
@@ -147,3 +152,82 @@ class team_data(AsyncWebsocketConsumer):
                 'traceback': traceback.format_exc()
             }))
             
+class profile_data(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+        self.player = None
+        
+    async def connect(self):
+        player_id = self.scope['url_route']['kwargs']['id']
+        self.player = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player_id)
+        self.user = self.player.user
+        await self.accept()
+        
+    async def disconnect(self, close_code):
+        pass
+    
+    async def receive(self, text_data):
+        try:
+            json_data = json.loads(text_data)
+            command = json_data['command']
+            
+            if command == "player_stats":
+                total_goals_for = 0
+                total_goals_against = 0
+                
+                all_matches_with_player = await sync_to_async(Match.objects.filter)(
+                    Q(home_team__team_data__players=self.player, finished=True) |
+                    Q(away_team__team_data__players=self.player, finished=True)
+                )
+
+                goal_types = await sync_to_async(list)(GoalType.objects.all())
+
+                player_goal_stats = {}
+                scoring_types = []
+
+                for goal_type in goal_types:
+                    goals_by_player = await sync_to_async(Goal.objects.filter(
+                        match__in=all_matches_with_player, 
+                        goal_type=goal_type, 
+                        player=self.player,
+                        for_team=True
+                    ).count)()
+                    
+                    goals_against_player = await sync_to_async(Goal.objects.filter(
+                        match__in=all_matches_with_player, 
+                        goal_type=goal_type, 
+                        player=self.player,
+                        for_team=False
+                    ).count)()
+
+                    player_goal_stats[goal_type.name] = {
+                        "goals_by_player": goals_by_player,
+                        "goals_against_player": goals_against_player
+                    }
+                    
+                    total_goals_for += goals_by_player
+                    total_goals_against += goals_against_player
+
+                    scoring_types.append(goal_type.name)
+
+                await self.send(text_data=json.dumps({
+                    'command': 'player_goal_stats',
+                    'player_goal_stats': player_goal_stats,
+                    'scoring_types': scoring_types,
+                    'played_matches': await sync_to_async(all_matches_with_player.count)(),
+                    'total_goals_for': total_goals_for,
+                    'total_goals_against': total_goals_against,
+                }))
+                
+            if command == "settings_request":
+                pass
+            
+            if command == "settings_update":
+                pass
+            
+        except Exception as e:
+            await self.send(text_data=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }))
