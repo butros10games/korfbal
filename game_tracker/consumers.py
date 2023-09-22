@@ -3,6 +3,7 @@ from asgiref.sync import sync_to_async
 from django.db.models import Q
 
 from .models import Team, Match, Goal, GoalType, Season, TeamData, Player
+from authentication.models import UserProfile
 
 import json
 import traceback
@@ -157,11 +158,13 @@ class profile_data(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.user = None
         self.player = None
+        self.user_profile = None
         
     async def connect(self):
         player_id = self.scope['url_route']['kwargs']['id']
         self.player = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player_id)
         self.user = self.player.user
+        self.user_profile = await sync_to_async(UserProfile.objects.get)(user=self.user)
         await self.accept()
         
     async def disconnect(self, close_code):
@@ -221,10 +224,35 @@ class profile_data(AsyncWebsocketConsumer):
                 }))
                 
             if command == "settings_request":
-                pass
+                await self.send(text_data=json.dumps({
+                    'command': 'settings_request',
+                    'username': self.user.username,
+                    'email': self.user.email,
+                    'first_name': self.user.first_name,
+                    'last_name': self.user.last_name,
+                    'is_2fa_enabled': self.user_profile.is_2fa_enabled
+                }))
             
             if command == "settings_update":
-                pass
+                data = json_data['data']
+                username = data['username']
+                email = data['email']
+                first_name = data['first_name']
+                last_name = data['last_name']
+                is_2fa_enabled = data['is_2fa_enabled']
+                
+                self.user.username = username
+                self.user.email = email
+                self.user.first_name = first_name
+                self.user.last_name = last_name
+                await sync_to_async(self.user.save)()
+                
+                self.user_profile.is_2fa_enabled = is_2fa_enabled
+                await sync_to_async(self.user_profile.save)()
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'settings_updated',
+                }))
             
         except Exception as e:
             await self.send(text_data=json.dumps({

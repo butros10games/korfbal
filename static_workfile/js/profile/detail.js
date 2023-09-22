@@ -97,15 +97,31 @@ function onMessageReceived(event) {
     const data = JSON.parse(event.data);
     console.log(data);
 
-    cleanDom();
-
     switch(data.command) {
-        case "settings":
+        case "settings_request":
+            cleanDom();
+
             updateSettings(data);
             break;
         
         case "player_goal_stats":
+            cleanDom();
+
             updateGoalStats(data);
+            break;
+
+        case "settings_updated":
+            const saveButtonText = document.getElementById("save-button-text");
+            saveButtonText.innerHTML = "Saved!";
+            saveButtonText.style.color = "#fff";
+
+            const saveButton = document.querySelector(".save-button");
+            saveButton.classList.remove("loading");
+
+            setTimeout(() => {
+                saveButtonText.innerHTML = "Save";
+                saveButtonText.style.color = "";
+            }, 1500);
             break;
     }
 }
@@ -120,29 +136,127 @@ function cleanDom() {
     infoContainer.classList.remove("flex-center");
 }
 
+function updateSettings(data) {
+    // Main container for settings
+    const settingsContainer = document.createElement("div");
+    settingsContainer.classList.add("flex-column");
+
+    const settingsRow = document.createElement("div");
+    settingsRow.classList.add("flex-row");
+
+    const settingsText = document.createElement("div");
+    settingsText.classList.add("from-container");
+
+    // Create input field for each setting
+    const fields = [
+        { name: "username", label: "Username", type: "text" },
+        { name: "email", label: "Email", type: "email" },
+        { name: "first_name", label: "First Name", type: "text" },
+        { name: "last_name", label: "Last Name", type: "text" },
+        { name: "is_2fa_enabled", label: "2FA Enabled", type: "checkbox" }
+    ];
+
+    fields.forEach(field => {
+        const inputShell = document.createElement("div");
+
+        if (field.type === "checkbox") {
+            inputShell.classList.add("text-checkbox-shell");
+        } else {
+            inputShell.classList.add("text-input-shell");
+        }
+
+        const label = document.createElement("label");
+        label.for = field.name;
+        label.innerHTML = field.label;
+
+        inputShell.appendChild(label);
+
+        let input;
+        if (field.type === "checkbox") {
+            input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = data[field.name] ? data[field.name] : false;
+            input.classList.add("text-checkbox");
+        } else {
+            input = document.createElement("input");
+            input.type = field.type;
+            input.value = data[field.name] && data[field.name].trim() !== "" ? data[field.name] : "";
+            input.placeholder = field.label + "...";
+            input.classList.add("text-input");
+        }
+        input.id = field.name;
+        input.name = field.name;
+
+        inputShell.appendChild(input);
+        settingsText.appendChild(inputShell);
+    });
+
+    const saveButton = document.createElement("button");
+    saveButton.type = "submit";
+    
+    const saveButtonText = document.createElement("p");
+    saveButtonText.innerHTML = "Save";
+    saveButtonText.style.margin = "0";
+    saveButtonText.id = "save-button-text";
+
+    saveButton.appendChild(saveButtonText);
+
+    saveButton.classList.add("save-button");
+
+    saveButton.addEventListener("click", function(event) {
+        event.preventDefault();  // Prevent form submission
+
+        saveButton.classList.add("loading");
+
+        // Gather input values
+        const formData = {
+            'username': document.getElementById("username").value,
+            'email': document.getElementById("email").value,
+            'first_name': document.getElementById("first_name").value,
+            'last_name': document.getElementById("last_name").value,
+            'is_2fa_enabled': document.getElementById("is_2fa_enabled").checked
+        };
+
+        // Send data to server
+        socket.send(JSON.stringify({
+            'command': 'settings_update',
+            'data': formData
+        }));
+    });
+
+    settingsText.appendChild(saveButton);
+
+    settingsRow.appendChild(settingsText);
+    settingsContainer.appendChild(settingsRow);
+
+    // Append the settingsContainer to the main container (assuming it's named infoContainer)
+    infoContainer.innerHTML = ""; // Clear existing content
+    infoContainer.appendChild(settingsContainer);
+}
+
 function updateGoalStats(data) {
     if (data.played_matches > 0) {
-        goals_container = document.createElement("div");
+        const goals_container = document.createElement("div");
         goals_container.classList.add("flex-column");
         goals_container.style.width = "calc(100% - 24px))";
         goals_container.style.padding = "12px";
 
-        row_1 = document.createElement("div");
+        const row_1 = document.createElement("div");
         row_1.classList.add("flex-row");
         row_1.style.justifyContent = "space-around";
         row_1.style.width = "100%";
         row_1.style.marginBottom = "24px";
         
-        matchs_container = document.createElement("div");
+        const matchs_container = document.createElement("div");
         matchs_container.classList.add("flex-column");
         matchs_container.style.width = "144px";
 
-        matchs = document.createElement("p");
+        const matchs = document.createElement("p");
         matchs.style.margin = "0";
         matchs.style.fontSize = "14px";
         matchs.innerHTML = "Wedstrijden";
 
-        matchs_data = document.createElement("p");
+        const matchs_data = document.createElement("p");
         matchs_data.style.margin = "0";
         matchs_data.innerHTML = data.played_matches;
 
@@ -151,16 +265,16 @@ function updateGoalStats(data) {
 
         row_1.appendChild(matchs_container);
 
-        total_score_container = document.createElement("div");
+        const total_score_container = document.createElement("div");
         total_score_container.classList.add("flex-column");
         total_score_container.style.width = "144px";
 
-        total_score = document.createElement("p");
+        const total_score = document.createElement("p");
         total_score.style.margin = "0";
         total_score.style.fontSize = "14px";
         total_score.innerHTML = "Totaal punten";
 
-        total_score_data = document.createElement("p");
+        const total_score_data = document.createElement("p");
         total_score_data.style.margin = "0";
         total_score_data.innerHTML = data.total_goals_for + '/' + data.total_goals_against;
 
@@ -171,10 +285,8 @@ function updateGoalStats(data) {
 
         goals_container.appendChild(row_1);
 
-        row_2 = document.createElement("div");
-
         // Create a container for goal stats per type
-        goal_stats_container = document.createElement("div");
+        const goal_stats_container = document.createElement("div");
         goal_stats_container.classList.add("flex-row");
         goal_stats_container.style.width = "100%";
         goal_stats_container.style.marginTop = "12px";
@@ -187,18 +299,18 @@ function updateGoalStats(data) {
                 const goalStat = data.player_goal_stats[goalType];
 
                 // Create a div for each goal type's stats
-                goal_type_container = document.createElement("div");
+                const goal_type_container = document.createElement("div");
                 goal_type_container.classList.add("flex-column");
                 goal_type_container.style.marginbottom = "12px";
                 goal_type_container.style.width = "104px";
                 goal_type_container.style.marginBottom = "12px";
 
-                goal_type_name = document.createElement("p");
+                const goal_type_name = document.createElement("p");
                 goal_type_name.style.margin = "0";
                 goal_type_name.style.fontSize = "14px";
                 goal_type_name.innerHTML = goalType;
 
-                goals_data = document.createElement("p");
+                const goals_data = document.createElement("p");
                 goals_data.style.margin = "0";
                 goals_data.innerHTML = goalStat.goals_by_player + "/" + goalStat.goals_against_player;
 
