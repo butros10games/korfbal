@@ -4,10 +4,11 @@ let WebSocket_url;
 let infoContainer;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
-const loadIcon = 
+let profilePicture
 
 window.addEventListener("DOMContentLoaded", function() {
     infoContainer = document.getElementById("info-container");
+    profilePicture = document.getElementById("profilePic-container");
     
     const matches = url.match(regex);
 
@@ -23,6 +24,59 @@ window.addEventListener("DOMContentLoaded", function() {
     load_icon();
     initializeSocket(WebSocket_url);
     setNavButtons();
+
+    const imageModal = document.getElementById('imageModal');
+    const closeModalButton = document.getElementById('closeModal');
+
+    // Show modal when an image is selected
+    const fileInput = document.getElementById('profilePicInput');
+    const imagePreview = document.getElementById('imagePreview');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            const file = fileInput.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imageModal.style.display = 'flex'; // Show the modal
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    // Close modal when the close button is clicked
+    if (closeModalButton) {
+        closeModalButton.addEventListener('click', function() {
+            imageModal.style.display = 'none'; // Hide the modal
+        });
+    }
+
+    // Add event listener for save button
+    const saveButton = document.getElementById('saveProfilePic');
+    if (saveButton) {
+        saveButton.addEventListener('click', function() {
+            const file = fileInput.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('profile_picture', file);
+    
+                fetch('/upload_profile_picture/', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(console.log('upload succesful'))
+                .then(data => {
+                    imageModal.style.display = 'none'; // Hide the modal
+                    document.getElementById('profilePic').src = data.url;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+        });
+    }
 });
 
 function setNavButtons() {
@@ -37,6 +91,7 @@ function setNavButtons() {
             });
 
             this.classList.toggle("active");
+            profilePicture.classList.remove("active-img");
 
             // Get data out of the button
             var data = this.getAttribute('data');
@@ -137,6 +192,8 @@ function cleanDom() {
 }
 
 function updateSettings(data) {
+    profilePicture.classList.add("active-img");
+
     // Main container for settings
     const settingsContainer = document.createElement("div");
     settingsContainer.classList.add("flex-column");

@@ -231,3 +231,69 @@ a {
 .save-button.loading #save-button-text {
     visibility: hidden;
 }
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 500px;
+    text-align: center;
+}
+
+.image-preview {
+    max-width: 100%;
+    margin: 20px 0;
+}
+
+.profile-container {
+    position: relative;
+    width: 128px;
+    height: 128px;
+}
+
+.profile-pic {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: block;
+}
+
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);  /* Black background with 50% opacity */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.profile-container.active-img .overlay {
+    opacity: 1;
+}
+
+.overlay-icon {
+    width: 40px;  /* Adjust as needed */
+    height: 40px; /* Adjust as needed */
+    z-index: 2;
+    margin-left: 6px;
+}

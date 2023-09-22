@@ -4,11 +4,13 @@ from django.db.models import Q
 
 from .models import Team, Match, Goal, GoalType, Season, TeamData, Player
 from authentication.models import UserProfile
+from django.core.files.base import ContentFile
 
 import json
 import traceback
 import locale
 from datetime import datetime
+import base64
 
 class team_data(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
@@ -253,6 +255,18 @@ class profile_data(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({
                     'command': 'settings_updated',
                 }))
+                
+            if command == 'update_profile_picture_url':
+                url = json_data['url']
+                if url:
+                    self.player.profile_picture = url  # Assuming 'url' contains the relative path of the image
+                    await sync_to_async(self.player.save)()
+
+                    # Send a response back to the client if needed
+                    await self.send(text_data=json.dumps({
+                        'command': 'profile_picture_updated',
+                        'status': 'success'
+                    }))
             
         except Exception as e:
             await self.send(text_data=json.dumps({
