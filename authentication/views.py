@@ -26,6 +26,7 @@ from django.contrib.auth import BACKEND_SESSION_KEY
 
 import random
 from .models import UserProfile
+from game_tracker.models import Player
 
 from django_ratelimit.decorators import ratelimit
 
@@ -51,6 +52,9 @@ def register_page(request):
             
             UserProfile_data = UserProfile.objects.create(user = user)
             UserProfile_data.save()
+            
+            player_data = Player.objects.create(user = user)
+            player_data.save()
 
             # Generate token and send confirmation email
             token = default_token_generator.make_token(user)
