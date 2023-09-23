@@ -1,7 +1,10 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData
+from .models import Team, Player, TeamData, Season
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.http import Http404
+
+from datetime import date
 
 # Create your views here.
 def index(request):
@@ -47,15 +50,37 @@ def teams(request):
 def team_detail(request, team_id):
     team = get_object_or_404(Team, id_uuid=team_id)
     
+    # Get current date
+    today = date.today()
+    
+    # Find the current season
+    current_season = Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
+
+    # If no season is found, then there might be an error in data or there's currently no active season
+    if not current_season:
+        raise Http404("No active season found")
+    
+    team_data = TeamData.objects.filter(team=team, season=current_season).first()
+    
     profile_url = None
     user_request = request.user
     if user_request.is_authenticated:
         player = Player.objects.get(user=user_request)
         profile_url = player.get_absolute_url
-    
+        
+    following = False
+    coach = False
+    if user_request.is_authenticated:
+        player = Player.objects.get(user=user_request)
+        following = player.team_follow.filter(id_uuid=team_id).exists()
+        
+        coach = team_data.coach.filter(id_uuid=player.id_uuid).exists()
+        
     context= {
         "team": team,
-        "profile_url": profile_url
+        "profile_url": profile_url,
+        "coaching": coach,
+        "following": following
     }
     
     return render(request, "teams/detail.html", context)
@@ -98,7 +123,7 @@ def match_detail(request):
         profile_url = player.get_absolute_url
     
     context = {
-        "profile_url": profile_url
+        "profile_url": profile_url,
     }
     
     return render(request, "profile/index.html", context)

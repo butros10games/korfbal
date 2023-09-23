@@ -297,3 +297,39 @@ a {
     z-index: 2;
     margin-left: 6px;
 }
+
+.icon-container {
+    position: absolute;
+    left: 8px;
+    top: 58px;
+    width: auto; /* use auto to fit the width of the SVG */
+    height: 32px; /* height of the volgen-icon */
+    cursor: pointer;
+    display: inline-block; /* ensures the container fits its children */
+}
+
+.volgen-icon {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 32px;
+    width: auto;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    transform: scale(0.8); /* initial scaled down state */
+    opacity: 0;
+}
+
+/* Initial visibility based on data-followed attribute */
+.icon-container[data-followed="true"] #follow-full,
+.icon-container[data-followed="false"] #follow-outline {
+    opacity: 1;
+    transform: scale(1); /* scale back to original size */
+}
+
+.settings-icon {
+    height: 32px;
+    width: auto;
+    position: absolute;
+    right: 8px;
+    top: 58px;
+}
