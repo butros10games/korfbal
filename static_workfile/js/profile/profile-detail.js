@@ -282,6 +282,14 @@ function updateSettings(data) {
     });
 
     settingsText.appendChild(saveButton);
+    
+    // django logout button
+    const logoutButton = document.createElement("a");
+    logoutButton.href = "/logout";
+    logoutButton.innerHTML = "Logout";
+    logoutButton.classList.add("logout-button");
+
+    settingsText.appendChild(logoutButton);
 
     settingsRow.appendChild(settingsText);
     settingsContainer.appendChild(settingsRow);
