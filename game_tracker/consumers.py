@@ -149,6 +149,23 @@ class team_data(AsyncWebsocketConsumer):
                     'spelers':players_in_team_season_dict,
                 }))
                 
+            elif command == "follow":
+                follow = json_data['followed']
+                user_id = json_data['user_id']
+                
+                player = await sync_to_async(Player.objects.get)(user=user_id)
+                
+                if follow:
+                    await sync_to_async(player.team_follow.add)(self.team)
+                    
+                else:
+                    await sync_to_async(player.team_follow.remove)(self.team)
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'follow',
+                    'status': 'success'
+                }))
+                    
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'error': str(e),

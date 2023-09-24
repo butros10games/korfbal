@@ -4,10 +4,12 @@ let socket;
 let team_id;
 let WebSocket_url;
 let infoContainer;
+let user_id;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
 
 window.addEventListener("DOMContentLoaded", function() {
+    user_id = document.getElementById("user_id").innerText;
     infoContainer = document.getElementById("info-container");
     
     const matches = url.match(regex);
@@ -30,6 +32,14 @@ window.addEventListener("DOMContentLoaded", function() {
         
         // Toggle the data-followed attribute
         this.setAttribute('data-followed', !isFollowed);
+
+        console.log("user_id: " + user_id);
+
+        socket.send(JSON.stringify({
+            'command': 'follow',
+            'user_id': user_id,
+            'followed': !isFollowed
+        }));
     });
 });
 
@@ -105,18 +115,22 @@ function onMessageReceived(event) {
     const data = JSON.parse(event.data);
     console.log(data);
 
-    cleanDom();
-
     switch(data.command) {
         case "wedstrijden":
+            cleanDom();
+
             updateMatches(data);
             break;
         
         case "goal_stats":
+            cleanDom();
+
             updateGoalStats(data);
             break;
 
         case "spelers":
+            cleanDom();
+            
             updatePlayers(data);
             break;
     }
