@@ -33,6 +33,9 @@ def teams(request):
         
         # Get all teams the user is following
         following_teams = player.team_follow.all()
+        
+        ## remove the teams the user is following from the teams the user is part of
+        following_teams = following_teams.exclude(id_uuid__in=connected_teams)
     
     profile_url = None
     user_request = request.user
