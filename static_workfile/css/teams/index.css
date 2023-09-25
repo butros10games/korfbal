@@ -28,6 +28,15 @@ body {
     align-items: center;
 }
 
+.flex-start-wrap {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: flex-start;
+    align-items: center;
+}
+
 h1 {
     margin: 0;
 }
@@ -46,9 +55,33 @@ a {
     color: black;
 }
 
-.active {
-    color: white;
+.carousel-container {
+    overflow: hidden;
+    border-bottom: 6px solid var(--button-color);
+    width: 100%;
+}
+
+.carousel {
+    display: flex;
+    width: 100%;
+}
+
+.button {
+    flex: 0 0 calc(90vw / 3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 36px; /* Adjust the height as needed */
+    color: black;
+    background: transparent;
+    transition: background 0.3s ease;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.button.active {
     background: var(--button-color);
+    color: white;
 }
 
 .player-container {
@@ -62,6 +95,7 @@ a {
 
 .player-profile-pic {
     width: 96px;
+    height: 96px;
     border-radius: 50%;
 }
 

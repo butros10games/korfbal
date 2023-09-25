@@ -7,12 +7,16 @@
 
 <div class="stickyBottomNav">
     <ul>
-        <li><a href="{% url 'index' %}"><img src="/static/images/navbar/home.svg"></a></li>
-        <li><a href="{% url 'teams' %}"><img src="/static/images/navbar/group.svg"></a></li>
+        <li><a href="{% url 'index' %}" style="width: 42px;"><img alt="home" src="/static/images/navbar/home.svg"></a></li>
+        <li><a href="{% url 'teams' %}" style="width: 42px;"><img alt="teams" src="/static/images/navbar/group.svg"></a></li>
         {% if user.is_authenticated %}
-            <li><a href="{{ profile_url }}"><img src="/static/images/navbar/profile.svg"></a></li>
+            {% if profile_img_url %}
+            <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" style="height: 32px; width: auto; border-radius: 50%; border: 2px solid white;" src="{{ profile_img_url }}"></a></li>
+            {% else %}
+            <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" src="/static/images/navbar/profile.svg"></a></li>
+            {% endif %}
         {% else %}
-            <li><a href="{% url 'login' %}"><img src="/static/images/navbar/login.svg"></a></li>
+            <li><a href="{% url 'login' %}" style="width: 42px;"><img alt="login" src="/static/images/navbar/login.svg"></a></li>
         {% endif %}
     </ul>
 </div>

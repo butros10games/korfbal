@@ -8,14 +8,11 @@ from datetime import date
 
 # Create your views here.
 def index(request):
-    profile_url = None
-    user_request = request.user
-    if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        profile_url = player.get_absolute_url
+    profile_url, profile_img_url = standart_inports(request)
         
     context = {
-        "profile_url": profile_url
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
     }
         
     return render(request, "index.html", context)
@@ -37,16 +34,13 @@ def teams(request):
         # remove the teams the user is part of from the teams the user is following
         following_teams = following_teams.exclude(id_uuid__in=connected_teams)
     
-    profile_url = None
-    user_request = request.user
-    if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        profile_url = player.get_absolute_url
+    profile_url, profile_img_url = standart_inports(request)
     
     context = {
         "teams": connected_teams,
         "following_teams": following_teams,
-        "profile_url": profile_url
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
     }
     return render(request, "teams/index.html", context)
 
@@ -65,12 +59,9 @@ def team_detail(request, team_id):
     
     team_data = TeamData.objects.filter(team=team, season=current_season).first()
     
-    profile_url = None
+    profile_url, profile_img_url = standart_inports(request)
+    
     user_request = request.user
-    if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        profile_url = player.get_absolute_url
-        
     following = False
     coach = False
     if user_request.is_authenticated:
@@ -82,6 +73,7 @@ def team_detail(request, team_id):
     context= {
         "team": team,
         "profile_url": profile_url,
+        "profile_img_url": profile_img_url,
         "coaching": coach,
         "following": following
     }
@@ -103,30 +95,24 @@ def profile_detail(request, player_id=None):
     if user.is_authenticated and user == player.user:
         is_own_profile = True
     
-    profile_url = None
-    user_request = request.user
-    if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        profile_url = player.get_absolute_url
+    profile_url, profile_img_url = standart_inports(request)
     
     context = {
         "player": player,
         "user_data": user_data,
         "is_own_profile": is_own_profile,
-        "profile_url": profile_url
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
     }
     
     return render(request, "profile/index.html", context)
 
 def match_detail(request):
-    profile_url = None
-    user_request = request.user
-    if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        profile_url = player.get_absolute_url
+    profile_url, profile_img_url = standart_inports(request)
     
     context = {
         "profile_url": profile_url,
+        "profile_img_url": profile_img_url
     }
     
     return render(request, "profile/index.html", context)
@@ -144,3 +130,14 @@ def upload_profile_picture(request):
         return JsonResponse({'url': player.profile_picture.url})
 
     return JsonResponse({'error': 'Invalid request'}, status=400)
+
+def standart_inports(request):
+    profile_url = None
+    profile_img_url = None
+    user_request = request.user
+    if user_request.is_authenticated:
+        player = Player.objects.get(user=user_request)
+        profile_url = player.get_absolute_url
+        profile_img_url = player.profile_picture.url if player.profile_picture else None
+        
+    return profile_url, profile_img_url

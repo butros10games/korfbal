@@ -8,7 +8,18 @@ let user_id;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
 
+let touchStartX = 0;
+let touchEndX = 0;
+let isDragging = false;
+let currentPosition = 0;
+
+let buttonWidth;
+let carousel;
+
 window.addEventListener("DOMContentLoaded", function() {
+    buttonWidth = document.querySelector('.button').offsetWidth;
+    carousel = document.querySelector('.carousel');
+
     user_id = document.getElementById("user_id").innerText;
     infoContainer = document.getElementById("info-container");
     
@@ -44,27 +55,65 @@ window.addEventListener("DOMContentLoaded", function() {
 });
 
 function setNavButtons() {
-    // button selection for the team detail page
-    buttons = document.querySelectorAll(".button");
-    buttons.forEach(button => {
-        button.addEventListener("click", function() {
-            // deactivated the other buttons
-            var otherButtons = document.querySelectorAll(".button");
-            otherButtons.forEach(element => {
+    // Button selection for the carousel
+    const buttons = document.querySelectorAll(".button");
+    buttons.forEach((button) => {
+        button.addEventListener("click", function () {
+            // Deactivate the other buttons
+            buttons.forEach((element) => {
                 element.classList.remove("active");
             });
 
-            this.classList.toggle("active");
+            this.classList.add("active");
 
             // Get data out of the button
-            var data = this.getAttribute('data');
-            
+            const data = this.getAttribute("data");
+
             socket.send(JSON.stringify({
                 'command': data
             }));
 
+            cleanDom();
             load_icon();
         });
+    });
+
+    // Touch event handlers
+    carousel.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        startPosition = currentPosition;
+        isDragging = true;
+        carousel.style.transition = 'none';
+    });
+
+    carousel.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        touchEndX = e.touches[0].clientX;
+        const diff = touchEndX - touchStartX;
+        currentPosition = startPosition + diff;
+        carousel.style.transform = `translateX(${currentPosition}px)`;
+    });
+
+    carousel.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        const diff = touchEndX - touchStartX;
+
+        if (diff > buttonWidth / 3) {
+            // Swipe to the right, go to the previous item
+            currentPosition += buttonWidth;
+        } else if (diff < -buttonWidth / 3) {
+            // Swipe to the left, go to the next item
+            currentPosition -= buttonWidth;
+        }
+
+        // Ensure the carousel doesn't go beyond the boundaries
+        currentPosition = Math.max(currentPosition, -(carousel.scrollWidth - carousel.clientWidth));
+        currentPosition = Math.min(currentPosition, 0);
+
+        carousel.style.transition = 'transform 0.3s ease';
+        carousel.style.transform = `translateX(${currentPosition}px)`;
+
+        isDragging = false;
     });
 }
 
@@ -144,6 +193,7 @@ function load_icon() {
 function cleanDom() {
     infoContainer.innerHTML = "";
     infoContainer.classList.remove("flex-center");
+    infoContainer.classList.remove("flex-start-wrap");
 }
 
 function updateMatches(data) {
@@ -315,6 +365,8 @@ function updateGoalStats(data) {
 }
 
 function updatePlayers(data) {
+    infoContainer.classList.add("flex-start-wrap");
+
     if (data.spelers.length > 0) {
         for (i = 0; i < data.spelers.length; i++) {
             player_container = document.createElement("a");

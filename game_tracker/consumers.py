@@ -31,33 +31,19 @@ class team_data(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "wedstrijden":
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team=self.team) | Q(away_team=self.team)))
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=False).order_by('start_time'))
                 
-                wedstrijden_dict = []
+                wedstrijden_dict = await self.transfrom_matchdata(wedstrijden_data)
                 
-                for wedstrijd in wedstrijden_data:
-                    locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
-                    start_time_dt = datetime.fromisoformat(wedstrijd.start_time.isoformat())
-                    
-                    # Format the date as "za 01 april"
-                    formatted_date = start_time_dt.strftime("%a %d %b").lower()  # %a for abbreviated day name
-
-                    # Extract the time as "14:45"
-                    formatted_time = start_time_dt.strftime("%H:%M")
-
-                    wedstrijden_dict.append({
-                        'id_uuid': str(wedstrijd.id_uuid),
-                        'home_team': wedstrijd.home_team.name,
-                        'away_team': wedstrijd.away_team.name,
-                        'home_score': wedstrijd.home_score,
-                        'away_score': wedstrijd.away_score,
-                        'start_date': formatted_date,
-                        'start_time': formatted_time,  # Add the time separately
-                        'length': wedstrijd.length,
-                        'finished': wedstrijd.finished,
-                        'winner': wedstrijd.get_winner().name if wedstrijd.get_winner() else None,
-                        'get_absolute_url': str(wedstrijd.get_absolute_url())
-                    })
+                await self.send(text_data=json.dumps({
+                    'command': 'wedstrijden',
+                    'wedstrijden': wedstrijden_dict
+                }))
+                
+            elif command == "ended_matches":
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=True).order_by('-start_time'))
+                
+                wedstrijden_dict = await self.transfrom_matchdata(wedstrijden_data)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'wedstrijden',
@@ -171,6 +157,35 @@ class team_data(AsyncWebsocketConsumer):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
+        
+    async def transfrom_matchdata(self, wedstrijden_data):
+        wedstrijden_dict = []
+                
+        for wedstrijd in wedstrijden_data:
+            locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
+            start_time_dt = datetime.fromisoformat(wedstrijd.start_time.isoformat())
+            
+            # Format the date as "za 01 april"
+            formatted_date = start_time_dt.strftime("%a %d %b").lower()  # %a for abbreviated day name
+
+            # Extract the time as "14:45"
+            formatted_time = start_time_dt.strftime("%H:%M")
+
+            wedstrijden_dict.append({
+                'id_uuid': str(wedstrijd.id_uuid),
+                'home_team': wedstrijd.home_team.name,
+                'away_team': wedstrijd.away_team.name,
+                'home_score': wedstrijd.home_score,
+                'away_score': wedstrijd.away_score,
+                'start_date': formatted_date,
+                'start_time': formatted_time,  # Add the time separately
+                'length': wedstrijd.length,
+                'finished': wedstrijd.finished,
+                'winner': wedstrijd.get_winner().name if wedstrijd.get_winner() else None,
+                'get_absolute_url': str(wedstrijd.get_absolute_url())
+            })
+            
+        return wedstrijden_dict
             
 class profile_data(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
