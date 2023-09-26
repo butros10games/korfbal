@@ -365,9 +365,9 @@ function updateGoalStats(data) {
 }
 
 function updatePlayers(data) {
-    infoContainer.classList.add("flex-start-wrap");
-
     if (data.spelers.length > 0) {
+        infoContainer.classList.add("flex-start-wrap");
+        
         for (i = 0; i < data.spelers.length; i++) {
             player_container = document.createElement("a");
             player_container.href = data.spelers[i].get_absolute_url;

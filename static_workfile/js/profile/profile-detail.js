@@ -4,9 +4,20 @@ let WebSocket_url;
 let infoContainer;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
-let profilePicture
+let profilePicture;
+
+let touchStartX = 0;
+let touchEndX = 0;
+let isDragging = false;
+let currentPosition = 0;
+
+let buttonWidth;
+let carousel;
 
 window.addEventListener("DOMContentLoaded", function() {
+    buttonWidth = document.querySelector('.button').offsetWidth;
+    carousel = document.querySelector('.carousel');
+
     infoContainer = document.getElementById("info-container");
     profilePicture = document.getElementById("profilePic-container");
     
@@ -80,28 +91,65 @@ window.addEventListener("DOMContentLoaded", function() {
 });
 
 function setNavButtons() {
-    // button selection for the team detail page
-    buttons = document.querySelectorAll(".button");
-    buttons.forEach(button => {
-        button.addEventListener("click", function() {
-            // deactivated the other buttons
-            var otherButtons = document.querySelectorAll(".button");
-            otherButtons.forEach(element => {
+    // Button selection for the carousel
+    const buttons = document.querySelectorAll(".button");
+    buttons.forEach((button) => {
+        button.addEventListener("click", function () {
+            // Deactivate the other buttons
+            buttons.forEach((element) => {
                 element.classList.remove("active");
             });
 
-            this.classList.toggle("active");
-            profilePicture.classList.remove("active-img");
+            this.classList.add("active");
 
             // Get data out of the button
-            var data = this.getAttribute('data');
-            
+            const data = this.getAttribute("data");
+
             socket.send(JSON.stringify({
                 'command': data
             }));
 
+            cleanDom();
             load_icon();
         });
+    });
+
+    // Touch event handlers
+    carousel.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        startPosition = currentPosition;
+        isDragging = true;
+        carousel.style.transition = 'none';
+    });
+
+    carousel.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        touchEndX = e.touches[0].clientX;
+        const diff = touchEndX - touchStartX;
+        currentPosition = startPosition + diff;
+        carousel.style.transform = `translateX(${currentPosition}px)`;
+    });
+
+    carousel.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        const diff = touchEndX - touchStartX;
+
+        if (diff > buttonWidth / 3) {
+            // Swipe to the right, go to the previous item
+            currentPosition += buttonWidth;
+        } else if (diff < -buttonWidth / 3) {
+            // Swipe to the left, go to the next item
+            currentPosition -= buttonWidth;
+        }
+
+        // Ensure the carousel doesn't go beyond the boundaries
+        currentPosition = Math.max(currentPosition, -(carousel.scrollWidth - carousel.clientWidth));
+        currentPosition = Math.min(currentPosition, 0);
+
+        carousel.style.transition = 'transform 0.3s ease';
+        carousel.style.transform = `translateX(${currentPosition}px)`;
+
+        isDragging = false;
     });
 }
 
@@ -178,6 +226,24 @@ function onMessageReceived(event) {
                 saveButtonText.style.color = "";
             }, 1500);
             break;
+
+        case "teams":
+            cleanDom();
+
+            updateTeam(data);
+            break;
+
+        case "upcomming-matches":
+            cleanDom();
+
+            updateMatches(data);
+            break;
+
+        case "past-matches":
+            cleanDom();
+
+            updateMatches(data);
+            break;
     }
 }
 
@@ -189,6 +255,7 @@ function load_icon() {
 function cleanDom() {
     infoContainer.innerHTML = "";
     infoContainer.classList.remove("flex-center");
+    infoContainer.classList.remove("flex-start-wrap");
 }
 
 function updateSettings(data) {
@@ -391,5 +458,105 @@ function updateGoalStats(data) {
     } else {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen doelpunten gemaakt</p>";
+    }
+}
+
+function updateTeam(data) {
+    if (data.teams.length > 0) {
+        for (i = 0; i < data.teams.length; i++) {
+            team_container = document.createElement("a");
+            team_container.classList.add("team-container");
+            team_container.style.padding = "12px";
+            team_container.style.borderBottom = "1px solid #000";
+            team_container.style.width = "calc(100% - 24px)";
+            team_container.style.display = "block";
+            team_container.style.textDecoration = "none";
+            team_container.style.color = "#000";
+            team_container.href = data.teams[i].get_absolute_url;
+
+            team_name = document.createElement("p");
+            team_name.style.margin = "0";
+            team_name.style.marginBottom = "6px";
+            team_name.style.marginTop = "6px";
+            team_name.style.fontSize = "14px";
+            team_name.innerHTML = data.teams[i].name;
+
+            team_container.appendChild(team_name);
+            infoContainer.appendChild(team_container);
+        }
+    } else {
+        infoContainer.classList.add("flex-center");
+        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen teams</p>";
+    }
+}
+
+function updateMatches(data) {
+    if (data.matches.length > 0) {
+        for (i = 0; i < data.matches.length; i++) {
+            match_container = document.createElement("a");
+            match_container.classList.add("match-container");
+            match_container.style.padding = "12px";
+            match_container.style.borderBottom = "1px solid #000";
+            match_container.style.width = "calc(100% - 24px)";
+            match_container.style.display = "block";
+            match_container.style.textDecoration = "none";
+            match_container.style.color = "#000";
+            match_container.href = data.matches[i].get_absolute_url;
+
+            match_date_container = document.createElement("div");
+            match_date_container.classList.add("flex-row");
+
+            match_date = document.createElement("p");
+            match_date.style.margin = "0";
+            match_date.style.marginBottom = "12px";
+            match_date.innerHTML = data.matches[i].start_date;
+
+            match_date_container.appendChild(match_date);
+            
+            match_hour = document.createElement("p");
+            match_hour.style.margin = "0";
+            match_hour.style.marginBottom = "12px";
+            match_hour.innerHTML = data.matches[i].start_time;
+
+            match_date_container.appendChild(match_hour);
+            match_container.appendChild(match_date_container);
+
+            home_team_container = document.createElement("div");
+            home_team_container.classList.add("flex-row");
+
+            home_team_name = document.createElement("p");
+            home_team_name.style.margin = "0";
+            home_team_name.innerHTML = data.matches[i].home_team;
+
+            home_team_score = document.createElement("p");
+            home_team_score.style.margin = "0";
+            home_team_score.innerHTML = data.matches[i].home_score;
+
+            home_team_container.appendChild(home_team_name);
+            home_team_container.appendChild(home_team_score);
+
+            match_container.appendChild(home_team_container);
+
+            away_team_container = document.createElement("div");
+            away_team_container.classList.add("flex-row");
+
+            away_team_name = document.createElement("p");
+            away_team_name.style.margin = "0";
+            away_team_name.innerHTML = data.matches[i].away_team;
+
+            away_team_score = document.createElement("p");
+            away_team_score.style.margin = "0";
+            away_team_score.innerHTML = data.matches[i].away_score;
+
+            away_team_container.appendChild(away_team_name);
+            away_team_container.appendChild(away_team_score);
+
+            match_container.appendChild(away_team_container);
+
+            infoContainer.appendChild(match_container);
+        }
+    } else {
+        infoContainer.classList.add("flex-center");
+        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
     }
 }
