@@ -14,14 +14,16 @@
     <body>
         {% include 'overlays/navbar.html' %}
 
-        <div class="flex-column" style="margin-top: 64px; margin: 64px 8px 0 8px;">
+        <div class="flex-column" style="margin: 64px 8px 0 8px;">
             <div class="flex-row">
                 <h1 style="font-size: 24px;">Teams</h1>
-                <div class="search-container">
-                    <div class="search-icon">
-                        <img src="/static/images/search.svg" alt="search">
+                <div id="search-container-full" class="flex-row" style="width: auto;"> 
+                    <div class="search-container">
+                        <div class="search-icon">
+                            <img src="/static/images/search.svg" alt="search">
+                        </div>
+                        <input type="text" class="search-input" placeholder="Search for a team">
                     </div>
-                    <input type="text" class="search-input" placeholder="Search for a team">
                 </div>
             </div>
 

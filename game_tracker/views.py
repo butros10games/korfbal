@@ -45,6 +45,50 @@ def teams(request):
     }
     return render(request, "teams/index.html", context)
 
+def teams_index_data(request):
+    connected_teams = None
+    following_teams = None
+    user = request.user
+    if user.is_authenticated:
+        # Get the Player object associated with this user
+        player = Player.objects.get(user=user)
+        
+        # Get all teams where the user is part of the team
+        connected_teams = Team.objects.filter(team_data__players=player)
+        
+        # Get all teams the user is following
+        following_teams = player.team_follow.all()
+        
+        # remove the teams the user is part of from the teams the user is following
+        following_teams = following_teams.exclude(id_uuid__in=connected_teams)
+    
+        connected_teams_list = []
+        following_teams_list = []
+        
+        for team in connected_teams:
+            connected_teams_list.append({
+                "id": str(team.id_uuid),
+                "name": team.name,
+                "url": str(team.get_absolute_url())
+            })
+            
+        for team in following_teams:
+            following_teams_list.append({
+                "id": str(team.id_uuid),
+                "name": team.name,
+                "url": str(team.get_absolute_url())
+            })
+    else:
+        connected_teams_list = []
+        following_teams_list = []
+    
+    context = {
+        "teams": connected_teams_list,
+        "following_teams": following_teams_list,
+    }
+    
+    return JsonResponse(context)
+
 def team_detail(request, team_id):
     team = get_object_or_404(Team, id_uuid=team_id)
     
