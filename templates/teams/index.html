@@ -17,8 +17,11 @@
         <div class="flex-column" style="margin-top: 64px; margin: 64px 8px 0 8px;">
             <div class="flex-row">
                 <h1 style="font-size: 24px;">Teams</h1>
-                <div style="background: #D9D9D9; padding: 4px; border-radius: 4px; height: 24px;">
-                    <img style="height: 24px; width: 24px;" alt="search" src="/static/images/search.svg">
+                <div class="search-container">
+                    <div class="search-icon">
+                        <img src="/static/images/search.svg" alt="search">
+                    </div>
+                    <input type="text" class="search-input" placeholder="Search for a team">
                 </div>
             </div>
 
@@ -28,8 +31,8 @@
                 {% endif %}
                 
                 {% for team in teams %}
-                <a href="/team/{{ team.id_uuid }}" class="flex-column" style="width: 100%; min-height: 156px; background: #D9D9D9; border-radius: 4px; justify-content: flex-end;">
-                    <div class="flex-row" style="background-color: rgba(0, 0, 0, 0.3); width: 100%; border-radius: 0 0 4px 4px; height: 48px; justify-content: center">
+                <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
+                    <div class="flex-row team-container">
                         <p style="font-weight: 600; ">{{ team.name }}</p>
                     </div>
                 </a>
@@ -40,8 +43,8 @@
                 {% endif %}
 
                 {% for team in following_teams %}
-                <a href="/team/{{ team.id_uuid }}" class="flex-column" style="width: 100%; min-height: 156px; background: #D9D9D9; border-radius: 4px; justify-content: flex-end;">
-                    <div class="flex-row" style="background-color: rgba(0, 0, 0, 0.3); width: 100%; border-radius: 0 0 4px 4px; height: 48px; justify-content: center">
+                <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
+                    <div class="flex-row team-container">
                         <p style="font-weight: 600; ">{{ team.name }}</p>
                     </div>
                 </a>

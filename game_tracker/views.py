@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from .models import Team, Player, TeamData, Season
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.http import Http404
@@ -79,6 +80,27 @@ def team_detail(request, team_id):
     }
     
     return render(request, "teams/detail.html", context)
+
+def search(request):
+    search_term = request.GET.get('q', '')
+    
+    # Get the teams that match the search term
+    teams = Team.objects.filter(Q(name__icontains=search_term))
+    
+    teams_json = []
+    
+    for team in teams:
+        teams_json.append({
+            "id": str(team.id_uuid),
+            "name": team.name,
+            "url": str(team.get_absolute_url())
+        })
+    
+    context = {
+        "teams": teams_json
+    }
+    
+    return JsonResponse(context)
 
 def profile_detail(request, player_id=None):
     player = None
