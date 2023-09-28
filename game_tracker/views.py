@@ -58,46 +58,71 @@ def teams(request):
     }
     return render(request, "teams/index.html", context)
 
+@csrf_exempt
 def teams_index_data(request):
-    connected_teams = None
-    following_teams = None
-    user = request.user
-    if user.is_authenticated:
-        # Get the Player object associated with this user
-        player = Player.objects.get(user=user)
-        
-        # Get all teams where the user is part of the team
-        connected_teams = Team.objects.filter(team_data__players=player)
-        
-        # Get all teams the user is following
-        following_teams = player.team_follow.all()
-        
-        # remove the teams the user is part of from the teams the user is following
-        following_teams = following_teams.exclude(id_uuid__in=connected_teams)
+    connected_list = []
+    following_list = []
+    selection = None
     
-        connected_teams_list = []
-        following_teams_list = []
-        
-        for team in connected_teams:
-            connected_teams_list.append({
-                "id": str(team.id_uuid),
-                "name": team.name,
-                "url": str(team.get_absolute_url())
-            })
+    user = request.user
+                
+    if request.method == 'POST' and 'value' in request.POST:
+        selection = request.POST['value']
+
+        if selection == "clubs" and user.is_authenticated:
+            player = Player.objects.get(user=user)
             
-        for team in following_teams:
-            following_teams_list.append({
-                "id": str(team.id_uuid),
-                "name": team.name,
-                "url": str(team.get_absolute_url())
-            })
-    else:
-        connected_teams_list = []
-        following_teams_list = []
+            connected_clubs = Club.objects.filter(teams__team_data__players=player)
+            
+            following_clubs = player.club_follow.all()
+            
+            following_clubs = following_clubs.exclude(id_uuid__in=connected_clubs)
+            
+            for club in connected_clubs:
+                connected_list.append({
+                    "id": str(club.id_uuid),
+                    "name": club.name,
+                    "url": str(club.get_absolute_url())
+                })
+                
+            for club in following_clubs:
+                following_list.append({
+                    "id": str(club.id_uuid),
+                    "name": club.name,
+                    "url": str(club.get_absolute_url())
+                })
+        
+        elif selection == "teams" and user.is_authenticated:
+            # Get the Player object associated with this user
+            player = Player.objects.get(user=user)
+            
+            # Get all teams where the user is part of the team
+            connected_teams = Team.objects.filter(team_data__players=player)
+            
+            # Get all teams the user is following
+            following_teams = player.team_follow.all()
+            
+            # remove the teams the user is part of from the teams the user is following
+            following_teams = following_teams.exclude(id_uuid__in=connected_teams)
+            
+            for team in connected_teams:
+                connected_list.append({
+                    "id": str(team.id_uuid),
+                    "name": team.name,
+                    "url": str(team.get_absolute_url())
+                })
+                
+            for team in following_teams:
+                following_list.append({
+                    "id": str(team.id_uuid),
+                    "name": team.name,
+                    "url": str(team.get_absolute_url())
+                })
     
     context = {
-        "teams": connected_teams_list,
-        "following_teams": following_teams_list,
+        "type": selection,
+        "connected": connected_list,
+        "following": following_list,
     }
     
     return JsonResponse(context)

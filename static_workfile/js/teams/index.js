@@ -1,7 +1,38 @@
 document.addEventListener("DOMContentLoaded", function() {
     setup_search();
+
+    stypeSelection()
 });
 
+
+function stypeSelection() {
+    document.getElementById('type').addEventListener('change', function() {
+        // Get the selected value
+        const selectedValue = this.value;
+    
+        // Make an AJAX request using the Fetch API
+        fetch('/teams/indexdata/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ value: selectedValue })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (selectedValue === "teams") {
+                console.log(data.teams);
+                // Handle teams data here
+            } else if (selectedValue === "clubs") {
+                console.log(data.clubs);
+                // Handle clubs data here
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    });
+}
 
 function setup_search() {
     const searchContainerFull = document.getElementById('search-container-full');
