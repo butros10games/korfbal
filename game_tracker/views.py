@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season
+from .models import Team, Player, TeamData, Season, Club
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -17,6 +17,19 @@ def index(request):
     }
         
     return render(request, "index.html", context)
+
+def club_detail(request, club_id):
+    club = get_object_or_404(Club, id_uuid=club_id)
+    
+    profile_url, profile_img_url = standart_inports(request)
+    
+    context = {
+        "club": club,
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
+    }
+    
+    return render(request, "club/index.html", context)
 
 def teams(request):
     connected_teams = None
