@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import Http404
 
 from datetime import date
+import json
 
 # Create your views here.
 def index(request):
@@ -51,8 +52,8 @@ def teams(request):
     profile_url, profile_img_url = standart_inports(request)
     
     context = {
-        "teams": connected_teams,
-        "following_teams": following_teams,
+        "connected": connected_teams,
+        "following": following_teams,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url
     }
@@ -66,58 +67,63 @@ def teams_index_data(request):
     
     user = request.user
                 
-    if request.method == 'POST' and 'value' in request.POST:
-        selection = request.POST['value']
+    if request.method == 'POST':
+        # Load the JSON data from the request body
+        data = json.loads(request.body.decode('utf-8'))
 
-        if selection == "clubs" and user.is_authenticated:
-            player = Player.objects.get(user=user)
-            
-            connected_clubs = Club.objects.filter(teams__team_data__players=player)
-            
-            following_clubs = player.club_follow.all()
-            
-            following_clubs = following_clubs.exclude(id_uuid__in=connected_clubs)
-            
-            for club in connected_clubs:
-                connected_list.append({
-                    "id": str(club.id_uuid),
-                    "name": club.name,
-                    "url": str(club.get_absolute_url())
-                })
+        # Check if the 'value' key is in the data
+        if 'value' in data:
+            selection = data['value']
+
+            if selection == "clubs" and user.is_authenticated:
+                player = Player.objects.get(user=user)
                 
-            for club in following_clubs:
-                following_list.append({
-                    "id": str(club.id_uuid),
-                    "name": club.name,
-                    "url": str(club.get_absolute_url())
-                })
-        
-        elif selection == "teams" and user.is_authenticated:
-            # Get the Player object associated with this user
-            player = Player.objects.get(user=user)
-            
-            # Get all teams where the user is part of the team
-            connected_teams = Team.objects.filter(team_data__players=player)
-            
-            # Get all teams the user is following
-            following_teams = player.team_follow.all()
-            
-            # remove the teams the user is part of from the teams the user is following
-            following_teams = following_teams.exclude(id_uuid__in=connected_teams)
-            
-            for team in connected_teams:
-                connected_list.append({
-                    "id": str(team.id_uuid),
-                    "name": team.name,
-                    "url": str(team.get_absolute_url())
-                })
+                connected_clubs = Club.objects.filter(teams__team_data__players=player).distinct()
                 
-            for team in following_teams:
-                following_list.append({
-                    "id": str(team.id_uuid),
-                    "name": team.name,
-                    "url": str(team.get_absolute_url())
-                })
+                following_clubs = player.club_follow.all()
+                
+                following_clubs = following_clubs.exclude(id_uuid__in=connected_clubs)
+                
+                for club in connected_clubs:
+                    connected_list.append({
+                        "id": str(club.id_uuid),
+                        "name": club.name,
+                        "url": str(club.get_absolute_url())
+                    })
+                    
+                for club in following_clubs:
+                    following_list.append({
+                        "id": str(club.id_uuid),
+                        "name": club.name,
+                        "url": str(club.get_absolute_url())
+                    })
+            
+            elif selection == "teams" and user.is_authenticated:
+                # Get the Player object associated with this user
+                player = Player.objects.get(user=user)
+                
+                # Get all teams where the user is part of the team
+                connected_teams = Team.objects.filter(team_data__players=player)
+                
+                # Get all teams the user is following
+                following_teams = player.team_follow.all()
+                
+                # remove the teams the user is part of from the teams the user is following
+                following_teams = following_teams.exclude(id_uuid__in=connected_teams)
+                
+                for team in connected_teams:
+                    connected_list.append({
+                        "id": str(team.id_uuid),
+                        "name": team.name,
+                        "url": str(team.get_absolute_url())
+                    })
+                    
+                for team in following_teams:
+                    following_list.append({
+                        "id": str(team.id_uuid),
+                        "name": team.name,
+                        "url": str(team.get_absolute_url())
+                    })
     
     context = {
         "type": selection,
@@ -164,20 +170,33 @@ def team_detail(request, team_id):
     return render(request, "teams/detail.html", context)
 
 def search(request):
-    search_term = request.GET.get('q', '')
-    
-    # Get the teams that match the search term
-    teams = Team.objects.filter(Q(name__icontains=search_term))
-    
     teams_json = []
     
-    for team in teams:
-        teams_json.append({
-            "id": str(team.id_uuid),
-            "name": team.name,
-            "url": str(team.get_absolute_url())
-        })
+    search_term = request.GET.get('q', '')
+    category = request.GET.get('category', '')
     
+    if category == 'teams':
+        # Get the teams that match the search term
+        teams = Team.objects.filter(Q(name__icontains=search_term))
+        
+        for team in teams:
+            teams_json.append({
+                "id": str(team.id_uuid),
+                "name": team.name,
+                "url": str(team.get_absolute_url())
+            })
+        
+    elif category == "clubs":
+        # Get the teams that match the search term
+        clubs = Club.objects.filter(Q(name__icontains=search_term))
+        
+        for club in clubs:
+            teams_json.append({
+                "id": str(club.id_uuid),
+                "name": club.name,
+                "url": str(club.get_absolute_url())
+            })
+        
     context = {
         "teams": teams_json
     }
