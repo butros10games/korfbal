@@ -8,7 +8,7 @@
         <title>{{ title }}</title>
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/static/css/teams/index.css">
+        <link rel="stylesheet" href="/static/css/clubs/detail.css">
         <link rel="stylesheet" href="/static/css/color/color.css">
     </head>
     <body>
@@ -17,33 +17,27 @@
         <div class="flex-column" style="margin-top: 48px;">
             <div class="flex-column" style="height: 212px; background: lightgray; justify-content: flex-end; width: 100%;">
                 <div class="flex-row" style="background-color: rgba(0, 0, 0, 0.3); width: 100%; height: 48px; justify-content: center">
-                    <p style="font-weight: 600; ">{{ team.name }}</p>
+                    <p style="font-weight: 600; ">{{ club.name }}</p>
                 </div>
                 <div class="icon-container" data-followed="{% if following %}true{% else %}false{% endif %}">
                     <img id="follow-full" src="{% static '/images/heart-full.svg' %}" alt="volgen" class="volgen-icon">
                     <img id="follow-outline" src="{% static '/images/heart-outline.svg' %}" alt="volgen" class="volgen-icon">
                 </div>
-                {% if coaching %}
+                {% if admin %}
                 <img id="settings" src="{% static '/images/settings.svg' %}" alt="instellingen" class="settings-icon">
                 {% endif %}
             </div>
 
             <div class="carousel-container">
                 <div class="carousel">
-                    <a class="button active" data="wedstrijden">Programma</a>
+                    <a class="button active" data="teams">teams</a>
+                    <a class="button" data="wedstrijden">Programma</a>
                     <a class="button" data="ended_matches">Uitslagen</a>
-                    <a class="button" data="team_stats">Team stats</a>
-                    <a class="button" data="spelers">Spelers</a>
                 </div>
             </div>
             <div id="info-container" style="height: calc((var(--vh, 1vh) * 100) - (315.5px + 64px)); width: 100%; overflow-y: scroll;">
 
             </div>
         </div>
-
-        <p style="display: none;" id="user_id">{{ request.user.id }}</p>
-
-        <script src="{% static '/js/teams/detail.js' %}"></script>
-        <script src="{% static '/js/programs/mobile_view.js' %}"></script>
     </body>
 </html>

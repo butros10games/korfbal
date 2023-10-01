@@ -30,7 +30,7 @@ def club_detail(request, club_id):
         "profile_img_url": profile_img_url
     }
     
-    return render(request, "club/index.html", context)
+    return render(request, "club/detail.html", context)
 
 def teams(request):
     connected_teams = None

@@ -7,12 +7,26 @@ let searchContainer;
 let searchIcon;
 let searchInput;
 
+let teamsContainer;
+
 document.addEventListener("DOMContentLoaded", function() {
+    teamsContainer = document.querySelector('.teams-container');
+
     setup_search();
 
     stypeSelection()
 });
 
+function load_icon() {
+    teamsContainer.classList.add("flex-center");
+    teamsContainer.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
+}
+
+function cleanDom() {
+    teamsContainer.innerHTML = "";
+    teamsContainer.classList.remove("flex-center");
+    teamsContainer.classList.remove("flex-start-wrap");
+}
 
 function stypeSelection() {
     document.getElementById('type').addEventListener('change', function() {
@@ -32,6 +46,9 @@ function stypeSelection() {
 }
 
 function ajaxRequestIndex(value) {
+    cleanDom()
+    load_icon()
+    
     // Make an AJAX request using the Fetch API
     fetch('/teams/indexdata/', {
         method: 'POST',
@@ -98,6 +115,9 @@ function setup_search() {
 }
 
 function performSearch(searchTerm) {
+    cleanDom()
+    load_icon()
+
     oldSearchTerm = searchTerm 
     // Perform AJAX request here (replace the URL with your actual API endpoint)
     const apiUrl = `https://korfbal.butrosgroot.com/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
@@ -146,9 +166,7 @@ function performSearch(searchTerm) {
 };
     
 function displaySearchResults(results) {
-    teamsContainer = document.querySelector('.teams-container');
-
-    teamsContainer.innerHTML = '';
+    cleanDom()
 
     if (results.teams.length === 0) {
         teamsContainer.innerHTML = '<p>No results found ):</p>';
@@ -174,9 +192,7 @@ function displaySearchResults(results) {
 }
 
 function displayNormalIndex(data) {
-    teamsContainer = document.querySelector('.teams-container');
-
-    teamsContainer.innerHTML = '';
+    cleanDom()
 
     followingText = document.createElement('p');
     followingText.innerHTML = 'Playing';
