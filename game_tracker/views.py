@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club
+from .models import Team, Player, TeamData, Season, Club, Match
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -230,15 +230,18 @@ def profile_detail(request, player_id=None):
     
     return render(request, "profile/index.html", context)
 
-def match_detail(request):
+def match_detail(request, match_id):
+    match_data = get_object_or_404(Match, id_uuid=match_id)
+    
     profile_url, profile_img_url = standart_inports(request)
     
     context = {
+        "match": match_data,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url
     }
     
-    return render(request, "profile/index.html", context)
+    return render(request, "matches/detail.html", context)
 
 @csrf_exempt
 def upload_profile_picture(request):
