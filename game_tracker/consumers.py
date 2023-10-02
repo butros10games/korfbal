@@ -417,10 +417,10 @@ class club_data(AsyncWebsocketConsumer):
                 player = await sync_to_async(Player.objects.get)(user=user_id)
                 
                 if follow:
-                    await sync_to_async(player.team_follow.add)(self.team)
+                    await sync_to_async(player.club_follow.add)(self.club)
                     
                 else:
-                    await sync_to_async(player.team_follow.remove)(self.team)
+                    await sync_to_async(player.club_follow.remove)(self.club)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'follow',
