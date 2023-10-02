@@ -348,3 +348,87 @@ async def transfrom_matchdata(wedstrijden_data):
         })
         
     return wedstrijden_dict
+
+class club_data(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+        self.player = None
+        self.user_profile = None
+        self.club = None
+        
+    async def connect(self):
+        self.club = self.scope['url_route']['kwargs']['id']
+        await self.accept()
+        
+    async def disconnect(self, close_code):
+        pass
+    
+    async def receive(self, text_data):
+        try:
+            json_data = json.loads(text_data)
+            command = json_data['command']
+            
+            if command == "teams":
+                teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
+                
+                teams_json = [
+                    {
+                        'id': str(team.id_uuid),
+                        'name': team.name,
+                        'get_absolute_url': str(team.get_absolute_url())
+                    }
+                    for team in teams
+                ]
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'teams',
+                    'teams': teams_json
+                }))
+            
+            elif command == "wedstrijden":
+                teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
+                team_ids = [team.id_uuid for team in teams]
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=False).order_by('start_time'))
+                
+                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'wedstrijden',
+                    'wedstrijden': wedstrijden_dict
+                }))
+                
+            elif command == "ended_matches":
+                teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
+                team_ids = [team.id_uuid for team in teams]
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=True).order_by('-start_time'))
+                
+                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'wedstrijden',
+                    'wedstrijden': wedstrijden_dict
+                }))
+            
+            elif command == "follow":
+                follow = json_data['followed']
+                user_id = json_data['user_id']
+                
+                player = await sync_to_async(Player.objects.get)(user=user_id)
+                
+                if follow:
+                    await sync_to_async(player.team_follow.add)(self.team)
+                    
+                else:
+                    await sync_to_async(player.team_follow.remove)(self.team)
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'follow',
+                    'status': 'success'
+                }))
+            
+        except Exception as e:
+            await self.send(text_data=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }))

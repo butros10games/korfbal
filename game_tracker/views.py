@@ -26,13 +26,17 @@ def club_detail(request, club_id):
     
     user_request = request.user
     admin = False
+    following = False
     if user_request.is_authenticated:
         player = Player.objects.get(user=user_request)
         admin = club.admin.filter(id_uuid=player.id_uuid).exists()
+        
+        following = player.club_follow.filter(id_uuid=club_id).exists()
     
     context = {
         "club": club,
         "admin": admin,
+        "following": following,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url
     }
