@@ -248,6 +248,8 @@ def match_detail(request, match_id):
     
     context = {
         "match": match_data,
+        "start_date": match_data.start_time.strftime('%A, %d %B'),
+        "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
         "profile_img_url": profile_img_url
     }
