@@ -4,9 +4,12 @@ from django.urls import reverse
 
 import uuid
 
+from game_tracker.programs.uuidv7 import uuid7
+
 class Club(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
+    admin = models.ForeignKey('Player', on_delete=models.CASCADE, related_name='clubs', blank=True, null=True)
     
     def __str__(self):
         return str(self.name)
@@ -15,7 +18,7 @@ class Club(models.Model):
         return reverse("club_detail", kwargs={"club_id": self.id_uuid})
 
 class Team(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name='teams')
     
@@ -35,7 +38,7 @@ class TeamData(models.Model):
         return str(self.team.name)
 
 class Player(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
     team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
     club_follow = models.ManyToManyField('Club', related_name='Follow', blank=True)
@@ -48,7 +51,7 @@ class Player(models.Model):
         return reverse('profile_detail', kwargs={'player_id': self.id_uuid})
 
 class Match(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     home_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='home_matches')
     away_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='away_matches')
     home_score = models.IntegerField()
@@ -72,7 +75,7 @@ class Match(models.Model):
         return reverse('match_detail', kwargs={'match_id': self.id_uuid})
 
 class PlayerGroup(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     players = models.ManyToManyField(Player, related_name='player_groups')
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='player_groups')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_groups')
@@ -80,14 +83,14 @@ class PlayerGroup(models.Model):
     current_type = models.CharField(max_length=255)
 
 class PlayerChange(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player_in = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='player_changes')
     player_out = models.ForeignKey(Player, on_delete=models.CASCADE)
     player_group = models.ForeignKey(PlayerGroup, on_delete=models.CASCADE, related_name='player_changes')
     time = models.IntegerField()
 
 class Goal(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='goals')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='goals')
     time = models.IntegerField()
@@ -95,20 +98,20 @@ class Goal(models.Model):
     for_team = models.BooleanField(default=True)
 
 class GoalType(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     
     def __str__(self):
         return str(self.name)
 
 class Pause(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
     time = models.IntegerField()
     active = models.BooleanField(default=True)
 
 class Season(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField()
     end_date = models.DateField()
