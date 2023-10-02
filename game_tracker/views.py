@@ -24,8 +24,15 @@ def club_detail(request, club_id):
     
     profile_url, profile_img_url = standart_inports(request)
     
+    user_request = request.user
+    admin = False
+    if user_request.is_authenticated:
+        player = Player.objects.get(user=user_request)
+        admin = club.admin.filter(id_uuid=player.id_uuid).exists()
+    
     context = {
         "club": club,
+        "admin": admin,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url
     }

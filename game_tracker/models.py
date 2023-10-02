@@ -9,7 +9,7 @@ from game_tracker.programs.uuidv7 import uuid7
 class Club(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
-    admin = models.ForeignKey('Player', on_delete=models.CASCADE, related_name='clubs', blank=True, null=True)
+    admin = models.ManyToManyField('Player', related_name='clubs', blank=True)
     
     def __str__(self):
         return str(self.name)
