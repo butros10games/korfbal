@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer, WebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause
+from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup
 from authentication.models import UserProfile
 from django.core.files.base import ContentFile
 
@@ -453,7 +453,7 @@ class match_data(AsyncWebsocketConsumer):
             
             if command == "match_events":
                 goals = await sync_to_async(list)(Goal.objects.prefetch_related('player__user', 'goal_type').filter(match=self.match).order_by('time'))
-                player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in__user', 'player_out__user').filter(player_group__match=self.match).order_by('time'))
+                player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user').filter(player_group__match=self.match).order_by('time'))
                 time_outs = await sync_to_async(list)(Pause.objects.filter(match=self.match).order_by('time'))
                 
                 # add all the events to a list and order them on time
@@ -491,38 +491,89 @@ class match_data(AsyncWebsocketConsumer):
                 
                 await self.send(text_data=json.dumps({
                     'command': 'events',
-                    'teams': events_dict
+                    'events': events_dict
                 }))
             
             elif command == "home_team":
-                teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
-                team_ids = [team.id_uuid for team in teams]
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=False).order_by('start_time'))
+                user_id = json_data['user_id']
+                team = self.match.home_team
                 
-                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+                player_groups_array = await self.makePlayerGroupList(team)
+                
+                players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+                
+                players_json = []
+                
+                for player in players:
+                    player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                    players_json.append({
+                        'id': str(player_json.id_uuid),
+                        'name': player_json.user.username,
+                        'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
+                        'get_absolute_url': str(player_json.get_absolute_url())
+                    })
+                    
+                if user_id != 'None':
+                    player = await sync_to_async(Player.objects.get)(user=user_id)
+                    
+                    try:
+                        team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
+                        is_coach = True
+                    except TeamData.DoesNotExist:
+                        is_coach = False
+                
+                else:
+                    is_coach = False
                 
                 await self.send(text_data=json.dumps({
-                    'command': 'wedstrijden',
-                    'wedstrijden': wedstrijden_dict
+                    'command': 'playerGroups',
+                    'playerGroups': player_groups_array,
+                    'players': players_json,
+                    'is_coach': is_coach
                 }))
                 
             elif command == "away_team":
-                teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
-                team_ids = [team.id_uuid for team in teams]
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=True).order_by('-start_time'))
+                user_id = json_data['user_id']
+                team = self.match.away_team
                 
-                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+                player_groups_array = await self.makePlayerGroupList(team)
+                
+                players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+                
+                players_json = []
+                
+                for player in players:
+                    player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                    players_json.append({
+                        'id': str(player_json.id_uuid),
+                        'name': player_json.user.username,
+                    })
+                
+                if user_id != 'None':
+                    player = await sync_to_async(Player.objects.get)(user=user_id)
+                    
+                    try:
+                        team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
+                        is_coach = True
+                    except TeamData.DoesNotExist:
+                        is_coach = False
+                
+                else:
+                    is_coach = False
                 
                 await self.send(text_data=json.dumps({
-                    'command': 'wedstrijden',
-                    'wedstrijden': wedstrijden_dict
+                    'command': 'playerGroups',
+                    'playerGroups': player_groups_array,
+                    'players': players_json,
+                    'is_coach': is_coach
                 }))
+                
             
             elif command == "follow":
                 follow = json_data['followed']
                 user_id = json_data['user_id']
                 
-                player = await sync_to_async(Player.objects.get)(user=user_id)
+                player = await sync_to_async(TeamData.objects.get)(user=user_id)
                 
                 if follow:
                     await sync_to_async(player.club_follow.add)(self.club)
@@ -540,3 +591,25 @@ class match_data(AsyncWebsocketConsumer):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
+            
+    async def makePlayerGroupList(self, team):
+        player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
+                
+        # make it a json parsable string
+        player_groups_array = [
+            {
+                'id': str(player_group.id_uuid),
+                'players': [
+                    {
+                        'id': str(player.id_uuid),
+                        'name': player.user.username,
+                    }
+                    for player in player_group.players.all()
+                ],
+                'starting_type': player_group.starting_type.name,
+                'current_type': player_group.current_type.name
+            }
+            for player_group in player_groups
+        ]
+        
+        return player_groups_array

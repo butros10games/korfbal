@@ -19,6 +19,7 @@ window.addEventListener("DOMContentLoaded", function() {
     carousel = document.querySelector('.carousel');
 
     infoContainer = document.getElementById("info-container");
+    user_id = document.getElementById("user_id").innerText;
     
     const matches = url.match(regex);
 
@@ -34,21 +35,6 @@ window.addEventListener("DOMContentLoaded", function() {
     load_icon();
     initializeSocket(WebSocket_url);
     setNavButtons();
-
-    document.querySelector('.icon-container').addEventListener('click', function() {
-        const isFollowed = this.getAttribute('data-followed') === 'true';
-        
-        // Toggle the data-followed attribute
-        this.setAttribute('data-followed', !isFollowed);
-
-        console.log("user_id: " + user_id);
-
-        socket.send(JSON.stringify({
-            'command': 'follow',
-            'user_id': user_id,
-            'followed': !isFollowed
-        }));
-    });
 });
 
 function setNavButtons() {
@@ -67,7 +53,8 @@ function setNavButtons() {
             const data = this.getAttribute("data");
 
             socket.send(JSON.stringify({
-                'command': data
+                'command': data,
+                'user_id': user_id
             }));
 
             cleanDom();
@@ -119,7 +106,8 @@ function requestInitalData() {
     var data = button.getAttribute('data');
 
     socket.send(JSON.stringify({
-        'command': data
+        'command': data,
+        'user_id': user_id
     }));
 }
 
@@ -162,22 +150,20 @@ function onMessageReceived(event) {
     console.log(data);
 
     switch(data.command) {
-        case "wedstrijden":
+        case "events":
             cleanDom();
 
-            updateMatches(data);
+            updateEvents(data);
             break;
         
-        case "goal_stats":
+        case "playerGroups":
             cleanDom();
 
-            updateGoalStats(data);
-            break;
-
-        case "spelers":
-            cleanDom();
-            
-            updatePlayers(data);
+            if (data.is_coach) {
+                updateplayerGroups(data);
+            } else {
+                showPlayerGroups(data);
+            }
             break;
     }
 }
@@ -191,4 +177,244 @@ function cleanDom() {
     infoContainer.innerHTML = "";
     infoContainer.classList.remove("flex-center");
     infoContainer.classList.remove("flex-start-wrap");
+}
+
+function updateEvents(data) {
+    const events = data.events;
+
+    let thuis = 0
+    let uit = 0
+
+    const eventContainer = document.createElement("div");
+    eventContainer.classList.add("event-container");
+
+    if (events.length > 0) {
+        events.forEach(event => {
+            const eventDiv = document.createElement("div");
+            eventDiv.classList.add("event");
+            eventDiv.classList.add("flex-row");
+
+            if (event.type == "goal") {
+                const eventTypeDiv = document.createElement("div");
+                eventTypeDiv.classList.add("event-type");
+                eventTypeDiv.innerHTML = event.type;
+                if (event.for_team) {
+                    eventTypeDiv.style.backgroundColor = '#4CAF50';
+                    thuis++;
+                } else {
+                    eventTypeDiv.style.backgroundColor = '#red';
+                    uit++;
+                }
+
+                const midsectionDiv = document.createElement("div");
+                midsectionDiv.classList.add("flex-column");
+
+                const descriptionDiv = document.createElement("div");
+                descriptionDiv.classList.add("description");
+                descriptionDiv.innerHTML = event.goal_type + " (" + event.time + "\")";
+
+                const playerName = document.createElement("p");
+                playerName.innerHTML = event.player;
+                playerName.style.margin = "0";
+
+                midsectionDiv.appendChild(descriptionDiv);
+                midsectionDiv.appendChild(playerName);
+
+                const currentScoreDiv = document.createElement("div");
+                currentScoreDiv.classList.add("current-score");
+                currentScoreDiv.innerHTML = thuis + "-" + uit;
+
+                eventDiv.appendChild(eventTypeDiv);
+                eventDiv.appendChild(midsectionDiv);
+                eventDiv.appendChild(currentScoreDiv);
+            } else if (event.type == "substitution") {
+
+            } else if (event.type == "pause") {
+
+            }
+
+            eventContainer.appendChild(eventDiv);
+        });
+
+        infoContainer.appendChild(eventContainer);
+    } else {
+        infoContainer.innerHTML = "<p>Geen events gevonden.</p>";
+    }
+}
+
+function onPlayerSelectChange(changedSelect) {
+    const allSelectors = document.querySelectorAll('.player-selector');
+    allSelectors.forEach(select => {
+        // Skip the select that was changed
+        if (select === changedSelect) return;
+
+        // If another select has the same value, reset it
+        if (select.value === changedSelect.value) {
+            select.value = NaN;  // Set to 'Niet ingevuld' value
+        }
+    });
+
+    // Show the save button
+    document.getElementById("saveButton").style.display = "block";
+}
+
+function showPlayerGroups(data) {
+    const playerGroups = data.playerGroups;
+
+    const playerGroupContainer = document.createElement("div");
+    playerGroupContainer.classList.add("player-group-container");
+
+    if (playerGroups.length > 0) {
+        playerGroups.forEach(playerGroup => {
+            const playerGroupDiv = document.createElement("div");
+            playerGroupDiv.classList.add("player-group");
+            playerGroupDiv.classList.add("flex-column");
+            playerGroupDiv.style.marginTop = "12px";
+
+            const playerGroupTitle = document.createElement("div");
+            playerGroupTitle.classList.add("flex-row");
+            playerGroupTitle.classList.add("player-group-title");
+            playerGroupTitle.style.justifyContent = "flex-start";
+            playerGroupTitle.style.fontWeight = "600";
+            playerGroupTitle.style.marginBottom = "6px";
+            playerGroupTitle.style.marginLeft = "12px";
+            playerGroupTitle.innerHTML = playerGroup.starting_type;
+
+            const playerGroupPlayers = document.createElement("div");
+            playerGroupPlayers.classList.add("player-group-players");
+            playerGroupPlayers.classList.add("flex-row");
+            playerGroupPlayers.style.flexWrap = "wrap";
+            playerGroupPlayers.style.alignItems = 'stretch';
+        
+            for (let i = 0; i < 4; i++) {
+                let player = playerGroup.players[i];
+                console.log(player);
+        
+                const playerDiv = document.createElement("div");
+                playerDiv.classList.add("player-selector", "flex-center");
+                playerDiv.style.flexGrow = "1";
+                playerDiv.style.flexBasis = "calc(50% - 32px)"; 
+                playerDiv.style.textAlign = "center";
+
+                const playerName = document.createElement("p");
+                playerName.style.margin = "0";
+                playerName.style.fontSize = "14px";
+
+                if (player) {
+                    playerName.innerHTML = player.name;
+                } else {
+                    playerName.innerHTML = "geen data";
+                }
+
+                playerDiv.appendChild(playerName);
+        
+                playerGroupPlayers.appendChild(playerDiv);
+            }
+
+            playerGroupDiv.appendChild(playerGroupTitle);
+            playerGroupDiv.appendChild(playerGroupPlayers);
+
+            playerGroupContainer.appendChild(playerGroupDiv);
+        });
+
+        infoContainer.appendChild(playerGroupContainer);
+    } else {
+        infoContainer.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+    }
+}
+
+function updateplayerGroups(data) {
+    const playerGroups = data.playerGroups;
+
+    const playerGroupContainer = document.createElement("div");
+    playerGroupContainer.classList.add("player-group-container");
+
+    if (playerGroups.length > 0) {
+        playerGroups.forEach(playerGroup => {
+            const playerGroupDiv = document.createElement("div");
+            playerGroupDiv.classList.add("player-group");
+            playerGroupDiv.classList.add("flex-column");
+            playerGroupDiv.style.marginTop = "12px";
+
+            const playerGroupTitle = document.createElement("div");
+            playerGroupTitle.classList.add("flex-row");
+            playerGroupTitle.classList.add("player-group-title");
+            playerGroupTitle.style.justifyContent = "flex-start";
+            playerGroupTitle.style.fontWeight = "600";
+            playerGroupTitle.style.marginBottom = "6px";
+            playerGroupTitle.style.marginLeft = "12px";
+            playerGroupTitle.innerHTML = playerGroup.starting_type;
+
+            const playerGroupPlayers = document.createElement("div");
+            playerGroupPlayers.classList.add("player-group-players");
+            playerGroupPlayers.classList.add("flex-row");
+            playerGroupPlayers.style.flexWrap = "wrap";
+            playerGroupPlayers.style.alignItems = 'stretch';
+
+            const playerOptions = data.players.map(dataPlayer => {
+                const option = document.createElement("option");
+                option.value = dataPlayer.id;
+                option.innerHTML = dataPlayer.name;
+                return option;
+            });
+        
+            const nietIngevuldOption = document.createElement("option");
+            nietIngevuldOption.value = NaN;
+            nietIngevuldOption.innerHTML = 'Niet ingevuld';
+        
+            for (let i = 0; i < 4; i++) {
+                let player = playerGroup.players[i];
+                console.log(player);
+        
+                const playerDiv = document.createElement("select");
+                playerDiv.classList.add("player-selector", "flex-row");
+                playerDiv.style.flexGrow = "1";
+                playerDiv.style.flexBasis = "calc(50% - 32px)"; 
+                playerDiv.style.textAlign = "center";
+        
+                // Attach the event listener
+                playerDiv.addEventListener('change', function() {
+                    onPlayerSelectChange(this);
+                });
+        
+                // Append the list of player options
+                playerOptions.forEach(option => {
+                    playerDiv.appendChild(option.cloneNode(true));  // Clone the option to avoid moving the same node
+                });
+        
+                // Append the 'Niet ingevuld' option
+                playerDiv.appendChild(nietIngevuldOption.cloneNode(true));
+        
+                // If a player is already selected, set the value of the dropdown
+                if (player) {
+                    playerDiv.value = player.id;
+                } else {
+                    playerDiv.value = NaN;  // Set to 'Niet ingevuld' value
+                }
+        
+                playerGroupPlayers.appendChild(playerDiv);
+            }
+
+            playerGroupDiv.appendChild(playerGroupTitle);
+            playerGroupDiv.appendChild(playerGroupPlayers);
+
+            playerGroupContainer.appendChild(playerGroupDiv);
+        });
+
+        const buttonDiv = document.createElement("div");
+        buttonDiv.classList.add("flex-center");
+        buttonDiv.style.marginTop = "12px";
+
+        const saveButton = document.createElement("button");
+        saveButton.id = "saveButton";
+        saveButton.innerHTML = "Save";
+        saveButton.style.display = "none";  // Initially hidden
+        buttonDiv.appendChild(saveButton);
+
+        playerGroupContainer.appendChild(buttonDiv);
+
+        infoContainer.appendChild(playerGroupContainer);
+    } else {
+        infoContainer.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+    }
 }

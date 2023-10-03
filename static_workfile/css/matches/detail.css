@@ -1,0 +1,112 @@
+body {
+    margin: 0;
+    font-family: termina, sans-serif;
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.flex-center {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+}
+
+.flex-start-wrap {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: flex-start;
+    align-items: center;
+}
+
+h1 {
+    margin: 0;
+}
+
+a {
+    text-decoration: none;
+    color: black;
+}
+
+.carousel-container {
+    overflow: hidden;
+    border-bottom: 6px solid var(--button-color);
+    width: 100%;
+}
+
+.carousel {
+    display: flex;
+    width: 100%;
+}
+
+.button {
+    flex: 0 0 calc(90vw / 3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 36px; /* Adjust the height as needed */
+    color: black;
+    background: transparent;
+    transition: background 0.3s ease;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.button.active {
+    background: var(--button-color);
+    color: white;
+}
+
+.event {
+    height: 46px;
+    border-bottom: 1px solid black;
+}
+
+.event-type {
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-content: center;
+    align-items: center;
+    height: 100%;
+    width: auto !important;
+    padding: 0 10px;
+}
+
+.description {
+    margin: 0;
+    font-size: 12px;
+}
+
+.current-score {
+    margin-right: 10px;
+}
+
+.player-selector {
+    background-color: #D9D9D9;
+    border-radius: 4px;
+    height: 46px;
+    margin: 4px 8px 8px 4px;
+}
+
+.player-name {
+    margin: auto;
+}

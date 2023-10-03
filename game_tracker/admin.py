@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Club, Team, TeamData, Player, Match, PlayerGroup, PlayerChange, Goal, GoalType, Pause, Season
+from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, Goal, GoalType, Pause, Season
 
 # Register your models here.
 class club_admin(admin.ModelAdmin):
@@ -49,6 +49,14 @@ class player_group_admin(admin.ModelAdmin):
     class Meta:
         model = PlayerGroup
 admin.site.register(PlayerGroup, player_group_admin)
+
+class game_types_admin(admin.ModelAdmin):
+    list_display = ["id_uuid", "name"]
+    show_full_result_count = False
+    
+    class Meta:
+        model = GroupTypes
+admin.site.register(GroupTypes, game_types_admin)
 
 class player_change_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "player_in", "player_out", "player_group", "time"]

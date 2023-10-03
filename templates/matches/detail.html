@@ -8,7 +8,7 @@
         <title>{{ title }}</title>
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/static/css/clubs/detail.css">
+        <link rel="stylesheet" href="/static/css/matches/detail.css">
         <link rel="stylesheet" href="/static/css/color/color.css">
     </head>
     <body>
@@ -53,6 +53,8 @@
 
             </div>
         </div>
+
+        <p style="display: none;" id="user_id">{{ request.user.id }}</p>
 
         <script src="{% static '/js/matches/detail.js' %}"></script>
         <script src="{% static '/js/programs/mobile_view.js' %}"></script>

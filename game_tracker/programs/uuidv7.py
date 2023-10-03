@@ -103,15 +103,15 @@ def uuid7(
     else:
         ms = int(ms)  # Fail fast if not an int
 
-    rand_a = int.from_bytes(os.urandom(2))
-    rand_b = int.from_bytes(os.urandom(8))
+    rand_a = int.from_bytes(os.urandom(2), byteorder='big')
+    rand_b = int.from_bytes(os.urandom(8), byteorder='big')
     uuid_bytes = uuidfromvalues(ms, rand_a, rand_b)
 
-    uuid_int = int.from_bytes(uuid_bytes)
+    uuid_int = int.from_bytes(uuid_bytes, byteorder='big')
     if as_type == "int":
-        return int.from_bytes(uuid_bytes)
+        return int.from_bytes(uuid_bytes, byteorder='big')
     elif as_type == "bin":
-        return bin(int.from_bytes(uuid_bytes))
+        return bin(int.from_bytes(uuid_bytes, byteorder='big'))
     elif as_type == "hex":
         return f"{uuid_int:>032x}"
     elif as_type == "bytes":
@@ -128,9 +128,9 @@ def uuidfromvalues(unix_ts_ms: int, rand_a: int, rand_b: int):
     rand_a &= 0xfff
     rand_b &= 0x3fffffffffffffff
 
-    final_bytes = unix_ts_ms.to_bytes(6)
-    final_bytes += ((version<<12)+rand_a).to_bytes(2)
-    final_bytes += ((var<<62)+rand_b).to_bytes(8)
+    final_bytes = unix_ts_ms.to_bytes(6, byteorder='big')
+    final_bytes += ((version<<12)+rand_a).to_bytes(2, byteorder='big')
+    final_bytes += ((var<<62)+rand_b).to_bytes(8, byteorder='big')
 
     return final_bytes
 

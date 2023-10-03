@@ -77,11 +77,18 @@ class Match(models.Model):
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    players = models.ManyToManyField(Player, related_name='player_groups')
+    players = models.ManyToManyField(Player, related_name='player_groups', blank=True)
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='player_groups')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_groups')
-    starting_type = models.CharField(max_length=255)
-    current_type = models.CharField(max_length=255)
+    starting_type = models.ForeignKey('GroupTypes', on_delete=models.CASCADE, related_name='player_groups')
+    current_type = models.ForeignKey('GroupTypes', on_delete=models.CASCADE, related_name='current_player_groups')
+    
+class GroupTypes(models.Model):
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    name = models.CharField(max_length=255, unique=True)
+    
+    def __str__(self):
+        return str(self.name)
 
 class PlayerChange(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
@@ -109,13 +116,14 @@ class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
     time = models.IntegerField()
+    length = models.IntegerField(blank=True, null=True)
     active = models.BooleanField(default=True)
 
 class Season(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
-    time = models.IntegerField()
-    length = models.IntegerField(blank=True, null=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
     
     def __str__(self):
         return str(self.name)
