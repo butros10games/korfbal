@@ -102,6 +102,7 @@ a {
 
 .player-selector {
     background-color: #D9D9D9;
+    color: black;
     border-radius: 4px;
     height: 46px;
     margin: 4px 8px 8px 4px;
@@ -109,4 +110,18 @@ a {
 
 .player-name {
     margin: auto;
+}
+
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    margin: 0;
+    outline: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><path d="M0 0 L10 0 L5 5 z" fill="black"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right center;
+    background-size: 10px 5px;
+    padding: 0 1em 0 0;
+    color: black;
 }
