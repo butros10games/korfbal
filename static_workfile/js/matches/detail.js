@@ -1,5 +1,5 @@
 let socket;
-let club_id;
+let match_id;
 let WebSocket_url;
 let infoContainer;
 let user_id;
@@ -24,13 +24,13 @@ window.addEventListener("DOMContentLoaded", function() {
     const matches = url.match(regex);
 
     if (matches) {
-        team_id = matches[1];
-        console.log(team_id);
+        match_id = matches[1];
+        console.log(match_id);
     } else {
         console.log("No UUID found in the URL.");
     }
 
-    WebSocket_url = "wss://" + window.location.host + "/ws/match/" + team_id + "/";
+    WebSocket_url = "wss://" + window.location.host + "/ws/match/" + match_id + "/";
 
     load_icon();
     initializeSocket(WebSocket_url);
@@ -234,6 +234,20 @@ function updateEvents(data) {
             }
 
             eventContainer.appendChild(eventDiv);
+
+            if (data.access && data.finished) {
+                const buttonContainer = document.createElement("div");
+                buttonContainer.classList.add("flex-center");
+                buttonContainer.style.marginTop = "12px";
+
+                const trackerButton = document.createElement("a");
+                trackerButton.classList.add("tracker-button");
+                trackerButton.href = "/match/tracker/" + match_id + "/";
+                trackerButton.innerHTML = "bijhouden";
+
+                buttonContainer.appendChild(trackerButton);
+                eventContainer.appendChild(buttonContainer);
+            }
         });
 
         infoContainer.appendChild(eventContainer);

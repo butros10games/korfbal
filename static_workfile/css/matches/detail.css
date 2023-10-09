@@ -125,3 +125,29 @@ select {
     padding: 0 1em 0 0;
     color: black;
 }
+
+.tracker-button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background-color: var(--button-color); 
+    border: 0;
+
+    color: var(--text-color);
+    text-decoration: none;
+
+    font-size: 16px;
+
+    width: 256px;
+    height: 48px;
+
+    font-family: termina, sans-serif;
+    font-weight: 400;
+    font-style: normal;
+
+    border-radius: 4px;
+
+    transition-duration: 0.4s;
+    cursor: pointer;
+}
