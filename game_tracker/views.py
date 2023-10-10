@@ -256,6 +256,21 @@ def match_detail(request, match_id):
     
     return render(request, "matches/detail.html", context)
 
+def match_tracker(request, match_id):
+    match_data = get_object_or_404(Match, id_uuid=match_id)
+    
+    profile_url, profile_img_url = standart_inports(request)
+    
+    context = {
+        "match": match_data,
+        "start_date": match_data.start_time.strftime('%A, %d %B'),
+        "start_time": match_data.start_time.strftime('%H:%M'),
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
+    }
+    
+    return render(request, "matches/tracker.html", context)
+
 @csrf_exempt
 def upload_profile_picture(request):
     if request.method == 'POST' and request.FILES['profile_picture']:

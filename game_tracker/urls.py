@@ -15,4 +15,5 @@ urlpatterns = [
     path('upload_profile_picture/', views.upload_profile_picture, name='upload_profile_picture'),
     
     path('match/<uuid:match_id>/', views.match_detail, name='match_detail'),
+    path('match/tracker/<uuid:match_id>/', views.match_tracker, name='match_tracker'),
 ]

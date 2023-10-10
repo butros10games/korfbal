@@ -631,3 +631,27 @@ class match_data(AsyncWebsocketConsumer):
         ]
         
         return player_groups_array
+    
+class match_tracker(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.match = None
+        
+    async def connect(self):
+        match_id = self.scope['url_route']['kwargs']['id']
+        self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
+        await self.accept()
+        
+    async def disconnect(self, close_code):
+        pass
+    
+    async def receive(self, text_data):
+        try:
+            json_data = json.loads(text_data)
+            command = json_data['command']
+
+        except Exception as e:
+                await self.send(text_data=json.dumps({
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }))
