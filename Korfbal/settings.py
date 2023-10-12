@@ -24,7 +24,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = get_random_secret_key()
+SECRET_KEY = '38-=v#0hid9x0cskra+qinxlm*gqil@m#y-*a3n04nawf$xa3d'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -63,6 +63,7 @@ LOGIN_URL = 'login'
 
 AUTHENTICATION_BACKENDS = [
     'authentication.auth_backend.EmailOrUsernameModelBackend',
+    'authentication.auth_backend.SteamAuthenticationBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
