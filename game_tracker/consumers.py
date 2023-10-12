@@ -440,7 +440,7 @@ class match_data(AsyncWebsocketConsumer):
         
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
-        self.match = await sync_to_async(Match.objects.prefetch_related('home_team', 'away_team').get)(id_uuid=match_id)
+        self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
         await self.accept()
         
     async def disconnect(self, close_code):
@@ -488,10 +488,28 @@ class match_data(AsyncWebsocketConsumer):
                             'time': event.time,
                             'length': event.length
                         })
+                    
+                    ## Check if player is in the home or away team
+                    user_id = json_data['user_id']
+                    player = await sync_to_async(Player.objects.get)(user=user_id)
+                    
+                    players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
+                    players_away = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.away_team).values_list('players', flat=True))
+                    
+                    players_list = []
+                    
+                    players_list.extend(players_home)
+                    players_list.extend(players_away)
+                    
+                    access = False
+                    if player.id_uuid in players_list:
+                        access = True
                 
                 await self.send(text_data=json.dumps({
                     'command': 'events',
-                    'events': events_dict
+                    'events': events_dict,
+                    'access': access,
+                    'finished': self.match.finished
                 }))
             
             elif command == "home_team":
@@ -613,3 +631,27 @@ class match_data(AsyncWebsocketConsumer):
         ]
         
         return player_groups_array
+    
+class match_tracker(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.match = None
+        
+    async def connect(self):
+        match_id = self.scope['url_route']['kwargs']['id']
+        self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
+        await self.accept()
+        
+    async def disconnect(self, close_code):
+        pass
+    
+    async def receive(self, text_data):
+        try:
+            json_data = json.loads(text_data)
+            command = json_data['command']
+
+        except Exception as e:
+                await self.send(text_data=json.dumps({
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }))

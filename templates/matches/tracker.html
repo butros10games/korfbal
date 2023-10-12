@@ -1,0 +1,24 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>{{ title }}</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/static/css/matches/tracker.css">
+        <link rel="stylesheet" href="/static/css/color/color.css">
+    </head>
+    <body>
+        {% include 'overlays/navbar.html' %}
+
+        <div class="flex-column" style="margin-top: 48px;">
+            
+        </div>
+
+        <script src="{% static '/js/matches/tracker.js' %}"></script>
+        <script src="{% static '/js/programs/mobile_view.js' %}"></script>
+    </body>
+</html>

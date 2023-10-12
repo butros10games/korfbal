@@ -169,16 +169,10 @@ function onMessageReceived(event) {
             updateMatches(data);
             break;
         
-        case "goal_stats":
+        case "teams":
             cleanDom();
 
-            updateGoalStats(data);
-            break;
-
-        case "spelers":
-            cleanDom();
-            
-            updatePlayers(data);
+            updateTeam(data);
             break;
     }
 }
@@ -262,5 +256,34 @@ function updateMatches(data) {
     } else {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
+    }
+}
+
+function updateTeam(data) {
+    if (data.teams.length > 0) {
+        for (i = 0; i < data.teams.length; i++) {
+            team_container = document.createElement("a");
+            team_container.classList.add("team-container");
+            team_container.style.padding = "12px";
+            team_container.style.borderBottom = "1px solid #000";
+            team_container.style.width = "calc(100% - 24px)";
+            team_container.style.display = "block";
+            team_container.style.textDecoration = "none";
+            team_container.style.color = "#000";
+            team_container.href = data.teams[i].get_absolute_url;
+
+            team_name = document.createElement("p");
+            team_name.style.margin = "0";
+            team_name.style.marginBottom = "6px";
+            team_name.style.marginTop = "6px";
+            team_name.style.fontSize = "14px";
+            team_name.innerHTML = data.teams[i].name;
+
+            team_container.appendChild(team_name);
+            infoContainer.appendChild(team_container);
+        }
+    } else {
+        infoContainer.classList.add("flex-center");
+        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen teams</p>";
     }
 }
