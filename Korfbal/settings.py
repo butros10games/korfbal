@@ -63,7 +63,6 @@ LOGIN_URL = 'login'
 
 AUTHENTICATION_BACKENDS = [
     'authentication.auth_backend.EmailOrUsernameModelBackend',
-    'authentication.auth_backend.SteamAuthenticationBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
