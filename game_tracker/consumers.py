@@ -489,21 +489,21 @@ class match_data(AsyncWebsocketConsumer):
                             'length': event.length
                         })
                     
-                    ## Check if player is in the home or away team
-                    user_id = json_data['user_id']
-                    player = await sync_to_async(Player.objects.get)(user=user_id)
-                    
-                    players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
-                    players_away = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.away_team).values_list('players', flat=True))
-                    
-                    players_list = []
-                    
-                    players_list.extend(players_home)
-                    players_list.extend(players_away)
-                    
-                    access = False
-                    if player.id_uuid in players_list:
-                        access = True
+                ## Check if player is in the home or away team
+                user_id = json_data['user_id']
+                player = await sync_to_async(Player.objects.get)(user=user_id)
+                
+                players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
+                players_away = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.away_team).values_list('players', flat=True))
+                
+                players_list = []
+                
+                players_list.extend(players_home)
+                players_list.extend(players_away)
+                
+                access = False
+                if player.id_uuid in players_list:
+                    access = True
                 
                 await self.send(text_data=json.dumps({
                     'command': 'events',

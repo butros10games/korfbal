@@ -152,6 +152,14 @@ def team_detail(request, team_id):
     
     # Find the current season
     current_season = Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
+    
+    # If current season is not found, then find the next season
+    if not current_season:
+        current_season = Season.objects.filter(start_date__gte=today).first()
+    
+    # If next season is not found, then find the previous season
+    if not current_season:
+        current_season = Season.objects.filter(end_date__lte=today).last()
 
     # If no season is found, then there might be an error in data or there's currently no active season
     if not current_season:
