@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer, WebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup
+from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup, GroupTypes
 from authentication.models import UserProfile
 from django.core.files.base import ContentFile
 
@@ -522,14 +522,15 @@ class match_data(AsyncWebsocketConsumer):
                 
                 players_json = []
                 
-                for player in players:
-                    player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
-                    players_json.append({
-                        'id': str(player_json.id_uuid),
-                        'name': player_json.user.username,
-                        'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
-                        'get_absolute_url': str(player_json.get_absolute_url())
-                    })
+                if user_id[0] == None:
+                    for player in players:
+                        player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                        players_json.append({
+                            'id': str(player_json.id_uuid),
+                            'name': player_json.user.username,
+                            'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
+                            'get_absolute_url': str(player_json.get_absolute_url())
+                        })
                     
                 if user_id != 'None':
                     player = await sync_to_async(Player.objects.get)(user=user_id)
@@ -611,26 +612,43 @@ class match_data(AsyncWebsocketConsumer):
             }))
             
     async def makePlayerGroupList(self, team):
-        player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
+        try:
+            player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
+            
+            # When there is no connected player group create the player groups
+            if player_groups == []:
+                group_types = await sync_to_async(list)(GroupTypes.objects.all())
                 
-        # make it a json parsable string
-        player_groups_array = [
-            {
-                'id': str(player_group.id_uuid),
-                'players': [
-                    {
-                        'id': str(player.id_uuid),
-                        'name': player.user.username,
-                    }
-                    for player in player_group.players.all()
-                ],
-                'starting_type': player_group.starting_type.name,
-                'current_type': player_group.current_type.name
-            }
-            for player_group in player_groups
-        ]
+                for group_type in group_types:
+                    await sync_to_async(PlayerGroup.objects.create)(match=self.match, team=team, starting_type=group_type.id_uuid, current_type=group_type.id_uuid)
+                    
+                player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
+            
+            # make it a json parsable string
+            player_groups_array = [
+                {
+                    'id': str(player_group.id_uuid),
+                    'players': [
+                        {
+                            'id': str(player.id_uuid),
+                            'name': player.user.username,
+                        }
+                        for player in player_group.players.all()
+                    ],
+                    'starting_type': player_group.starting_type.name,
+                    'current_type': player_group.current_type.name
+                }
+                for player_group in player_groups
+            ]
+            
+            return player_groups_array
         
-        return player_groups_array
+        except Exception as e:
+            await self.send(text_data=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc(),
+                'player_groups': player_groups
+            }))
     
 class match_tracker(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):

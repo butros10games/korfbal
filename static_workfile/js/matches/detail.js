@@ -234,26 +234,32 @@ function updateEvents(data) {
             }
 
             eventContainer.appendChild(eventDiv);
-
-            if (data.access && data.finished) {
-                const buttonContainer = document.createElement("div");
-                buttonContainer.classList.add("flex-center");
-                buttonContainer.style.marginTop = "12px";
-
-                const trackerButton = document.createElement("a");
-                trackerButton.classList.add("tracker-button");
-                trackerButton.href = "/match/tracker/" + match_id + "/";
-                trackerButton.innerHTML = "bijhouden";
-
-                buttonContainer.appendChild(trackerButton);
-                eventContainer.appendChild(buttonContainer);
-            }
         });
-
-        infoContainer.appendChild(eventContainer);
     } else {
-        infoContainer.innerHTML = "<p>Geen events gevonden.</p>";
+        const textElement = document.createElement("p");
+        textElement.classList.add("flex-center");
+        textElement.innerHTML = "<p>Geen events gevonden.</p>";
+
+        eventContainer.appendChild(textElement);
     }
+
+    if (data.access) {
+        console.log("Access granted");
+
+        const buttonContainer = document.createElement("div");
+        buttonContainer.classList.add("flex-center");
+        buttonContainer.style.marginTop = "12px";
+
+        const trackerButton = document.createElement("a");
+        trackerButton.classList.add("tracker-button");
+        trackerButton.href = "/match/tracker/" + match_id + "/";
+        trackerButton.innerHTML = "bijhouden";
+
+        buttonContainer.appendChild(trackerButton);
+        eventContainer.appendChild(buttonContainer);
+    }
+
+    infoContainer.appendChild(eventContainer);
 }
 
 function onPlayerSelectChange(changedSelect) {
@@ -330,11 +336,15 @@ function showPlayerGroups(data) {
 
             playerGroupContainer.appendChild(playerGroupDiv);
         });
-
-        infoContainer.appendChild(playerGroupContainer);
     } else {
-        infoContainer.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+        const textElement = document.createElement("p");
+        textElement.classList.add("flex-center");
+        textElement.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+
+        playerGroupContainer.appendChild(textElement);
     }
+
+    infoContainer.appendChild(playerGroupContainer);
 }
 
 function updateplayerGroups(data) {
@@ -426,9 +436,13 @@ function updateplayerGroups(data) {
         buttonDiv.appendChild(saveButton);
 
         playerGroupContainer.appendChild(buttonDiv);
-
-        infoContainer.appendChild(playerGroupContainer);
     } else {
-        infoContainer.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+        const textElement = document.createElement("p");
+        textElement.classList.add("flex-center");
+        textElement.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+
+        playerGroupContainer.appendChild(textElement);
     }
+
+    infoContainer.appendChild(playerGroupContainer);
 }
