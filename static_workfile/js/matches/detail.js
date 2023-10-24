@@ -243,9 +243,7 @@ function updateEvents(data) {
         eventContainer.appendChild(textElement);
     }
 
-    if (data.access) {
-        console.log("Access granted");
-
+    if (data.access && !data.finished) {
         const buttonContainer = document.createElement("div");
         buttonContainer.classList.add("flex-center");
         buttonContainer.style.marginTop = "12px";
@@ -278,6 +276,38 @@ function onPlayerSelectChange(changedSelect) {
     document.getElementById("saveButton").style.display = "block";
 }
 
+function savePlayerGroups() {
+    const playerGroups = document.querySelectorAll('.player-group');
+    const playerGroupData = [];
+
+    playerGroups.forEach(playerGroup => {
+        const playerGroupTitle = playerGroup.querySelector('.player-group-title');
+        const playerGroupPlayers = playerGroup.querySelectorAll('.player-selector');
+
+        const playerGroupObject = {
+            'starting_type': playerGroupTitle.innerHTML,
+            'id': playerGroupTitle.id,
+            'players': []
+        };
+
+        playerGroupPlayers.forEach(player => {
+            if (player.value) {
+                playerGroupObject.players.push(player.value);
+            } else {
+                playerGroupObject.players.push(null);
+            }
+        });
+
+        playerGroupData.push(playerGroupObject);
+    });
+
+    socket.send(JSON.stringify({
+        'command': 'savePlayerGroups',
+        'user_id': user_id,
+        'playerGroups': playerGroupData
+    }));
+}
+
 function showPlayerGroups(data) {
     const playerGroups = data.playerGroups;
 
@@ -298,7 +328,9 @@ function showPlayerGroups(data) {
             playerGroupTitle.style.fontWeight = "600";
             playerGroupTitle.style.marginBottom = "6px";
             playerGroupTitle.style.marginLeft = "12px";
+            playerGroupTitle.style.width = "calc(100% - 12px)";
             playerGroupTitle.innerHTML = playerGroup.starting_type;
+            playerGroupTitle.id = playerGroup.id;
 
             const playerGroupPlayers = document.createElement("div");
             playerGroupPlayers.classList.add("player-group-players");
@@ -308,7 +340,6 @@ function showPlayerGroups(data) {
         
             for (let i = 0; i < 4; i++) {
                 let player = playerGroup.players[i];
-                console.log(player);
         
                 const playerDiv = document.createElement("div");
                 playerDiv.classList.add("player-selector", "flex-center");
@@ -367,7 +398,9 @@ function updateplayerGroups(data) {
             playerGroupTitle.style.fontWeight = "600";
             playerGroupTitle.style.marginBottom = "6px";
             playerGroupTitle.style.marginLeft = "12px";
+            playerGroupTitle.style.width = "calc(100% - 12px)";
             playerGroupTitle.innerHTML = playerGroup.starting_type;
+            playerGroupTitle.id = playerGroup.id;
 
             const playerGroupPlayers = document.createElement("div");
             playerGroupPlayers.classList.add("player-group-players");
@@ -388,7 +421,6 @@ function updateplayerGroups(data) {
         
             for (let i = 0; i < 4; i++) {
                 let player = playerGroup.players[i];
-                console.log(player);
         
                 const playerDiv = document.createElement("select");
                 playerDiv.classList.add("player-selector", "flex-row");
@@ -434,6 +466,10 @@ function updateplayerGroups(data) {
         saveButton.innerHTML = "Save";
         saveButton.style.display = "none";  // Initially hidden
         buttonDiv.appendChild(saveButton);
+
+        saveButton.addEventListener('click', function() {
+            savePlayerGroups();
+        });
 
         playerGroupContainer.appendChild(buttonDiv);
     } else {

@@ -518,31 +518,9 @@ class match_data(AsyncWebsocketConsumer):
                 
                 player_groups_array = await self.makePlayerGroupList(team)
                 
-                players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
-                
-                players_json = []
-                
-                if user_id[0] == None:
-                    for player in players:
-                        player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
-                        players_json.append({
-                            'id': str(player_json.id_uuid),
-                            'name': player_json.user.username,
-                            'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
-                            'get_absolute_url': str(player_json.get_absolute_url())
-                        })
+                players_json = await self.makePlayerList(team)
                     
-                if user_id != 'None':
-                    player = await sync_to_async(Player.objects.get)(user=user_id)
-                    
-                    try:
-                        team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
-                        is_coach = True
-                    except TeamData.DoesNotExist:
-                        is_coach = False
-                
-                else:
-                    is_coach = False
+                is_coach = await self.checkIfCoach(user_id, team)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'playerGroups',
@@ -557,28 +535,9 @@ class match_data(AsyncWebsocketConsumer):
                 
                 player_groups_array = await self.makePlayerGroupList(team)
                 
-                players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+                players_json = await self.makePlayerList(team)
                 
-                players_json = []
-                
-                for player in players:
-                    player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
-                    players_json.append({
-                        'id': str(player_json.id_uuid),
-                        'name': player_json.user.username,
-                    })
-                
-                if user_id != 'None':
-                    player = await sync_to_async(Player.objects.get)(user=user_id)
-                    
-                    try:
-                        team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
-                        is_coach = True
-                    except TeamData.DoesNotExist:
-                        is_coach = False
-                
-                else:
-                    is_coach = False
+                is_coach = await self.checkIfCoach(user_id, team)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'playerGroups',
@@ -586,7 +545,6 @@ class match_data(AsyncWebsocketConsumer):
                     'players': players_json,
                     'is_coach': is_coach
                 }))
-                
             
             elif command == "follow":
                 follow = json_data['followed']
@@ -602,6 +560,26 @@ class match_data(AsyncWebsocketConsumer):
                 
                 await self.send(text_data=json.dumps({
                     'command': 'follow',
+                    'status': 'success'
+                }))
+                
+            elif command == "savePlayerGroups":
+                player_groups = json_data['playerGroups']
+                
+                for player_group in player_groups:
+                    group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_group['id'])
+                    await sync_to_async(group.players.clear)()
+                    
+                    for player in player_group['players']:
+                        if player == 'NaN':
+                            continue
+                        player_obj = await sync_to_async(Player.objects.get)(id_uuid=player)
+                        await sync_to_async(group.players.add)(player_obj)
+                        
+                    await sync_to_async(group.save)()
+                
+                await self.send(text_data=json.dumps({
+                    'command': 'savePlayerGroups',
                     'status': 'success'
                 }))
             
@@ -620,7 +598,7 @@ class match_data(AsyncWebsocketConsumer):
                 group_types = await sync_to_async(list)(GroupTypes.objects.all())
                 
                 for group_type in group_types:
-                    await sync_to_async(PlayerGroup.objects.create)(match=self.match, team=team, starting_type=group_type.id_uuid, current_type=group_type.id_uuid)
+                    await sync_to_async(PlayerGroup.objects.create)(match=self.match, team=team, starting_type=group_type, current_type=group_type)
                     
                 player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
             
@@ -649,6 +627,36 @@ class match_data(AsyncWebsocketConsumer):
                 'traceback': traceback.format_exc(),
                 'player_groups': player_groups
             }))
+            
+    async def makePlayerList(self, team):
+        players_json = []
+        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+        
+        for player in players:
+            try:
+                player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                players_json.append({
+                    'id': str(player_json.id_uuid),
+                    'name': player_json.user.username,
+                    'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
+                    'get_absolute_url': str(player_json.get_absolute_url())
+                })
+            except Player.DoesNotExist:
+                pass
+                
+        return players_json
+    
+    async def checkIfCoach(self, user_id, team):
+        if user_id != 'None':
+            player = await sync_to_async(Player.objects.get)(user=user_id)
+            
+            try:
+                team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
+                return True
+            except TeamData.DoesNotExist:
+                return False
+            
+        return False
     
 class match_tracker(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):

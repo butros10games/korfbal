@@ -105,7 +105,12 @@ a {
     color: black;
     border-radius: 4px;
     height: 46px;
-    margin: 4px 8px 8px 4px;
+}
+
+.player-group-players {
+    gap: 8px;
+    margin: 0 8px;
+    width: calc(100% - 16px);
 }
 
 .player-name {
