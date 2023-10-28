@@ -62,3 +62,12 @@ a {
 .player-name {
     margin: auto;
 }
+
+.switch-button {
+    background: var(--button-color);
+    border-radius: 4px;
+    width: calc(100% - 12px);
+    border: 0;
+    color: white;
+    height: 32px;
+}

@@ -22,20 +22,20 @@
                     <p style="font-size: 16px; font-weight: 600; margin: 0;">30:00</p>
                 </div>
                 <div style="width: calc(100% * 1/3)" class="flex-column">
-                    <button style="background: var(--button-color); border-radius: 4px; width: calc(100% - 12px); border: 0; color: white; height: 32px;">Start/Stop</button>
+                    <button class="switch-button">Start/Stop</button>
                 </div>
             </div>
 
             <div style="margin: 0 24px; width: calc(100% - 48px)" class="flex-row">
                 <div class="flex-column" style="width: 50%">
                     <p style="margin: 0;">{{ match.home_team.name }}</p>
-                    <div style="background: #43ff6480; border-radius: 4px 0 0 4px; width: 100%; height: 46px;" class="flex-center">
+                    <div id="home-score" style="background: #43ff6480; border-radius: 4px 0 0 4px; width: 100%; height: 46px;" class="flex-center">
                         <p style="margin: 0; padding: 0; font-size: 24px;">0</p>
                     </div>
                 </div>
                 <div class="flex-column" style="width: 50%">
                     <p style="margin: 0;">{{ match.away_team.name }}</p>
-                    <div style="background: rgba(235, 0, 0, 0.5); border-radius: 0 4px 4px 0; width: 100%; height: 46px;" class="flex-center">
+                    <div id="away-score" style="background: rgba(235, 0, 0, 0.5); border-radius: 0 4px 4px 0; width: 100%; height: 46px;" class="flex-center">
                         <p style="margin: 0; padding: 0; font-size: 24px;">0</p>
                     </div>
                 </div>
