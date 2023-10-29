@@ -15,5 +15,6 @@ urlpatterns = [
     path('upload_profile_picture/', views.upload_profile_picture, name='upload_profile_picture'),
     
     path('match/<uuid:match_id>/', views.match_detail, name='match_detail'),
-    path('match/tracker/<uuid:match_id>/', views.match_tracker, name='match_tracker'),
+    path('match/selector/<uuid:match_id>/', views.match_team_selector, name='match_team_selector'),
+    path('match/tracker/<uuid:match_id>/<uuid:team_id>/', views.match_tracker, name='match_tracker'),
 ]

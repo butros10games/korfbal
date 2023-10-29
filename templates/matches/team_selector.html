@@ -1,0 +1,39 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>{{ title }}</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/static/css/matches/tracker.css">
+        <link rel="stylesheet" href="/static/css/color/color.css">
+    </head>
+    <body>
+        {% include 'overlays/navbar.html' %}
+
+        <div class="flex-column" style="margin-top: 48px;">
+            <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px;">
+                <div class="flex-row" style="justify-content: flex-start;">
+                    <p style="font-weight: 600; font-size: 14px;">Selecteer team voor bijhouden</p>
+                </div>
+                <div class="flex-color flex-column" style="margin-top: 6px; gap: 12px; width: 100%;">
+                    <a href="/match/tracker/{{ match.id_uuid }}/{{ match.home_team.id_uuid}}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black; padding: 16px 0; width: 100%;">
+                        <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team.name }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <h2 style="margin: 4px 0; font-size: 22px;">{{ match.home_team.name }}</h2>
+                    </a>
+
+                    <a href="/match/tracker/{{ match.id_uuid }}/{{ match.away_team.id_uuid}}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black; padding: 16px 0; width: 100%;">
+                        <img src="{{ match.away_team.club.logo.url }}" alt="{{ match.away_team.name }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <h2 style="margin: 4px 0; font-size: 22px;">{{ match.away_team.name }}</h2>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <script src="{% static '/js/matches/tracker.js' %}"></script>
+        <script src="{% static '/js/programs/mobile_view.js' %}"></script>
+    </body>
+</html>

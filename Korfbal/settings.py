@@ -84,6 +84,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Korfbal.wsgi.application'
 
+ASGI_APPLICATION = 'ButrosGroot.asgi.application'
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+            "capacity": 1500,  # default 100
+            "expiry": 10,  # default 60
+        },
+    },
+}
 
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases

@@ -2,9 +2,11 @@ from channels.generic.websocket import AsyncWebsocketConsumer, WebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup, GroupTypes
+from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup, GroupTypes, Shot
 from authentication.models import UserProfile
 from django.core.files.base import ContentFile
+
+
 
 import json
 import traceback
@@ -441,6 +443,10 @@ class match_data(AsyncWebsocketConsumer):
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
         self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
+        
+        self.channel_group_name = 'match_%s' % self.match.id_uuid
+        await self.channel_layer.group_add(self.channel_group_name, self.channel_name)
+        
         await self.accept()
         
     async def disconnect(self, close_code):
@@ -658,6 +664,10 @@ class match_data(AsyncWebsocketConsumer):
             
         return False
     
+    async def send_data(self, event):
+        data = event['data']
+        await self.send(text_data=json.dumps(data))
+    
 class match_tracker(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -666,6 +676,11 @@ class match_tracker(AsyncWebsocketConsumer):
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
         self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
+        self.team = await sync_to_async(Team.objects.get)(id_uuid=self.scope['url_route']['kwargs']['team_id'])
+        
+        self.channel_group_name = 'match_%s' % self.match.id_uuid
+        await self.channel_layer.group_add(self.channel_group_name, self.channel_name)
+        
         await self.accept()
         
     async def disconnect(self, close_code):
@@ -677,7 +692,7 @@ class match_tracker(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "playerGroups":
-                team = self.match.home_team
+                team = self.team
                 
                 player_groups_array = await self.makePlayerGroupList(team)
                 
@@ -688,6 +703,18 @@ class match_tracker(AsyncWebsocketConsumer):
                     'playerGroups': player_groups_array,
                     'players': players_json
                 }))
+                
+            elif command == "shot_reg":
+                await sync_to_async(Shot.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match=self.match, time = json_data['time'], for_team=json_data['for_team'])
+                
+                await self.channel_layer.group_send(self.channel_group_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'player_shot_change',
+                        'player_id': json_data['player_id'],
+                        'shots': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match=self.match).count)()
+                    }
+                })
 
         except Exception as e:
                 await self.send(text_data=json.dumps({
@@ -695,48 +722,50 @@ class match_tracker(AsyncWebsocketConsumer):
                     'traceback': traceback.format_exc()
                 }))
                 
+    async def create_player_groups(self, team):
+        group_types = await sync_to_async(list)(GroupTypes.objects.all())
+        for group_type in group_types:
+            await sync_to_async(PlayerGroup.objects.create)(match=self.match, team=team, starting_type=group_type, current_type=group_type)
+
+    async def get_player_groups(self, team):
+        return await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
+
+    async def make_player_group_json(self, player_groups):
+        async def process_player(player):
+            return {
+                'id': str(player.id_uuid),
+                'name': player.user.username,
+                'shots': await sync_to_async(Shot.objects.filter(player=player, match=self.match).count)()
+            }
+
+        async def process_player_group(player_group):
+            return {
+                'id': str(player_group.id_uuid),
+                'players': [await process_player(player) for player in player_group.players.all()],
+                'starting_type': player_group.starting_type.name,
+                'current_type': player_group.current_type.name
+            }
+
+        return [await process_player_group(player_group) for player_group in player_groups]
+
     async def makePlayerGroupList(self, team):
-        try:
-            player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
-            
-            # When there is no connected player group create the player groups
-            if player_groups == []:
-                group_types = await sync_to_async(list)(GroupTypes.objects.all())
-                
-                for group_type in group_types:
-                    await sync_to_async(PlayerGroup.objects.create)(match=self.match, team=team, starting_type=group_type, current_type=group_type)
-                    
-                player_groups = await sync_to_async(list)(PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type').filter(match=self.match, team=team).order_by('starting_type'))
-            
-            # make it a json parsable string
-            player_groups_array = [
-                {
-                    'id': str(player_group.id_uuid),
-                    'players': [
-                        {
-                            'id': str(player.id_uuid),
-                            'name': player.user.username,
-                        }
-                        for player in player_group.players.all()
-                    ],
-                    'starting_type': player_group.starting_type.name,
-                    'current_type': player_group.current_type.name
-                }
-                for player_group in player_groups
-            ]
-            
-            return player_groups_array
-        
-        except Exception as e:
-            await self.send(text_data=json.dumps({
-                'error': str(e),
-                'traceback': traceback.format_exc(),
-                'player_groups': player_groups
-            }))
+        player_groups = await self.get_player_groups(team)
+        if not player_groups:
+            await self.create_player_groups(team)
+            player_groups = await self.get_player_groups(team)
+        return await self.make_player_group_json(player_groups)
             
     async def makePlayerList(self, team):
         players_json = []
-        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+        
+        # Get all player groups for the team
+        player_groups = await self.get_player_groups(team)
+        
+        # Get all players that are already in a group
+        grouped_players = [player for group in player_groups for player in group.players.all()]
+        
+        # Get all players for the team, excluding those that are already in a group
+        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).exclude(players__in=grouped_players).values_list('players', flat=True))
         
         for player in players:
             try:
@@ -749,5 +778,9 @@ class match_tracker(AsyncWebsocketConsumer):
                 })
             except Player.DoesNotExist:
                 pass
-                
+                    
         return players_json
+    
+    async def send_data(self, event):
+        data = event['data']
+        await self.send(text_data=json.dumps(data))

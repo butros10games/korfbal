@@ -1,7 +1,7 @@
 let socket;
 let match_id;
 let WebSocket_url;
-const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
+const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
 const url = window.location.href;
 
 let eventsDiv;
@@ -13,14 +13,18 @@ window.addEventListener("DOMContentLoaded", function() {
 
     const matches = url.match(regex);
 
-    if (matches) {
-        match_id = matches[1];
-        console.log(match_id);
+    console.log(matches);
+
+    if (matches && matches.length >= 2) {
+        firstUUID = matches[0];
+        secondUUID = matches[1];
+        console.log("First UUID:", firstUUID);
+        console.log("Second UUID:", secondUUID);
     } else {
-        console.log("No UUID found in the URL.");
+        console.log("Not enough UUIDs found in the URL.");
     }
 
-    WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + match_id + "/";
+    WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
 
     load_icon(eventsDiv);
     load_icon(playersDiv);
@@ -54,16 +58,17 @@ function scoringButtonSetup() {
             // Deactivate the button if it's already activated
             button.style.background = team === "home" ? "#43ff6480" : "rgba(235, 0, 0, 0.5)";
             button.classList.remove("activated");
-    
-            // Remove event listeners from the deactivated button
+
+            shotButtonReg(team);
+        } else {
+            // remove the playerClickHandler from the player buttons
             Array.from(playerButtons).forEach(element => {
-                element.style.background = "";
                 if (element._playerClickHandler) {
                     element.removeEventListener("click", element._playerClickHandler);
                     delete element._playerClickHandler;
                 }
             });
-        } else {
+
             // First, deactivate the currently activated button (if any)
             const activatedButton = document.querySelector(".activated");
             if (activatedButton) {
@@ -99,6 +104,7 @@ function scoringButtonSetup() {
                         "team": team,
                         "player": element.id,
                     }
+
                     socket.send(JSON.stringify(data));
                 };
     
@@ -106,7 +112,7 @@ function scoringButtonSetup() {
                 element.addEventListener("click", playerClickHandler);
             });
         }
-    }    
+    }
 
     homeScoreButton.addEventListener("click", function () {
         toggleButton(homeScoreButton, "home");
@@ -114,6 +120,35 @@ function scoringButtonSetup() {
 
     awayScoreButton.addEventListener("click", function () {
         toggleButton(awayScoreButton, "away");
+    });
+}
+
+function shotButtonReg(team) {
+    const playerButtonsContainer = document.getElementById(team === "home" ? "Aanval" : "Verdediging");
+    const playerButtons = playerButtonsContainer.getElementsByClassName("player-selector");
+    
+    // Remove event listeners from the deactivated button
+    Array.from(playerButtons).forEach(element => {
+        element.style.background = "";
+        element.removeEventListener("click", element._playerClickHandler);
+        delete element._playerClickHandler;
+
+        // set a other click event to the player buttons to register shots
+        const playerClickHandler = function () {
+            const data = {
+                "command": "shot_reg",
+                "player_id": element.id,
+                "time": new Date().toISOString(),
+                "for_team": team === "home" ? true : false,
+            }
+
+            console.log(data);
+
+            socket.send(JSON.stringify(data));
+        };
+
+        element._playerClickHandler = playerClickHandler;
+        element.addEventListener("click", playerClickHandler);
     });
 }
 
@@ -178,6 +213,15 @@ function onMessageReceived(event) {
             cleanDom(playersDiv);
 
             showPlayerGroups(data);
+
+            shotButtonReg("home");
+            shotButtonReg("away");
+            break;
+
+        case "player_shot_change":
+            console.log("Player shot change received.");
+
+            updatePlayerShot(data);
             break;
     }
 }
@@ -191,6 +235,19 @@ function cleanDom(element) {
     element.innerHTML = "";
     element.classList.remove("flex-center");
     element.classList.remove("flex-start-wrap");
+}
+
+function updatePlayerShot(data) {
+    const playerGroups = document.getElementsByClassName("player-group-players");
+
+    for (const playerGroup of playerGroups) {
+        // Use attribute selector syntax
+        const playerDiv = playerGroup.querySelector(`[id="${data.player_id}"]`);
+
+        if (playerDiv) {
+            playerDiv.querySelector("p:nth-child(2)").innerHTML = data.shots;
+        }
+    }
 }
 
 function showPlayerGroups(data) {
@@ -264,13 +321,22 @@ function showPlayerGroups(data) {
                 playerName.style.margin = "0";
                 playerName.style.fontSize = "14px";
 
+                const playerShots = document.createElement("p");
+                playerShots.style.margin = "0";
+                playerShots.style.fontSize = "14px";
+
                 if (player) {
+                    playerDiv.id = player.id;
+                    playerDiv.style.justifyContent = "space-around";
+
                     playerName.innerHTML = player.name;
+                    playerShots.innerHTML = player.shots;
                 } else {
                     playerName.innerHTML = "geen data";
                 }
 
                 playerDiv.appendChild(playerName);
+                playerDiv.appendChild(playerShots);
         
                 playerGroupPlayers.appendChild(playerDiv);
             }

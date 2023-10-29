@@ -250,7 +250,7 @@ function updateEvents(data) {
 
         const trackerButton = document.createElement("a");
         trackerButton.classList.add("tracker-button");
-        trackerButton.href = "/match/tracker/" + match_id + "/";
+        trackerButton.href = "/match/selector/" + match_id + "/";
         trackerButton.innerHTML = "bijhouden";
 
         buttonContainer.appendChild(trackerButton);

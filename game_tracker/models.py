@@ -111,6 +111,13 @@ class GoalType(models.Model):
     
     def __str__(self):
         return str(self.name)
+    
+class Shot(models.Model):
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='shots')
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='shots')
+    time = models.DateTimeField()
+    for_team = models.BooleanField(default=True)
 
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)

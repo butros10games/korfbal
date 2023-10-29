@@ -264,13 +264,35 @@ def match_detail(request, match_id):
     
     return render(request, "matches/detail.html", context)
 
-def match_tracker(request, match_id):
+def match_team_selector(request, match_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
     
     profile_url, profile_img_url = standart_inports(request)
     
     context = {
         "match": match_data,
+        "profile_url": profile_url,
+        "profile_img_url": profile_img_url
+    }
+    
+    return render(request, "matches/team_selector.html", context)
+
+def match_tracker(request, match_id, team_id):
+    match_data = get_object_or_404(Match, id_uuid=match_id)
+    team_data = get_object_or_404(Team, id_uuid=team_id)
+    
+    profile_url, profile_img_url = standart_inports(request)
+    
+    # get the two teams that are playing and make the first team the team from team_data and the second team the opponent
+    if match_data.home_team == team_data:
+        opponent_data = match_data.away_team
+    else:
+        opponent_data = match_data.home_team
+    
+    context = {
+        "match": match_data,
+        "team_1": team_data,
+        "team_2": opponent_data,
         "start_date": match_data.start_time.strftime('%A, %d %B'),
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
