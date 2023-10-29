@@ -288,9 +288,22 @@ def match_tracker(request, match_id, team_id):
         opponent_data = match_data.away_team
     else:
         opponent_data = match_data.home_team
+        
+    # calculate the time left in the current part if the part is not finished or started yet then set the time to the part lenght i have set the part_lenght to be in seconds
+    time_left = match_data.part_lenght
+    if match_data.current_part > 1:
+        time_left = match_data.part_lenght - ((match_data.current_part - 1) * match_data.part_lenght)
+        
+    # convert the seconds to minutes and seconds to display on the page make the numbers look nice with the %02d
+    minutes = int(time_left / 60)
+    seconds = int(time_left % 60)
+    time_display = "%02d:%02d" % (minutes, seconds)
     
     context = {
         "match": match_data,
+        "minutes": minutes,
+        "seconds": seconds,
+        "time_display": time_display,
         "team_1": team_data,
         "team_2": opponent_data,
         "start_date": match_data.start_time.strftime('%A, %d %B'),

@@ -6,6 +6,7 @@ const url = window.location.href;
 
 let eventsDiv;
 let playersDiv;
+let last_goal_Data;
 
 window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
@@ -97,12 +98,15 @@ function scoringButtonSetup() {
                 element.style.background = team === "home" ? "#43ff6480" : "rgba(235, 0, 0, 0.5)";
     
                 const playerClickHandler = function () {
-                    console.log("Player clicked: " + element.id);
-    
+
                     const data = {
-                        "command": "score",
-                        "team": team,
-                        "player": element.id,
+                        "command": "get_goal_types"
+                    }
+
+                    last_goal_Data = {
+                        "player_id": element.id,
+                        "time": new Date().toISOString(),
+                        "for_team": team === "home" ? true : false,
                     }
 
                     socket.send(JSON.stringify(data));
@@ -219,9 +223,11 @@ function onMessageReceived(event) {
             break;
 
         case "player_shot_change":
-            console.log("Player shot change received.");
-
             updatePlayerShot(data);
+            break;
+
+        case "goal_types":
+            showGoalTypes(data);
             break;
     }
 }
@@ -235,6 +241,103 @@ function cleanDom(element) {
     element.innerHTML = "";
     element.classList.remove("flex-center");
     element.classList.remove("flex-start-wrap");
+}
+
+function showGoalTypes(data) {
+    // Create the overlay container
+    const overlay = document.createElement("div");
+    overlay.classList.add("overlay");
+    
+    // Create the popup container
+    const popup = document.createElement("div");
+    popup.classList.add("popup");
+    
+    // Create the content for the popup
+    const goalTypesContainer = document.createElement("div");
+    goalTypesContainer.classList.add("goal-types-container");
+    goalTypesContainer.style.display = "flex";
+    goalTypesContainer.style.flexWrap = "wrap"; // Add this line to wrap the buttons to a second line
+
+    const TopLineContainer = document.createElement("div");
+    TopLineContainer.classList.add("flex-row");
+    TopLineContainer.style.marginBottom = "12px";
+
+    const goalTypesTitle = document.createElement("p");
+    goalTypesTitle.innerHTML = "Doelpunt type";
+    goalTypesTitle.style.margin = "0";
+
+    TopLineContainer.appendChild(goalTypesTitle);
+
+    // Create a close button for the popup
+    const closeButton = document.createElement("button");
+    closeButton.classList.add("close-button");
+    closeButton.innerHTML = "Close";
+    closeButton.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+    });
+
+    TopLineContainer.appendChild(closeButton);
+
+    goalTypesContainer.appendChild(TopLineContainer);
+
+    for (const goalType of data.goal_types) {
+        const goalTypeDiv = document.createElement("div");
+        goalTypeDiv.classList.add("goal-type");
+        goalTypeDiv.classList.add("flex-center");
+        goalTypeDiv.style.flexGrow = "1";
+        goalTypeDiv.style.flexBasis = "calc(50% - 32px)"; 
+        goalTypeDiv.style.textAlign = "center";
+        goalTypeDiv.style.margin = "0 12px 6px 12px";
+        goalTypeDiv.style.width = "calc(100% - 12px)";
+        goalTypeDiv.style.background = goalType.color;
+
+        const goalTypeTitle = document.createElement("p");
+        goalTypeTitle.classList.add("flex-center");
+        goalTypeTitle.innerHTML = goalType.name;
+        goalTypeTitle.style.margin = "0";
+        goalTypeTitle.style.fontSize = "14px";
+        goalTypeTitle.style.background = "var(--button-color)";
+        goalTypeTitle.style.color = "var(--text-color)";
+        goalTypeTitle.style.padding = "6px";
+        goalTypeTitle.style.borderRadius = "4px";
+        goalTypeTitle.style.width = "100%";
+        goalTypeTitle.style.height = "42px";
+        goalTypeTitle.style.cursor = "pointer";
+        goalTypeTitle.style.userSelect = "none";
+
+        goalTypeDiv.addEventListener("click", function() {
+            const data = {
+                "command": "goal_reg",
+                "goal_type": goalType.id,
+                "player_id": last_goal_Data.player_id,
+                "time": last_goal_Data.time,
+                "for_team": last_goal_Data.for_team,
+            }
+
+            socket.send(JSON.stringify(data));
+        });
+
+        goalTypeDiv.appendChild(goalTypeTitle);
+
+        goalTypesContainer.appendChild(goalTypeDiv);
+    }
+
+    // Append the close button and goalTypesContainer to the popup
+    popup.appendChild(goalTypesContainer);
+    
+    // Append the popup to the overlay
+    overlay.appendChild(popup);
+    
+    // Append the overlay to the body to cover the entire screen
+    document.body.appendChild(overlay);
+    
+    // Disable scrolling on the body while the overlay is open
+    document.body.style.overflow = "hidden";
+}
+
+function updateEvent(data) {
+
 }
 
 function updatePlayerShot(data) {

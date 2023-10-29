@@ -58,7 +58,9 @@ class Match(models.Model):
     home_score = models.IntegerField()
     away_score = models.IntegerField()
     start_time = models.DateTimeField()
-    length = models.IntegerField()
+    parts = models.IntegerField(default=2)
+    current_part = models.IntegerField(default=1)
+    part_lenght = models.IntegerField()
     finished = models.BooleanField(default=False)
 
     def get_winner(self):
@@ -74,6 +76,14 @@ class Match(models.Model):
     
     def get_absolute_url(self):
         return reverse('match_detail', kwargs={'match_id': self.id_uuid})
+    
+class MatchPart(models.Model):
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='match_parts')
+    part_number = models.IntegerField()
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField(blank=True, null=True)
+    active = models.BooleanField(default=True)
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
@@ -95,13 +105,13 @@ class PlayerChange(models.Model):
     player_in = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='player_changes')
     player_out = models.ForeignKey(Player, on_delete=models.CASCADE)
     player_group = models.ForeignKey(PlayerGroup, on_delete=models.CASCADE, related_name='player_changes')
-    time = models.IntegerField()
+    time = models.DateTimeField(default=None, blank=True, null=True)
 
 class Goal(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='goals')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='goals')
-    time = models.IntegerField()
+    time = models.DateTimeField(default=None, blank=True, null=True)
     goal_type = models.ForeignKey('GoalType', on_delete=models.CASCADE, related_name='goals')
     for_team = models.BooleanField(default=True)
 
@@ -116,13 +126,14 @@ class Shot(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='shots')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='shots')
-    time = models.DateTimeField()
+    time = models.DateTimeField(default=None, blank=True, null=True)
     for_team = models.BooleanField(default=True)
 
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
-    time = models.IntegerField()
+    start_time = models.DateTimeField(default=None, blank=True, null=True)
+    end_time = models.DateTimeField(blank=True, null=True)
     length = models.IntegerField(blank=True, null=True)
     active = models.BooleanField(default=True)
 

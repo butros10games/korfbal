@@ -35,7 +35,7 @@ class player_admin(admin.ModelAdmin):
 admin.site.register(Player, player_admin)
 
 class match_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "home_team", "away_team", "home_score", "away_score", "start_time", "length"]
+    list_display = ["id_uuid", "home_team", "away_team", "home_score", "away_score", "start_time", "part_lenght", "finished"]
     show_full_result_count = False
     
     class Meta:
@@ -59,7 +59,7 @@ class game_types_admin(admin.ModelAdmin):
 admin.site.register(GroupTypes, game_types_admin)
 
 class player_change_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player_in", "player_out", "player_group", "time"]
+    list_display = ["id_uuid", "player_in", "player_out", "player_group"]
     show_full_result_count = False
     
     class Meta:
@@ -67,7 +67,7 @@ class player_change_admin(admin.ModelAdmin):
 admin.site.register(PlayerChange, player_change_admin)
 
 class goal_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "match", "time"]
+    list_display = ["id_uuid", "player", "match"]
     show_full_result_count = False
     
     class Meta:
@@ -83,7 +83,7 @@ class goal_type_admin(admin.ModelAdmin):
 admin.site.register(GoalType, goal_type_admin)
 
 class pause_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "match", "time"]
+    list_display = ["id_uuid", "match"]
     show_full_result_count = False
     
     class Meta:
