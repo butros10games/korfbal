@@ -512,7 +512,9 @@ class match_data(AsyncWebsocketConsumer):
                             events_dict.append({
                                 'type': 'pause',
                                 'time': time_in_minutes,
-                                'length': event.length
+                                'length': event.length,
+                                'start_time': event.time.isoformat() if event.time else None,
+                                'end_time': event.end_time.isoformat() if event.end_time else None
                             })
                     
                 ## Check if player is in the home or away team
@@ -698,6 +700,11 @@ class match_tracker(AsyncWebsocketConsumer):
         self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
         self.team = await sync_to_async(Team.objects.get)(id_uuid=self.scope['url_route']['kwargs']['team_id'])
         
+        if self.team == self.match.home_team:
+            self.other_team = self.match.away_team
+        else:
+            self.other_team = self.match.home_team
+        
         self.channel_group_name = 'match_%s' % self.match.id_uuid
         await self.channel_layer.group_add(self.channel_group_name, self.channel_name)
         
@@ -753,13 +760,10 @@ class match_tracker(AsyncWebsocketConsumer):
                 }))
                 
             elif command == "goal_reg":
-                if json_data['for_team'] == "home":
+                if json_data['for_team']:
                     team = self.team
                 else:
-                    if self.team == self.match.home_team:
-                        team = self.match.away_team
-                    else:
-                        team = self.match.home_team
+                    team = self.other_team
                 
                 await sync_to_async(Goal.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match=self.match, time = json_data['time'], goal_type=await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type']), for_team=json_data['for_team'], team=team)
                 
@@ -772,8 +776,8 @@ class match_tracker(AsyncWebsocketConsumer):
                         'command': 'team_goal_change',
                         'player_name': player.user.username,
                         'goal_type': goal_type.name,
-                        'goals_for': await sync_to_async(Goal.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, team=self.team).count)(),
-                        'goals_against': await sync_to_async(Goal.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, team=team).count)()
+                        'goals_for': await sync_to_async(Goal.objects.filter(match=self.match, team=self.team).count)(),
+                        'goals_against': await sync_to_async(Goal.objects.filter(match=self.match, team=self.other_team).count)()
                     }
                 })
                 
@@ -899,6 +903,48 @@ class match_tracker(AsyncWebsocketConsumer):
                         'command': 'timer_data',
                         'type': 'deactive'
                     }))
+                    
+            elif command == "last_event":
+                goals = await sync_to_async(list)(Goal.objects.prefetch_related('player__user', 'goal_type').filter(match=self.match).order_by('time'))
+                player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user').filter(player_group__match=self.match).order_by('time'))
+                time_outs = await sync_to_async(list)(Pause.objects.filter(match=self.match).order_by('time'))
+                
+                # add all the events to a list and order them on time
+                events = []
+                events.extend(goals)
+                events.extend(player_change)
+                events.extend(time_outs)
+                events.sort(key=lambda x: x.time)
+                
+                # Get last event
+                last_event = events[-1]
+                
+                if isinstance(last_event, Goal):
+                    events_dict = ({
+                        'type': 'goal',
+                        'player': last_event.player.user.username,
+                        'goal_type': last_event.goal_type.name,
+                        'for_team': last_event.for_team
+                    })
+                elif isinstance(last_event, PlayerChange):
+                    events_dict = ({
+                        'type': 'player_change',
+                        'player_in': last_event.player_in.user.username,
+                        'player_out': last_event.player_out.user.username,
+                        'player_group': last_event.player_group.id_uuid
+                    })
+                elif isinstance(last_event, Pause):
+                    events_dict = ({
+                        'type': 'pause',
+                        'length': last_event.length,
+                        'start_time': last_event.time.isoformat() if last_event.time else None,
+                        'end_time': last_event.end_time.isoformat() if last_event.end_time else None
+                    })
+                
+                await self.send(text_data=json.dumps({
+                    "command": "last_event",
+                    "last_event": events_dict
+                }))
 
         except Exception as e:
                 await self.send(text_data=json.dumps({

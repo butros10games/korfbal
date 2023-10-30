@@ -177,7 +177,7 @@ function requestInitalData() {
     }));
 
     socket.send(JSON.stringify({
-        'command': 'events',
+        'command': 'last_event',
     }));
 
     socket.send(JSON.stringify({
@@ -305,7 +305,14 @@ function cleanDom(element) {
 }
 
 function teamGoalChange(data) {
-    
+    first_team = document.getElementById("home-score");
+    firstTeamP = first_team.querySelector("p");
+
+    second_team = document.getElementById("away-score");
+    secondTeamP = second_team.querySelector("p");
+
+    firstTeamP.innerHTML = data.goals_for;
+    secondTeamP.innerHTML = data.goals_against;
 }
 
 function showGoalTypes(data) {

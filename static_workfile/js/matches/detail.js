@@ -198,6 +198,8 @@ function updateEvents(data) {
                 const eventTypeDiv = document.createElement("div");
                 eventTypeDiv.classList.add("event-type");
                 eventTypeDiv.innerHTML = event.type;
+                eventTypeDiv.style.width = "64px";
+
                 if (event.for_team) {
                     eventTypeDiv.style.backgroundColor = '#4CAF50';
                     thuis++;
@@ -223,6 +225,7 @@ function updateEvents(data) {
                 const currentScoreDiv = document.createElement("div");
                 currentScoreDiv.classList.add("current-score");
                 currentScoreDiv.innerHTML = thuis + "-" + uit;
+                currentScoreDiv.style.width = "64px";
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
@@ -230,7 +233,38 @@ function updateEvents(data) {
             } else if (event.type == "substitution") {
 
             } else if (event.type == "pause") {
+                const eventTypeDiv = document.createElement("div");
+                eventTypeDiv.classList.add("event-type");
+                eventTypeDiv.innerHTML = event.type;
+                eventTypeDiv.style.width = "64px";
+                eventTypeDiv.style.backgroundColor = '#2196F3';
 
+                const midsectionDiv = document.createElement("div");
+                midsectionDiv.classList.add("flex-column");
+
+                const descriptionDiv = document.createElement("div");
+                descriptionDiv.classList.add("description");
+
+                if (event.end_time == null) {
+                    // Convert the start time to a date object and format it so only the hour and minutes are shown
+                    start_time = new Date(event.start_time);
+
+                    descriptionDiv.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0')
+                } else {
+                    start_time = new Date(event.start_time);
+                    end_time = new Date(event.end_time);
+
+                    descriptionDiv.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
+                }
+
+                midsectionDiv.appendChild(descriptionDiv);
+
+                const endSectionDiv = document.createElement("div");
+                endSectionDiv.style.width = "64px";
+
+                eventDiv.appendChild(eventTypeDiv);
+                eventDiv.appendChild(midsectionDiv);
+                eventDiv.appendChild(endSectionDiv);
             }
 
             eventContainer.appendChild(eventDiv);

@@ -84,10 +84,11 @@ a {
     font-size: 14px;
     font-weight: bold;
     display: flex;
+    justify-content: center;
     align-content: center;
     align-items: center;
     height: 100%;
-    width: auto !important;
+    width: 64px;
     padding: 0 10px;
 }
 

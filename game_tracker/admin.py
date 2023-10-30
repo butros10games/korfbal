@@ -75,7 +75,7 @@ class player_change_admin(admin.ModelAdmin):
 admin.site.register(PlayerChange, player_change_admin)
 
 class goal_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "match"]
+    list_display = ["id_uuid", "player", "match", "team"]
     show_full_result_count = False
     
     class Meta:
