@@ -115,6 +115,7 @@ class Goal(models.Model):
     time = models.DateTimeField(default=None, blank=True, null=True)
     goal_type = models.ForeignKey('GoalType', on_delete=models.CASCADE, related_name='goals')
     for_team = models.BooleanField(default=True)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='goals', blank=True, null=True)
 
 class GoalType(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
@@ -133,7 +134,7 @@ class Shot(models.Model):
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
-    start_time = models.DateTimeField(default=None, blank=True, null=True)
+    time = models.DateTimeField(default=None, blank=True, null=True)
     end_time = models.DateTimeField(blank=True, null=True)
     length = models.IntegerField(blank=True, null=True)
     active = models.BooleanField(default=True)

@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club, Match
+from .models import Team, Player, TeamData, Season, Club, Match, Goal
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -259,7 +259,9 @@ def match_detail(request, match_id):
         "start_date": match_data.start_time.strftime('%A, %d %B'),
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "home_score": Goal.objects.filter(match=match_data, team=match_data.home_team).count(),
+        "away_score": Goal.objects.filter(match=match_data, team=match_data.away_team).count()
     }
     
     return render(request, "matches/detail.html", context)
@@ -299,13 +301,19 @@ def match_tracker(request, match_id, team_id):
     seconds = int(time_left % 60)
     time_display = "%02d:%02d" % (minutes, seconds)
     
+    # calculate the score for both the teams
+    team_1_score = Goal.objects.filter(match=match_data, team=team_data).count()
+    team_2_score = Goal.objects.filter(match=match_data, team=opponent_data).count()
+    
     context = {
         "match": match_data,
         "minutes": minutes,
         "seconds": seconds,
         "time_display": time_display,
         "team_1": team_data,
+        "team_1_score": team_1_score,
         "team_2": opponent_data,
+        "team_2_score": team_2_score,
         "start_date": match_data.start_time.strftime('%A, %d %B'),
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,

@@ -8,6 +8,8 @@ let eventsDiv;
 let playersDiv;
 let last_goal_Data;
 
+let timer = null;
+
 window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
@@ -177,6 +179,10 @@ function requestInitalData() {
     socket.send(JSON.stringify({
         'command': 'events',
     }));
+
+    socket.send(JSON.stringify({
+        'command': 'get_time',
+    }));
 }
 
 // Function to initialize WebSocket
@@ -244,12 +250,46 @@ function onMessageReceived(event) {
             break;
 
         case "timer_data":
+            if (timer) {
+                return;
+            }
+
             if (data.type === "active") {
-                const timer = new CountdownTimer(data.time, data.length);
+                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000);
                 timer.start();
+            } else if (data.type === "pause") {
+                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
             } else {
 
             }
+
+            break;
+
+        case "pause":
+            if (data.pause === true) {
+                timer.stop();
+                console.log("Timer paused");
+            } else if (data.pause === false) {
+                timer.start(data.pause_time);
+                console.log("Timer resumed");
+            }
+
+            break;
+
+        case "team_goal_change":
+            teamGoalChange(data);
+
+            // remove overlay
+            const overlay = document.getElementById("overlay");
+            overlay.remove();
+
+            // remove the collor change from the buttons
+            const activatedButton = document.querySelector(".activated");
+            if (activatedButton) {
+                activatedButton.click();
+            }
+
+            break;
     }
 }
 
@@ -264,9 +304,14 @@ function cleanDom(element) {
     element.classList.remove("flex-start-wrap");
 }
 
+function teamGoalChange(data) {
+    
+}
+
 function showGoalTypes(data) {
     // Create the overlay container
     const overlay = document.createElement("div");
+    overlay.id = "overlay";
     overlay.classList.add("overlay");
     
     // Create the popup container
@@ -482,35 +527,46 @@ function showPlayerGroups(data) {
 }
 
 class CountdownTimer {
-    constructor(startTimeISO, lengthInSeconds) {
-        this.startTime = new Date(startTimeISO).getTime();
-        this.length = lengthInSeconds * 1000;  // Convert to milliseconds
-        this.endTime = this.startTime + this.length;
+    constructor(startTimeISO, lengthInMilliseconds, pauseTimeISO = null, offsetInMilliseconds = 0) {
+        this.lengthInMilliseconds = lengthInMilliseconds;
+        
+        this.startTime = new Date(startTimeISO);
+        this.totalLength = lengthInMilliseconds + offsetInMilliseconds;  // Include the offset
+        this.endTime = new Date(this.startTime.getTime() + this.totalLength);
+        
+        this.offset = offsetInMilliseconds;
+        this.pauseTimeISO = pauseTimeISO;
         this.interval = null;
+
+        // Call updateDisplay immediately upon construction to set the initial value
+        this.updateDisplay();
     }
 
-    start() {
-        const updateDisplay = () => {
-            const now = Date.now();
-            let remainingTime = this.endTime - now;
+    updateDisplay() {
+        this.now = this.pauseTimeISO ? new Date(this.pauseTimeISO) : new Date();;
+        let timeLeft = this.totalLength - (this.now - this.startTime);
+    
+        const sign = timeLeft < 0 ? '-' : '';
+        const absTime = Math.abs(timeLeft);
+    
+        const minutes = Math.floor(absTime / 60000);
+        const seconds = Math.floor((absTime % 60000) / 1000);
+    
+        // Update the counter display on the website
+        document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }    
 
-            if (remainingTime <= 0) {
-                clearInterval(this.interval);
-                remainingTime = 0;
-            }
+    start(pause_time = null) {
+        if (pause_time) {
+            this.totalLength = this.lengthInMilliseconds + (pause_time * 1000);
+        }
 
-            const minutes = Math.floor(remainingTime / 60000);
-            const seconds = Math.floor((remainingTime % 60000) / 1000);
-
-            // Update the counter display on the website
-            document.getElementById('counter').innerText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        };
-
-        this.interval = setInterval(updateDisplay, 1000);
-        updateDisplay(); // Call it immediately to show the initial value
+        this.pauseTimeISO = null;
+        this.interval = setInterval(() => this.updateDisplay(), 1000);
     }
 
     stop() {
         clearInterval(this.interval);
+        this.interval = null;
     }
 }

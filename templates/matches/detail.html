@@ -29,10 +29,14 @@
                         {% if match.finished %}
                             <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
                         {% else %}
-                            <p style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
+                            {% if match.active %}
+                                <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
+                            {% else %}
+                                <p style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
+                            {% endif %}
                         {% endif %}
 
-                        <p style="margin: 0;">{{ match.home_score }} / {{ match.away_score }}</p>
+                        <p style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
                     </div>
 
                     <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
@@ -49,7 +53,7 @@
                     <a class="button" data="away_team">{{ match.away_team.name }}</a>
                 </div>
             </div>
-            <div id="info-container" style="height: calc((var(--vh, 1vh) * 100) - 315.5px); width: 100%; overflow-y: scroll;">
+            <div id="info-container" style="height: calc((var(--vh, 1vh) * 100) - 317.5px); width: 100%; overflow-y: scroll;">
 
             </div>
         </div>
