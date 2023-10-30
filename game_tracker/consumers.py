@@ -341,7 +341,7 @@ async def transfrom_matchdata(wedstrijden_data):
             'away_score': wedstrijd.away_score,
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
-            'length': wedstrijd.length,
+            'length': wedstrijd.part_lenght,
             'finished': wedstrijd.finished,
             'winner': wedstrijd.get_winner().name if wedstrijd.get_winner() else None,
             'get_absolute_url': str(wedstrijd.get_absolute_url())
@@ -478,7 +478,7 @@ class match_data(AsyncWebsocketConsumer):
                     
                     for event in events:
                         if isinstance(event, Goal):
-                            time_in_minutes = (event.time - part.start_time).total_seconds() / 60
+                            time_in_minutes = round((event.time - part.start_time).total_seconds() / 60)
                             
                             events_dict.append({
                                 'type': 'goal',
@@ -488,7 +488,7 @@ class match_data(AsyncWebsocketConsumer):
                                 'for_team': event.for_team
                             })
                         elif isinstance(event, PlayerChange):
-                            time_in_minutes = (event.time - part.start_time).total_seconds() / 60
+                            time_in_minutes = round((event.time - part.start_time).total_seconds() / 60)
                             
                             events_dict.append({
                                 'type': 'player_change',
@@ -499,7 +499,7 @@ class match_data(AsyncWebsocketConsumer):
                             })
                         elif isinstance(event, Pause):
                             # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-                            time_in_minutes = (event.start_time - part.start_time).total_seconds() / 60
+                            time_in_minutes = round((event.start_time - part.start_time).total_seconds() / 60)
                             
                             events_dict.append({
                                 'type': 'pause',
@@ -748,13 +748,14 @@ class match_tracker(AsyncWebsocketConsumer):
                 await sync_to_async(Goal.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match=self.match, time = json_data['time'], goal_type=await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type']), for_team=json_data['for_team'])
                 
                 player = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['player_id'])
+                goal_type = await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type'])
                 
                 await self.channel_layer.group_send(self.channel_group_name, {
                     'type': 'send_data',
                     'data': {
                         'command': 'team_goal_change',
                         'player_name': player.user.username,
-                        'goal_type': await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type']).name,
+                        'goal_type': goal_type.name,
                         'goals_for': await sync_to_async(Goal.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, for_team=True).count)(),
                         'goals_against': await sync_to_async(Goal.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, for_team=False).count)()
                     }
@@ -763,43 +764,94 @@ class match_tracker(AsyncWebsocketConsumer):
             elif command == "start/pause":
                 try:
                     part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
-                    
-                    # check if there is a pause active and if not create a pause
-                    try:
-                        pause = await sync_to_async(Pause.objects.get)(match=self.match, active=True)
-                        pause.active = False
-                        pause.end_time = datetime.now()
-                        await sync_to_async(pause.save)()
-                        
-                        await self.channel_layer.group_send(self.channel_group_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'pause',
-                                'pause': False
-                            }
-                        })
-                        
-                    except Pause.DoesNotExist:
-                        pause = await sync_to_async(Pause.objects.create)(match=self.match, active=False, start_time=datetime.now())
-                        
-                        await self.channel_layer.group_send(self.channel_group_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'pause',
-                                'pause': False
-                            }
-                        })
-                
                 except MatchPart.DoesNotExist:
-                    part = await sync_to_async(MatchPart.objects.create)(match=self.match, active=True, start_time=datetime.now())
+                    part = await sync_to_async(MatchPart.objects.create)(match=self.match, active=True, start_time=datetime.now(), part_number=self.match.current_part)
+                    
+                    if self.match.current_part == 1:
+                        self.match.active = True
+                        await sync_to_async(self.match.save)()
                     
                     await self.channel_layer.group_send(self.channel_group_name, {
                         'type': 'send_data',
                         'data': {
                             'command': 'start',
-                            'time': 0
+                            'time': 'started',
+                            'start_time': part.start_time.isoformat()
                         }
                     })
+                else:
+                    try:
+                        pause = await sync_to_async(Pause.objects.get)(match=self.match, active=True)
+                    except Pause.DoesNotExist:
+                        pause = await sync_to_async(Pause.objects.create)(match=self.match, active=True, start_time=datetime.now())
+                        pause_message = {'command': 'pause', 'pause': True}
+                    else:
+                        pause.active = False
+                        pause.end_time = datetime.now()
+                        pause.length = (pause.end_time - pause.start_time).total_seconds()
+                        pause.save()
+                        pause_message = {'command': 'pause', 'pause': False}
+                    
+                    await self.channel_layer.group_send(self.channel_group_name, {
+                        'type': 'send_data',
+                        'data': pause_message
+                    })
+                    
+            elif command == "part_end":
+                if self.match.current_part < self.match.parts:
+                    self.match.current_part += 1
+                    await sync_to_async(self.match.save)()
+                    
+                    match_part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
+                    match_part.active = False
+                    match_part.end_time = datetime.now()
+                    await sync_to_async(match_part.save)()
+                    
+                    await self.channel_layer.group_send(self.channel_group_name, {
+                        'type': 'send_data',
+                        'data': {
+                            'command': 'part_end',
+                            'part': self.match.current_part
+                        }
+                    })
+                    
+                else:
+                    self.match.finished = True
+                    self.match.active = False
+                    await sync_to_async(self.match.save)()
+                    
+                    match_part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
+                    match_part.active = False
+                    match_part.end_time = datetime.now()
+                    await sync_to_async(match_part.save)()
+                    
+                    await self.channel_layer.group_send(self.channel_group_name, {
+                        'type': 'send_data',
+                        'data': {
+                            'command': 'match_end',
+                            'part': self.match.current_part
+                        }
+                    })
+                    
+            elif "get_time":
+                # check if there is a active part if there is a active part send the start time of the part and lenght of a match part
+                try:
+                    part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
+                except MatchPart.DoesNotExist:
+                    part = None
+                    
+                if part != None:
+                    await self.send(text_data=json.dumps({
+                        'command': 'timer_data',
+                        'type': 'active',
+                        'time': part.start_time.isoformat(),
+                        'length': self.match.part_lenght
+                    }))
+                else:
+                    await self.send(text_data=json.dumps({
+                        'command': 'timer_data',
+                        'type': 'deactive'
+                    }))
 
         except Exception as e:
                 await self.send(text_data=json.dumps({

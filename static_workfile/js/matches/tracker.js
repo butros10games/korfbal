@@ -32,6 +32,7 @@ window.addEventListener("DOMContentLoaded", function() {
     initializeSocket(WebSocket_url);
     initializeButtons();
     scoringButtonSetup();
+    startStopButtonSetup();
 });
 
 function initializeButtons() {
@@ -45,6 +46,18 @@ function initializeButtons() {
             socket.send(JSON.stringify(data));
         });
     }
+}
+
+function startStopButtonSetup() {
+    const startStopButton = document.getElementById("start-stop-button");
+
+    startStopButton.addEventListener("click", function() {
+        const data = {
+            "command": "start/pause",
+        }
+
+        socket.send(JSON.stringify(data));
+    });
 }
 
 function scoringButtonSetup() {
@@ -229,6 +242,14 @@ function onMessageReceived(event) {
         case "goal_types":
             showGoalTypes(data);
             break;
+
+        case "timer_data":
+            if (data.type === "active") {
+                const timer = new CountdownTimer(data.time, data.length);
+                timer.start();
+            } else {
+
+            }
     }
 }
 
@@ -458,4 +479,38 @@ function showPlayerGroups(data) {
     }
 
     playersDiv.appendChild(playerGroupContainer);
+}
+
+class CountdownTimer {
+    constructor(startTimeISO, lengthInSeconds) {
+        this.startTime = new Date(startTimeISO).getTime();
+        this.length = lengthInSeconds * 1000;  // Convert to milliseconds
+        this.endTime = this.startTime + this.length;
+        this.interval = null;
+    }
+
+    start() {
+        const updateDisplay = () => {
+            const now = Date.now();
+            let remainingTime = this.endTime - now;
+
+            if (remainingTime <= 0) {
+                clearInterval(this.interval);
+                remainingTime = 0;
+            }
+
+            const minutes = Math.floor(remainingTime / 60000);
+            const seconds = Math.floor((remainingTime % 60000) / 1000);
+
+            // Update the counter display on the website
+            document.getElementById('counter').innerText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        };
+
+        this.interval = setInterval(updateDisplay, 1000);
+        updateDisplay(); // Call it immediately to show the initial value
+    }
+
+    stop() {
+        clearInterval(this.interval);
+    }
 }

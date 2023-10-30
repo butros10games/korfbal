@@ -61,6 +61,7 @@ class Match(models.Model):
     parts = models.IntegerField(default=2)
     current_part = models.IntegerField(default=1)
     part_lenght = models.IntegerField()
+    active = models.BooleanField(default=True)
     finished = models.BooleanField(default=False)
 
     def get_winner(self):
