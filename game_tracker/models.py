@@ -106,12 +106,15 @@ class PlayerChange(models.Model):
     player_in = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='player_changes')
     player_out = models.ForeignKey(Player, on_delete=models.CASCADE)
     player_group = models.ForeignKey(PlayerGroup, on_delete=models.CASCADE, related_name='player_changes')
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_changes', blank=True, null=True)
+    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='player_changes', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
 
 class Goal(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='goals')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='goals')
+    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='goals', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
     goal_type = models.ForeignKey('GoalType', on_delete=models.CASCADE, related_name='goals')
     for_team = models.BooleanField(default=True)
@@ -128,12 +131,14 @@ class Shot(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='shots')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='shots')
+    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
     for_team = models.BooleanField(default=True)
 
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
+    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='pauses', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
     end_time = models.DateTimeField(blank=True, null=True)
     length = models.IntegerField(blank=True, null=True)

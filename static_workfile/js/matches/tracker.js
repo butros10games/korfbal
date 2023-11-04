@@ -48,6 +48,14 @@ function initializeButtons() {
             socket.send(JSON.stringify(data));
         });
     }
+
+    const endHalfButton = document.getElementById("end-half-button");
+    endHalfButton.addEventListener("click", function() {
+        const data = {
+            "command": "part_end",
+        }
+        socket.send(JSON.stringify(data));
+    });
 }
 
 function startStopButtonSetup() {
@@ -259,8 +267,9 @@ function onMessageReceived(event) {
                 timer.start();
             } else if (data.type === "pause") {
                 timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
-            } else {
-
+            } else if (data.type === "start") {
+                timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
+                timer.start();
             }
 
             break;
@@ -561,7 +570,13 @@ class CountdownTimer {
     
         // Update the counter display on the website
         document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
-    }    
+
+        // if the time is under one minute add a end half button
+        if (minutes < 1 || sign === "-") {
+            const endHalfButton = document.getElementById("end-half-button");
+            endHalfButton.style.display = "block";
+        }
+    }
 
     start(pause_time = null) {
         if (pause_time) {
