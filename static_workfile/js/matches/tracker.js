@@ -265,8 +265,18 @@ function onMessageReceived(event) {
             if (data.type === "active") {
                 timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000);
                 timer.start();
+
+                // set the pause button to pause
+                const startStopButton = document.getElementById("start-stop-button");
+                startStopButton.innerHTML = "Pause";
+
             } else if (data.type === "pause") {
                 timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
+
+                // set the pause button to start
+                const startStopButton = document.getElementById("start-stop-button");
+                startStopButton.innerHTML = "Start";
+
             } else if (data.type === "start") {
                 timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
                 timer.start();
@@ -278,9 +288,18 @@ function onMessageReceived(event) {
             if (data.pause === true) {
                 timer.stop();
                 console.log("Timer paused");
+
+                // set the pause button to start
+                const startStopButton = document.getElementById("start-stop-button");
+                startStopButton.innerHTML = "Start";
+
             } else if (data.pause === false) {
                 timer.start(data.pause_time);
                 console.log("Timer resumed");
+
+                // set the pause button to pause
+                const startStopButton = document.getElementById("start-stop-button");
+                startStopButton.innerHTML = "Pause";
             }
 
             break;
@@ -430,7 +449,11 @@ function updatePlayerShot(data) {
         const playerDiv = playerGroup.querySelector(`[id="${data.player_id}"]`);
 
         if (playerDiv) {
-            playerDiv.querySelector("p:nth-child(2)").innerHTML = data.shots;
+            const shotsFor = playerDiv.querySelector("#shots-for");
+            const shotsAgainst = playerDiv.querySelector("#shots-against");
+
+            shotsFor.innerHTML = data.shots_for;
+            shotsAgainst.innerHTML = data.shots_against;
         }
     }
 }
@@ -458,7 +481,7 @@ function showPlayerGroups(data) {
 
             const playerGroupTitle = document.createElement("div");
             playerGroupTitle.style.fontWeight = "600";
-            playerGroupTitle.innerHTML = playerGroup.starting_type;
+            playerGroupTitle.innerHTML = playerGroup.current_type;
             playerGroupTitle.id = playerGroup.id;
 
             playerGroupTitleDiv.appendChild(playerGroupTitle);
@@ -491,7 +514,7 @@ function showPlayerGroups(data) {
             playerGroupPlayers.style.flexWrap = "wrap";
             playerGroupPlayers.style.alignItems = 'stretch';
 
-            playerGroupPlayers.id = playerGroup.starting_type;
+            playerGroupPlayers.id = playerGroup.current_type;
         
             for (let i = 0; i < 4; i++) {
                 let player = playerGroup.players[i];
@@ -506,19 +529,40 @@ function showPlayerGroups(data) {
                 playerName.style.margin = "0";
                 playerName.style.fontSize = "14px";
 
-                const playerShots = document.createElement("p");
-                playerShots.style.margin = "0";
-                playerShots.style.fontSize = "14px";
+                const playerShots = document.createElement("div");
+                playerShots.classList.add("flex-column");
+
+                const playerShotsfor = document.createElement("p");
+                playerShotsfor.id = "shots-for";
+                playerShotsfor.style.margin = "0";
+                playerShotsfor.style.fontSize = "14px";
+                playerShotsfor.style.marginBottom = "-10px";
+
+                const playerShotsAgainst = document.createElement("p");
+                playerShotsAgainst.id = "shots-against";
+                playerShotsAgainst.style.margin = "0";
+                playerShotsAgainst.style.fontSize = "14px";
+                playerShotsAgainst.style.marginTop = "-10px";
 
                 if (player) {
                     playerDiv.id = player.id;
                     playerDiv.style.justifyContent = "space-around";
 
                     playerName.innerHTML = player.name;
-                    playerShots.innerHTML = player.shots;
+                    playerShotsfor.innerHTML = player.shots_for;
+                    playerShotsAgainst.innerHTML = player.shots_against;
                 } else {
                     playerName.innerHTML = "geen data";
                 }
+
+                const playerShotsDivider = document.createElement("p");
+                playerShotsDivider.style.margin = "0";
+                playerShotsDivider.style.fontSize = "14px";
+                playerShotsDivider.innerHTML = "-";
+
+                playerShots.appendChild(playerShotsfor);
+                playerShots.appendChild(playerShotsDivider);
+                playerShots.appendChild(playerShotsAgainst);
 
                 playerDiv.appendChild(playerName);
                 playerDiv.appendChild(playerShots);

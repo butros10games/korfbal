@@ -204,7 +204,7 @@ function updateEvents(data) {
                     eventTypeDiv.style.backgroundColor = '#4CAF50';
                     thuis++;
                 } else {
-                    eventTypeDiv.style.backgroundColor = '#red';
+                    eventTypeDiv.style.backgroundColor = 'rgba(235, 0, 0, 0.7)';
                     uit++;
                 }
 
