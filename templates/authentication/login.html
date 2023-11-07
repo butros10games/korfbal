@@ -34,7 +34,7 @@
     
                         <form method="post" action="">
                             {% csrf_token %}
-                            <input type="hidden" name="next" value="{{ request.GET.next }}">
+                            <input type="hidden" name="next" value="{{ request.GET.next|default:'index' }}">
     
                             <div class="flex-column">
                                 <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
