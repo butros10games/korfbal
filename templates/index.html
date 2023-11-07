@@ -14,9 +14,12 @@
     <body>
         {% include 'overlays/navbar.html' %}
 
+        {% if user.is_authenticated %}
+        {% else %}
         <div class="flex-column" style="margin-top: 48px;">
             <a href="{% url 'login' %}" class="login_button flex-center">Login</a>
         </div>
+        {% endif %}
 
     </body>
 </html>
