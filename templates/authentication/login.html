@@ -34,6 +34,7 @@
     
                         <form method="post" action="">
                             {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.GET.next }}">
     
                             <div class="flex-column">
                                 <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
@@ -87,6 +88,8 @@
                     </div>
 
                     <form method="post" action="" style="width: 100%;">
+                        <input type="hidden" name="next" value="{{ request.GET.next }}">
+                        
                         <div class="flex-column">
                             <div class="flex-row" style="justify-content: center; width: 100%;">
                                 <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
@@ -118,7 +121,7 @@
                         <p class="CHK2-P">{{ error_message|safe }}</p>
                     {% endif %}
 
-                    <p class="CHK2-P">Don't have an account yet? <a href="/register" style="color: var(--button-color); margin-left: 12px;">Sign Up</a></p>
+                    <p class="CHK2-P">Don't have an account yet? <a href="{% url 'register'%}" style="color: var(--button-color); margin-left: 12px;">Sign Up</a></p>
                     
                 </div>
             </div>

@@ -20,11 +20,11 @@ class Club(models.Model):
 
 class Team(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name='teams')
     
     def __str__(self):
-        return str(self.name)
+        return str(self.club.name)  + " " +  str(self.name)
     
     def get_absolute_url(self):
         return reverse('team_detail', kwargs={'team_id': self.id_uuid})
@@ -55,13 +55,13 @@ class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     home_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='home_matches')
     away_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='away_matches')
-    home_score = models.IntegerField()
-    away_score = models.IntegerField()
+    home_score = models.IntegerField(default=0)
+    away_score = models.IntegerField(default=0)
     start_time = models.DateTimeField()
     parts = models.IntegerField(default=2)
     current_part = models.IntegerField(default=1)
-    part_lenght = models.IntegerField()
-    active = models.BooleanField(default=True)
+    part_lenght = models.IntegerField(default=1800)
+    active = models.BooleanField(default=False)
     finished = models.BooleanField(default=False)
 
     def get_winner(self):

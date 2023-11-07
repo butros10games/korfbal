@@ -129,6 +129,7 @@ def login_page(request):
         username = request.POST['username']
         password = request.POST['password']
         remember_me = request.POST.get('remember', False)  # Assuming the checkbox name is 'remember_me'
+        next_page = request.POST.get('next', 'index')  # Get the next page, default to 'index'
 
         user = authenticate(request, username=username, password=password)
         if user is not None:
@@ -145,7 +146,7 @@ def login_page(request):
                 if not remember_me:
                     # Set the session to expire when the user closes the browser
                     request.session.set_expiry(0)
-                return redirect('index')  # Redirect to the home page or any other desired page
+                return redirect(next_page)  # Redirect to the next page or the index page
             
             else:
                 error_message = (
@@ -173,7 +174,6 @@ def login_page(request):
     }
 
     return render(request, 'authentication/login.html', context)
-
 
 @login_required(login_url = 'login')
 def logout_user(request):

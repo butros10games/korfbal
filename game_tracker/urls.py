@@ -11,6 +11,8 @@ urlpatterns = [
     path('search/', views.search, name='search'),
     path('teams/indexdata/', views.teams_index_data, name='teams_index_data'),
     
+    path('register_to_team/<uuid:team_id>/', views.register_to_team, name='register_to_team'),
+    
     path('profile/<uuid:player_id>/', views.profile_detail, name='profile_detail'),
     path('upload_profile_picture/', views.upload_profile_picture, name='upload_profile_picture'),
     

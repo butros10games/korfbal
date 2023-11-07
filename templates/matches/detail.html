@@ -23,8 +23,8 @@
                 </div>
                 <div class="flex-row" style="margin-top: 6px;">
                     <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
-                        <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team.name }}" width="64px" height="64px" style="border-radius: 50%;">
-                        <h2 style="margin: 4px 0; font-size: 22px;">{{ match.home_team.name }}</h2>
+                        <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <h2 style="margin: 4px 0; font-size: 18px;">{{ match.home_team }}</h2>
                     </a>
 
                     <div class="flex-column" style="justify-content: centre;">
@@ -42,8 +42,8 @@
                     </div>
 
                     <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
-                        <img src="{{ match.away_team.club.logo.url }}" alt="{{ match.away_team.name }}" width="64px" height="64px" style="border-radius: 50%;">
-                        <h2 style="margin: 4px 0; font-size: 22px;">{{ match.away_team.name }}</h2>
+                        <img src="{{ match.away_team.club.logo.url }}" alt="{{ match.away_team }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <h2 style="margin: 4px 0; font-size: 18px;">{{ match.away_team }}</h2>
                     </a>
                 </div>
             </div>
@@ -51,8 +51,8 @@
             <div class="carousel-container">
                 <div class="carousel">
                     <a class="button active" data="match_events">Events</a>
-                    <a class="button" data="home_team">{{ match.home_team.name }}</a>
-                    <a class="button" data="away_team">{{ match.away_team.name }}</a>
+                    <a class="button" data="home_team">{{ match.home_team }}</a>
+                    <a class="button" data="away_team">{{ match.away_team }}</a>
                 </div>
             </div>
             <div id="info-container" style="height: calc((var(--vh, 1vh) * 100) - 317.5px); width: 100%; overflow-y: scroll;">

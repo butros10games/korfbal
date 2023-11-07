@@ -100,8 +100,8 @@
                         <input type="submit" class="CHK2-button" name="Create User" value="Create User">
                     </form>    
 
-                    <p class="CHK2-P">Already an account? <a href="/login" style="color: var(--button-color); margin-left: 12px;">login</a></p>
-                    <p class="CHK2-P">have you forgotten your <a href="/password_reset" style="color: var(--button-color); margin-left: 12px;">Password?</a><p>
+                    <p class="CHK2-P">Already an account? <a href="{% url 'login' %}" style="color: var(--button-color); margin-left: 12px;">login</a></p>
+                    <p class="CHK2-P">have you forgotten your <a href="{% url 'password_reset' %}" style="color: var(--button-color); margin-left: 12px;">Password?</a><p>
                 </div>
             </div>
         </div>

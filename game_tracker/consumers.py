@@ -279,7 +279,7 @@ class profile_data(AsyncWebsocketConsumer):
                 teams_dict = [
                     {
                         'id': str(team.id_uuid),
-                        'name': team.name,
+                        'name': await sync_to_async(team.__str__)(),
                         'get_absolute_url': str(team.get_absolute_url())
                     }
                     for team in teams
@@ -337,15 +337,15 @@ async def transfrom_matchdata(wedstrijden_data):
 
         wedstrijden_dict.append({
             'id_uuid': str(wedstrijd.id_uuid),
-            'home_team': wedstrijd.home_team.name,
-            'away_team': wedstrijd.away_team.name,
+            'home_team': await sync_to_async(wedstrijd.home_team.__str__)(),
+            'away_team': await sync_to_async(wedstrijd.away_team.__str__)(),
             'home_score': wedstrijd.home_score,
             'away_score': wedstrijd.away_score,
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
             'length': wedstrijd.part_lenght,
             'finished': wedstrijd.finished,
-            'winner': wedstrijd.get_winner().name if wedstrijd.get_winner() else None,
+            'winner': await sync_to_async(wedstrijd.get_winner().__str__)() if wedstrijd.get_winner() else None,
             'get_absolute_url': str(wedstrijd.get_absolute_url())
         })
         
@@ -377,7 +377,7 @@ class club_data(AsyncWebsocketConsumer):
                 teams_json = [
                     {
                         'id': str(team.id_uuid),
-                        'name': team.name,
+                        'name': await sync_to_async(team.__str__)(),
                         'get_absolute_url': str(team.get_absolute_url())
                     }
                     for team in teams

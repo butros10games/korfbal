@@ -40,7 +40,7 @@
                 {% for team in teams %}
                 <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
                     <div class="flex-row team-container">
-                        <p style="font-weight: 600; ">{{ team.name }}</p>
+                        <p style="font-weight: 600; ">{{ team_name }}</p>
                     </div>
                 </a>
                 {% endfor %}
@@ -52,7 +52,7 @@
                 {% for team in following_teams %}
                 <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
                     <div class="flex-row team-container">
-                        <p style="font-weight: 600; ">{{ team.name }}</p>
+                        <p style="font-weight: 600; ">{{ team_name }}</p>
                     </div>
                 </a>
                 {% endfor %}

@@ -125,14 +125,14 @@ def teams_index_data(request):
                 for team in connected_teams:
                     connected_list.append({
                         "id": str(team.id_uuid),
-                        "name": team.name,
+                        "name": team.__str__(),
                         "url": str(team.get_absolute_url())
                     })
                     
                 for team in following_teams:
                     following_list.append({
                         "id": str(team.id_uuid),
-                        "name": team.name,
+                        "name": team.__str__(),
                         "url": str(team.get_absolute_url())
                     })
     
@@ -140,6 +140,7 @@ def teams_index_data(request):
         "type": selection,
         "connected": connected_list,
         "following": following_list,
+        "team_name": team.__str__(),
     }
     
     return JsonResponse(context)
@@ -201,7 +202,7 @@ def search(request):
         for team in teams:
             teams_json.append({
                 "id": str(team.id_uuid),
-                "name": team.name,
+                "name": team.__str__(),
                 "url": str(team.get_absolute_url())
             })
         
@@ -346,3 +347,18 @@ def standart_inports(request):
         profile_img_url = player.profile_picture.url if player.profile_picture else None
         
     return profile_url, profile_img_url
+
+# this view handels the registration of a player to a team. if the user is logedin the users gets added to the team if the user is not registerd the user gets redirected to the login page with a next parameter
+def register_to_team(request, team_id):
+    team = get_object_or_404(Team, id_uuid=team_id)
+    user = request.user
+    
+    if user.is_authenticated:
+        player = Player.objects.get(user=user)
+        team_data = TeamData.objects.get(team=team)
+        
+        team_data.players.add(player)
+        
+        return redirect('teams')
+    else:
+        return redirect('/login/?next=/register_to_team/%s/' % team_id)

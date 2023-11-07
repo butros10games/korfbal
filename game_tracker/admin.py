@@ -11,7 +11,7 @@ class club_admin(admin.ModelAdmin):
 admin.site.register(Club, club_admin)
 
 class team_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "name", "club"]
+    list_display = ["id_uuid", "__str__", "club"]
     show_full_result_count = False
     
     class Meta:
