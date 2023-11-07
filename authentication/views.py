@@ -77,7 +77,7 @@ def register_page(request):
             email.send()
             
             messages.success(request, 'Account created. Please check your email for activation instructions.')
-            return redirect('login')
+            return redirect('confirmation_sent')
     
     context = {
         'form': form,
@@ -85,6 +85,9 @@ def register_page(request):
         'csrftoken': get_token(request),
     }
     return render(request, 'authentication/register.html', context)
+
+def confirmation_sent(request):
+    return render(request, 'authentication/confirmation_sent.html')
 
 @ratelimit(key='ip', rate='2/m', method='ALL')
 def resend_confirmation_email(request, email):
