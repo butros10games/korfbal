@@ -273,25 +273,46 @@ function updateMatches(data) {
 
 function updateTeam(data) {
     if (data.teams.length > 0) {
-        for (i = 0; i < data.teams.length; i++) {
-            team_container = document.createElement("a");
+        for (const element of data.teams) {
+            const team_container = document.createElement("a");
             team_container.classList.add("team-container");
+            team_container.classList.add("flex-row");
+            team_container.style.justifyContent = "flex-start";
             team_container.style.padding = "12px";
-            team_container.style.borderBottom = "1px solid #000";
+            team_container.style.borderBottom = "1px solid rgb(0 0 0 / 20%)";
             team_container.style.width = "calc(100% - 24px)";
-            team_container.style.display = "block";
             team_container.style.textDecoration = "none";
             team_container.style.color = "#000";
-            team_container.href = data.teams[i].get_absolute_url;
+            team_container.href = element.get_absolute_url;
 
-            team_name = document.createElement("p");
-            team_name.style.margin = "0";
-            team_name.style.marginBottom = "6px";
-            team_name.style.marginTop = "6px";
+            const team_picture = document.createElement("img");
+            team_picture.src = element.logo;
+            team_picture.style.width = "48px";
+            team_picture.style.height = "48px";
+
+            const team_name = document.createElement("p");
+            team_name.style.margin = "12px 6px";
             team_name.style.fontSize = "14px";
-            team_name.innerHTML = data.teams[i].name;
+            team_name.innerHTML = element.name;
 
+            const arrow_div = document.createElement("div");
+            arrow_div.classList.add("flex-center");
+            arrow_div.style.width = "24px";
+            arrow_div.style.height = "24px";
+            arrow_div.style.marginLeft = "auto";
+
+            const arrow = document.createElement("img");
+            arrow.src = "/static/images/arrow.svg";
+            arrow.style.width = "18px";
+            // rotated arrow 90 degrees
+            arrow.style.transform = "rotate(-90deg)";
+
+            arrow_div.appendChild(arrow);
+
+            team_container.appendChild(team_picture);
             team_container.appendChild(team_name);
+            team_container.appendChild(arrow_div);
+
             infoContainer.appendChild(team_container);
         }
     } else {

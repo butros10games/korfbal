@@ -398,6 +398,7 @@ class club_data(AsyncWebsocketConsumer):
                     {
                         'id': str(team.id_uuid),
                         'name': await sync_to_async(team.__str__)(),
+                        'logo': team.club.logo.url if team.club.logo else None,
                         'get_absolute_url': str(team.get_absolute_url())
                     }
                     for team in teams
