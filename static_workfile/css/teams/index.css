@@ -46,7 +46,7 @@ h1 {
     flex-direction: column;
     gap: 8px;
     width: 100%;
-    height: calc((var(--vh, 1vh) * 100) - 190px);
+    height: calc((var(--vh, 1vh) * 100) - 184px);
     overflow-y: scroll;
 }
 

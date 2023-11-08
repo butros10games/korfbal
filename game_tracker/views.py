@@ -116,6 +116,9 @@ def teams_index_data(request):
                 # Get all teams where the user is part of the team
                 connected_teams = Team.objects.filter(team_data__players=player)
                 
+                # remove duplicate teams
+                connected_teams = connected_teams.distinct()
+                
                 # Get all teams the user is following
                 following_teams = player.team_follow.all()
                 
@@ -139,8 +142,7 @@ def teams_index_data(request):
     context = {
         "type": selection,
         "connected": connected_list,
-        "following": following_list,
-        "team_name": team.__str__(),
+        "following": following_list
     }
     
     return JsonResponse(context)
@@ -177,7 +179,10 @@ def team_detail(request, team_id):
         player = Player.objects.get(user=user_request)
         following = player.team_follow.filter(id_uuid=team_id).exists()
         
-        coach = team_data.coach.filter(id_uuid=player.id_uuid).exists()
+        if team_data:
+            coach = team_data.coach.filter(id_uuid=player.id_uuid).exists()
+        else: 
+            coach = False
         
     context= {
         "team": team,
@@ -353,9 +358,26 @@ def register_to_team(request, team_id):
     team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user
     
+    try:
+        season = Season.objects.get(start_date__lte=date.today(), end_date__gte=date.today())
+    except Season.DoesNotExist:
+        season = Season.objects.filter(end_date__lte=date.today()).order_by('-end_date').first()
+    
     if user.is_authenticated:
         player = Player.objects.get(user=user)
-        team_data = TeamData.objects.get(team=team)
+        
+        try:
+            team_data = TeamData.objects.get(team=team, season=season)
+        except TeamData.DoesNotExist:
+            # get the coach of the previous season
+            try:
+                previous_season = Season.objects.filter(end_date__lte=date.today()).order_by('-end_date').first()
+                previous_team_data = TeamData.objects.get(team=team, season=previous_season)
+                
+                team_data = TeamData.objects.create(team=team, season=season)
+                team_data.coach.set(previous_team_data.coach.all())
+            except TeamData.DoesNotExist:
+                team_data = TeamData.objects.create(team=team, season=season)
         
         team_data.players.add(player)
         

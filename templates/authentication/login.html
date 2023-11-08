@@ -22,19 +22,19 @@
                 <div class="CHK2-row">
                     <div class="CHK2-text" style="flex-basis: calc(100% - 24px);">
                         <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
-                            <img src="/static/images/icon/BJG.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                            <img src="/static/images/logo/KWT_logo.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
                         </div>
                         
                         <div class="flex-column" style="margin-bottom: 32px;">
-                            <h1 class="CHK2-H" style="margin: 0;">Hello again!</h1>
+                            <h1 class="CHK2-H" style="margin: 0;">Welkom terug!</h1>
                             <div>
-                                <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                                <p class="CHK2-P" style="color: lightgray;">Bij de Korfbal wedstrijd tracker</p>
                             </div>
                         </div>
     
                         <form method="post" action="">
                             {% csrf_token %}
-                            <input type="hidden" name="next" value="{{ request.GET.next|default:'index' }}">
+                            <input type="hidden" name="next" value="{{ request.GET.next|default:'teams' }}">
     
                             <div class="flex-column">
                                 <input type="text" id="username" name="username" placeholder="Username or email..." class="CHK2-text-input" value="{{ username }}">
@@ -46,7 +46,7 @@
                                 <div class="flex-row">
                                     <div class="flex-row" style="justify-content: flex-start; width: 156px;">
                                         <input type="checkbox" id="remember" name="remember" class="CHK2-checkbox" style="width: 16px; margin: 6px;">
-                                        <label for="remember" class="CHK2-P" style="margin: auto;">Remember me</label>
+                                        <label for="remember" class="CHK2-P" style="margin: auto;">Onthoud me</label>
                                     </div>
                                     <a class="CHK2-P" style="color: #24A0ED; margin-right: 6px;" href="/password_reset/">Recover Password</a>
                                 </div>
@@ -64,7 +64,7 @@
                             <p class="CHK2-P">{{ error_message|safe }}</p>
                         {% endif %}
     
-                        <p class="CHK2-P">Don't have an account yet? <a href="{% url 'register' %}" style="color: #24A0ED; margin-left: 12px;">Sign Up</a></p>
+                        <p class="CHK2-P">Heb je nog geen account maak er een? <a href="{% url 'register' %}" style="color: #24A0ED; margin-left: 12px;">Registreer</a></p>
                         
                     </div>
                 </div>

@@ -22,13 +22,13 @@
                 <div class="CHK2-row">
                     <div class="CHK2-text" style="flex-basis: calc(100% - 24px);">
                         <div class="flex-row" style="justify-content: center; margin-bottom: 24px;">
-                            <img src="/static/images/Logo/Profile_Picture_Final.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
+                            <img src="/static/images/logo/KWT_logo.png" alt="logo" style="width: 96px; height: 100%; border-radius: 360px;">
                         </div>
 
                         <div class="flex-column" style="margin-bottom: 32px;">
-                            <h1 class="CHK2-H" style="margin: 0;">Welcome!</h1>
+                            <h1 class="CHK2-H" style="margin: 0;">Hallo!</h1>
                             <div>
-                                <p class="CHK2-P" style="color: lightgray;">A program portal for BJG Groot Software</p>
+                                <p class="CHK2-P" style="color: lightgray;">Registreer je voor de Korfbal wedstrijd tracker</p>
                             </div>
                         </div>
     
@@ -36,7 +36,7 @@
                             {% csrf_token %}
 
                             <div>
-                                <input type="text" id="id_username" name="username" maxlength="150" autofocus="" required="" class="CHK2-text-input" placeholder="Username...">
+                                <input type="text" id="id_username" name="username" maxlength="150" autofocus="" required="" class="CHK2-text-input" placeholder="Gebruikersnaam...">
                             </div>
     
                             <div>
@@ -44,20 +44,19 @@
                             </div>
     
                             <div>
-                                <input type="password" id="id_password1" name="password1" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Password...">
+                                <input type="password" id="id_password1" name="password1" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Wachtwoord...">
                             </div>
     
                             <div>
-                                <input type="password" id="id_password2" name="password2" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Confirm password...">
+                                <input type="password" id="id_password2" name="password2" autocomplete="new-password" required="" class="CHK2-text-input" placeholder="Herhaal Wachtwoord...">
                             </div>
     
-                            <input type="submit" class="CHK2-button" name="Create User" value="Create User">
+                            <input type="submit" class="CHK2-button" name="Create User" value="Maak account">
                         </form>    
     
                         <p class="CHK2-P">{{form.errors}}</p>
     
-                        <p class="CHK2-P">Already an account? <a href="{% url 'login' %}" style="color: #24A0ED; margin-left: 12px;">login</a></p>
-                        <p class="CHK2-P">have you forgotten your <a href="/password_reset/" style="color: #24A0ED; margin-left: 12px;">Password?</a><p>
+                        <p class="CHK2-P">Heb je al een account? <a href="{% url 'login' %}" style="color: #24A0ED; margin-left: 12px;">login</a></p>
                     </div>
                 </div>
             </div>

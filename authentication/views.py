@@ -129,7 +129,7 @@ def login_page(request):
         username = request.POST['username']
         password = request.POST['password']
         remember_me = request.POST.get('remember', False)  # Assuming the checkbox name is 'remember_me'
-        next_page = request.POST.get('next') or 'index'  # This will use 'index' if next_page is None or empty
+        next_page = request.POST.get('next') or 'teams'  # This will use 'index' if next_page is None or empty
 
         user = authenticate(request, username=username, password=password)
         if user is not None:
@@ -243,7 +243,7 @@ def verify_2fa_code(request):
 
             user.backend = backend
             login(request, user)
-            return redirect('index')
+            return redirect('teams')
         else:
             messages.error(request, 'Invalid 2FA code. Please try again.')
             return redirect('enter_2fa_code')

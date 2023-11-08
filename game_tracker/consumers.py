@@ -111,8 +111,14 @@ class team_data(AsyncWebsocketConsumer):
                         players_prefetch = await sync_to_async(all_players.prefetch_related)('user')
                         await sync_to_async(players_in_team_season.extend)(players_prefetch)
                 else:
-                    # No specific season provided, so retrieve players from all seasons
-                    all_team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team))
+                    # retreve the players of the current season or last season if there is no current season
+                    try:
+                        current_season = await sync_to_async(Season.objects.get)(start_date__lte=datetime.now(), end_date__gte=datetime.now())
+                    except Season.DoesNotExist:
+                        current_season = await sync_to_async(Season.objects.filter(end_date__lte=datetime.now()).order_by('-end_date').first)()
+                    
+                    # Get the team data instances for the current season
+                    all_team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=current_season))
 
                     # Iterate through all TeamData instances and collect players
                     for team_data_instance in all_team_data_instances:
@@ -134,7 +140,7 @@ class team_data(AsyncWebsocketConsumer):
 
                 await self.send(text_data=json.dumps({
                     'command': 'spelers',
-                    'spelers':players_in_team_season_dict,
+                    'spelers': players_in_team_season_dict,
                 }))
                 
             elif command == "follow":
@@ -276,6 +282,9 @@ class profile_data(AsyncWebsocketConsumer):
             if command == 'teams':
                 teams = await sync_to_async(list)(Team.objects.filter(team_data__players=self.player))
                 
+                # remove dubplicates
+                teams = list(dict.fromkeys(teams))
+                
                 teams_dict = [
                     {
                         'id': str(team.id_uuid),
@@ -373,6 +382,9 @@ class club_data(AsyncWebsocketConsumer):
             
             if command == "teams":
                 teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
+                
+                # remove dubplicates
+                teams = list(dict.fromkeys(teams))
                 
                 teams_json = [
                     {
@@ -669,8 +681,11 @@ class match_data(AsyncWebsocketConsumer):
             }))
             
     async def makePlayerList(self, team):
+        # get the season of the match
+        season = await self.season_request()
+            
         players_json = []
-        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team, season=season).values_list('players', flat=True))
         
         for player in players:
             try:
@@ -691,7 +706,9 @@ class match_data(AsyncWebsocketConsumer):
             player = await sync_to_async(Player.objects.get)(user=user_id)
             
             try:
-                team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player)
+                season = await self.season_request()
+                
+                team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player, season=season)
                 return True
             except TeamData.DoesNotExist:
                 return False
@@ -701,6 +718,12 @@ class match_data(AsyncWebsocketConsumer):
     async def send_data(self, event):
         data = event['data']
         await self.send(text_data=json.dumps(data))
+        
+    async def season_request(self):
+        try:
+            return await sync_to_async(Season.objects.get)(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
+        except Season.DoesNotExist:
+            return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
     
 class match_tracker(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
