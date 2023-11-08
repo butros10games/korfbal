@@ -2,7 +2,17 @@
 <link rel="stylesheet" href="/static/css/overlays/navbar.css">
 
 <div class="stickyTopNav">
-    <img src="/static/images/logo/ButrosGrootLogo2.svg">
+    <div style="width: calc(100% *1/3); display: flex; justify-content: flex-start; align-items: center;">
+        {% if display_back %}
+        {% else %}
+        <a href="{% url 'previous_page' %}" style="display: flex; justify-content: flex-start; align-items: center; margin-left: 12px;">
+            <img style="width: 32px; height: 32px;" alt="back button" src="/static/images/arrow-left.svg">
+        </a>
+        {% endif %}
+    </div>
+    <p style="color: white; font-weight: 600; font-size: 18px;">KWT</p>
+    <div style="width: calc(100% *1/3)">
+    </div>
 </div>
 
 <div class="stickyBottomNav">

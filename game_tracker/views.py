@@ -8,13 +8,16 @@ from django.http import Http404
 from datetime import date
 import json
 
+from django.http import HttpResponseRedirect
+
 # Create your views here.
 def index(request):
     profile_url, profile_img_url = standart_inports(request)
         
     context = {
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "display_back": True
     }
         
     return render(request, "index.html", context)
@@ -66,7 +69,8 @@ def teams(request):
         "connected": connected_teams,
         "following": following_teams,
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "display_back": True
     }
     return render(request, "teams/index.html", context)
 
@@ -245,12 +249,17 @@ def profile_detail(request, player_id=None):
     
     profile_url, profile_img_url = standart_inports(request)
     
+    display_back = False
+    if is_own_profile:
+        display_back = True
+    
     context = {
         "player": player,
         "user_data": user_data,
         "is_own_profile": is_own_profile,
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "display_back": display_back
     }
     
     return render(request, "profile/index.html", context)
@@ -384,3 +393,12 @@ def register_to_team(request, team_id):
         return redirect('teams')
     else:
         return redirect('/login/?next=/register_to_team/%s/' % team_id)
+    
+def previous_page(request):
+    # Use the 'HTTP_REFERER' header to go to the previous page
+    referer = request.META.get('HTTP_REFERER')
+    if referer:
+        return HttpResponseRedirect(referer)
+    else:
+        # If there is no referer (like when the user directly accesses the URL), redirect to a default page
+        return redirect('teams')

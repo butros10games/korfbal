@@ -19,4 +19,6 @@ urlpatterns = [
     path('match/<uuid:match_id>/', views.match_detail, name='match_detail'),
     path('match/selector/<uuid:match_id>/', views.match_team_selector, name='match_team_selector'),
     path('match/tracker/<uuid:match_id>/<uuid:team_id>/', views.match_tracker, name='match_tracker'),
+    
+    path('previous/', views.previous_page, name='previous_page'),
 ]
