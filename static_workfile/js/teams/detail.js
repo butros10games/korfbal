@@ -16,6 +16,8 @@ let currentPosition = 0;
 let buttonWidth;
 let carousel;
 
+const maxLength = 14;
+
 window.addEventListener("DOMContentLoaded", function() {
     buttonWidth = document.querySelector('.button').offsetWidth;
     carousel = document.querySelector('.carousel');
@@ -210,6 +212,9 @@ function updateMatches(data) {
             match_container.style.color = "#000";
             match_container.href = element.get_absolute_url;
 
+            const homeTeamText = truncateMiddle(element.home_team, maxLength);
+            const awayTeamText = truncateMiddle(element.away_team, maxLength);
+
             const home_team_container = document.createElement("div");
             home_team_container.classList.add("flex-column");
             home_team_container.style.width = "128px";
@@ -221,9 +226,10 @@ function updateMatches(data) {
 
             const home_team_name = document.createElement("p");
             home_team_name.style.margin = "0";
-            home_team_name.style.fontSize = "14px";
+            home_team_name.style.marginTop = "4px";
+            home_team_name.style.fontSize = "12px";
             home_team_name.style.textAlign = "center";
-            home_team_name.innerHTML = element.home_team;
+            home_team_name.innerHTML = homeTeamText;
 
             home_team_container.appendChild(home_team_logo);
             home_team_container.appendChild(home_team_name);
@@ -262,9 +268,10 @@ function updateMatches(data) {
 
             const away_team_name = document.createElement("p");
             away_team_name.style.margin = "0";
-            away_team_name.style.fontSize = "14px";
+            away_team_name.style.marginTop = "4px";
+            away_team_name.style.fontSize = "12px";
             away_team_name.style.textAlign = "center";
-            away_team_name.innerHTML = element.away_team;
+            away_team_name.innerHTML = awayTeamText;
 
             away_team_container.appendChild(away_team_logo);
             away_team_container.appendChild(away_team_name);
@@ -277,6 +284,19 @@ function updateMatches(data) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
     }
+}
+
+function truncateMiddle(text, maxLength) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+  
+    // Calculate the number of characters to show before and after the ellipsis
+    var charsToShow = maxLength - 3;
+    var frontChars = Math.ceil(charsToShow / 2);
+    var backChars = Math.floor(charsToShow / 2);
+  
+    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
 
 function updateGoalStats(data) {

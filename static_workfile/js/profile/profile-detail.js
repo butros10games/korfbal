@@ -14,6 +14,8 @@ let currentPosition = 0;
 let buttonWidth;
 let carousel;
 
+const maxLength = 14;
+
 window.addEventListener("DOMContentLoaded", function() {
     buttonWidth = document.querySelector('.button').offsetWidth;
     carousel = document.querySelector('.carousel');
@@ -465,25 +467,45 @@ function updateGoalStats(data) {
 
 function updateTeam(data) {
     if (data.teams.length > 0) {
-        for (i = 0; i < data.teams.length; i++) {
-            team_container = document.createElement("a");
-            team_container.classList.add("team-container");
+        for (const element of data.teams) {
+            const team_container = document.createElement("a");
+            team_container.classList.add("flex-row");
+            team_container.style.justifyContent = "flex-start";
             team_container.style.padding = "12px";
-            team_container.style.borderBottom = "1px solid #000";
+            team_container.style.borderBottom = "1px solid rgb(0 0 0 / 20%)";
             team_container.style.width = "calc(100% - 24px)";
-            team_container.style.display = "block";
             team_container.style.textDecoration = "none";
             team_container.style.color = "#000";
-            team_container.href = data.teams[i].get_absolute_url;
+            team_container.href = element.get_absolute_url;
 
-            team_name = document.createElement("p");
-            team_name.style.margin = "0";
-            team_name.style.marginBottom = "6px";
-            team_name.style.marginTop = "6px";
+            const team_picture = document.createElement("img");
+            team_picture.src = element.logo;
+            team_picture.style.width = "48px";
+            team_picture.style.height = "48px";
+
+            const team_name = document.createElement("p");
+            team_name.style.margin = "12px 6px";
             team_name.style.fontSize = "14px";
-            team_name.innerHTML = data.teams[i].name;
+            team_name.innerHTML = element.name;
 
+            const arrow_div = document.createElement("div");
+            arrow_div.classList.add("flex-center");
+            arrow_div.style.width = "24px";
+            arrow_div.style.height = "24px";
+            arrow_div.style.marginLeft = "auto";
+
+            const arrow = document.createElement("img");
+            arrow.src = "/static/images/arrow.svg";
+            arrow.style.width = "18px";
+            // rotated arrow 90 degrees
+            arrow.style.transform = "rotate(-90deg)";
+
+            arrow_div.appendChild(arrow);
+
+            team_container.appendChild(team_picture);
             team_container.appendChild(team_name);
+            team_container.appendChild(arrow_div);
+
             infoContainer.appendChild(team_container);
         }
     } else {
@@ -506,6 +528,9 @@ function updateMatches(data) {
             match_container.style.color = "#000";
             match_container.href = element.get_absolute_url;
 
+            const homeTeamText = truncateMiddle(element.home_team, maxLength);
+            const awayTeamText = truncateMiddle(element.away_team, maxLength);
+
             const home_team_container = document.createElement("div");
             home_team_container.classList.add("flex-column");
             home_team_container.style.width = "128px";
@@ -517,9 +542,10 @@ function updateMatches(data) {
 
             const home_team_name = document.createElement("p");
             home_team_name.style.margin = "0";
-            home_team_name.style.fontSize = "14px";
+            home_team_name.style.marginTop = "4px";
+            home_team_name.style.fontSize = "12px";
             home_team_name.style.textAlign = "center";
-            home_team_name.innerHTML = element.home_team;
+            home_team_name.innerHTML = homeTeamText;
 
             home_team_container.appendChild(home_team_logo);
             home_team_container.appendChild(home_team_name);
@@ -558,9 +584,10 @@ function updateMatches(data) {
 
             const away_team_name = document.createElement("p");
             away_team_name.style.margin = "0";
-            away_team_name.style.fontSize = "14px";
+            away_team_name.style.marginTop = "4px";
+            away_team_name.style.fontSize = "12px";
             away_team_name.style.textAlign = "center";
-            away_team_name.innerHTML = element.away_team;
+            away_team_name.innerHTML = awayTeamText;
 
             away_team_container.appendChild(away_team_logo);
             away_team_container.appendChild(away_team_name);
@@ -573,4 +600,17 @@ function updateMatches(data) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
     }
+}
+
+function truncateMiddle(text, maxLength) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+  
+    // Calculate the number of characters to show before and after the ellipsis
+    var charsToShow = maxLength - 3;
+    var frontChars = Math.ceil(charsToShow / 2);
+    var backChars = Math.floor(charsToShow / 2);
+  
+    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
