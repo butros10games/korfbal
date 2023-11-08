@@ -198,64 +198,76 @@ function cleanDom() {
 
 function updateMatches(data) {
     if (data.wedstrijden.length > 0) {
-        for (i = 0; i < data.wedstrijden.length; i++) {
-            match_container = document.createElement("a");
+        for (const element of data.wedstrijden) {
+            const match_container = document.createElement("a");
             match_container.classList.add("match-container");
+            match_container.classList.add("flex-row");
+            match_container.style.justifyContent = "space-around";
             match_container.style.padding = "12px";
             match_container.style.borderBottom = "1px solid #000";
             match_container.style.width = "calc(100% - 24px)";
-            match_container.style.display = "block";
             match_container.style.textDecoration = "none";
             match_container.style.color = "#000";
-            match_container.href = data.wedstrijden[i].get_absolute_url;
+            match_container.href = element.get_absolute_url;
 
-            match_date_container = document.createElement("div");
-            match_date_container.classList.add("flex-row");
+            const home_team_container = document.createElement("div");
+            home_team_container.classList.add("flex-column");
+            home_team_container.style.width = "128px";
 
-            match_date = document.createElement("p");
+            const home_team_logo = document.createElement("img");
+            home_team_logo.src = element.home_team_logo;
+            home_team_logo.style.width = "64px";
+            home_team_logo.style.height = "64px";
+
+            const home_team_name = document.createElement("p");
+            home_team_name.style.margin = "0";
+            home_team_name.style.fontSize = "14px";
+            home_team_name.style.textAlign = "center";
+            home_team_name.innerHTML = element.home_team;
+
+            home_team_container.appendChild(home_team_logo);
+            home_team_container.appendChild(home_team_name);
+
+            match_container.appendChild(home_team_container);
+
+
+            const match_date_container = document.createElement("div");
+            match_date_container.classList.add("flex-column");
+
+            const match_date = document.createElement("p");
             match_date.style.margin = "0";
             match_date.style.marginBottom = "12px";
-            match_date.innerHTML = data.wedstrijden[i].start_date;
+            match_date.innerHTML = element.start_date;
 
             match_date_container.appendChild(match_date);
             
-            match_hour = document.createElement("p");
+            const match_hour = document.createElement("p");
             match_hour.style.margin = "0";
             match_hour.style.marginBottom = "12px";
-            match_hour.innerHTML = data.wedstrijden[i].start_time;
+            match_hour.style.fontWeight = "600";
+            match_hour.innerHTML = element.start_time;
 
             match_date_container.appendChild(match_hour);
             match_container.appendChild(match_date_container);
 
-            home_team_container = document.createElement("div");
-            home_team_container.classList.add("flex-row");
 
-            home_team_name = document.createElement("p");
-            home_team_name.style.margin = "0";
-            home_team_name.innerHTML = data.wedstrijden[i].home_team;
+            const away_team_container = document.createElement("div");
+            away_team_container.classList.add("flex-column");
+            away_team_container.style.width = "128px";
 
-            home_team_score = document.createElement("p");
-            home_team_score.style.margin = "0";
-            home_team_score.innerHTML = data.wedstrijden[i].home_score;
+            const away_team_logo = document.createElement("img");
+            away_team_logo.src = element.away_team_logo;
+            away_team_logo.style.width = "64px";
+            away_team_logo.style.height = "64px";
 
-            home_team_container.appendChild(home_team_name);
-            home_team_container.appendChild(home_team_score);
-
-            match_container.appendChild(home_team_container);
-
-            away_team_container = document.createElement("div");
-            away_team_container.classList.add("flex-row");
-
-            away_team_name = document.createElement("p");
+            const away_team_name = document.createElement("p");
             away_team_name.style.margin = "0";
-            away_team_name.innerHTML = data.wedstrijden[i].away_team;
+            away_team_name.style.fontSize = "14px";
+            away_team_name.style.textAlign = "center";
+            away_team_name.innerHTML = element.away_team;
 
-            away_team_score = document.createElement("p");
-            away_team_score.style.margin = "0";
-            away_team_score.innerHTML = data.wedstrijden[i].away_score;
-
+            away_team_container.appendChild(away_team_logo);
             away_team_container.appendChild(away_team_name);
-            away_team_container.appendChild(away_team_score);
 
             match_container.appendChild(away_team_container);
 
@@ -269,27 +281,27 @@ function updateMatches(data) {
 
 function updateGoalStats(data) {
     if (data.played_matches > 0) {
-        goals_container = document.createElement("div");
+        const goals_container = document.createElement("div");
         goals_container.classList.add("flex-column");
         goals_container.style.width = "calc(100% - 24px))";
         goals_container.style.padding = "12px";
 
-        row_1 = document.createElement("div");
+        const row_1 = document.createElement("div");
         row_1.classList.add("flex-row");
         row_1.style.justifyContent = "space-around";
         row_1.style.width = "100%";
         row_1.style.marginBottom = "24px";
         
-        matchs_container = document.createElement("div");
+        const matchs_container = document.createElement("div");
         matchs_container.classList.add("flex-column");
         matchs_container.style.width = "144px";
 
-        matchs = document.createElement("p");
+        const matchs = document.createElement("p");
         matchs.style.margin = "0";
         matchs.style.fontSize = "14px";
         matchs.innerHTML = "Wedstrijden";
 
-        matchs_data = document.createElement("p");
+        const matchs_data = document.createElement("p");
         matchs_data.style.margin = "0";
         matchs_data.innerHTML = data.played_matches;
 
@@ -298,16 +310,16 @@ function updateGoalStats(data) {
 
         row_1.appendChild(matchs_container);
 
-        total_score_container = document.createElement("div");
+        const total_score_container = document.createElement("div");
         total_score_container.classList.add("flex-column");
         total_score_container.style.width = "144px";
 
-        total_score = document.createElement("p");
+        const total_score = document.createElement("p");
         total_score.style.margin = "0";
         total_score.style.fontSize = "14px";
         total_score.innerHTML = "Totaal punten";
 
-        total_score_data = document.createElement("p");
+        const total_score_data = document.createElement("p");
         total_score_data.style.margin = "0";
         total_score_data.innerHTML = data.total_goals_for + '/' + data.total_goals_against;
 
@@ -318,10 +330,8 @@ function updateGoalStats(data) {
 
         goals_container.appendChild(row_1);
 
-        row_2 = document.createElement("div");
-
         // Create a container for goal stats per type
-        goal_stats_container = document.createElement("div");
+        const goal_stats_container = document.createElement("div");
         goal_stats_container.classList.add("flex-row");
         goal_stats_container.style.width = "100%";
         goal_stats_container.style.marginTop = "12px";
@@ -334,18 +344,18 @@ function updateGoalStats(data) {
                 const goalStat = data.goal_stats[goalType];
 
                 // Create a div for each goal type's stats
-                goal_type_container = document.createElement("div");
+                const goal_type_container = document.createElement("div");
                 goal_type_container.classList.add("flex-column");
                 goal_type_container.style.marginbottom = "12px";
                 goal_type_container.style.width = "104px";
                 goal_type_container.style.marginBottom = "12px";
 
-                goal_type_name = document.createElement("p");
+                const goal_type_name = document.createElement("p");
                 goal_type_name.style.margin = "0";
                 goal_type_name.style.fontSize = "14px";
                 goal_type_name.innerHTML = goalType;
 
-                goals_data = document.createElement("p");
+                const goals_data = document.createElement("p");
                 goals_data.style.margin = "0";
                 goals_data.innerHTML = goalStat.goals_for + "/" + goalStat.goals_against;
 
@@ -369,20 +379,21 @@ function updatePlayers(data) {
         infoContainer.classList.add("flex-start-wrap");
         
         for (i = 0; i < data.spelers.length; i++) {
-            player_container = document.createElement("a");
+            const player_container = document.createElement("a");
             player_container.href = data.spelers[i].get_absolute_url;
             player_container.style.textDecoration = "none";
             player_container.style.color = "#000";
             player_container.classList.add("player-container");
 
-            player_profile_pic = document.createElement("img");
+            const player_profile_pic = document.createElement("img");
             player_profile_pic.classList.add("player-profile-pic");
             player_profile_pic.src = data.spelers[i].profile_picture;
 
             player_container.appendChild(player_profile_pic);
 
-            player_name = document.createElement("p");
+            const player_name = document.createElement("p");
             player_name.classList.add("player-name");
+            player_name.style.fontSize = "14px";
             player_name.innerHTML = data.spelers[i].name;
 
             player_container.appendChild(player_name);

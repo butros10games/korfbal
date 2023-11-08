@@ -191,63 +191,75 @@ function cleanDom() {
 function updateMatches(data) {
     if (data.wedstrijden.length > 0) {
         for (i = 0; i < data.wedstrijden.length; i++) {
-            match_container = document.createElement("a");
+            const match_container = document.createElement("a");
             match_container.classList.add("match-container");
+            match_container.classList.add("flex-row");
+            match_container.style.justifyContent = "space-around";
             match_container.style.padding = "12px";
             match_container.style.borderBottom = "1px solid #000";
             match_container.style.width = "calc(100% - 24px)";
-            match_container.style.display = "block";
             match_container.style.textDecoration = "none";
             match_container.style.color = "#000";
             match_container.href = data.wedstrijden[i].get_absolute_url;
 
-            match_date_container = document.createElement("div");
-            match_date_container.classList.add("flex-row");
+            const home_team_container = document.createElement("div");
+            home_team_container.classList.add("flex-column");
+            home_team_container.style.width = "128px";
 
-            match_date = document.createElement("p");
+            const home_team_logo = document.createElement("img");
+            home_team_logo.src = data.wedstrijden[i].home_team_logo;
+            home_team_logo.style.width = "64px";
+            home_team_logo.style.height = "64px";
+
+            const home_team_name = document.createElement("p");
+            home_team_name.style.margin = "0";
+            home_team_name.style.fontSize = "14px";
+            home_team_name.style.textAlign = "center";
+            home_team_name.innerHTML = data.wedstrijden[i].home_team;
+
+            home_team_container.appendChild(home_team_logo);
+            home_team_container.appendChild(home_team_name);
+
+            match_container.appendChild(home_team_container);
+
+
+            const match_date_container = document.createElement("div");
+            match_date_container.classList.add("flex-column");
+
+            const match_date = document.createElement("p");
             match_date.style.margin = "0";
             match_date.style.marginBottom = "12px";
             match_date.innerHTML = data.wedstrijden[i].start_date;
 
             match_date_container.appendChild(match_date);
             
-            match_hour = document.createElement("p");
+            const match_hour = document.createElement("p");
             match_hour.style.margin = "0";
             match_hour.style.marginBottom = "12px";
+            match_hour.style.fontWeight = "600";
             match_hour.innerHTML = data.wedstrijden[i].start_time;
 
             match_date_container.appendChild(match_hour);
             match_container.appendChild(match_date_container);
 
-            home_team_container = document.createElement("div");
-            home_team_container.classList.add("flex-row");
 
-            home_team_name = document.createElement("p");
-            home_team_name.style.margin = "0";
-            home_team_name.innerHTML = data.wedstrijden[i].home_team;
+            const away_team_container = document.createElement("div");
+            away_team_container.classList.add("flex-column");
+            away_team_container.style.width = "128px";
 
-            home_team_score = document.createElement("p");
-            home_team_score.style.margin = "0";
-            home_team_score.innerHTML = data.wedstrijden[i].home_score;
+            const away_team_logo = document.createElement("img");
+            away_team_logo.src = data.wedstrijden[i].away_team_logo;
+            away_team_logo.style.width = "64px";
+            away_team_logo.style.height = "64px";
 
-            home_team_container.appendChild(home_team_name);
-            home_team_container.appendChild(home_team_score);
-
-            match_container.appendChild(home_team_container);
-
-            away_team_container = document.createElement("div");
-            away_team_container.classList.add("flex-row");
-
-            away_team_name = document.createElement("p");
+            const away_team_name = document.createElement("p");
             away_team_name.style.margin = "0";
+            away_team_name.style.fontSize = "14px";
+            away_team_name.style.textAlign = "center";
             away_team_name.innerHTML = data.wedstrijden[i].away_team;
 
-            away_team_score = document.createElement("p");
-            away_team_score.style.margin = "0";
-            away_team_score.innerHTML = data.wedstrijden[i].away_score;
-
+            away_team_container.appendChild(away_team_logo);
             away_team_container.appendChild(away_team_name);
-            away_team_container.appendChild(away_team_score);
 
             match_container.appendChild(away_team_container);
 

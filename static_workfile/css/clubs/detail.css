@@ -77,8 +77,8 @@ a {
 
 .icon-container {
     position: absolute;
-    left: 8px;
-    top: 58px;
+    right: 46px;
+    top: 64px;
     width: auto; /* use auto to fit the width of the SVG */
     height: 32px; /* height of the volgen-icon */
     cursor: pointer;
@@ -107,6 +107,6 @@ a {
     height: 32px;
     width: auto;
     position: absolute;
-    right: 8px;
-    top: 58px;
+    right: 48px;
+    top: 64px;
 }

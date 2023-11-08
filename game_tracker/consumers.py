@@ -33,7 +33,7 @@ class team_data(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "wedstrijden":
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=False).order_by('start_time'))
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=False).order_by('start_time'))
                 
                 wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
                 
@@ -43,7 +43,7 @@ class team_data(AsyncWebsocketConsumer):
                 }))
                 
             elif command == "ended_matches":
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=True).order_by('-start_time'))
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=True).order_by('-start_time'))
                 
                 wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
                 
@@ -300,10 +300,13 @@ class profile_data(AsyncWebsocketConsumer):
                 }))
                 
             if command == "upcomming_matches":
-                upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(
+                upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(
                     Q(home_team__team_data__players=self.player, finished=False) |
                     Q(away_team__team_data__players=self.player, finished=False)
                 ))
+                
+                # remove dubplicates
+                upcomming_matches = list(dict.fromkeys(upcomming_matches))
                 
                 upcomming_matches_dict = await transfrom_matchdata(upcomming_matches)
                 
@@ -313,10 +316,13 @@ class profile_data(AsyncWebsocketConsumer):
                 }))
                 
             if command == "past_matches":
-                upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(
+                upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(
                     Q(home_team__team_data__players=self.player, finished=True) |
                     Q(away_team__team_data__players=self.player, finished=True)
                 ))
+                
+                # remove dubplicates
+                upcomming_matches = list(dict.fromkeys(upcomming_matches))
                 
                 upcomming_matches_dict = await transfrom_matchdata(upcomming_matches)
                 
@@ -347,8 +353,10 @@ async def transfrom_matchdata(wedstrijden_data):
         wedstrijden_dict.append({
             'id_uuid': str(wedstrijd.id_uuid),
             'home_team': await sync_to_async(wedstrijd.home_team.__str__)(),
-            'away_team': await sync_to_async(wedstrijd.away_team.__str__)(),
+            'home_team_logo': wedstrijd.home_team.club.logo.url if wedstrijd.home_team.club.logo else None,
             'home_score': wedstrijd.home_score,
+            'away_team': await sync_to_async(wedstrijd.away_team.__str__)(),
+            'away_team_logo': wedstrijd.away_team.club.logo.url if wedstrijd.away_team.club.logo else None,
             'away_score': wedstrijd.away_score,
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
@@ -403,7 +411,7 @@ class club_data(AsyncWebsocketConsumer):
             elif command == "wedstrijden":
                 teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
                 team_ids = [team.id_uuid for team in teams]
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=False).order_by('start_time'))
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=False).order_by('start_time'))
                 
                 wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
                 
@@ -415,7 +423,7 @@ class club_data(AsyncWebsocketConsumer):
             elif command == "ended_matches":
                 teams = await sync_to_async(list)(Team.objects.filter(club=self.club))
                 team_ids = [team.id_uuid for team in teams]
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'away_team').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=True).order_by('-start_time'))
+                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team__in=team_ids) | Q(away_team__in=team_ids), finished=True).order_by('-start_time'))
                 
                 wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
                 
