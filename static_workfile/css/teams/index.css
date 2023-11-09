@@ -291,7 +291,8 @@ a {
 }
 
 .image-preview {
-    max-width: 100%;
+    max-width: 95%;
+    max-height: 70vh;
     margin: 20px 0;
 }
 

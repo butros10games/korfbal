@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, Goal, GoalType, Pause, Season, MatchPart, Shot
+from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, Goal, GoalType, Pause, Season, MatchPart, Shot, PageConnectRegistration
 
 # Register your models here.
 class club_admin(admin.ModelAdmin):
@@ -113,3 +113,11 @@ class season_admin(admin.ModelAdmin):
     class Meta:
         model = Season
 admin.site.register(Season, season_admin)
+
+class page_connect_registration_admin(admin.ModelAdmin):
+    list_display = ["id_uuid", "player", "page", "registration_date"]
+    show_full_result_count = False
+    
+    class Meta:
+        model = PageConnectRegistration
+admin.site.register(PageConnectRegistration, page_connect_registration_admin)

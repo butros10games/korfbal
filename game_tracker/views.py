@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club, Match, Goal
+from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration
 from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -7,11 +7,14 @@ from django.http import Http404
 
 from datetime import date
 import json
+from django.utils import timezone
 
 from django.http import HttpResponseRedirect
 
 # Create your views here.
 def index(request):
+    register_page_request(request)
+    
     profile_url, profile_img_url = standart_inports(request)
         
     context = {
@@ -23,6 +26,8 @@ def index(request):
     return render(request, "index.html", context)
 
 def club_detail(request, club_id):
+    register_page_request(request)
+    
     club = get_object_or_404(Club, id_uuid=club_id)
     
     profile_url, profile_img_url = standart_inports(request)
@@ -47,6 +52,8 @@ def club_detail(request, club_id):
     return render(request, "club/detail.html", context)
 
 def teams(request):
+    register_page_request(request)
+    
     connected_teams = None
     following_teams = None
     user = request.user
@@ -152,6 +159,8 @@ def teams_index_data(request):
     return JsonResponse(context)
 
 def team_detail(request, team_id):
+    register_page_request(request)
+    
     team = get_object_or_404(Team, id_uuid=team_id)
     
     # Get current date
@@ -233,6 +242,8 @@ def search(request):
     return JsonResponse(context)
 
 def profile_detail(request, player_id=None):
+    register_page_request(request)
+    
     player = None
     user = request.user
     
@@ -265,6 +276,8 @@ def profile_detail(request, player_id=None):
     return render(request, "profile/index.html", context)
 
 def match_detail(request, match_id):
+    register_page_request(request)
+    
     match_data = get_object_or_404(Match, id_uuid=match_id)
     
     profile_url, profile_img_url = standart_inports(request)
@@ -282,6 +295,8 @@ def match_detail(request, match_id):
     return render(request, "matches/detail.html", context)
 
 def match_team_selector(request, match_id):
+    register_page_request(request)
+    
     match_data = get_object_or_404(Match, id_uuid=match_id)
     
     profile_url, profile_img_url = standart_inports(request)
@@ -295,6 +310,8 @@ def match_team_selector(request, match_id):
     return render(request, "matches/team_selector.html", context)
 
 def match_tracker(request, match_id, team_id):
+    register_page_request(request)
+    
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_data = get_object_or_404(Team, id_uuid=team_id)
     
@@ -364,6 +381,8 @@ def standart_inports(request):
 
 # this view handels the registration of a player to a team. if the user is logedin the users gets added to the team if the user is not registerd the user gets redirected to the login page with a next parameter
 def register_to_team(request, team_id):
+    register_page_request(request)
+    
     team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user
     
@@ -394,11 +413,32 @@ def register_to_team(request, team_id):
     else:
         return redirect('/login/?next=/register_to_team/%s/' % team_id)
     
+
 def previous_page(request):
-    # Use the 'HTTP_REFERER' header to go to the previous page
-    referer = request.META.get('HTTP_REFERER')
+    player = Player.objects.get(user=request.user)
+    
+    # Order by the most recent registration date and get the second to newest
+    pages = PageConnectRegistration.objects.filter(player=player).order_by('-registration_date').exclude(page='')
+
+    # Make sure there is at least one page to get the second to newest
+    if pages.count() > 1:
+        referer = pages[1].page  # Get the second to newest item
+    else:
+        referer = None
+
     if referer:
         return HttpResponseRedirect(referer)
     else:
         # If there is no referer (like when the user directly accesses the URL), redirect to a default page
         return redirect('teams')
+    
+def register_page_request(request):
+    # get the url of the request and save it in PageConnectRegistration if the user is loged in
+    if request.user.is_authenticated:
+        player = Player.objects.get(user=request.user)
+        try:
+            page = PageConnectRegistration.objects.get(player=player, page=request.path)
+            page.registration_date = timezone.now()
+            page.save()
+        except PageConnectRegistration.DoesNotExist:
+            PageConnectRegistration.objects.create(player=player, page=request.path)
