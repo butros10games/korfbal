@@ -490,7 +490,7 @@ class match_data(AsyncWebsocketConsumer):
                 # check if there is a part active or the match is finished
                 if part != None or self.match.finished:
                     goals = await sync_to_async(list)(Goal.objects.prefetch_related('player__user', 'goal_type', 'match_part').filter(match=self.match).order_by('time'))
-                    player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user', 'match_part').filter(player_group__match=self.match).order_by('time'))
+                    player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user', 'player_group', 'match_part').filter(player_group__match=self.match).order_by('time'))
                     time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part').filter(match=self.match).order_by('time'))
                     
                     # add all the events to a list and order them on time
@@ -501,55 +501,75 @@ class match_data(AsyncWebsocketConsumer):
                     events.sort(key=lambda x: x.time)
                     
                     for event in events:
-                        if isinstance(event, Goal):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length
-                            
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() - pause_time) / 60)
-                            
-                            events_dict.append({
-                                'type': 'goal',
-                                'time': time_in_minutes,
-                                'player': event.player.user.username,
-                                'goal_type': event.goal_type.name,
-                                'for_team': event.for_team
-                            })
-                        elif isinstance(event, PlayerChange):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length
+                        if event.match_part is not None:
+                            if isinstance(event, Goal):
+                                # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+                                pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
+                                pause_time = 0
+                                for pause in pauses:
+                                    pause_time += pause.length
                                 
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() - pause_time) / 60)
-                            
-                            events_dict.append({
-                                'type': 'player_change',
-                                'time': time_in_minutes,
-                                'player_in': event.player_in.user.username,
-                                'player_out': event.player_out.user.username,
-                                'player_group': event.player_group.id_uuid
-                            })
-                        elif isinstance(event, Pause):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length
+                                time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60) + 1
                                 
-                            # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() - pause_time) / 60)
-                            
-                            events_dict.append({
-                                'type': 'pause',
-                                'time': time_in_minutes,
-                                'length': event.length,
-                                'start_time': event.time.isoformat() if event.time else None,
-                                'end_time': event.end_time.isoformat() if event.end_time else None
-                            })
+                                left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
+                                if left_over > 0:
+                                    time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+                                
+                                events_dict.append({
+                                    'type': 'goal',
+                                    'time': time_in_minutes,
+                                    'player': event.player.user.username,
+                                    'goal_type': event.goal_type.name,
+                                    'for_team': event.for_team
+                                })
+                            elif isinstance(event, PlayerChange):
+                                # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+                                pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
+                                pause_time = 0
+                                for pause in pauses:
+                                    pause_time += pause.length
+                                    
+                                time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + ((event.match_part.part_number - 1) * self.match.part_lenght) - pause_time) / 60) + 1
+                                
+                                left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
+                                if left_over > 0:
+                                    time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+                                
+                                async def get_username(player):
+                                    user = await sync_to_async(lambda: player.user)()
+                                    return user.username
+                                
+                                player_in_username = await get_username(event.player_in)
+                                player_out_username = await get_username(event.player_out)
+                                
+                                events_dict.append({
+                                    'type': 'wissel',
+                                    'time': time_in_minutes,
+                                    'player_in': player_in_username,
+                                    'player_out': player_out_username,
+                                    'player_group': str(event.player_group.id_uuid)
+                                })
+                            elif isinstance(event, Pause):
+                                # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+                                pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, time__lt=event.time, time__gte=event.match_part.start_time))
+                                pause_time = 0
+                                for pause in pauses:
+                                    pause_time += pause.length
+                                    
+                                # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
+                                time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60) + 1
+                                
+                                left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
+                                if left_over > 0:
+                                    time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+                                
+                                events_dict.append({
+                                    'type': 'pauze',
+                                    'time': time_in_minutes,
+                                    'length': event.length,
+                                    'start_time': event.time.isoformat() if event.time else None,
+                                    'end_time': event.end_time.isoformat() if event.end_time else None
+                                })
                     
                 ## Check if player is in the home or away team
                 user_id = json_data['user_id']
@@ -755,6 +775,10 @@ class match_tracker(AsyncWebsocketConsumer):
             pause = await sync_to_async(Pause.objects.get)(match=self.match, active=True) 
             self.is_paused = True
         except Pause.DoesNotExist:
+            ## if match is not active the game is also paused
+            if not self.match.active:
+                self.is_paused = True
+            
             pass
         
         if self.team == self.match.home_team:
@@ -766,6 +790,12 @@ class match_tracker(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.channel_group_name, self.channel_name)
         
         await self.accept()
+        
+        if self.match.finished:
+            await self.send(text_data=json.dumps({
+                'command': 'match_end',
+                'match_id': str(self.match.id_uuid)
+            }))
         
     async def disconnect(self, close_code):
         pass
@@ -877,6 +907,8 @@ class match_tracker(AsyncWebsocketConsumer):
                     
                     self.current_part = part
                     
+                    self.is_paused = False
+                    
                     if self.match.current_part == 1:
                         self.match.active = True
                         await sync_to_async(self.match.save)()
@@ -951,7 +983,8 @@ class match_tracker(AsyncWebsocketConsumer):
                         'type': 'send_data',
                         'data': {
                             'command': 'part_end',
-                            'part': self.match.current_part
+                            'part': self.match.current_part,
+                            'part_length': self.match.part_lenght
                         }
                     })
                     
@@ -969,7 +1002,7 @@ class match_tracker(AsyncWebsocketConsumer):
                         'type': 'send_data',
                         'data': {
                             'command': 'match_end',
-                            'part': self.match.current_part
+                            'match_id': str(self.match.id_uuid)
                         }
                     })
                     
@@ -1039,10 +1072,16 @@ class match_tracker(AsyncWebsocketConsumer):
                         'for_team': last_event.for_team
                     })
                 elif isinstance(last_event, PlayerChange):
+                    async def get_username(player):
+                        return await sync_to_async(player.user.username)()
+                    
+                    player_in_username = await get_username(last_event.player_in)
+                    player_out_username = await get_username(last_event.player_out)
+
                     events_dict = ({
                         'type': 'player_change',
-                        'player_in': last_event.player_in.user.username,
-                        'player_out': last_event.player_out.user.username,
+                        'player_in': player_in_username,
+                        'player_out': player_out_username,
                         'player_group': last_event.player_group.id_uuid
                     })
                 elif isinstance(last_event, Pause):
@@ -1057,6 +1096,72 @@ class match_tracker(AsyncWebsocketConsumer):
                     "command": "last_event",
                     "last_event": events_dict
                 }))
+                
+            elif command == "get_non_active_players":
+                # Get all player groups for the team and remove the players that are already in a group
+                player_groups = await self.get_player_groups(self.team)
+                grouped_players = [player for group in player_groups for player in group.players.all()]
+                
+                season = await self.season_request()
+                
+                # Get all players for the team, excluding those that are already in a group
+                team_data_list = await sync_to_async(list)(TeamData.objects.prefetch_related('players', 'players__user').filter(team=self.team, season=season))
+
+                # Get all players for each TeamData object, excluding those that are already in a group
+                all_players = [player for team_data in team_data_list for player in team_data.players.all()]
+                
+                ## romove the players that are already in a group
+                non_play_players = [player for player in all_players if player not in grouped_players]
+                
+                players_json = []
+                for player in non_play_players:
+                    try:
+                        players_json.append({
+                            'id': str(player.id_uuid),
+                            'name': player.user.username
+                        })
+                    except Player.DoesNotExist:
+                        pass
+                    
+                await self.send(text_data=json.dumps({
+                    'command': 'non_active_players',
+                    'players': players_json
+                }))
+            
+            elif command == "wissel_reg":
+                # check if the match is paused and if it is paused decline the request except for the start/stop command
+                if self.is_paused:
+                    await self.send(text_data=json.dumps({
+                        'error': 'match is paused'
+                    }))
+                    return
+                
+                player_in = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['new_player_id'])
+                player_out = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['old_player_id'])
+                player_group = await sync_to_async(PlayerGroup.objects.get)(team=self.team, match=self.match, players__in=[player_out])
+                
+                await sync_to_async(player_group.players.remove)(player_out)
+                await sync_to_async(player_group.players.add)(player_in)
+                
+                await sync_to_async(PlayerChange.objects.create)(player_in=player_in, player_out=player_out, player_group=player_group, match=self.match, match_part = self.current_part, time = json_data['time'])
+                
+                ## get the shot count for the new player
+                shots_for = await sync_to_async(Shot.objects.filter(player=player_in, match=self.match, for_team = True).count)()
+                shots_against = await sync_to_async(Shot.objects.filter(player=player_in, match=self.match, for_team = False).count)()
+                
+                await self.channel_layer.group_send(self.channel_group_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'player_change',
+                        'player_in': player_in.user.username,
+                        'player_in_id': str(player_in.id_uuid),
+                        'player_in_shots_for': shots_for,
+                        'player_in_shots_against': shots_against,
+                        'player_out': player_out.user.username,
+                        'player_out_id': str(player_out.id_uuid),
+                        'player_group': str(player_group.id_uuid)
+                    }
+                })
 
         except Exception as e:
                 await self.send(text_data=json.dumps({
@@ -1144,3 +1249,9 @@ class match_tracker(AsyncWebsocketConsumer):
     async def send_data(self, event):
         data = event['data']
         await self.send(text_data=json.dumps(data))
+        
+    async def season_request(self):
+        try:
+            return await sync_to_async(Season.objects.get)(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
+        except Season.DoesNotExist:
+            return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()

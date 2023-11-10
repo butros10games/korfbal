@@ -10,6 +10,9 @@ let last_goal_Data;
 
 let timer = null;
 
+let playerGroupsData;
+let playerSwitchData;
+
 window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
@@ -231,6 +234,64 @@ function onMessageReceived(event) {
     const data = JSON.parse(event.data);
     console.log(data);
 
+    if (data.error) {
+        if (data.error === "match is paused") {
+            // give a notification like popup that the match is paused
+            const overlay = document.createElement("div");
+            overlay.id = "overlay";
+            overlay.classList.add("overlay");
+            
+            // Create the popup container
+            const popup = document.createElement("div");
+            popup.classList.add("popup");
+
+            const popupText = document.createElement("p");
+            popupText.innerHTML = "De wedstrijd is gepauzeerd.";
+            popupText.style.margin = "0";
+            popupText.style.fontSize = "18px";
+            popupText.style.fontWeight = "600";
+            popupText.style.marginBottom = "12px";
+
+            popup.appendChild(popupText);
+
+            const popupButton = document.createElement("button");
+            popupButton.classList.add("button");
+            popupButton.innerHTML = "OK";
+            popupButton.style.margin = "0";
+            popupButton.style.width = "100%";
+            popupButton.style.height = "42px";
+            popupButton.style.fontSize = "14px";
+            popupButton.style.fontWeight = "600";
+            popupButton.style.marginBottom = "12px";
+            popupButton.style.background = "var(--button-color)";
+            popupButton.style.color = "var(--text-color)";
+            popupButton.style.border = "none";
+            popupButton.style.borderRadius = "4px";
+            popupButton.style.cursor = "pointer";
+            popupButton.style.userSelect = "none";
+
+            popupButton.addEventListener("click", function() {
+                // Remove the popup and overlay when the close button is clicked
+                overlay.remove();
+
+                // remove the scroll lock
+                document.body.style.overflow = "";
+            });
+
+            popup.appendChild(popupButton);
+
+            // Append the popup to the overlay
+            overlay.appendChild(popup);
+
+            // Append the overlay to the body to cover the entire screen
+            document.body.appendChild(overlay);
+
+            // Disable scrolling on the body while the overlay is open
+            document.body.style.overflow = "hidden";
+        }
+        return;
+    }
+
     switch(data.command) {
         case "event":
             cleanDom(eventsDiv);
@@ -242,6 +303,8 @@ function onMessageReceived(event) {
         case "playerGroups":
             cleanDom(eventsDiv);
             cleanDom(playersDiv);
+
+            playerGroupsData = data;
 
             showPlayerGroups(data);
 
@@ -318,6 +381,109 @@ function onMessageReceived(event) {
             }
 
             break;
+
+        case "non_active_players":
+            showReservePlayer(data);
+
+            break;
+
+        case "player_change":
+            playerChange(data);
+        
+            break;
+
+        case "part_end":
+            periode_p = document.getElementById("periode_number");
+            periode_p.innerHTML = data.part;
+
+            // reset the timer
+            timer.stop();
+
+            // destroy the timer
+            timer = null;
+
+            let timer_p = document.getElementById("counter");
+            
+            // convert seconds to minutes and seconds
+            minutes = data.part_length / 60;
+            seconds = data.part_length % 60;
+            
+            timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
+
+            // hide the end half button
+            const endHalfButton = document.getElementById("end-half-button");
+            endHalfButton.style.display = "none";
+
+            break;
+
+        case "match_end":
+            // remove the timer
+            if (timer) {
+                timer.stop();
+                timer = null;
+            }
+
+            // set the pause button to start
+            const startStopButton = document.getElementById("start-stop-button");
+            startStopButton.innerHTML = "match ended";
+
+            // add a overlay with the match end and a button when pressed it goes back to the match detail page
+            const overlay_ended = document.createElement("div");
+            overlay_ended.id = "overlay";
+            overlay_ended.classList.add("overlay");
+
+            // Create the popup container
+            const popup = document.createElement("div");
+            popup.classList.add("popup");
+
+            const popupText = document.createElement("p");
+            popupText.innerHTML = "De wedstrijd is afgelopen.";
+            popupText.style.margin = "0";
+            popupText.style.fontSize = "18px";
+            popupText.style.fontWeight = "600";
+            popupText.style.marginBottom = "12px";
+
+            popup.appendChild(popupText);
+
+            const popupButton = document.createElement("button");
+            popupButton.classList.add("button");
+            popupButton.innerHTML = "OK";
+            popupButton.style.margin = "0";
+            popupButton.style.width = "100%";
+            popupButton.style.height = "42px";
+            popupButton.style.fontSize = "14px";
+            popupButton.style.fontWeight = "600";
+            popupButton.style.marginBottom = "12px";
+            popupButton.style.background = "var(--button-color)";
+            popupButton.style.color = "var(--text-color)";
+            popupButton.style.border = "none";
+            popupButton.style.borderRadius = "4px";
+            popupButton.style.cursor = "pointer";
+            popupButton.style.userSelect = "none";
+
+            popupButton.addEventListener("click", function() {
+                // Remove the popup and overlay when the close button is clicked
+                overlay_ended.remove();
+
+                // remove the scroll lock
+                document.body.style.overflow = "";
+
+                // go back to the match detail page
+                window.location.href = "/match/" + data.match_id + "/";
+            });
+
+            popup.appendChild(popupButton);
+
+            // Append the popup to the overlay
+            overlay_ended.appendChild(popup);
+
+            // Append the overlay to the body to cover the entire screen
+            document.body.appendChild(overlay_ended);
+
+            // Disable scrolling on the body while the overlay is open
+            document.body.style.overflow = "hidden";
+
+            break;
     }
 }
 
@@ -330,6 +496,27 @@ function cleanDom(element) {
     element.innerHTML = "";
     element.classList.remove("flex-center");
     element.classList.remove("flex-start-wrap");
+}
+
+function playerChange(data) {
+    // look for the player button
+    const playerButtonData = document.getElementById(data.player_out_id);
+
+    playerButtonData.id = data.player_in_id;
+    playerButtonData.querySelector("p").innerHTML = data.player_in;
+    
+    // change the player shot registration points
+    shots_for = playerButtonData.querySelector("#shots-for");
+    shots_against = playerButtonData.querySelector("#shots-against");
+
+    shots_for.innerHTML = data.player_in_shots_for;
+    shots_against.innerHTML = data.player_in_shots_against;
+
+    playerSwitch()
+
+    // remove the overlay
+    const overlay = document.getElementById("overlay");
+    overlay.remove();
 }
 
 function teamGoalChange(data) {
@@ -437,6 +624,101 @@ function showGoalTypes(data) {
     document.body.style.overflow = "hidden";
 }
 
+function showReservePlayer(data) {
+    // Create the overlay container
+    const overlay = document.createElement("div");
+    overlay.id = "overlay";
+    overlay.classList.add("overlay");
+    
+    // Create the popup container
+    const popup = document.createElement("div");
+    popup.classList.add("popup");
+    
+    // Create the content for the popup
+    const PlayersContainer = document.createElement("div");
+    PlayersContainer.classList.add("goal-types-container");
+    PlayersContainer.style.display = "flex";
+    PlayersContainer.style.flexWrap = "wrap"; // Add this line to wrap the buttons to a second line
+
+    const TopLineContainer = document.createElement("div");
+    TopLineContainer.classList.add("flex-row");
+    TopLineContainer.style.marginBottom = "12px";
+
+    const PlayersTitle = document.createElement("p");
+    PlayersTitle.innerHTML = "Doelpunt type";
+    PlayersTitle.style.margin = "0";
+
+    TopLineContainer.appendChild(PlayersTitle);
+
+    // Create a close button for the popup
+    const closeButton = document.createElement("button");
+    closeButton.classList.add("close-button");
+    closeButton.innerHTML = "Close";
+    closeButton.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+    });
+
+    TopLineContainer.appendChild(closeButton);
+
+    PlayersContainer.appendChild(TopLineContainer);
+
+    for (const Player of data.players) {
+        const PlayerDiv = document.createElement("div");
+        PlayerDiv.classList.add("goal-type");
+        PlayerDiv.classList.add("flex-center");
+        PlayerDiv.style.flexGrow = "1";
+        PlayerDiv.style.flexBasis = "calc(50% - 32px)"; 
+        PlayerDiv.style.textAlign = "center";
+        PlayerDiv.style.margin = "0 12px 6px 12px";
+        PlayerDiv.style.width = "calc(100% - 12px)";
+        PlayerDiv.style.background = Player.color;
+
+        const PlayerTitle = document.createElement("p");
+        PlayerTitle.classList.add("flex-center");
+        PlayerTitle.innerHTML = Player.name;
+        PlayerTitle.style.margin = "0";
+        PlayerTitle.style.fontSize = "14px";
+        PlayerTitle.style.background = "var(--button-color)";
+        PlayerTitle.style.color = "var(--text-color)";
+        PlayerTitle.style.padding = "6px";
+        PlayerTitle.style.borderRadius = "4px";
+        PlayerTitle.style.width = "100%";
+        PlayerTitle.style.height = "42px";
+        PlayerTitle.style.cursor = "pointer";
+        PlayerTitle.style.userSelect = "none";
+
+        PlayerDiv.addEventListener("click", function() {
+            const data = {
+                "command": "wissel_reg",
+                "new_player_id": Player.id,
+                "old_player_id": playerSwitchData.player_id,
+                "time": playerSwitchData.time,
+            }
+
+            console.log(data);
+
+            socket.send(JSON.stringify(data));
+        });
+
+        PlayerDiv.appendChild(PlayerTitle);
+
+        PlayersContainer.appendChild(PlayerDiv);
+    }
+
+    // Append the close button and PlayersContainer to the popup
+    popup.appendChild(PlayersContainer);
+    
+    // Append the popup to the overlay
+    overlay.appendChild(popup);
+    
+    // Append the overlay to the body to cover the entire screen
+    document.body.appendChild(overlay);
+    
+    // Disable scrolling on the body while the overlay is open
+    document.body.style.overflow = "hidden";
+}
+
 function updateEvent(data) {
 
 }
@@ -459,6 +741,22 @@ function updatePlayerShot(data) {
 }
 
 function showPlayerGroups(data) {
+    const homeScoreButton = document.getElementById("home-score");
+    const awayScoreButton = document.getElementById("away-score");
+
+    // remove the activated class from the buttons and remove the color
+    if (homeScoreButton.classList.contains("activated")) {
+        homeScoreButton.classList.remove("activated");
+
+        homeScoreButton.style.background = "#43ff6480";
+    }
+
+    if (awayScoreButton.classList.contains("activated")) {
+        awayScoreButton.classList.remove("activated");
+
+        awayScoreButton.style.background = "rgba(235, 0, 0, 0.5)";
+    }
+
     let switchButton = false;
     const playerGroups = data.playerGroups;
 
@@ -496,11 +794,7 @@ function showPlayerGroups(data) {
                 switchButtonDiv.style.width = "96px";
 
                 switchButtonDiv.addEventListener("click", function() {
-                    const data = {
-                        "command": "switch",
-                        "player_group": playerGroup.id,
-                    }
-                    socket.send(JSON.stringify(data));
+                    playerSwitch();
                 });
 
                 playerGroupTitleDiv.appendChild(switchButtonDiv);
@@ -522,7 +816,8 @@ function showPlayerGroups(data) {
                 const playerDiv = document.createElement("div");
                 playerDiv.classList.add("player-selector", "flex-center");
                 playerDiv.style.flexGrow = "1";
-                playerDiv.style.flexBasis = "calc(50% - 32px)"; 
+                playerDiv.style.flexBasis = "calc(50% - 44px)"; 
+                playerDiv.style.padding = "0 6px";
                 playerDiv.style.textAlign = "center";
 
                 const playerName = document.createElement("p");
@@ -546,7 +841,8 @@ function showPlayerGroups(data) {
 
                 if (player) {
                     playerDiv.id = player.id;
-                    playerDiv.style.justifyContent = "space-around";
+                    playerDiv.style.justifyContent = "space-between";
+
 
                     playerName.innerHTML = player.name;
                     playerShotsfor.innerHTML = player.shots_for;
@@ -584,6 +880,76 @@ function showPlayerGroups(data) {
     }
 
     playersDiv.appendChild(playerGroupContainer);
+}
+
+function playerSwitch() {
+    // add to the wissel button a active tag and change the color
+    const switchButton = document.getElementById("switch-button");
+    
+    if (switchButton.classList.contains("activated")) {
+        switchButton.classList.remove("activated");
+        switchButton.style.background = "";
+
+        // remove the color from the player buttons and remove the event listeners
+        const playerButtons = document.getElementsByClassName("player-selector");
+
+        Array.from(playerButtons).forEach(element => {
+            element.style.background = "";
+            if (element._playerClickHandler) {
+                element.removeEventListener("click", element._playerClickHandler);
+                delete element._playerClickHandler;
+            }
+        });
+
+        shotButtonReg("home");
+        shotButtonReg("away");
+    } else {
+        switchButton.classList.add("activated");
+        switchButton.style.background = "#4169e152";
+
+        // change the color on the player buttons and remove the event listeners and add a event listener to the player buttons to switch the player clicked on
+        const playerButtons = document.getElementsByClassName("player-selector");
+
+        Array.from(playerButtons).forEach(element => {
+            const homeScoreButton = document.getElementById("home-score");
+            const awayScoreButton = document.getElementById("away-score");
+
+            // remove the activated class from the buttons and remove the color
+            if (homeScoreButton.classList.contains("activated")) {
+                homeScoreButton.classList.remove("activated");
+
+                homeScoreButton.style.background = "#43ff6480";
+            }
+
+            if (awayScoreButton.classList.contains("activated")) {
+                awayScoreButton.classList.remove("activated");
+
+                awayScoreButton.style.background = "rgba(235, 0, 0, 0.5)";
+            }
+
+            element.style.background = "#4169e152";
+            if (element._playerClickHandler) {
+                element.removeEventListener("click", element._playerClickHandler);
+                delete element._playerClickHandler;
+            }
+
+            const playerClickHandler = function () {
+                playerSwitchData = {
+                    "player_id": element.id,
+                    "time": new Date().toISOString(),
+                }
+
+                const data = {
+                    "command": "get_non_active_players"
+                }
+
+                socket.send(JSON.stringify(data));
+            };
+
+            element._playerClickHandler = playerClickHandler;
+            element.addEventListener("click", playerClickHandler);
+        });
+    }
 }
 
 class CountdownTimer {

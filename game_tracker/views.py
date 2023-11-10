@@ -325,8 +325,6 @@ def match_tracker(request, match_id, team_id):
         
     # calculate the time left in the current part if the part is not finished or started yet then set the time to the part lenght i have set the part_lenght to be in seconds
     time_left = match_data.part_lenght
-    if match_data.current_part > 1:
-        time_left = match_data.part_lenght - ((match_data.current_part - 1) * match_data.part_lenght)
         
     # convert the seconds to minutes and seconds to display on the page make the numbers look nice with the %02d
     minutes = int(time_left / 60)
