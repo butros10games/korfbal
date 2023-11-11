@@ -1,0 +1,16 @@
+{
+    "short_name": "KWT",
+    "name": "Korfbal Wedstrijd Tracker",
+    "icons": [
+      {
+            "src": "/static/images/logo/KWT_logo.png",
+            "sizes": "512x512",
+            "type": "image/png"
+      }
+    ],
+    "start_url": "/teams/",
+    "background_color": "#1b1b1b",
+    "display": "standalone",
+    "scope": "/",
+    "theme_color": "#1b1b1b"
+}

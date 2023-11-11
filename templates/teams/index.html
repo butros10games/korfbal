@@ -12,6 +12,9 @@
         <link rel="stylesheet" href="/static/css/color/color.css">
 
         <link rel="icon" href="/static/images/logo/KWT_logo.png" type="image/x-icon">
+
+        <link rel="manifest" href="/static/json/manifest.json">
+        <script src="/static/js/pwa/service-worker.js"></script>
     </head>
     <body>
         {% include 'overlays/navbar.html' %}
@@ -20,7 +23,7 @@
             <div class="flex-row">
                 <select id="type">
                     <option value="teams">Teams</option>
-                    <option value="clubs">Clubs</option>
+                    <option value="clubs">vereniging</option>
                 </select>
                 <div id="search-container-full" class="flex-row" style="width: auto;"> 
                     <div class="search-container">
@@ -34,7 +37,7 @@
 
             <div class="teams-container" style="margin-top: 16px; padding-bottom: 8px;">
                 {% if teams %}
-                <h2 style="margin: 0; font-size: 16px;">Playing</h2>
+                <h2 style="margin: 0; font-size: 16px;">Aangesloten</h2>
                 {% endif %}
                 
                 {% for team in teams %}
@@ -46,7 +49,7 @@
                 {% endfor %}
 
                 {% if following_teams %}
-                <h2 style="margin: 0; font-size: 16px;">Following</h2>
+                <h2 style="margin: 0; font-size: 16px;">Volgend</h2>
                 {% endif %}
 
                 {% for team in following_teams %}
