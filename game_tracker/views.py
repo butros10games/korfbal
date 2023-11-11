@@ -61,8 +61,7 @@ def teams(request):
         # Get the Player object associated with this user
         player = Player.objects.get(user=user)
         
-        # Get all teams where the user is part of the team
-        connected_teams = Team.objects.filter(team_data__players=player)
+        connected_teams = Team.objects.filter(Q(team_data__players=player) | Q(team_data__coach=player)).distinct()
         
         # Get all teams the user is following
         following_teams = player.team_follow.all()
@@ -100,7 +99,7 @@ def teams_index_data(request):
             if selection == "clubs" and user.is_authenticated:
                 player = Player.objects.get(user=user)
                 
-                connected_clubs = Club.objects.filter(teams__team_data__players=player).distinct()
+                connected_clubs = Club.objects.filter(Q(teams__team_data__players=player) | Q(teams__team_data__coach=player)).distinct()
                 
                 following_clubs = player.club_follow.all()
                 
@@ -125,7 +124,7 @@ def teams_index_data(request):
                 player = Player.objects.get(user=user)
                 
                 # Get all teams where the user is part of the team
-                connected_teams = Team.objects.filter(team_data__players=player)
+                connected_teams = Team.objects.filter(Q(team_data__players=player) | Q(team_data__coach=player)).distinct()
                 
                 # remove duplicate teams
                 connected_teams = connected_teams.distinct()
@@ -295,12 +294,31 @@ def match_detail(request, match_id):
     return render(request, "matches/detail.html", context)
 
 def match_team_selector(request, match_id):
+    # Assuming register_page_request is a valid function
     register_page_request(request)
     
+    # Retrieve the match or return 404
     match_data = get_object_or_404(Match, id_uuid=match_id)
-    
+
+    # Assuming standard_imports is the correct function
     profile_url, profile_img_url = standart_inports(request)
-    
+
+    # Get the teams in the match
+    teams_in_match = [match_data.home_team, match_data.away_team]
+
+    player = Player.objects.get(user=request.user)
+
+    # Get the teams the user is connected to through TeamData
+    user_team_data = TeamData.objects.filter(players=player)
+    user_teams = [team_data.team for team_data in user_team_data]
+
+    # Check if the user is connected to one or both of the teams in the match
+    connected_teams = [team for team in teams_in_match if team in user_teams]
+
+    # If the user is connected to only one team, redirect them to the tracker page
+    if len(connected_teams) == 1:
+        return redirect('match_tracker', match_id=match_id, team_id=connected_teams[0].id_uuid)
+
     context = {
         "match": match_data,
         "profile_url": profile_url,

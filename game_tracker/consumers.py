@@ -868,6 +868,19 @@ class match_tracker(AsyncWebsocketConsumer):
                 
                 await sync_to_async(Goal.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match=self.match, match_part = self.current_part, time = json_data['time'], goal_type=await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type']), for_team=json_data['for_team'], team=team)
                 
+                ## register the shot
+                await sync_to_async(Shot.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match=self.match, match_part = self.current_part, time = json_data['time'], for_team=json_data['for_team'])
+                
+                await self.channel_layer.group_send(self.channel_group_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'player_shot_change',
+                        'player_id': json_data['player_id'],
+                        'shots_for': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, for_team = True).count)(),
+                        'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match=self.match, for_team = False).count)()
+                    }
+                })
+                
                 player = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['player_id'])
                 goal_type = await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type'])
                 
@@ -1060,6 +1073,14 @@ class match_tracker(AsyncWebsocketConsumer):
                 events.extend(player_change)
                 events.extend(time_outs)
                 events.sort(key=lambda x: x.time)
+                
+                # check if there are events
+                if events == []:
+                    await self.send(text_data=json.dumps({
+                        'command': 'last_event',
+                        'event': 'no_event'
+                    }))
+                    return
                 
                 # Get last event
                 last_event = events[-1]

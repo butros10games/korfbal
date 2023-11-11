@@ -293,9 +293,8 @@ function onMessageReceived(event) {
     }
 
     switch(data.command) {
-        case "event":
+        case "last_event":
             cleanDom(eventsDiv);
-            cleanDom(playersDiv);
 
             updateEvent(data);
             break;
@@ -720,7 +719,47 @@ function showReservePlayer(data) {
 }
 
 function updateEvent(data) {
+    switch(data.event) {
+        case "no_event":
+            const textElement = document.createElement("p");
+            textElement.classList.add("flex-center");
+            textElement.style.margin = "0";
+            textElement.style.height = "64px";
+            textElement.innerHTML = "<p>Geen events gevonden.</p>";
 
+            eventsDiv.appendChild(textElement);
+            break;
+
+        case "goal":
+            const goalElement = document.createElement("p");
+            goalElement.classList.add("flex-center");
+            goalElement.style.margin = "0";
+            goalElement.style.height = "64px";
+            goalElement.innerHTML = "<p>Doelpunt.</p>";
+
+            eventsDiv.appendChild(goalElement);
+            break;
+
+        case "shot":
+            const shotElement = document.createElement("p");
+            shotElement.classList.add("flex-center");
+            shotElement.style.margin = "0";
+            shotElement.style.height = "64px";
+            shotElement.innerHTML = "<p>Schot.</p>";
+
+            eventsDiv.appendChild(shotElement);
+            break;
+
+        case "shot_against":
+            const shotAgainstElement = document.createElement("p");
+            shotAgainstElement.classList.add("flex-center");
+            shotAgainstElement.style.margin = "0";
+            shotAgainstElement.style.height = "64px";
+            shotAgainstElement.innerHTML = "<p>Schot tegen.</p>";
+
+            eventsDiv.appendChild(shotAgainstElement);
+            break;
+    }
 }
 
 function updatePlayerShot(data) {
