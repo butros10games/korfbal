@@ -16,11 +16,28 @@ def index(request):
     register_page_request(request)
     
     profile_url, profile_img_url = standart_inports(request)
+    
+    ## get the players first upcoming match
+    # get the player
+    user_request = request.user
+    if user_request.is_authenticated:
+        player = Player.objects.get(user=user_request)
+        # get the teams the player is connected to
+        teams = Team.objects.filter(Q(team_data__players=player) | Q(team_data__coach=player)).distinct()
+        # get the matches of the teams
+        matches = Match.objects.filter(Q(home_team__in=teams) | Q(away_team__in=teams)).order_by('start_time')
+        # get the first match that is in the future
+        match = matches.filter(start_time__gte=timezone.now()).first()
+    else:
+        match = None
         
     context = {
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
-        "display_back": True
+        "display_back": True,
+        "match": match,
+        "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
+        "match_time": match.start_time.strftime('%H:%M') if match else ""
     }
         
     return render(request, "index.html", context)
@@ -294,9 +311,6 @@ def match_detail(request, match_id):
     return render(request, "matches/detail.html", context)
 
 def match_team_selector(request, match_id):
-    # Assuming register_page_request is a valid function
-    register_page_request(request)
-    
     # Retrieve the match or return 404
     match_data = get_object_or_404(Match, id_uuid=match_id)
 
@@ -308,9 +322,16 @@ def match_team_selector(request, match_id):
 
     player = Player.objects.get(user=request.user)
 
-    # Get the teams the user is connected to through TeamData
-    user_team_data = TeamData.objects.filter(players=player)
-    user_teams = [team_data.team for team_data in user_team_data]
+    # Get the teams the user is connected to through TeamData as a player
+    user_team_data_as_player = TeamData.objects.filter(players=player)
+    user_teams_as_player = [team_data.team for team_data in user_team_data_as_player]
+
+    # Get the teams the user is connected to through TeamData as a coach
+    user_team_data_as_coach = TeamData.objects.filter(coach=player)
+    user_teams_as_coach = [team_data.team for team_data in user_team_data_as_coach]
+
+    # Combine the teams where the user is a player and a coach
+    user_teams = list(set(user_teams_as_player + user_teams_as_coach))
 
     # Check if the user is connected to one or both of the teams in the match
     connected_teams = [team for team in teams_in_match if team in user_teams]
@@ -326,6 +347,7 @@ def match_team_selector(request, match_id):
     }
     
     return render(request, "matches/team_selector.html", context)
+
 
 def match_tracker(request, match_id, team_id):
     register_page_request(request)

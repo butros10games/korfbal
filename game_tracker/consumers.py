@@ -576,12 +576,17 @@ class match_data(AsyncWebsocketConsumer):
                 player = await sync_to_async(Player.objects.get)(user=user_id)
                 
                 players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
+                coaches_home = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=self.match.home_team).values_list('coach', flat=True))
+
                 players_away = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.away_team).values_list('players', flat=True))
+                coaches_away = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=self.match.away_team).values_list('coach', flat=True))
                 
                 players_list = []
                 
                 players_list.extend(players_home)
+                players_list.extend(coaches_home)
                 players_list.extend(players_away)
+                players_list.extend(coaches_away)
                 
                 access = False
                 if player.id_uuid in players_list:

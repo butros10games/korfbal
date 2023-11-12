@@ -195,7 +195,7 @@ function displayNormalIndex(data) {
     cleanDom()
 
     followingText = document.createElement('p');
-    followingText.innerHTML = 'Playing';
+    followingText.innerHTML = 'Aangesloten';
     followingText.style.fontWeight = '600';
     followingText.style.marginBottom = '8px';
     followingText.style.marginTop = '4px';
@@ -229,7 +229,7 @@ function displayNormalIndex(data) {
 
 
     followingText = document.createElement('p');
-    followingText.innerHTML = 'Following';
+    followingText.innerHTML = 'Volgend';
     followingText.style.fontWeight = '600';
     followingText.style.marginBottom = '8px';
 
