@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration
-from django.db.models import Q
+from django.db.models import Q, Max
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.http import Http404
@@ -14,8 +14,7 @@ from django.http import HttpResponseRedirect
 # Create your views here.
 def index(request):
     register_page_request(request)
-    
-    profile_url, profile_img_url = standart_inports(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     ## get the players first upcoming match
     # get the player
@@ -34,6 +33,7 @@ def index(request):
     context = {
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
         "display_back": True,
         "match": match,
         "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
@@ -44,10 +44,9 @@ def index(request):
 
 def club_detail(request, club_id):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     club = get_object_or_404(Club, id_uuid=club_id)
-    
-    profile_url, profile_img_url = standart_inports(request)
     
     user_request = request.user
     admin = False
@@ -63,13 +62,15 @@ def club_detail(request, club_id):
         "admin": admin,
         "following": following,
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "current_counter": current_counter
     }
     
     return render(request, "club/detail.html", context)
 
 def teams(request):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     connected_teams = None
     following_teams = None
@@ -86,13 +87,12 @@ def teams(request):
         # remove the teams the user is part of from the teams the user is following
         following_teams = following_teams.exclude(id_uuid__in=connected_teams)
     
-    profile_url, profile_img_url = standart_inports(request)
-    
     context = {
         "connected": connected_teams,
         "following": following_teams,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
         "display_back": True
     }
     return render(request, "teams/index.html", context)
@@ -176,6 +176,7 @@ def teams_index_data(request):
 
 def team_detail(request, team_id):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     team = get_object_or_404(Team, id_uuid=team_id)
     
@@ -199,8 +200,6 @@ def team_detail(request, team_id):
     
     team_data = TeamData.objects.filter(team=team, season=current_season).first()
     
-    profile_url, profile_img_url = standart_inports(request)
-    
     user_request = request.user
     following = False
     coach = False
@@ -217,6 +216,7 @@ def team_detail(request, team_id):
         "team": team,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
         "coaching": coach,
         "following": following
     }
@@ -259,6 +259,7 @@ def search(request):
 
 def profile_detail(request, player_id=None):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     player = None
     user = request.user
@@ -274,8 +275,6 @@ def profile_detail(request, player_id=None):
     if user.is_authenticated and user == player.user:
         is_own_profile = True
     
-    profile_url, profile_img_url = standart_inports(request)
-    
     display_back = False
     if is_own_profile:
         display_back = True
@@ -286,6 +285,7 @@ def profile_detail(request, player_id=None):
         "is_own_profile": is_own_profile,
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
         "display_back": display_back
     }
     
@@ -293,10 +293,9 @@ def profile_detail(request, player_id=None):
 
 def match_detail(request, match_id):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     match_data = get_object_or_404(Match, id_uuid=match_id)
-    
-    profile_url, profile_img_url = standart_inports(request)
     
     context = {
         "match": match_data,
@@ -304,6 +303,7 @@ def match_detail(request, match_id):
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
         "home_score": Goal.objects.filter(match=match_data, team=match_data.home_team).count(),
         "away_score": Goal.objects.filter(match=match_data, team=match_data.away_team).count()
     }
@@ -315,7 +315,7 @@ def match_team_selector(request, match_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
 
     # Assuming standard_imports is the correct function
-    profile_url, profile_img_url = standart_inports(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
 
     # Get the teams in the match
     teams_in_match = [match_data.home_team, match_data.away_team]
@@ -343,7 +343,8 @@ def match_team_selector(request, match_id):
     context = {
         "match": match_data,
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
     }
     
     return render(request, "matches/team_selector.html", context)
@@ -351,11 +352,10 @@ def match_team_selector(request, match_id):
 
 def match_tracker(request, match_id, team_id):
     register_page_request(request)
+    profile_url, profile_img_url, current_counter = standart_inports(request)
     
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_data = get_object_or_404(Team, id_uuid=team_id)
-    
-    profile_url, profile_img_url = standart_inports(request)
     
     # get the two teams that are playing and make the first team the team from team_data and the second team the opponent
     if match_data.home_team == team_data:
@@ -387,7 +387,8 @@ def match_tracker(request, match_id, team_id):
         "start_date": match_data.start_time.strftime('%A, %d %B'),
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
-        "profile_img_url": profile_img_url
+        "profile_img_url": profile_img_url,
+        "current_counter": current_counter,
     }
     
     return render(request, "matches/tracker.html", context)
@@ -409,13 +410,19 @@ def upload_profile_picture(request):
 def standart_inports(request):
     profile_url = None
     profile_img_url = None
+    current_counter = 0
     user_request = request.user
     if user_request.is_authenticated:
         player = Player.objects.get(user=user_request)
         profile_url = player.get_absolute_url
         profile_img_url = player.profile_picture.url if player.profile_picture else None
         
-    return profile_url, profile_img_url
+        # Fetch the latest PageConnectRegistration instance for this player
+        latest_page_registration = PageConnectRegistration.objects.filter(player=player).order_by('-counter').first()
+        if latest_page_registration:
+            current_counter = latest_page_registration.counter
+        
+    return profile_url, profile_img_url, current_counter
 
 # this view handels the registration of a player to a team. if the user is logedin the users gets added to the team if the user is not registerd the user gets redirected to the login page with a next parameter
 def register_to_team(request, team_id):
@@ -454,29 +461,29 @@ def register_to_team(request, team_id):
 
 def previous_page(request):
     player = Player.objects.get(user=request.user)
-    
-    # Order by the most recent registration date and get the second to newest
-    pages = PageConnectRegistration.objects.filter(player=player).order_by('-registration_date').exclude(page='')
 
-    # Make sure there is at least one page to get the second to newest
-    if pages.count() > 1:
-        referer = pages[1].page  # Get the second to newest item
-    else:
-        referer = None
+    # Retrieve the counter from the request (you may need to adjust this depending on how you pass it)
+    current_counter = int(request.GET.get('counter', 0))
 
-    if referer:
-        return HttpResponseRedirect(referer)
+    # Find the previous page based on the counter
+    previous_page = PageConnectRegistration.objects.filter(player=player, counter__lt=current_counter).order_by('-counter').first()
+
+    if previous_page:
+        return HttpResponseRedirect(previous_page.page)
     else:
-        # If there is no referer (like when the user directly accesses the URL), redirect to a default page
         return redirect('teams')
     
 def register_page_request(request):
-    # get the url of the request and save it in PageConnectRegistration if the user is loged in
     if request.user.is_authenticated:
         player = Player.objects.get(user=request.user)
-        try:
-            page = PageConnectRegistration.objects.get(player=player, page=request.path)
-            page.registration_date = timezone.now()
-            page.save()
-        except PageConnectRegistration.DoesNotExist:
-            PageConnectRegistration.objects.create(player=player, page=request.path)
+
+        # Find the highest current counter value and increment it
+        max_counter = PageConnectRegistration.objects.filter(player=player).aggregate(Max('counter'))['counter__max']
+        next_counter = (max_counter or 0) + 1
+
+        # Update or create a PageConnectRegistration entry
+        PageConnectRegistration.objects.update_or_create(
+            player=player, 
+            page=request.path, 
+            defaults={'registration_date': timezone.now(), 'counter': next_counter}
+        )
