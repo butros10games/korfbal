@@ -355,10 +355,10 @@ async def transfrom_matchdata(wedstrijden_data):
             'id_uuid': str(wedstrijd.id_uuid),
             'home_team': await sync_to_async(wedstrijd.home_team.__str__)(),
             'home_team_logo': wedstrijd.home_team.club.logo.url if wedstrijd.home_team.club.logo else None,
-            'home_score': wedstrijd.home_score,
+            'home_score': await sync_to_async(Goal.objects.filter(match=wedstrijd, team=wedstrijd.home_team).count)(),
             'away_team': await sync_to_async(wedstrijd.away_team.__str__)(),
             'away_team_logo': wedstrijd.away_team.club.logo.url if wedstrijd.away_team.club.logo else None,
-            'away_score': wedstrijd.away_score,
+            'away_score': await sync_to_async(Goal.objects.filter(match=wedstrijd, team=wedstrijd.away_team).count)(),
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
             'length': wedstrijd.part_lenght,

@@ -115,7 +115,7 @@ class season_admin(admin.ModelAdmin):
 admin.site.register(Season, season_admin)
 
 class page_connect_registration_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "page", "registration_date", "counter"]
+    list_display = ["id_uuid", "player", "page", "registration_date"]
     show_full_result_count = False
     
     class Meta:

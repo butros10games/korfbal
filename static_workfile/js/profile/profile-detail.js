@@ -563,13 +563,33 @@ function updateMatches(data) {
 
             match_date_container.appendChild(match_date);
             
-            const match_hour = document.createElement("p");
-            match_hour.style.margin = "0";
-            match_hour.style.marginBottom = "12px";
-            match_hour.style.fontWeight = "600";
-            match_hour.innerHTML = element.start_time;
+            if (element.finished) {
+                const match_score = document.createElement("p");
+                match_score.style.margin = "0";
+                match_score.style.marginBottom = "12px";
+                match_score.style.fontWeight = "600";
+                match_score.innerHTML = element.home_score + " - " + element.away_score;
 
-            match_date_container.appendChild(match_hour);
+                match_date_container.appendChild(match_score);
+            } else {
+                if (element.active) {
+                    const match_hour = document.createElement("p");
+                    match_hour.style.margin = "0";
+                    match_hour.style.marginBottom = "12px";
+                    match_hour.style.fontWeight = "600";
+                    match_hour.innerHTML = element.start_time + " (live)";
+
+                    match_date_container.appendChild(match_hour);
+                } else {
+                    const match_hour = document.createElement("p");
+                    match_hour.style.margin = "0";
+                    match_hour.style.marginBottom = "12px";
+                    match_hour.style.fontWeight = "600";
+                    match_hour.innerHTML = element.start_time;
+
+                    match_date_container.appendChild(match_hour);
+                }
+            }
             match_container.appendChild(match_date_container);
 
 

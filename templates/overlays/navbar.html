@@ -5,7 +5,7 @@
     <div style="width: calc(100% *1/3); display: flex; justify-content: flex-start; align-items: center;">
         {% if display_back %}
         {% else %}
-        <a href="{% url 'previous_page' %}?counter={{ current_counter }}" style="display: flex; justify-content: flex-start; align-items: center; margin-left: 12px;">
+        <a href="{% url 'previous_page' %}" style="display: flex; justify-content: flex-start; align-items: center; margin-left: 12px;">
             <img style="width: 32px; height: 32px;" alt="back button" src="/static/images/arrow-left.svg">
         </a>
         {% endif %}
