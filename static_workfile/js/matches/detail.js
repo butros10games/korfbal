@@ -52,6 +52,18 @@ function setNavButtons() {
             // Get data out of the button
             const data = this.getAttribute("data");
 
+            if (data == "get_stats") {
+                socket.send(JSON.stringify({
+                    'command': data,
+                    'user_id': user_id,
+                    'data_type': 'general'
+                }));
+
+                cleanDom();
+                load_icon();
+                return;
+            }
+
             socket.send(JSON.stringify({
                 'command': data,
                 'user_id': user_id
@@ -164,6 +176,10 @@ function onMessageReceived(event) {
             } else {
                 showPlayerGroups(data);
             }
+            break;
+
+        case "stats":
+            UpdateStatastics(data.data);
             break;
     }
 }
@@ -548,4 +564,157 @@ function updateplayerGroups(data) {
     }
 
     infoContainer.appendChild(playerGroupContainer);
+}
+
+function UpdateStatastics(data) {
+    const stats = data.stats;
+
+    const statsContainer = document.createElement("div");
+    statsContainer.classList.add("stats-container");
+
+    if (stats) {
+        // check if the buttons already exist and if they exist skip the creation of the buttons
+        if (!document.querySelector(".stat-selector-button")) {
+            cleanDom();
+
+            const statSelectorButtonField = document.createElement("div");
+            statSelectorButtonField.classList.add("flex-row");
+            statSelectorButtonField.style.justifyContent = "space-around";
+            statSelectorButtonField.style.margin = "12px";
+            statSelectorButtonField.style.width = "calc(100% - 24px)";
+            
+            const buttonTypes = [
+                { name: 'generaal', type: 'general' },
+                { name: 'verloop', type: 'progression' },
+                { name: 'spelers', type: 'player_stats' }
+            ];
+
+            buttonTypes.forEach(type => {
+                const button = document.createElement("button");
+                button.classList.add("stat-selector-button");
+
+                // add to the first button a active class
+                if (type.type == 'general') {
+                    button.classList.add("active");
+                }
+
+                button.innerHTML = type.name;
+                button.addEventListener('click', function() {
+                    socket.send(JSON.stringify({
+                        'command': 'get_stats',
+                        'user_id': user_id,
+                        'data_type': type.type
+                    }));
+
+                    // add active class to the button and remove it by the other buttons
+                    const buttons = document.querySelectorAll(".stat-selector-button");
+                    buttons.forEach((button) => {
+                        button.classList.remove("active");
+                    });
+                    this.classList.add("active");
+                });
+
+                statSelectorButtonField.appendChild(button);
+            });
+
+            statsContainer.appendChild(statSelectorButtonField);
+        }
+        
+        // check if there is already a dataField and if there is a field delete it
+        if (document.getElementById("dataField")) {
+            document.getElementById("dataField").remove();
+        }
+
+        console.log(data);
+
+        if (data.type == "player_stats") {
+            // Creating the player selector field
+            const playerSelectorField = document.createElement("div");
+            playerSelectorField.classList.add("flex-column");
+            playerSelectorField.id = "dataField";
+            playerSelectorField.style.margin = "24px 12px 0 12px";
+            playerSelectorField.style.width = "calc(100% - 24px)";
+
+            // create a lagenda for the player stats
+            const legend = document.createElement("div");
+            legend.classList.add("flex-row");
+            legend.style.justifyContent = "space-between";
+            legend.style.marginBottom = "12px";
+            legend.style.borderBottom = "1px solid #ccc";
+            legend.style.paddingBottom = "12px";
+            
+            const name = document.createElement("p");
+            name.innerHTML = "Naam";
+            name.style.margin = "0";
+            name.style.fontSize = "14px";
+
+            const score = document.createElement("p");
+            score.classList.add("flex-center");
+            score.innerHTML = "Score";
+            score.style.width = "80px";
+            score.style.margin = "0";
+            score.style.fontSize = "14px";
+            score.style.marginLeft = "auto";
+            score.style.marginRight = "12px";
+
+            const shots = document.createElement("p");
+            shots.classList.add("flex-center");
+            shots.innerHTML = "Schoten";
+            shots.style.width = "80px";
+            shots.style.margin = "0";
+            shots.style.fontSize = "14px";
+
+            legend.appendChild(name);
+            legend.appendChild(score);
+            legend.appendChild(shots);
+
+            playerSelectorField.appendChild(legend);
+
+            stats.player_stats.forEach(player => {
+                const playerDataDiv = document.createElement("div");
+                playerDataDiv.classList.add("flex-row");
+                playerDataDiv.style.justifyContent = "space-between";
+                playerDataDiv.style.marginBottom = "12px";
+                playerDataDiv.style.borderBottom = "1px solid #ccc";
+                playerDataDiv.style.paddingBottom = "12px";
+
+                const playerName = document.createElement("p");
+                playerName.innerHTML = player.username;
+                playerName.style.margin = "0";
+                playerName.style.fontSize = "14px";
+
+                const playerScore = document.createElement("p");
+                playerScore.classList.add("flex-center");
+                playerScore.innerHTML = player.goals_for + " / " + player.goals_against;
+                playerScore.style.width = "80px";
+                playerScore.style.margin = "0";
+                playerScore.style.fontSize = "14px";
+                playerScore.style.marginLeft = "auto";
+                playerScore.style.marginRight = "12px";
+
+                const playerShots = document.createElement("p");
+                playerShots.classList.add("flex-center");
+                playerShots.innerHTML = player.shots_for + " / " + player.shots_against;
+                playerShots.style.width = "80px";
+                playerShots.style.margin = "0";
+                playerShots.style.fontSize = "14px";
+
+                playerDataDiv.appendChild(playerName);
+                playerDataDiv.appendChild(playerScore);
+                playerDataDiv.appendChild(playerShots);
+
+                playerSelectorField.appendChild(playerDataDiv);
+            });
+
+            statsContainer.appendChild(playerSelectorField);
+        }
+    } else {
+        const textElement = document.createElement("p");
+        textElement.classList.add("flex-center");
+        textElement.innerHTML = "<p>Geen statistieken gevonden.</p>";
+
+        statsContainer.appendChild(textElement);
+    }
+
+    infoContainer.appendChild(statsContainer);
 }

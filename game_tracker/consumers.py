@@ -669,6 +669,63 @@ class match_data(AsyncWebsocketConsumer):
                     'command': 'savePlayerGroups',
                     'status': 'success'
                 }))
+                
+            elif command == "get_stats":
+                data_type = json_data['data_type']
+                
+                if data_type == 'general':
+                    ## get the amount of goals for and against for all the types
+                    goal_types = await sync_to_async(list)(GoalType.objects.all())
+                    
+                    goals_for = {}
+                    goals_against = {}
+                    for goal_type in goal_types:
+                        goals_for[goal_type.name] = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=True).count)()
+                        goals_against[goal_type.name] = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=False).count)()
+                    
+                    await self.send(text_data=json.dumps({
+                        'command': 'stats',
+                        'data': {
+                            'type': 'general',
+                            'stats': {
+                                'shots_for': await sync_to_async(Shot.objects.filter(match=self.match, for_team=True).count)(),
+                                'shots_against': await sync_to_async(Shot.objects.filter(match=self.match, for_team=False).count)(),
+                                'goals_for': await sync_to_async(Goal.objects.filter(match=self.match, for_team=True).count)(),
+                                'goals_against': await sync_to_async(Goal.objects.filter(match=self.match, for_team=False).count)(),
+                                'goals_for_types': goals_for,
+                            }
+                        }
+                    }))
+                
+                elif data_type == 'player_stats':
+                    ## Get the player stats. shots for and against, goals for and against.
+                    players = await sync_to_async(list)(Player.objects.prefetch_related('user').filter(Q(team_data_as_player__team=self.match.home_team) | Q(team_data_as_player__team=self.match.away_team)).distinct())
+                    
+                    players_stats = []
+                    for player in players:
+                        player_stats = {
+                            'username': player.user.username,
+                            'shots_for': await sync_to_async(Shot.objects.filter(match=self.match, player=player, for_team=True).count)(),
+                            'shots_against': await sync_to_async(Shot.objects.filter(match=self.match, player=player, for_team=False).count)(),
+                            'goals_for': await sync_to_async(Goal.objects.filter(match=self.match, player=player, for_team=True).count)(),
+                            'goals_against': await sync_to_async(Goal.objects.filter(match=self.match, player=player, for_team=False).count)(),
+                        }
+                        
+                        players_stats.append(player_stats)
+                        
+                    ## sort the `player_stats` so the player with the most goals for is on top
+                    players_stats = sorted(players_stats, key=lambda x: x['goals_for'], reverse=True)
+                        
+                    await self.send(text_data=json.dumps({
+                        'command': 'stats',
+                        'data': {
+                            'type': 'player_stats',
+                            'stats': {
+                                'player_stats': players_stats
+                            }
+                        }
+                    }))
+                    
             
         except Exception as e:
             await self.send(text_data=json.dumps({

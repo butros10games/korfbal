@@ -157,3 +157,35 @@ select {
     transition-duration: 0.4s;
     cursor: pointer;
 }
+
+.stat-selector-button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background-color: transparent; 
+    border: 2px solid var(--button-color);
+
+    color: black;
+    text-decoration: none;
+
+    font-size: 14px;
+
+    width: 112px;
+    height: 42px;
+
+    font-family: termina, sans-serif;
+    font-weight: 400;
+    font-style: normal;
+
+    border-radius: 4px;
+
+    transition-duration: 0.4s;
+    cursor: pointer;
+}
+
+.stat-selector-button.active {
+    background-color: var(--button-color);
+
+    color: var(--text-color);
+}
