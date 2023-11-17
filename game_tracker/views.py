@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration
-from django.db.models import Q, Max
+from django.db.models import Q, F, Value
+from django.db.models.functions import Concat
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.http import Http404
@@ -227,7 +228,8 @@ def search(request):
     
     if category == 'teams':
         # Get the teams that match the search term
-        teams = Team.objects.filter(Q(name__icontains=search_term))
+        teams = Team.objects.annotate(
+        full_name=Concat(F('club__name'), Value(' '), F('name'))).filter(Q(full_name__icontains=search_term))
         
         for team in teams:
             teams_json.append({
