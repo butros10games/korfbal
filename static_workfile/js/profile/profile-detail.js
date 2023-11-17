@@ -45,15 +45,32 @@ window.addEventListener("DOMContentLoaded", function() {
     const fileInput = document.getElementById('profilePicInput');
     const imagePreview = document.getElementById('imagePreview');
     if (fileInput) {
-        fileInput.addEventListener('change', function() {
+        fileInput.addEventListener('change', async function() {
             const file = fileInput.files[0];
             if (file) {
+                let blob = file;
+        
+                // Check if the file is a HEIC file
+                if (file.name.toLowerCase().endsWith('.heic')) {
+                    try {
+                        // Convert HEIC to JPEG
+                        blob = await heic2any({
+                            blob: file,
+                            toType: "image/jpeg",
+                            quality: 0.7 // Adjust quality as needed
+                        });
+                    } catch (error) {
+                        console.error('Error converting HEIC to JPEG:', error);
+                        return;
+                    }
+                }
+        
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     imagePreview.src = e.target.result;
                     imageModal.style.display = 'flex'; // Show the modal
                 }
-                reader.readAsDataURL(file);
+                reader.readAsDataURL(blob);
             }
         });
     }
@@ -71,26 +88,46 @@ window.addEventListener("DOMContentLoaded", function() {
         saveButton.addEventListener('click', function() {
             const file = fileInput.files[0];
             if (file) {
-                const formData = new FormData();
-                formData.append('profile_picture', file);
-    
-                fetch('/upload_profile_picture/', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(console.log('upload succesful'))
-                .then(data => {
-                    imageModal.style.display = 'none'; // Hide the modal
-                    document.getElementById('profilePic').src = data.url;
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                });
+                let blob = file;
+        
+                // Convert HEIC to JPEG before upload if necessary
+                if (file.name.toLowerCase().endsWith('.heic')) {
+                    heic2any({
+                        blob: file,
+                        toType: "image/jpeg",
+                        quality: 0.7
+                    })
+                    .then(convertedBlob => {
+                        uploadImage(convertedBlob);
+                    })
+                    .catch(error => {
+                        console.error('Error converting HEIC to JPEG:', error);
+                    });
+                } else {
+                    uploadImage(blob);
+                }
             }
         });
     }
 });
+
+function uploadImage(blob) {
+    const formData = new FormData();
+    formData.append('profile_picture', blob, 'profile_picture.jpg'); // Set a default filename for the JPEG
+
+    fetch('/upload_profile_picture/', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        imageModal.style.display = 'none'; // Hide the modal
+        document.getElementById('profilePic').src = data.url;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
 
 function setNavButtons() {
     // Button selection for the carousel
