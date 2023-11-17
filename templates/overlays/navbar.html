@@ -34,6 +34,28 @@
 <script>
     if (window.matchMedia('(display-mode: standalone)').matches) {
         document.querySelector('.stickyBottomNav').style.paddingBottom = '20px';
+
+        window.addEventListener("DOMContentLoaded", function() {
+            let infoHeightContainer = document.getElementById('info-container').style.height
+    
+            console.log(infoHeightContainer)
+    
+            // data example "calc((var(--vh, 1vh) * 100) - 308.5px)" and i want to get the 308.5px
+            let hight_data = infoHeightContainer.split("px")[0].split(" - ")[1]
+    
+            console.log(hight_data)
+    
+            hight_data = parseFloat(hight_data)
+            hight_data = hight_data + 20
+    
+            console.log(hight_data)
+            
+            let new_hight_data = "calc((var(--vh, 1vh) * 100) - " + hight_data + "px"
+            
+            document.getElementById('info-container').style.height = new_hight_data
+    
+            console.log(document.getElementById('info-container').style.height)
+        });
     }
 </script>
     
