@@ -75,8 +75,8 @@ class team_data(AsyncWebsocketConsumer):
                     scoring_types.append(goal_type.name)
                     
                 for match in all_matches_list:
-                    total_goals_for += match.home_score if match.home_team == self.team else match.away_score
-                    total_goals_against += match.away_score if match.home_team == self.team else match.home_score
+                    total_goals_for += await sync_to_async(Goal.objects.filter(match=match, team=self.team, for_team=True).count)()
+                    total_goals_against += await sync_to_async(Goal.objects.filter(match=match, for_team=False).exclude(team=self.team).count)()
                 
                 await self.send(text_data=json.dumps({
                     'command': 'goal_stats',
@@ -302,8 +302,10 @@ class profile_data(AsyncWebsocketConsumer):
             if command == "upcomming_matches":
                 upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(
                     Q(home_team__team_data__players=self.player, finished=False) |
-                    Q(away_team__team_data__players=self.player, finished=False)
-                ))
+                    Q(away_team__team_data__players=self.player, finished=False) |
+                    Q(home_team__team_data__coach=self.player, finished=False) |
+                    Q(away_team__team_data__coach=self.player, finished=False)
+                ).order_by("start_time").distinct())
                 
                 # remove dubplicates
                 upcomming_matches = list(dict.fromkeys(upcomming_matches))
@@ -318,8 +320,10 @@ class profile_data(AsyncWebsocketConsumer):
             if command == "past_matches":
                 upcomming_matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(
                     Q(home_team__team_data__players=self.player, finished=True) |
-                    Q(away_team__team_data__players=self.player, finished=True)
-                ))
+                    Q(away_team__team_data__players=self.player, finished=True) |
+                    Q(home_team__team_data__coach=self.player, finished=True) |
+                    Q(away_team__team_data__coach=self.player, finished=True)
+                ).order_by("start_time").distinct())
                 
                 # remove dubplicates
                 upcomming_matches = list(dict.fromkeys(upcomming_matches))
