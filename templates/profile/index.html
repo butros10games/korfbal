@@ -60,9 +60,11 @@
             </div>
             <script>
                 const profilePic = document.getElementById('overlay');
-                console.log(profilePic);
                 profilePic.onclick = function() {
-                    document.getElementById('profilePicInput').click();
+                    // check if profilePic-container has the class active-img
+                    if (document.getElementById("profilePic-container").classList.contains("active-img")) {
+                        document.getElementById('profilePicInput').click();
+                    }
                 };
             </script>
         {% endif %}
