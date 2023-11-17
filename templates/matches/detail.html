@@ -23,15 +23,15 @@
         <div class="flex-column" style="margin-top: 48px;">
             <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px;">
                 <div class="flex-row" style="justify-content: flex-start;">
-                    <p style="font-weight: 600; font-size: 14px;">{{ start_date }}</p>
+                    <p style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">{{ start_date }}</p>
                 </div>
-                <div class="flex-row" style="margin-top: 6px;">
+                <div class="flex-row" style="margin-top: 6px; margin-bottom: 6px;">
                     <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
                         <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
                         <h2 style="margin: 4px 0; font-size: 16px;">{{ match.home_team|truncate_middle:12 }}</h2>
                     </a>
 
-                    <div class="flex-column" style="justify-content: centre;">
+                    <div class="flex-column" style="justify-content: center; margin-top: -14px;">
                         {% if match.finished %}
                             <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
                         {% else %}
