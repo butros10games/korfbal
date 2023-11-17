@@ -237,7 +237,6 @@ function updateMatches(data) {
 
             match_container.appendChild(home_team_container);
 
-
             const match_date_container = document.createElement("div");
             match_date_container.classList.add("flex-column");
 
@@ -420,16 +419,16 @@ function updatePlayers(data) {
     if (data.spelers.length > 0) {
         infoContainer.classList.add("flex-start-wrap");
         
-        for (i = 0; i < data.spelers.length; i++) {
+        for (const element of data.spelers) {
             const player_container = document.createElement("a");
-            player_container.href = data.spelers[i].get_absolute_url;
+            player_container.href = element.get_absolute_url;
             player_container.style.textDecoration = "none";
             player_container.style.color = "#000";
             player_container.classList.add("player-container");
 
             const player_profile_pic = document.createElement("img");
             player_profile_pic.classList.add("player-profile-pic");
-            player_profile_pic.src = data.spelers[i].profile_picture;
+            player_profile_pic.src = element.profile_picture;
             player_profile_pic.style.objectFit = "cover";
 
             player_container.appendChild(player_profile_pic);
@@ -437,7 +436,10 @@ function updatePlayers(data) {
             const player_name = document.createElement("p");
             player_name.classList.add("player-name");
             player_name.style.fontSize = "14px";
-            player_name.innerHTML = data.spelers[i].name;
+
+            const PlayerName = truncateMiddle(element.name, 22);
+
+            player_name.innerHTML = PlayerName;
 
             player_container.appendChild(player_name);
 

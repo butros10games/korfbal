@@ -35,7 +35,7 @@ class player_admin(admin.ModelAdmin):
 admin.site.register(Player, player_admin)
 
 class match_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "home_team", "away_team", "home_score", "away_score", "start_time", "part_lenght", "finished"]
+    list_display = ["id_uuid", "home_team", "away_team", "home_score", "away_score", "start_time", "part_lenght", "active", "finished"]
     show_full_result_count = False
     
     class Meta:

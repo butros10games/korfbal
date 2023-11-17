@@ -630,6 +630,7 @@ function UpdateStatastics(data) {
         if (data.type == "general") {
             const goals_container = document.createElement("div");
             goals_container.classList.add("flex-column");
+            goals_container.id = "dataField";
             goals_container.style.width = "calc(100% - 24px))";
             goals_container.style.padding = "12px";
 
@@ -668,9 +669,10 @@ function UpdateStatastics(data) {
             goal_stats_container.style.justifyContent = "space-around";
 
             // Iterate through goal_stats object
-            for (const goalType in stats.goal_types) {
-                if (stats.goals_for_types.hasOwnProperty(goalType.name)) {
-                    const goalStat = stats.goals_for_types[goalType.name];
+            for (const goalType of stats.goal_types) {
+                console.log(goalType);
+                if (stats.team_goal_stats.hasOwnProperty(goalType.name)) {
+                    const goalStat = stats.team_goal_stats[goalType.name];
 
                     // Create a div for each goal type's stats
                     const goal_type_container = document.createElement("div");
@@ -682,7 +684,7 @@ function UpdateStatastics(data) {
                     const goal_type_name = document.createElement("p");
                     goal_type_name.style.margin = "0";
                     goal_type_name.style.fontSize = "14px";
-                    goal_type_name.innerHTML = goalType;
+                    goal_type_name.innerHTML = goalType.name;
 
                     const goals_data = document.createElement("p");
                     goals_data.style.margin = "0";
