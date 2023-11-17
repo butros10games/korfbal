@@ -1,18 +1,17 @@
-from channels.generic.websocket import AsyncWebsocketConsumer, WebsocketConsumer
+from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q, Case, When
 
 from .models import Team, Match, Goal, GoalType, Season, TeamData, Player, PlayerChange, Pause, PlayerGroup, GroupTypes, Shot, MatchPart
 from authentication.models import UserProfile
-from django.core.files.base import ContentFile
 
 import json
 import traceback
 import locale
 from datetime import datetime
-import base64
 
 from django.utils.timezone import make_aware
+
 
 class team_data(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
@@ -570,7 +569,7 @@ class match_data(AsyncWebsocketConsumer):
                                     'start_time': event.time.isoformat() if event.time else None,
                                     'end_time': event.end_time.isoformat() if event.end_time else None
                                 })
-                    
+                
                 ## Check if player is in the home or away team
                 user_id = json_data['user_id']
                 player = await sync_to_async(Player.objects.get)(user=user_id)
@@ -606,14 +605,12 @@ class match_data(AsyncWebsocketConsumer):
                 player_groups_array = await self.makePlayerGroupList(team)
                 
                 players_json = await self.makePlayerList(team)
-                    
-                is_coach = await self.checkIfCoach(user_id, team)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'playerGroups',
                     'playerGroups': player_groups_array,
                     'players': players_json,
-                    'is_coach': is_coach
+                    'is_coach': await self.checkIfAcces(user_id, team)
                 }))
                 
             elif command == "away_team":
@@ -624,13 +621,11 @@ class match_data(AsyncWebsocketConsumer):
                 
                 players_json = await self.makePlayerList(team)
                 
-                is_coach = await self.checkIfCoach(user_id, team)
-                
                 await self.send(text_data=json.dumps({
                     'command': 'playerGroups',
                     'playerGroups': player_groups_array,
                     'players': players_json,
-                    'is_coach': is_coach
+                    'is_coach': await self.checkIfAcces(user_id, team)
                 }))
             
             elif command == "follow":
@@ -685,11 +680,15 @@ class match_data(AsyncWebsocketConsumer):
                         for goal_type in goal_types
                     ]
                     
-                    goals_for = {}
-                    goals_against = {}
+                    team_goal_stats = {}
                     for goal_type in goal_types:
-                        goals_for[goal_type.name] = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=True).count)()
-                        goals_against[goal_type.name] = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=False).count)()
+                        goals_for = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=True).count)()
+                        goals_against = await sync_to_async(Goal.objects.filter(match=self.match, goal_type=goal_type, for_team=False).count)()
+                        
+                        team_goal_stats[goal_type.name] = {
+                            "goals_by_player": goals_for,
+                            "goals_against_player": goals_against
+                        }
                     
                     await self.send(text_data=json.dumps({
                         'command': 'stats',
@@ -700,7 +699,7 @@ class match_data(AsyncWebsocketConsumer):
                                 'shots_against': await sync_to_async(Shot.objects.filter(match=self.match, for_team=False).count)(),
                                 'goals_for': await sync_to_async(Goal.objects.filter(match=self.match, for_team=True).count)(),
                                 'goals_against': await sync_to_async(Goal.objects.filter(match=self.match, for_team=False).count)(),
-                                'goals_for_types': goals_for,
+                                'team_goal_stats': team_goal_stats,
                                 'goal_types': goal_types_json,
                             }
                         }
@@ -802,19 +801,23 @@ class match_data(AsyncWebsocketConsumer):
                 
         return players_json
     
-    async def checkIfCoach(self, user_id, team):
-        if user_id != 'None':
-            player = await sync_to_async(Player.objects.get)(user=user_id)
+    async def checkIfAcces(self, user_id, team):
+        player = await sync_to_async(Player.objects.get)(user=user_id)
+        
+        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
+        coaches = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=team).values_list('coach', flat=True))
+
+        
+        players_list = []
+        
+        players_list.extend(players)
+        players_list.extend(coaches)
+        
+        access = False
+        if player.id_uuid in players_list:
+            access = True
             
-            try:
-                season = await self.season_request()
-                
-                team_coach = await sync_to_async(TeamData.objects.get)(team=team, coach=player, season=season)
-                return True
-            except TeamData.DoesNotExist:
-                return False
-            
-        return False
+        return access
     
     async def send_data(self, event):
         data = event['data']
