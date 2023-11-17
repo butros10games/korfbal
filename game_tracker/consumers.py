@@ -677,6 +677,14 @@ class match_data(AsyncWebsocketConsumer):
                     ## get the amount of goals for and against for all the types
                     goal_types = await sync_to_async(list)(GoalType.objects.all())
                     
+                    goal_types_json = [
+                        {
+                            'id': str(goal_type.id_uuid),
+                            'name': goal_type.name
+                        }
+                        for goal_type in goal_types
+                    ]
+                    
                     goals_for = {}
                     goals_against = {}
                     for goal_type in goal_types:
@@ -693,6 +701,7 @@ class match_data(AsyncWebsocketConsumer):
                                 'goals_for': await sync_to_async(Goal.objects.filter(match=self.match, for_team=True).count)(),
                                 'goals_against': await sync_to_async(Goal.objects.filter(match=self.match, for_team=False).count)(),
                                 'goals_for_types': goals_for,
+                                'goal_types': goal_types_json,
                             }
                         }
                     }))

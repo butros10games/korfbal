@@ -59,12 +59,12 @@
                         </form>
     
                         {% for message in messages %}
-                            <p class="CHK2-P">{{ message }}</p>
+                            <p class="CHK2-P"  style="color: white;">{{ message }}</p>
                         {% endfor %}
     
                         {{form.errors}}
                         {% if error_message %}
-                            <p class="CHK2-P">{{ error_message|safe }}</p>
+                            <p class="CHK2-P"  style="color: white;">{{ error_message|safe }}</p>
                         {% endif %}
     
                         <p class="CHK2-P">Heb je nog geen account maak er een? <a href="{% url 'register' %}" style="color: #24A0ED; margin-left: 12px;">Registreer</a></p>

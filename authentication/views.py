@@ -83,6 +83,7 @@ def register_page(request):
         'form': form,
         'device': request.device,
         'csrftoken': get_token(request),
+        "display_back": True,
     }
     return render(request, 'authentication/register.html', context)
 
@@ -172,6 +173,7 @@ def login_page(request):
         'csrftoken': get_token(request),
         'error_message': error_message,
         'username': username,
+        "display_back": True,
     }
 
     return render(request, 'authentication/login.html', context)
@@ -221,6 +223,7 @@ def enter_2fa_code(request):
     context = {
         'device': request.device,
         'csrftoken': get_token(request),
+        "display_back": True,
     }
     return render(request, 'authentication/enter_2fa_code.html', context)
 
