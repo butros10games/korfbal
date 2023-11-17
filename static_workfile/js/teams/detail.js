@@ -221,6 +221,7 @@ function updateMatches(data) {
 
             const home_team_logo = document.createElement("img");
             home_team_logo.src = element.home_team_logo;
+            home_team_logo.style.objectFit = "contain";
             home_team_logo.style.width = "64px";
             home_team_logo.style.height = "64px";
 
@@ -283,6 +284,7 @@ function updateMatches(data) {
 
             const away_team_logo = document.createElement("img");
             away_team_logo.src = element.away_team_logo;
+            away_team_logo.style.objectFit = "contain";
             away_team_logo.style.width = "64px";
             away_team_logo.style.height = "64px";
 
@@ -428,6 +430,7 @@ function updatePlayers(data) {
             const player_profile_pic = document.createElement("img");
             player_profile_pic.classList.add("player-profile-pic");
             player_profile_pic.src = data.spelers[i].profile_picture;
+            player_profile_pic.style.objectFit = "cover";
 
             player_container.appendChild(player_profile_pic);
 

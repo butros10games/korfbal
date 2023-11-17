@@ -27,7 +27,7 @@
                 </div>
                 <div class="flex-row" style="margin-top: 6px;">
                     <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
-                        <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <img src="{{ match.home_team.club.logo.url }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
                         <h2 style="margin: 4px 0; font-size: 16px;">{{ match.home_team|truncate_middle:12 }}</h2>
                     </a>
 
@@ -46,7 +46,7 @@
                     </div>
 
                     <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decorator: none; color: black;">
-                        <img src="{{ match.away_team.club.logo.url }}" alt="{{ match.away_team }}" width="64px" height="64px" style="border-radius: 50%;">
+                        <img src="{{ match.away_team.club.logo.url }}" alt="{{ match.away_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
                         <h2 style="margin: 4px 0; font-size: 16px;">{{ match.away_team|truncate_middle:12 }}</h2>
                     </a>
                 </div>

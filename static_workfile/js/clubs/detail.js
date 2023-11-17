@@ -212,6 +212,7 @@ function updateMatches(data) {
             home_team_container.style.width = "128px";
 
             const home_team_logo = document.createElement("img");
+            home_team_logo.style.objectFit = "contain";
             home_team_logo.src = element.home_team_logo;
             home_team_logo.style.width = "64px";
             home_team_logo.style.height = "64px";
@@ -274,6 +275,7 @@ function updateMatches(data) {
             away_team_container.style.width = "128px";
 
             const away_team_logo = document.createElement("img");
+            away_team_logo.style.objectFit = "contain";
             away_team_logo.src = element.away_team_logo;
             away_team_logo.style.width = "64px";
             away_team_logo.style.height = "64px";
@@ -325,6 +327,7 @@ function updateTeam(data) {
             team_container.href = element.get_absolute_url;
 
             const team_picture = document.createElement("img");
+            team_picture.style.objectFit = "contain";
             team_picture.src = element.logo;
             team_picture.style.width = "48px";
             team_picture.style.height = "48px";
