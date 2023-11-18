@@ -878,22 +878,23 @@ function showPlayerGroups(data) {
                 playerShotsAgainst.style.fontSize = "14px";
                 playerShotsAgainst.style.marginTop = "-10px";
 
+                const playerShotsDivider = document.createElement("p");
+                playerShotsDivider.style.margin = "0";
+                playerShotsDivider.style.fontSize = "14px";
+
                 if (player) {
                     playerDiv.id = player.id;
                     playerDiv.style.justifyContent = "space-between";
 
 
-                    playerName.innerHTML = player.name;
+                    playerName.innerHTML = truncateMiddle(player.name, 16);
                     playerShotsfor.innerHTML = player.shots_for;
                     playerShotsAgainst.innerHTML = player.shots_against;
+
+                    playerShotsDivider.innerHTML = "-";
                 } else {
                     playerName.innerHTML = "geen data";
                 }
-
-                const playerShotsDivider = document.createElement("p");
-                playerShotsDivider.style.margin = "0";
-                playerShotsDivider.style.fontSize = "14px";
-                playerShotsDivider.innerHTML = "-";
 
                 playerShots.appendChild(playerShotsfor);
                 playerShots.appendChild(playerShotsDivider);
@@ -1040,4 +1041,17 @@ class CountdownTimer {
         clearInterval(this.interval);
         this.interval = null;
     }
+}
+
+function truncateMiddle(text, maxLength) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+  
+    // Calculate the number of characters to show before and after the ellipsis
+    var charsToShow = maxLength - 3;
+    var frontChars = Math.ceil(charsToShow / 2);
+    var backChars = Math.floor(charsToShow / 2);
+  
+    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
