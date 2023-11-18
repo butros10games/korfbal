@@ -7,6 +7,7 @@ const url = window.location.href;
 let profilePicture;
 
 let touchStartX = 0;
+let touchStartY = 0;
 let touchEndX = 0;
 let isDragging = false;
 let currentPosition = 0;
@@ -195,21 +196,28 @@ function setNavButtons() {
 
     infoContainer.addEventListener('touchstart', (e) => {
         touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
     });
 
     infoContainer.addEventListener('touchend', (e) => {
         touchEndX = e.changedTouches[0].clientX;
-        const diff = touchEndX - touchStartX;
-
-        let activeIndex = Array.from(document.querySelectorAll(".button")).findIndex(button => button.classList.contains("active"));
-
-        if (diff > 30) { // Swipe right
-            activeIndex = Math.max(activeIndex - 1, 0);
-        } else if (diff < -30) { // Swipe left
-            activeIndex = Math.min(activeIndex + 1, buttons.length - 1);
+        touchEndY = e.changedTouches[0].clientY;
+    
+        const diffX = touchEndX - touchStartX;
+        const diffY = touchEndY - touchStartY;
+    
+        // Check if it's a horizontal swipe
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            let activeIndex = Array.from(document.querySelectorAll(".button")).findIndex(button => button.classList.contains("active"));
+    
+            if (diffX > 30) { // Swipe right
+                activeIndex = Math.max(activeIndex - 1, 0);
+            } else if (diffX < -30) { // Swipe left
+                activeIndex = Math.min(activeIndex + 1, buttons.length - 1);
+            }
+    
+            changeActiveButton(activeIndex);
         }
-
-        changeActiveButton(activeIndex);
     });
 }
 
