@@ -129,25 +129,25 @@ function uploadImage(blob) {
     });
 }
 
+let isAutoScrolling = false; // Flag to track if we are auto-scrolling
+
 function setNavButtons() {
     // Button selection for the carousel
     const buttons = document.querySelectorAll(".button");
+
     buttons.forEach((button) => {
         button.addEventListener("click", function () {
-            // Deactivate the other buttons
-            buttons.forEach((element) => {
-                element.classList.remove("active");
-            });
+            if (isAutoScrolling) return;
 
+            buttons.forEach(element => element.classList.remove("active"));
             this.classList.add("active");
 
-            // Get data out of the button
+            isAutoScrolling = true;
+            this.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            setTimeout(() => isAutoScrolling = false, 500);
+
             const data = this.getAttribute("data");
-
-            socket.send(JSON.stringify({
-                'command': data
-            }));
-
+            socket.send(JSON.stringify({ 'command': data }));
             cleanDom();
             load_icon();
         });
@@ -189,6 +189,49 @@ function setNavButtons() {
         carousel.style.transform = `translateX(${currentPosition}px)`;
 
         isDragging = false;
+    });
+
+    const infoContainer = document.getElementById("info-container");
+
+    infoContainer.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+    });
+
+    infoContainer.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].clientX;
+        const diff = touchEndX - touchStartX;
+
+        let activeIndex = Array.from(document.querySelectorAll(".button")).findIndex(button => button.classList.contains("active"));
+
+        if (diff > 30) { // Swipe right
+            activeIndex = Math.max(activeIndex - 1, 0);
+        } else if (diff < -30) { // Swipe left
+            activeIndex = Math.min(activeIndex + 1, buttons.length - 1);
+        }
+
+        changeActiveButton(activeIndex);
+    });
+}
+
+function changeActiveButton(newActiveIndex) {
+    const buttons = document.querySelectorAll(".button");
+
+    buttons.forEach((button, index) => {
+        button.classList.remove("active");
+        if (index === newActiveIndex) {
+            button.classList.add("active");
+
+            if (!isAutoScrolling) {
+                isAutoScrolling = true;
+                button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                setTimeout(() => isAutoScrolling = false, 500);
+            }
+
+            const data = button.getAttribute("data");
+            socket.send(JSON.stringify({ 'command': data }));
+            cleanDom();
+            load_icon();
+        }
     });
 }
 

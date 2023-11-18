@@ -614,7 +614,8 @@ class match_data(AsyncWebsocketConsumer):
                     'command': 'playerGroups',
                     'playerGroups': player_groups_array,
                     'players': players_json,
-                    'is_coach': await self.checkIfAcces(user_id, team)
+                    'is_coach': await self.checkIfAcces(user_id, team),
+                    'finished': self.match.finished
                 }))
                 
             elif command == "away_team":
@@ -629,7 +630,8 @@ class match_data(AsyncWebsocketConsumer):
                     'command': 'playerGroups',
                     'playerGroups': player_groups_array,
                     'players': players_json,
-                    'is_coach': await self.checkIfAcces(user_id, team)
+                    'is_coach': await self.checkIfAcces(user_id, team),
+                    'finished': self.match.finished
                 }))
             
             elif command == "follow":
