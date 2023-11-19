@@ -56,7 +56,11 @@ function setNavButtons() {
             setTimeout(() => isAutoScrolling = false, 500);
 
             const data = this.getAttribute("data");
-            socket.send(JSON.stringify({ 'command': data }));
+            socket.send(JSON.stringify({
+                'command': data,
+                'user_id': user_id,
+                'data_type': 'general'
+            }));
             cleanDom();
             load_icon();
         });
@@ -144,7 +148,11 @@ function changeActiveButton(newActiveIndex) {
             }
 
             const data = button.getAttribute("data");
-            socket.send(JSON.stringify({ 'command': data }));
+            socket.send(JSON.stringify({
+                'command': data,
+                'user_id': user_id,
+                'data_type': 'general'
+            }));
             cleanDom();
             load_icon();
         }
