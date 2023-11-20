@@ -235,6 +235,7 @@ def search(request):
             teams_json.append({
                 "id": str(team.id_uuid),
                 "name": team.__str__(),
+                "img_url": team.club.logo.url if team.club.logo else None,
                 "url": str(team.get_absolute_url())
             })
         
@@ -246,6 +247,7 @@ def search(request):
             teams_json.append({
                 "id": str(club.id_uuid),
                 "name": club.name,
+                "img_url": club.logo.url if club.logo else None,
                 "url": str(club.get_absolute_url())
             })
         

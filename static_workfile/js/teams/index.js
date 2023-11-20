@@ -194,16 +194,57 @@ function displaySearchResults(results) {
 function displayNormalIndex(data) {
     cleanDom()
 
-    followingText = document.createElement('p');
-    followingText.innerHTML = 'Aangesloten';
-    followingText.style.fontWeight = '600';
-    followingText.style.marginBottom = '8px';
-    followingText.style.marginTop = '4px';
+    const buttonDiv = document.createElement('div');
+    buttonDiv.classList.add('flex-row');
 
-    teamsContainer.appendChild(followingText);
+    // button array
+    const buttonArray = ['Aangesloten', 'Volgend'];
+
+    // loop through the button array
+    buttonArray.forEach(button => {
+        // create a button element
+        const button_element = document.createElement('div');
+        button_element.classList.add('selection-button', 'flex-center');
+
+        // add the active class to the first button
+        if (button === 'Aangesloten') {
+            button_element.classList.add('active');
+        }
+
+        button_element.innerHTML = button;
+        button_element.addEventListener('click', () => {
+            // get all the divs with the class of selection-button
+            const buttons = document.querySelectorAll('.selection-button');
+            // loop through the buttons and remove the active class
+            buttons.forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // add the active class to the button that was clicked
+            button_element.classList.add('active');
+
+            // Look for the div with the id of the button that was clicked
+            const div = document.getElementById(button);
+            div.style.display = 'flex';
+
+            // Look for the element with the name of the other button
+            const otherButton = document.getElementById(button === 'Aangesloten' ? 'Volgend' : 'Aangesloten');
+            otherButton.style.display = 'none';
+        });
+
+        buttonDiv.appendChild(button_element);
+    });
+
+    teamsContainer.appendChild(buttonDiv);
+
+    const connectedDiv = document.createElement('div');
+    connectedDiv.id = 'Aangesloten';
+    connectedDiv.classList.add('flex-column');
 
     if (data.connected.length > 0) {
         data.connected.forEach(element => {
+
+            
             team_button = document.createElement('a');
             team_button.classList.add('flex-column', 'team-button');
             team_button.href = element.url;
@@ -217,23 +258,20 @@ function displayNormalIndex(data) {
 
             divContainer.appendChild(team_name);
             team_button.appendChild(divContainer);
-            teamsContainer.appendChild(team_button);
+            connectedDiv.appendChild(team_button);
         });
     } else {
         followingText = document.createElement('p');
         followingText.innerHTML = 'You are not playing in any teams yet ):';
         followingText.style.marginBottom = '8px';
 
-        teamsContainer.appendChild(followingText);
+        connectedDiv.appendChild(followingText);
     }
 
-
-    followingText = document.createElement('p');
-    followingText.innerHTML = 'Volgend';
-    followingText.style.fontWeight = '600';
-    followingText.style.marginBottom = '8px';
-
-    teamsContainer.appendChild(followingText);
+    const followingDiv = document.createElement('div');
+    followingDiv.id = 'Volgend';
+    followingDiv.classList.add('flex-column');
+    followingDiv.style.display = 'none';
 
     if (data.following.length > 0) {
         data.following.forEach(element => {
@@ -250,13 +288,16 @@ function displayNormalIndex(data) {
 
             divContainer.appendChild(team_name);
             team_button.appendChild(divContainer);
-            teamsContainer.appendChild(team_button);
+            followingDiv.appendChild(team_button);
         });
     } else {
         followingText = document.createElement('p');
         followingText.innerHTML = 'You are not following any teams yet ):';
         followingText.style.marginBottom = '8px';
 
-        teamsContainer.appendChild(followingText);
+        followingDiv.appendChild(followingText);
     }
+
+    teamsContainer.appendChild(connectedDiv);
+    teamsContainer.appendChild(followingDiv);
 }

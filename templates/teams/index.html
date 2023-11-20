@@ -36,9 +36,16 @@
             </div>
 
             <div id="info-container" class="teams-container" style="margin-top: 16px; padding-bottom: 8px; height: calc((var(--vh, 1vh) * 100) - 184px);">
-                {% if teams %}
-                <h2 style="margin: 0; font-size: 16px;">Aangesloten</h2>
-                {% endif %}
+                
+                <div class="flex-row">
+                    {% if teams %}
+                    <div class="selection-button active">Aangesloten</div>
+                    {% endif %}
+
+                    {% if following_teams %}
+                    <div class="selection-button">Volgend</div>
+                    {% endif %}
+                </div>
                 
                 {% for team in teams %}
                 <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
@@ -48,10 +55,7 @@
                 </a>
                 {% endfor %}
 
-                {% if following_teams %}
-                <h2 style="margin: 0; font-size: 16px;">Volgend</h2>
-                {% endif %}
-
+                
                 {% for team in following_teams %}
                 <a href="/team/{{ team.id_uuid }}" class="flex-column team-button">
                     <div class="flex-row team-container">
