@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration
+from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration, PlayerGroup
 from django.db.models import Q, F, Value
 from django.db.models.functions import Concat
 from django.http import JsonResponse
@@ -370,6 +370,14 @@ def match_tracker(request, match_id, team_id):
     team_1_score = Goal.objects.filter(match=match_data, team=team_data).count()
     team_2_score = Goal.objects.filter(match=match_data, team=opponent_data).count()
     
+    ## Check if the 'aanval' and 'verdediging' playerGroups are created for the both teams
+    team_names = [match_data.home_team, match_data.away_team]
+    player_group_names = ['Aanval', 'Verdediging']
+
+    for team_name in team_names:
+        for group_name in player_group_names:
+            PlayerGroup.objects.get_or_create(team=team_name, match=match_data, starting_type__name=group_name)
+        
     context = {
         "match": match_data,
         "minutes": minutes,
