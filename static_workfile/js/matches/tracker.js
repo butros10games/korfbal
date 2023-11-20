@@ -305,10 +305,14 @@ function onMessageReceived(event) {
 
             playerGroupsData = data;
 
-            showPlayerGroups(data);
+            if (data.match_active) {
+                showPlayerGroups(data);
 
-            shotButtonReg("home");
-            shotButtonReg("away");
+                shotButtonReg("home");
+                shotButtonReg("away");
+            } else {
+                updateplayerGroups(data);
+            }
             break;
 
         case "player_shot_change":
@@ -1041,6 +1045,158 @@ class CountdownTimer {
         clearInterval(this.interval);
         this.interval = null;
     }
+}
+
+function updateplayerGroups(data) {
+    const playerGroups = data.playerGroups;
+
+    const playerGroupContainer = document.createElement("div");
+    playerGroupContainer.classList.add("player-group-container");
+
+    if (playerGroups.length > 0) {
+        playerGroups.forEach(playerGroup => {
+            const playerGroupDiv = document.createElement("div");
+            playerGroupDiv.classList.add("player-group");
+            playerGroupDiv.classList.add("flex-column");
+            playerGroupDiv.style.marginTop = "12px";
+
+            const playerGroupTitle = document.createElement("div");
+            playerGroupTitle.classList.add("flex-row");
+            playerGroupTitle.classList.add("player-group-title");
+            playerGroupTitle.style.justifyContent = "flex-start";
+            playerGroupTitle.style.fontWeight = "600";
+            playerGroupTitle.style.marginBottom = "6px";
+            playerGroupTitle.style.marginLeft = "12px";
+            playerGroupTitle.style.width = "calc(100% - 12px)";
+            playerGroupTitle.innerHTML = playerGroup.starting_type;
+            playerGroupTitle.id = playerGroup.id;
+
+            const playerGroupPlayers = document.createElement("div");
+            playerGroupPlayers.classList.add("player-group-players");
+            playerGroupPlayers.classList.add("flex-row");
+            playerGroupPlayers.style.flexWrap = "wrap";
+            playerGroupPlayers.style.alignItems = 'stretch';
+
+            const playerOptions = data.full_player_list.map(dataPlayer => {
+                const option = document.createElement("option");
+                option.value = dataPlayer.id;
+                option.innerHTML = truncateMiddle(dataPlayer.name, 18);
+                return option;
+            });
+        
+            const nietIngevuldOption = document.createElement("option");
+            nietIngevuldOption.value = NaN;
+            nietIngevuldOption.innerHTML = 'Niet ingevuld';
+        
+            for (let i = 0; i < 4; i++) {
+                let player = playerGroup.players[i];
+        
+                const playerDiv = document.createElement("select");
+                playerDiv.classList.add("player-selector", "flex-row");
+                playerDiv.style.flexGrow = "1";
+                playerDiv.style.flexBasis = "calc(50% - 32px)"; 
+                playerDiv.style.textAlign = "center";
+        
+                // Attach the event listener
+                playerDiv.addEventListener('change', function() {
+                    onPlayerSelectChange(this);
+                });
+        
+                // Append the list of player options
+                playerOptions.forEach(option => {
+                    playerDiv.appendChild(option.cloneNode(true));  // Clone the option to avoid moving the same node
+                });
+        
+                // Append the 'Niet ingevuld' option
+                playerDiv.appendChild(nietIngevuldOption.cloneNode(true));
+        
+                // If a player is already selected, set the value of the dropdown
+                if (player) {
+                    playerDiv.value = player.id;
+                } else {
+                    playerDiv.value = NaN;  // Set to 'Niet ingevuld' value
+                }
+        
+                playerGroupPlayers.appendChild(playerDiv);
+            }
+
+            playerGroupDiv.appendChild(playerGroupTitle);
+            playerGroupDiv.appendChild(playerGroupPlayers);
+
+            playerGroupContainer.appendChild(playerGroupDiv);
+        });
+
+        const buttonDiv = document.createElement("div");
+        buttonDiv.classList.add("flex-center");
+        buttonDiv.style.marginTop = "12px";
+
+        const saveButton = document.createElement("button");
+        saveButton.id = "saveButton";
+        saveButton.innerHTML = "Save";
+        saveButton.style.display = "none";  // Initially hidden
+        buttonDiv.appendChild(saveButton);
+
+        saveButton.addEventListener('click', function() {
+            savePlayerGroups();
+        });
+
+        playerGroupContainer.appendChild(buttonDiv);
+    } else {
+        const textElement = document.createElement("p");
+        textElement.classList.add("flex-center");
+        textElement.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+
+        playerGroupContainer.appendChild(textElement);
+    }
+
+    playersDiv.appendChild(playerGroupContainer);
+}
+
+function onPlayerSelectChange(changedSelect) {
+    const allSelectors = document.querySelectorAll('.player-selector');
+    allSelectors.forEach(select => {
+        // Skip the select that was changed
+        if (select === changedSelect) return;
+
+        // If another select has the same value, reset it
+        if (select.value === changedSelect.value) {
+            select.value = NaN;  // Set to 'Niet ingevuld' value
+        }
+    });
+
+    // Show the save button
+    document.getElementById("saveButton").style.display = "block";
+}
+
+function savePlayerGroups() {
+    const playerGroups = document.querySelectorAll('.player-group');
+    const playerGroupData = [];
+
+    playerGroups.forEach(playerGroup => {
+        const playerGroupTitle = playerGroup.querySelector('.player-group-title');
+        const playerGroupPlayers = playerGroup.querySelectorAll('.player-selector');
+
+        const playerGroupObject = {
+            'starting_type': playerGroupTitle.innerHTML,
+            'id': playerGroupTitle.id,
+            'players': []
+        };
+
+        playerGroupPlayers.forEach(player => {
+            if (player.value) {
+                playerGroupObject.players.push(player.value);
+            } else {
+                playerGroupObject.players.push(null);
+            }
+        });
+
+        playerGroupData.push(playerGroupObject);
+    });
+
+    socket.send(JSON.stringify({
+        'command': 'savePlayerGroups',
+        'playerGroups': playerGroupData
+    }));
 }
 
 function truncateMiddle(text, maxLength) {

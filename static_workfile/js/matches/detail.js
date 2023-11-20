@@ -432,7 +432,6 @@ function savePlayerGroups() {
 
     socket.send(JSON.stringify({
         'command': 'savePlayerGroups',
-        'user_id': user_id,
         'playerGroups': playerGroupData
     }));
 }
@@ -540,7 +539,7 @@ function updateplayerGroups(data) {
             const playerOptions = data.players.map(dataPlayer => {
                 const option = document.createElement("option");
                 option.value = dataPlayer.id;
-                option.innerHTML = dataPlayer.name;
+                option.innerHTML = truncateMiddle(dataPlayer.name, 18);
                 return option;
             });
         
@@ -835,4 +834,17 @@ function UpdateStatastics(data) {
     }
 
     infoContainer.appendChild(statsContainer);
+}
+
+function truncateMiddle(text, maxLength) {
+    if (text.length <= maxLength) {
+        return text;
+    }
+  
+    // Calculate the number of characters to show before and after the ellipsis
+    var charsToShow = maxLength - 3;
+    var frontChars = Math.ceil(charsToShow / 2);
+    var backChars = Math.floor(charsToShow / 2);
+  
+    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }

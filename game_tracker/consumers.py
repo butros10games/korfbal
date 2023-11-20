@@ -804,7 +804,10 @@ class match_data(AsyncWebsocketConsumer):
                 })
             except Player.DoesNotExist:
                 pass
-                
+        
+        # remove duplicates
+        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
+        
         return players_json
     
     async def checkIfAcces(self, user_id, team):
@@ -886,15 +889,26 @@ class match_tracker(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "playerGroups":
-                team = self.team
+                await self.playerGroupRequest()
                 
-                player_groups_array = await self.makePlayerGroupList(team)
-                players_json = await self.makePlayerList(team)
+            elif command == "savePlayerGroups":
+                player_groups = json_data['playerGroups']
+                
+                for player_group in player_groups:
+                    group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_group['id'])
+                    await sync_to_async(group.players.clear)()
+                    
+                    for player in player_group['players']:
+                        if player == 'NaN':
+                            continue
+                        player_obj = await sync_to_async(Player.objects.get)(id_uuid=player)
+                        await sync_to_async(group.players.add)(player_obj)
+                        
+                    await sync_to_async(group.save)()
                 
                 await self.send(text_data=json.dumps({
-                    'command': 'playerGroups',
-                    'playerGroups': player_groups_array,
-                    'players': players_json
+                    'command': 'savePlayerGroups',
+                    'status': 'success'
                 }))
                 
             elif command == "shot_reg":
@@ -1005,6 +1019,8 @@ class match_tracker(AsyncWebsocketConsumer):
                     if self.match.current_part == 1:
                         self.match.active = True
                         await sync_to_async(self.match.save)()
+                        
+                        await self.playerGroupRequest()
                     
                     await self.channel_layer.group_send(self.channel_group_name, {
                         'type': 'send_data',
@@ -1270,6 +1286,20 @@ class match_tracker(AsyncWebsocketConsumer):
                     'traceback': traceback.format_exc()
                 }))
                 
+    async def playerGroupRequest(self):
+        team = self.team
+                
+        player_groups_array = await self.makePlayerGroupList(team)
+        players_json = await self.makePlayerList(team)
+        
+        await self.send(text_data=json.dumps({
+            'command': 'playerGroups',
+            'playerGroups': player_groups_array,
+            'players': players_json,
+            'full_player_list': await self.makeFullPlayerList(self.team),
+            'match_active': self.match.active
+        }))            
+                
     async def create_player_groups(self, team):
         group_types = await sync_to_async(list)(GroupTypes.objects.all().order_by('id'))
         for group_type in group_types:
@@ -1331,7 +1361,34 @@ class match_tracker(AsyncWebsocketConsumer):
                 })
             except Player.DoesNotExist:
                 pass
+            
+        # remove duplicates
+        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
                     
+        return players_json
+    
+    async def makeFullPlayerList(self, team):
+        # get the season of the match
+        season = await self.season_request()
+            
+        players_json = []
+        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team, season=season).values_list('players', flat=True))
+        
+        for player in players:
+            try:
+                player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                players_json.append({
+                    'id': str(player_json.id_uuid),
+                    'name': player_json.user.username,
+                    'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
+                    'get_absolute_url': str(player_json.get_absolute_url())
+                })
+            except Player.DoesNotExist:
+                pass
+        
+        # remove duplicates
+        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
+        
         return players_json
     
     async def swap_player_group_types(self, team):
