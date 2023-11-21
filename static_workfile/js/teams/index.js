@@ -174,19 +174,39 @@ function displaySearchResults(results) {
     }
 
     results.teams.forEach(element => {
-        team_button = document.createElement('a');
-        team_button.classList.add('flex-column', 'team-button');
+        const team_button = document.createElement('a');
+        team_button.classList.add('flex-row', 'team-button');
         team_button.href = element.url;
 
-        divContainer = document.createElement('div');
-        divContainer.classList.add('flex-row', 'team-container');
+        const logo = document.createElement('img');
+        logo.src = element.img_url;
+        logo.classList.add('team-logo');
 
-        team_name = document.createElement('p');
+        team_button.appendChild(logo);
+
+        const textContainer = document.createElement('div');
+        textContainer.classList.add('flex-column', 'team-container');
+
+        const team_name = document.createElement('p');
         team_name.style.fontWeight = '600';
+        team_name.style.margin = 0;
+        team_name.style.fontSize = '16px';
         team_name.innerHTML = element.name;
 
-        divContainer.appendChild(team_name);
-        team_button.appendChild(divContainer);
+        const competition = document.createElement('p');
+        competition.style.margin = 0;
+        competition.style.fontSize = '12px';
+        competition.style.color = '#666';
+        competition.style.fontWeight = '500';
+        competition.style.marginTop = '4px';
+        competition.innerHTML = element.competition;
+
+        textContainer.appendChild(team_name);
+
+        if (element.competition != null && element.competition != undefined && element.competition != '') {
+            textContainer.appendChild(competition);
+        }
+        team_button.appendChild(textContainer);
         teamsContainer.appendChild(team_button);
     });
 }
@@ -243,21 +263,38 @@ function displayNormalIndex(data) {
 
     if (data.connected.length > 0) {
         data.connected.forEach(element => {
-
-            
-            team_button = document.createElement('a');
-            team_button.classList.add('flex-column', 'team-button');
+            const team_button = document.createElement('a');
+            team_button.classList.add('flex-row', 'team-button');
             team_button.href = element.url;
 
-            divContainer = document.createElement('div');
-            divContainer.classList.add('flex-row', 'team-container');
+            const logo = document.createElement('img');
+            logo.src = element.img_url;
+            logo.classList.add('team-logo');
 
-            team_name = document.createElement('p');
+            team_button.appendChild(logo);
+
+            const textContainer = document.createElement('div');
+            textContainer.classList.add('flex-column', 'team-container');
+
+            const team_name = document.createElement('p');
             team_name.style.fontWeight = '600';
+            team_name.style.margin = 0;
+            team_name.style.fontSize = '16px';
             team_name.innerHTML = element.name;
 
-            divContainer.appendChild(team_name);
-            team_button.appendChild(divContainer);
+            const competition = document.createElement('p');
+            competition.style.margin = 0;
+            competition.style.fontSize = '12px';
+            competition.style.color = '#666';
+            competition.style.fontWeight = '500';
+            competition.style.marginTop = '4px';
+            competition.innerHTML = element.competition;
+
+            textContainer.appendChild(team_name);
+            if (element.competition != null && element.competition != undefined && element.competition != '') {
+                textContainer.appendChild(competition);
+            }
+            team_button.appendChild(textContainer);
             connectedDiv.appendChild(team_button);
         });
     } else {
@@ -275,19 +312,38 @@ function displayNormalIndex(data) {
 
     if (data.following.length > 0) {
         data.following.forEach(element => {
-            team_button = document.createElement('a');
-            team_button.classList.add('flex-column', 'team-button');
+            const team_button = document.createElement('a');
+            team_button.classList.add('flex-row', 'team-button');
             team_button.href = element.url;
 
-            divContainer = document.createElement('div');
-            divContainer.classList.add('flex-row', 'team-container');
+            const logo = document.createElement('img');
+            logo.src = element.img_url;
+            logo.classList.add('team-logo');
 
-            team_name = document.createElement('p');
+            team_button.appendChild(logo);
+
+            const textContainer = document.createElement('div');
+            textContainer.classList.add('flex-column', 'team-container');
+
+            const team_name = document.createElement('p');
             team_name.style.fontWeight = '600';
+            team_name.style.margin = 0;
+            team_name.style.fontSize = '16px';
             team_name.innerHTML = element.name;
 
-            divContainer.appendChild(team_name);
-            team_button.appendChild(divContainer);
+            const competition = document.createElement('p');
+            competition.style.margin = 0;
+            competition.style.fontSize = '12px';
+            competition.style.color = '#666';
+            competition.style.fontWeight = '500';
+            competition.style.marginTop = '4px';
+            competition.innerHTML = element.competition;
+
+            textContainer.appendChild(team_name);
+            if (element.competition != null && element.competition != undefined && element.competition != '') {
+                textContainer.appendChild(competition);
+            }
+            team_button.appendChild(textContainer);
             followingDiv.appendChild(team_button);
         });
     } else {

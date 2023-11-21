@@ -124,6 +124,8 @@ def teams_index_data(request):
                     connected_list.append({
                         "id": str(club.id_uuid),
                         "name": club.name,
+                        "img_url": club.logo.url if club.logo else None,
+                        "competition": None,
                         "url": str(club.get_absolute_url())
                     })
                     
@@ -131,6 +133,8 @@ def teams_index_data(request):
                     following_list.append({
                         "id": str(club.id_uuid),
                         "name": club.name,
+                        "img_url": club.logo.url if club.logo else None,
+                        "competition": None,
                         "url": str(club.get_absolute_url())
                     })
             
@@ -154,6 +158,8 @@ def teams_index_data(request):
                     connected_list.append({
                         "id": str(team.id_uuid),
                         "name": team.__str__(),
+                        "img_url": team.club.logo.url if team.club.logo else None,
+                        "competition": team.team_data.last().competition if team.team_data else "",
                         "url": str(team.get_absolute_url())
                     })
                     
@@ -161,6 +167,8 @@ def teams_index_data(request):
                     following_list.append({
                         "id": str(team.id_uuid),
                         "name": team.__str__(),
+                        "img_url": team.club.logo.url if team.club.logo else None,
+                        "competition": team.team_data.last().competition if team.team_data else "",
                         "url": str(team.get_absolute_url())
                     })
     
@@ -226,16 +234,37 @@ def search(request):
     search_term = request.GET.get('q', '')
     category = request.GET.get('category', '')
     
+    # Get current date
+    today = date.today()
+    
+    # Find the current season
+    current_season = Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
+    
+    # If current season is not found, then find the next season
+    if not current_season:
+        current_season = Season.objects.filter(start_date__gte=today).first()
+    
+    # If next season is not found, then find the previous season
+    if not current_season:
+        current_season = Season.objects.filter(end_date__lte=today).last()
+
+    # If no season is found, then there might be an error in data or there's currently no active season
+    if not current_season:
+        raise Http404("No active season found")
+    
     if category == 'teams':
         # Get the teams that match the search term
         teams = Team.objects.annotate(
         full_name=Concat(F('club__name'), Value(' '), F('name'))).filter(Q(full_name__icontains=search_term))
         
         for team in teams:
+            team_data = TeamData.objects.filter(team=team, season=current_season).first()
+            
             teams_json.append({
                 "id": str(team.id_uuid),
                 "name": team.__str__(),
                 "img_url": team.club.logo.url if team.club.logo else None,
+                "competition": team_data.competition if team_data else "",
                 "url": str(team.get_absolute_url())
             })
         
@@ -248,6 +277,7 @@ def search(request):
                 "id": str(club.id_uuid),
                 "name": club.name,
                 "img_url": club.logo.url if club.logo else None,
+                "competition": None,
                 "url": str(club.get_absolute_url())
             })
         
