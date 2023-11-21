@@ -167,6 +167,10 @@ function requestInitalData() {
         'command': data,
         'user_id': user_id
     }));
+
+    socket.send(JSON.stringify({
+        'command': 'get_time',
+    }));
 }
 
 // Function to initialize WebSocket
@@ -227,6 +231,35 @@ function onMessageReceived(event) {
         case "stats":
             UpdateStatastics(data.data);
             break;
+
+        case "timer_data":
+            if (timer) {
+                return;
+            }
+
+            if (data.type === "active") {
+                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000);
+                timer.start();
+            } else if (data.type === "pause") {
+                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
+            } else if (data.type === "start") {
+                timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
+                timer.start();
+            }
+
+            break;
+
+        case "pause":
+            if (data.pause === true) {
+                timer.stop();
+                console.log("Timer paused");
+
+            } else if (data.pause === false) {
+                timer.start(data.pause_time);
+                console.log("Timer resumed");
+            }
+
+            break;
     }
 }
 
@@ -278,7 +311,7 @@ function updateEvents(data) {
                 descriptionDiv.innerHTML = event.goal_type + " (\"" + event.time + "\")";
 
                 const playerName = document.createElement("p");
-                playerName.innerHTML = event.player;
+                playerName.innerHTML = truncateMiddle(event.player, 20);
                 playerName.style.margin = "0";
 
                 midsectionDiv.appendChild(descriptionDiv);
@@ -480,7 +513,7 @@ function showPlayerGroups(data) {
                 playerName.style.fontSize = "14px";
 
                 if (player) {
-                    playerName.innerHTML = player.name;
+                    playerName.innerHTML = truncateMiddle(player.name, 16);
                 } else {
                     playerName.innerHTML = "geen data";
                 }
@@ -796,7 +829,7 @@ function UpdateStatastics(data) {
                 playerDataDiv.style.paddingBottom = "12px";
 
                 const playerName = document.createElement("p");
-                playerName.innerHTML = player.username;
+                playerName.innerHTML = truncateMiddle(player.username, 20);
                 playerName.style.margin = "0";
                 playerName.style.fontSize = "14px";
 
@@ -847,4 +880,55 @@ function truncateMiddle(text, maxLength) {
     var backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
+}
+
+class CountdownTimer {
+    constructor(startTimeISO, lengthInMilliseconds, pauseTimeISO = null, offsetInMilliseconds = 0) {
+        this.lengthInMilliseconds = lengthInMilliseconds;
+        
+        this.startTime = new Date(startTimeISO);
+        this.totalLength = lengthInMilliseconds + offsetInMilliseconds;  // Include the offset
+        this.endTime = new Date(this.startTime.getTime() + this.totalLength);
+        
+        this.offset = offsetInMilliseconds;
+        this.pauseTimeISO = pauseTimeISO;
+        this.interval = null;
+
+        // Call updateDisplay immediately upon construction to set the initial value
+        this.updateDisplay();
+    }
+
+    updateDisplay() {
+        this.now = this.pauseTimeISO ? new Date(this.pauseTimeISO) : new Date();;
+        let timeLeft = this.totalLength - (this.now - this.startTime);
+    
+        const sign = timeLeft < 0 ? '-' : '';
+        const absTime = Math.abs(timeLeft);
+    
+        const minutes = Math.floor(absTime / 60000);
+        const seconds = Math.floor((absTime % 60000) / 1000);
+    
+        // Update the counter display on the website
+        document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        // if the time is under one minute add a end half button
+        if (minutes < 1 || sign === "-") {
+            const endHalfButton = document.getElementById("end-half-button");
+            endHalfButton.style.display = "block";
+        }
+    }
+
+    start(pause_time = null) {
+        if (pause_time) {
+            this.totalLength = this.lengthInMilliseconds + (pause_time * 1000);
+        }
+
+        this.pauseTimeISO = null;
+        this.interval = setInterval(() => this.updateDisplay(), 1000);
+    }
+
+    stop() {
+        clearInterval(this.interval);
+        this.interval = null;
+    }
 }

@@ -601,6 +601,9 @@ class match_data(AsyncWebsocketConsumer):
                     'access': access,
                     'finished': self.match.finished
                 }))
+                
+            elif command == "get_time":
+                await get_time(self)
             
             elif command == "home_team":
                 user_id = json_data['user_id']
@@ -1116,47 +1119,7 @@ class match_tracker(AsyncWebsocketConsumer):
                     })
                     
             elif command == "get_time":
-                # check if there is a active part if there is a active part send the start time of the part and lenght of a match part
-                try:
-                    part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
-                except MatchPart.DoesNotExist:
-                    part = False
-                    
-                if part:
-                    # check if there is a active pause if there is a active pause send the start time of the pause
-                    try:
-                        active_pause = await sync_to_async(Pause.objects.get)(match=self.match, active=True, match_part = self.current_part)
-                    except Pause.DoesNotExist:
-                        active_pause = False
-                    
-                    # calculate all the time in pauses that are not active anymore
-                    pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, match_part = self.current_part))
-                    pause_time = 0
-                    for pause in pauses:
-                        pause_time += pause.length
-                    
-                    if active_pause:
-                        await self.send(text_data=json.dumps({
-                            'command': 'timer_data',
-                            'type': 'pause',
-                            'time': part.start_time.isoformat(),
-                            'calc_to': active_pause.time.isoformat(),
-                            'length': self.match.part_lenght,
-                            'pause_length': pause_time
-                        }))
-                    else:
-                        await self.send(text_data=json.dumps({
-                            'command': 'timer_data',
-                            'type': 'active',
-                            'time': part.start_time.isoformat(),
-                            'length': self.match.part_lenght,
-                            'pause_length': pause_time
-                        }))
-                else:
-                    await self.send(text_data=json.dumps({
-                        'command': 'timer_data',
-                        'type': 'deactive'
-                    }))
+                await get_time(self)
                     
             elif command == "last_event":
                 goals = await sync_to_async(list)(Goal.objects.prefetch_related('player__user', 'goal_type').filter(match=self.match).order_by('time'))
@@ -1413,3 +1376,46 @@ class match_tracker(AsyncWebsocketConsumer):
             return await sync_to_async(Season.objects.get)(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
         except Season.DoesNotExist:
             return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
+
+async def get_time(self):
+    # check if there is a active part if there is a active part send the start time of the part and lenght of a match part
+    try:
+        part = await sync_to_async(MatchPart.objects.get)(match=self.match, active=True)
+    except MatchPart.DoesNotExist:
+        part = False
+        
+    if part:
+        # check if there is a active pause if there is a active pause send the start time of the pause
+        try:
+            active_pause = await sync_to_async(Pause.objects.get)(match=self.match, active=True, match_part = self.current_part)
+        except Pause.DoesNotExist:
+            active_pause = False
+        
+        # calculate all the time in pauses that are not active anymore
+        pauses = await sync_to_async(list)(Pause.objects.filter(match=self.match, active=False, match_part = self.current_part))
+        pause_time = 0
+        for pause in pauses:
+            pause_time += pause.length
+        
+        if active_pause:
+            await self.send(text_data=json.dumps({
+                'command': 'timer_data',
+                'type': 'pause',
+                'time': part.start_time.isoformat(),
+                'calc_to': active_pause.time.isoformat(),
+                'length': self.match.part_lenght,
+                'pause_length': pause_time
+            }))
+        else:
+            await self.send(text_data=json.dumps({
+                'command': 'timer_data',
+                'type': 'active',
+                'time': part.start_time.isoformat(),
+                'length': self.match.part_lenght,
+                'pause_length': pause_time
+            }))
+    else:
+        await self.send(text_data=json.dumps({
+            'command': 'timer_data',
+            'type': 'deactive'
+        }))
