@@ -229,6 +229,12 @@ function onMessageReceived(event) {
                 showPlayerGroups(data);
             }
             break;
+        
+        case "team_goal_change":
+            score_field = document.getElementById("score");
+            score_field.innerHTML = data.goals_for + " / " + data.goals_against;
+
+            break;
 
         case "stats":
             UpdateStatastics(data.data);

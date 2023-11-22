@@ -723,33 +723,65 @@ function showReservePlayer(data) {
 }
 
 function updateEvent(data) {
-    switch(data.event) {
+    const event = data.last_event;
+
+    switch(event.type) {
         case "no_event":
-            const textElement = document.createElement("p");
+            textElement = document.createElement("p");
             textElement.classList.add("flex-center");
             textElement.style.margin = "0";
             textElement.style.height = "64px";
-            textElement.innerHTML = "<p>Geen events gevonden.</p>";
+            textElement.innerHTML = "Geen events gevonden.";
 
             eventsDiv.appendChild(textElement);
             break;
 
         case "goal":
-            const goalElement = document.createElement("p");
-            goalElement.classList.add("flex-center");
-            goalElement.style.margin = "0";
-            goalElement.style.height = "64px";
-            goalElement.innerHTML = "<p>Doelpunt.</p>";
+            eventTypeDiv = document.createElement("div");
+            eventTypeDiv.classList.add("event-type", "flex-center");
+            eventTypeDiv.innerHTML = event.type;
+            eventTypeDiv.style.width = "64px";
+            eventTypeDiv.style.height = "100%";
 
-            eventsDiv.appendChild(goalElement);
+            if (event.for_team) {
+                eventTypeDiv.style.backgroundColor = '#4CAF50';
+                thuis++;
+            } else {
+                eventTypeDiv.style.backgroundColor = 'rgba(235, 0, 0, 0.7)';
+                uit++;
+            }
+
+            midsectionDiv = document.createElement("div");
+            midsectionDiv.classList.add("flex-column");
+
+            descriptionDiv = document.createElement("div");
+            descriptionDiv.classList.add("description");
+            descriptionDiv.innerHTML = event.goal_type + " (\"" + event.time + "\")";
+
+            playerName = document.createElement("p");
+            playerName.innerHTML = truncateMiddle(event.player, 20);
+            playerName.style.margin = "0";
+
+            midsectionDiv.appendChild(descriptionDiv);
+            midsectionDiv.appendChild(playerName);
+
+            currentScoreDiv = document.createElement("div");
+            currentScoreDiv.classList.add("current-score");
+            currentScoreDiv.innerHTML = thuis + "-" + uit;
+            currentScoreDiv.style.width = "84px";
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(currentScoreDiv);
+
             break;
 
         case "shot":
-            const shotElement = document.createElement("p");
+            shotElement = document.createElement("p");
             shotElement.classList.add("flex-center");
             shotElement.style.margin = "0";
             shotElement.style.height = "64px";
-            shotElement.innerHTML = "<p>Schot.</p>";
+            shotElement.innerHTML = "Schot.";
 
             eventsDiv.appendChild(shotElement);
             break;
@@ -759,9 +791,83 @@ function updateEvent(data) {
             shotAgainstElement.classList.add("flex-center");
             shotAgainstElement.style.margin = "0";
             shotAgainstElement.style.height = "64px";
-            shotAgainstElement.innerHTML = "<p>Schot tegen.</p>";
+            shotAgainstElement.innerHTML = "Schot tegen.";
 
             eventsDiv.appendChild(shotAgainstElement);
+            break;
+
+        case "wissel":
+            eventTypeDiv = document.createElement("div");
+            eventTypeDiv.classList.add("event-type", "flex-center");
+            eventTypeDiv.innerHTML = event.type;
+            eventTypeDiv.style.width = "64px";
+            eventTypeDiv.style.height = "100%";
+            eventTypeDiv.style.backgroundColor = '#eb9834';
+
+            midsectionDiv = document.createElement("div");
+            midsectionDiv.classList.add("flex-column");
+
+            descriptionDiv = document.createElement("div");
+            descriptionDiv.classList.add("description");
+            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
+            
+            playerName = document.createElement("p");
+            playerName.innerHTML = event.player_in + " --> " + event.player_out;
+            playerName.style.margin = "0";
+            playerName.style.fontSize = "12px";
+
+            midsectionDiv.appendChild(descriptionDiv);
+            midsectionDiv.appendChild(playerName);
+
+            endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
+
+            break;
+
+        case "pause":
+            eventTypeDiv = document.createElement("div");
+            eventTypeDiv.classList.add("event-type", "flex-center");
+            eventTypeDiv.innerHTML = event.type;
+            eventTypeDiv.style.width = "64px";
+            eventTypeDiv.style.height = "100%";
+            eventTypeDiv.style.backgroundColor = '#2196F3';
+
+            midsectionDiv = document.createElement("div");
+            midsectionDiv.classList.add("flex-column");
+
+            descriptionDiv = document.createElement("div");
+            descriptionDiv.classList.add("description");
+            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
+
+            timeout_div = document.createElement("p");
+            timeout_div.style.margin = "0";
+            timeout_div.style.fontSize = "14px";
+            if (event.end_time == null) {
+                // Convert the start time to a date object and format it so only the hour and minutes are shown
+                start_time = new Date(event.start_time);
+
+                timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0')
+            } else {
+                start_time = new Date(event.start_time);
+                end_time = new Date(event.end_time);
+
+                timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
+            }
+
+            midsectionDiv.appendChild(descriptionDiv);
+            midsectionDiv.appendChild(timeout_div);
+
+            endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
+
             break;
     }
 }
