@@ -1,14 +1,12 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from authentication.forms import CreateUserForm
 from django.contrib import messages
-from django.conf import settings
 from django.urls import reverse
 
-from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib.auth import authenticate, login, logout, BACKEND_SESSION_KEY
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.middleware.csrf import get_token
-from django.views.decorators.csrf import csrf_exempt
 
 from django.contrib.sites.shortcuts import get_current_site
 from django.template.loader import render_to_string
@@ -18,11 +16,7 @@ from django.contrib.auth.tokens import default_token_generator
 
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-
-from django.shortcuts import get_object_or_404
-from django.contrib.auth import BACKEND_SESSION_KEY
 
 import random
 from .models import UserProfile
