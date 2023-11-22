@@ -12,6 +12,8 @@ let touchEndX = 0;
 let isDragging = false;
 let currentPosition = 0;
 
+let timer = null;
+
 let buttonWidth;
 let carousel;
 
