@@ -37,7 +37,9 @@ def index(request):
         "display_back": True,
         "match": match,
         "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
-        "match_time": match.start_time.strftime('%H:%M') if match else ""
+        "start_time": match.start_time.strftime('%H:%M') if match else "",
+        "home_score": Goal.objects.filter(match=match, team=match.home_team).count() if match else 0,
+        "away_score": Goal.objects.filter(match=match, team=match.away_team).count() if match else 0,
     }
         
     return render(request, "index.html", context)
