@@ -745,10 +745,8 @@ function updateEvent(data) {
 
             if (event.for_team) {
                 eventTypeDiv.style.backgroundColor = '#4CAF50';
-                thuis++;
             } else {
                 eventTypeDiv.style.backgroundColor = 'rgba(235, 0, 0, 0.7)';
-                uit++;
             }
 
             midsectionDiv = document.createElement("div");
@@ -767,7 +765,7 @@ function updateEvent(data) {
 
             currentScoreDiv = document.createElement("div");
             currentScoreDiv.classList.add("current-score");
-            currentScoreDiv.innerHTML = thuis + "-" + uit;
+            currentScoreDiv.innerHTML = event.goals_for + "-" + event.goals_against;
             currentScoreDiv.style.width = "84px";
 
             eventsDiv.appendChild(eventTypeDiv);
