@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club, Match, Goal, PageConnectRegistration, PlayerGroup
+from .models import Team, Player, TeamData, Season, Club, Match, PageConnectRegistration, PlayerGroup, Shot
 from django.db.models import Q, F, Value
 from django.db.models.functions import Concat
 from django.http import JsonResponse
@@ -38,8 +38,8 @@ def index(request):
         "match": match,
         "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
         "start_time": match.start_time.strftime('%H:%M') if match else "",
-        "home_score": Goal.objects.filter(match=match, team=match.home_team).count() if match else 0,
-        "away_score": Goal.objects.filter(match=match, team=match.away_team).count() if match else 0,
+        "home_score": Shot.objects.filter(match=match, team=match.home_team, scored=True).count() if match else 0,
+        "away_score": Shot.objects.filter(match=match, team=match.away_team, scored=True).count() if match else 0,
     }
         
     return render(request, "index.html", context)
@@ -334,8 +334,8 @@ def match_detail(request, match_id):
         "start_time": match_data.start_time.strftime('%H:%M'),
         "profile_url": profile_url,
         "profile_img_url": profile_img_url,
-        "home_score": Goal.objects.filter(match=match_data, team=match_data.home_team).count(),
-        "away_score": Goal.objects.filter(match=match_data, team=match_data.away_team).count()
+        "home_score": Shot.objects.filter(match=match_data, team=match_data.home_team, scored=True).count(),
+        "away_score": Shot.objects.filter(match=match_data, team=match_data.away_team, scored=True).count()
     }
     
     return render(request, "matches/detail.html", context)
@@ -401,8 +401,8 @@ def match_tracker(request, match_id, team_id):
     time_display = "%02d:%02d" % (minutes, seconds)
     
     # calculate the score for both the teams
-    team_1_score = Goal.objects.filter(match=match_data, team=team_data).count()
-    team_2_score = Goal.objects.filter(match=match_data, team=opponent_data).count()
+    team_1_score = Shot.objects.filter(match=match_data, team=team_data, scored=True).count()
+    team_2_score = Shot.objects.filter(match=match_data, team=opponent_data, scored=True).count()
     
     ## Check if the 'aanval' and 'verdediging' playerGroups are created for the both teams
     team_names = [match_data.home_team, match_data.away_team]

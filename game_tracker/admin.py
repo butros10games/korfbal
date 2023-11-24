@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, Goal, GoalType, Pause, Season, MatchPart, Shot, PageConnectRegistration
+from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, Season, MatchPart, Shot, PageConnectRegistration
+
+from django import forms
+from django.db.models import Q
 
 # Register your models here.
 class club_admin(admin.ModelAdmin):
@@ -74,14 +77,6 @@ class player_change_admin(admin.ModelAdmin):
         model = PlayerChange
 admin.site.register(PlayerChange, player_change_admin)
 
-class goal_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "match", "team"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = Goal
-admin.site.register(Goal, goal_admin)
-
 class goal_type_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "name"]
     show_full_result_count = False
@@ -90,13 +85,30 @@ class goal_type_admin(admin.ModelAdmin):
         model = GoalType
 admin.site.register(GoalType, goal_type_admin)
 
-class shot_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "match", "for_team"]
-    show_full_result_count = False
-    
+class ShotAdminForm(forms.ModelForm):
     class Meta:
         model = Shot
-admin.site.register(Shot, shot_admin)
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super(ShotAdminForm, self).__init__(*args, **kwargs)
+        if 'instance' in kwargs and kwargs['instance']:
+            match = kwargs['instance'].match
+            self.fields['team'].queryset = Team.objects.filter(
+                Q(home_matches=match) | Q(away_matches=match)
+            ).distinct()
+        else:
+            self.fields['team'].queryset = Team.objects.none()
+
+class ShotAdmin(admin.ModelAdmin):
+    form = ShotAdminForm
+    list_display = ["id_uuid", "player", "match", "for_team", "team", "scored"]
+    show_full_result_count = False
+
+    class Meta:
+        model = Shot
+
+admin.site.register(Shot, ShotAdmin)
 
 class pause_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "match"]
