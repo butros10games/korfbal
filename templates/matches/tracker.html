@@ -49,9 +49,12 @@
                 </div>
             </div>
 
-            <div id="match-event" class="flex-row" style="margin-top: 24px; height: 64px; width: 100%; background: lightgray;">
-
-            </div>
+            <div id="match-event-swipe" class="flex-row" style="margin-top: 24px; height: 64px; width: 100%; background: lightgray; overflow: hidden;">
+                <div id="match-event" class="flex-row swipe-content" style="width: 100vw">
+                    <!-- Your content here -->
+                </div>
+                <button id="deleteButton" class="delete-btn">Delete</button>
+            </div>            
             
             <div id="players" style="height: calc((var(--vh, 1vh) * 100) - 315.5px); width: 100%;">
 

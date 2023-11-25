@@ -1208,7 +1208,7 @@ class match_tracker(AsyncWebsocketConsumer):
                 shots_against = await sync_to_async(Shot.objects.filter(player=player_in, match=self.match, for_team = False).count)()
                 
                 for channel_name in [self.channel_names[1]]:
-                    await self.channel_layer.group_send(self.channel_group_name, {
+                    await self.channel_layer.group_send(channel_name, {
                         'type': 'send_data',
                         'data': {
                             'command': 'player_change',
@@ -1229,7 +1229,78 @@ class match_tracker(AsyncWebsocketConsumer):
                 })
             
             elif command == "remove_last_event":
-                pass
+                event = await self.get_last_event_element()
+                
+                if isinstance(event, Shot):
+                    # get and delete the last shot event
+                    shot = await sync_to_async(Shot.objects.prefetch_related('player', 'player__user', 'shot_type').get)(match_part = event.match_part, time = event.time)
+                    
+                    player_id = str(shot.player.id_uuid)
+                    
+                    await sync_to_async(shot.delete)()
+                    
+                    # send player shot update message
+                    await self.channel_layer.group_send(self.channel_names[1], {
+                        'type': 'send_data',
+                        'data': {
+                            'command': 'player_shot_change',
+                            'player_id': player_id,
+                            'shots_for': await sync_to_async(Shot.objects.filter(player__id_uuid=player_id, match=self.match, for_team = True).count)(),
+                            'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=player_id, match=self.match, for_team = False).count)()
+                        }
+                    })
+                    
+                    for channel_name in [self.channel_names[1], self.channel_names[0]]:
+                        await self.channel_layer.group_send(channel_name, {
+                            'type': 'send_data',
+                            'data': {
+                                'command': 'team_goal_change',
+                                'player_name': shot.player.user.username,
+                                'goal_type': shot.shot_type.name,
+                                'goals_for': await sync_to_async(Shot.objects.filter(match=self.match, team=self.team, scored=True).count)(),
+                                'goals_against': await sync_to_async(Shot.objects.filter(match=self.match, team=self.other_team, scored=True).count)()
+                            }
+                        })
+                        
+                    # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
+                    if shot.scored:
+                        if (await sync_to_async(Shot.objects.filter(match=self.match, scored=True).count)()) % 2 == 1:
+                            await self.swap_player_group_types(self.team)
+                            await self.swap_player_group_types(self.other_team)
+                            
+                            await self.playerGroupRequest()
+                            
+                elif isinstance(event, PlayerChange):
+                    # get and delete the last player change event
+                    player_change = await sync_to_async(PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').get)(match_part = event.match_part, time = event.time)
+                    player_group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_change.player_group.id_uuid)
+                    
+                    await sync_to_async(player_group.players.remove)(player_change.player_in)
+                    await sync_to_async(player_group.players.add)(player_change.player_out)
+                    
+                    await sync_to_async(player_group.save)()
+                    
+                    await sync_to_async(player_change.delete)()
+                    
+                    # send player group update message
+                    await self.playerGroupRequest()
+                    
+                elif isinstance(event, Pause):
+                    # get and delete the last pause event
+                    pause = await sync_to_async(Pause.objects.get)(active=event.active, match_part = event.match_part, time = event.time)
+                    
+                    if event.active:
+                        await sync_to_async(pause.delete)()
+                    else:
+                        pause.active = True
+                        pause.end_time = None
+                        pause.length = None
+                        await sync_to_async(pause.save)()
+                        
+                    # send the timer message
+                    await get_time(self)
+                    
+                await self.get_last_event()
 
         except Exception as e:
                 await self.send(text_data=json.dumps({
@@ -1237,10 +1308,10 @@ class match_tracker(AsyncWebsocketConsumer):
                     'traceback': traceback.format_exc()
                 }))
                 
-    async def get_last_event(self):
+    async def get_last_event_element(self):
         # Fetch each type of event separately
         shots = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'match_part', 'shot_type').filter(match=self.match).order_by('time'))
-        player_changes = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user', 'player_group', 'match_part').filter(player_group__match=self.match).order_by('time'))
+        player_changes = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_in__user', 'player_out', 'player_out__user', 'player_group', 'match_part').filter(player_group__match=self.match).order_by('time'))
         time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part').filter(match=self.match).order_by('time'))
 
         # Combine all events and sort them
@@ -1250,12 +1321,20 @@ class match_tracker(AsyncWebsocketConsumer):
         if events == []:
             await self.send(text_data=json.dumps({
                 'command': 'last_event',
-                'event': 'no_event'
+                'last_event': {
+                    'type': 'no_event'
+                }
             }))
-            return
+            return None
         
         # Get last event
-        last_event = events[-1]
+        return events[-1]
+                
+    async def get_last_event(self):
+        last_event = await self.get_last_event_element()
+        
+        if last_event == None:
+            return
         
         if isinstance(last_event, Shot):
             time_in_minutes = await self.time_calc(last_event)
@@ -1278,20 +1357,17 @@ class match_tracker(AsyncWebsocketConsumer):
                     'goals_against': await sync_to_async(Shot.objects.filter(match=self.match, for_team=False, scored=True).count)()
                 })
         elif isinstance(last_event, PlayerChange):
-            async def get_username(player):
-                return await sync_to_async(player.user.username)()
-            
-            player_in_username = await get_username(last_event.player_in)
-            player_out_username = await get_username(last_event.player_out)
+            player_in_username = last_event.player_in.user.username
+            player_out_username = last_event.player_out.user.username
             
             time_in_minutes = await self.time_calc(last_event)
 
             events_dict = ({
-                'type': 'player_change',
+                'type': 'wissel',
                 'time': time_in_minutes,
                 'player_in': player_in_username,
                 'player_out': player_out_username,
-                'player_group': last_event.player_group.id_uuid
+                'player_group': str(last_event.player_group.id_uuid)
             })
         elif isinstance(last_event, Pause):
             time_in_minutes = await self.time_calc(last_event)

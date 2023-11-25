@@ -32,12 +32,15 @@ window.addEventListener("DOMContentLoaded", function() {
 
     WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
 
-    load_icon(eventsDiv);
+    load_icon_small(eventsDiv);
     load_icon(playersDiv);
     initializeSocket(WebSocket_url);
     initializeButtons();
     scoringButtonSetup();
     startStopButtonSetup();
+
+    setupSwipeDelete()
+    deleteButtonSetup()
 });
 
 function initializeButtons() {
@@ -324,8 +327,10 @@ function onMessageReceived(event) {
             break;
 
         case "timer_data":
+            // remove the timer if it exists
             if (timer) {
-                return;
+                timer.destroy();
+                timer = null;
             }
 
             if (data.type === "active") {
@@ -338,6 +343,7 @@ function onMessageReceived(event) {
 
             } else if (data.type === "pause") {
                 timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
+                timer.stop();
 
                 // set the pause button to start
                 const startStopButton = document.getElementById("start-stop-button");
@@ -375,7 +381,9 @@ function onMessageReceived(event) {
 
             // remove overlay
             const overlay = document.getElementById("overlay");
-            overlay.remove();
+            if (overlay) {
+                overlay.remove();
+            }
 
             // remove the collor change from the buttons
             const activatedButton = document.querySelector(".activated");
@@ -493,6 +501,11 @@ function onMessageReceived(event) {
 function load_icon(element) {
     element.classList.add("flex-center");
     element.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
+}
+
+function load_icon_small(element) {
+    element.classList.add("flex-center");
+    element.innerHTML = "<div id='load_icon' class='small-lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom(element) {
@@ -732,6 +745,7 @@ function updateEvent(data) {
             textElement.style.margin = "0";
             textElement.style.height = "64px";
             textElement.innerHTML = "Geen events gevonden.";
+            textElement.style.width = "100%";
 
             eventsDiv.appendChild(textElement);
             break;
@@ -1130,9 +1144,12 @@ class CountdownTimer {
         document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
 
         // if the time is under one minute add a end half button
+        const endHalfButton = document.getElementById("end-half-button");
+
         if (minutes < 1 || sign === "-") {
-            const endHalfButton = document.getElementById("end-half-button");
             endHalfButton.style.display = "block";
+        } else if (minutes > 1 && endHalfButton.style.display === "block") {
+            endHalfButton.style.display = "none";
         }
     }
 
@@ -1148,6 +1165,17 @@ class CountdownTimer {
     stop() {
         clearInterval(this.interval);
         this.interval = null;
+    }
+
+    destroy() {
+        clearInterval(this.interval);
+        this.interval = null;
+        this.startTime = null;
+        this.endTime = null;
+        this.now = null;
+        this.totalLength = null;
+        this.offset = null;
+        this.pauseTimeISO = null;
     }
 }
 
@@ -1314,4 +1342,175 @@ function truncateMiddle(text, maxLength) {
     var backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
+}
+
+function setupSwipeDelete() {
+    const matchEvent = document.getElementById('match-event-swipe');
+    const swipeContent = document.getElementById('match-event');
+    swipeContent.style.transform = `translateX(0px)`;
+    let startX, currentX, isSwiping = false;
+
+    const onTouchStart = (e) => {
+        const transform = window.getComputedStyle(swipeContent).getPropertyValue('transform');
+        const transformX = transform.split(',')[4].trim();
+
+        startX = e.touches[0].clientX - parseInt(transformX);
+        isSwiping = true;
+        swipeContent.classList.remove('transition-back');
+    };
+
+    const onTouchMove = (e) => {
+        if (!isSwiping) return;
+
+        currentX = e.touches[0].clientX;
+        const distance = startX - currentX;
+        if (distance >= 0) {
+            requestAnimationFrame(() => {
+                swipeContent.style.transform = `translateX(${-Math.min(distance, 100)}px)`;
+            });
+        }
+    };
+
+    const onTouchEnd = () => {
+        isSwiping = false;
+        const swipeDistance = startX - currentX;
+        const isSwipeLeft = swipeDistance > 50;
+        swipeContent.style.transform = isSwipeLeft ? 'translateX(-100px)' : 'translateX(0px)';
+        swipeContent.classList.add('transition-back');
+        matchEvent.classList.toggle('swiped-left', isSwipeLeft);
+    };
+
+    swipeContent.addEventListener('touchstart', onTouchStart, { passive: true });
+    swipeContent.addEventListener('touchmove', onTouchMove, { passive: true });
+    swipeContent.addEventListener('touchend', onTouchEnd, false);
+}
+
+function deleteButtonSetup() {
+    const deleteButton = document.getElementById('deleteButton');
+
+    deleteButton.addEventListener('click', () => {
+        deleteConfirmPopup();
+    });
+}
+
+function deleteConfirmPopup() {
+    // Create the overlay container
+    const overlay = document.createElement("div");
+    overlay.id = "overlay";
+    overlay.classList.add("overlay");
+
+    // Create the popup container
+    const popup = document.createElement("div");
+    popup.classList.add("popup");
+
+    const popupTextRow = document.createElement("div");
+    popupTextRow.classList.add("flex-row");
+    popupTextRow.style.marginBottom = "24px";
+
+    // Create the content for the popup
+    const popupText = document.createElement("p");
+    popupText.innerHTML = "Event verwijderen?";
+    popupText.style.margin = "0";
+    popupText.style.fontSize = "18px";
+    popupText.style.fontWeight = "600";
+
+    // Create a close button for the popup
+    const closeButton = document.createElement("button");
+    closeButton.classList.add("close-button");
+    closeButton.innerHTML = "Close";
+    closeButton.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+    });
+
+    popupTextRow.appendChild(popupText);
+    popupTextRow.appendChild(closeButton);
+
+    popup.appendChild(popupTextRow);
+
+    const popupButtonContainer = document.createElement("div");
+    popupButtonContainer.classList.add("flex-row");
+    popupButtonContainer.style.justifyContent = "space-between";
+
+    const popupButton = document.createElement("button");
+    popupButton.classList.add("button");
+    popupButton.innerHTML = "Ja";
+    popupButton.style.margin = "0";
+    popupButton.style.width = "calc(50% - 12px)";
+    popupButton.style.height = "42px";
+    popupButton.style.fontSize = "14px";
+    popupButton.style.fontWeight = "600";
+    popupButton.style.background = "var(--button-color)";
+    popupButton.style.color = "var(--text-color)";
+    popupButton.style.border = "none";
+    popupButton.style.borderRadius = "4px";
+    popupButton.style.cursor = "pointer";
+    popupButton.style.userSelect = "none";
+
+    popupButton.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+
+        // remove the scroll lock
+        document.body.style.overflow = "";
+
+        // send the delete command to the server
+        const data = {
+            "command": "remove_last_event"
+        }
+
+        socket.send(JSON.stringify(data));
+    });
+
+    popupButtonContainer.appendChild(popupButton);
+
+    const popupButton2 = document.createElement("button");
+    popupButton2.classList.add("button");
+    popupButton2.innerHTML = "Nee";
+    popupButton2.style.margin = "0";
+    popupButton2.style.width = "calc(50% - 12px)";
+    popupButton2.style.height = "42px";
+    popupButton2.style.fontSize = "14px";
+    popupButton2.style.fontWeight = "600";
+    popupButton2.style.background = "red";
+    popupButton2.style.color = "var(--text-color)";
+    popupButton2.style.border = "none";
+    popupButton2.style.borderRadius = "4px";
+    popupButton2.style.cursor = "pointer";
+    popupButton2.style.userSelect = "none";
+
+    popupButton2.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+
+        // remove the scroll lock
+        document.body.style.overflow = "";
+    });
+
+    popupButtonContainer.appendChild(popupButton2);
+
+    popup.appendChild(popupButtonContainer);
+
+    // Append the popup to the overlay
+    overlay.appendChild(popup);
+
+    // Append the overlay to the body to cover the entire screen
+    document.body.appendChild(overlay);
+
+    // Disable scrolling on the body while the overlay is open
+    document.body.style.overflow = "hidden";
+
+    // add a event listener to the overlay so when clicked it closes the popup
+    overlay.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay.remove();
+
+        // remove the scroll lock
+        document.body.style.overflow = "";
+    });
+
+    // add a event listener to the popup so when clicked it doesn't close the overlay
+    popup.addEventListener("click", function(event) {
+        event.stopPropagation();
+    });
 }

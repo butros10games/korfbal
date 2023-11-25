@@ -138,12 +138,52 @@ a {
     }
 }
 
+.small-lds-ring {
+    display: inline-block;
+    position: relative;
+    width: 64px;
+    height: 64px;
+}
+
+.small-lds-ring div {
+    box-sizing: border-box;
+    display: block;
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    margin: 8px;
+    border: 8px solid black;
+    border-radius: 50%;
+    animation: lds-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    border-color: black transparent transparent transparent;
+}
+
+.small-lds-ring div:nth-child(1) {
+    animation-delay: -0.45s;
+}
+
+.small-lds-ring div:nth-child(2) {
+    animation-delay: -0.3s;
+}
+
+.small-lds-ring div:nth-child(3) {
+    animation-delay: -0.15s;
+}
+
+@keyframes small-lds-ring {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+}
+
 .event-type {
     font-size: 14px;
     font-weight: bold;
     display: flex;
     justify-content: center;
-    align-content: center;
     align-items: center;
     height: 100%;
     width: 64px;
@@ -157,4 +197,34 @@ a {
 
 .current-score {
     margin-right: 10px;
+    text-align: center;
+}
+
+.swipe-content {
+    flex-grow: 1;
+    transition: transform 0.3s ease;
+    height: 100%;
+    background-color: lightgray;
+    z-index: 1;
+}
+
+.delete-btn {
+    width: 100px;
+    height: 100%;
+    background-color: red;
+    color: white;
+    border: none;
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 0;
+}
+
+#match-event-swipe {
+    position: relative;
+}
+
+.transition-back {
+    transition: transform 0.3s ease;
 }
