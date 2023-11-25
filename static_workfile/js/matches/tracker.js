@@ -298,7 +298,8 @@ function onMessageReceived(event) {
     switch(data.command) {
         case "last_event":
             cleanDom(eventsDiv);
-
+            resetSwipe()
+            
             updateEvent(data);
             break;
         
@@ -789,23 +790,39 @@ function updateEvent(data) {
             break;
 
         case "shot":
-            shotElement = document.createElement("p");
-            shotElement.classList.add("flex-center");
-            shotElement.style.margin = "0";
-            shotElement.style.height = "64px";
-            shotElement.innerHTML = "Schot.";
+            eventTypeDiv = document.createElement("div");
+            eventTypeDiv.classList.add("event-type", "flex-center");
+            eventTypeDiv.innerHTML = event.type;
+            eventTypeDiv.style.width = "64px";
+            eventTypeDiv.style.height = "100%";
+            
+            if (event.for_team) {
+                eventTypeDiv.style.backgroundColor = '#43ff644d';
+            } else {
+                eventTypeDiv.style.backgroundColor = '#eb00004d';
+            }
 
-            eventsDiv.appendChild(shotElement);
-            break;
+            midsectionDiv = document.createElement("div");
+            midsectionDiv.classList.add("flex-column");
 
-        case "shot_against":
-            const shotAgainstElement = document.createElement("p");
-            shotAgainstElement.classList.add("flex-center");
-            shotAgainstElement.style.margin = "0";
-            shotAgainstElement.style.height = "64px";
-            shotAgainstElement.innerHTML = "Schot tegen.";
+            descriptionDiv = document.createElement("div");
+            descriptionDiv.classList.add("description");
+            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
+            
+            playerName = document.createElement("p");
+            playerName.innerHTML = event.player;
+            playerName.style.margin = "0";
+            playerName.style.fontSize = "12px";
 
-            eventsDiv.appendChild(shotAgainstElement);
+            midsectionDiv.appendChild(descriptionDiv);
+            midsectionDiv.appendChild(playerName);
+
+            endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
             break;
 
         case "wissel":
@@ -1383,6 +1400,18 @@ function setupSwipeDelete() {
     swipeContent.addEventListener('touchstart', onTouchStart, { passive: true });
     swipeContent.addEventListener('touchmove', onTouchMove, { passive: true });
     swipeContent.addEventListener('touchend', onTouchEnd, false);
+}
+
+function resetSwipe() {
+    // Assuming swipeContent is the element you want to reset
+    const swipeContent = document.getElementById('match-event');
+
+    // Reset transform to initial state
+    swipeContent.style.transform = 'translateX(0px)';
+
+    // Reset any classes that might have been added or removed during swipe
+    swipeContent.classList.remove('transition-back');
+    swipeContent.classList.remove('swiped-left'); // If this class is added on swipe
 }
 
 function deleteButtonSetup() {

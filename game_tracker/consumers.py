@@ -1249,21 +1249,21 @@ class match_tracker(AsyncWebsocketConsumer):
                             'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=player_id, match=self.match, for_team = False).count)()
                         }
                     })
-                    
-                    for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                        await self.channel_layer.group_send(channel_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'team_goal_change',
-                                'player_name': shot.player.user.username,
-                                'goal_type': shot.shot_type.name,
-                                'goals_for': await sync_to_async(Shot.objects.filter(match=self.match, team=self.team, scored=True).count)(),
-                                'goals_against': await sync_to_async(Shot.objects.filter(match=self.match, team=self.other_team, scored=True).count)()
-                            }
-                        })
                         
                     # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
                     if shot.scored:
+                        for channel_name in [self.channel_names[1], self.channel_names[0]]:
+                            await self.channel_layer.group_send(channel_name, {
+                                'type': 'send_data',
+                                'data': {
+                                    'command': 'team_goal_change',
+                                    'player_name': shot.player.user.username,
+                                    'goal_type': shot.shot_type.name,
+                                    'goals_for': await sync_to_async(Shot.objects.filter(match=self.match, team=self.team, scored=True).count)(),
+                                    'goals_against': await sync_to_async(Shot.objects.filter(match=self.match, team=self.other_team, scored=True).count)()
+                                }
+                            })
+                            
                         if (await sync_to_async(Shot.objects.filter(match=self.match, scored=True).count)()) % 2 == 1:
                             await self.swap_player_group_types(self.team)
                             await self.swap_player_group_types(self.other_team)
