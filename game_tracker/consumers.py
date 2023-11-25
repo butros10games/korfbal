@@ -1301,6 +1301,10 @@ class match_tracker(AsyncWebsocketConsumer):
                     await get_time(self)
                     
                 await self.get_last_event()
+                
+                await self.channel_layer.group_send(self.channel_names[0], {
+                    'type': 'get_events'
+                })
 
         except Exception as e:
                 await self.send(text_data=json.dumps({
