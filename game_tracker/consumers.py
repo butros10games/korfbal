@@ -676,7 +676,7 @@ class match_data(AsyncWebsocketConsumer):
                             for pause in pauses:
                                 pause_time += pause.length
                             
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60) + 1
+                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60)
                             
                             left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
                             if left_over > 0:
@@ -696,7 +696,7 @@ class match_data(AsyncWebsocketConsumer):
                             for pause in pauses:
                                 pause_time += pause.length
                                 
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + ((event.match_part.part_number - 1) * self.match.part_lenght) - pause_time) / 60) + 1
+                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + ((event.match_part.part_number - 1) * self.match.part_lenght) - pause_time) / 60)
                             
                             left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
                             if left_over > 0:
@@ -724,7 +724,7 @@ class match_data(AsyncWebsocketConsumer):
                                 pause_time += pause.length
                                 
                             # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60) + 1
+                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60)
                             
                             left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
                             if left_over > 0:
@@ -1397,7 +1397,7 @@ class match_tracker(AsyncWebsocketConsumer):
             pause_time += pause.length
             
         # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-        time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60) + 1
+        time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match.part_lenght)) - pause_time) / 60)
         
         left_over = time_in_minutes - ((event.match_part.part_number * self.match.part_lenght) / 60)
         if left_over > 0:
