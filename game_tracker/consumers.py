@@ -52,40 +52,120 @@ class team_data(AsyncWebsocketConsumer):
                 }))
                 
             elif command == "team_stats":
-                all_matches = await sync_to_async(Match.objects.filter)(Q(home_team=self.team, finished=True) | Q(away_team=self.team, finished=True))
-                all_matches_list = await sync_to_async(list)(all_matches.prefetch_related('home_team', 'away_team'))
+                data_type = json_data['data_type']
                 
-                goal_types = await sync_to_async(list)(GoalType.objects.all())
+                if data_type == 'general':
+                    ## get the amount of goals for and against for all the types
+                    goal_types = await sync_to_async(list)(GoalType.objects.all())
+                    
+                    goal_types_json = [
+                        {
+                            'id': str(goal_type.id_uuid),
+                            'name': goal_type.name
+                        }
+                        for goal_type in goal_types
+                    ]
+                    
+                    # get a list of all the matches of the team
+                    matches = await sync_to_async(list)(Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)))
+                    
+                    team_goal_stats = {}
+                    for goal_type in goal_types:
+                        goals_for = 0
+                        goals_against = 0
+                        
+                        for match in matches:
+                            goals_for += await sync_to_async(Shot.objects.filter(match=match, shot_type=goal_type, for_team=True, scored=True).count)()
+                            goals_against += await sync_to_async(Shot.objects.filter(match=match, shot_type=goal_type, for_team=False, scored=True).count)()
+                        
+                        team_goal_stats[goal_type.name] = {
+                            "goals_by_player": goals_for,
+                            "goals_against_player": goals_against
+                        }
+                        
+                    shots_for = 0
+                    shots_against = 0
+                    goals_for = 0
+                    goals_against = 0
+                    
+                    for match in matches:
+                        shots_for += await sync_to_async(Shot.objects.filter(match=match, for_team=True).count)()
+                        shots_against += await sync_to_async(Shot.objects.filter(match=match, for_team=False).count)()
+                        goals_for += await sync_to_async(Shot.objects.filter(match=match, for_team=True, scored=True).count)()
+                        goals_against += await sync_to_async(Shot.objects.filter(match=match, for_team=False, scored=True).count)()
+                    
+                    await self.send(text_data=json.dumps({
+                        'command': 'goal_stats',
+                        'data': {
+                            'type': 'general',
+                            'stats': {
+                                'shots_for': shots_for,
+                                'shots_against': shots_against,
+                                'goals_for': goals_for,
+                                'goals_against': goals_against,
+                                'team_goal_stats': team_goal_stats,
+                                'goal_types': goal_types_json,
+                            }
+                        }
+                    }))
+                
+                elif data_type == 'player_stats':
+                    # Fetch players and matches in bulk
+                    players = await sync_to_async(list)(
+                        Player.objects.prefetch_related('user')
+                        .filter(team_data_as_player__team=self.team)
+                        .distinct()
+                    )
 
-                goal_stats = {}
-                scoring_types = []
-                played_matches = await sync_to_async(all_matches.count)()
-                total_goals_for = 0
-                total_goals_against = 0
-                
-                for goal_type in goal_types:
-                    goals_for = await sync_to_async(Shot.objects.filter(match__in=all_matches, shot_type=goal_type, for_team=True, scored=True).count)()
-                    goals_against = await sync_to_async(Shot.objects.filter(match__in=all_matches, shot_type=goal_type, for_team=False, scored=True).count)()
-            
-                    goal_stats[goal_type.name] = {
-                        "goals_for": goals_for,
-                        "goals_against": goals_against
-                    }
+                    matches = await sync_to_async(list)(
+                        Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
+                    )
+
+                    # Fetch all shots in bulk
+                    shots = await sync_to_async(list)(
+                        Shot.objects.filter(
+                            match__in=matches, 
+                            player__in=players
+                        ).select_related('match', 'player')
+                    )
+
+                    players_stats = []
+
+                    # Process data in Python instead of making separate DB queries for each player and match
+                    for player in players:
+                        player_shots = [shot for shot in shots if shot.player_id == player.id_uuid]
+                        shots_for = sum(1 for shot in player_shots if shot.for_team)
+                        shots_against = sum(1 for shot in player_shots if not shot.for_team)
+                        goals_for = sum(1 for shot in player_shots if shot.for_team and shot.scored)
+                        goals_against = sum(1 for shot in player_shots if not shot.for_team and shot.scored)
+
+                        player_stats = {
+                            'username': player.user.username,
+                            'shots_for': shots_for,
+                            'shots_against': shots_against,
+                            'goals_for': goals_for,
+                            'goals_against': goals_against,
+                        }
+                        
+                        players_stats.append(player_stats)
+
+                    # Sort players_stats
+                    players_stats.sort(key=lambda x: x['goals_for'], reverse=True)
                     
-                    scoring_types.append(goal_type.name)
-                    
-                for match in all_matches_list:
-                    total_goals_for += await sync_to_async(Shot.objects.filter(match=match, team=self.team, for_team=True, scored=True).count)()
-                    total_goals_against += await sync_to_async(Shot.objects.filter(match=match, for_team=False, scored=True).exclude(team=self.team).count)()
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'goal_stats',
-                    'goal_stats': goal_stats,
-                    'scoring_types': scoring_types,
-                    'played_matches': played_matches,
-                    'total_goals_for': total_goals_for,
-                    'total_goals_against': total_goals_against,
-                }))
+                    # remove all the players with no goals
+                    players_stats = [player for player in players_stats if player['goals_for'] > 0]
+
+                    # Prepare and send data
+                    await self.send(text_data=json.dumps({
+                        'command': 'goal_stats',
+                        'data': {
+                            'type': 'player_stats',
+                            'stats': {
+                                'player_stats': players_stats
+                            }
+                        }
+                    }))
+
                 
             elif command == "spelers":
                 if 'season_uuid' in json_data:
