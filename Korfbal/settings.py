@@ -145,7 +145,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
 EMAIL_PORT = 587
 EMAIL_HOST_USER = 'butrosgroot@gmail.com'
-EMAIL_HOST_PASSWORD = 'pcnwpwottyabmkix'
+EMAIL_HOST_PASSWORD = 'lirm mgny vhgc gytl'
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
