@@ -11,29 +11,44 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 
 from pathlib import Path
-from django.core.management.utils import get_random_secret_key
-
 import os
+import json
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
+# Load secrets from private_settings.json
+with open(os.path.join(PROJECT_DIR, 'private_settings.json')) as f:
+   secrets = json.load(f)
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '38-=v#0hid9x0cskra+qinxlm*gqil@m#y-*a3n04nawf$xa3d'
+SECRET_KEY = secrets['SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = secrets['DEBUG']
 
 ALLOWED_HOSTS = ["korfbal.butrosgroot.com"]
 
+if DEBUG:
+    SECURE_SSL_REDIRECT = False
+    
+    ALLOWED_HOSTS.extend(["localhost", "127.0.0.1"])
+else:
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    SECURE_SSL_REDIRECT = True
+
+    # Secure cookies
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -84,14 +99,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Korfbal.wsgi.application'
 
-ASGI_APPLICATION = 'ButrosGroot.asgi.application'
+ASGI_APPLICATION = 'Korfbal.asgi.application'
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [("127.0.0.1", 6379)],
-            "capacity": 1500,  # default 100
-            "expiry": 10,  # default 60
+            "capacity": 100,
+            "expiry": 60,
         },
     },
 }
@@ -102,22 +117,20 @@ CHANNEL_LAYERS = {
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Korfbal',
-        'USER': 'butrosdata',
-        'PASSWORD': 'Bo3tr0s03',
-        'HOST': '192.168.2.237',  # Replace with the actual hostname
-        'PORT': '5432',  # Replace with the actual port number
+        'NAME': secrets['DB_NAME'],
+        'USER': secrets['DB_USER'],
+        'PASSWORD': secrets['DB_PASSWORD'],
+        'HOST': secrets['DB_HOST'],  # Replace with the actual hostname
+        'PORT': secrets['DB_PORT'],  # Replace with the actual port number
     }
 }
 
-''' 
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
     }
 }
-'''
 
 # Password validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
@@ -143,9 +156,9 @@ AUTH_PASSWORD_VALIDATORS = [
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
-EMAIL_PORT = 587
-EMAIL_HOST_USER = 'butrosgroot@gmail.com'
-EMAIL_HOST_PASSWORD = 'lirm mgny vhgc gytl'
+EMAIL_HOST_USER = secrets['EMAIL_USER']
+EMAIL_HOST_PASSWORD = secrets['EMAIL_PASSWORD']
+EMAIL_PORT = secrets['EMAIL_PORT']
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
@@ -176,3 +189,30 @@ TEMPLATE_DIRS = [
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.sftpstorage.SFTPStorage",
+        "OPTIONS": {
+            "host": secrets['SFTP_HOST'],
+            "params": {
+            "username": secrets['SFTP_USER'],
+            "password": secrets['SFTP_PASSWORD'],
+            "port": secrets['SFTP_PORT'],
+            },
+            "root_path": os.path.join(secrets['SFTP_REMOTE_PATH'], 'media'),
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.sftpstorage.SFTPStorage",
+        "OPTIONS": {
+            "host": secrets['SFTP_HOST'],
+            "params": {
+                "username": secrets['SFTP_USER'],
+                "password": secrets['SFTP_PASSWORD'],
+                "port": secrets['SFTP_PORT'],
+            },
+            "root_path": os.path.join(secrets['SFTP_REMOTE_PATH'], 'static'),
+        },
+    },
+}
