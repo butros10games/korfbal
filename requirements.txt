@@ -1,5 +1,20 @@
+--extra-index-url https://pypi.butrosgroot.com/
+
 django
 psycopg2
 django-mobile-detect
 django_ratelimit
 Pillow
+
+daphne
+channels
+django-channels
+channels-redis
+
+django-storages[sftp]
+
+django_authentication
+uuidv7
+
+django_cached_paginator
+django-phonenumber-field[phonenumbers]

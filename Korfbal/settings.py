@@ -18,12 +18,9 @@ import json
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = Path(__file__).resolve().parent
 
-
 # Load secrets from private_settings.json
 with open(os.path.join(PROJECT_DIR, 'private_settings.json')) as f:
    secrets = json.load(f)
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = secrets['SECRET_KEY']
@@ -31,7 +28,11 @@ SECRET_KEY = secrets['SECRET_KEY']
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = secrets['DEBUG']
 
-ALLOWED_HOSTS = ["korfbal.butrosgroot.com"]
+ALLOWED_HOSTS = ['korfbal.butrosgroot.com']
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://korfbal.butrosgroot.com'
+]
 
 if DEBUG:
     SECURE_SSL_REDIRECT = False
@@ -57,9 +58,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'mobiledetect',
+    'phonenumber_field',
     
     'game_tracker',
-    'authentication',
+    'authentication.apps.AuthenticationConfig',
 ]
 
 MIDDLEWARE = [
@@ -68,6 +70,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'authentication.auth_backend.BlockAdminLoginMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'mobiledetect.middleware.DetectMiddleware',
@@ -96,8 +99,6 @@ TEMPLATES = [
         },
     },
 ]
-
-WSGI_APPLICATION = 'Korfbal.wsgi.application'
 
 ASGI_APPLICATION = 'Korfbal.asgi.application'
 CHANNEL_LAYERS = {
@@ -196,9 +197,9 @@ STORAGES = {
         "OPTIONS": {
             "host": secrets['SFTP_HOST'],
             "params": {
-            "username": secrets['SFTP_USER'],
-            "password": secrets['SFTP_PASSWORD'],
-            "port": secrets['SFTP_PORT'],
+                "username": secrets['SFTP_USER'],
+                "password": secrets['SFTP_PASSWORD'],
+                "port": secrets['SFTP_PORT'],
             },
             "root_path": os.path.join(secrets['SFTP_REMOTE_PATH'], 'media'),
         },

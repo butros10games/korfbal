@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User  # Assuming you're using the built-in User model
 from django.urls import reverse
 
-from game_tracker.programs.uuidv7 import uuid7
+from uuidv7 import uuid7
 
 class Club(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
