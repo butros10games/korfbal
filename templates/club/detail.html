@@ -26,11 +26,11 @@
                     <p style="font-weight: 600; color: white; margin-left: 12px;">{{ club.name }}</p>
                 </div>
                 <div class="icon-container" data-followed="{% if following %}true{% else %}false{% endif %}">
-                    <img id="follow-full" src="{% static '/images/heart-full.svg' %}" alt="volgen" class="volgen-icon">
-                    <img id="follow-outline" src="{% static '/images/heart-outline.svg' %}" alt="volgen" class="volgen-icon">
+                    <img id="follow-full" src="/static/images/heart-full.svg" alt="volgen" class="volgen-icon">
+                    <img id="follow-outline" src="/static/images/heart-outline.svg" alt="volgen" class="volgen-icon">
                 </div>
                 {% if admin %}
-                <img id="settings" src="{% static '/images/settings.svg' %}" alt="instellingen" class="settings-icon">
+                <img id="settings" src="/static/images/settings.svg" alt="instellingen" class="settings-icon">
                 {% endif %}
             </div>
 
@@ -48,7 +48,7 @@
 
         <p style="display: none;" id="user_id">{{ request.user.id }}</p>
 
-        <script src="{% static '/js/clubs/detail.js' %}"></script>
-        <script src="{% static '/js/programs/mobile_view.js' %}"></script>
+        <script src="/static/js/clubs/detail.js"></script>
+        <script src="/static/js/programs/mobile_view.js"></script>
     </body>
 </html>

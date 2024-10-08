@@ -5,17 +5,12 @@ psycopg2
 django-mobile-detect
 django_ratelimit
 Pillow
-
 uwsgi
 daphne
 channels
-django-channels
 channels-redis
-
 django-storages[sftp]
-
 django_authentication
 uuidv7
-
 django_cached_paginator
 django-phonenumber-field[phonenumbers]

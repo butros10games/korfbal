@@ -60,7 +60,10 @@ INSTALLED_APPS = [
     'mobiledetect',
     'phonenumber_field',
     
-    'game_tracker',
+    'apps.game_tracker',
+    'apps.club',
+    'apps.player',
+    'apps.team',
     'authentication.apps.AuthenticationConfig',
 ]
 

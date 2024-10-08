@@ -8,7 +8,7 @@ class Club(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     admin = models.ManyToManyField('Player', related_name='clubs', blank=True)
-    logo = models.ImageField(upload_to='static/images/clubs/club_pictures/', default='/static/images/clubs/blank-club-picture.png', blank=True)
+    logo = models.ImageField(upload_to='media/club_pictures/', default='/static/images/clubs/blank-club-picture.png', blank=True)
     
     def __str__(self):
         return str(self.name)
@@ -42,7 +42,7 @@ class Player(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
     team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
     club_follow = models.ManyToManyField('Club', related_name='Follow', blank=True)
-    profile_picture = models.ImageField(upload_to='static/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
+    profile_picture = models.ImageField(upload_to='/media/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
     
     def __str__(self):
         return str(self.user.username)

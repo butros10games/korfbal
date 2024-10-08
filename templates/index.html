@@ -27,31 +27,33 @@
                 <p style="margin: 0; font-size: 12px; color: gray; margin-right: auto;">{{ match_date }}</p>
 
                 <div class="flex-column" style="height: 156px; justify-content: center; width: 100%;">
-                    <a href="{% url 'match_detail' match_id=match.id_uuid %}" class="flex-row" style="justify-content: space-around; margin-top: 12px;">
-                        <div class="flex-column" style="width: 128px;">
-                            <img alt="club_logo" src="{{ match.home_team.club.logo.url }}" style="height: 56px; width: 56px;">
-                            <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.home_team|truncate_middle:16 }}</p>
-                        </div>
+                    {% if match %}
+                        <a href="{% url 'match_detail' match_id=match.id_uuid %}" class="flex-row" style="justify-content: space-around; margin-top: 12px;">
+                            <div class="flex-column" style="width: 128px;">
+                                <img alt="club_logo" src="{{ match.home_team.club.logo.url }}" style="height: 56px; width: 56px;">
+                                <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.home_team|truncate_middle:16 }}</p>
+                            </div>
 
-                        <div class="flex-column" style="justify-content: center; margin-top: -14px;">
-                            {% if match.finished %}
-                                <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
-                            {% else %}
-                                {% if match.active %}
-                                    <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
+                            <div class="flex-column" style="justify-content: center; margin-top: -14px;">
+                                {% if match.finished %}
+                                    <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
                                 {% else %}
-                                    <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
+                                    {% if match.active %}
+                                        <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
+                                    {% else %}
+                                        <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
+                                    {% endif %}
                                 {% endif %}
-                            {% endif %}
-    
-                            <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
-                        </div>
+        
+                                <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
+                            </div>
 
-                        <div class="flex-column" style="width: 128px;">
-                            <img alt="club_logo" src="{{ match.away_team.club.logo.url }}" style="height: 56px; width: 56px;">
-                            <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.away_team|truncate_middle:16 }}</p>
-                        </div>
-                    </a>
+                            <div class="flex-column" style="width: 128px;">
+                                <img alt="club_logo" src="{{ match.away_team.club.logo.url }}" style="height: 56px; width: 56px;">
+                                <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.away_team|truncate_middle:16 }}</p>
+                            </div>
+                        </a>
+                    {% endif %}
                 </div>
 
                 <div class="flex-center" style="border-top: 1px solid #0000004a; width: 100%">
