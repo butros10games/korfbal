@@ -1,33 +1,12 @@
 from django.contrib import admin
-from .models import Club, Team, TeamData, Player, Match, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, Season, MatchPart, Shot, PageConnectRegistration
+from django.apps import apps
+
+from apps.team.models import Team
+from .models import Player, Match, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot, PageConnectRegistration
 
 from django import forms
 from django.db.models import Q
 
-# Register your models here.
-class club_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "name"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = Club
-admin.site.register(Club, club_admin)
-
-class team_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "__str__", "club"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = Team
-admin.site.register(Team, team_admin)
-
-class team_data_admin(admin.ModelAdmin):
-    list_display = ["team", "season"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = TeamData
-admin.site.register(TeamData, team_data_admin)
 
 class player_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "user"]
@@ -85,6 +64,7 @@ class goal_type_admin(admin.ModelAdmin):
         model = GoalType
 admin.site.register(GoalType, goal_type_admin)
 
+'''
 class ShotAdminForm(forms.ModelForm):
     class Meta:
         model = Shot
@@ -99,9 +79,10 @@ class ShotAdminForm(forms.ModelForm):
             ).distinct()
         else:
             self.fields['team'].queryset = Team.objects.none()
+'''
 
 class ShotAdmin(admin.ModelAdmin):
-    form = ShotAdminForm
+    #form = ShotAdminForm
     list_display = ["id_uuid", "player", "match", "for_team", "team", "scored"]
     show_full_result_count = False
 
@@ -117,14 +98,6 @@ class pause_admin(admin.ModelAdmin):
     class Meta:
         model = Pause
 admin.site.register(Pause, pause_admin)
-
-class season_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "name"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = Season
-admin.site.register(Season, season_admin)
 
 class page_connect_registration_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "player", "page", "registration_date"]

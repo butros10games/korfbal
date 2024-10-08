@@ -1,5 +1,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Team, Player, TeamData, Season, Club, Match, PageConnectRegistration, PlayerGroup, Shot
+from .models import Player, Match, PageConnectRegistration, PlayerGroup, Shot
+from apps.team.models import Team, TeamData
+from apps.schedule.models import Season
+from apps.club.models import Club
 from django.db.models import Q, F, Value
 from django.db.models.functions import Concat
 from django.http import JsonResponse

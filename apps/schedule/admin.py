@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from .models import Club
+from .models import Season
 
-class club_admin(admin.ModelAdmin):
+class season_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "name"]
     show_full_result_count = False
     
     class Meta:
-        model = Club
-admin.site.register(Club, club_admin)
+        model = Season
+admin.site.register(Season, season_admin)

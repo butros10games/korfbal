@@ -6,4 +6,4 @@ class GameTrackerConfig(AppConfig):
     name = 'apps.game_tracker'
     
     def ready(self):
-        import game_tracker.signals
+        import apps.game_tracker.signals

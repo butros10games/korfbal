@@ -1,48 +1,21 @@
 from django.db import models
-from django.contrib.auth.models import User  # Assuming you're using the built-in User model
 from django.urls import reverse
+from django.contrib.auth.models import User
 
 from uuidv7 import uuid7
 
-class Club(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=255, unique=True)
-    admin = models.ManyToManyField('Player', related_name='clubs', blank=True)
-    logo = models.ImageField(upload_to='media/club_pictures/', default='/static/images/clubs/blank-club-picture.png', blank=True)
-    
-    def __str__(self):
-        return str(self.name)
-    
-    def get_absolute_url(self):
-        return reverse("club_detail", kwargs={"club_id": self.id_uuid})
+team_model_string = 'team.Team'
+club_model_string = 'club.Club'
 
-class Team(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=255)
-    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name='teams')
-    
-    def __str__(self):
-        return str(self.club.name)  + " " +  str(self.name)
-    
-    def get_absolute_url(self):
-        return reverse('team_detail', kwargs={'team_id': self.id_uuid})
-    
-class TeamData(models.Model):
-    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
-    coach = models.ManyToManyField('Player', related_name='team_data_as_coach', blank=True)
-    players = models.ManyToManyField('Player', related_name='team_data_as_player', blank=True)
-    season = models.ForeignKey('Season', on_delete=models.CASCADE, related_name='team_data')
-    competition = models.CharField(max_length=255, blank=True, null=True)
-    
-    def __str__(self):
-        return str(self.team.name)
 
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
-    team_follow = models.ManyToManyField('Team', related_name='Follow', blank=True)
-    club_follow = models.ManyToManyField('Club', related_name='Follow', blank=True)
-    profile_picture = models.ImageField(upload_to='/media/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
+    
+    profile_picture = models.ImageField(upload_to='media/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
+    
+    team_follow = models.ManyToManyField(team_model_string, blank=True)
+    club_follow = models.ManyToManyField(club_model_string, blank=True)
     
     def __str__(self):
         return str(self.user.username)
@@ -52,8 +25,8 @@ class Player(models.Model):
 
 class Match(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    home_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='home_matches')
-    away_team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='away_matches')
+    home_team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name='home_matches')
+    away_team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name='away_matches')
     home_score = models.IntegerField(default=0)
     away_score = models.IntegerField(default=0)
     start_time = models.DateTimeField()
@@ -79,7 +52,7 @@ class Match(models.Model):
     
 class MatchPart(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='match_parts')
+    match = models.ForeignKey('Match', on_delete=models.CASCADE, related_name='match_parts')
     part_number = models.IntegerField()
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(blank=True, null=True)
@@ -87,9 +60,9 @@ class MatchPart(models.Model):
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    players = models.ManyToManyField(Player, related_name='player_groups', blank=True)
-    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='player_groups')
-    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_groups')
+    players = models.ManyToManyField('Player', related_name='player_groups', blank=True)
+    team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name='player_groups')
+    match = models.ForeignKey('Match', on_delete=models.CASCADE, related_name='player_groups')
     starting_type = models.ForeignKey('GroupTypes', on_delete=models.CASCADE, related_name='player_groups')
     current_type = models.ForeignKey('GroupTypes', on_delete=models.CASCADE, related_name='current_player_groups')
     
@@ -102,9 +75,9 @@ class GroupTypes(models.Model):
 
 class PlayerChange(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    player_in = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='player_changes')
-    player_out = models.ForeignKey(Player, on_delete=models.CASCADE)
-    player_group = models.ForeignKey(PlayerGroup, on_delete=models.CASCADE, related_name='player_changes')
+    player_in = models.ForeignKey('Player', on_delete=models.CASCADE, related_name='player_changes')
+    player_out = models.ForeignKey('Player', on_delete=models.CASCADE)
+    player_group = models.ForeignKey('PlayerGroup', on_delete=models.CASCADE, related_name='player_changes')
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_changes', blank=True, null=True)
     match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='player_changes', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
@@ -118,35 +91,26 @@ class GoalType(models.Model):
     
 class Shot(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='shots')
-    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='shots')
-    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
+    player = models.ForeignKey('Player', on_delete=models.CASCADE, related_name='shots')
+    match = models.ForeignKey('Match', on_delete=models.CASCADE, related_name='shots')
+    match_part = models.ForeignKey('MatchPart', on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
     for_team = models.BooleanField(default=True)
-    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
+    team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
     scored = models.BooleanField(default=False)
-    shot_type = models.ForeignKey(GoalType, on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
+    shot_type = models.ForeignKey('GoalType', on_delete=models.CASCADE, related_name='shots', blank=True, null=True)
 
 class Pause(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='pauses')
-    match_part = models.ForeignKey(MatchPart, on_delete=models.CASCADE, related_name='pauses', blank=True, null=True)
+    match = models.ForeignKey('Match', on_delete=models.CASCADE, related_name='pauses')
+    match_part = models.ForeignKey('MatchPart', on_delete=models.CASCADE, related_name='pauses', blank=True, null=True)
     time = models.DateTimeField(default=None, blank=True, null=True)
     end_time = models.DateTimeField(blank=True, null=True)
     length = models.IntegerField(blank=True, null=True)
     active = models.BooleanField(default=True)
-
-class Season(models.Model):
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=255, unique=True)
-    start_date = models.DateField()
-    end_date = models.DateField()
-    
-    def __str__(self):
-        return str(self.name)
     
 class PageConnectRegistration(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='page_connect_registrations')
+    player = models.ForeignKey('Player', on_delete=models.CASCADE, related_name='page_connect_registrations')
     page = models.CharField(max_length=255)
     registration_date = models.DateTimeField(auto_now_add=True)
