@@ -1,10 +1,6 @@
 from django.contrib import admin
 
-from apps.team.models import Team
 from .models import MatchData, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot
-
-from django import forms
-from django.db.models import Q
 
 
 class match_data_admin(admin.ModelAdmin):
