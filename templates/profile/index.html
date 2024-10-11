@@ -24,7 +24,7 @@
         <div class="flex-column" style="margin-top: 64px;">
             <div class="flex-column" style="height: 170px; justify-content: center; width: 100%;">
                 <div id="profilePic-container" class="profile-container">
-                    <img src="{{ player.profile_picture.url }}" alt="profile picture" class="profile-pic" id="profilePic">
+                    <img src="{{ profile_img_url }}" alt="profile" class="profile-pic" id="profilePic">
                     <div id="overlay" class="overlay">
                         <img src="/static/images/player/edit-button-svgrepo-com.svg" alt="Overlay Icon" class="overlay-icon">
                     </div>
@@ -53,7 +53,7 @@
             <div id="imageModal" class="modal">
                 <div class="modal-content">
                     <h4>Change Profile Picture</h4>
-                    <img id="imagePreview" src="" alt="Image Preview" class="image-preview">
+                    <img id="imagePreview" src="" alt="Preview" class="image-preview">
                     <button id="saveProfilePic">Save</button>
                     <button id="closeModal">Cancel</button>
                 </div>

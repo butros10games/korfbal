@@ -7,7 +7,7 @@ class Club(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     admin = models.ManyToManyField('player.Player', through='ClubAdmin', related_name='clubs', blank=True)
-    logo = models.ImageField(upload_to='media/club_pictures/', default='/static/images/clubs/blank-club-picture.png', blank=True)
+    logo = models.ImageField(upload_to='club_pictures/', default='/static/images/clubs/blank-club-picture.png', blank=True)
     
     def __str__(self):
         return str(self.name)

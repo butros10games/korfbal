@@ -1,6 +1,7 @@
 let selectedValue
 let oldSearchTerm = ''
 let searchTimer;
+let isSearching = false;
 
 let searchContainerFull;
 let searchContainer;
@@ -9,8 +10,11 @@ let searchInput;
 
 let teamsContainer;
 
+let csrfToken;
+
 document.addEventListener("DOMContentLoaded", function() {
     teamsContainer = document.querySelector('.teams-container');
+    csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
     setup_search();
 
@@ -50,10 +54,11 @@ function ajaxRequestIndex(value) {
     load_icon()
     
     // Make an AJAX request using the Fetch API
-    fetch('/teams/indexdata/', {
+    fetch('/api/catalog/data', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
         },
         body: JSON.stringify({ value: value })
     })
@@ -95,57 +100,63 @@ function setup_search() {
         if (event.key === 'Enter') {
             // Prevent the default behavior of the Enter key
             event.preventDefault();
-    
-            if (searchTerm !== '') {
-                // Perform the search immediately for Enter key presses
-                performSearch(searchTerm);
-            }
-        } else {
-            // For other key presses (not Enter), trigger the search after a brief delay
-            if (searchTerm !== '') {
-                clearTimeout(searchTimer);
 
-                searchTimer = setTimeout(() => {
-                    // Call the performSearch function with the current search term
-                    performSearch(searchTerm);
-                }, 500);
+            if (searchTerm !== '' && !isSearching) {
+                isSearching = true;
+                // Perform the search immediately for Enter key presses
+                performSearch(searchTerm).finally(() => {
+                    isSearching = false;
+                });
             }
-        }    
+        } else if (searchTerm !== '') { // For other key presses (not Enter), trigger the search after a brief delay
+            clearTimeout(searchTimer);
+
+            searchTimer = setTimeout(() => {
+                if (!isSearching) {
+                    isSearching = true;
+                    // Call the performSearch function with the current search term
+                    performSearch(searchTerm).finally(() => {
+                        isSearching = false;
+                    });
+                }
+            }, 500);
+        }
     });
 }
 
 function performSearch(searchTerm) {
-    cleanDom()
-    load_icon()
+    cleanDom();
+    load_icon();
 
-    oldSearchTerm = searchTerm 
+    oldSearchTerm = searchTerm;
+
     // Perform AJAX request here (replace the URL with your actual API endpoint)
-    const apiUrl = `https://korfbal.butrosgroot.com/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
+    const apiUrl = `https://korfbal.butrosgroot.com/api/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
 
-    // Assuming you're using fetch API for the AJAX request
-    fetch(apiUrl)
+    // Returning the fetch promise so it can be used in the calling function
+    return fetch(apiUrl)
         .then(response => response.json())
         .then(data => {
             // Handle the search results data
-            console.log(data);
-            displaySearchResults(data);
+            console.log('Success:', data);
+            displaySearchResults(data.results);
             searchInput.value = '';
 
-            previusRequests = document.querySelectorAll('.past-request');
+            const previusRequests = document.querySelectorAll('.past-request');
             previusRequests.forEach(element => {
                 element.remove();
             });
 
-            pastRequest = document.createElement('div');
+            const pastRequest = document.createElement('div');
             pastRequest.classList.add('past-request');
 
-            pastRequestText = document.createElement('p');
+            const pastRequestText = document.createElement('p');
             pastRequestText.innerHTML = searchTerm;
             pastRequestText.classList.add('past-request-text');
 
             pastRequest.appendChild(pastRequestText);
 
-            removeButton = document.createElement('p');
+            const removeButton = document.createElement('p');
             removeButton.style.margin = 0;
             removeButton.innerHTML = 'x';
             removeButton.classList.add('remove-button');
@@ -153,27 +164,26 @@ function performSearch(searchTerm) {
             removeButton.addEventListener('click', () => {
                 pastRequest.remove();
                 oldSearchTerm = '';
-                ajaxRequestIndex(selectedValue)
+                ajaxRequestIndex(selectedValue);
             });
 
             pastRequest.appendChild(removeButton);
-
             searchContainerFull.prepend(pastRequest);
         })
         .catch(error => {
             console.error('Error:', error);
         });
-};
+}
     
 function displaySearchResults(results) {
     cleanDom()
 
-    if (results.teams.length === 0) {
+    if (results.length === 0) {
         teamsContainer.innerHTML = '<p>No results found ):</p>';
         return;
     }
 
-    results.teams.forEach(element => {
+    results.forEach(element => {
         const team_button = document.createElement('a');
         team_button.classList.add('flex-row', 'team-button');
         team_button.href = element.url;
@@ -298,7 +308,7 @@ function displayNormalIndex(data) {
             connectedDiv.appendChild(team_button);
         });
     } else {
-        followingText = document.createElement('p');
+        const followingText = document.createElement('p');
         followingText.innerHTML = 'You are not playing in any teams yet ):';
         followingText.style.marginBottom = '8px';
 
@@ -347,7 +357,7 @@ function displayNormalIndex(data) {
             followingDiv.appendChild(team_button);
         });
     } else {
-        followingText = document.createElement('p');
+        const followingText = document.createElement('p');
         followingText.innerHTML = 'You are not following any teams yet ):';
         followingText.style.marginBottom = '8px';
 

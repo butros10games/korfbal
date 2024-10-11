@@ -18,7 +18,7 @@
 <div class="stickyBottomNav">
     <ul>
         <li><a href="{% url 'index' %}" style="width: 42px;"><img alt="home" src="/static/images/navbar/home.svg"></a></li>
-        <li><a href="{% url 'teams' %}" style="width: 42px;"><img alt="teams" src="/static/images/navbar/group.svg"></a></li>
+        <li><a href="{% url 'catalog' %}" style="width: 42px;"><img alt="catalog" src="/static/images/navbar/group.svg"></a></li>
         {% if user.is_authenticated %}
             {% if profile_img_url %}
             <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" style="height: 32px; width: auto; border-radius: 50%; border: 2px solid white;" src="{{ profile_img_url }}"></a></li>

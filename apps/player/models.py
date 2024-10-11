@@ -11,7 +11,7 @@ class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='players')
     
-    profile_picture = models.ImageField(upload_to='media/profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
+    profile_picture = models.ImageField(upload_to='profile_pictures/', default='/static/images/player/blank-profile-picture.png', blank=True)
     
     team_follow = models.ManyToManyField(team_model_string, blank=True)
     club_follow = models.ManyToManyField(club_model_string, blank=True)

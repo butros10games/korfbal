@@ -66,7 +66,9 @@
             </div>
         </div>
 
-        <script src="/static/js/teams/index.js"></script>
+        {% csrf_token %}
+
+        <script src="/static/js/hub/catalog.js"></script>
         <script src="/static/js/programs/mobile_view.js"></script>
     </body>
 </html>
