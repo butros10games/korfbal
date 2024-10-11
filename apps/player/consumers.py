@@ -150,7 +150,7 @@ class profile_data(AsyncWebsocketConsumer):
                 upcomming_matches_dict = await transfrom_matchdata(matchs_data)
                 
                 await self.send(text_data=json.dumps({
-                    'command': 'upcomming-matches' if command == "upcomming_matches" else 'past-matches',
+                    'command': 'matches',
                     'matches': upcomming_matches_dict
                 }))
             
