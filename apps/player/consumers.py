@@ -169,14 +169,14 @@ class profile_data(AsyncWebsocketConsumer):
         return await sync_to_async(list)(MatchData.objects.filter(match_link__in=all_matches_with_player, status='finished'))
     
     async def get_matchs_data(self, status):
-        matches = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(
+        matches = await sync_to_async(list)(Match.objects.filter(
             Q(home_team__team_data__players=self.player) |
             Q(away_team__team_data__players=self.player) |
             Q(home_team__team_data__coach=self.player) |
             Q(away_team__team_data__coach=self.player)
         ).order_by("start_time").distinct())
         
-        upcomming_matches = list(dict.fromkeys(matches))
+        matches_non_dub = list(dict.fromkeys(matches))
         
         matchs_data = await sync_to_async(list)(MatchData.objects.prefetch_related(
             'match_link', 
@@ -184,7 +184,7 @@ class profile_data(AsyncWebsocketConsumer):
             'match_link__home_team__club', 
             'match_link__away_team', 
             'match_link__away_team__club'
-        ).filter(match_link__in=upcomming_matches, status__in=status))
+        ).filter(match_link__in=matches_non_dub, status__in=status))
         
         return matchs_data
             
