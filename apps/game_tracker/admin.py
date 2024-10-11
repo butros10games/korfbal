@@ -1,31 +1,22 @@
 from django.contrib import admin
-from django.apps import apps
 
 from apps.team.models import Team
-from .models import Player, Match, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot, PageConnectRegistration
+from .models import MatchData, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot
 
 from django import forms
 from django.db.models import Q
 
 
-class player_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "user"]
+class match_data_admin(admin.ModelAdmin):
+    list_display = ["id_uuid", "match_link", "home_score", "away_score", "part_lenght", "status"]
     show_full_result_count = False
     
     class Meta:
-        model = Player
-admin.site.register(Player, player_admin)
-
-class match_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "home_team", "away_team", "home_score", "away_score", "start_time", "part_lenght", "active", "finished"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = Match
-admin.site.register(Match, match_admin)
+        model = MatchData
+admin.site.register(MatchData, match_data_admin)
 
 class match_part_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "start_time", "end_time", "active", "match"]
+    list_display = ["id_uuid", "start_time", "end_time", "match_data"]
     show_full_result_count = False
     
     class Meta:
@@ -33,7 +24,7 @@ class match_part_admin(admin.ModelAdmin):
 admin.site.register(MatchPart, match_part_admin)
 
 class player_group_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "team", "match", "starting_type", "current_type"]
+    list_display = ["id_uuid", "team", "match_data", "starting_type", "current_type"]
     show_full_result_count = False
     
     class Meta:
@@ -73,7 +64,7 @@ class ShotAdminForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super(ShotAdminForm, self).__init__(*args, **kwargs)
         if 'instance' in kwargs and kwargs['instance']:
-            match = kwargs['instance'].match
+            match = kwargs['instance'].match_data
             self.fields['team'].queryset = Team.objects.filter(
                 Q(home_matches=match) | Q(away_matches=match)
             ).distinct()
@@ -82,8 +73,8 @@ class ShotAdminForm(forms.ModelForm):
 '''
 
 class ShotAdmin(admin.ModelAdmin):
-    #form = ShotAdminForm
-    list_display = ["id_uuid", "player", "match", "for_team", "team", "scored"]
+    # form = ShotAdminForm
+    list_display = ["id_uuid", "player", "match_data", "for_team", "team", "scored"]
     show_full_result_count = False
 
     class Meta:
@@ -92,17 +83,9 @@ class ShotAdmin(admin.ModelAdmin):
 admin.site.register(Shot, ShotAdmin)
 
 class pause_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "match"]
+    list_display = ["id_uuid", "match_data"]
     show_full_result_count = False
     
     class Meta:
         model = Pause
 admin.site.register(Pause, pause_admin)
-
-class page_connect_registration_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "player", "page", "registration_date"]
-    show_full_result_count = False
-    
-    class Meta:
-        model = PageConnectRegistration
-admin.site.register(PageConnectRegistration, page_connect_registration_admin)

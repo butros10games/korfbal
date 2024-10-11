@@ -2,6 +2,8 @@ from django.db import models
 from django.urls import reverse
 from uuidv7 import uuid7
 
+player_model_string = 'player.Player'
+
 class Team(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255)
@@ -16,8 +18,8 @@ class Team(models.Model):
 
 class TeamData(models.Model):
     team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='team_data')
-    coach = models.ManyToManyField('game_tracker.Player', related_name='team_data_as_coach', blank=True)
-    players = models.ManyToManyField('game_tracker.Player', related_name='team_data_as_player', blank=True)
+    coach = models.ManyToManyField(player_model_string, related_name='team_data_as_coach', blank=True)
+    players = models.ManyToManyField(player_model_string, related_name='team_data_as_player', blank=True)
     season = models.ForeignKey('schedule.Season', on_delete=models.CASCADE, related_name='team_data')
     competition = models.CharField(max_length=255, blank=True, null=True)
     

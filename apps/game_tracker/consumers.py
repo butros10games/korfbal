@@ -7,7 +7,6 @@ from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
-
 import json
 import traceback
 from datetime import datetime
