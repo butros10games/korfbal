@@ -4,7 +4,7 @@ from .models import MatchData, PlayerGroup, GroupTypes, PlayerChange, GoalType, 
 
 
 class match_data_admin(admin.ModelAdmin):
-    list_display = ["id_uuid", "match_link", "home_score", "away_score", "part_lenght", "status"]
+    list_display = ["id_uuid", "__str__", "home_score", "away_score", "part_lenght", "status"]
     show_full_result_count = False
     
     class Meta:
