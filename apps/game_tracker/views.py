@@ -56,14 +56,15 @@ def match_team_selector(request, match_id):
     return render(request, "matches/team_selector.html", context)
 
 def match_tracker(request, match_id, team_id):
-    match_data = get_object_or_404(Match, id_uuid=match_id)
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    match_data = MatchData.objects.get(match_link=match_model)
     team_data = get_object_or_404(Team, id_uuid=team_id)
     
     # get the two teams that are playing and make the first team the team from team_data and the second team the opponent
-    if match_data.home_team == team_data:
-        opponent_data = match_data.away_team
+    if match_model.home_team == team_data:
+        opponent_data = match_model.away_team
     else:
-        opponent_data = match_data.home_team
+        opponent_data = match_model.home_team
         
     # calculate the time left in the current part if the part is not finished or started yet then set the time to the part lenght i have set the part_lenght to be in seconds
     time_left = match_data.part_lenght
@@ -74,16 +75,16 @@ def match_tracker(request, match_id, team_id):
     time_display = "%02d:%02d" % (minutes, seconds)
     
     # calculate the score for both the teams
-    team_1_score = Shot.objects.filter(match=match_data, team=team_data, scored=True).count()
-    team_2_score = Shot.objects.filter(match=match_data, team=opponent_data, scored=True).count()
+    team_1_score = Shot.objects.filter(match_data=match_data, team=team_data, scored=True).count()
+    team_2_score = Shot.objects.filter(match_data=match_data, team=opponent_data, scored=True).count()
     
     ## Check if the 'aanval' and 'verdediging' playerGroups are created for the both teams
-    team_names = [match_data.home_team, match_data.away_team]
+    team_names = [match_model.home_team, match_model.away_team]
     player_group_names = ['Aanval', 'Verdediging']
 
     for team_name in team_names:
         for group_name in player_group_names:
-            PlayerGroup.objects.get_or_create(team=team_name, match=match_data, starting_type__name=group_name)
+            PlayerGroup.objects.get_or_create(team=team_name, match_data=match_data, starting_type__name=group_name)
         
     context = {
         "match": match_data,
@@ -94,8 +95,8 @@ def match_tracker(request, match_id, team_id):
         "team_1_score": team_1_score,
         "team_2": opponent_data,
         "team_2_score": team_2_score,
-        "start_date": match_data.start_time.strftime('%A, %d %B'),
-        "start_time": match_data.start_time.strftime('%H:%M')
+        "start_date": match_model.start_time.strftime('%A, %d %B'),
+        "start_time": match_model.start_time.strftime('%H:%M')
     }
     
     return render(request, "matches/tracker.html", context)

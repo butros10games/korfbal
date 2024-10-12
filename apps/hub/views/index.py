@@ -5,7 +5,7 @@ from django.db.models import Q
 from apps.player.models import Player
 from apps.team.models import Team
 from apps.schedule.models import Match
-from apps.game_tracker.models import Shot
+from apps.game_tracker.models import Shot, MatchData
 
 
 def index(request):
@@ -20,6 +20,8 @@ def index(request):
         matches = Match.objects.filter(Q(home_team__in=teams) | Q(away_team__in=teams)).order_by('start_time')
         # get the first match that is in the future
         match = matches.filter(start_time__gte=timezone.now()).first()
+        
+        match_data = MatchData.objects.get(match_link=match)
     else:
         match = None
         
@@ -28,8 +30,8 @@ def index(request):
         "match": match,
         "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
         "start_time": match.start_time.strftime('%H:%M') if match else "",
-        "home_score": Shot.objects.filter(match=match, team=match.home_team, scored=True).count() if match else 0,
-        "away_score": Shot.objects.filter(match=match, team=match.away_team, scored=True).count() if match else 0,
+        "home_score": Shot.objects.filter(match_data=match_data, team=match.home_team, scored=True).count() if match else 0,
+        "away_score": Shot.objects.filter(match_data=match_data, team=match.away_team, scored=True).count() if match else 0,
     }
         
     return render(request, "hub/index.html", context)
