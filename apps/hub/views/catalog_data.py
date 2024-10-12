@@ -72,11 +72,12 @@ def connected_teams_query(player):
     ).distinct()
 
 def team_serializer(team):
+    last_team_data = team.team_data.last() if team.team_data else None
     return {
         "id": str(team.id_uuid),
         "name": str(team),
         "img_url": team.club.logo.url if team.club.logo else None,
-        "competition": team.team_data.last().competition if team.team_data else "",
+        "competition": last_team_data.competition if last_team_data else "",
         "url": str(team.get_absolute_url())
     }
 

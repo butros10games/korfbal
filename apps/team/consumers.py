@@ -7,7 +7,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 from django.db.models import Q
-from apps.game_tracker.models import Shot, GoalType
+from apps.game_tracker.models import Shot, GoalType, MatchData
 from apps.player.models import Player
 from apps.schedule.models import Season, Match
 from apps.team.models import Team, TeamData
@@ -22,26 +22,16 @@ class team_data(AsyncWebsocketConsumer):
         self.team = await sync_to_async(Team.objects.get)(id_uuid=team_id)
         await self.accept()
         
-    async def disconnect(self, close_code):
-        pass
-        
     async def receive(self, text_data):
         try:
             json_data = json.loads(text_data)
             command = json_data['command']
             
-            if command == "wedstrijden":
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=False).order_by('start_time'))
-                
-                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'wedstrijden',
-                    'wedstrijden': wedstrijden_dict
-                }))
-                
-            elif command == "ended_matches":
-                wedstrijden_data = await sync_to_async(list)(Match.objects.prefetch_related('home_team', 'home_team__club', 'away_team', 'away_team__club').filter(Q(home_team=self.team) | Q(away_team=self.team), finished=True).order_by('-start_time'))
+            if command == "wedstrijden" or command == "ended_matches":
+                wedstrijden_data = await self.get_matchs_data(
+                    ['upcoming', 'active'] if command == "wedstrijden" else ['finished'],
+                    '' if command == "wedstrijden" else '-'
+                )
                 
                 wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
                 
@@ -68,30 +58,25 @@ class team_data(AsyncWebsocketConsumer):
                     # get a list of all the matches of the team
                     matches = await sync_to_async(list)(Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)))
                     
+                    match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
+                    
                     team_goal_stats = {}
                     for goal_type in goal_types:
                         goals_for = 0
                         goals_against = 0
                         
-                        for match in matches:
-                            goals_for += await sync_to_async(Shot.objects.filter(match=match, shot_type=goal_type, for_team=True, scored=True).count)()
-                            goals_against += await sync_to_async(Shot.objects.filter(match=match, shot_type=goal_type, for_team=False, scored=True).count)()
+                        goals_for += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=True, scored=True).count)()
+                        goals_against += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=False, scored=True).count)()
                         
                         team_goal_stats[goal_type.name] = {
                             "goals_by_player": goals_for,
                             "goals_against_player": goals_against
                         }
-                        
-                    shots_for = 0
-                    shots_against = 0
-                    goals_for = 0
-                    goals_against = 0
                     
-                    for match in matches:
-                        shots_for += await sync_to_async(Shot.objects.filter(match=match, for_team=True).count)()
-                        shots_against += await sync_to_async(Shot.objects.filter(match=match, for_team=False).count)()
-                        goals_for += await sync_to_async(Shot.objects.filter(match=match, for_team=True, scored=True).count)()
-                        goals_against += await sync_to_async(Shot.objects.filter(match=match, for_team=False, scored=True).count)()
+                    shots_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True).count)()
+                    shots_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False).count)()
+                    goals_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True, scored=True).count)()
+                    goals_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False, scored=True).count)()
                     
                     await self.send(text_data=json.dumps({
                         'command': 'goal_stats',
@@ -119,13 +104,15 @@ class team_data(AsyncWebsocketConsumer):
                     matches = await sync_to_async(list)(
                         Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
                     )
-
+                    
+                    match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
+                    
                     # Fetch all shots in bulk
                     shots = await sync_to_async(list)(
                         Shot.objects.filter(
-                            match__in=matches, 
+                            match_data__in=match_datas, 
                             player__in=players
-                        ).select_related('match', 'player')
+                        ).select_related('match_data', 'player')
                     )
 
                     players_stats = []
@@ -210,7 +197,7 @@ class team_data(AsyncWebsocketConsumer):
                     {
                         'id': str(player.id_uuid),
                         'name': player.user.username,
-                        'profile_picture': player.profile_picture.url if player.profile_picture else None,
+                        'profile_picture': ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url if player.profile_picture else None,
                         'get_absolute_url': str(player.get_absolute_url())
                     }
                     for player in players_in_team_season_list
@@ -244,33 +231,54 @@ class team_data(AsyncWebsocketConsumer):
                 'traceback': traceback.format_exc()
             }))
             
-async def transfrom_matchdata(wedstrijden_data):
-    wedstrijden_dict = []
+    async def get_matchs_data(self, status, order):
+        matches = await sync_to_async(list)(Match.objects.filter(
+           Q(home_team=self.team) | 
+           Q(away_team=self.team)
+        ).distinct())
+        
+        matches_non_dub = list(dict.fromkeys(matches))
+        
+        matchs_data = await sync_to_async(list)(MatchData.objects.prefetch_related(
+            'match_link', 
+            'match_link__home_team', 
+            'match_link__home_team__club', 
+            'match_link__away_team', 
+            'match_link__away_team__club'
+        ).filter(match_link__in=matches_non_dub, status__in=status).order_by(order + "match_link__start_time"))
+        
+        return matchs_data
             
-    for wedstrijd in wedstrijden_data:
-        locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
-        start_time_dt = datetime.fromisoformat(wedstrijd.start_time.isoformat())
+async def transfrom_matchdata(matchs_data):
+    match_dict = []
+    locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
+    
+    for match_data in matchs_data:
+        start_time_dt = datetime.fromisoformat(match_data.match_link.start_time.isoformat())
         
         # Format the date as "za 01 april"
         formatted_date = start_time_dt.strftime("%a %d %b").lower()  # %a for abbreviated day name
 
         # Extract the time as "14:45"
         formatted_time = start_time_dt.strftime("%H:%M")
+        
+        home_team = match_data.match_link.home_team
+        away_team = match_data.match_link.away_team
 
-        wedstrijden_dict.append({
-            'id_uuid': str(wedstrijd.id_uuid),
-            'home_team': await sync_to_async(wedstrijd.home_team.__str__)(),
-            'home_team_logo': wedstrijd.home_team.club.logo.url if wedstrijd.home_team.club.logo else None,
-            'home_score': await sync_to_async(Shot.objects.filter(match=wedstrijd, team=wedstrijd.home_team, scored=True).count)(),
-            'away_team': await sync_to_async(wedstrijd.away_team.__str__)(),
-            'away_team_logo': wedstrijd.away_team.club.logo.url if wedstrijd.away_team.club.logo else None,
-            'away_score': await sync_to_async(Shot.objects.filter(match=wedstrijd, team=wedstrijd.away_team, scored=True).count)(),
+        match_dict.append({
+            'id_uuid': str(match_data.match_link.id_uuid),
+            'home_team': await sync_to_async(home_team.__str__)(),
+            'home_team_logo': home_team.club.logo.url if home_team.club.logo else None,
+            'home_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=home_team, scored=True).count)(),
+            'away_team': await sync_to_async(away_team.__str__)(),
+            'away_team_logo': away_team.club.logo.url if away_team.club.logo else None,
+            'away_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=away_team, scored=True).count)(),
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
-            'length': wedstrijd.part_lenght,
-            'finished': wedstrijd.finished,
-            'winner': await sync_to_async(wedstrijd.get_winner().__str__)() if wedstrijd.get_winner() else None,
-            'get_absolute_url': str(wedstrijd.get_absolute_url())
+            'length': match_data.part_lenght,
+            'status': match_data.status,
+            'winner': await sync_to_async(match_data.get_winner().__str__)() if match_data.get_winner() else None,
+            'get_absolute_url': str(match_data.match_link.get_absolute_url())
         })
         
-    return wedstrijden_dict
+    return match_dict

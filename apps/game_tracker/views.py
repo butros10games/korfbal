@@ -8,14 +8,16 @@ from apps.schedule.models import Match
 
 
 def match_detail(request, match_id):
-    match_data = get_object_or_404(Match, id_uuid=match_id)
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    
+    match_data = MatchData.objects.get(match_link=match_model)
     
     context = {
-        "match": match_data,
-        "start_date": match_data.start_time.strftime('%A, %d %B'),
-        "start_time": match_data.start_time.strftime('%H:%M'),
-        "home_score": Shot.objects.filter(match=match_data, team=match_data.home_team, scored=True).count(),
-        "away_score": Shot.objects.filter(match=match_data, team=match_data.away_team, scored=True).count()
+        "match": match_model,
+        "start_date": match_model.start_time.strftime('%A, %d %B'),
+        "start_time": match_model.start_time.strftime('%H:%M'),
+        "home_score": Shot.objects.filter(match_data=match_data, team=match_model.home_team, scored=True).count(),
+        "away_score": Shot.objects.filter(match_data=match_data, team=match_model.away_team, scored=True).count()
     }
     
     return render(request, "matches/detail.html", context)

@@ -41,6 +41,7 @@ class MatchPart(models.Model):
     part_number = models.IntegerField()
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(blank=True, null=True)
+    active = models.BooleanField(default=False)
 
 class PlayerGroup(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
