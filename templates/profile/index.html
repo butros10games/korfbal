@@ -24,12 +24,12 @@
         <div class="flex-column" style="margin-top: 64px;">
             <div class="flex-column" style="height: 170px; justify-content: center; width: 100%;">
                 <div id="profilePic-container" class="profile-container">
-                    <img src="{{ profile_img_url }}" alt="profile" class="profile-pic" id="profilePic">
+                    <img src="{{ profile_picture }}" alt="profile" class="profile-pic" id="profilePic">
                     <div id="overlay" class="overlay">
                         <img src="/static/images/player/edit-button-svgrepo-com.svg" alt="Overlay Icon" class="overlay-icon">
                     </div>
                 </div>
-                <p style="margin-bottom: 0;">{{ user_data.username }}</p>
+                <p style="margin-bottom: 0;">{{ player.user.username }}</p>
             </div>
 
             <div class="carousel-container">

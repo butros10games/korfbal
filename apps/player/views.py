@@ -11,7 +11,6 @@ def profile_detail(request, player_id=None):
     
     if player_id:
         player = get_object_or_404(Player, id_uuid=player_id)
-        user_data = player.user
     elif user.is_authenticated:
         player = Player.objects.get(user=user)
         
@@ -26,7 +25,7 @@ def profile_detail(request, player_id=None):
     
     context = {
         "player": player,
-        "user_data": user_data,
+        "profile_picture": ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url,
         "is_own_profile": is_own_profile,
         "display_back": display_back
     }

@@ -305,7 +305,7 @@ function updateMatches(data) {
 
             match_date_container.appendChild(match_date);
             
-            if (element.finished) {
+            if (element.status === "finished") {
                 const match_score = document.createElement("p");
                 match_score.style.margin = "0";
                 match_score.style.marginBottom = "12px";
@@ -314,12 +314,14 @@ function updateMatches(data) {
 
                 match_date_container.appendChild(match_score);
             } else {
-                if (element.active) {
+                if (element.status === 'active') {
                     const match_hour = document.createElement("p");
                     match_hour.style.margin = "0";
                     match_hour.style.marginBottom = "12px";
                     match_hour.style.fontWeight = "600";
-                    match_hour.innerHTML = element.start_time + " (live)";
+                    match_hour.style.fontSize = "18px";
+                    match_hour.style.textAlign = "center";
+                    match_hour.innerHTML = element.start_time + "</br>" + " (live)";
 
                     match_date_container.appendChild(match_hour);
                 } else {
@@ -381,13 +383,14 @@ function truncateMiddle(text, maxLength) {
 function UpdateStatastics(data) {
     const stats = data.stats;
 
-    console.log(stats);
-
     const statsContainer = document.createElement("div");
     statsContainer.classList.add("stats-container");
 
     if (stats) {
-        // check if the buttons already exist and if they exist skip the creation of the buttons
+        // Get the currently active button type
+        let activeType = document.querySelector(".stat-selector-button.active")?.dataset.type || 'general';
+
+        // Check if the buttons already exist and if they exist, skip the creation of the buttons
         if (!document.querySelector(".stat-selector-button")) {
             cleanDom();
 
@@ -396,7 +399,7 @@ function UpdateStatastics(data) {
             statSelectorButtonField.style.justifyContent = "space-around";
             statSelectorButtonField.style.margin = "12px";
             statSelectorButtonField.style.width = "calc(100% - 24px)";
-            
+
             const buttonTypes = [
                 { name: 'generaal', type: 'general' },
                 { name: 'verloop', type: 'progression' },
@@ -406,9 +409,10 @@ function UpdateStatastics(data) {
             buttonTypes.forEach(type => {
                 const button = document.createElement("button");
                 button.classList.add("stat-selector-button");
+                button.dataset.type = type.type;
 
-                // add to the first button a active class
-                if (type.type == 'general') {
+                // Set the active class to the button that matches the active type
+                if (type.type === activeType) {
                     button.classList.add("active");
                 }
 
@@ -420,7 +424,7 @@ function UpdateStatastics(data) {
                         'data_type': type.type
                     }));
 
-                    // add active class to the button and remove it by the other buttons
+                    // Add active class to the button and remove it by the other buttons
                     const buttons = document.querySelectorAll(".stat-selector-button");
                     buttons.forEach((button) => {
                         button.classList.remove("active");
@@ -433,8 +437,8 @@ function UpdateStatastics(data) {
 
             statsContainer.appendChild(statSelectorButtonField);
         }
-        
-        // check if there is already a dataField and if there is a field delete it
+
+        // Check if there is already a dataField and if there is a field delete it
         if (document.getElementById("dataField")) {
             document.getElementById("dataField").remove();
         }
@@ -445,7 +449,7 @@ function UpdateStatastics(data) {
             const goals_container = document.createElement("div");
             goals_container.classList.add("flex-column");
             goals_container.id = "dataField";
-            goals_container.style.width = "calc(100% - 24px))";
+            goals_container.style.width = "calc(100% - 24px)";
             goals_container.style.padding = "12px";
 
             const row_1 = document.createElement("div");
@@ -491,9 +495,8 @@ function UpdateStatastics(data) {
                     // Create a div for each goal type's stats
                     const goal_type_container = document.createElement("div");
                     goal_type_container.classList.add("flex-column");
-                    goal_type_container.style.marginbottom = "12px";
-                    goal_type_container.style.width = "104px";
                     goal_type_container.style.marginBottom = "12px";
+                    goal_type_container.style.width = "104px";
 
                     const goal_type_name = document.createElement("p");
                     goal_type_name.style.margin = "0";
@@ -521,14 +524,14 @@ function UpdateStatastics(data) {
             playerSelectorField.style.margin = "24px 12px 0 12px";
             playerSelectorField.style.width = "calc(100% - 24px)";
 
-            // create a lagenda for the player stats
+            // Create a legend for the player stats
             const legend = document.createElement("div");
             legend.classList.add("flex-row");
             legend.style.justifyContent = "space-between";
             legend.style.marginBottom = "12px";
             legend.style.borderBottom = "1px solid #ccc";
             legend.style.paddingBottom = "12px";
-            
+
             const name = document.createElement("p");
             name.innerHTML = "Naam";
             name.style.margin = "0";

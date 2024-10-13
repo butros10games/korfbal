@@ -295,6 +295,8 @@ function onMessageReceived(event) {
         return;
     }
 
+    const startStopButton = document.getElementById("start-stop-button");
+
     switch(data.command) {
         case "last_event":
             cleanDom(eventsDiv);
@@ -339,7 +341,6 @@ function onMessageReceived(event) {
                 timer.start();
 
                 // set the pause button to pause
-                const startStopButton = document.getElementById("start-stop-button");
                 startStopButton.innerHTML = "Pause";
 
             } else if (data.type === "pause") {
@@ -347,7 +348,6 @@ function onMessageReceived(event) {
                 timer.stop();
 
                 // set the pause button to start
-                const startStopButton = document.getElementById("start-stop-button");
                 startStopButton.innerHTML = "Start";
 
             } else if (data.type === "start") {
@@ -363,7 +363,6 @@ function onMessageReceived(event) {
                 console.log("Timer paused");
 
                 // set the pause button to start
-                const startStopButton = document.getElementById("start-stop-button");
                 startStopButton.innerHTML = "Start";
 
             } else if (data.pause === false) {
@@ -371,7 +370,6 @@ function onMessageReceived(event) {
                 console.log("Timer resumed");
 
                 // set the pause button to pause
-                const startStopButton = document.getElementById("start-stop-button");
                 startStopButton.innerHTML = "Pause";
             }
 
@@ -426,6 +424,9 @@ function onMessageReceived(event) {
             const endHalfButton = document.getElementById("end-half-button");
             endHalfButton.style.display = "none";
 
+            // change the start/pause button to start
+            startStopButton.innerHTML = "start";
+
             break;
 
         case "match_end":
@@ -436,7 +437,6 @@ function onMessageReceived(event) {
             }
 
             // set the pause button to start
-            const startStopButton = document.getElementById("start-stop-button");
             startStopButton.innerHTML = "match ended";
 
             // add a overlay with the match end and a button when pressed it goes back to the match detail page

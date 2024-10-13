@@ -654,7 +654,7 @@ function updateMatches(data) {
 
             match_date_container.appendChild(match_date);
             
-            if (element.finished) {
+            if (element.status === 'finished') {
                 const match_score = document.createElement("p");
                 match_score.style.margin = "0";
                 match_score.style.marginBottom = "12px";
@@ -663,12 +663,14 @@ function updateMatches(data) {
 
                 match_date_container.appendChild(match_score);
             } else {
-                if (element.active) {
+                if (element.status === 'active') {
                     const match_hour = document.createElement("p");
                     match_hour.style.margin = "0";
                     match_hour.style.marginBottom = "12px";
                     match_hour.style.fontWeight = "600";
-                    match_hour.innerHTML = element.start_time + " (live)";
+                    match_hour.style.fontSize = "18px";
+                    match_hour.style.textAlign = "center";
+                    match_hour.innerHTML = element.start_time + "</br>" + " (live)";
 
                     match_date_container.appendChild(match_hour);
                 } else {

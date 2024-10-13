@@ -115,7 +115,7 @@ function setNavButtons() {
 
     infoContainer.addEventListener('touchend', (e) => {
         touchEndX = e.changedTouches[0].clientX;
-        touchEndY = e.changedTouches[0].clientY;
+        const touchEndY = e.changedTouches[0].clientY;
     
         const diffX = touchEndX - touchStartX;
         const diffY = touchEndY - touchStartY;
@@ -223,7 +223,7 @@ function onMessageReceived(event) {
         case "playerGroups":
             cleanDom();
 
-            if (data.is_coach && !data.finished) {
+            if (data.is_coach && !data.status == 'finished') {
                 updateplayerGroups(data);
             } else {
                 showPlayerGroups(data);
@@ -349,7 +349,7 @@ function updateEvents(data) {
 
 
                 const playerName = document.createElement("p");
-                playerName.innerHTML = event.player_in + " --> " + event.player_out;
+                playerName.innerHTML = truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15);
                 playerName.style.margin = "0";
                 playerName.style.fontSize = "12px";
 
@@ -412,7 +412,7 @@ function updateEvents(data) {
         eventContainer.appendChild(textElement);
     }
 
-    if (data.access && !data.finished) {
+    if (data.access && !data.status == 'finished') {
         const buttonContainer = document.createElement("div");
         buttonContainer.classList.add("flex-center");
         buttonContainer.style.marginTop = "12px";

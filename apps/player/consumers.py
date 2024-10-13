@@ -11,7 +11,7 @@ from django.db.models import Q
 from apps.game_tracker.models import Shot, GoalType, MatchData
 from apps.schedule.models import Match
 from apps.player.models import Player
-from apps.team.models import Team
+from apps.team.models import Team, TeamData
 from authentication.models import UserProfile
 
 class profile_data(AsyncWebsocketConsumer):
@@ -20,12 +20,16 @@ class profile_data(AsyncWebsocketConsumer):
         self.user = None
         self.player = None
         self.user_profile = None
+        self.teams = None
         
     async def connect(self):
         player_id = self.scope['url_route']['kwargs']['id']
         self.player = await Player.objects.prefetch_related('user').aget(id_uuid=player_id)
         self.user = self.player.user
         self.user_profile = await UserProfile.objects.aget(user=self.user)
+        self.teams = await sync_to_async(list)(Team.objects.filter(team_data__players=self.player).distinct())
+        
+        self.team_data = await sync_to_async(TeamData.objects.filter(Q(players=self.player) | Q(coach=self.player)).distinct)()
         await self.accept()
     
     async def receive(self, text_data):
@@ -37,7 +41,7 @@ class profile_data(AsyncWebsocketConsumer):
                 total_goals_for = 0
                 total_goals_against = 0
                 
-                all_finished_match_data = await self.get_all_finished_matches()
+                all_finished_match_data = await self.get_matchs_data(['finished'])
 
                 goal_types = await sync_to_async(list)(GoalType.objects.all())
 
@@ -45,21 +49,21 @@ class profile_data(AsyncWebsocketConsumer):
                 scoring_types = []
 
                 for goal_type in goal_types:
-                    goals_by_player = await sync_to_async(Shot.objects.filter(
-                        match__in=all_finished_match_data, 
+                    goals_by_player = await Shot.objects.filter(
+                        match_data__in=all_finished_match_data, 
                         shot_type=goal_type, 
                         player=self.player,
                         for_team=True,
                         scored=True
-                    ).count)()
+                    ).acount()
                     
-                    goals_against_player = await sync_to_async(Shot.objects.filter(
-                        match__in=all_finished_match_data, 
+                    goals_against_player = await Shot.objects.filter(
+                        match_data__in=all_finished_match_data, 
                         shot_type=goal_type, 
                         player=self.player,
                         for_team=False,
                         scored=True
-                    ).count)()
+                    ).acount()
 
                     player_goal_stats[goal_type.name] = {
                         "goals_by_player": goals_by_player,
@@ -75,7 +79,7 @@ class profile_data(AsyncWebsocketConsumer):
                     'command': 'player_goal_stats',
                     'player_goal_stats': player_goal_stats,
                     'scoring_types': scoring_types,
-                    'played_matches': await sync_to_async(all_finished_match_data.count)() if all_finished_match_data else 0,
+                    'played_matches': len(all_finished_match_data),
                     'total_goals_for': total_goals_for,
                     'total_goals_against': total_goals_against,
                 }))
@@ -124,11 +128,6 @@ class profile_data(AsyncWebsocketConsumer):
                     }))
                     
             if command == 'teams':
-                teams = await sync_to_async(list)(Team.objects.filter(team_data__players=self.player))
-                
-                # remove dubplicates
-                teams = list(dict.fromkeys(teams))
-                
                 teams_dict = [
                     {
                         'id': str(team.id_uuid),
@@ -136,7 +135,7 @@ class profile_data(AsyncWebsocketConsumer):
                         'logo': team.club.logo.url if team.club.logo else None,
                         'get_absolute_url': str(team.get_absolute_url())
                     }
-                    for team in teams
+                    for team in self.teams
                 ]
                 
                 await self.send(text_data=json.dumps({
@@ -145,13 +144,13 @@ class profile_data(AsyncWebsocketConsumer):
                 }))
                 
             if command == "upcomming_matches" or command == "past_matches":
-                matchs_data = await self.get_matchs_data(['upcoming', 'active'] if command == "upcomming_matches" else 'finished')
+                matchs_data = await self.get_matchs_data(['upcoming', 'active'] if command == "upcomming_matches" else ['finished'])
                 
-                upcomming_matches_dict = await transfrom_matchdata(matchs_data)
+                matches_dict = await transfrom_matchdata(matchs_data)
                 
                 await self.send(text_data=json.dumps({
                     'command': 'matches',
-                    'matches': upcomming_matches_dict
+                    'matches': matches_dict
                 }))
             
         except Exception as e:
@@ -159,21 +158,11 @@ class profile_data(AsyncWebsocketConsumer):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
-            
-    async def get_all_finished_matches(self):
-        all_matches_with_player = await sync_to_async(Match.objects.filter)(
-            Q(home_team__team_data__players=self.player) |
-            Q(away_team__team_data__players=self.player)
-        )
-                
-        return await sync_to_async(list)(MatchData.objects.filter(match_link__in=all_matches_with_player, status='finished'))
     
     async def get_matchs_data(self, status):
         matches = await sync_to_async(list)(Match.objects.filter(
-            Q(home_team__team_data__players=self.player) |
-            Q(away_team__team_data__players=self.player) |
-            Q(home_team__team_data__coach=self.player) |
-            Q(away_team__team_data__coach=self.player)
+            Q(home_team__team_data__in=self.team_data) |
+            Q(away_team__team_data__in=self.team_data)
         ).order_by("start_time").distinct())
         
         matches_non_dub = list(dict.fromkeys(matches))
@@ -190,9 +179,9 @@ class profile_data(AsyncWebsocketConsumer):
             
 async def transfrom_matchdata(matchs_data):
     match_dict = []
-            
+    locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
+    
     for match_data in matchs_data:
-        locale.setlocale(locale.LC_TIME, 'nl_NL.utf8')
         start_time_dt = datetime.fromisoformat(match_data.match_link.start_time.isoformat())
         
         # Format the date as "za 01 april"
@@ -208,10 +197,10 @@ async def transfrom_matchdata(matchs_data):
             'id_uuid': str(match_data.match_link.id_uuid),
             'home_team': await sync_to_async(home_team.__str__)(),
             'home_team_logo': home_team.club.logo.url if home_team.club.logo else None,
-            'home_score': await sync_to_async(Shot.objects.filter(match=match_data, team=home_team, scored=True).count)(),
+            'home_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=home_team, scored=True).count)(),
             'away_team': await sync_to_async(away_team.__str__)(),
             'away_team_logo': away_team.club.logo.url if away_team.club.logo else None,
-            'away_score': await sync_to_async(Shot.objects.filter(match=match_data, team=away_team, scored=True).count)(),
+            'away_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=away_team, scored=True).count)(),
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately
             'length': match_data.part_lenght,
