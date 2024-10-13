@@ -217,7 +217,7 @@ class match_data(AsyncWebsocketConsumer):
                 events.extend(goals)
                 events.extend(player_change)
                 events.extend(time_outs)
-                events.sort(key=lambda x: x.time)
+                events.sort(key=lambda x: getattr(x, 'time', getattr(x, 'start_time', None)))
                 
                 for event in events:
                     if event.match_part is not None:
@@ -270,13 +270,13 @@ class match_data(AsyncWebsocketConsumer):
                             })
                         elif isinstance(event, Pause):
                             # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.time, start_time__gte=event.match_part.start_time))
+                            pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.start_time, start_time__gte=event.match_part.start_time))
                             pause_time = 0
                             for pause in pauses:
                                 pause_time += pause.length().total_seconds()
                                 
                             # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
+                            time_in_minutes = round(((event.start_time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
                             
                             left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
                             if left_over > 0:
@@ -285,8 +285,8 @@ class match_data(AsyncWebsocketConsumer):
                             events_dict.append({
                                 'type': 'pauze',
                                 'time': time_in_minutes,
-                                'length': event.length,
-                                'start_time': event.time.isoformat() if event.time else None,
+                                'length': event.length().total_seconds(),
+                                'start_time': event.start_time.isoformat() if event.start_time else None,
                                 'end_time': event.end_time.isoformat() if event.end_time else None
                             })
             
@@ -836,7 +836,7 @@ class match_tracker(AsyncWebsocketConsumer):
                     
                 elif isinstance(event, Pause):
                     # get and delete the last pause event
-                    pause = await sync_to_async(Pause.objects.get)(active=event.active, match_part=event.match_part, start_time=event.time)
+                    pause = await sync_to_async(Pause.objects.get)(active=event.active, match_part=event.match_part, start_time=event.start_time)
                     
                     if event.active:
                         await sync_to_async(pause.delete)()
@@ -867,7 +867,7 @@ class match_tracker(AsyncWebsocketConsumer):
         time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part', 'match_part__match_data', 'match_data__match_link').filter(match_data=self.match_data).order_by('start_time'))
 
         # Combine all events and sort them
-        events = sorted(shots + player_changes + time_outs, key=lambda x: x.start_time)
+        events = sorted(shots + player_changes + time_outs, key=lambda x: getattr(x, 'time', getattr(x, 'start_time', None)))
         
         # check if there are events
         if events == []:
@@ -938,19 +938,36 @@ class match_tracker(AsyncWebsocketConsumer):
         }))
         
     async def time_calc(self, event):
-        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-        pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.start_time, start_time__gte=event.match_data.match_link.start_time))
-        pause_time = 0
-        for pause in pauses:
-            pause_time += pause.length().total_seconds()
-            
-        # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-        time_in_minutes = round(((event.start_time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
-        
+        # Determine the event time attribute, either 'time' or 'start_time'
+        event_time = getattr(event, 'time', getattr(event, 'start_time', None))
+
+        if not event_time:
+            raise ValueError("Event must have either 'time' or 'start_time' attribute")
+
+        # Calculate the time of the pauses before the event happened by summing the length of the pauses
+        pauses = await sync_to_async(list)(
+            Pause.objects.filter(
+                match_data=self.match_data,
+                active=False,
+                start_time__lt=event_time,
+                start_time__gte=event.match_part.start_time
+            )
+        )
+        pause_time = sum([pause.length().total_seconds() for pause in pauses])
+
+        # Calculate the time in minutes since the real_start_time of the match and the event time
+        time_in_minutes = round(
+            (
+                (event_time - event.match_part.start_time).total_seconds()
+                + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght))
+                - pause_time
+            ) / 60
+        )
+
         left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
         if left_over > 0:
             time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
-            
+
         return time_in_minutes
                 
     async def playerGroupRequest(self):

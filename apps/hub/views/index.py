@@ -21,7 +21,10 @@ def index(request):
         # get the first match that is in the future
         match = matches.filter(start_time__gte=timezone.now()).first()
         
-        match_data = MatchData.objects.get(match_link=match)
+        if match:
+            match_data = MatchData.objects.get(match_link=match)
+        else:
+            match_data = None
     else:
         match = None
         

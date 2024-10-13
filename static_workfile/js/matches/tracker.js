@@ -810,7 +810,7 @@ function updateEvent(data) {
             descriptionDiv.innerHTML = "(\"" + event.time + "\")";
             
             playerName = document.createElement("p");
-            playerName.innerHTML = event.player;
+            playerName.innerHTML = truncateMiddle(event.player, 20);
             playerName.style.margin = "0";
             playerName.style.fontSize = "12px";
 
@@ -841,7 +841,7 @@ function updateEvent(data) {
             descriptionDiv.innerHTML = "(\"" + event.time + "\")";
             
             playerName = document.createElement("p");
-            playerName.innerHTML = event.player_in + " --> " + event.player_out;
+            playerName.innerHTML = truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15);
             playerName.style.margin = "0";
             playerName.style.fontSize = "12px";
 

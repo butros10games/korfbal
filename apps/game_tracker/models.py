@@ -63,7 +63,6 @@ class PlayerGroup(models.Model):
     def __str__(self):
         return f"Player Group {self.id_uuid}"
 
-    
 class GroupTypes(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)

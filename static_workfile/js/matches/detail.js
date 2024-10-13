@@ -918,12 +918,6 @@ class CountdownTimer {
     
         // Update the counter display on the website
         document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        // if the time is under one minute add a end half button
-        if (minutes < 1 || sign === "-") {
-            const endHalfButton = document.getElementById("end-half-button");
-            endHalfButton.style.display = "block";
-        }
     }
 
     start(pause_time = null) {
