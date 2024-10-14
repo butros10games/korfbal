@@ -373,9 +373,9 @@ function truncateMiddle(text, maxLength) {
     }
   
     // Calculate the number of characters to show before and after the ellipsis
-    var charsToShow = maxLength - 3;
-    var frontChars = Math.ceil(charsToShow / 2);
-    var backChars = Math.floor(charsToShow / 2);
+    const charsToShow = maxLength - 3;
+    const frontChars = Math.ceil(charsToShow / 2);
+    const backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
@@ -387,9 +387,6 @@ function UpdateStatastics(data) {
     statsContainer.classList.add("stats-container");
 
     if (stats) {
-        // Get the currently active button type
-        let activeType = document.querySelector(".stat-selector-button.active")?.dataset.type || 'general';
-
         // Check if the buttons already exist and if they exist, skip the creation of the buttons
         if (!document.querySelector(".stat-selector-button")) {
             cleanDom();
@@ -409,22 +406,21 @@ function UpdateStatastics(data) {
             buttonTypes.forEach(type => {
                 const button = document.createElement("button");
                 button.classList.add("stat-selector-button");
-                button.dataset.type = type.type;
 
-                // Set the active class to the button that matches the active type
-                if (type.type === activeType) {
+                // add to the first button a active class
+                if (type.type == 'general') {
                     button.classList.add("active");
                 }
 
                 button.innerHTML = type.name;
                 button.addEventListener('click', function() {
                     socket.send(JSON.stringify({
-                        'command': 'team_stats',
+                        'command': 'get_stats',
                         'user_id': user_id,
                         'data_type': type.type
                     }));
 
-                    // Add active class to the button and remove it by the other buttons
+                    // add active class to the button and remove it by the other buttons
                     const buttons = document.querySelectorAll(".stat-selector-button");
                     buttons.forEach((button) => {
                         button.classList.remove("active");

@@ -79,6 +79,8 @@ function setNavButtons() {
         });
     });
 
+    let startPosition;
+
     // Touch event handlers
     carousel.addEventListener('touchstart', (e) => {
         touchStartX = e.touches[0].clientX;
@@ -126,7 +128,7 @@ function setNavButtons() {
 
     infoContainer.addEventListener('touchend', (e) => {
         touchEndX = e.changedTouches[0].clientX;
-        touchEndY = e.changedTouches[0].clientY;
+        const touchEndY = e.changedTouches[0].clientY;
     
         const diffX = touchEndX - touchStartX;
         const diffY = touchEndY - touchStartY;
@@ -169,8 +171,8 @@ function changeActiveButton(newActiveIndex) {
 }
 
 function requestInitalData() {
-    button = document.querySelector(".button.active");
-    var data = button.getAttribute('data');
+    const button = document.querySelector(".button.active");
+    const data = button.getAttribute('data');
 
     socket.send(JSON.stringify({
         'command': data

@@ -68,6 +68,8 @@ function setNavButtons() {
         });
     });
 
+    let startPosition;
+
     // Touch event handlers
     carousel.addEventListener('touchstart', (e) => {
         touchStartX = e.touches[0].clientX;
@@ -214,13 +216,14 @@ function onMessageReceived(event) {
     console.log(data);
 
     switch(data.command) {
-        case "events":
+        case "events": {
             cleanDom();
 
             updateEvents(data);
             break;
+        }
         
-        case "playerGroups":
+        case "playerGroups": {
             cleanDom();
 
             if (data.is_coach && !data.status == 'finished') {
@@ -229,18 +232,21 @@ function onMessageReceived(event) {
                 showPlayerGroups(data);
             }
             break;
+        }
         
-        case "team_goal_change":
-            score_field = document.getElementById("score");
-            score_field.innerHTML = data.goals_for + " / " + data.goals_against;
+        case "team_goal_change": {
+            const scoreField = document.getElementById("score");
+            scoreField.innerHTML = data.goals_for + " / " + data.goals_against;
 
             break;
+        }
 
-        case "stats":
+        case "stats": {
             UpdateStatastics(data.data);
             break;
+        }
 
-        case "timer_data":
+        case "timer_data": {
             if (timer) {
                 return;
             }
@@ -256,8 +262,9 @@ function onMessageReceived(event) {
             }
 
             break;
+        }
 
-        case "pause":
+        case "pause": {
             if (data.pause === true) {
                 timer.stop();
                 console.log("Timer paused");
@@ -268,6 +275,7 @@ function onMessageReceived(event) {
             }
 
             break;
+        }
     }
 }
 
