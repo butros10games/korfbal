@@ -1,7 +1,7 @@
 --extra-index-url https://pypi.butrosgroot.com/
 
 django
-psycopg2
+psycopg2-binary
 django-mobile-detect
 django_ratelimit
 Pillow

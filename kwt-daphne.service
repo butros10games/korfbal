@@ -1,0 +1,13 @@
+[Unit]
+Description=Daphne KWT Server
+After=network.target
+
+[Service]
+User=butros
+WorkingDirectory=/home/butros/Korfbal
+ExecStart=/bin/bash -c 'source /home/butros/Korfbal/.env/bin/activate && /home/butros/Korfbal/.env/bin/daphne -p 8001 -b 0.0.0.0 Korfbal.asgi:application'
+Restart=always
+SyslogIdentifier=butrosgroot
+
+[Install]
+WantedBy=multi-user.target

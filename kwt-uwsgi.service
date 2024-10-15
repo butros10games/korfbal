@@ -1,0 +1,13 @@
+[Unit]
+Description=uWSGI service for KWT Django application
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/home/butros/Korfbal
+ExecStart=/home/butros/Korfbal/.env/bin/uwsgi --ini /home/butros/Korfbal/uwsgi.ini
+ExecReload=/bin/kill -s HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

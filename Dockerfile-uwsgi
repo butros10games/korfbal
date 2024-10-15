@@ -1,0 +1,32 @@
+# Dockerfile-uwsgi
+FROM python:3.13-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies for PostgreSQL and psycopg2-binary
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project
+COPY . /app/
+
+# Expose port for HTTP
+EXPOSE 1664
+
+# Command to run uWSGI server
+CMD ["uwsgi", "--http", "0.0.0.0:1664", "--module", "app.wsgi:application", "--master", "--processes", "4", "--threads", "2"]
+
+# Healthcheck to ensure uWSGI is responding on port 8000
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD curl --fail http://localhost:8000 || exit 1

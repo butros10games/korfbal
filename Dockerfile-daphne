@@ -1,0 +1,32 @@
+# Dockerfile-daphne
+FROM python:3.13-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies for PostgreSQL and psycopg2-binary
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app 
+
+# Install Python dependencies
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project
+COPY . /app/
+
+# Expose port for WebSocket connections
+EXPOSE 8001
+
+# Command to run Daphne server
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8001", "app.asgi:application"]
+
+# Healthcheck to ensure Daphne is responding on the WebSocket port
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD curl --fail http://localhost:8001 || exit 1
