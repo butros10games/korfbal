@@ -37,136 +37,13 @@ class team_data(AsyncWebsocketConsumer):
                     await self.team_stats_general_request()
                 
                 elif data_type == 'player_stats':
-                    # Fetch players and matches in bulk
-                    players = await sync_to_async(list)(
-                        Player.objects.prefetch_related('user')
-                        .filter(team_data_as_player__team=self.team)
-                        .distinct()
-                    )
-
-                    matches = await sync_to_async(list)(
-                        Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
-                    )
-                    
-                    match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
-                    
-                    # Fetch all shots in bulk
-                    shots = await sync_to_async(list)(
-                        Shot.objects.filter(
-                            match_data__in=match_datas, 
-                            player__in=players
-                        ).select_related('match_data', 'player')
-                    )
-
-                    players_stats = []
-
-                    # Process data in Python instead of making separate DB queries for each player and match
-                    for player in players:
-                        player_shots = [shot for shot in shots if shot.player_id == player.id_uuid]
-                        shots_for = sum(1 for shot in player_shots if shot.for_team)
-                        shots_against = sum(1 for shot in player_shots if not shot.for_team)
-                        goals_for = sum(1 for shot in player_shots if shot.for_team and shot.scored)
-                        goals_against = sum(1 for shot in player_shots if not shot.for_team and shot.scored)
-
-                        player_stats = {
-                            'username': player.user.username,
-                            'shots_for': shots_for,
-                            'shots_against': shots_against,
-                            'goals_for': goals_for,
-                            'goals_against': goals_against,
-                        }
-                        
-                        players_stats.append(player_stats)
-
-                    # Sort players_stats
-                    players_stats.sort(key=lambda x: x['goals_for'], reverse=True)
-                    
-                    # remove all the players with no goals
-                    players_stats = [player for player in players_stats if player['goals_for'] > 0]
-
-                    # Prepare and send data
-                    await self.send(text_data=json.dumps({
-                        'command': 'goal_stats',
-                        'data': {
-                            'type': 'player_stats',
-                            'stats': {
-                                'player_stats': players_stats
-                            }
-                        }
-                    }))
-
+                    await self.team_stats_player_request()
                 
             elif command == "spelers":
-                if 'season_uuid' in json_data:
-                    season_uuid = json_data['season_uuid']
-                else:
-                    season_uuid = None
-                
-                # Initialize an empty list to store players
-                players_in_team_season = []
-
-                # Check if a specific season is provided
-                if season_uuid:
-                    # Assuming you have a Season object or its UUID
-                    season = await sync_to_async(Season.objects.get)(id_uuid=season_uuid)
-
-                    # Get all TeamData instances for the specified team and season
-                    team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=season))
-
-                    # Iterate through the TeamData instances and collect players
-                    for team_data_instance in team_data_instances:
-                        all_players = await sync_to_async(team_data_instance.players.all)()
-                        players_prefetch = await sync_to_async(all_players.prefetch_related)('user')
-                        await sync_to_async(players_in_team_season.extend)(players_prefetch)
-                else:
-                    # retreve the players of the current season or last season if there is no current season
-                    try:
-                        current_season = await sync_to_async(Season.objects.get)(start_date__lte=datetime.now(), end_date__gte=datetime.now())
-                    except Season.DoesNotExist:
-                        current_season = await sync_to_async(Season.objects.filter(end_date__lte=datetime.now()).order_by('-end_date').first)()
-                    
-                    # Get the team data instances for the current season
-                    all_team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=current_season))
-
-                    # Iterate through all TeamData instances and collect players
-                    for team_data_instance in all_team_data_instances:
-                        all_players = await sync_to_async(team_data_instance.players.all)()
-                        players_prefetch = await sync_to_async(all_players.prefetch_related)('user')
-                        await sync_to_async(players_in_team_season.extend)(players_prefetch)
-                        
-                players_in_team_season_list = await sync_to_async(list)(players_in_team_season)
-                        
-                players_in_team_season_dict = [
-                    {
-                        'id': str(player.id_uuid),
-                        'name': player.user.username,
-                        'profile_picture': ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url if player.profile_picture else None,
-                        'get_absolute_url': str(player.get_absolute_url())
-                    }
-                    for player in players_in_team_season_list
-                ]
-
-                await self.send(text_data=json.dumps({
-                    'command': 'spelers',
-                    'spelers': players_in_team_season_dict,
-                }))
+                await self.player_request(json_data)
                 
             elif command == "follow":
-                follow = json_data['followed']
-                user_id = json_data['user_id']
-                
-                player = await sync_to_async(Player.objects.get)(user=user_id)
-                
-                if follow:
-                    await sync_to_async(player.team_follow.add)(self.team)
-                    
-                else:
-                    await sync_to_async(player.team_follow.remove)(self.team)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'follow',
-                    'status': 'success'
-                }))
+                await self.follow_request(json_data['followed'], json_data['user_id'])
                     
         except Exception as e:
             await self.send(text_data=json.dumps({
@@ -236,7 +113,135 @@ class team_data(AsyncWebsocketConsumer):
                 }
             }
         }))
+        
+    async def team_stats_player_request(self):
+        # Fetch players and matches in bulk
+        players = await sync_to_async(list)(
+            Player.objects.prefetch_related('user')
+            .filter(team_data_as_player__team=self.team)
+            .distinct()
+        )
+
+        matches = await sync_to_async(list)(
+            Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
+        )
+        
+        match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
+        
+        # Fetch all shots in bulk
+        shots = await sync_to_async(list)(
+            Shot.objects.filter(
+                match_data__in=match_datas, 
+                player__in=players
+            ).select_related('match_data', 'player')
+        )
+
+        players_stats = []
+
+        # Process data in Python instead of making separate DB queries for each player and match
+        for player in players:
+            player_shots = [shot for shot in shots if shot.player_id == player.id_uuid]
+            shots_for = sum(1 for shot in player_shots if shot.for_team)
+            shots_against = sum(1 for shot in player_shots if not shot.for_team)
+            goals_for = sum(1 for shot in player_shots if shot.for_team and shot.scored)
+            goals_against = sum(1 for shot in player_shots if not shot.for_team and shot.scored)
+
+            player_stats = {
+                'username': player.user.username,
+                'shots_for': shots_for,
+                'shots_against': shots_against,
+                'goals_for': goals_for,
+                'goals_against': goals_against,
+            }
             
+            players_stats.append(player_stats)
+
+        # Sort players_stats
+        players_stats.sort(key=lambda x: x['goals_for'], reverse=True)
+        
+        # remove all the players with no goals
+        players_stats = [player for player in players_stats if player['goals_for'] > 0]
+
+        # Prepare and send data
+        await self.send(text_data=json.dumps({
+            'command': 'goal_stats',
+            'data': {
+                'type': 'player_stats',
+                'stats': {
+                    'player_stats': players_stats
+                }
+            }
+        }))
+        
+    async def player_request(self, json_data):
+        if 'season_uuid' in json_data:
+            season_uuid = json_data['season_uuid']
+        else:
+            season_uuid = None
+        
+        # Initialize an empty list to store players
+        players_in_team_season = []
+
+        # Check if a specific season is provided
+        if season_uuid:
+            # Assuming you have a Season object or its UUID
+            season = await sync_to_async(Season.objects.get)(id_uuid=season_uuid)
+
+            # Get all TeamData instances for the specified team and season
+            team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=season))
+
+            # Iterate through the TeamData instances and collect players
+            for team_data_instance in team_data_instances:
+                all_players = await sync_to_async(team_data_instance.players.all)()
+                players_prefetch = await sync_to_async(all_players.prefetch_related)('user')
+                await sync_to_async(players_in_team_season.extend)(players_prefetch)
+        else:
+            # retreve the players of the current season or last season if there is no current season
+            try:
+                current_season = await sync_to_async(Season.objects.get)(start_date__lte=datetime.now(), end_date__gte=datetime.now())
+            except Season.DoesNotExist:
+                current_season = await sync_to_async(Season.objects.filter(end_date__lte=datetime.now()).order_by('-end_date').first)()
+            
+            # Get the team data instances for the current season
+            all_team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=current_season))
+
+            # Iterate through all TeamData instances and collect players
+            for team_data_instance in all_team_data_instances:
+                all_players = await sync_to_async(team_data_instance.players.all)()
+                players_prefetch = await sync_to_async(all_players.prefetch_related)('user')
+                await sync_to_async(players_in_team_season.extend)(players_prefetch)
+                
+        players_in_team_season_list = await sync_to_async(list)(players_in_team_season)
+                
+        players_in_team_season_dict = [
+            {
+                'id': str(player.id_uuid),
+                'name': player.user.username,
+                'profile_picture': ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url if player.profile_picture else None,
+                'get_absolute_url': str(player.get_absolute_url())
+            }
+            for player in players_in_team_season_list
+        ]
+
+        await self.send(text_data=json.dumps({
+            'command': 'spelers',
+            'spelers': players_in_team_season_dict,
+        }))
+    
+    async def follow_request(self, follow, user_id):
+        player = await Player.objects.aget(user=user_id)
+        
+        if follow:
+            await player.team_follow.aadd(self.team)
+            
+        else:
+            await player.team_follow.aremove(self.team)
+        
+        await self.send(text_data=json.dumps({
+            'command': 'follow',
+            'status': 'success'
+        }))
+    
     async def get_matchs_data(self, status, order):
         matches = await sync_to_async(list)(Match.objects.filter(
            Q(home_team=self.team) | 
