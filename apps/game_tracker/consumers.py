@@ -173,7 +173,7 @@ class match_data(AsyncWebsocketConsumer):
     async def get_events(self, event=None, user_id=None):
         try:
             try:
-                part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+                part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
             except MatchPart.DoesNotExist:
                 part = None
                 
@@ -181,112 +181,21 @@ class match_data(AsyncWebsocketConsumer):
             
             # check if there is a part active or the match is finished
             if part != None or self.match_data.status == 'finished':
-                goals = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'shot_type', 'match_part').filter(match_data=self.match_data, scored=True).order_by('time'))
-                player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_out__user', 'player_group', 'match_part').filter(player_group__match_data=self.match_data).order_by('time'))
-                time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part').filter(match_data=self.match_data).order_by('start_time'))
-                
-                # add all the events to a list and order them on time
-                events = []
-                events.extend(goals)
-                events.extend(player_change)
-                events.extend(time_outs)
-                events.sort(key=lambda x: getattr(x, 'time', getattr(x, 'start_time', None)))
+                events = await self.get_all_events()
                 
                 for event in events:
                     if event.match_part is not None:
                         if isinstance(event, Shot):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.time, start_time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length().total_seconds()
-                            
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
-                            
-                            left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
-                            if left_over > 0:
-                                time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
-                            
-                            events_dict.append({
-                                'type': 'goal',
-                                'time': time_in_minutes,
-                                'player': event.player.user.username,
-                                'goal_type': event.shot_type.name,
-                                'for_team': event.for_team
-                            })
+                            events_dict.append(await self.event_shot(event))
                         elif isinstance(event, PlayerChange):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.time, start_time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length().total_seconds()
-                                
-                            time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + ((event.match_part.part_number - 1) * self.match_data.part_lenght) - pause_time) / 60)
-                            
-                            left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
-                            if left_over > 0:
-                                time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
-                            
-                            async def get_username(player):
-                                user = await sync_to_async(lambda: player.user)()
-                                return user.username
-                            
-                            player_in_username = await get_username(event.player_in)
-                            player_out_username = await get_username(event.player_out)
-                            
-                            events_dict.append({
-                                'type': 'wissel',
-                                'time': time_in_minutes,
-                                'player_in': player_in_username,
-                                'player_out': player_out_username,
-                                'player_group': str(event.player_group.id_uuid)
-                            })
+                            events_dict.append(await self.event_player_change(event))
                         elif isinstance(event, Pause):
-                            # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
-                            pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.start_time, start_time__gte=event.match_part.start_time))
-                            pause_time = 0
-                            for pause in pauses:
-                                pause_time += pause.length().total_seconds()
-                                
-                            # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
-                            time_in_minutes = round(((event.start_time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
-                            
-                            left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
-                            if left_over > 0:
-                                time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
-                            
-                            events_dict.append({
-                                'type': 'pauze',
-                                'time': time_in_minutes,
-                                'length': event.length().total_seconds(),
-                                'start_time': event.start_time.isoformat() if event.start_time else None,
-                                'end_time': event.end_time.isoformat() if event.end_time else None
-                            })
-            
-            ## Check if player is in the home or away team
-            player = await sync_to_async(Player.objects.get)(user=user_id)
-            
-            players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
-            coaches_home = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=self.match.home_team).values_list('coach', flat=True))
-
-            players_away = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.away_team).values_list('players', flat=True))
-            coaches_away = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=self.match.away_team).values_list('coach', flat=True))
-            
-            players_list = []
-            
-            players_list.extend(players_home)
-            players_list.extend(coaches_home)
-            players_list.extend(players_away)
-            players_list.extend(coaches_away)
-            
-            access = False
-            if player.id_uuid in players_list:
-                access = True
+                            events_dict.append(await self.event_pause(event))
             
             await self.send(text_data=json.dumps({
                 'command': 'events',
                 'events': events_dict,
-                'access': access,
+                'access': await self.check_access(user_id, self.match),
                 'status': self.match_data.status
             }))
         
@@ -295,6 +204,102 @@ class match_data(AsyncWebsocketConsumer):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
+            
+    async def get_all_events(self):
+        goals = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'shot_type', 'match_part').filter(match_data=self.match_data, scored=True).order_by('time'))
+        player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_in__user', 'player_out', 'player_out__user', 'player_group', 'match_part').filter(player_group__match_data=self.match_data).order_by('time'))
+        time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part').filter(match_data=self.match_data).order_by('start_time'))
+        
+        # add all the events to a list and order them on time
+        events = []
+        events.extend(goals)
+        events.extend(player_change)
+        events.extend(time_outs)
+        events.sort(key=lambda x: getattr(x, 'time', getattr(x, 'start_time', None)))
+        
+        return events
+    
+    async def event_shot(self, event):
+        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.time, start_time__gte=event.match_part.start_time))
+        pause_time = 0
+        for pause in pauses:
+            pause_time += pause.length().total_seconds()
+        
+        time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
+        
+        left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
+        if left_over > 0:
+            time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+        
+        return ({
+            'type': 'goal',
+            'time': time_in_minutes,
+            'player': event.player.user.username,
+            'goal_type': event.shot_type.name,
+            'for_team': event.for_team
+        })
+    
+    async def event_player_change(self, event):
+        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.time, start_time__gte=event.match_part.start_time))
+        pause_time = 0
+        for pause in pauses:
+            pause_time += pause.length().total_seconds()
+            
+        time_in_minutes = round(((event.time - event.match_part.start_time).total_seconds() + ((event.match_part.part_number - 1) * self.match_data.part_lenght) - pause_time) / 60)
+        
+        left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
+        if left_over > 0:
+            time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+        
+        return ({
+            'type': 'wissel',
+            'time': time_in_minutes,
+            'player_in': event.player_in.user.username,
+            'player_out': event.player_out.user.username,
+            'player_group': str(event.player_group.id_uuid)
+        })
+    
+    async def event_pause(self, event):
+        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, start_time__lt=event.start_time, start_time__gte=event.match_part.start_time))
+        pause_time = 0
+        for pause in pauses:
+            pause_time += pause.length().total_seconds()
+            
+        # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
+        time_in_minutes = round(((event.start_time - event.match_part.start_time).total_seconds() + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght)) - pause_time) / 60)
+        
+        left_over = time_in_minutes - ((event.match_part.part_number * self.match_data.part_lenght) / 60)
+        if left_over > 0:
+            time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
+        
+        return ({
+            'type': 'pauze',
+            'time': time_in_minutes,
+            'length': event.length().total_seconds(),
+            'start_time': event.start_time.isoformat() if event.start_time else None,
+            'end_time': event.end_time.isoformat() if event.end_time else None
+        })
+    
+    async def check_access(self, user_id, match):
+        player = await Player.objects.aget(user=user_id)
+        
+        # Combine queries for players and coaches for both home and away teams
+        team_data = await sync_to_async(list)(
+            TeamData.objects.prefetch_related('players', 'coach')
+            .filter(
+                Q(team=match.home_team) | Q(team=match.away_team)
+            )
+            .values_list('players', 'coach')
+        )
+        
+        # Flatten the list of tuples and remove None values
+        players_list = [item for sublist in team_data for item in sublist if item is not None]
+        
+        access = player.id_uuid in players_list
+        return access
             
     async def makePlayerGroupList(self, team):
         try:
@@ -365,7 +370,6 @@ class match_data(AsyncWebsocketConsumer):
         players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).values_list('players', flat=True))
         coaches = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=team).values_list('coach', flat=True))
 
-        
         players_list = []
         
         players_list.extend(players)
