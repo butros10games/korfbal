@@ -397,6 +397,7 @@ class match_tracker(AsyncWebsocketConsumer):
         self.match = None
         self.current_part = None
         self.is_paused = False
+        self.match_is_paused_message = 'match is paused'
         
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
@@ -408,13 +409,11 @@ class match_tracker(AsyncWebsocketConsumer):
         except MatchPart.DoesNotExist:
             pass
             
-        try:
-            pause = await sync_to_async(Pause.objects.get)(match_data=self.match_data, active=True) 
-            self.is_paused = True
-        except Pause.DoesNotExist:
-            ## if match is not active the game is also paused
-            if self.match_data.status != 'active':
-                self.is_paused = True
+        # Check if an active pause exists for the given match_data
+        is_pause_active = await sync_to_async(Pause.objects.filter(match_data=self.match_data, active=True).exists)()
+        
+        # Set the pause status based on the existence of an active pause or the match status
+        self.is_paused = is_pause_active or self.match_data.status != 'active'
         
         if self.team == self.match.home_team:
             self.other_team = self.match.away_team
@@ -449,16 +448,16 @@ class match_tracker(AsyncWebsocketConsumer):
                 player_groups = json_data['playerGroups']
                 
                 for player_group in player_groups:
-                    group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_group['id'])
-                    await sync_to_async(group.players.clear)()
+                    group = await PlayerGroup.objects.aget(id_uuid=player_group['id'])
+                    await group.players.aclear()
                     
                     for player in player_group['players']:
                         if player == 'NaN':
                             continue
-                        player_obj = await sync_to_async(Player.objects.get)(id_uuid=player)
-                        await sync_to_async(group.players.add)(player_obj)
+                        player_obj = await Player.objects.aget(id_uuid=player)
+                        await group.players.aadd(player_obj)
                         
-                    await sync_to_async(group.save)()
+                    await group.asave()
                 
                 await self.send(text_data=json.dumps({
                     'command': 'savePlayerGroups',
@@ -469,19 +468,19 @@ class match_tracker(AsyncWebsocketConsumer):
                 # check if the match is paused and if it is paused decline the request except for the start/stop command
                 if self.is_paused:
                     await self.send(text_data=json.dumps({
-                        'error': 'match is paused'
+                        'error': self.match_is_paused_message
                     }))
                     return
             
-                await sync_to_async(Shot.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], for_team=json_data['for_team'])
+                await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], for_team=json_data['for_team'])
                 
                 await self.channel_layer.group_send(self.channel_names[1], {
                     'type': 'send_data',
                     'data': {
                         'command': 'player_shot_change',
                         'player_id': json_data['player_id'],
-                        'shots_for': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=True).count)(),
-                        'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=False).count)()
+                        'shots_for': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=True).acount(),
+                        'shots_against': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=False).acount()
                     }
                 })
                 
@@ -507,7 +506,7 @@ class match_tracker(AsyncWebsocketConsumer):
                 # check if the match is paused and if it is paused decline the request except for the start/stop command
                 if self.is_paused:
                     await self.send(text_data=json.dumps({
-                        'error': 'match is paused'
+                        'error': self.match_is_paused_message
                     }))
                     return
                 
@@ -516,7 +515,7 @@ class match_tracker(AsyncWebsocketConsumer):
                 else:
                     team = self.other_team
                 
-                await sync_to_async(Shot.objects.create)(player=await sync_to_async(Player.objects.get)(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], shot_type=await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type']), for_team=json_data['for_team'], team=team, scored=True)
+                await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], shot_type=await GoalType.objects.aget(id_uuid=json_data['goal_type']), for_team=json_data['for_team'], team=team, scored=True)
                 
                 for channel_name in [self.channel_names[1], self.channel_names[0]]:
                     await self.channel_layer.group_send(channel_name, {
@@ -524,13 +523,13 @@ class match_tracker(AsyncWebsocketConsumer):
                         'data': {
                             'command': 'player_shot_change',
                             'player_id': json_data['player_id'],
-                            'shots_for': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = True).count)(),
-                            'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = False).count)()
+                            'shots_for': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = True).acount(),
+                            'shots_against': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = False).acount()
                         }
                     })
                 
-                player = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['player_id'])
-                goal_type = await sync_to_async(GoalType.objects.get)(id_uuid=json_data['goal_type'])
+                player = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['player_id'])
+                goal_type = await GoalType.objects.aget(id_uuid=json_data['goal_type'])
                 
                 for channel_name in [self.channel_names[1], self.channel_names[0]]:
                     await self.channel_layer.group_send(channel_name, {
@@ -539,12 +538,12 @@ class match_tracker(AsyncWebsocketConsumer):
                             'command': 'team_goal_change',
                             'player_name': player.user.username,
                             'goal_type': goal_type.name,
-                            'goals_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).count)(),
-                            'goals_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).count)()
+                            'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
+                            'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
                         }
                     })
                 
-                if (await sync_to_async(Shot.objects.filter(match_data=self.match_data, scored=True).count)()) % 2 == 0:
+                if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 0:
                     await self.swap_player_group_types(self.team)
                     await self.swap_player_group_types(self.other_team)
                     
@@ -558,12 +557,12 @@ class match_tracker(AsyncWebsocketConsumer):
                     
             elif command == "start/pause":
                 try:
-                    part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+                    part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
                 except MatchPart.DoesNotExist:
-                    part = await sync_to_async(MatchPart.objects.create)(match_data=self.match_data, active=True, start_time=datetime.now(), part_number=self.match_data.current_part)
+                    part = await MatchPart.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), part_number=self.match_data.current_part)
                     
                     # reload part from database
-                    part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+                    part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
                     
                     self.current_part = part
                     
@@ -571,7 +570,7 @@ class match_tracker(AsyncWebsocketConsumer):
                     
                     if self.match_data.current_part == 1:
                         self.match_data.status = 'active'
-                        await sync_to_async(self.match_data.save)()
+                        await self.match_data.asave()
                         
                         await self.playerGroupRequest()
                     
@@ -587,9 +586,9 @@ class match_tracker(AsyncWebsocketConsumer):
                         })
                 else:
                     try:
-                        pause = await sync_to_async(Pause.objects.get)(match_data=self.match_data, active=True, match_part = self.current_part)
+                        pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part = self.current_part)
                     except Pause.DoesNotExist:
-                        pause = await sync_to_async(Pause.objects.create)(match_data=self.match_data, active=True, start_time=datetime.now(), match_part = self.current_part)
+                        pause = await Pause.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), match_part = self.current_part)
                         
                         self.is_paused = True
                         pause_message = {'command': 'pause', 'pause': True}
@@ -598,7 +597,7 @@ class match_tracker(AsyncWebsocketConsumer):
                         aware_datetime = make_aware(naive_datetime)
                         pause.active = False
                         pause.end_time = aware_datetime
-                        await sync_to_async(pause.save)()
+                        await pause.asave()
                         
                         self.is_paused = False
                         
@@ -623,26 +622,26 @@ class match_tracker(AsyncWebsocketConsumer):
                     
             elif command == "part_end":
                 try:
-                    pause = await sync_to_async(Pause.objects.get)(match_data=self.match_data, active=True, match_part=self.current_part)
+                    pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part=self.current_part)
                     
                     naive_datetime = datetime.now()
                     aware_datetime = make_aware(naive_datetime)
                     pause.active = False
                     pause.end_time = aware_datetime
-                    await sync_to_async(pause.save)()
+                    await pause.asave()
                     
                 except Pause.DoesNotExist:
                     pass
                 
                 if self.match_data.current_part < self.match_data.parts:
                     self.match_data.current_part += 1
-                    await sync_to_async(self.match_data.save)()
+                    await self.match_data.asave()
                     
                     try:
-                        match_part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+                        match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
                         match_part.active = False
                         match_part.end_time = datetime.now()
-                        await sync_to_async(match_part.save)()
+                        await match_part.asave()
                         
                     except MatchPart.DoesNotExist:
                         pass
@@ -659,12 +658,12 @@ class match_tracker(AsyncWebsocketConsumer):
                     
                 else:
                     self.match_data.status = 'finished'
-                    await sync_to_async(self.match_data.save)()
+                    await self.match_data.asave()
                     
-                    match_part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+                    match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
                     match_part.active = False
                     match_part.end_time = datetime.now()
-                    await sync_to_async(match_part.save)()
+                    await match_part.asave()
                     
                     for channel_name in [self.channel_names[2]]:
                         await self.channel_layer.group_send(channel_name, {
@@ -716,22 +715,22 @@ class match_tracker(AsyncWebsocketConsumer):
                 # check if the match is paused and if it is paused decline the request except for the start/stop command
                 if self.is_paused:
                     await self.send(text_data=json.dumps({
-                        'error': 'match is paused'
+                        'error': self.match_is_paused_message
                     }))
                     return
                 
-                player_in = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['new_player_id'])
-                player_out = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=json_data['old_player_id'])
-                player_group = await sync_to_async(PlayerGroup.objects.get)(team=self.team, match_data=self.match_data, players__in=[player_out])
+                player_in = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['new_player_id'])
+                player_out = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['old_player_id'])
+                player_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, players__in=[player_out])
                 
-                await sync_to_async(player_group.players.remove)(player_out)
-                await sync_to_async(player_group.players.add)(player_in)
+                await player_group.players.aremove(player_out)
+                await player_group.players.aadd(player_in)
                 
-                await sync_to_async(PlayerChange.objects.create)(player_in=player_in, player_out=player_out, player_group=player_group, match_data=self.match_data, match_part = self.current_part, time = json_data['time'])
+                await PlayerChange.objects.acreate(player_in=player_in, player_out=player_out, player_group=player_group, match_data=self.match_data, match_part = self.current_part, time = json_data['time'])
                 
                 ## get the shot count for the new player
-                shots_for = await sync_to_async(Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = True).count)()
-                shots_against = await sync_to_async(Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = False).count)()
+                shots_for = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = True).acount()
+                shots_against = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = False).acount()
                 
                 for channel_name in [self.channel_names[1]]:
                     await self.channel_layer.group_send(channel_name, {
@@ -759,11 +758,11 @@ class match_tracker(AsyncWebsocketConsumer):
                 
                 if isinstance(event, Shot):
                     # get and delete the last shot event
-                    shot = await sync_to_async(Shot.objects.prefetch_related('player', 'player__user', 'shot_type').get)(match_part = event.match_part, time = event.time)
+                    shot = await Shot.objects.prefetch_related('player', 'player__user', 'shot_type').aget(match_part = event.match_part, time = event.time)
                     
                     player_id = str(shot.player.id_uuid)
                     
-                    await sync_to_async(shot.delete)()
+                    await shot.adelete()
                     
                     # send player shot update message
                     await self.channel_layer.group_send(self.channel_names[1], {
@@ -771,8 +770,8 @@ class match_tracker(AsyncWebsocketConsumer):
                         'data': {
                             'command': 'player_shot_change',
                             'player_id': player_id,
-                            'shots_for': await sync_to_async(Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = True).count)(),
-                            'shots_against': await sync_to_async(Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = False).count)()
+                            'shots_for': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = True).acount(),
+                            'shots_against': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = False).acount()
                         }
                     })
                         
@@ -785,12 +784,12 @@ class match_tracker(AsyncWebsocketConsumer):
                                     'command': 'team_goal_change',
                                     'player_name': shot.player.user.username,
                                     'goal_type': shot.shot_type.name,
-                                    'goals_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).count)(),
-                                    'goals_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).count)()
+                                    'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
+                                    'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
                                 }
                             })
                             
-                        if (await sync_to_async(Shot.objects.filter(match_data=self.match_data, scored=True).count)()) % 2 == 1:
+                        if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 1:
                             await self.swap_player_group_types(self.team)
                             await self.swap_player_group_types(self.other_team)
                             
@@ -798,29 +797,29 @@ class match_tracker(AsyncWebsocketConsumer):
                             
                 elif isinstance(event, PlayerChange):
                     # get and delete the last player change event
-                    player_change = await sync_to_async(PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').get)(match_part = event.match_part, time = event.time)
-                    player_group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_change.player_group.id_uuid)
+                    player_change = await PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').aget(match_part = event.match_part, time = event.time)
+                    player_group = await PlayerGroup.objects.aget(id_uuid=player_change.player_group.id_uuid)
                     
-                    await sync_to_async(player_group.players.remove)(player_change.player_in)
-                    await sync_to_async(player_group.players.add)(player_change.player_out)
+                    await player_group.players.aremove(player_change.player_in)
+                    await player_group.players.aadd(player_change.player_out)
                     
-                    await sync_to_async(player_group.save)()
+                    await player_group.asave()
                     
-                    await sync_to_async(player_change.delete)()
+                    await player_change.adelete()
                     
                     # send player group update message
                     await self.playerGroupRequest()
                     
                 elif isinstance(event, Pause):
                     # get and delete the last pause event
-                    pause = await sync_to_async(Pause.objects.get)(active=event.active, match_part=event.match_part, start_time=event.start_time)
+                    pause = await Pause.objects.aget(active=event.active, match_part=event.match_part, start_time=event.start_time)
                     
                     if event.active:
-                        await sync_to_async(pause.delete)()
+                        await pause.adelete()
                     else:
                         pause.active = True
                         pause.end_time = None
-                        await sync_to_async(pause.save)()
+                        await pause.asave()
                         
                     # send the timer message
                     await get_time(self)
@@ -882,8 +881,8 @@ class match_tracker(AsyncWebsocketConsumer):
                     'player': last_event.player.user.username,
                     'goal_type': last_event.shot_type.name,
                     'for_team': last_event.for_team,
-                    'goals_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).count)(),
-                    'goals_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).count)()
+                    'goals_for': await Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).acount(),
+                    'goals_against': await Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).acount()
                 })
         elif isinstance(last_event, PlayerChange):
             player_in_username = last_event.player_in.user.username
@@ -964,7 +963,7 @@ class match_tracker(AsyncWebsocketConsumer):
     async def create_player_groups(self, team):
         group_types = await sync_to_async(list)(GroupTypes.objects.all().order_by('id'))
         for group_type in group_types:
-            await sync_to_async(PlayerGroup.objects.create)(match_data=self.match_data, team=team, starting_type=group_type, current_type=group_type)
+            await PlayerGroup.objects.acreate(match_data=self.match_data, team=team, starting_type=group_type, current_type=group_type)
 
     async def get_player_groups(self, team):
         return await sync_to_async(list)(
@@ -978,8 +977,8 @@ class match_tracker(AsyncWebsocketConsumer):
             return {
                 'id': str(player.id_uuid),
                 'name': player.user.username,
-                'shots_for': await sync_to_async(Shot.objects.filter(player=player, match_data=self.match_data, for_team = True).count)(),
-                'shots_against': await sync_to_async(Shot.objects.filter(player=player, match_data=self.match_data, for_team = False).count)()
+                'shots_for': await Shot.objects.filter(player=player, match_data=self.match_data, for_team = True).acount(),
+                'shots_against': await Shot.objects.filter(player=player, match_data=self.match_data, for_team = False).acount()
             }
 
         async def process_player_group(player_group):
@@ -1013,7 +1012,7 @@ class match_tracker(AsyncWebsocketConsumer):
         
         for player in players:
             try:
-                player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                player_json = await Player.objects.prefetch_related('user').aget(id_uuid=player)
                 players_json.append({
                     'id': str(player_json.id_uuid),
                     'name': player_json.user.username,
@@ -1037,7 +1036,7 @@ class match_tracker(AsyncWebsocketConsumer):
         
         for player in players:
             try:
-                player_json = await sync_to_async(Player.objects.prefetch_related('user').get)(id_uuid=player)
+                player_json = await Player.objects.prefetch_related('user').aget(id_uuid=player)
                 players_json.append({
                     'id': str(player_json.id_uuid),
                     'name': player_json.user.username,
@@ -1053,17 +1052,17 @@ class match_tracker(AsyncWebsocketConsumer):
         return players_json
     
     async def swap_player_group_types(self, team):
-        group_type_a = await sync_to_async(GroupTypes.objects.get)(name='Aanval')
-        group_type_v = await sync_to_async(GroupTypes.objects.get)(name='Verdediging')
+        group_type_a = await GroupTypes.objects.aget(name='Aanval')
+        group_type_v = await GroupTypes.objects.aget(name='Verdediging')
 
-        player_group_a = await sync_to_async(PlayerGroup.objects.get)(match_data=self.match_data, team=team, current_type=group_type_a)
-        player_group_v = await sync_to_async(PlayerGroup.objects.get)(match_data=self.match_data, team=team, current_type=group_type_v)
+        player_group_a = await PlayerGroup.objects.aget(match_data=self.match_data, team=team, current_type=group_type_a)
+        player_group_v = await PlayerGroup.objects.aget(match_data=self.match_data, team=team, current_type=group_type_v)
 
         player_group_a.current_type = group_type_v
         player_group_v.current_type = group_type_a
 
-        await sync_to_async(player_group_a.save)()
-        await sync_to_async(player_group_v.save)()
+        await player_group_a.asave()
+        await player_group_v.asave()
     
     async def send_data(self, event):
         data = event['data']
@@ -1071,21 +1070,21 @@ class match_tracker(AsyncWebsocketConsumer):
         
     async def season_request(self):
         try:
-            return await sync_to_async(Season.objects.get)(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
+            return await Season.objects.aget(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
         except Season.DoesNotExist:
             return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
 
 async def get_time(self):
     # check if there is a active part if there is a active part send the start time of the part and lenght of a match part
     try:
-        part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+        part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
     except MatchPart.DoesNotExist:
         part = False
         
     if part:
         # check if there is a active pause if there is a active pause send the start time of the pause
         try:
-            active_pause = await sync_to_async(Pause.objects.get)(match_data=self.match_data, active=True, match_part = self.current_part)
+            active_pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part = self.current_part)
         except Pause.DoesNotExist:
             active_pause = False
         
