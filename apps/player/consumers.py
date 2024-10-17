@@ -38,51 +38,7 @@ class profile_data(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "player_stats":
-                total_goals_for = 0
-                total_goals_against = 0
-                
-                all_finished_match_data = await self.get_matchs_data(['finished'])
-
-                goal_types = await sync_to_async(list)(GoalType.objects.all())
-
-                player_goal_stats = {}
-                scoring_types = []
-
-                for goal_type in goal_types:
-                    goals_by_player = await Shot.objects.filter(
-                        match_data__in=all_finished_match_data, 
-                        shot_type=goal_type, 
-                        player=self.player,
-                        for_team=True,
-                        scored=True
-                    ).acount()
-                    
-                    goals_against_player = await Shot.objects.filter(
-                        match_data__in=all_finished_match_data, 
-                        shot_type=goal_type, 
-                        player=self.player,
-                        for_team=False,
-                        scored=True
-                    ).acount()
-
-                    player_goal_stats[goal_type.name] = {
-                        "goals_by_player": goals_by_player,
-                        "goals_against_player": goals_against_player
-                    }
-                    
-                    total_goals_for += goals_by_player
-                    total_goals_against += goals_against_player
-
-                    scoring_types.append(goal_type.name)
-
-                await self.send(text_data=json.dumps({
-                    'command': 'player_goal_stats',
-                    'player_goal_stats': player_goal_stats,
-                    'scoring_types': scoring_types,
-                    'played_matches': len(all_finished_match_data),
-                    'total_goals_for': total_goals_for,
-                    'total_goals_against': total_goals_against,
-                }))
+                await self.player_stats_request()
                 
             if command == "settings_request":
                 await self.send(text_data=json.dumps({
@@ -95,75 +51,135 @@ class profile_data(AsyncWebsocketConsumer):
                 }))
             
             if command == "settings_update":
-                data = json_data['data']
-                username = data['username']
-                email = data['email']
-                first_name = data['first_name']
-                last_name = data['last_name']
-                email_2fa = data['email_2fa']
-                
-                self.user.username = username
-                self.user.email = email
-                self.user.first_name = first_name
-                self.user.last_name = last_name
-                await self.user.asave()
-                
-                self.user_profile.email_2fa = email_2fa
-                await self.user_profile.asave()
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'settings_updated',
-                }))
+                await self.settings_update_request(json_data['data'])
                 
             if command == 'update_profile_picture_url':
-                url = json_data['url']
-                if url:
-                    self.player.profile_picture = url  # Assuming 'url' contains the relative path of the image
-                    await self.player.asave()
-
-                    # Send a response back to the client if needed
-                    await self.send(text_data=json.dumps({
-                        'command': 'profile_picture_updated',
-                        'status': 'success'
-                    }))
+                await self.settings_update_request(json_data['url'])
                     
             if command == 'teams':
-                teams_dict = [
-                    {
-                        'id': str(team.id_uuid),
-                        'name': await sync_to_async(team.__str__)(),
-                        'logo': team.club.logo.url if team.club.logo else None,
-                        'get_absolute_url': str(team.get_absolute_url())
-                    }
-                    for team in self.teams
-                ]
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'teams',
-                    'teams': teams_dict
-                }))
+               await self.teams_request()
                 
             if command == "upcomming_matches" or command == "past_matches":
-                matchs_data = await self.get_matchs_data(['upcoming', 'active'] if command == "upcomming_matches" else ['finished'])
-                
-                matches_dict = await transfrom_matchdata(matchs_data)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'matches',
-                    'matches': matches_dict
-                }))
+                await self.matches_request(command)
             
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
-    
-    async def get_matchs_data(self, status):
+            
+    async def player_stats_request(self):
+        total_goals_for = 0
+        total_goals_against = 0
+        
+        all_finished_match_data = await self.get_matchs_data(['finished'], '-')
+
+        goal_types = await sync_to_async(list)(GoalType.objects.all())
+
+        player_goal_stats = {}
+        scoring_types = []
+
+        for goal_type in goal_types:
+            goals_by_player = await Shot.objects.filter(
+                match_data__in=all_finished_match_data, 
+                shot_type=goal_type, 
+                player=self.player,
+                for_team=True,
+                scored=True
+            ).acount()
+            
+            goals_against_player = await Shot.objects.filter(
+                match_data__in=all_finished_match_data, 
+                shot_type=goal_type, 
+                player=self.player,
+                for_team=False,
+                scored=True
+            ).acount()
+
+            player_goal_stats[goal_type.name] = {
+                "goals_by_player": goals_by_player,
+                "goals_against_player": goals_against_player
+            }
+            
+            total_goals_for += goals_by_player
+            total_goals_against += goals_against_player
+
+            scoring_types.append(goal_type.name)
+
+        await self.send(text_data=json.dumps({
+            'command': 'player_goal_stats',
+            'player_goal_stats': player_goal_stats,
+            'scoring_types': scoring_types,
+            'played_matches': len(all_finished_match_data),
+            'total_goals_for': total_goals_for,
+            'total_goals_against': total_goals_against,
+        }))
+        
+    async def settings_update_request(self, data):
+        username = data['username']
+        email = data['email']
+        first_name = data['first_name']
+        last_name = data['last_name']
+        email_2fa = data['email_2fa']
+        
+        self.user.username = username
+        self.user.email = email
+        self.user.first_name = first_name
+        self.user.last_name = last_name
+        await self.user.asave()
+        
+        self.user_profile.email_2fa = email_2fa
+        await self.user_profile.asave()
+        
+        await self.send(text_data=json.dumps({
+            'command': 'settings_updated',
+        }))
+        
+    async def update_profile_picture_url_request(self, url):
+        if url:
+            self.player.profile_picture = url  # Assuming 'url' contains the relative path of the image
+            await self.player.asave()
+
+            # Send a response back to the client if needed
+            await self.send(text_data=json.dumps({
+                'command': 'profile_picture_updated',
+                'status': 'success'
+            }))
+            
+    async def teams_request(self):
+        teams_dict = [
+            {
+                'id': str(team.id_uuid),
+                'name': await sync_to_async(team.__str__)(),
+                'logo': team.club.logo.url if team.club.logo else None,
+                'get_absolute_url': str(team.get_absolute_url())
+            }
+            for team in self.teams
+        ]
+        
+        await self.send(text_data=json.dumps({
+            'command': 'teams',
+            'teams': teams_dict
+        }))
+        
+    async def matches_request(self, command):
+        wedstrijden_data = await self.get_matchs_data(
+            ['upcoming', 'active'] if command == "wedstrijden" else ['finished'],
+            '' if command == "wedstrijden" else '-'
+        )
+        
+        wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+        
+        await self.send(text_data=json.dumps({
+            'command': 'wedstrijden',
+            'wedstrijden': wedstrijden_dict
+        }))
+
+    async def get_matchs_data(self, status, order):
         matches = await sync_to_async(list)(Match.objects.filter(
             Q(home_team__team_data__in=self.team_data) |
             Q(away_team__team_data__in=self.team_data)
-        ).order_by("start_time").distinct())
+        ).distinct())
         
         matches_non_dub = list(dict.fromkeys(matches))
         
@@ -173,7 +189,7 @@ class profile_data(AsyncWebsocketConsumer):
             'match_link__home_team__club', 
             'match_link__away_team', 
             'match_link__away_team__club'
-        ).filter(match_link__in=matches_non_dub, status__in=status))
+        ).filter(match_link__in=matches_non_dub, status__in=status).order_by(order + "match_link__start_time"))
         
         return matchs_data
             
