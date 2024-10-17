@@ -28,70 +28,13 @@ class team_data(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "wedstrijden" or command == "ended_matches":
-                wedstrijden_data = await self.get_matchs_data(
-                    ['upcoming', 'active'] if command == "wedstrijden" else ['finished'],
-                    '' if command == "wedstrijden" else '-'
-                )
-                
-                wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'wedstrijden',
-                    'wedstrijden': wedstrijden_dict
-                }))
+                await self.matches_request(command)
                 
             elif command == "team_stats":
                 data_type = json_data['data_type']
                 
                 if data_type == 'general':
-                    ## get the amount of goals for and against for all the types
-                    goal_types = await sync_to_async(list)(GoalType.objects.all())
-                    
-                    goal_types_json = [
-                        {
-                            'id': str(goal_type.id_uuid),
-                            'name': goal_type.name
-                        }
-                        for goal_type in goal_types
-                    ]
-                    
-                    # get a list of all the matches of the team
-                    matches = await sync_to_async(list)(Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)))
-                    
-                    match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
-                    
-                    team_goal_stats = {}
-                    for goal_type in goal_types:
-                        goals_for = 0
-                        goals_against = 0
-                        
-                        goals_for += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=True, scored=True).count)()
-                        goals_against += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=False, scored=True).count)()
-                        
-                        team_goal_stats[goal_type.name] = {
-                            "goals_by_player": goals_for,
-                            "goals_against_player": goals_against
-                        }
-                    
-                    shots_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True).count)()
-                    shots_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False).count)()
-                    goals_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True, scored=True).count)()
-                    goals_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False, scored=True).count)()
-                    
-                    await self.send(text_data=json.dumps({
-                        'command': 'goal_stats',
-                        'data': {
-                            'type': 'general',
-                            'stats': {
-                                'shots_for': shots_for,
-                                'shots_against': shots_against,
-                                'goals_for': goals_for,
-                                'goals_against': goals_against,
-                                'team_goal_stats': team_goal_stats,
-                                'goal_types': goal_types_json,
-                            }
-                        }
-                    }))
+                    await self.team_stats_general_request()
                 
                 elif data_type == 'player_stats':
                     # Fetch players and matches in bulk
@@ -230,6 +173,69 @@ class team_data(AsyncWebsocketConsumer):
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
+            
+    async def matches_request(self, command):
+        wedstrijden_data = await self.get_matchs_data(
+            ['upcoming', 'active'] if command == "wedstrijden" else ['finished'],
+            '' if command == "wedstrijden" else '-'
+        )
+        
+        wedstrijden_dict = await transfrom_matchdata(wedstrijden_data)
+        
+        await self.send(text_data=json.dumps({
+            'command': 'wedstrijden',
+            'wedstrijden': wedstrijden_dict
+        }))
+        
+    async def team_stats_general_request(self):
+        ## get the amount of goals for and against for all the types
+        goal_types = await sync_to_async(list)(GoalType.objects.all())
+        
+        goal_types_json = [
+            {
+                'id': str(goal_type.id_uuid),
+                'name': goal_type.name
+            }
+            for goal_type in goal_types
+        ]
+        
+        # get a list of all the matches of the team
+        matches = await sync_to_async(list)(Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)))
+        
+        match_datas = await sync_to_async(list)(MatchData.objects.filter(match_link__in=matches))
+        
+        team_goal_stats = {}
+        for goal_type in goal_types:
+            goals_for = 0
+            goals_against = 0
+            
+            goals_for += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=True, scored=True).count)()
+            goals_against += await sync_to_async(Shot.objects.filter(match_data__in=match_datas, shot_type=goal_type, for_team=False, scored=True).count)()
+            
+            team_goal_stats[goal_type.name] = {
+                "goals_by_player": goals_for,
+                "goals_against_player": goals_against
+            }
+        
+        shots_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True).count)()
+        shots_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False).count)()
+        goals_for = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=True, scored=True).count)()
+        goals_against = await sync_to_async(Shot.objects.filter(match_data__in=match_datas, for_team=False, scored=True).count)()
+        
+        await self.send(text_data=json.dumps({
+            'command': 'goal_stats',
+            'data': {
+                'type': 'general',
+                'stats': {
+                    'shots_for': shots_for,
+                    'shots_against': shots_against,
+                    'goals_for': goals_for,
+                    'goals_against': goals_against,
+                    'team_goal_stats': team_goal_stats,
+                    'goal_types': goal_types_json,
+                }
+            }
+        }))
             
     async def get_matchs_data(self, status, order):
         matches = await sync_to_async(list)(Match.objects.filter(
