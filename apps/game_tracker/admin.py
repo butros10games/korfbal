@@ -56,7 +56,7 @@ admin.site.register(GoalType, goal_type_admin)
 class ShotAdminForm(forms.ModelForm):
     class Meta:
         model = Shot
-        fields = ['id_uuid', 'player', 'match_data', 'for_team', 'team', 'scored']
+        fields = ['player', 'match_data', 'for_team', 'team', 'scored']
 
     def __init__(self, *args, **kwargs):
         from apps.team.models import Team
