@@ -18,15 +18,14 @@ class match_data(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.match = None
         self.current_part = None
-        self.user_id = None
         
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
-        self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
-        self.match_data = await sync_to_async(MatchData.objects.get)(match_link=self.match)
+        self.match = await Match.objects.prefetch_related('home_team','away_team').aget(id_uuid=match_id)
+        self.match_data = await MatchData.objects.aget(match_link=self.match)
         
         try:
-            self.current_part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+            self.current_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
         except MatchPart.DoesNotExist:
             pass
         
@@ -46,141 +45,132 @@ class match_data(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "match_events":
-                self.user_id = json_data['user_id']
-                await self.get_events()
+                await self.get_events(user_id=json_data['user_id'])
                 
             elif command == "get_time":
                 await get_time(self)
             
-            elif command == "home_team":
-                self.user_id = json_data['user_id']
-                team = self.match.home_team
-                
-                player_groups_array = await self.makePlayerGroupList(team)
-                
-                players_json = await self.makePlayerList(team)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'playerGroups',
-                    'playerGroups': player_groups_array,
-                    'players': players_json,
-                    'is_coach': await self.checkIfAcces(self.user_id, team),
-                    'finished': True if self.match_data.status == 'finished' else False
-                }))
-                
-            elif command == "away_team":
-                self.user_id = json_data['user_id']
-                team = self.match.away_team
-                
-                player_groups_array = await self.makePlayerGroupList(team)
-                
-                players_json = await self.makePlayerList(team)
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'playerGroups',
-                    'playerGroups': player_groups_array,
-                    'players': players_json,
-                    'is_coach': await self.checkIfAcces(self.user_id, team),
-                    'finished': True if self.match_data.status == 'finished' else False
-                }))
+            elif command == "home_team" or command == "away_team":
+                await self.team_request(command, json_data['user_id'])
                 
             elif command == "savePlayerGroups":
-                player_groups = json_data['playerGroups']
-                
-                for player_group in player_groups:
-                    group = await sync_to_async(PlayerGroup.objects.get)(id_uuid=player_group['id'])
-                    await sync_to_async(group.players.clear)()
-                    
-                    for player in player_group['players']:
-                        if player == 'NaN':
-                            continue
-                        player_obj = await sync_to_async(Player.objects.get)(id_uuid=player)
-                        await sync_to_async(group.players.add)(player_obj)
-                        
-                    await sync_to_async(group.save)()
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'savePlayerGroups',
-                    'status': 'success'
-                }))
+                await self.save_player_groups_request(json_data['playerGroups'])
                 
             elif command == "get_stats":
                 data_type = json_data['data_type']
                 
                 if data_type == 'general':
-                    ## get the amount of goals for and against for all the types
-                    goal_types = await sync_to_async(list)(GoalType.objects.all())
-                    
-                    goal_types_json = [
-                        {
-                            'id': str(goal_type.id_uuid),
-                            'name': goal_type.name
-                        }
-                        for goal_type in goal_types
-                    ]
-                    
-                    team_goal_stats = {}
-                    for goal_type in goal_types:
-                        goals_for = await sync_to_async(Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=True, scored=True).count)()
-                        goals_against = await sync_to_async(Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=False, scored=True).count)()
-                        
-                        team_goal_stats[goal_type.name] = {
-                            "goals_by_player": goals_for,
-                            "goals_against_player": goals_against
-                        }
-                    
-                    await self.send(text_data=json.dumps({
-                        'command': 'stats',
-                        'data': {
-                            'type': 'general',
-                            'stats': {
-                                'shots_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=True).count)(),
-                                'shots_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=False).count)(),
-                                'goals_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).count)(),
-                                'goals_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).count)(),
-                                'team_goal_stats': team_goal_stats,
-                                'goal_types': goal_types_json,
-                            }
-                        }
-                    }))
+                    await self.get_stats_general_request()
                 
                 elif data_type == 'player_stats':
-                    ## Get the player stats. shots for and against, goals for and against.
-                    players = await sync_to_async(list)(Player.objects.prefetch_related('user').filter(Q(team_data_as_player__team=self.match.home_team) | Q(team_data_as_player__team=self.match.away_team)).distinct())
+                    await self.get_stats_player_request()
                     
-                    players_stats = []
-                    for player in players:
-                        player_stats = {
-                            'username': player.user.username,
-                            'shots_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, player=player, for_team=True).count)(),
-                            'shots_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, player=player, for_team=False).count)(),
-                            'goals_for': await sync_to_async(Shot.objects.filter(match_data=self.match_data, player=player, for_team=True, scored=True).count)(),
-                            'goals_against': await sync_to_async(Shot.objects.filter(match_data=self.match_data, player=player, for_team=False, scored=True).count)(),
-                        }
-                        
-                        players_stats.append(player_stats)
-                        
-                    ## sort the `player_stats` so the player with the most goals for is on top
-                    players_stats = sorted(players_stats, key=lambda x: x['goals_for'], reverse=True)
-                        
-                    await self.send(text_data=json.dumps({
-                        'command': 'stats',
-                        'data': {
-                            'type': 'player_stats',
-                            'stats': {
-                                'player_stats': players_stats
-                            }
-                        }
-                    }))
-                    
-            
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }))
             
-    async def get_events(self, event=None):
+    async def team_request(self, command, user_id):
+        team = self.match.home_team if command == "home_team" else self.match.away_team
+                
+        player_groups_array = await self.makePlayerGroupList(team)
+        
+        players_json = await self.makePlayerList(team)
+        
+        await self.send(text_data=json.dumps({
+            'command': 'playerGroups',
+            'playerGroups': player_groups_array,
+            'players': players_json,
+            'is_coach': await self.checkIfAcces(user_id, team),
+            'finished': True if self.match_data.status == 'finished' else False
+        }))
+        
+    async def save_player_groups_request(self, player_groups):
+        for player_group in player_groups:
+            group = await PlayerGroup.objects.aget(id_uuid=player_group['id'])
+            await group.players.aclear()
+            
+            for player in player_group['players']:
+                if player == 'NaN':
+                    continue
+                player_obj = await Player.objects.aget(id_uuid=player)
+                await group.players.aadd(player_obj)
+                
+            await group.asave()
+        
+        await self.send(text_data=json.dumps({
+            'command': 'savePlayerGroups',
+            'status': 'success'
+        }))
+        
+    async def get_stats_general_request(self):
+        ## get the amount of goals for and against for all the types
+        goal_types = await sync_to_async(list)(GoalType.objects.all())
+        
+        goal_types_json = [
+            {
+                'id': str(goal_type.id_uuid),
+                'name': goal_type.name
+            }
+            for goal_type in goal_types
+        ]
+        
+        team_goal_stats = {}
+        for goal_type in goal_types:
+            goals_for = await Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=True, scored=True).acount()
+            goals_against = await Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=False, scored=True).acount()
+            
+            team_goal_stats[goal_type.name] = {
+                "goals_by_player": goals_for,
+                "goals_against_player": goals_against
+            }
+        
+        await self.send(text_data=json.dumps({
+            'command': 'stats',
+            'data': {
+                'type': 'general',
+                'stats': {
+                    'shots_for': await Shot.objects.filter(match_data=self.match_data, for_team=True).acount(),
+                    'shots_against': await Shot.objects.filter(match_data=self.match_data, for_team=False).acount(),
+                    'goals_for': await Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).acount(),
+                    'goals_against': await Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).acount(),
+                    'team_goal_stats': team_goal_stats,
+                    'goal_types': goal_types_json,
+                }
+            }
+        }))
+        
+    async def get_stats_player_request(self):
+        ## Get the player stats. shots for and against, goals for and against.
+        players = await sync_to_async(list)(Player.objects.prefetch_related('user').filter(Q(team_data_as_player__team=self.match.home_team) | Q(team_data_as_player__team=self.match.away_team)).distinct())
+        
+        players_stats = []
+        for player in players:
+            player_stats = {
+                'username': player.user.username,
+                'shots_for': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=True).acount(),
+                'shots_against': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=False).acount(),
+                'goals_for': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=True, scored=True).acount(),
+                'goals_against': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=False, scored=True).acount(),
+            }
+            
+            players_stats.append(player_stats)
+            
+        ## sort the `player_stats` so the player with the most goals for is on top
+        players_stats = sorted(players_stats, key=lambda x: x['goals_for'], reverse=True)
+            
+        await self.send(text_data=json.dumps({
+            'command': 'stats',
+            'data': {
+                'type': 'player_stats',
+                'stats': {
+                    'player_stats': players_stats
+                }
+            }
+        }))
+            
+    async def get_events(self, event=None, user_id=None):
         try:
             try:
                 part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
@@ -274,7 +264,7 @@ class match_data(AsyncWebsocketConsumer):
                             })
             
             ## Check if player is in the home or away team
-            player = await sync_to_async(Player.objects.get)(user=self.user_id)
+            player = await sync_to_async(Player.objects.get)(user=user_id)
             
             players_home = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.match.home_team).values_list('players', flat=True))
             coaches_home = await sync_to_async(list)(TeamData.objects.prefetch_related('coach').filter(team=self.match.home_team).values_list('coach', flat=True))
