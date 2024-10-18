@@ -14,7 +14,6 @@ let timer = null;
 
 window.addEventListener("DOMContentLoaded", function() {
     user_id = document.getElementById("user_id").innerText;
-    console.log('user_id: ', user_id);
 
     const matches = regex.exec(url);
     if (matches) {
@@ -30,10 +29,10 @@ window.addEventListener("DOMContentLoaded", function() {
     socket.onopen = function() {
         console.log("WebSocket connection established, sending initial data...");
         requestInitalData(".button.active", socket, { 'user_id': user_id });
-        socket.send(JSON.stringify({'command': 'get_time',}));
+        socket.send(JSON.stringify({'command': 'get_time'}));
     };
 
-    setupCarousel(carousel, buttons, { 'user_id': user_id });
+    setupCarousel(carousel, buttons, { 'user_id': user_id }, 'get_stats');
 });
 
 function onMessageReceived(event) {

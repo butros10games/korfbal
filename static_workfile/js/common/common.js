@@ -29,7 +29,7 @@ window.initializeSocket = function(url, onMessageReceived) {
     return socket;
 }
 
-window.setupCarousel = function(carouselElement, buttons, ExtraData = null) {
+window.setupCarousel = function(carouselElement, buttons, extraData = null, statsName = null) {
     let isDragging = false;
     let touchStartX = 0;
     let touchEndX = 0;
@@ -89,11 +89,11 @@ window.setupCarousel = function(carouselElement, buttons, ExtraData = null) {
                 const payload = { 'command': data };
 
                 // Merge ExtraData into the payload if ExtraData is provided
-                if (ExtraData) {
-                    Object.assign(payload, ExtraData);
+                if (extraData) {
+                    Object.assign(payload, extraData);
                 }
-
-                if (data === 'get_stats') {
+                
+                if (data === statsName) {
                     Object.assign(payload, { 'data_type': 'general' });
                 }
 
@@ -141,4 +141,19 @@ window.cleanDom = function(container) {
     container.innerHTML = "";
     container.classList.remove("flex-center");
     container.classList.remove("flex-start-wrap");
+}
+
+window.setupFollowButton = function() {
+    document.querySelector('.icon-container').addEventListener('click', function() {
+        const isFollowed = this.getAttribute('data-followed') === 'true';
+        
+        // Toggle the data-followed attribute
+        this.setAttribute('data-followed', !isFollowed);
+
+        socket.send(JSON.stringify({
+            'command': 'follow',
+            'user_id': user_id,
+            'followed': !isFollowed
+        }));
+    });
 }

@@ -27,6 +27,7 @@ window.addEventListener("DOMContentLoaded", function() {
     };
 
     setupCarousel(carousel, buttons);
+    setupFollowButton();
 });
 
 function onMessageReceived(event) {
@@ -47,8 +48,6 @@ function onMessageReceived(event) {
             break;
     }
 }
-
-
 
 function updateMatches(data) {
     if (data.wedstrijden.length > 0) {
