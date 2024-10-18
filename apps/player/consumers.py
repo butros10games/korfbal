@@ -166,14 +166,14 @@ class profile_data(AsyncWebsocketConsumer):
         
     async def matches_request(self, command):
         wedstrijden_data = await self.get_matchs_data(
-            ['upcoming', 'active'] if command == "wedstrijden" else ['finished'],
-            '' if command == "wedstrijden" else '-'
+            ['upcoming', 'active'] if command == "upcomming_matches" else ['finished'],
+            '' if command == "upcomming_matches" else '-'
         )
         
         wedstrijden_dict = await transform_matchdata(wedstrijden_data)
         
         await self.send(text_data=json.dumps({
-            'command': 'wedstrijden',
+            'command': 'matches',
             'wedstrijden': wedstrijden_dict
         }))
 
