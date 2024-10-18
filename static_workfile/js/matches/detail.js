@@ -24,7 +24,7 @@ window.addEventListener("DOMContentLoaded", function() {
     infoContainer = document.getElementById("info-container");
     user_id = document.getElementById("user_id").innerText;
     
-    const matches = regex.match(url);
+    const matches = regex.exec(url);
 
     if (matches) {
         match_id = matches[1];

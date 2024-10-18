@@ -18,7 +18,7 @@ window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
 
-    const matches = regex.match(url);
+    const matches = regex.exec(url);
 
     console.log(matches);
 

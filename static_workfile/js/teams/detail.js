@@ -28,7 +28,7 @@ window.addEventListener("DOMContentLoaded", function() {
     user_id = document.getElementById("user_id").innerText;
     infoContainer = document.getElementById("info-container");
     
-    const matches = regex.match(url);
+    const matches = regex.exec(url);
 
     if (matches) {
         team_id = matches[1];
