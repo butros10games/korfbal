@@ -1,31 +1,22 @@
 let socket;
 let match_id;
-let WebSocket_url;
-let infoContainer;
 let user_id;
+let WebSocket_url;
+let infoContainer = document.getElementById("info-container");
+let carousel = document.querySelector('.carousel');
+let buttons = document.querySelectorAll('.button');
+
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
-
-let touchStartX = 0;
-let touchStartY = 0;
-let touchEndX = 0;
-let isDragging = false;
-let currentPosition = 0;
+const maxLength = 14;
 
 let timer = null;
 
-let buttonWidth;
-let carousel;
-
 window.addEventListener("DOMContentLoaded", function() {
-    buttonWidth = document.querySelector('.button').offsetWidth;
-    carousel = document.querySelector('.carousel');
-
-    infoContainer = document.getElementById("info-container");
     user_id = document.getElementById("user_id").innerText;
-    
-    const matches = regex.exec(url);
+    console.log('user_id: ', user_id);
 
+    const matches = regex.exec(url);
     if (matches) {
         match_id = matches[1];
         console.log(match_id);
@@ -34,182 +25,16 @@ window.addEventListener("DOMContentLoaded", function() {
     }
 
     WebSocket_url = "wss://" + window.location.host + "/ws/match/" + match_id + "/";
+    socket = initializeSocket(WebSocket_url, onMessageReceived);
 
-    load_icon();
-    initializeSocket(WebSocket_url);
-    setNavButtons();
+    socket.onopen = function() {
+        console.log("WebSocket connection established, sending initial data...");
+        requestInitalData(".button.active", socket, { 'user_id': user_id });
+        socket.send(JSON.stringify({'command': 'get_time',}));
+    };
+
+    setupCarousel(carousel, buttons, { 'user_id': user_id });
 });
-
-let isAutoScrolling = false; // Flag to track if we are auto-scrolling
-
-function setNavButtons() {
-    // Button selection for the carousel
-    const buttons = document.querySelectorAll(".button");
-
-    buttons.forEach((button) => {
-        button.addEventListener("click", function () {
-            if (isAutoScrolling) return;
-
-            buttons.forEach(element => element.classList.remove("active"));
-            this.classList.add("active");
-
-            isAutoScrolling = true;
-            this.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-            setTimeout(() => isAutoScrolling = false, 500);
-
-            const data = this.getAttribute("data");
-            socket.send(JSON.stringify({
-                'command': data,
-                'user_id': user_id,
-                'data_type': 'general'
-            }));
-            cleanDom();
-            load_icon();
-        });
-    });
-
-    let startPosition;
-
-    // Touch event handlers
-    carousel.addEventListener('touchstart', (e) => {
-        touchStartX = e.touches[0].clientX;
-        startPosition = currentPosition;
-        isDragging = true;
-        carousel.style.transition = 'none';
-    });
-
-    carousel.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        touchEndX = e.touches[0].clientX;
-        const diff = touchEndX - touchStartX;
-        currentPosition = startPosition + diff;
-        carousel.style.transform = `translateX(${currentPosition}px)`;
-    });
-
-    carousel.addEventListener('touchend', () => {
-        if (!isDragging) return;
-        const diff = touchEndX - touchStartX;
-
-        if (diff > buttonWidth / 3) {
-            // Swipe to the right, go to the previous item
-            currentPosition += buttonWidth;
-        } else if (diff < -buttonWidth / 3) {
-            // Swipe to the left, go to the next item
-            currentPosition -= buttonWidth;
-        }
-
-        // Ensure the carousel doesn't go beyond the boundaries
-        currentPosition = Math.max(currentPosition, -(carousel.scrollWidth - carousel.clientWidth));
-        currentPosition = Math.min(currentPosition, 0);
-
-        carousel.style.transition = 'transform 0.3s ease';
-        carousel.style.transform = `translateX(${currentPosition}px)`;
-
-        isDragging = false;
-    });
-
-    const infoContainer = document.getElementById("info-container");
-
-    infoContainer.addEventListener('touchstart', (e) => {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-    });
-
-    infoContainer.addEventListener('touchend', (e) => {
-        touchEndX = e.changedTouches[0].clientX;
-        const touchEndY = e.changedTouches[0].clientY;
-    
-        const diffX = touchEndX - touchStartX;
-        const diffY = touchEndY - touchStartY;
-    
-        // Check if it's a horizontal swipe
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            let activeIndex = Array.from(document.querySelectorAll(".button")).findIndex(button => button.classList.contains("active"));
-    
-            if (diffX > 30) { // Swipe right
-                activeIndex = Math.max(activeIndex - 1, 0);
-            } else if (diffX < -30) { // Swipe left
-                activeIndex = Math.min(activeIndex + 1, buttons.length - 1);
-            }
-    
-            changeActiveButton(activeIndex);
-        }
-    });
-}
-
-function changeActiveButton(newActiveIndex) {
-    const buttons = document.querySelectorAll(".button");
-
-    buttons.forEach((button, index) => {
-        button.classList.remove("active");
-        if (index === newActiveIndex) {
-            button.classList.add("active");
-
-            if (!isAutoScrolling) {
-                isAutoScrolling = true;
-                button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                setTimeout(() => isAutoScrolling = false, 500);
-            }
-
-            const data = button.getAttribute("data");
-            socket.send(JSON.stringify({
-                'command': data,
-                'user_id': user_id,
-                'data_type': 'general'
-            }));
-            cleanDom();
-            load_icon();
-        }
-    });
-}
-
-function requestInitalData() {
-    const button = document.querySelector(".button.active");
-    const data = button.getAttribute('data');
-
-    socket.send(JSON.stringify({
-        'command': data,
-        'user_id': user_id
-    }));
-
-    socket.send(JSON.stringify({
-        'command': 'get_time',
-    }));
-}
-
-// Function to initialize WebSocket
-function initializeSocket(url) {
-    // Close the current connection if it exists
-    if (socket) {
-        socket.onclose = null; // Clear the onclose handler to prevent console error logging
-        socket.close();
-    }
-    
-    // Create a new WebSocket connection
-    socket = new WebSocket(url);
-    
-    // On successful connection
-    socket.onopen = function(e) {
-        console.log("Connection established!");
-        requestInitalData();
-    };
-    
-    // On message received
-    socket.onmessage = onMessageReceived;
-    
-    // On connection closed
-    socket.onclose = function(event) {
-        if (event.wasClean) {
-            console.log(`Connection closed cleanly, code=${event.code}, reason=${event.reason}`);
-        } else {
-            console.error('Connection died');
-        }
-
-        console.log("Attempting to reconnect...");
-        // Attempt to reconnect
-        setTimeout(() => initializeSocket(url), 3000);
-    };
-}
 
 function onMessageReceived(event) {
     const data = JSON.parse(event.data);
@@ -217,14 +42,14 @@ function onMessageReceived(event) {
 
     switch(data.command) {
         case "events": {
-            cleanDom();
+            cleanDom(infoContainer);
 
             updateEvents(data);
             break;
         }
         
         case "playerGroups": {
-            cleanDom();
+            cleanDom(infoContainer);
 
             if (data.is_coach && !data.status == 'finished') {
                 updateplayerGroups(data);
@@ -277,17 +102,6 @@ function onMessageReceived(event) {
             break;
         }
     }
-}
-
-function load_icon() {
-    infoContainer.classList.add("flex-center");
-    infoContainer.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
-}
-
-function cleanDom() {
-    infoContainer.innerHTML = "";
-    infoContainer.classList.remove("flex-center");
-    infoContainer.classList.remove("flex-start-wrap");
 }
 
 function updateEvents(data) {
@@ -669,7 +483,7 @@ function UpdateStatastics(data) {
     if (stats) {
         // check if the buttons already exist and if they exist skip the creation of the buttons
         if (!document.querySelector(".stat-selector-button")) {
-            cleanDom();
+            cleanDom(infoContainer);
 
             const statSelectorButtonField = document.createElement("div");
             statSelectorButtonField.classList.add("flex-row");
@@ -883,19 +697,6 @@ function UpdateStatastics(data) {
     }
 
     infoContainer.appendChild(statsContainer);
-}
-
-function truncateMiddle(text, maxLength) {
-    if (text.length <= maxLength) {
-        return text;
-    }
-  
-    // Calculate the number of characters to show before and after the ellipsis
-    const charsToShow = maxLength - 3;
-    const frontChars = Math.ceil(charsToShow / 2);
-    const backChars = Math.floor(charsToShow / 2);
-  
-    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
 
 class CountdownTimer {

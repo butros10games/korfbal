@@ -4,10 +4,10 @@ let WebSocket_url;
 let infoContainer = document.getElementById("info-container");
 let carousel = document.querySelector('.carousel');
 let buttons = document.querySelectorAll('.button');
-const maxLength = 14;
 
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
+const maxLength = 14;
 
 window.addEventListener("DOMContentLoaded", function() {
     const matches = regex.exec(url);
@@ -48,11 +48,7 @@ function onMessageReceived(event) {
     }
 }
 
-function cleanDom(container) {
-    container.innerHTML = "";
-    container.classList.remove("flex-center");
-    container.classList.remove("flex-start-wrap");
-}
+
 
 function updateMatches(data) {
     if (data.wedstrijden.length > 0) {
