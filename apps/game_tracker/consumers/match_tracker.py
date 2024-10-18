@@ -22,6 +22,7 @@ class match_tracker(AsyncWebsocketConsumer):
         self.current_part = None
         self.is_paused = False
         self.match_is_paused_message = 'match is paused'
+        self.player_group_class = PlayerGroupClass()
         
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
@@ -47,6 +48,9 @@ class match_tracker(AsyncWebsocketConsumer):
         self.channel_names = ['detail_match_%s' % self.match.id_uuid, 'tracker_match_%s' % self.match.id_uuid, 'time_match_%s' % self.match.id_uuid]
         for channel_name in [self.channel_names[1], self.channel_names[2]]:
             await self.channel_layer.group_add(channel_name, self.channel_name)
+            
+        self.player_group_class.team = self.team
+        self.player_group_class.match_data = self.match_data
         
         await self.accept()
         
@@ -66,393 +70,40 @@ class match_tracker(AsyncWebsocketConsumer):
             command = json_data['command']
             
             if command == "playerGroups":
-                await self.playerGroupRequest()
+                await self.send(text_data=await self.player_group_class.player_group_request())
                 
             elif command == "savePlayerGroups":
-                player_groups = json_data['playerGroups']
-                
-                for player_group in player_groups:
-                    group = await PlayerGroup.objects.aget(id_uuid=player_group['id'])
-                    await group.players.aclear()
-                    
-                    for player in player_group['players']:
-                        if player == 'NaN':
-                            continue
-                        player_obj = await Player.objects.aget(id_uuid=player)
-                        await group.players.aadd(player_obj)
-                        
-                    await group.asave()
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'savePlayerGroups',
-                    'status': 'success'
-                }))
+                await self.save_player_groups(json_data['playerGroups'])
                 
             elif command == "shot_reg":
-                # check if the match is paused and if it is paused decline the request except for the start/stop command
-                if self.is_paused:
-                    await self.send(text_data=json.dumps({
-                        'error': self.match_is_paused_message
-                    }))
-                    return
-            
-                await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], for_team=json_data['for_team'])
-                
-                await self.channel_layer.group_send(self.channel_names[1], {
-                    'type': 'send_data',
-                    'data': {
-                        'command': 'player_shot_change',
-                        'player_id': json_data['player_id'],
-                        'shots_for': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=True).acount(),
-                        'shots_against': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team=False).acount()
-                    }
-                })
-                
-                await self.get_last_event()
+                await self.shot_reg(json_data['player_id'], json_data['time'], json_data['for_team'])
                 
             elif command == "get_goal_types":
-                goal_type_list = await sync_to_async(list)(GoalType.objects.all())
-                
-                goal_type_list = [
-                    {
-                        'id': str(goal_type.id_uuid),
-                        'name': goal_type.name
-                    }
-                    for goal_type in goal_type_list
-                ]
-                
-                await self.send(text_data=json.dumps({
-                    'command': 'goal_types',
-                    'goal_types': goal_type_list
-                }))
+                await self.get_goal_types()
                 
             elif command == "goal_reg":
-                # check if the match is paused and if it is paused decline the request except for the start/stop command
-                if self.is_paused:
-                    await self.send(text_data=json.dumps({
-                        'error': self.match_is_paused_message
-                    }))
-                    return
-                
-                if json_data['for_team']:
-                    team = self.team
-                else:
-                    team = self.other_team
-                
-                await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=json_data['player_id']), match_data=self.match_data, match_part = self.current_part, time = json_data['time'], shot_type=await GoalType.objects.aget(id_uuid=json_data['goal_type']), for_team=json_data['for_team'], team=team, scored=True)
-                
-                for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                    await self.channel_layer.group_send(channel_name, {
-                        'type': 'send_data',
-                        'data': {
-                            'command': 'player_shot_change',
-                            'player_id': json_data['player_id'],
-                            'shots_for': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = True).acount(),
-                            'shots_against': await Shot.objects.filter(player__id_uuid=json_data['player_id'], match_data=self.match_data, for_team = False).acount()
-                        }
-                    })
-                
-                player = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['player_id'])
-                goal_type = await GoalType.objects.aget(id_uuid=json_data['goal_type'])
-                
-                for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                    await self.channel_layer.group_send(channel_name, {
-                        'type': 'send_data',
-                        'data': {
-                            'command': 'team_goal_change',
-                            'player_name': player.user.username,
-                            'goal_type': goal_type.name,
-                            'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
-                            'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
-                        }
-                    })
-                
-                if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 0:
-                    await self.swap_player_group_types(self.team)
-                    await self.swap_player_group_types(self.other_team)
-                    
-                    await self.playerGroupRequest()
-                        
-                await self.get_last_event()
-                
-                await self.channel_layer.group_send(self.channel_names[0], {
-                    'type': 'get_events'
-                })
+                await self.goal_reg(json_data['player_id'], json_data['goal_type'], json_data['for_team'], json_data['time'])
                     
             elif command == "start/pause":
-                try:
-                    part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
-                except MatchPart.DoesNotExist:
-                    part = await MatchPart.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), part_number=self.match_data.current_part)
-                    
-                    # reload part from database
-                    part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
-                    
-                    self.current_part = part
-                    
-                    self.is_paused = False
-                    
-                    if self.match_data.current_part == 1:
-                        self.match_data.status = 'active'
-                        await self.match_data.asave()
-                        
-                        await self.playerGroupRequest()
-                    
-                    for channel_name in [self.channel_names[2]]:
-                        await self.channel_layer.group_send(channel_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'timer_data',
-                                'type': 'start',
-                                'time': part.start_time.isoformat(),
-                                'length': self.match_data.part_lenght
-                            }
-                        })
-                else:
-                    try:
-                        pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part = self.current_part)
-                    except Pause.DoesNotExist:
-                        pause = await Pause.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), match_part = self.current_part)
-                        
-                        self.is_paused = True
-                        pause_message = {'command': 'pause', 'pause': True}
-                    else:
-                        naive_datetime = datetime.now()
-                        aware_datetime = make_aware(naive_datetime)
-                        pause.active = False
-                        pause.end_time = aware_datetime
-                        await pause.asave()
-                        
-                        self.is_paused = False
-                        
-                        pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, match_part=self.current_part))
-                        pause_time = 0
-                        for pause in pauses:
-                            pause_time += pause.length().total_seconds()
-                        
-                        pause_message = {'command': 'pause', 'pause': False, 'pause_time': pause_time}
-                    
-                    for channel_name in [self.channel_names[2]]:
-                        await self.channel_layer.group_send(channel_name, {
-                            'type': 'send_data',
-                            'data': pause_message
-                        })
-                
-                await self.get_last_event()
-                
-                await self.channel_layer.group_send(self.channel_names[0], {
-                    'type': 'get_events'
-                })
+                await self.start_pause()
                     
             elif command == "part_end":
-                try:
-                    pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part=self.current_part)
-                    
-                    naive_datetime = datetime.now()
-                    aware_datetime = make_aware(naive_datetime)
-                    pause.active = False
-                    pause.end_time = aware_datetime
-                    await pause.asave()
-                    
-                except Pause.DoesNotExist:
-                    pass
-                
-                if self.match_data.current_part < self.match_data.parts:
-                    self.match_data.current_part += 1
-                    await self.match_data.asave()
-                    
-                    try:
-                        match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
-                        match_part.active = False
-                        match_part.end_time = datetime.now()
-                        await match_part.asave()
-                        
-                    except MatchPart.DoesNotExist:
-                        pass
-                    
-                    for channel_name in [self.channel_names[2]]:
-                        await self.channel_layer.group_send(channel_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'part_end',
-                                'part': self.match_data.current_part,
-                                'part_length': self.match_data.part_lenght
-                            }
-                        })
-                    
-                else:
-                    self.match_data.status = 'finished'
-                    await self.match_data.asave()
-                    
-                    match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
-                    match_part.active = False
-                    match_part.end_time = datetime.now()
-                    await match_part.asave()
-                    
-                    for channel_name in [self.channel_names[2]]:
-                        await self.channel_layer.group_send(channel_name, {
-                            'type': 'send_data',
-                            'data': {
-                                'command': 'match_end',
-                                'match_id': str(self.match.id_uuid)
-                            }
-                        })
+                await self.part_end()
                     
             elif command == "get_time":
                 self.send(text_data=await get_time(self.match_data, self.current_part))
                     
             elif command == "last_event":
-                await self.get_last_event()
+                await self.send_last_event()
                 
             elif command == "get_non_active_players":
-                # Get all player groups for the team and remove the players that are already in a group
-                player_groups = await self.get_player_groups(self.team)
-                grouped_players = [player for group in player_groups for player in group.players.all()]
-                
-                season = await self.season_request()
-                
-                # Get all players for the team, excluding those that are already in a group
-                team_data_list = await sync_to_async(list)(TeamData.objects.prefetch_related('players', 'players__user').filter(team=self.team, season=season))
-
-                # Get all players for each TeamData object, excluding those that are already in a group
-                all_players = [player for team_data in team_data_list for player in team_data.players.all()]
-                
-                ## romove the players that are already in a group
-                non_play_players = [player for player in all_players if player not in grouped_players]
-                
-                players_json = []
-                for player in non_play_players:
-                    try:
-                        players_json.append({
-                            'id': str(player.id_uuid),
-                            'name': player.user.username
-                        })
-                    except Player.DoesNotExist:
-                        pass
-                    
-                await self.send(text_data=json.dumps({
-                    'command': 'non_active_players',
-                    'players': players_json
-                }))
+                await self.get_non_active_players()
             
             elif command == "wissel_reg":
-                # check if the match is paused and if it is paused decline the request except for the start/stop command
-                if self.is_paused:
-                    await self.send(text_data=json.dumps({
-                        'error': self.match_is_paused_message
-                    }))
-                    return
-                
-                player_in = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['new_player_id'])
-                player_out = await Player.objects.prefetch_related('user').aget(id_uuid=json_data['old_player_id'])
-                player_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, players__in=[player_out])
-                
-                await player_group.players.aremove(player_out)
-                await player_group.players.aadd(player_in)
-                
-                await PlayerChange.objects.acreate(player_in=player_in, player_out=player_out, player_group=player_group, match_data=self.match_data, match_part = self.current_part, time = json_data['time'])
-                
-                ## get the shot count for the new player
-                shots_for = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = True).acount()
-                shots_against = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = False).acount()
-                
-                for channel_name in [self.channel_names[1]]:
-                    await self.channel_layer.group_send(channel_name, {
-                        'type': 'send_data',
-                        'data': {
-                            'command': 'player_change',
-                            'player_in': player_in.user.username,
-                            'player_in_id': str(player_in.id_uuid),
-                            'player_in_shots_for': shots_for,
-                            'player_in_shots_against': shots_against,
-                            'player_out': player_out.user.username,
-                            'player_out_id': str(player_out.id_uuid),
-                            'player_group': str(player_group.id_uuid)
-                        }
-                    })
-                    
-                await self.get_last_event()
-                
-                await self.channel_layer.group_send(self.channel_names[0], {
-                    'type': 'get_events'
-                })
+                await self.wissel_reg(json_data['new_player_id'], json_data['old_player_id'], json_data['time'])
             
             elif command == "remove_last_event":
-                event = await self.get_last_event_element()
-                
-                if isinstance(event, Shot):
-                    # get and delete the last shot event
-                    shot = await Shot.objects.prefetch_related('player', 'player__user', 'shot_type').aget(match_part = event.match_part, time = event.time)
-                    
-                    player_id = str(shot.player.id_uuid)
-                    
-                    await shot.adelete()
-                    
-                    # send player shot update message
-                    await self.channel_layer.group_send(self.channel_names[1], {
-                        'type': 'send_data',
-                        'data': {
-                            'command': 'player_shot_change',
-                            'player_id': player_id,
-                            'shots_for': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = True).acount(),
-                            'shots_against': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = False).acount()
-                        }
-                    })
-                        
-                    # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
-                    if shot.scored:
-                        for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                            await self.channel_layer.group_send(channel_name, {
-                                'type': 'send_data',
-                                'data': {
-                                    'command': 'team_goal_change',
-                                    'player_name': shot.player.user.username,
-                                    'goal_type': shot.shot_type.name,
-                                    'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
-                                    'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
-                                }
-                            })
-                            
-                        if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 1:
-                            await self.swap_player_group_types(self.team)
-                            await self.swap_player_group_types(self.other_team)
-                            
-                            await self.playerGroupRequest()
-                            
-                elif isinstance(event, PlayerChange):
-                    # get and delete the last player change event
-                    player_change = await PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').aget(match_part = event.match_part, time = event.time)
-                    player_group = await PlayerGroup.objects.aget(id_uuid=player_change.player_group.id_uuid)
-                    
-                    await player_group.players.aremove(player_change.player_in)
-                    await player_group.players.aadd(player_change.player_out)
-                    
-                    await player_group.asave()
-                    
-                    await player_change.adelete()
-                    
-                    # send player group update message
-                    await self.playerGroupRequest()
-                    
-                elif isinstance(event, Pause):
-                    # get and delete the last pause event
-                    pause = await Pause.objects.aget(active=event.active, match_part=event.match_part, start_time=event.start_time)
-                    
-                    if event.active:
-                        await pause.adelete()
-                    else:
-                        pause.active = True
-                        pause.end_time = None
-                        await pause.asave()
-                        
-                    # send the timer message
-                    self.send(text_data=await get_time(self.match_data, self.current_part))
-                    
-                await self.get_last_event()
-                
-                await self.channel_layer.group_send(self.channel_names[0], {
-                    'type': 'get_events'
-                })
+                await self.removed_last_event()
 
         except Exception as e:
                 await self.send(text_data=json.dumps({
@@ -460,7 +111,382 @@ class match_tracker(AsyncWebsocketConsumer):
                     'traceback': traceback.format_exc()
                 }))
                 
-    async def get_last_event_element(self):
+    async def save_player_groups(self, player_groups):
+        for player_group in player_groups:
+            group = await PlayerGroup.objects.aget(id_uuid=player_group['id'])
+            await group.players.aclear()
+            
+            for player in player_group['players']:
+                if player == 'NaN':
+                    continue
+                player_obj = await Player.objects.aget(id_uuid=player)
+                await group.players.aadd(player_obj)
+                
+            await group.asave()
+        
+        await self.send(text_data=json.dumps({
+            'command': 'savePlayerGroups',
+            'status': 'success'
+        }))
+        
+    async def shot_reg(self, player_id, time, for_team):
+        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        if self.is_paused:
+            await self.send(text_data=json.dumps({
+                'error': self.match_is_paused_message
+            }))
+            return
+    
+        await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=player_id), match_data=self.match_data, match_part = self.current_part, time = time, for_team=for_team)
+        
+        await self.channel_layer.group_send(self.channel_names[1], {
+            'type': 'send_data',
+            'data': {
+                'command': 'player_shot_change',
+                'player_id': player_id,
+                'shots_for': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team=True).acount(),
+                'shots_against': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team=False).acount()
+            }
+        })
+        
+        await self.send_last_event()
+        
+    async def get_goal_types(self):
+        goal_type_list = await sync_to_async(list)(GoalType.objects.all())
+                
+        goal_type_list = [
+            {
+                'id': str(goal_type.id_uuid),
+                'name': goal_type.name
+            }
+            for goal_type in goal_type_list
+        ]
+        
+        await self.send(text_data=json.dumps({
+            'command': 'goal_types',
+            'goal_types': goal_type_list
+        }))
+        
+    async def goal_reg(self, player_id, goal_type, for_team, time):
+        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        if self.is_paused:
+            await self.send(text_data=json.dumps({
+                'error': self.match_is_paused_message
+            }))
+            return
+        
+        if for_team:
+            team = self.team
+        else:
+            team = self.other_team
+            
+        player = await Player.objects.prefetch_related('user').aget(id_uuid=player_id)
+        goal_type = await GoalType.objects.aget(id_uuid=goal_type)
+        
+        await Shot.objects.acreate(player=await Player.objects.aget(id_uuid=player_id), match_data=self.match_data, match_part=self.current_part, time=time, shot_type=goal_type, for_team=for_team, team=team, scored=True)
+        
+        for channel_name in [self.channel_names[1], self.channel_names[0]]:
+            await self.channel_layer.group_send(channel_name, {
+                'type': 'send_data',
+                'data': {
+                    'command': 'player_shot_change',
+                    'player_id': player_id,
+                    'shots_for': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = True).acount(),
+                    'shots_against': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = False).acount()
+                }
+            })
+        
+        for channel_name in [self.channel_names[1], self.channel_names[0]]:
+            await self.channel_layer.group_send(channel_name, {
+                'type': 'send_data',
+                'data': {
+                    'command': 'team_goal_change',
+                    'player_name': player.user.username,
+                    'goal_type': goal_type.name,
+                    'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
+                    'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
+                }
+            })
+        
+        if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 0:
+            await self.player_group_class.swap_player_group_types(self.team)
+            await self.player_group_class.swap_player_group_types(self.other_team)
+            
+            await self.send(text_data=await self.player_group_class.player_group_request())
+                
+        await self.send_last_event()
+        
+        await self.channel_layer.group_send(self.channel_names[0], {
+            'type': 'get_events'
+        })
+        
+    async def start_pause(self):
+        try:
+            part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
+        except MatchPart.DoesNotExist:
+            part = await MatchPart.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), part_number=self.match_data.current_part)
+            
+            # reload part from database
+            part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
+            
+            self.current_part = part
+            
+            self.is_paused = False
+            
+            if self.match_data.current_part == 1:
+                self.match_data.status = 'active'
+                await self.match_data.asave()
+                
+                await self.send(text_data=await self.player_group_class.player_group_request())
+            
+            for channel_name in [self.channel_names[2]]:
+                await self.channel_layer.group_send(channel_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'timer_data',
+                        'type': 'start',
+                        'time': part.start_time.isoformat(),
+                        'length': self.match_data.part_lenght
+                    }
+                })
+        else:
+            try:
+                pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part = self.current_part)
+            except Pause.DoesNotExist:
+                pause = await Pause.objects.acreate(match_data=self.match_data, active=True, start_time=datetime.now(), match_part = self.current_part)
+                
+                self.is_paused = True
+                pause_message = {'command': 'pause', 'pause': True}
+            else:
+                naive_datetime = datetime.now()
+                aware_datetime = make_aware(naive_datetime)
+                pause.active = False
+                pause.end_time = aware_datetime
+                await pause.asave()
+                
+                self.is_paused = False
+                
+                pauses = await sync_to_async(list)(Pause.objects.filter(match_data=self.match_data, active=False, match_part=self.current_part))
+                pause_time = 0
+                for pause in pauses:
+                    pause_time += pause.length().total_seconds()
+                
+                pause_message = {'command': 'pause', 'pause': False, 'pause_time': pause_time}
+            
+            for channel_name in [self.channel_names[2]]:
+                await self.channel_layer.group_send(channel_name, {
+                    'type': 'send_data',
+                    'data': pause_message
+                })
+        
+        await self.send_last_event()
+        
+        await self.channel_layer.group_send(self.channel_names[0], {
+            'type': 'get_events'
+        })
+        
+    async def part_end(self):
+        try:
+            pause = await Pause.objects.aget(match_data=self.match_data, active=True, match_part=self.current_part)
+            
+            pause.active = False
+            pause.end_time = make_aware(datetime.now())
+            await pause.asave()
+            
+        except Pause.DoesNotExist:
+            pass
+        
+        if self.match_data.current_part < self.match_data.parts:
+            self.match_data.current_part += 1
+            await self.match_data.asave()
+            
+            try:
+                match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
+                match_part.active = False
+                match_part.end_time = datetime.now()
+                await match_part.asave()
+                
+            except MatchPart.DoesNotExist:
+                pass
+            
+            for channel_name in [self.channel_names[2]]:
+                await self.channel_layer.group_send(channel_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'part_end',
+                        'part': self.match_data.current_part,
+                        'part_length': self.match_data.part_lenght
+                    }
+                })
+        else:
+            self.match_data.status = 'finished'
+            await self.match_data.asave()
+            
+            match_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
+            match_part.active = False
+            match_part.end_time = make_aware(datetime.now())
+            await match_part.asave()
+            
+            for channel_name in [self.channel_names[2]]:
+                await self.channel_layer.group_send(channel_name, {
+                    'type': 'send_data',
+                    'data': {
+                        'command': 'match_end',
+                        'match_id': str(self.match.id_uuid)
+                    }
+                })
+                
+    async def get_non_active_players(self):
+        # Get all player groups for the team and remove the players that are already in a group
+        player_groups = await self.player_group_class.get_player_groups()
+        grouped_players = [player for group in player_groups for player in group.players.all()]
+        
+        season = await self.season_request()
+        
+        # Get all players for the team, excluding those that are already in a group
+        team_data_list = await sync_to_async(list)(TeamData.objects.prefetch_related('players', 'players__user').filter(team=self.team, season=season))
+
+        # Get all players for each TeamData object, excluding those that are already in a group
+        all_players = [player for team_data in team_data_list for player in team_data.players.all()]
+        
+        ## romove the players that are already in a group
+        non_play_players = [player for player in all_players if player not in grouped_players]
+        
+        players_json = []
+        for player in non_play_players:
+            try:
+                players_json.append({
+                    'id': str(player.id_uuid),
+                    'name': player.user.username
+                })
+            except Player.DoesNotExist:
+                pass
+            
+        await self.send(text_data=json.dumps({
+            'command': 'non_active_players',
+            'players': players_json
+        }))
+        
+    async def wissel_reg(self, new_player_id, old_player_id, time):
+        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        if self.is_paused:
+            await self.send(text_data=json.dumps({
+                'error': self.match_is_paused_message
+            }))
+            return
+        
+        player_in = await Player.objects.prefetch_related('user').aget(id_uuid=new_player_id)
+        player_out = await Player.objects.prefetch_related('user').aget(id_uuid=old_player_id)
+        player_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, players__in=[player_out])
+        
+        await player_group.players.aremove(player_out)
+        await player_group.players.aadd(player_in)
+        
+        await PlayerChange.objects.acreate(player_in=player_in, player_out=player_out, player_group=player_group, match_data=self.match_data, match_part = self.current_part, time = time)
+        
+        ## get the shot count for the new player
+        shots_for = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = True).acount()
+        shots_against = await Shot.objects.filter(player=player_in, match_data=self.match_data, for_team = False).acount()
+        
+        for channel_name in [self.channel_names[1]]:
+            await self.channel_layer.group_send(channel_name, {
+                'type': 'send_data',
+                'data': {
+                    'command': 'player_change',
+                    'player_in': player_in.user.username,
+                    'player_in_id': str(player_in.id_uuid),
+                    'player_in_shots_for': shots_for,
+                    'player_in_shots_against': shots_against,
+                    'player_out': player_out.user.username,
+                    'player_out_id': str(player_out.id_uuid),
+                    'player_group': str(player_group.id_uuid)
+                }
+            })
+            
+        await self.send_last_event()
+        
+        await self.channel_layer.group_send(self.channel_names[0], {
+            'type': 'get_events'
+        })
+        
+    async def removed_last_event(self):
+        event = await self.get_all_events()
+                
+        if isinstance(event, Shot):
+            # get and delete the last shot event
+            shot = await Shot.objects.prefetch_related('player', 'player__user', 'shot_type').aget(match_part = event.match_part, time = event.time)
+            
+            player_id = str(shot.player.id_uuid)
+            
+            await shot.adelete()
+            
+            # send player shot update message
+            await self.channel_layer.group_send(self.channel_names[1], {
+                'type': 'send_data',
+                'data': {
+                    'command': 'player_shot_change',
+                    'player_id': player_id,
+                    'shots_for': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = True).acount(),
+                    'shots_against': await Shot.objects.filter(player__id_uuid=player_id, match_data=self.match_data, for_team = False).acount()
+                }
+            })
+                
+            # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
+            if shot.scored:
+                for channel_name in [self.channel_names[1], self.channel_names[0]]:
+                    await self.channel_layer.group_send(channel_name, {
+                        'type': 'send_data',
+                        'data': {
+                            'command': 'team_goal_change',
+                            'player_name': shot.player.user.username,
+                            'goal_type': shot.shot_type.name,
+                            'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
+                            'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
+                        }
+                    })
+                    
+                if (await Shot.objects.filter(match_data=self.match_data, scored=True).acount()) % 2 == 1:
+                    await self.player_group_class.swap_player_group_types(self.team)
+                    await self.player_group_class.swap_player_group_types(self.other_team)
+                    
+                    await self.send(text_data=await self.player_group_class.player_group_request())
+                    
+        elif isinstance(event, PlayerChange):
+            # get and delete the last player change event
+            player_change = await PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').aget(match_part = event.match_part, time = event.time)
+            player_group = await PlayerGroup.objects.aget(id_uuid=player_change.player_group.id_uuid)
+            
+            await player_group.players.aremove(player_change.player_in)
+            await player_group.players.aadd(player_change.player_out)
+            
+            await player_group.asave()
+            
+            await player_change.adelete()
+            
+            # send player group update message
+            await self.send(text_data=await self.player_group_class.player_group_request())
+            
+        elif isinstance(event, Pause):
+            # get and delete the last pause event
+            pause = await Pause.objects.aget(active=event.active, match_part=event.match_part, start_time=event.start_time)
+            
+            if event.active:
+                await pause.adelete()
+            else:
+                pause.active = True
+                pause.end_time = None
+                await pause.asave()
+                
+            # send the timer message
+            self.send(text_data=await get_time(self.match_data, self.current_part))
+            
+        await self.send_last_event()
+        
+        await self.channel_layer.group_send(self.channel_names[0], {
+            'type': 'get_events'
+        })
+
+    async def get_all_events(self):
         # Fetch each type of event separately
         shots = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'match_part', 'shot_type', 'match_data').filter(match_data=self.match_data).order_by('time'))
         player_changes = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_in__user', 'player_out', 'player_out__user', 'player_group', 'match_part', 'match_data').filter(player_group__match_data=self.match_data).order_by('time'))
@@ -482,8 +508,8 @@ class match_tracker(AsyncWebsocketConsumer):
         # Get last event
         return events[-1]
                 
-    async def get_last_event(self):
-        last_event = await self.get_last_event_element()
+    async def send_last_event(self):
+        last_event = await self.get_all_events()
         
         if last_event == None:
             return
@@ -491,23 +517,26 @@ class match_tracker(AsyncWebsocketConsumer):
         if isinstance(last_event, Shot):
             time_in_minutes = await self.time_calc(last_event)
             
-            if last_event.scored == False:
-                events_dict = ({
-                    'type': 'shot',
-                    'time': time_in_minutes,
-                    'player': last_event.player.user.username,
-                    'for_team': last_event.for_team
-                })
-            else:
-                events_dict = ({
+            data_add = {
+                'type': 'shot'
+            }
+            if last_event.scored:
+                goals_for = await Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).acount()
+                goals_against = await Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).acount()
+                
+                data_add = {
                     'type': 'goal',
-                    'time': time_in_minutes,
-                    'player': last_event.player.user.username,
-                    'goal_type': last_event.shot_type.name,
-                    'for_team': last_event.for_team,
-                    'goals_for': await Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).acount(),
-                    'goals_against': await Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).acount()
-                })
+                    'goals_for': goals_for,
+                    'goals_against': goals_against
+                }
+                
+            events_dict = {
+                'time': time_in_minutes,
+                'player': last_event.player.user.username,
+                'shot_type': last_event.shot_type.name,
+                'for_team': last_event.for_team,
+                **data_add
+            }
         elif isinstance(last_event, PlayerChange):
             player_in_username = last_event.player_in.user.username
             player_out_username = last_event.player_out.user.username
@@ -569,112 +598,46 @@ class match_tracker(AsyncWebsocketConsumer):
             time_in_minutes = str(time_in_minutes - left_over).split(".")[0] + "+" + str(left_over).split(".")[0]
 
         return time_in_minutes
-                
-    async def playerGroupRequest(self):
-        team = self.team
-                
-        player_groups_array = await self.makePlayerGroupList(team)
-        players_json = await self.makePlayerList(team)
+    
+    async def send_data(self, event): # is for the data that needs be send from other websocket connections
+        data = event['data']
+        await self.send(text_data=json.dumps(data))
         
-        await self.send(text_data=json.dumps({
+    async def season_request(self):
+        try:
+            return await Season.objects.aget(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
+        except Season.DoesNotExist:
+            return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
+
+
+class PlayerGroupClass:
+    def __init__(self):
+        self.team = None
+        self.match_data = None
+    
+    async def player_group_request(self):
+        player_groups_array = await self._make_player_group_list()
+        players_json = await self._make_player_list()
+        
+        return json.dumps({
             'command': 'playerGroups',
             'playerGroups': player_groups_array,
             'players': players_json,
-            'full_player_list': await self.makeFullPlayerList(self.team),
-            'match_active': True if self.match_data.status == 'active' else False
-        }))            
-                
-    async def create_player_groups(self, team):
-        group_types = await sync_to_async(list)(GroupTypes.objects.all().order_by('id'))
-        for group_type in group_types:
-            await PlayerGroup.objects.acreate(match_data=self.match_data, team=team, starting_type=group_type, current_type=group_type)
-
-    async def get_player_groups(self, team):
+            'full_player_list': await self._make_full_player_list(),
+            'match_active': self.match_data.status == 'active'
+        })
+    
+    async def get_player_groups(self):
         return await sync_to_async(list)(
-            PlayerGroup.objects.prefetch_related('players', 'players__user', 'starting_type', 'current_type')
-            .filter(match_data=self.match_data, team=team)
-            .order_by(Case(When(current_type__name='Aanval', then=0), default=1), 'starting_type')
+            PlayerGroup.objects.prefetch_related(
+                'players', 'players__user', 'starting_type', 'current_type'
+            ).filter(
+                match_data=self.match_data, team=self.team
+            ).order_by(
+                Case(When(current_type__name='Aanval', then=0), default=1), 'starting_type'
+            )
         )
-
-    async def make_player_group_json(self, player_groups):
-        async def process_player(player):
-            return {
-                'id': str(player.id_uuid),
-                'name': player.user.username,
-                'shots_for': await Shot.objects.filter(player=player, match_data=self.match_data, for_team = True).acount(),
-                'shots_against': await Shot.objects.filter(player=player, match_data=self.match_data, for_team = False).acount()
-            }
-
-        async def process_player_group(player_group):
-            return {
-                'id': str(player_group.id_uuid),
-                'players': [await process_player(player) for player in player_group.players.all()],
-                'starting_type': player_group.starting_type.name,
-                'current_type': player_group.current_type.name
-            }
-
-        return [await process_player_group(player_group) for player_group in player_groups]
-
-    async def makePlayerGroupList(self, team):
-        player_groups = await self.get_player_groups(team)
-        if not player_groups:
-            await self.create_player_groups(team)
-            player_groups = await self.get_player_groups(team)
-        return await self.make_player_group_json(player_groups)
-            
-    async def makePlayerList(self, team):
-        players_json = []
         
-        # Get all player groups for the team
-        player_groups = await self.get_player_groups(team)
-        
-        # Get all players that are already in a group
-        grouped_players = [player for group in player_groups for player in group.players.all()]
-        
-        # Get all players for the team, excluding those that are already in a group
-        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team).exclude(players__in=grouped_players).values_list('players', flat=True))
-        
-        for player in players:
-            try:
-                player_json = await Player.objects.prefetch_related('user').aget(id_uuid=player)
-                players_json.append({
-                    'id': str(player_json.id_uuid),
-                    'name': player_json.user.username,
-                    'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
-                    'get_absolute_url': str(player_json.get_absolute_url())
-                })
-            except Player.DoesNotExist:
-                pass
-            
-        # remove duplicates
-        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
-                    
-        return players_json
-    
-    async def makeFullPlayerList(self, team):
-        # get the season of the match
-        season = await self.season_request()
-            
-        players_json = []
-        players = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=team, season=season).values_list('players', flat=True))
-        
-        for player in players:
-            try:
-                player_json = await Player.objects.prefetch_related('user').aget(id_uuid=player)
-                players_json.append({
-                    'id': str(player_json.id_uuid),
-                    'name': player_json.user.username,
-                    'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
-                    'get_absolute_url': str(player_json.get_absolute_url())
-                })
-            except Player.DoesNotExist:
-                pass
-        
-        # remove duplicates
-        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
-        
-        return players_json
-    
     async def swap_player_group_types(self, team):
         group_type_a = await GroupTypes.objects.aget(name='Aanval')
         group_type_v = await GroupTypes.objects.aget(name='Verdediging')
@@ -688,13 +651,80 @@ class match_tracker(AsyncWebsocketConsumer):
         await player_group_a.asave()
         await player_group_v.asave()
     
-    async def send_data(self, event):
-        data = event['data']
-        await self.send(text_data=json.dumps(data))
+    async def _make_player_group_list(self):
+        player_groups = await self.get_player_groups()
+        if not player_groups:
+            await self._create_player_groups()
+            player_groups = await self.get_player_groups()
+        return await self._make_player_group_json(player_groups)
+    
+    async def _create_player_groups(self):
+        group_types = await sync_to_async(list)(GroupTypes.objects.all().order_by('id'))
+        for group_type in group_types:
+            await PlayerGroup.objects.acreate(
+                match_data=self.match_data, team=self.team,
+                starting_type=group_type, current_type=group_type
+            )
+    
+    async def _make_player_group_json(self, player_groups):
+        async def _process_player(player):
+            return {
+                'id': str(player.id_uuid),
+                'name': player.user.username,
+                'shots_for': await Shot.objects.filter(player=player, match_data=self.match_data, for_team=True).acount(),
+                'shots_against': await Shot.objects.filter(player=player, match_data=self.match_data, for_team=False).acount()
+            }
+
+        async def _process_player_group(player_group):
+            return {
+                'id': str(player_group.id_uuid),
+                'players': [await _process_player(player) for player in player_group.players.all()],
+                'starting_type': player_group.starting_type.name,
+                'current_type': player_group.current_type.name
+            }
+
+        return [await _process_player_group(player_group) for player_group in player_groups]
+    
+    async def _make_player_list(self):
+        players_json = []
+        player_groups = await self.get_player_groups()
+        grouped_players = [player for group in player_groups for player in group.players.all()]
+        players = await sync_to_async(list)(
+            TeamData.objects.prefetch_related('players').filter(team=self.team).exclude(players__in=grouped_players).values_list('players', flat=True)
+        )
         
-    async def season_request(self):
+        for player in players:
+            player_json = await self._get_player_json(player)
+            if player_json:
+                players_json.append(player_json)
+        
+        return self._remove_duplicates(players_json)
+    
+    async def _make_full_player_list(self):
+        season = await self._season_request()
+        players_json = []
+        players = await sync_to_async(list)(
+            TeamData.objects.prefetch_related('players').filter(team=self.team, season=season).values_list('players', flat=True)
+        )
+        
+        for player in players:
+            player_json = await self._get_player_json(player)
+            if player_json:
+                players_json.append(player_json)
+        
+        return self._remove_duplicates(players_json)
+    
+    async def _get_player_json(self, player):
         try:
-            return await Season.objects.aget(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
-        except Season.DoesNotExist:
-            return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
-        
+            player_obj = await Player.objects.prefetch_related('user').aget(id_uuid=player)
+            return {
+                'id': str(player_obj.id_uuid),
+                'name': player_obj.user.username,
+                'profile_picture': player_obj.profile_picture.url if player_obj.profile_picture else None,
+                'get_absolute_url': str(player_obj.get_absolute_url())
+            }
+        except Player.DoesNotExist:
+            return None
+    
+    def _remove_duplicates(self, players_json):
+        return [dict(t) for t in {tuple(d.items()) for d in players_json}]
