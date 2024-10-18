@@ -1,5 +1,5 @@
 let socket;
-let club_id;
+let team_id;
 let WebSocket_url;
 let infoContainer;
 let user_id;
@@ -24,7 +24,7 @@ window.addEventListener("DOMContentLoaded", function() {
     user_id = document.getElementById("user_id").innerText;
     infoContainer = document.getElementById("info-container");
     
-    const matches = url.match(regex);
+    const matches = regex.exec(url);
 
     if (matches) {
         team_id = matches[1];
@@ -301,26 +301,24 @@ function updateMatches(data) {
                 match_score.innerHTML = element.home_score + " - " + element.away_score;
 
                 match_date_container.appendChild(match_score);
+            } else if (element.status === 'active') {
+                const match_hour = document.createElement("p");
+                match_hour.style.margin = "0";
+                match_hour.style.marginBottom = "12px";
+                match_hour.style.fontWeight = "600";
+                match_hour.style.fontSize = "18px";
+                match_hour.style.textAlign = "center";
+                match_hour.innerHTML = element.start_time + "</br>" + " (live)";
+
+                match_date_container.appendChild(match_hour);
             } else {
-                if (element.status === 'active') {
-                    const match_hour = document.createElement("p");
-                    match_hour.style.margin = "0";
-                    match_hour.style.marginBottom = "12px";
-                    match_hour.style.fontWeight = "600";
-                    match_hour.style.fontSize = "18px";
-                    match_hour.style.textAlign = "center";
-                    match_hour.innerHTML = element.start_time + "</br>" + " (live)";
+                const match_hour = document.createElement("p");
+                match_hour.style.margin = "0";
+                match_hour.style.marginBottom = "12px";
+                match_hour.style.fontWeight = "600";
+                match_hour.innerHTML = element.start_time;
 
-                    match_date_container.appendChild(match_hour);
-                } else {
-                    const match_hour = document.createElement("p");
-                    match_hour.style.margin = "0";
-                    match_hour.style.marginBottom = "12px";
-                    match_hour.style.fontWeight = "600";
-                    match_hour.innerHTML = element.start_time;
-
-                    match_date_container.appendChild(match_hour);
-                }
+                match_date_container.appendChild(match_hour);
             }
             match_container.appendChild(match_date_container);
 
@@ -361,9 +359,9 @@ function truncateMiddle(text, maxLength) {
     }
   
     // Calculate the number of characters to show before and after the ellipsis
-    var charsToShow = maxLength - 3;
-    var frontChars = Math.ceil(charsToShow / 2);
-    var backChars = Math.floor(charsToShow / 2);
+    const charsToShow = maxLength - 3;
+    const frontChars = Math.ceil(charsToShow / 2);
+    const backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }

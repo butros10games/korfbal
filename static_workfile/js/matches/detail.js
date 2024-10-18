@@ -24,7 +24,7 @@ window.addEventListener("DOMContentLoaded", function() {
     infoContainer = document.getElementById("info-container");
     user_id = document.getElementById("user_id").innerText;
     
-    const matches = url.match(regex);
+    const matches = regex.match(url);
 
     if (matches) {
         match_id = matches[1];
@@ -164,8 +164,8 @@ function changeActiveButton(newActiveIndex) {
 }
 
 function requestInitalData() {
-    button = document.querySelector(".button.active");
-    var data = button.getAttribute('data');
+    const button = document.querySelector(".button.active");
+    const data = button.getAttribute('data');
 
     socket.send(JSON.stringify({
         'command': data,
@@ -389,12 +389,12 @@ function updateEvents(data) {
                 timeout_div.style.fontSize = "14px";
                 if (event.end_time == null) {
                     // Convert the start time to a date object and format it so only the hour and minutes are shown
-                    start_time = new Date(event.start_time);
+                    const start_time = new Date(event.start_time);
 
                     timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0')
                 } else {
-                    start_time = new Date(event.start_time);
-                    end_time = new Date(event.end_time);
+                    const start_time = new Date(event.start_time);
+                    const end_time = new Date(event.end_time);
 
                     timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
                 }
@@ -891,9 +891,9 @@ function truncateMiddle(text, maxLength) {
     }
   
     // Calculate the number of characters to show before and after the ellipsis
-    var charsToShow = maxLength - 3;
-    var frontChars = Math.ceil(charsToShow / 2);
-    var backChars = Math.floor(charsToShow / 2);
+    const charsToShow = maxLength - 3;
+    const frontChars = Math.ceil(charsToShow / 2);
+    const backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }

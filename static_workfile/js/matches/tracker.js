@@ -1,5 +1,6 @@
 let socket;
-let match_id;
+let firstUUID;
+let secondUUID;
 let WebSocket_url;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
 const url = window.location.href;
@@ -17,7 +18,7 @@ window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
 
-    const matches = url.match(regex);
+    const matches = regex.match(url);
 
     console.log(matches);
 
@@ -135,7 +136,7 @@ function scoringButtonSetup() {
                     last_goal_Data = {
                         "player_id": element.id,
                         "time": new Date().toISOString(),
-                        "for_team": team === "home" ? true : false,
+                        "for_team": team === "home",
                     }
 
                     socket.send(JSON.stringify(data));
@@ -172,7 +173,7 @@ function shotButtonReg(team) {
                 "command": "shot_reg",
                 "player_id": element.id,
                 "time": new Date().toISOString(),
-                "for_team": team === "home" ? true : false,
+                "for_team": team === "home",
             }
 
             console.log(data);
@@ -298,14 +299,15 @@ function onMessageReceived(event) {
     const startStopButton = document.getElementById("start-stop-button");
 
     switch(data.command) {
-        case "last_event":
+        case "last_event": {
             cleanDom(eventsDiv);
             resetSwipe()
             
             updateEvent(data);
             break;
+        }
         
-        case "playerGroups":
+        case "playerGroups": {
             cleanDom(eventsDiv);
             cleanDom(playersDiv);
 
@@ -320,16 +322,19 @@ function onMessageReceived(event) {
                 updateplayerGroups(data);
             }
             break;
+        }
 
-        case "player_shot_change":
+        case "player_shot_change": {
             updatePlayerShot(data);
             break;
+        }
 
-        case "goal_types":
+        case "goal_types": {
             showGoalTypes(data);
             break;
+        }
 
-        case "timer_data":
+        case "timer_data": {
             // remove the timer if it exists
             if (timer) {
                 timer.destroy();
@@ -356,8 +361,9 @@ function onMessageReceived(event) {
             }
 
             break;
+        }
 
-        case "pause":
+        case "pause": {
             if (data.pause === true) {
                 timer.stop();
                 console.log("Timer paused");
@@ -374,8 +380,9 @@ function onMessageReceived(event) {
             }
 
             break;
+        }
 
-        case "team_goal_change":
+        case "team_goal_change": {
             teamGoalChange(data);
 
             // remove overlay
@@ -391,19 +398,22 @@ function onMessageReceived(event) {
             }
 
             break;
+        }
 
-        case "non_active_players":
+        case "non_active_players": {
             showReservePlayer(data);
 
             break;
+        }
 
-        case "player_change":
+        case "player_change": {
             playerChange(data);
         
             break;
+        }
 
-        case "part_end":
-            periode_p = document.getElementById("periode_number");
+        case "part_end": {
+            const periode_p = document.getElementById("periode_number");
             periode_p.innerHTML = data.part;
 
             // reset the timer
@@ -415,8 +425,8 @@ function onMessageReceived(event) {
             let timer_p = document.getElementById("counter");
             
             // convert seconds to minutes and seconds
-            minutes = data.part_length / 60;
-            seconds = data.part_length % 60;
+            const minutes = data.part_length / 60;
+            const seconds = data.part_length % 60;
             
             timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
 
@@ -428,8 +438,9 @@ function onMessageReceived(event) {
             startStopButton.innerHTML = "start";
 
             break;
+        }
 
-        case "match_end":
+        case "match_end": {
             // remove the timer
             if (timer) {
                 timer.stop();
@@ -496,6 +507,7 @@ function onMessageReceived(event) {
             document.body.style.overflow = "hidden";
 
             break;
+        }
     }
 }
 
@@ -523,8 +535,8 @@ function playerChange(data) {
     playerButtonData.querySelector("p").innerHTML = data.player_in;
     
     // change the player shot registration points
-    shots_for = playerButtonData.querySelector("#shots-for");
-    shots_against = playerButtonData.querySelector("#shots-against");
+    const shots_for = playerButtonData.querySelector("#shots-for");
+    const shots_against = playerButtonData.querySelector("#shots-against");
 
     shots_for.innerHTML = data.player_in_shots_for;
     shots_against.innerHTML = data.player_in_shots_against;
@@ -537,11 +549,11 @@ function playerChange(data) {
 }
 
 function teamGoalChange(data) {
-    first_team = document.getElementById("home-score");
-    firstTeamP = first_team.querySelector("p");
+    const first_team = document.getElementById("home-score");
+    const firstTeamP = first_team.querySelector("p");
 
-    second_team = document.getElementById("away-score");
-    secondTeamP = second_team.querySelector("p");
+    const second_team = document.getElementById("away-score");
+    const secondTeamP = second_team.querySelector("p");
 
     firstTeamP.innerHTML = data.goals_for;
     secondTeamP.innerHTML = data.goals_against;
@@ -740,8 +752,8 @@ function updateEvent(data) {
     const event = data.last_event;
 
     switch(event.type) {
-        case "no_event":
-            textElement = document.createElement("p");
+        case "no_event": {
+            const textElement = document.createElement("p");
             textElement.classList.add("flex-center");
             textElement.style.margin = "0";
             textElement.style.height = "64px";
@@ -750,9 +762,10 @@ function updateEvent(data) {
 
             eventsDiv.appendChild(textElement);
             break;
+        }
 
-        case "goal":
-            eventTypeDiv = document.createElement("div");
+        case "goal": {
+            const eventTypeDiv = document.createElement("div");
             eventTypeDiv.classList.add("event-type", "flex-center");
             eventTypeDiv.innerHTML = event.type;
             eventTypeDiv.style.width = "64px";
@@ -764,21 +777,21 @@ function updateEvent(data) {
                 eventTypeDiv.style.backgroundColor = 'rgba(235, 0, 0, 0.7)';
             }
 
-            midsectionDiv = document.createElement("div");
+            const midsectionDiv = document.createElement("div");
             midsectionDiv.classList.add("flex-column");
 
-            descriptionDiv = document.createElement("div");
+            const descriptionDiv = document.createElement("div");
             descriptionDiv.classList.add("description");
             descriptionDiv.innerHTML = event.goal_type + " (\"" + event.time + "\")";
 
-            playerName = document.createElement("p");
+            const playerName = document.createElement("p");
             playerName.innerHTML = truncateMiddle(event.player, 20);
             playerName.style.margin = "0";
 
             midsectionDiv.appendChild(descriptionDiv);
             midsectionDiv.appendChild(playerName);
 
-            currentScoreDiv = document.createElement("div");
+            const currentScoreDiv = document.createElement("div");
             currentScoreDiv.classList.add("current-score");
             currentScoreDiv.innerHTML = event.goals_for + "-" + event.goals_against;
             currentScoreDiv.style.width = "84px";
@@ -788,9 +801,10 @@ function updateEvent(data) {
             eventsDiv.appendChild(currentScoreDiv);
 
             break;
+        }
 
-        case "shot":
-            eventTypeDiv = document.createElement("div");
+        case "shot": {
+            const eventTypeDiv = document.createElement("div");
             eventTypeDiv.classList.add("event-type", "flex-center");
             eventTypeDiv.innerHTML = event.type;
             eventTypeDiv.style.width = "64px";
@@ -802,14 +816,14 @@ function updateEvent(data) {
                 eventTypeDiv.style.backgroundColor = '#eb00004d';
             }
 
-            midsectionDiv = document.createElement("div");
+            const midsectionDiv = document.createElement("div");
             midsectionDiv.classList.add("flex-column");
 
-            descriptionDiv = document.createElement("div");
+            const descriptionDiv = document.createElement("div");
             descriptionDiv.classList.add("description");
             descriptionDiv.innerHTML = "(\"" + event.time + "\")";
             
-            playerName = document.createElement("p");
+            const playerName = document.createElement("p");
             playerName.innerHTML = truncateMiddle(event.player, 20);
             playerName.style.margin = "0";
             playerName.style.fontSize = "12px";
@@ -817,30 +831,31 @@ function updateEvent(data) {
             midsectionDiv.appendChild(descriptionDiv);
             midsectionDiv.appendChild(playerName);
 
-            endSectionDiv = document.createElement("div");
+            const endSectionDiv = document.createElement("div");
             endSectionDiv.style.width = "84px";
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
             eventsDiv.appendChild(endSectionDiv);
             break;
+        }
 
-        case "wissel":
-            eventTypeDiv = document.createElement("div");
+        case "wissel": {
+            const eventTypeDiv = document.createElement("div");
             eventTypeDiv.classList.add("event-type", "flex-center");
             eventTypeDiv.innerHTML = event.type;
             eventTypeDiv.style.width = "64px";
             eventTypeDiv.style.height = "100%";
             eventTypeDiv.style.backgroundColor = '#eb9834';
 
-            midsectionDiv = document.createElement("div");
+            const midsectionDiv = document.createElement("div");
             midsectionDiv.classList.add("flex-column");
 
-            descriptionDiv = document.createElement("div");
+            const descriptionDiv = document.createElement("div");
             descriptionDiv.classList.add("description");
             descriptionDiv.innerHTML = "(\"" + event.time + "\")";
             
-            playerName = document.createElement("p");
+            const playerName = document.createElement("p");
             playerName.innerHTML = truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15);
             playerName.style.margin = "0";
             playerName.style.fontSize = "12px";
@@ -848,7 +863,7 @@ function updateEvent(data) {
             midsectionDiv.appendChild(descriptionDiv);
             midsectionDiv.appendChild(playerName);
 
-            endSectionDiv = document.createElement("div");
+            const endSectionDiv = document.createElement("div");
             endSectionDiv.style.width = "84px";
 
             eventsDiv.appendChild(eventTypeDiv);
@@ -856,33 +871,34 @@ function updateEvent(data) {
             eventsDiv.appendChild(endSectionDiv);
 
             break;
+        }
 
-        case "pause":
-            eventTypeDiv = document.createElement("div");
+        case "pause": {
+            const eventTypeDiv = document.createElement("div");
             eventTypeDiv.classList.add("event-type", "flex-center");
             eventTypeDiv.innerHTML = event.type;
             eventTypeDiv.style.width = "64px";
             eventTypeDiv.style.height = "100%";
             eventTypeDiv.style.backgroundColor = '#2196F3';
 
-            midsectionDiv = document.createElement("div");
+            const midsectionDiv = document.createElement("div");
             midsectionDiv.classList.add("flex-column");
 
-            descriptionDiv = document.createElement("div");
+            const descriptionDiv = document.createElement("div");
             descriptionDiv.classList.add("description");
             descriptionDiv.innerHTML = "(\"" + event.time + "\")";
 
-            timeout_div = document.createElement("p");
+            const timeout_div = document.createElement("p");
             timeout_div.style.margin = "0";
             timeout_div.style.fontSize = "14px";
             if (event.end_time == null) {
                 // Convert the start time to a date object and format it so only the hour and minutes are shown
-                start_time = new Date(event.start_time);
+                const start_time = new Date(event.start_time);
 
                 timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0')
             } else {
-                start_time = new Date(event.start_time);
-                end_time = new Date(event.end_time);
+                const start_time = new Date(event.start_time);
+                const end_time = new Date(event.end_time);
 
                 timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
             }
@@ -890,7 +906,7 @@ function updateEvent(data) {
             midsectionDiv.appendChild(descriptionDiv);
             midsectionDiv.appendChild(timeout_div);
 
-            endSectionDiv = document.createElement("div");
+            const endSectionDiv = document.createElement("div");
             endSectionDiv.style.width = "84px";
 
             eventsDiv.appendChild(eventTypeDiv);
@@ -898,6 +914,7 @@ function updateEvent(data) {
             eventsDiv.appendChild(endSectionDiv);
 
             break;
+        }
     }
 }
 
@@ -1354,9 +1371,9 @@ function truncateMiddle(text, maxLength) {
     }
   
     // Calculate the number of characters to show before and after the ellipsis
-    var charsToShow = maxLength - 3;
-    var frontChars = Math.ceil(charsToShow / 2);
-    var backChars = Math.floor(charsToShow / 2);
+    const charsToShow = maxLength - 3;
+    const frontChars = Math.ceil(charsToShow / 2);
+    const backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }

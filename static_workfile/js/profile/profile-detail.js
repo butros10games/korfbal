@@ -11,6 +11,7 @@ let touchStartY = 0;
 let touchEndX = 0;
 let isDragging = false;
 let currentPosition = 0;
+let startPosition = 0;
 
 let buttonWidth;
 let carousel;
@@ -298,19 +299,21 @@ function onMessageReceived(event) {
     console.log(data);
 
     switch(data.command) {
-        case "settings_request":
+        case "settings_request": {
             cleanDom();
 
             updateSettings(data);
             break;
+        }
         
-        case "player_goal_stats":
+        case "player_goal_stats": {
             cleanDom();
 
             updateGoalStats(data);
             break;
+        }
 
-        case "settings_updated":
+        case "settings_updated": {
             const saveButtonText = document.getElementById("save-button-text");
             saveButtonText.innerHTML = "Saved!";
             saveButtonText.style.color = "#fff";
@@ -323,18 +326,21 @@ function onMessageReceived(event) {
                 saveButtonText.style.color = "";
             }, 1500);
             break;
+        }
 
-        case "teams":
+        case "teams": {
             cleanDom();
 
             updateTeam(data);
             break;
+        }
 
-        case "matches":
+        case "matches": {
             cleanDom();
 
             updateMatches(data);
             break;
+        }
     }
 }
 
@@ -662,26 +668,24 @@ function updateMatches(data) {
                 match_score.innerHTML = element.home_score + " - " + element.away_score;
 
                 match_date_container.appendChild(match_score);
+            } else if (element.status === 'active') {
+                const match_hour = document.createElement("p");
+                match_hour.style.margin = "0";
+                match_hour.style.marginBottom = "12px";
+                match_hour.style.fontWeight = "600";
+                match_hour.style.fontSize = "18px";
+                match_hour.style.textAlign = "center";
+                match_hour.innerHTML = element.start_time + "</br>" + " (live)";
+
+                match_date_container.appendChild(match_hour);
             } else {
-                if (element.status === 'active') {
-                    const match_hour = document.createElement("p");
-                    match_hour.style.margin = "0";
-                    match_hour.style.marginBottom = "12px";
-                    match_hour.style.fontWeight = "600";
-                    match_hour.style.fontSize = "18px";
-                    match_hour.style.textAlign = "center";
-                    match_hour.innerHTML = element.start_time + "</br>" + " (live)";
+                const match_hour = document.createElement("p");
+                match_hour.style.margin = "0";
+                match_hour.style.marginBottom = "12px";
+                match_hour.style.fontWeight = "600";
+                match_hour.innerHTML = element.start_time;
 
-                    match_date_container.appendChild(match_hour);
-                } else {
-                    const match_hour = document.createElement("p");
-                    match_hour.style.margin = "0";
-                    match_hour.style.marginBottom = "12px";
-                    match_hour.style.fontWeight = "600";
-                    match_hour.innerHTML = element.start_time;
-
-                    match_date_container.appendChild(match_hour);
-                }
+                match_date_container.appendChild(match_hour);
             }
             match_container.appendChild(match_date_container);
 
