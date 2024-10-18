@@ -30,7 +30,6 @@
 }
 
 .stickyBottomNav a {
-    display: block;
     color: var(--text-color);
     height: calc(100% - 8px);
     text-align: center;
