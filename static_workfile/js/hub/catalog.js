@@ -1,5 +1,5 @@
-let selectedValue
-let oldSearchTerm = ''
+let selectedValue;
+let oldSearchTerm = '';
 let searchTimer;
 let isSearching = false;
 
@@ -12,171 +12,155 @@ let teamsContainer;
 
 let csrfToken;
 
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function () {
     teamsContainer = document.querySelector('.teams-container');
     csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
-    setup_search();
-
-    stypeSelection()
+    setupSearch();
+    setupTypeSelection();
 });
 
-function load_icon() {
+function loadIcon() {
     teamsContainer.classList.add("flex-center");
     teamsContainer.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom() {
     teamsContainer.innerHTML = "";
-    teamsContainer.classList.remove("flex-center");
-    teamsContainer.classList.remove("flex-start-wrap");
+    teamsContainer.classList.remove("flex-center", "flex-start-wrap");
 }
 
-function stypeSelection() {
-    document.getElementById('type').addEventListener('change', function() {
-        // Get the selected value
-        selectedValue = this.value;
-        console.log(selectedValue);
+function setupTypeSelection() {
+    const typeElement = document.getElementById('type');
+    typeElement.addEventListener('change', handleTypeChange);
+    selectedValue = typeElement.value;
+    ajaxRequestIndex(selectedValue);
+}
 
-        if (oldSearchTerm == '') {
-            ajaxRequestIndex(selectedValue)
-        } else {
-            performSearch(oldSearchTerm)
-        }
-    });
+function handleTypeChange() {
+    selectedValue = this.value;
+    console.log(selectedValue);
 
-    selectedValue = document.getElementById('type').value;
-    ajaxRequestIndex(selectedValue)
+    if (oldSearchTerm === '') {
+        ajaxRequestIndex(selectedValue);
+    } else {
+        performSearch(oldSearchTerm);
+    }
 }
 
 function ajaxRequestIndex(value) {
-    cleanDom()
-    load_icon()
-    
-    // Make an AJAX request using the Fetch API
-    fetch('/api/catalog/data', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken
-        },
-        body: JSON.stringify({ value: value })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Success:', data);
-        displayNormalIndex(data);
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
+    cleanDom();
+    loadIcon();
+
+    makeFetchRequest('/api/catalog/data', { value: value })
+        .then(data => displayNormalIndex(data))
+        .catch(error => console.error('Error:', error));
 }
 
-function setup_search() {
+function setupSearch() {
     searchContainerFull = document.getElementById('search-container-full');
     searchContainer = document.querySelector('.search-container');
     searchIcon = document.querySelector('.search-icon');
     searchInput = document.querySelector('.search-input');
 
-    searchContainer.addEventListener('click', () => {
-        searchIcon.style.width = '0';
-        searchIcon.style.opacity = 0;
-        searchInput.style.width = '128px';
-        searchInput.style.opacity = 1;
-        searchInput.style.paddingLeft = '4px';
-        searchInput.focus();
-    });
+    searchContainer.addEventListener('click', expandSearchInput);
+    searchInput.addEventListener('blur', collapseSearchInput);
+    searchInput.addEventListener('keyup', handleSearchInput);
+}
 
-    searchInput.addEventListener('blur', () => {
-        searchInput.style.width = '0';
-        searchInput.style.opacity = 0;
-        searchInput.style.paddingLeft = '0';
-        searchIcon.style.opacity = 1;
-        searchIcon.style.width = '24px';
-    });
+function expandSearchInput() {
+    searchIcon.style.width = '0';
+    searchIcon.style.opacity = 0;
+    searchInput.style.width = '128px';
+    searchInput.style.opacity = 1;
+    searchInput.style.paddingLeft = '4px';
+    searchInput.focus();
+}
 
-    searchInput.addEventListener('keyup', (event) => {
-        const searchTerm = searchInput.value.trim();
-        if (event.key === 'Enter') {
-            // Prevent the default behavior of the Enter key
-            event.preventDefault();
+function collapseSearchInput() {
+    searchInput.style.width = '0';
+    searchInput.style.opacity = 0;
+    searchInput.style.paddingLeft = '0';
+    searchIcon.style.opacity = 1;
+    searchIcon.style.width = '24px';
+}
 
-            if (searchTerm !== '' && !isSearching) {
-                isSearching = true;
-                // Perform the search immediately for Enter key presses
-                performSearch(searchTerm).finally(() => {
-                    isSearching = false;
-                });
-            }
-        } else if (searchTerm !== '') { // For other key presses (not Enter), trigger the search after a brief delay
-            clearTimeout(searchTimer);
+function handleSearchInput(event) {
+    const searchTerm = searchInput.value.trim();
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        triggerSearch(searchTerm);
+    } else if (searchTerm !== '') {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => triggerSearch(searchTerm), 500);
+    }
+}
 
-            searchTimer = setTimeout(() => {
-                if (!isSearching) {
-                    isSearching = true;
-                    // Call the performSearch function with the current search term
-                    performSearch(searchTerm).finally(() => {
-                        isSearching = false;
-                    });
-                }
-            }, 500);
-        }
-    });
+function triggerSearch(searchTerm) {
+    if (searchTerm !== '' && !isSearching) {
+        isSearching = true;
+        performSearch(searchTerm).finally(() => {
+            isSearching = false;
+        });
+    }
 }
 
 function performSearch(searchTerm) {
     cleanDom();
-    load_icon();
-
+    loadIcon();
     oldSearchTerm = searchTerm;
 
-    // Perform AJAX request here (replace the URL with your actual API endpoint)
     const apiUrl = `https://korfbal.butrosgroot.com/api/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
-
-    // Returning the fetch promise so it can be used in the calling function
-    return fetch(apiUrl)
-        .then(response => response.json())
+    return makeFetchRequest(apiUrl)
         .then(data => {
-            // Handle the search results data
-            console.log('Success:', data);
             displaySearchResults(data.results);
             searchInput.value = '';
-
-            const previusRequests = document.querySelectorAll('.past-request');
-            previusRequests.forEach(element => {
-                element.remove();
-            });
-
-            const pastRequest = document.createElement('div');
-            pastRequest.classList.add('past-request');
-
-            const pastRequestText = document.createElement('p');
-            pastRequestText.innerHTML = searchTerm;
-            pastRequestText.classList.add('past-request-text');
-
-            pastRequest.appendChild(pastRequestText);
-
-            const removeButton = document.createElement('p');
-            removeButton.style.margin = 0;
-            removeButton.innerHTML = 'x';
-            removeButton.classList.add('remove-button');
-
-            removeButton.addEventListener('click', () => {
-                pastRequest.remove();
-                oldSearchTerm = '';
-                ajaxRequestIndex(selectedValue);
-            });
-
-            pastRequest.appendChild(removeButton);
-            searchContainerFull.prepend(pastRequest);
+            addPastRequest(searchTerm);
         })
-        .catch(error => {
-            console.error('Error:', error);
-        });
+        .catch(error => console.error('Error:', error));
 }
-    
+
+function makeFetchRequest(url, bodyData = null) {
+    const options = {
+        method: bodyData ? 'POST' : 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+    };
+    if (bodyData) options.body = JSON.stringify(bodyData);
+
+    return fetch(url, options).then(response => response.json());
+}
+
+function addPastRequest(searchTerm) {
+    const previousRequests = document.querySelectorAll('.past-request');
+    previousRequests.forEach(element => element.remove());
+
+    const pastRequest = document.createElement('div');
+    pastRequest.classList.add('past-request');
+
+    const pastRequestText = document.createElement('p');
+    pastRequestText.innerHTML = searchTerm;
+    pastRequestText.classList.add('past-request-text');
+    pastRequest.appendChild(pastRequestText);
+
+    const removeButton = document.createElement('p');
+    removeButton.style.margin = 0;
+    removeButton.innerHTML = 'x';
+    removeButton.classList.add('remove-button');
+    removeButton.addEventListener('click', () => {
+        pastRequest.remove();
+        oldSearchTerm = '';
+        ajaxRequestIndex(selectedValue);
+    });
+
+    pastRequest.appendChild(removeButton);
+    searchContainerFull.prepend(pastRequest);
+}
+
 function displaySearchResults(results) {
-    cleanDom()
+    cleanDom();
 
     if (results.length === 0) {
         teamsContainer.innerHTML = '<p>No results found ):</p>';
@@ -184,25 +168,86 @@ function displaySearchResults(results) {
     }
 
     results.forEach(element => {
-        const team_button = document.createElement('a');
-        team_button.classList.add('flex-row', 'team-button');
-        team_button.href = element.url;
+        teamsContainer.appendChild(createTeamButton(element));
+    });
+}
 
-        const logo = document.createElement('img');
-        logo.src = element.img_url;
-        logo.classList.add('team-logo');
+function displayNormalIndex(data) {
+    cleanDom();
+    const buttonDiv = createButtonDiv(['Aangesloten', 'Volgend']);
+    teamsContainer.appendChild(buttonDiv);
 
-        team_button.appendChild(logo);
+    const connectedDiv = createTeamListDiv('Aangesloten', data.connected, 'You are not playing in any teams yet ):');
+    const followingDiv = createTeamListDiv('Volgend', data.following, 'You are not following any teams yet ):');
+    followingDiv.style.display = 'none';
 
-        const textContainer = document.createElement('div');
-        textContainer.classList.add('flex-column', 'team-container');
+    teamsContainer.appendChild(connectedDiv);
+    teamsContainer.appendChild(followingDiv);
+}
 
-        const team_name = document.createElement('p');
-        team_name.style.fontWeight = '600';
-        team_name.style.margin = 0;
-        team_name.style.fontSize = '16px';
-        team_name.innerHTML = element.name;
+function createButtonDiv(buttonArray) {
+    const buttonDiv = document.createElement('div');
+    buttonDiv.classList.add('flex-row');
 
+    buttonArray.forEach(button => {
+        const buttonElement = document.createElement('div');
+        buttonElement.classList.add('selection-button', 'flex-center');
+        if (button === 'Aangesloten') buttonElement.classList.add('active');
+        buttonElement.innerHTML = button;
+        buttonElement.addEventListener('click', () => handleButtonClick(buttonElement, button));
+        buttonDiv.appendChild(buttonElement);
+    });
+
+    return buttonDiv;
+}
+
+function handleButtonClick(buttonElement, button) {
+    const buttons = document.querySelectorAll('.selection-button');
+    buttons.forEach(button => button.classList.remove('active'));
+    buttonElement.classList.add('active');
+
+    document.getElementById(button).style.display = 'flex';
+    document.getElementById(button === 'Aangesloten' ? 'Volgend' : 'Aangesloten').style.display = 'none';
+}
+
+function createTeamListDiv(id, teams, emptyMessage) {
+    const div = document.createElement('div');
+    div.id = id;
+    div.classList.add('flex-column');
+
+    if (teams.length > 0) {
+        teams.forEach(team => div.appendChild(createTeamButton(team)));
+    } else {
+        const emptyText = document.createElement('p');
+        emptyText.innerHTML = emptyMessage;
+        emptyText.style.marginBottom = '8px';
+        div.appendChild(emptyText);
+    }
+
+    return div;
+}
+
+function createTeamButton(element) {
+    const teamButton = document.createElement('a');
+    teamButton.classList.add('flex-row', 'team-button');
+    teamButton.href = element.url;
+
+    const logo = document.createElement('img');
+    logo.src = element.img_url;
+    logo.classList.add('team-logo');
+    teamButton.appendChild(logo);
+
+    const textContainer = document.createElement('div');
+    textContainer.classList.add('flex-column', 'team-container');
+
+    const teamName = document.createElement('p');
+    teamName.style.fontWeight = '600';
+    teamName.style.margin = 0;
+    teamName.style.fontSize = '16px';
+    teamName.innerHTML = element.name;
+    textContainer.appendChild(teamName);
+
+    if (element.competition) {
         const competition = document.createElement('p');
         competition.style.margin = 0;
         competition.style.fontSize = '12px';
@@ -210,160 +255,9 @@ function displaySearchResults(results) {
         competition.style.fontWeight = '500';
         competition.style.marginTop = '4px';
         competition.innerHTML = element.competition;
-
-        textContainer.appendChild(team_name);
-
-        if (element.competition != null && element.competition != undefined && element.competition != '') {
-            textContainer.appendChild(competition);
-        }
-        team_button.appendChild(textContainer);
-        teamsContainer.appendChild(team_button);
-    });
-}
-
-function displayNormalIndex(data) {
-    cleanDom()
-
-    const buttonDiv = document.createElement('div');
-    buttonDiv.classList.add('flex-row');
-
-    // button array
-    const buttonArray = ['Aangesloten', 'Volgend'];
-
-    // loop through the button array
-    buttonArray.forEach(button => {
-        // create a button element
-        const button_element = document.createElement('div');
-        button_element.classList.add('selection-button', 'flex-center');
-
-        // add the active class to the first button
-        if (button === 'Aangesloten') {
-            button_element.classList.add('active');
-        }
-
-        button_element.innerHTML = button;
-        button_element.addEventListener('click', () => {
-            // get all the divs with the class of selection-button
-            const buttons = document.querySelectorAll('.selection-button');
-            // loop through the buttons and remove the active class
-            buttons.forEach(button => {
-                button.classList.remove('active');
-            });
-
-            // add the active class to the button that was clicked
-            button_element.classList.add('active');
-
-            // Look for the div with the id of the button that was clicked
-            const div = document.getElementById(button);
-            div.style.display = 'flex';
-
-            // Look for the element with the name of the other button
-            const otherButton = document.getElementById(button === 'Aangesloten' ? 'Volgend' : 'Aangesloten');
-            otherButton.style.display = 'none';
-        });
-
-        buttonDiv.appendChild(button_element);
-    });
-
-    teamsContainer.appendChild(buttonDiv);
-
-    const connectedDiv = document.createElement('div');
-    connectedDiv.id = 'Aangesloten';
-    connectedDiv.classList.add('flex-column');
-
-    if (data.connected.length > 0) {
-        data.connected.forEach(element => {
-            const team_button = document.createElement('a');
-            team_button.classList.add('flex-row', 'team-button');
-            team_button.href = element.url;
-
-            const logo = document.createElement('img');
-            logo.src = element.img_url;
-            logo.classList.add('team-logo');
-
-            team_button.appendChild(logo);
-
-            const textContainer = document.createElement('div');
-            textContainer.classList.add('flex-column', 'team-container');
-
-            const team_name = document.createElement('p');
-            team_name.style.fontWeight = '600';
-            team_name.style.margin = 0;
-            team_name.style.fontSize = '16px';
-            team_name.innerHTML = element.name;
-
-            const competition = document.createElement('p');
-            competition.style.margin = 0;
-            competition.style.fontSize = '12px';
-            competition.style.color = '#666';
-            competition.style.fontWeight = '500';
-            competition.style.marginTop = '4px';
-            competition.innerHTML = element.competition;
-
-            textContainer.appendChild(team_name);
-            if (element.competition != null && element.competition != undefined && element.competition != '') {
-                textContainer.appendChild(competition);
-            }
-            team_button.appendChild(textContainer);
-            connectedDiv.appendChild(team_button);
-        });
-    } else {
-        const followingText = document.createElement('p');
-        followingText.innerHTML = 'You are not playing in any teams yet ):';
-        followingText.style.marginBottom = '8px';
-
-        connectedDiv.appendChild(followingText);
+        textContainer.appendChild(competition);
     }
 
-    const followingDiv = document.createElement('div');
-    followingDiv.id = 'Volgend';
-    followingDiv.classList.add('flex-column');
-    followingDiv.style.display = 'none';
-
-    if (data.following.length > 0) {
-        data.following.forEach(element => {
-            const team_button = document.createElement('a');
-            team_button.classList.add('flex-row', 'team-button');
-            team_button.href = element.url;
-
-            const logo = document.createElement('img');
-            logo.src = element.img_url;
-            logo.classList.add('team-logo');
-
-            team_button.appendChild(logo);
-
-            const textContainer = document.createElement('div');
-            textContainer.classList.add('flex-column', 'team-container');
-
-            const team_name = document.createElement('p');
-            team_name.style.fontWeight = '600';
-            team_name.style.margin = 0;
-            team_name.style.fontSize = '16px';
-            team_name.innerHTML = element.name;
-
-            const competition = document.createElement('p');
-            competition.style.margin = 0;
-            competition.style.fontSize = '12px';
-            competition.style.color = '#666';
-            competition.style.fontWeight = '500';
-            competition.style.marginTop = '4px';
-            competition.innerHTML = element.competition;
-
-            textContainer.appendChild(team_name);
-            if (element.competition != null && element.competition != undefined && element.competition != '') {
-                textContainer.appendChild(competition);
-            }
-            team_button.appendChild(textContainer);
-            followingDiv.appendChild(team_button);
-        });
-    } else {
-        const followingText = document.createElement('p');
-        followingText.innerHTML = 'You are not following any teams yet ):';
-        followingText.style.marginBottom = '8px';
-
-        followingDiv.appendChild(followingText);
-    }
-
-    teamsContainer.appendChild(connectedDiv);
-    teamsContainer.appendChild(followingDiv);
+    teamButton.appendChild(textContainer);
+    return teamButton;
 }
