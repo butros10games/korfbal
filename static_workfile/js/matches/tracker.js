@@ -245,34 +245,7 @@ function onMessageReceived(event) {
             overlay.id = "overlay";
             overlay.classList.add("overlay");
             
-            // Create the popup container
-            const popup = document.createElement("div");
-            popup.classList.add("popup");
-
-            const popupText = document.createElement("p");
-            popupText.innerHTML = "De wedstrijd is gepauzeerd.";
-            popupText.style.margin = "0";
-            popupText.style.fontSize = "18px";
-            popupText.style.fontWeight = "600";
-            popupText.style.marginBottom = "12px";
-
-            popup.appendChild(popupText);
-
-            const popupButton = document.createElement("button");
-            popupButton.classList.add("button");
-            popupButton.innerHTML = "OK";
-            popupButton.style.margin = "0";
-            popupButton.style.width = "100%";
-            popupButton.style.height = "42px";
-            popupButton.style.fontSize = "14px";
-            popupButton.style.fontWeight = "600";
-            popupButton.style.marginBottom = "12px";
-            popupButton.style.background = "var(--button-color)";
-            popupButton.style.color = "var(--text-color)";
-            popupButton.style.border = "none";
-            popupButton.style.borderRadius = "4px";
-            popupButton.style.cursor = "pointer";
-            popupButton.style.userSelect = "none";
+            popup, popupButton = createPopup("De wedstrijd is gepauzeerd.");
 
             popupButton.addEventListener("click", function() {
                 // Remove the popup and overlay when the close button is clicked
@@ -455,34 +428,7 @@ function onMessageReceived(event) {
             overlay_ended.id = "overlay";
             overlay_ended.classList.add("overlay");
 
-            // Create the popup container
-            const popup = document.createElement("div");
-            popup.classList.add("popup");
-
-            const popupText = document.createElement("p");
-            popupText.innerHTML = "De wedstrijd is afgelopen.";
-            popupText.style.margin = "0";
-            popupText.style.fontSize = "18px";
-            popupText.style.fontWeight = "600";
-            popupText.style.marginBottom = "12px";
-
-            popup.appendChild(popupText);
-
-            const popupButton = document.createElement("button");
-            popupButton.classList.add("button");
-            popupButton.innerHTML = "OK";
-            popupButton.style.margin = "0";
-            popupButton.style.width = "100%";
-            popupButton.style.height = "42px";
-            popupButton.style.fontSize = "14px";
-            popupButton.style.fontWeight = "600";
-            popupButton.style.marginBottom = "12px";
-            popupButton.style.background = "var(--button-color)";
-            popupButton.style.color = "var(--text-color)";
-            popupButton.style.border = "none";
-            popupButton.style.borderRadius = "4px";
-            popupButton.style.cursor = "pointer";
-            popupButton.style.userSelect = "none";
+            popup, popupButton = createPopup("De wedstrijd is afgelopen.");
 
             popupButton.addEventListener("click", function() {
                 // Remove the popup and overlay when the close button is clicked
@@ -509,6 +455,39 @@ function onMessageReceived(event) {
             break;
         }
     }
+}
+
+function createPopup(popupText) {
+    // Create the popup container
+    const popup = document.createElement("div");
+    popup.classList.add("popup");
+
+    const popupText = document.createElement("p");
+    popupText.innerHTML = popupText;
+    popupText.style.margin = "0";
+    popupText.style.fontSize = "18px";
+    popupText.style.fontWeight = "600";
+    popupText.style.marginBottom = "12px";
+
+    popup.appendChild(popupText);
+
+    const popupButton = document.createElement("button");
+    popupButton.classList.add("button");
+    popupButton.innerHTML = "OK";
+    popupButton.style.margin = "0";
+    popupButton.style.width = "100%";
+    popupButton.style.height = "42px";
+    popupButton.style.fontSize = "14px";
+    popupButton.style.fontWeight = "600";
+    popupButton.style.marginBottom = "12px";
+    popupButton.style.background = "var(--button-color)";
+    popupButton.style.color = "var(--text-color)";
+    popupButton.style.border = "none";
+    popupButton.style.borderRadius = "4px";
+    popupButton.style.cursor = "pointer";
+    popupButton.style.userSelect = "none";
+
+    return popup, popupButton;
 }
 
 function load_icon(element) {
