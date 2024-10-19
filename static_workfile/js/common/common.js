@@ -73,32 +73,37 @@ window.setupCarousel = function(carouselElement, buttons, extraData = null, stat
     }
 
     function setNavButtons() {
+        function handleButtonClick(button, index) {
+            if (isAutoScrolling) return;
+        
+            buttons.forEach(el => el.classList.remove("active"));
+            button.classList.add("active");
+        
+            isAutoScrolling = true;
+            button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            setTimeout(() => isAutoScrolling = false, 500);
+        
+            sendDataToServer(button);
+        }
+        
+        function sendDataToServer(button) {
+            const data = button.getAttribute('data');
+            const payload = { 'command': data };
+        
+            // Merge ExtraData into the payload if ExtraData is provided
+            if (extraData) {
+                Object.assign(payload, extraData);
+            }
+        
+            if (data === statsName) {
+                Object.assign(payload, { 'data_type': 'general' });
+            }
+        
+            socket.send(JSON.stringify(payload));
+        }
+
         buttons.forEach((button, index) => {
-            button.addEventListener("click", function() {
-                if (isAutoScrolling) return;
-
-                buttons.forEach(el => el.classList.remove("active"));
-                this.classList.add("active");
-
-                isAutoScrolling = true;
-                this.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                setTimeout(() => isAutoScrolling = false, 500);
-
-                // send data to server
-                const data = this.getAttribute('data');
-                const payload = { 'command': data };
-
-                // Merge ExtraData into the payload if ExtraData is provided
-                if (extraData) {
-                    Object.assign(payload, extraData);
-                }
-                
-                if (data === statsName) {
-                    Object.assign(payload, { 'data_type': 'general' });
-                }
-
-                socket.send(JSON.stringify(payload));
-            });
+            button.addEventListener("click", () => handleButtonClick(button, index));
         });
     }
 
