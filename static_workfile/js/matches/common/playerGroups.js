@@ -82,7 +82,7 @@ function createPlayerGroupContainer(playerGroups, renderPlayerDiv) {
     return playerGroupContainer;
 }
 
-window.updateplayerGroups = function(data) {
+window.updateplayerGroups = function(data, container) {
     const playerOptions = data.players.map(dataPlayer => {
         const option = document.createElement("option");
         option.value = dataPlayer.id;
@@ -113,15 +113,15 @@ window.updateplayerGroups = function(data) {
     });
 
     playerGroupContainer.appendChild(buttonDiv);
-    infoContainer.appendChild(playerGroupContainer);
+    container.appendChild(playerGroupContainer);
 }
 
-window.showPlayerGroups = function(data) {
+window.showPlayerGroups = function(data, container) {
     const playerGroupContainer = createPlayerGroupContainer(data.playerGroups, (player) => {
         return createPlayerDiv('div', player);
     });
 
-    infoContainer.appendChild(playerGroupContainer);
+    container.appendChild(playerGroupContainer);
 }
 
 window.savePlayerGroups = function() {

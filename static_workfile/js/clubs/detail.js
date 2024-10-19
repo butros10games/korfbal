@@ -1,5 +1,6 @@
 let socket;
 let team_id;
+let user_id;
 let WebSocket_url;
 let infoContainer = document.getElementById("info-container");
 let carousel = document.querySelector('.carousel');
@@ -10,6 +11,7 @@ const url = window.location.href;
 const maxLength = 14;
 
 window.addEventListener("DOMContentLoaded", function() {
+    user_id = document.getElementById("user_id").innerText
     const matches = regex.exec(url);
     if (matches) {
         team_id = matches[1];
@@ -27,7 +29,7 @@ window.addEventListener("DOMContentLoaded", function() {
     };
 
     setupCarousel(carousel, buttons);
-    setupFollowButton();
+    setupFollowButton(user_id);
 });
 
 function onMessageReceived(event) {

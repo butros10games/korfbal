@@ -30,8 +30,8 @@ window.addEventListener("DOMContentLoaded", function() {
         requestInitalData(".button.active", socket, { 'user_id': user_id });
     };
 
-    setupCarousel(carousel, buttons, { 'user_id': user_id }, 'team_stats');
-    setupFollowButton()
+    setupCarousel(carousel, buttons, { 'user_id': user_id }, 'get_stats');
+    setupFollowButton(user_id)
 });
 
 function onMessageReceived(event) {

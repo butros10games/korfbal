@@ -22,15 +22,15 @@ class match_tracker(AsyncWebsocketConsumer):
         self.current_part = None
         self.is_paused = False
         self.match_is_paused_message = 'match is paused'
-        self.player_group_class = PlayerGroupClass()
+        self.player_group_class = PlayerGroupClass(self.season_request)
         
     async def connect(self):
         match_id = self.scope['url_route']['kwargs']['id']
-        self.match = await sync_to_async(Match.objects.prefetch_related('home_team','away_team').get)(id_uuid=match_id)
-        self.match_data = await sync_to_async(MatchData.objects.get)(match_link=self.match)
-        self.team = await sync_to_async(Team.objects.get)(id_uuid=self.scope['url_route']['kwargs']['team_id'])
+        self.match = await Match.objects.prefetch_related('home_team','away_team').aget(id_uuid=match_id)
+        self.match_data = await MatchData.objects.aget(match_link=self.match)
+        self.team = await Team.objects.aget(id_uuid=self.scope['url_route']['kwargs']['team_id'])
         try:
-            self.current_part = await sync_to_async(MatchPart.objects.get)(match_data=self.match_data, active=True)
+            self.current_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
         except MatchPart.DoesNotExist:
             pass
             
@@ -611,9 +611,10 @@ class match_tracker(AsyncWebsocketConsumer):
 
 
 class PlayerGroupClass:
-    def __init__(self):
+    def __init__(self, season_request):
         self.team = None
         self.match_data = None
+        self._season_request = season_request
     
     async def player_group_request(self):
         player_groups_array = await self._make_player_group_list()

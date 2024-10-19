@@ -134,18 +134,3 @@ window.cleanDom = function(container) {
     container.classList.remove("flex-center");
     container.classList.remove("flex-start-wrap");
 }
-
-window.setupFollowButton = function() {
-    document.querySelector('.icon-container').addEventListener('click', function() {
-        const isFollowed = this.getAttribute('data-followed') === 'true';
-        
-        // Toggle the data-followed attribute
-        this.setAttribute('data-followed', !isFollowed);
-
-        socket.send(JSON.stringify({
-            'command': 'follow',
-            'user_id': user_id,
-            'followed': !isFollowed
-        }));
-    });
-}

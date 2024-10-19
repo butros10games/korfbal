@@ -32,7 +32,7 @@ class team_data(AsyncWebsocketConsumer):
             if command == "wedstrijden" or command == "ended_matches":
                 await self.matches_request(command)
                 
-            elif command == "team_stats":
+            elif command == "get_stats":
                 data_type = json_data['data_type']
                 
                 if data_type == 'general':

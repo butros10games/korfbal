@@ -18,7 +18,7 @@ window.addEventListener("DOMContentLoaded", function() {
     eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
 
-    const matches = regex.exec(url);
+    const matches = url.match(regex);
 
     console.log(matches);
 
@@ -294,7 +294,7 @@ function onMessageReceived(event) {
                 shotButtonReg("home");
                 shotButtonReg("away");
             } else {
-                updateplayerGroups(data); // imported from matches/common/updateplayerGroups.js
+                updateplayerGroups(data, playersDiv); // imported from matches/common/updateplayerGroups.js
             }
             break;
         }

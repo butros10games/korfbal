@@ -51,9 +51,9 @@ function onMessageReceived(event) {
             cleanDom(infoContainer);
 
             if (data.is_coach && !data.finished) {
-                updateplayerGroups(data); // imported from matches/common/updateplayerGroups.js
+                updateplayerGroups(data, infoContainer); // imported from matches/common/updateplayerGroups.js
             } else {
-                showPlayerGroups(data); // imported from matches/common/showPlayerGroups.js
+                showPlayerGroups(data, infoContainer); // imported from matches/common/showPlayerGroups.js
             }
             break;
         }
