@@ -750,8 +750,46 @@ function showReservePlayer(data) {
 
 function updateEvent(data) {
     const event = data.last_event;
+    const eventsDiv = document.createElement("div");
 
-    switch(event.type) {
+    switch (event.type) {
+        case "goal": {
+            const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
+            const midsectionDiv = createMidsectionDiv(event.goal_type + " (\"" + event.time + "\")", truncateMiddle(event.player, 20));
+            const scoreDiv = createScoreDiv(event.goals_for + "-" + event.goals_against, "84px");
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(scoreDiv);
+            break;
+        }
+        case "wissel": {
+            const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
+            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            break;
+        }
+        case "pause": {
+            const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
+            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            break;
+        }
+        case "shot": {
+            const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#43ff644d' : '#eb00004d');
+            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player, 20));
+            const endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
+            break;
+        }
         case "no_event": {
             const textElement = document.createElement("p");
             textElement.classList.add("flex-center");
@@ -763,158 +801,21 @@ function updateEvent(data) {
             eventsDiv.appendChild(textElement);
             break;
         }
-
-        case "goal": {
-            const eventTypeDiv = document.createElement("div");
-            eventTypeDiv.classList.add("event-type", "flex-center");
-            eventTypeDiv.innerHTML = event.type;
-            eventTypeDiv.style.width = "64px";
-            eventTypeDiv.style.height = "100%";
-
-            if (event.for_team) {
-                eventTypeDiv.style.backgroundColor = '#4CAF50';
-            } else {
-                eventTypeDiv.style.backgroundColor = 'rgba(235, 0, 0, 0.7)';
-            }
-
-            const midsectionDiv = document.createElement("div");
-            midsectionDiv.classList.add("flex-column");
-
-            const descriptionDiv = document.createElement("div");
-            descriptionDiv.classList.add("description");
-            descriptionDiv.innerHTML = event.goal_type + " (\"" + event.time + "\")";
-
-            const playerName = document.createElement("p");
-            playerName.innerHTML = truncateMiddle(event.player, 20);
-            playerName.style.margin = "0";
-
-            midsectionDiv.appendChild(descriptionDiv);
-            midsectionDiv.appendChild(playerName);
-
-            const currentScoreDiv = document.createElement("div");
-            currentScoreDiv.classList.add("current-score");
-            currentScoreDiv.innerHTML = event.goals_for + "-" + event.goals_against;
-            currentScoreDiv.style.width = "84px";
-
-            eventsDiv.appendChild(eventTypeDiv);
-            eventsDiv.appendChild(midsectionDiv);
-            eventsDiv.appendChild(currentScoreDiv);
-
+        default: {
+            console.warn("Unknown event type: ", event.type);
+            const defaultElement = document.createElement("p");
+            defaultElement.innerHTML = "Onbekend event type: " + event.type;
+            eventsDiv.appendChild(defaultElement);
             break;
         }
+    }
 
-        case "shot": {
-            const eventTypeDiv = document.createElement("div");
-            eventTypeDiv.classList.add("event-type", "flex-center");
-            eventTypeDiv.innerHTML = event.type;
-            eventTypeDiv.style.width = "64px";
-            eventTypeDiv.style.height = "100%";
-            
-            if (event.for_team) {
-                eventTypeDiv.style.backgroundColor = '#43ff644d';
-            } else {
-                eventTypeDiv.style.backgroundColor = '#eb00004d';
-            }
-
-            const midsectionDiv = document.createElement("div");
-            midsectionDiv.classList.add("flex-column");
-
-            const descriptionDiv = document.createElement("div");
-            descriptionDiv.classList.add("description");
-            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
-            
-            const playerName = document.createElement("p");
-            playerName.innerHTML = truncateMiddle(event.player, 20);
-            playerName.style.margin = "0";
-            playerName.style.fontSize = "12px";
-
-            midsectionDiv.appendChild(descriptionDiv);
-            midsectionDiv.appendChild(playerName);
-
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";
-
-            eventsDiv.appendChild(eventTypeDiv);
-            eventsDiv.appendChild(midsectionDiv);
-            eventsDiv.appendChild(endSectionDiv);
-            break;
-        }
-
-        case "wissel": {
-            const eventTypeDiv = document.createElement("div");
-            eventTypeDiv.classList.add("event-type", "flex-center");
-            eventTypeDiv.innerHTML = event.type;
-            eventTypeDiv.style.width = "64px";
-            eventTypeDiv.style.height = "100%";
-            eventTypeDiv.style.backgroundColor = '#eb9834';
-
-            const midsectionDiv = document.createElement("div");
-            midsectionDiv.classList.add("flex-column");
-
-            const descriptionDiv = document.createElement("div");
-            descriptionDiv.classList.add("description");
-            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
-            
-            const playerName = document.createElement("p");
-            playerName.innerHTML = truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15);
-            playerName.style.margin = "0";
-            playerName.style.fontSize = "12px";
-
-            midsectionDiv.appendChild(descriptionDiv);
-            midsectionDiv.appendChild(playerName);
-
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";
-
-            eventsDiv.appendChild(eventTypeDiv);
-            eventsDiv.appendChild(midsectionDiv);
-            eventsDiv.appendChild(endSectionDiv);
-
-            break;
-        }
-
-        case "pause": {
-            const eventTypeDiv = document.createElement("div");
-            eventTypeDiv.classList.add("event-type", "flex-center");
-            eventTypeDiv.innerHTML = event.type;
-            eventTypeDiv.style.width = "64px";
-            eventTypeDiv.style.height = "100%";
-            eventTypeDiv.style.backgroundColor = '#2196F3';
-
-            const midsectionDiv = document.createElement("div");
-            midsectionDiv.classList.add("flex-column");
-
-            const descriptionDiv = document.createElement("div");
-            descriptionDiv.classList.add("description");
-            descriptionDiv.innerHTML = "(\"" + event.time + "\")";
-
-            const timeout_div = document.createElement("p");
-            timeout_div.style.margin = "0";
-            timeout_div.style.fontSize = "14px";
-            if (event.end_time == null) {
-                // Convert the start time to a date object and format it so only the hour and minutes are shown
-                const start_time = new Date(event.start_time);
-
-                timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0')
-            } else {
-                const start_time = new Date(event.start_time);
-                const end_time = new Date(event.end_time);
-
-                timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
-            }
-
-            midsectionDiv.appendChild(descriptionDiv);
-            midsectionDiv.appendChild(timeout_div);
-
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";
-
-            eventsDiv.appendChild(eventTypeDiv);
-            eventsDiv.appendChild(midsectionDiv);
-            eventsDiv.appendChild(endSectionDiv);
-
-            break;
-        }
+    // Append eventsDiv to the container (assuming there's a container in the DOM to append it to)
+    const eventContainer = document.getElementById("event-container"); // Replace with the actual container ID
+    if (eventContainer) {
+        eventContainer.appendChild(eventsDiv);
+    } else {
+        console.error("Event container not found");
     }
 }
 
