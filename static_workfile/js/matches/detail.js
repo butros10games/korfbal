@@ -53,7 +53,7 @@ function onMessageReceived(event) {
             if (data.is_coach && !data.finished) {
                 updateplayerGroups(data); // imported from matches/common/updateplayerGroups.js
             } else {
-                showPlayerGroups(data);
+                showPlayerGroups(data); // imported from matches/common/showPlayerGroups.js
             }
             break;
         }
@@ -250,74 +250,3 @@ function updateEvents(data) {
 
     infoContainer.appendChild(eventContainer);
 }
-
-function showPlayerGroups(data) {
-    const playerGroups = data.playerGroups;
-
-    const playerGroupContainer = document.createElement("div");
-    playerGroupContainer.classList.add("player-group-container");
-
-    if (playerGroups.length > 0) {
-        playerGroups.forEach(playerGroup => {
-            const playerGroupDiv = document.createElement("div");
-            playerGroupDiv.classList.add("player-group");
-            playerGroupDiv.classList.add("flex-column");
-            playerGroupDiv.style.marginTop = "12px";
-
-            const playerGroupTitle = document.createElement("div");
-            playerGroupTitle.classList.add("flex-row");
-            playerGroupTitle.classList.add("player-group-title");
-            playerGroupTitle.style.justifyContent = "flex-start";
-            playerGroupTitle.style.fontWeight = "600";
-            playerGroupTitle.style.marginBottom = "6px";
-            playerGroupTitle.style.marginLeft = "12px";
-            playerGroupTitle.style.width = "calc(100% - 12px)";
-            playerGroupTitle.innerHTML = playerGroup.starting_type;
-            playerGroupTitle.id = playerGroup.id;
-
-            const playerGroupPlayers = document.createElement("div");
-            playerGroupPlayers.classList.add("player-group-players");
-            playerGroupPlayers.classList.add("flex-row");
-            playerGroupPlayers.style.flexWrap = "wrap";
-            playerGroupPlayers.style.alignItems = 'stretch';
-        
-            for (let i = 0; i < 4; i++) {
-                let player = playerGroup.players[i];
-        
-                const playerDiv = document.createElement("div");
-                playerDiv.classList.add("player-selector", "flex-center");
-                playerDiv.style.flexGrow = "1";
-                playerDiv.style.flexBasis = "calc(50% - 32px)"; 
-                playerDiv.style.textAlign = "center";
-
-                const playerName = document.createElement("p");
-                playerName.style.margin = "0";
-                playerName.style.fontSize = "14px";
-
-                if (player) {
-                    playerName.innerHTML = truncateMiddle(player.name, 16);
-                } else {
-                    playerName.innerHTML = "geen data";
-                }
-
-                playerDiv.appendChild(playerName);
-        
-                playerGroupPlayers.appendChild(playerDiv);
-            }
-
-            playerGroupDiv.appendChild(playerGroupTitle);
-            playerGroupDiv.appendChild(playerGroupPlayers);
-
-            playerGroupContainer.appendChild(playerGroupDiv);
-        });
-    } else {
-        const textElement = document.createElement("p");
-        textElement.classList.add("flex-center");
-        textElement.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
-
-        playerGroupContainer.appendChild(textElement);
-    }
-
-    infoContainer.appendChild(playerGroupContainer);
-}
-
