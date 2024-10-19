@@ -342,21 +342,21 @@ function onMessageReceived(event) {
             }
 
             if (data.type === "active") {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000);
+                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000, true);
                 timer.start();
 
                 // set the pause button to pause
                 startStopButton.innerHTML = "Pause";
 
             } else if (data.type === "pause") {
-                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
+                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true);
                 timer.stop();
 
                 // set the pause button to start
                 startStopButton.innerHTML = "Start";
 
             } else if (data.type === "start") {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
+                timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
                 timer.start();
             }
 
@@ -1148,71 +1148,6 @@ function playerSwitch() {
     }
 }
 
-class CountdownTimer {
-    constructor(startTimeISO, lengthInMilliseconds, pauseTimeISO = null, offsetInMilliseconds = 0) {
-        this.lengthInMilliseconds = lengthInMilliseconds;
-        
-        this.startTime = new Date(startTimeISO);
-        this.totalLength = lengthInMilliseconds + offsetInMilliseconds;  // Include the offset
-        this.endTime = new Date(this.startTime.getTime() + this.totalLength);
-        
-        this.offset = offsetInMilliseconds;
-        this.pauseTimeISO = pauseTimeISO;
-        this.interval = null;
-
-        // Call updateDisplay immediately upon construction to set the initial value
-        this.updateDisplay();
-    }
-
-    updateDisplay() {
-        this.now = this.pauseTimeISO ? new Date(this.pauseTimeISO) : new Date();;
-        let timeLeft = this.totalLength - (this.now - this.startTime);
-    
-        const sign = timeLeft < 0 ? '-' : '';
-        const absTime = Math.abs(timeLeft);
-    
-        const minutes = Math.floor(absTime / 60000);
-        const seconds = Math.floor((absTime % 60000) / 1000);
-    
-        // Update the counter display on the website
-        document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        // if the time is under one minute add a end half button
-        const endHalfButton = document.getElementById("end-half-button");
-
-        if (minutes < 1 || sign === "-") {
-            endHalfButton.style.display = "block";
-        } else if (minutes > 1 && endHalfButton.style.display === "block") {
-            endHalfButton.style.display = "none";
-        }
-    }
-
-    start(pause_time = null) {
-        if (pause_time) {
-            this.totalLength = this.lengthInMilliseconds + (pause_time * 1000);
-        }
-
-        this.pauseTimeISO = null;
-        this.interval = setInterval(() => this.updateDisplay(), 1000);
-    }
-
-    stop() {
-        clearInterval(this.interval);
-        this.interval = null;
-    }
-
-    destroy() {
-        clearInterval(this.interval);
-        this.interval = null;
-        this.startTime = null;
-        this.endTime = null;
-        this.now = null;
-        this.totalLength = null;
-        this.offset = null;
-        this.pauseTimeISO = null;
-    }
-}
-
 function updateplayerGroups(data) {
     const playerGroups = data.playerGroups;
 
@@ -1316,66 +1251,6 @@ function updateplayerGroups(data) {
     }
 
     playersDiv.appendChild(playerGroupContainer);
-}
-
-function onPlayerSelectChange(changedSelect) {
-    const allSelectors = document.querySelectorAll('.player-selector');
-    allSelectors.forEach(select => {
-        // Skip the select that was changed
-        if (select === changedSelect) return;
-
-        // If another select has the same value, reset it
-        if (select.value === changedSelect.value) {
-            select.value = NaN;  // Set to 'Niet ingevuld' value
-        }
-    });
-
-    // Show the save button
-    document.getElementById("saveButton").style.display = "block";
-}
-
-function savePlayerGroups() {
-    const playerGroups = document.querySelectorAll('.player-group');
-    const playerGroupData = [];
-
-    playerGroups.forEach(playerGroup => {
-        const playerGroupTitle = playerGroup.querySelector('.player-group-title');
-        const playerGroupPlayers = playerGroup.querySelectorAll('.player-selector');
-
-        const playerGroupObject = {
-            'starting_type': playerGroupTitle.innerHTML,
-            'id': playerGroupTitle.id,
-            'players': []
-        };
-
-        playerGroupPlayers.forEach(player => {
-            if (player.value) {
-                playerGroupObject.players.push(player.value);
-            } else {
-                playerGroupObject.players.push(null);
-            }
-        });
-
-        playerGroupData.push(playerGroupObject);
-    });
-
-    socket.send(JSON.stringify({
-        'command': 'savePlayerGroups',
-        'playerGroups': playerGroupData
-    }));
-}
-
-function truncateMiddle(text, maxLength) {
-    if (text.length <= maxLength) {
-        return text;
-    }
-  
-    // Calculate the number of characters to show before and after the ellipsis
-    const charsToShow = maxLength - 3;
-    const frontChars = Math.ceil(charsToShow / 2);
-    const backChars = Math.floor(charsToShow / 2);
-  
-    return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
 }
 
 function setupSwipeDelete() {
