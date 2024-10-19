@@ -245,7 +245,9 @@ function onMessageReceived(event) {
             overlay.id = "overlay";
             overlay.classList.add("overlay");
             
-            popup, popupButton = createPopup("De wedstrijd is gepauzeerd.");
+            const popupElements = createPopup("De wedstrijd is gepauzeerd.");
+            const popup = popupElements[0];
+            const popupButton = popupElements[1];
 
             popupButton.addEventListener("click", function() {
                 // Remove the popup and overlay when the close button is clicked
@@ -428,7 +430,9 @@ function onMessageReceived(event) {
             overlay_ended.id = "overlay";
             overlay_ended.classList.add("overlay");
 
-            popup, popupButton = createPopup("De wedstrijd is afgelopen.");
+            const popupElements = createPopup("De wedstrijd is afgelopen.");
+            const popup = popupElements[0];
+            const popupButton = popupElements[1];
 
             popupButton.addEventListener("click", function() {
                 // Remove the popup and overlay when the close button is clicked
@@ -457,13 +461,13 @@ function onMessageReceived(event) {
     }
 }
 
-function createPopup(popupText) {
+function createPopup(popupTextData) {
     // Create the popup container
     const popup = document.createElement("div");
     popup.classList.add("popup");
 
     const popupText = document.createElement("p");
-    popupText.innerHTML = popupText;
+    popupText.innerHTML = popupTextData;
     popupText.style.margin = "0";
     popupText.style.fontSize = "18px";
     popupText.style.fontWeight = "600";
@@ -487,7 +491,7 @@ function createPopup(popupText) {
     popupButton.style.cursor = "pointer";
     popupButton.style.userSelect = "none";
 
-    return popup, popupButton;
+    return [popup, popupButton];
 }
 
 function load_icon(element) {
