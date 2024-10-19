@@ -147,8 +147,11 @@ function updateEvents(data) {
         eventContainer.appendChild(textElement);
     }
 
+    console.log('test')
+
     // Adding the tracker button if required
-    if (data.access && !data.status == 'finished') {
+    if (data.access && data.status != 'finished') {
+        console.log('active')
         const buttonContainer = document.createElement("div");
         buttonContainer.classList.add("flex-center");
         buttonContainer.style.marginTop = "12px";
