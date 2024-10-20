@@ -101,6 +101,23 @@ function onMessageReceived(event) {
 
             break;
         }
+
+        case "part_end": {
+            const periode_p = document.getElementById("periode_number");
+            periode_p.innerHTML = data.part;
+
+            timer.stop();
+
+            timer = null;
+
+            let timer_p = document.getElementById("counter");
+    
+            // convert seconds to minutes and seconds
+            const minutes = data.part_length / 60;
+            const seconds = data.part_length % 60;
+            
+            timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
+        }
     }
 }
 

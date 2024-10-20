@@ -14,6 +14,8 @@ def match_detail(request, match_id):
     
     context = {
         "match": match_model,
+        "match_data": match_data,
+        "time_display": get_time_display(match_data),
         "start_date": match_model.start_time.strftime('%A, %d %B'),
         "start_time": match_model.start_time.strftime('%H:%M'),
         "home_score": Shot.objects.filter(match_data=match_data, team=match_model.home_team, scored=True).count(),
@@ -67,12 +69,7 @@ def match_tracker(request, match_id, team_id):
         opponent_data = match_model.home_team
         
     # calculate the time left in the current part if the part is not finished or started yet then set the time to the part lenght i have set the part_lenght to be in seconds
-    time_left = match_data.part_lenght
-        
-    # convert the seconds to minutes and seconds to display on the page make the numbers look nice with the %02d
-    minutes = int(time_left / 60)
-    seconds = int(time_left % 60)
-    time_display = "%02d:%02d" % (minutes, seconds)
+    
     
     # calculate the score for both the teams
     team_1_score = Shot.objects.filter(match_data=match_data, team=team_data, scored=True).count()
@@ -88,9 +85,7 @@ def match_tracker(request, match_id, team_id):
         
     context = {
         "match": match_data,
-        "minutes": minutes,
-        "seconds": seconds,
-        "time_display": time_display,
+        "time_display": get_time_display(match_data),
         "team_1": team_data,
         "team_1_score": team_1_score,
         "team_2": opponent_data,
@@ -101,3 +96,10 @@ def match_tracker(request, match_id, team_id):
     
     return render(request, "matches/tracker.html", context)
 
+def get_time_display(match_data):
+    time_left = match_data.part_lenght
+        
+    # convert the seconds to minutes and seconds to display on the page make the numbers look nice with the %02d
+    minutes = int(time_left / 60)
+    seconds = int(time_left % 60)
+    return "%02d:%02d" % (minutes, seconds)

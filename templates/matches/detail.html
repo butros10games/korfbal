@@ -32,14 +32,13 @@
                     </a>
 
                     <div class="flex-column" style="justify-content: center; margin-top: -14px;">
-                        {% if match.finished %}
+                        {% if match_data.status == 'finished' %}
                             <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
+                        {% elif match_data.status == 'active' %}
+                            <p style="font-size: 12px; margin: 0;">Perioide <span id="periode_number">{{ match_data.current_part }}</span>/{{ match_data.parts }}</p>
+                            <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
                         {% else %}
-                            {% if match.status == 'active' %}
-                                <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
-                            {% else %}
-                                <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
-                            {% endif %}
+                            <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p> 
                         {% endif %}
 
                         <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
@@ -57,7 +56,7 @@
                     <a class="button active" data="match_events">Events</a>
                     <a class="button" data="home_team">{{ match.home_team|truncate_middle:12 }}</a>
                     <a class="button" data="away_team">{{ match.away_team|truncate_middle:12 }}</a>
-                    {% if match.status != 'upcomming' %}
+                    {% if match_data.status != 'upcomming' %}
                     <a class="button" data="get_stats">statastieken</a>
                     {% endif %}
                 </div>

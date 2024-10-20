@@ -147,7 +147,7 @@ function scoringButtonSetup() {
             });
         }
     }
-
+    
     homeScoreButton.addEventListener("click", function () {
         toggleButton(homeScoreButton, "home");
     });
@@ -236,66 +236,21 @@ function initializeSocket(url) {
 
 function onMessageReceived(event) {
     const data = JSON.parse(event.data);
-    console.log(data);
+    const startStopButton = document.getElementById("start-stop-button");
 
     if (data.error) {
-        if (data.error === "match is paused") {
-            // give a notification like popup that the match is paused
-            const overlay = document.createElement("div");
-            overlay.id = "overlay";
-            overlay.classList.add("overlay");
-            
-            const popupElements = createPopup("De wedstrijd is gepauzeerd.");
-            const popup = popupElements[0];
-            const popupButton = popupElements[1];
-
-            popupButton.addEventListener("click", function() {
-                // Remove the popup and overlay when the close button is clicked
-                overlay.remove();
-
-                // remove the scroll lock
-                document.body.style.overflow = "";
-            });
-
-            popup.appendChild(popupButton);
-
-            // Append the popup to the overlay
-            overlay.appendChild(popup);
-
-            // Append the overlay to the body to cover the entire screen
-            document.body.appendChild(overlay);
-
-            // Disable scrolling on the body while the overlay is open
-            document.body.style.overflow = "hidden";
-        }
+        errorProcessing(data);
         return;
     }
 
-    const startStopButton = document.getElementById("start-stop-button");
-
     switch(data.command) {
         case "last_event": {
-            cleanDom(eventsDiv);
-            resetSwipe()
-            
-            updateEvent(data);
+            lastEvent(data);
             break;
         }
         
         case "playerGroups": {
-            cleanDom(eventsDiv);
-            cleanDom(playersDiv);
-
-            playerGroupsData = data;
-
-            if (data.match_active) {
-                showPlayerGroups(data);
-
-                shotButtonReg("home");
-                shotButtonReg("away");
-            } else {
-                updateplayerGroups(data, playersDiv); // imported from matches/common/updateplayerGroups.js
-            }
+            playerGroups(data);
             break;
         }
 
@@ -310,155 +265,223 @@ function onMessageReceived(event) {
         }
 
         case "timer_data": {
-            // remove the timer if it exists
-            if (timer) {
-                timer.destroy();
-                timer = null;
-            }
-
-            if (data.type === "active") {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000, true);
-                timer.start();
-
-                // set the pause button to pause
-                startStopButton.innerHTML = "Pause";
-
-            } else if (data.type === "pause") {
-                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true);
-                timer.stop();
-
-                // set the pause button to start
-                startStopButton.innerHTML = "Start";
-
-            } else if (data.type === "start") {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
-                timer.start();
-            }
-
+            timerData(data, startStopButton);
             break;
         }
 
         case "pause": {
-            if (data.pause === true) {
-                timer.stop();
-                console.log("Timer paused");
-
-                // set the pause button to start
-                startStopButton.innerHTML = "Start";
-
-            } else if (data.pause === false) {
-                timer.start(data.pause_time);
-                console.log("Timer resumed");
-
-                // set the pause button to pause
-                startStopButton.innerHTML = "Pause";
-            }
-
+            pauseTimer(data, startStopButton);
             break;
         }
 
         case "team_goal_change": {
             teamGoalChange(data);
-
-            // remove overlay
-            const overlay = document.getElementById("overlay");
-            if (overlay) {
-                overlay.remove();
-            }
-
-            // remove the collor change from the buttons
-            const activatedButton = document.querySelector(".activated");
-            if (activatedButton) {
-                activatedButton.click();
-            }
-
             break;
         }
 
         case "non_active_players": {
             showReservePlayer(data);
-
             break;
         }
 
         case "player_change": {
             playerChange(data);
-        
             break;
         }
 
         case "part_end": {
-            const periode_p = document.getElementById("periode_number");
-            periode_p.innerHTML = data.part;
-
-            // reset the timer
-            timer.stop();
-
-            // destroy the timer
-            timer = null;
-
-            let timer_p = document.getElementById("counter");
-            
-            // convert seconds to minutes and seconds
-            const minutes = data.part_length / 60;
-            const seconds = data.part_length % 60;
-            
-            timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
-
-            // hide the end half button
-            const endHalfButton = document.getElementById("end-half-button");
-            endHalfButton.style.display = "none";
-
-            // change the start/pause button to start
-            startStopButton.innerHTML = "start";
-
+            partEnd(data, startStopButton);
             break;
         }
 
         case "match_end": {
-            // remove the timer
-            if (timer) {
-                timer.stop();
-                timer = null;
-            }
-
-            // set the pause button to start
-            startStopButton.innerHTML = "match ended";
-
-            // add a overlay with the match end and a button when pressed it goes back to the match detail page
-            const overlay_ended = document.createElement("div");
-            overlay_ended.id = "overlay";
-            overlay_ended.classList.add("overlay");
-
-            const popupElements = createPopup("De wedstrijd is afgelopen.");
-            const popup = popupElements[0];
-            const popupButton = popupElements[1];
-
-            popupButton.addEventListener("click", function() {
-                // Remove the popup and overlay when the close button is clicked
-                overlay_ended.remove();
-
-                // remove the scroll lock
-                document.body.style.overflow = "";
-
-                // go back to the match detail page
-                window.location.href = "/match/" + data.match_id + "/";
-            });
-
-            popup.appendChild(popupButton);
-
-            // Append the popup to the overlay
-            overlay_ended.appendChild(popup);
-
-            // Append the overlay to the body to cover the entire screen
-            document.body.appendChild(overlay_ended);
-
-            // Disable scrolling on the body while the overlay is open
-            document.body.style.overflow = "hidden";
-
+            matchEnd(data, startStopButton);
             break;
         }
     }
+}
+
+function errorProcessing(data) {
+    if (data.error === "match is paused") {
+        // give a notification like popup that the match is paused
+        const overlay = document.createElement("div");
+        overlay.id = "overlay";
+        overlay.classList.add("overlay");
+        
+        const popupElements = createPopup("De wedstrijd is gepauzeerd.");
+        const popup = popupElements[0];
+        const popupButton = popupElements[1];
+
+        popupButton.addEventListener("click", function() {
+            // Remove the popup and overlay when the close button is clicked
+            overlay.remove();
+
+            // remove the scroll lock
+            document.body.style.overflow = "";
+        });
+
+        popup.appendChild(popupButton);
+
+        // Append the popup to the overlay
+        overlay.appendChild(popup);
+
+        // Append the overlay to the body to cover the entire screen
+        document.body.appendChild(overlay);
+
+        // Disable scrolling on the body while the overlay is open
+        document.body.style.overflow = "hidden";
+    }
+}
+
+function lastEvent(data) {
+    cleanDom(eventsDiv);
+    resetSwipe()
+    
+    updateEvent(data);
+}
+
+function playerGroups(data) {
+    cleanDom(eventsDiv);
+    cleanDom(playersDiv);
+
+    playerGroupsData = data;
+
+    if (data.match_active) {
+        showPlayerGroups(data);
+
+        shotButtonReg("home");
+        shotButtonReg("away");
+    } else {
+        updateplayerGroups(data, playersDiv); // imported from matches/common/updateplayerGroups.js
+    }
+}
+
+function timerData(data, startStopButton) {
+    // remove the timer if it exists
+    if (timer) {
+        timer.destroy();
+        timer = null;
+    }
+
+    if (data.type === "active") {
+        timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000, true);
+        timer.start();
+
+        // set the pause button to pause
+        startStopButton.innerHTML = "Pause";
+
+    } else if (data.type === "pause") {
+        timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true);
+        timer.stop();
+
+        // set the pause button to start
+        startStopButton.innerHTML = "Start";
+
+    } else if (data.type === "start") {
+        timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
+        timer.start();
+    }
+}
+
+function pauseTimer(data, startStopButton) {
+    if (data.pause === true) {
+        timer.stop();
+        console.log("Timer paused");
+
+        // set the pause button to start
+        startStopButton.innerHTML = "Start";
+
+    } else if (data.pause === false) {
+        timer.start(data.pause_time);
+        console.log("Timer resumed");
+
+        // set the pause button to pause
+        startStopButton.innerHTML = "Pause";
+    }
+}
+
+function teamGoalChange(data) {
+    teamGoalChange(data);
+
+    // remove overlay
+    const overlay = document.getElementById("overlay");
+    if (overlay) {
+        overlay.remove();
+    }
+
+    // remove the collor change from the buttons
+    const activatedButton = document.querySelector(".activated");
+    if (activatedButton) {
+        activatedButton.click();
+    }
+}
+
+function partEnd(data, startStopButton) {
+    const periode_p = document.getElementById("periode_number");
+    periode_p.innerHTML = data.part;
+
+    // reset the timer
+    timer.stop();
+
+    // destroy the timer
+    timer = null;
+
+    let timer_p = document.getElementById("counter");
+    
+    // convert seconds to minutes and seconds
+    const minutes = data.part_length / 60;
+    const seconds = data.part_length % 60;
+    
+    timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
+
+    // hide the end half button
+    const endHalfButton = document.getElementById("end-half-button");
+    endHalfButton.style.display = "none";
+
+    // change the start/pause button to start
+    startStopButton.innerHTML = "start";
+}
+
+function matchEnd(data, startStopButton) {
+    // remove the timer
+    if (timer) {
+        timer.stop();
+        timer = null;
+    }
+
+    // set the pause button to start
+    startStopButton.innerHTML = "match ended";
+
+    // add a overlay with the match end and a button when pressed it goes back to the match detail page
+    const overlay_ended = document.createElement("div");
+    overlay_ended.id = "overlay";
+    overlay_ended.classList.add("overlay");
+
+    const popupElements = createPopup("De wedstrijd is afgelopen.");
+    const popup = popupElements[0];
+    const popupButton = popupElements[1];
+
+    popupButton.addEventListener("click", function() {
+        // Remove the popup and overlay when the close button is clicked
+        overlay_ended.remove();
+
+        // remove the scroll lock
+        document.body.style.overflow = "";
+
+        // go back to the match detail page
+        window.location.href = "/match/" + data.match_id + "/";
+    });
+
+    popup.appendChild(popupButton);
+
+    // Append the popup to the overlay
+    overlay_ended.appendChild(popup);
+
+    // Append the overlay to the body to cover the entire screen
+    document.body.appendChild(overlay_ended);
+
+    // Disable scrolling on the body while the overlay is open
+    document.body.style.overflow = "hidden";
 }
 
 function createPopup(popupTextData) {
