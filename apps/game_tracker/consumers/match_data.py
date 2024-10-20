@@ -48,7 +48,7 @@ class match_data(AsyncWebsocketConsumer):
                 await self.get_events(user_id=json_data['user_id'])
                 
             elif command == "get_time":
-                self.send(text_data=await get_time(self.match_data, self.current_part))
+                await self.send(text_data=await get_time(self.match_data, self.current_part))
             
             elif command == "home_team" or command == "away_team":
                 await self.team_request(command, json_data['user_id'])
@@ -195,7 +195,7 @@ class match_data(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({
                 'command': 'events',
                 'events': events_dict,
-                'access': await self.check_access(user_id, self.match),
+                'access': await self.check_access(user_id, self.match) if user_id else False,
                 'status': self.match_data.status
             }))
         

@@ -72,7 +72,8 @@ function onMessageReceived(event) {
 
         case "timer_data": {
             if (timer) {
-                return;
+                timer.destroy();
+                timer = null;
             }
 
             if (data.type === "active") {

@@ -61,6 +61,7 @@ class match_tracker(AsyncWebsocketConsumer):
             }))
         
     async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.channel_names[0], self.channel_name)
         await self.channel_layer.group_discard(self.channel_names[1], self.channel_name)
         await self.channel_layer.group_discard(self.channel_names[2], self.channel_name)
     
@@ -91,7 +92,7 @@ class match_tracker(AsyncWebsocketConsumer):
                 await self.part_end()
                     
             elif command == "get_time":
-                self.send(text_data=await get_time(self.match_data, self.current_part))
+                await self.send(text_data=await get_time(self.match_data, self.current_part))
                     
             elif command == "last_event":
                 await self.send_last_event()
@@ -106,10 +107,10 @@ class match_tracker(AsyncWebsocketConsumer):
                 await self.removed_last_event()
 
         except Exception as e:
-                await self.send(text_data=json.dumps({
-                    'error': str(e),
-                    'traceback': traceback.format_exc()
-                }))
+            await self.send(text_data=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }))
                 
     async def save_player_groups(self, player_groups):
         for player_group in player_groups:
@@ -476,9 +477,13 @@ class match_tracker(AsyncWebsocketConsumer):
                 pause.active = True
                 pause.end_time = None
                 await pause.asave()
-                
-            # send the timer message
-            self.send(text_data=await get_time(self.match_data, self.current_part))
+            
+            time_data = await get_time(self.match_data, self.current_part)
+            
+            await self.channel_layer.group_send(self.channel_names[2], {
+                'type': 'send_data',
+                'data': json.loads(time_data)
+            })
             
         await self.send_last_event()
         
