@@ -275,7 +275,7 @@ function onMessageReceived(event) {
         }
 
         case "team_goal_change": {
-            teamGoalChange(data);
+            teamGoalChangeFunction(data);
             break;
         }
 
@@ -400,7 +400,7 @@ function pauseTimer(data, startStopButton) {
     }
 }
 
-function teamGoalChange(data) {
+function teamGoalChangeFunction(data) {
     teamGoalChange(data);
 
     // remove overlay

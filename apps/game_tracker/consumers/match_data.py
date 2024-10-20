@@ -171,16 +171,11 @@ class match_data(AsyncWebsocketConsumer):
         }))
             
     async def get_events(self, event=None, user_id=None):
-        try:
-            try:
-                part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
-            except MatchPart.DoesNotExist:
-                part = None
-                
+        try:   
             events_dict = []
             
             # check if there is a part active or the match is finished
-            if part != None or self.match_data.status == 'finished':
+            if self.match_data.status != 'upcomming':
                 events = await self.get_all_events()
                 
                 for event in events:
