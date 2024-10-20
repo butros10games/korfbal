@@ -39,23 +39,24 @@ function onMessageReceived(event) {
     console.log(data);
 
     switch(data.command) {
-        case "wedstrijden":
+        case "wedstrijden": {
             cleanDom(infoContainer);
 
             updateMatches(data); // imported from common/updateMatches.js
             break;
+        }
         
-        case "goal_stats":
-            cleanDom(infoContainer);
-
+        case "goal_stats": {
             UpdateStatastics(data.data); // imported from common/UpdateStatastics.js
             break;
+        }
 
-        case "spelers":
+        case "spelers": {
             cleanDom(infoContainer);
             
             updatePlayers(data);
             break;
+        }
     }
 }
 
