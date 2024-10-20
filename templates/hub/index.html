@@ -35,14 +35,12 @@
                             </div>
 
                             <div class="flex-column" style="justify-content: center; margin-top: -14px;">
-                                {% if match.finished %}
+                                {% if match_data.status == 'finished' %}
                                     <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
+                                {% elif match_data.status == 'active' %}
+                                    <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
                                 {% else %}
-                                    {% if match.active %}
-                                        <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
-                                    {% else %}
-                                        <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
-                                    {% endif %}
+                                    <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p>
                                 {% endif %}
         
                                 <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>

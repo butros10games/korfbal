@@ -18,19 +18,19 @@ def index(request):
         teams = Team.objects.filter(Q(team_data__players=player) | Q(team_data__coach=player)).distinct()
         # get the matches of the teams
         matches = Match.objects.filter(Q(home_team__in=teams) | Q(away_team__in=teams)).order_by('start_time')
-        # get the first match that is in the future
-        match = matches.filter(start_time__gte=timezone.now()).first()
         
-        if match:
-            match_data = MatchData.objects.get(match_link=match)
-        else:
-            match_data = None
+        # get the match datas of the matches
+        match_data = MatchData.objects.prefetch_related('match_link', "match_link__home_team", "match_link__away_team").filter(match_link__in=matches, status__in=['active', 'Upcomming']).order_by('match_link__start_time').first()
+        
+        if match_data:
+            match = match_data.match_link
     else:
         match = None
         
     context = {
         "display_back": True,
         "match": match,
+        "match_data": match_data,
         "match_date": match.start_time.strftime('%a, %d %b') if match else "No upcoming matches",
         "start_time": match.start_time.strftime('%H:%M') if match else "",
         "home_score": Shot.objects.filter(match_data=match_data, team=match.home_team, scored=True).count() if match else 0,
