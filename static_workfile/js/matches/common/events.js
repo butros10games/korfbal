@@ -12,6 +12,7 @@ window.createEventTypeDiv = function(type, width, backgroundColor) {
 window.createMidsectionDiv = function(description, playerText) {
     const midsectionDiv = document.createElement("div");
     midsectionDiv.classList.add("flex-column");
+    midsectionDiv.style.justifyContent = 'center';
 
     const descriptionDiv = document.createElement("div");
     descriptionDiv.classList.add("description");
@@ -31,6 +32,8 @@ window.createMidsectionDiv = function(description, playerText) {
 window.createScoreDiv = function(score, width) {
     const currentScoreDiv = document.createElement("div");
     currentScoreDiv.classList.add("current-score");
+    currentScoreDiv.classList.add("flex-column");
+    currentScoreDiv.style.justifyContent = 'center';
     currentScoreDiv.innerHTML = score;
     currentScoreDiv.style.width = width;
     return currentScoreDiv;

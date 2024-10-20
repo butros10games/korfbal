@@ -533,7 +533,7 @@ class match_tracker(AsyncWebsocketConsumer):
             events_dict = {
                 'time': time_in_minutes,
                 'player': last_event.player.user.username,
-                'shot_type': last_event.shot_type.name,
+                'shot_type': last_event.shot_type.name if last_event.shot_type else None,
                 'for_team': last_event.for_team,
                 **data_add
             }

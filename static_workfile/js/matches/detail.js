@@ -127,15 +127,21 @@ function updateEvents(data) {
             } else if (event.type == "wissel") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
                 const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
+                const endSectionDiv = document.createElement("div");
+                endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
+                eventDiv.appendChild(endSectionDiv);
             } else if (event.type == "pauze") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
                 const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
+                const endSectionDiv = document.createElement("div");
+                endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
+                eventDiv.appendChild(endSectionDiv);
             }
 
             eventContainer.appendChild(eventDiv);
@@ -147,11 +153,8 @@ function updateEvents(data) {
         eventContainer.appendChild(textElement);
     }
 
-    console.log('test')
-
     // Adding the tracker button if required
     if (data.access && data.status != 'finished') {
-        console.log('active')
         const buttonContainer = document.createElement("div");
         buttonContainer.classList.add("flex-center");
         buttonContainer.style.marginTop = "12px";

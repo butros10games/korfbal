@@ -734,11 +734,15 @@ function showReservePlayer(data) {
 function updateEvent(data) {
     const event = data.last_event;
     const eventsDiv = document.createElement("div");
+    eventsDiv.style.display = "flex";
+    eventsDiv.style.justifyContent = 'space-between';
+    eventsDiv.style.width = "100%";
+    eventsDiv.style.height = "100%";
 
     switch (event.type) {
         case "goal": {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
-            const midsectionDiv = createMidsectionDiv(event.goal_type + " (\"" + event.time + "\")", truncateMiddle(event.player, 20));
+            const midsectionDiv = createMidsectionDiv(event.shot_type + " (\"" + event.time + "\")", truncateMiddle(event.player, 20));
             const scoreDiv = createScoreDiv(event.goals_for + "-" + event.goals_against, "84px");
 
             eventsDiv.appendChild(eventTypeDiv);
@@ -749,17 +753,23 @@ function updateEvent(data) {
         case "wissel": {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
             const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
+            const endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
             break;
         }
         case "pause": {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
             const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
+            const endSectionDiv = document.createElement("div");
+            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
             break;
         }
         case "shot": {
@@ -794,7 +804,7 @@ function updateEvent(data) {
     }
 
     // Append eventsDiv to the container (assuming there's a container in the DOM to append it to)
-    const eventContainer = document.getElementById("event-container"); // Replace with the actual container ID
+    const eventContainer = document.getElementById("match-event"); // Replace with the actual container ID
     if (eventContainer) {
         eventContainer.appendChild(eventsDiv);
     } else {
