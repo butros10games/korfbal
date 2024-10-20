@@ -618,13 +618,11 @@ class PlayerGroupClass:
     
     async def player_group_request(self):
         player_groups_array = await self._make_player_group_list()
-        players_json = await self._make_player_list()
         
         return json.dumps({
             'command': 'playerGroups',
             'playerGroups': player_groups_array,
-            'players': players_json,
-            'full_player_list': await self._make_full_player_list(),
+            'players': await self._make_full_player_list(),
             'match_active': self.match_data.status == 'active'
         })
     
@@ -685,21 +683,6 @@ class PlayerGroupClass:
             }
 
         return [await _process_player_group(player_group) for player_group in player_groups]
-    
-    async def _make_player_list(self):
-        players_json = []
-        player_groups = await self.get_player_groups()
-        grouped_players = [player for group in player_groups for player in group.players.all()]
-        players = await sync_to_async(list)(
-            TeamData.objects.prefetch_related('players').filter(team=self.team).exclude(players__in=grouped_players).values_list('players', flat=True)
-        )
-        
-        for player in players:
-            player_json = await self._get_player_json(player)
-            if player_json:
-                players_json.append(player_json)
-        
-        return self._remove_duplicates(players_json)
     
     async def _make_full_player_list(self):
         season = await self._season_request()
