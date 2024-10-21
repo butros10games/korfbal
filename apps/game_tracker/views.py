@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.game_tracker.models import MatchData, PlayerGroup, Shot
+from apps.game_tracker.models import MatchData, PlayerGroup, Shot, Pause, MatchPart
 from apps.player.models import Player
 from apps.team.models import Team, TeamData
 from apps.schedule.models import Match
@@ -67,10 +67,7 @@ def match_tracker(request, match_id, team_id):
         opponent_data = match_model.away_team
     else:
         opponent_data = match_model.home_team
-        
-    # calculate the time left in the current part if the part is not finished or started yet then set the time to the part lenght i have set the part_lenght to be in seconds
-    
-    
+
     # calculate the score for both the teams
     team_1_score = Shot.objects.filter(match_data=match_data, team=team_data, scored=True).count()
     team_2_score = Shot.objects.filter(match_data=match_data, team=opponent_data, scored=True).count()
@@ -82,10 +79,19 @@ def match_tracker(request, match_id, team_id):
     for team_name in team_names:
         for group_name in player_group_names:
             PlayerGroup.objects.get_or_create(team=team_name, match_data=match_data, starting_type__name=group_name)
-        
+    
+    if match_data.status == 'upcomming':
+        button_text = "Start"
+    elif match_data.status == 'active':
+        if Pause.objects.filter(match_data=match_data, active=True).exists() or not MatchPart.objects.filter(match_data=match_data, active=True).exists():
+            button_text = "Start"
+        else:
+            button_text = "Pause"
+    
     context = {
         "match": match_data,
         "time_display": get_time_display(match_data),
+        "start_stop_button": button_text,
         "team_1": team_data,
         "team_1_score": team_1_score,
         "team_2": opponent_data,
