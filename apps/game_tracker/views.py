@@ -80,9 +80,8 @@ def match_tracker(request, match_id, team_id):
         for group_name in player_group_names:
             PlayerGroup.objects.get_or_create(team=team_name, match_data=match_data, starting_type__name=group_name)
     
-    if match_data.status == 'upcomming':
-        button_text = "Start"
-    elif match_data.status == 'active':
+    button_text = "Start"
+    if match_data.status == 'active':
         if Pause.objects.filter(match_data=match_data, active=True).exists() or not MatchPart.objects.filter(match_data=match_data, active=True).exists():
             button_text = "Start"
         else:

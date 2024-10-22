@@ -22,10 +22,12 @@ def index(request):
         # get the match datas of the matches
         match_data = MatchData.objects.prefetch_related('match_link', "match_link__home_team", "match_link__away_team").filter(match_link__in=matches, status__in=['active', 'Upcomming']).order_by('match_link__start_time').first()
         
+        match = None
         if match_data:
             match = match_data.match_link
     else:
         match = None
+        match_data = None
         
     context = {
         "display_back": True,
