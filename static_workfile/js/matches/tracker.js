@@ -82,79 +82,84 @@ function scoringButtonSetup() {
     const awayScoreButton = document.getElementById("away-score");
 
     function toggleButton(button, team) {
-        const playerButtonsContainer = document.getElementById(team === "home" ? "Aanval" : "Verdediging");
-        const playerButtons = playerButtonsContainer.getElementsByClassName("player-selector");
-    
         if (button.classList.contains("activated")) {
-            // Deactivate the button if it's already activated
-            button.style.background = team === "home" ? "#43ff6480" : "rgba(235, 0, 0, 0.5)";
-            button.classList.remove("activated");
-
+            deactivateButton(button, team);
             shotButtonReg(team);
         } else {
-            // remove the playerClickHandler from the player buttons
-            Array.from(playerButtons).forEach(element => {
-                if (element._playerClickHandler) {
-                    element.removeEventListener("click", element._playerClickHandler);
-                    delete element._playerClickHandler;
-                }
-            });
-
-            // First, deactivate the currently activated button (if any)
-            const activatedButton = document.querySelector(".activated");
-            if (activatedButton) {
-                const otherTeam = activatedButton === homeScoreButton ? "home" : "away";
-                activatedButton.style.background = otherTeam === "home" ? "#43ff6480" : "rgba(235, 0, 0, 0.5)";
-                activatedButton.classList.remove("activated");
-    
-                // Remove event listeners from the previously activated button
-                const otherPlayerButtonsContainer = document.getElementById(otherTeam === "home" ? "Aanval" : "Verdediging");
-                const otherPlayerButtons = otherPlayerButtonsContainer.getElementsByClassName("player-selector");
-                Array.from(otherPlayerButtons).forEach(element => {
-                    element.style.background = "";
-                    if (element._playerClickHandler) {
-                        element.removeEventListener("click", element._playerClickHandler);
-                        delete element._playerClickHandler;
-                    }
-                });
-            }
-    
-            // Activate the pressed button
-            button.style.background = team === "home" ? "#43ff64" : "rgba(235, 0, 0, 0.7)";
-            button.classList.add("activated");
-    
-            // Apply changes and add event listeners to the pressed button
-            Array.from(playerButtons).forEach(element => {
-                element.style.background = team === "home" ? "#43ff6480" : "rgba(235, 0, 0, 0.5)";
-    
-                const playerClickHandler = function () {
-
-                    const data = {
-                        "command": "get_goal_types"
-                    }
-
-                    last_goal_Data = {
-                        "player_id": element.id,
-                        "time": new Date().toISOString(),
-                        "for_team": team === "home",
-                    }
-
-                    socket.send(JSON.stringify(data));
-                };
-    
-                element._playerClickHandler = playerClickHandler;
-                element.addEventListener("click", playerClickHandler);
-            });
+            deactivateActivatedButton();
+            activateButton(button, team);
         }
     }
-    
-    homeScoreButton.addEventListener("click", function () {
-        toggleButton(homeScoreButton, "home");
-    });
 
-    awayScoreButton.addEventListener("click", function () {
-        toggleButton(awayScoreButton, "away");
-    });
+    function deactivateButton(button, team) {
+        const playerButtons = getPlayerButtons(team);
+        button.style.background = getButtonBackground(team, false);
+        button.classList.remove("activated");
+        removePlayerClickHandlers(playerButtons);
+    }
+
+    function deactivateActivatedButton() {
+        const activatedButton = document.querySelector(".activated");
+        if (activatedButton) {
+            const team = activatedButton === homeScoreButton ? "home" : "away";
+            deactivateButton(activatedButton, team);
+        }
+    }
+
+    function activateButton(button, team) {
+        const playerButtons = getPlayerButtons(team);
+        button.style.background = getButtonBackground(team, true);
+        button.classList.add("activated");
+        addPlayerClickHandlers(playerButtons, team);
+    }
+
+    function getPlayerButtons(team) {
+        const containerId = team === "home" ? "Aanval" : "Verdediging";
+        const playerButtonsContainer = document.getElementById(containerId);
+        return playerButtonsContainer.getElementsByClassName("player-selector");
+    }
+
+    function getButtonBackground(team, isActive) {
+        if (team === "home") {
+            return isActive ? "#43ff64" : "#43ff6480";
+        } else {
+            return isActive ? "rgba(235, 0, 0, 0.7)" : "rgba(235, 0, 0, 0.5)";
+        }
+    }
+
+    function removePlayerClickHandlers(playerButtons) {
+        Array.from(playerButtons).forEach(element => {
+            element.style.background = "";
+            if (element._playerClickHandler) {
+                element.removeEventListener("click", element._playerClickHandler);
+                delete element._playerClickHandler;
+            }
+        });
+    }
+
+    function addPlayerClickHandlers(playerButtons, team) {
+        Array.from(playerButtons).forEach(element => {
+            element.style.background = getButtonBackground(team, false);
+            const playerClickHandler = createPlayerClickHandler(element, team);
+            element._playerClickHandler = playerClickHandler;
+            element.addEventListener("click", playerClickHandler);
+        });
+    }
+
+    function createPlayerClickHandler(element, team) {
+        return function () {
+            const data = { "command": "get_goal_types" };
+            last_goal_Data = {
+                "player_id": element.id,
+                "time": new Date().toISOString(),
+                "for_team": team === "home",
+            };
+            socket.send(JSON.stringify(data));
+        };
+    }
+
+    homeScoreButton.addEventListener("click", () => toggleButton(homeScoreButton, "home"));
+    awayScoreButton.addEventListener("click", () => toggleButton(awayScoreButton, "away"));
 }
 
 function shotButtonReg(team) {
