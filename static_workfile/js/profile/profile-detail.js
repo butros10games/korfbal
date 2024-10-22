@@ -112,7 +112,7 @@ function uploadImage(blob) {
     const formData = new FormData();
     formData.append('profile_picture', blob, 'profile_picture.jpg'); // Set a default filename for the JPEG
 
-    fetch('/profile/upload_profile_picture/', {
+    fetch('/profile/api/upload_profile_picture/', {
         method: 'POST',
         body: formData,
         headers: {
