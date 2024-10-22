@@ -380,6 +380,8 @@ function timerData(data, startStopButton) {
     } else if (data.type === "start") {
         timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
         timer.start();
+
+        startStopButton.innerHTML = "Pause";
     }
 }
 
