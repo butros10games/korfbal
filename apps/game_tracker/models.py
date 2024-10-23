@@ -22,8 +22,6 @@ class MatchData(models.Model):
     current_part = models.IntegerField(default=1)
     part_lenght = models.IntegerField(default=1800)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='upcoming')
-    
-    players = models.ManyToManyField(player_model_string, related_name='match_data', blank=True)
 
     def get_winner(self):
         if self.home_score > self.away_score:
@@ -35,6 +33,15 @@ class MatchData(models.Model):
         
     def __str__(self):
         return str(self.match_link.home_team.name + " - " + self.match_link.away_team.name)
+    
+class MatchPlayer(models.Model):
+    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    match_data = models.ForeignKey('MatchData', on_delete=models.CASCADE, related_name='players')
+    team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name='match_players')
+    player = models.ForeignKey(player_model_string, on_delete=models.CASCADE, related_name='match_players')
+    
+    def __str__(self):
+        return str(self.player)
     
 class MatchPart(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)

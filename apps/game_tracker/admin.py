@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.db.models import Q
 
-from .models import MatchData, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot
+from .models import MatchData, PlayerGroup, GroupTypes, PlayerChange, GoalType, Pause, MatchPart, Shot, MatchPlayer
 
 
 class match_data_admin(admin.ModelAdmin):
@@ -20,6 +20,14 @@ class match_part_admin(admin.ModelAdmin):
     class Meta:
         model = MatchPart
 admin.site.register(MatchPart, match_part_admin)
+
+class match_player_admin(admin.ModelAdmin):
+    list_display = ["id_uuid", "match_data", "team", "player"]
+    show_full_result_count = False
+    
+    class Meta:
+        model = MatchPlayer
+admin.site.register(MatchPlayer, match_player_admin)
 
 class player_group_admin(admin.ModelAdmin):
     list_display = ["id_uuid", "team", "match_data", "starting_type", "current_type"]
