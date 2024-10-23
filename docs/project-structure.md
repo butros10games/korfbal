@@ -1,3 +1,6 @@
+# Kwt Project Structure
+
+```plaintext
 Kwt Project
 ├── apps/
 │   ├── club/
@@ -123,3 +126,4 @@ Kwt Project
 ├── requirements.txt
 ├── sonar-project.properties
 └── uwsgi.ini
+```
