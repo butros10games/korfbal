@@ -193,21 +193,11 @@ function updateEvents(data) {
     infoContainer.appendChild(eventContainer);
 }
 
-
 function wedstrijdPunten(event, thuis, uit, teamPositie) {
     if (event.for_team) {
-        if (teamPositie == 'home') {
-            thuis++;
-        } else {
-            uit++;
-        }
+        teamPositie == 'home' ? thuis++ : uit++;
     } else {
-        if (teamPositie == 'home') {
-            uit++;
-        } else {
-            thuis++;
-        }
+        teamPositie == 'home' ? uit++ : thuis++;
     }
-
     return [thuis, uit];
 }
