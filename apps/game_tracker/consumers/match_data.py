@@ -190,6 +190,7 @@ class match_data(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({
                 'command': 'events',
                 'events': events_dict,
+                'team_position': await self.get_team_position(events) if events else None,
                 'access': await self.check_access(user_id, self.match) if user_id else False,
                 'status': self.match_data.status
             }))
@@ -200,9 +201,19 @@ class match_data(AsyncWebsocketConsumer):
                 'traceback': traceback.format_exc()
             }))
             
+    async def get_team_position(self, events):
+        for event in events:
+            if event.match_part is not None:
+                if isinstance(event, Shot):
+                    return'home' if event.team == self.match.home_team else 'away'
+                elif isinstance(event, PlayerChange):
+                    return 'home' if event.player_group.team == self.match.home_team else 'away'
+                
+        return 'home'
+            
     async def get_all_events(self):
-        goals = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'shot_type', 'match_part').filter(match_data=self.match_data, scored=True).order_by('time'))
-        player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_in__user', 'player_out', 'player_out__user', 'player_group', 'match_part').filter(player_group__match_data=self.match_data).order_by('time'))
+        goals = await sync_to_async(list)(Shot.objects.prefetch_related('player__user', 'shot_type', 'match_part', 'team').filter(match_data=self.match_data, scored=True).order_by('time'))
+        player_change = await sync_to_async(list)(PlayerChange.objects.prefetch_related('player_in', 'player_in__user', 'player_out', 'player_out__user', 'player_group', 'player_group__team', 'match_part').filter(player_group__match_data=self.match_data).order_by('time'))
         time_outs = await sync_to_async(list)(Pause.objects.prefetch_related('match_part').filter(match_data=self.match_data).order_by('start_time'))
         
         # add all the events to a list and order them on time
