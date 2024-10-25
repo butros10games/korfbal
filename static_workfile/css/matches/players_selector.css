@@ -1,0 +1,77 @@
+body {
+    margin: 0;
+}
+
+.dm-sans-400-normal {
+    font-family: "DM Sans", sans-serif;
+    font-optical-sizing: auto;
+    font-weight: 400;
+    font-style: normal;
+}
+
+.dm-sans-600-normal {
+    font-family: "DM Sans", sans-serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-style: normal;
+}
+
+.flex-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.flex-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.box-48 {
+    width: 48px;
+    height: 48px;
+}
+
+.divider {
+    border-bottom: 1px solid var(--divider-color);
+    width: calc(100% - 2px);
+    margin: 0;
+}
+
+.scrollable {
+    overflow-y: auto;
+    height: calc(100vh - 160px);
+}
+
+.group-divider {
+    padding: 0 12px;
+
+    width: calc(100% - 24px);
+    height: 48px;
+
+    background-color: gray;
+}
+
+.player {
+    padding: 0 12px;
+
+    width: calc(100% - 24px);
+    height: 64px;
+
+    justify-content: flex-start;
+}
+
+.profile_picture {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+}

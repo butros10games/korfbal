@@ -1,0 +1,72 @@
+{% load static %}
+{% load custom_tags %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>{{ title }}</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/static/css/matches/players_selector.css">
+        <link rel="stylesheet" href="/static/css/color/color.css">
+
+        <link rel="icon" href="/static/images/logo/KWT_logo.png" type="image/x-icon">
+        
+        <link rel="manifest" href="/static/json/manifest.json">
+        <script src="/static/js/pwa/service-worker.js"></script>
+
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Krona+One&family=Merriweather&family=Noto+Sans&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        {% include 'overlays/navbar.html' %}
+
+        <div class="flex-column" style="margin-top: 48px;">
+            <div class="flex-row" style="width: calc(100% - 32px); margin: 0 16px; height: 48px;">
+                <p class="box-48"></p>
+
+                <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ team_model }}</p>
+
+                <p class="dm-sans-600-normal flex-center box-48" style="font-size: 36px; margin: 0;">+</p>
+            </div>
+
+            <hr class="divider">
+
+            <div id="player-field" class="flex-column scrollable">
+                {% for player_group in player_groups %}
+                    <div class="flex-row group-divider">
+                        <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ player_group.starting_type.name }}</p>
+                    </div>
+                    <hr class="divider">
+                    {% for player in player_group.players.all %}
+                        <div class="flex-row player">
+                            <img src={{ player.get_profile_picture }} alt="profile" class="profile_picture">
+                            <p class="dm-sans-400-normal" style="margin-left: 16px;">{{ player.user.username|truncate_middle:20 }}</p>
+                        </div>
+                        <hr class="divider">
+                    {% endfor %}
+                {% endfor %}
+                
+                {% if substitutes %}
+                    <div class="flex-row group-divider">
+                        <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">Wissels</p>
+                    </div>
+                    {% for player in substitutes %}
+                        <div class="flex-row player">
+                            <img src={{ player.get_profile_picture }} alt="profile" class="profile_picture">
+                            <p class="dm-sans-400-normal" style="margin-left: 16px;">{{ player.user.username|truncate_middle:20 }}</p>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+
+        <p style="display: none;" id="user_id">{{ request.user.id }}</p>
+
+        <script src="/static/js/common/truncateMiddle.js"></script>
+        <script src="/static/js/programs/mobile_view.js"></script>
+    </body>
+</html>

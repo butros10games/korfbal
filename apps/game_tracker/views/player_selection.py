@@ -4,23 +4,39 @@ from django.http import JsonResponse
 from apps.player.models import Player
 from apps.team.models import TeamData, Team
 from apps.schedule.models import Match
-from apps.game_tracker.models import MatchPlayer, PlayerGroup
+from apps.game_tracker.models import MatchPlayer, PlayerGroup, MatchData
 
 
 def player_overview(request, match_id, team_id):
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    team_model = get_object_or_404(Team, id_uuid=team_id)
+    
+    match_data = MatchData.objects.get(match_link=match_model)
+    
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type')
+    
+    # Extract UUIDs of players in player groups to avoid queryset issues
+    player_uuids = [player.id_uuid for player_group in player_groups for player in player_group.players.all()]
+    
+    # Exclude players with these UUIDs from match players
+    match_players = MatchPlayer.objects.filter(match_data=match_data, team=team_model).exclude(player__id_uuid__in=player_uuids)
+    
+    context = {
+        "team_model": team_model,
+        "player_groups": player_groups,
+        "substitutes": match_players
+    }
+    
+    return render(request, "matches/players_selector.html", context)
+
+def players_team(_, match_id, team_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
     
-    # get the current active teamData for the team
     team_data = TeamData.objects.get(team=team_model, season=match_data.season)
     
-    context = {
-        "match": match_data,
-        "team": team_data
-    }
+    return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in team_data.players.all()]})
     
-    return render(request, "matches/team_selector.html", context)
-
 def player_search(request):
     # get the name of the player that is searched for
     player_name = request.GET.get('player_name')

@@ -21,3 +21,9 @@ class Player(models.Model):
     
     def get_absolute_url(self):
         return reverse('profile_detail', kwargs={'player_id': self.id_uuid})
+    
+    def get_profile_picture(self):
+        if 'static' in self.profile_picture.url:
+            return self.profile_picture.url
+        else:
+            return '/media' + self.profile_picture.url
