@@ -48,8 +48,11 @@ body {
 }
 
 .scrollable {
-    overflow-y: auto;
+    width: 100%;
     height: calc(100vh - 160px);
+
+    overflow-y: auto;
+    position: relative;
 }
 
 .group-divider {
@@ -74,4 +77,16 @@ body {
     width: 48px;
     height: 48px;
     border-radius: 50%;
+}
+
+.options-bar {
+    width: 100%;
+    height: 48px;
+    background-color: #1b1b1b;
+
+    position: absolute;
+    bottom: 64px;
+    left: 0;
+
+    z-index: 1;
 }

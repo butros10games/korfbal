@@ -13,18 +13,11 @@ def player_overview(request, match_id, team_id):
     
     match_data = MatchData.objects.get(match_link=match_model)
     
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type')
-    
-    # Extract UUIDs of players in player groups to avoid queryset issues
-    player_uuids = [player.id_uuid for player_group in player_groups for player in player_group.players.all()]
-    
-    # Exclude players with these UUIDs from match players
-    match_players = MatchPlayer.objects.filter(match_data=match_data, team=team_model).exclude(player__id_uuid__in=player_uuids)
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
     
     context = {
         "team_model": team_model,
         "player_groups": player_groups,
-        "substitutes": match_players
     }
     
     return render(request, "matches/players_selector.html", context)

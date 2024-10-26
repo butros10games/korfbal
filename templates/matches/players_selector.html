@@ -35,7 +35,7 @@
 
             <hr class="divider">
 
-            <div id="player-field" class="flex-column scrollable">
+            <div id="player-field" class="scrollable">
                 {% for player_group in player_groups %}
                     <div class="flex-row group-divider">
                         <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ player_group.starting_type.name }}</p>
@@ -51,24 +51,14 @@
                     {% endfor %}
                     </div>
                 {% endfor %}
-                
-                {% if substitutes %}
-                    <div class="flex-row group-divider">
-                        <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">Wissels</p>
-                    </div>
-                    <div id="subsitutes" class="flex-column">
-                    {% for player in substitutes %}
-                        <div id="{{ player.id_uuid }}" class="flex-row player">
-                            <img src={{ player.get_profile_picture }} alt="profile" class="profile_picture">
-                            <p class="dm-sans-400-normal" style="margin-left: 16px;">{{ player.user.username|truncate_middle:20 }}</p>
-                        </div>
-                    {% endfor %}
-                    </div>
-                {% endif %}
             </div>
         </div>
 
         <p style="display: none;" id="user_id">{{ request.user.id }}</p>
+
+        {% for player_group in player_groups %}
+            <p style="display: none;" id="{{ player_group.starting_type.id_uuid }}">{{ player_group.id_uuid }}</p>
+        {% endfor %}
 
         <script src="/static/js/common/truncateMiddle.js"></script>
         <script src="/static/js/matches/players_selector.js"></script>
