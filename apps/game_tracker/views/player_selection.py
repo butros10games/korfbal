@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from apps.player.models import Player
 from apps.team.models import TeamData, Team
 from apps.schedule.models import Match
-from apps.game_tracker.models import MatchPlayer, PlayerGroup, MatchData
+from apps.game_tracker.models import PlayerGroup, MatchData, GroupTypes
 
 
 def player_overview(request, match_id, team_id):
@@ -43,12 +43,16 @@ def player_selection(request, match_id, team_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
     
+    reserve_model = GroupTypes.objects.get(name="Reserve")
+    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=reserve_model)
+    
     # get the player ids from the request
     player_ids = request.POST.getlist('players')
     
-    # add all the players to the match players model
     for player_id in player_ids:
-        MatchPlayer.objects.get_or_create(match_data=match_data, team=team_model, player=Player.objects.get(id_uuid=player_id))
+        player_group_model.players.add(Player.objects.get(id_uuid=player_id))
+    
+    player_group_model.save()
         
     return JsonResponse({"success": True})
 
@@ -57,12 +61,29 @@ def player_designation(request, match_id, team_id):
     team_model = get_object_or_404(Team, id_uuid=team_id)
     
     # get the player ids from the request
-    player_group_data = request.POST.getlist('player_group')
+    new_group_id = request.POST.getlist('new_group_id')
+    old_group_id = request.POST.getlist('old_group_id')
+    player_ids = request.POST.getlist('players')
     
-    player_group_type = player_group_data.group_type
-    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=player_group_type)
+    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=new_group_id))
+    old_player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=old_group_id))
     
-    for player_id in player_group_data.player_ids:
+    for player_id in player_ids:
+        old_player_group_model.players.remove(Player.objects.get(id_uuid=player_id))
         player_group_model.players.add(Player.objects.get(id_uuid=player_id))
         
+    return JsonResponse({"success": True})
+
+def player_remove_group(request, match_id, team_id):
+    match_data = get_object_or_404(Match, id_uuid=match_id)
+    team_model = get_object_or_404(Team, id_uuid=team_id)
+    
+    old_group_id = request.POST.getlist('old_group_id')
+    player_ids = request.POST.getlist('players')
+    
+    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=old_group_id))
+    
+    for player_id in player_ids:
+        player_group_model.players.remove(Player.objects.get(id_uuid=player_id))
+    
     return JsonResponse({"success": True})

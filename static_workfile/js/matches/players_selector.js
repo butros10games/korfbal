@@ -3,9 +3,9 @@ let group_id = null;
 
 // options for the group types
 const group_types = {
-    "01927d88-6878-7d0f-acbf-28c251fbc2b5": ["Remove"], // attack
-    "01927d88-57ef-7339-a791-67cf856bfea1": ["Remove"], // defense
-    "0192c7bb-c664-77fd-8a29-acde6f428c93": ["Remove", "Atack", "Defense"] // reserve
+    "01927d88-6878-7d0f-acbf-28c251fbc2b5": [{"text": "Remove", "function": changePlayerGroup}], // attack
+    "01927d88-57ef-7339-a791-67cf856bfea1": [{"text": "Remove", "function": changePlayerGroup}], // defense
+    "0192c7bb-c664-77fd-8a29-acde6f428c93": [{"text": "Remove", "function": removePlayerReserve}, {"text": "Atack", "function": changePlayerGroup}, {"text": "Defense", "function": changePlayerGroup}] // reserve
 };
 
 const typeIds= [
@@ -67,6 +67,7 @@ function highlightSelectedPlayer(player, selected_players) {
 function showOptionsBar(group_id) {
     if (selected_players.length === 1) {
         const optionsBar = document.createElement("div");
+        optionsBar.classList.add("flex-row");
         optionsBar.classList.add("options-bar");
         optionsBar.id = "options-bar";
 
@@ -80,20 +81,10 @@ function showOptionsBar(group_id) {
 
         for (const option of options) {
             const button = document.createElement("button");
-            button.innerText = option;
+            button.innerText = option.text;
             button.addEventListener("click", function() {
-                if (option === "Remove") {
-                    for (const player_id of selected_players) {
-                        const player = document.getElementById(player_id);
-                        player.style.backgroundColor = "white";
-                    }
-                    selected_players = [];
-                    group_id = null;
-
-                    removeOptionsBar();
-                } else {
-                    console.log("Change the group of the selected players to " + option);
-                }
+                option.function(selected_players);
+                removeOptionsBar();
             });
             optionsBar.appendChild(button);
         }
@@ -126,4 +117,16 @@ function fillTypeIDToGroupId() {
     }
 
     console.log(groupIdsToTypeIds);
+}
+
+function changePlayerGroup(selected_players) {
+    // remove the player from the group and add it to the reserve
+    // url = /matches/remove_player_group/match_id/team_id
+    // data in body = {"player_id": player_id, "new_group_id": new_group_id, "old_group_id": old_group_id}
+}
+
+function removePlayerReserve(selected_players) {
+    // remove the player from the reserve
+    // url = /matches/remove_player_reserve/match_id/team_id
+    // data in body = {"player_id": player_id, "old_group_id": old_group_id}
 }
