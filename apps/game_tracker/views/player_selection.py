@@ -28,6 +28,35 @@ def player_overview(request, match_id, team_id):
     
     return render(request, "matches/players_selector.html", context)
 
+def player_overview_data(_, match_id, team_id):
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    team_model = get_object_or_404(Team, id_uuid=team_id)
+    
+    match_data = MatchData.objects.get(match_link=match_model)
+    
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')
+    
+    player_groups_data = []
+    for player_group in player_groups:
+        players_data = []
+        for player in player_group.players.all():
+            players_data.append({
+                "id_uuid": str(player.id_uuid),
+                "user": {
+                    "username": player.user.username
+                },
+                "get_profile_picture": player.get_profile_picture()
+            })
+        player_groups_data.append({
+            "id_uuid": str(player_group.id_uuid),
+            "starting_type": {
+                "name": player_group.starting_type.name
+            },
+            "players": players_data
+        })
+    
+    return JsonResponse({"player_groups": player_groups_data})
+
 def players_team(_, match_id, team_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
