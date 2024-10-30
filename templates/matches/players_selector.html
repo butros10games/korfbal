@@ -37,6 +37,7 @@
 
             <div id="player-field" class="scrollable">
                 {% for player_group in player_groups %}
+                {% if player_group.players.all %}
                     <div class="flex-row group-divider">
                         <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ player_group.starting_type.name }}</p>
                     </div>
@@ -50,6 +51,7 @@
                         <hr class="divider">
                     {% endfor %}
                     </div>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>

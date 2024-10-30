@@ -23,7 +23,8 @@ def previous_page(request):
         Q(page__icontains='api') |
         Q(page__icontains='login') |
         Q(page__icontains='logout') |
-        Q(page__icontains='register')
+        Q(page__icontains='register') |
+        Q(page__icontains='favicon.ico')
     ).values_list('page', flat=True)
 
     # Remove consecutive duplicate URLs
