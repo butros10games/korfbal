@@ -42,7 +42,7 @@
                         <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ player_group.starting_type.name }}</p>
                     </div>
                     <hr class="divider">
-                    <div id="{{ player_group.id_uuid }}" class="flex-column">
+                    <div id="{{ player_group.id_uuid }}" class="flex-column player-group">
                     {% for player in player_group.players.all %}
                         <div id="{{ player.id_uuid }}" class="flex-row player">
                             <img src={{ player.get_profile_picture }} alt="profile" class="profile_picture">

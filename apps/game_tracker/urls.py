@@ -10,5 +10,5 @@ urlpatterns = [
     
     path('api/player_search/', views.player_search, name='player_search'),
     path('api/player_selection/<uuid:match_id>/<uuid:team_id>/', views.player_selection, name='player_selection'),
-    path('api/player_designation/<uuid:match_id>/<uuid:team_id>/', views.player_designation, name='player_designation'),
+    path('api/player_designation/', views.player_designation, name='player_designation'),
 ]
