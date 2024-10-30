@@ -55,6 +55,7 @@
         </div>
 
         <p style="display: none;" id="user_id">{{ request.user.id }}</p>
+        <p style="display: none;" id="team_id">{% csrf_token %}</p>
 
         {% for player_group in player_groups %}
             <p style="display: none;" id="{{ player_group.starting_type.id_uuid }}">{{ player_group.id_uuid }}</p>

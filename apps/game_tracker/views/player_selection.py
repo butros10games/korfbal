@@ -6,6 +6,12 @@ from apps.team.models import TeamData, Team
 from apps.schedule.models import Match
 from apps.game_tracker.models import PlayerGroup, MatchData, GroupTypes
 
+import json
+
+invalid_request = JsonResponse({"error": "Invalid request method"}, status=405)
+json_error = JsonResponse({"error": "Invalid JSON data"}, status=400)
+no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
+to_many_players_selected = JsonResponse({"error": "Too many players selected"}, status=400)
 
 def player_overview(request, match_id, team_id):
     match_model = get_object_or_404(Match, id_uuid=match_id)
@@ -13,7 +19,7 @@ def player_overview(request, match_id, team_id):
     
     match_data = MatchData.objects.get(match_link=match_model)
     
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')
     
     context = {
         "team_model": team_model,
@@ -31,6 +37,18 @@ def players_team(_, match_id, team_id):
     return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in team_data.players.all()]})
     
 def player_search(request):
+    if request.method != "GET":
+        return invalid_request
+    
+    if not request.GET.get('player_name'):
+        return no_player_selected
+    
+    if len(request.GET.get('player_name')) < 3:
+        return JsonResponse({"success": False, "error": "Player name should be at least 3 characters long"})
+    
+    if len(request.GET.get('player_name')) > 50:
+        return JsonResponse({"success": False, "error": "Player name should be at most 50 characters long"})
+    
     # get the name of the player that is searched for
     player_name = request.GET.get('player_name')
     
@@ -40,6 +58,15 @@ def player_search(request):
     return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in players]})
 
 def player_selection(request, match_id, team_id):
+    if request.method != "POST":
+        return invalid_request
+    
+    if not request.POST.getlist('players'):
+        return no_player_selected
+    
+    if len(request.POST.getlist('players')) > 16:
+        return to_many_players_selected
+    
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
     
@@ -56,34 +83,34 @@ def player_selection(request, match_id, team_id):
         
     return JsonResponse({"success": True})
 
-def player_designation(request, match_id, team_id):
-    match_data = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
+def player_designation(request):
+    if request.method != "POST":
+        return invalid_request
     
-    # get the player ids from the request
-    new_group_id = request.POST.getlist('new_group_id')
-    old_group_id = request.POST.getlist('old_group_id')
-    player_ids = request.POST.getlist('players')
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return json_error
     
-    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=new_group_id))
-    old_player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=old_group_id))
+    selected_players = data.get('players', [])
+    new_group_id = data.get('new_group_id')
     
-    for player_id in player_ids:
-        old_player_group_model.players.remove(Player.objects.get(id_uuid=player_id))
-        player_group_model.players.add(Player.objects.get(id_uuid=player_id))
-        
-    return JsonResponse({"success": True})
+    if not selected_players:
+        return no_player_selected
+    
+    if len(selected_players) > 4:
+        return to_many_players_selected
 
-def player_remove_group(request, match_id, team_id):
-    match_data = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
-    
-    old_group_id = request.POST.getlist('old_group_id')
-    player_ids = request.POST.getlist('players')
-    
-    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=GroupTypes.objects.get(id_uuid=old_group_id))
-    
-    for player_id in player_ids:
-        player_group_model.players.remove(Player.objects.get(id_uuid=player_id))
-    
+    if new_group_id:
+        player_group_model = PlayerGroup.objects.get(id_uuid=new_group_id)
+
+    for player_data in selected_players:
+        player_id = player_data.get('playerId')
+        old_group_id = player_data.get('groupId')
+        
+        PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(Player.objects.get(id_uuid=player_id))
+        
+        if player_group_model:
+            player_group_model.players.add(Player.objects.get(id_uuid=player_id))
+
     return JsonResponse({"success": True})

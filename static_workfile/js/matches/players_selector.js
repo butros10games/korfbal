@@ -1,132 +1,152 @@
-let selected_players = [];
-let group_id = null;
+let selectedPlayers = [];
+let groupId = null;
+let csrfToken = null;
+let matchId = null;
+let teamId = null;
 
-// options for the group types
-const group_types = {
-    "01927d88-6878-7d0f-acbf-28c251fbc2b5": [{"text": "Remove", "function": changePlayerGroup}], // attack
-    "01927d88-57ef-7339-a791-67cf856bfea1": [{"text": "Remove", "function": changePlayerGroup}], // defense
-    "0192c7bb-c664-77fd-8a29-acde6f428c93": [{"text": "Remove", "function": removePlayerReserve}, {"text": "Atack", "function": changePlayerGroup}, {"text": "Defense", "function": changePlayerGroup}] // reserve
+const groupTypes = {
+    "01927d88-6878-7d0f-acbf-28c251fbc2b5": [{ text: "Remove", func: changePlayerGroup, id: "0192c7bb-c664-77fd-8a29-acde6f428c93" }], // attack
+    "01927d88-57ef-7339-a791-67cf856bfea1": [{ text: "Remove", func: changePlayerGroup, id: "0192c7bb-c664-77fd-8a29-acde6f428c93" }], // defense
+    "0192c7bb-c664-77fd-8a29-acde6f428c93": [
+        { text: "Remove", func: changePlayerGroup },
+        { text: "Attack", func: changePlayerGroup, id: "01927d88-6878-7d0f-acbf-28c251fbc2b5" },
+        { text: "Defense", func: changePlayerGroup, id: "01927d88-57ef-7339-a791-67cf856bfea1" }
+    ] // reserve
 };
 
-const typeIds= [
+const typeIds = [
     "01927d88-6878-7d0f-acbf-28c251fbc2b5",
     "01927d88-57ef-7339-a791-67cf856bfea1",
     "0192c7bb-c664-77fd-8a29-acde6f428c93"
 ];
 
 const groupIdsToTypeIds = {};
+const TypeIdsToGroupIds = {};
 
-window.addEventListener("DOMContentLoaded", function() {
-    fillTypeIDToGroupId()
+window.addEventListener("DOMContentLoaded", initialize);
 
-    playerButtons();
-});
+function initialize() {
+    csrfToken = document.getElementsByName("csrfmiddlewaretoken")[0].value;
+    [matchId, teamId] = parseUrl();
+    mapGroupIdsToTypeIds();
+    mapTypeIdsToGroupIds();
+    setupPlayerButtons();
+}
 
-function playerButtons() {
-    // get all the elements with the class 'player'
-    const players = document.getElementsByClassName("player");
+function parseUrl() {
+    const urlParts = window.location.href.split("/");
+    return [urlParts[urlParts.length - 3], urlParts[urlParts.length - 2]];
+}
 
-    for (const player of players) {
-        player.addEventListener("click", function() {
-            const group_id_local = player.parentElement ? player.parentElement.id : null;
-            
-            if (group_id == group_id_local || group_id == null) {
-                if (!selected_players.includes(player.id)) {
-                    const player_id = player.id;
+function setupPlayerButtons() {
+    document.querySelectorAll(".player").forEach(player => {
+        player.addEventListener("click", () => handlePlayerSelection(player));
+    });
+}
 
-                    selected_players.push(player_id);
-                    group_id = group_id_local;
+function handlePlayerSelection(player) {
+    const localGroupId = player.parentElement?.id || null;
 
-                    highlightSelectedPlayer(player, selected_players);
-
-                    showOptionsBar(group_id);
-                } else {
-                    const index = selected_players.indexOf(player.id);
-                    selected_players.splice(index, 1);
-                    if (selected_players.length === 0) {
-                        group_id = null;
-                    }
-
-                    highlightSelectedPlayer(player, selected_players);
-
-                    removeOptionsBar();
-                }
-            }
-        });
+    if (groupId === localGroupId || groupId === null) {
+        togglePlayerSelection(player, localGroupId);
     }
 }
 
-function highlightSelectedPlayer(player, selected_players) {
-    if (selected_players.includes(player.id)) {
-        player.style.backgroundColor = "lightblue";
+function togglePlayerSelection(player, localGroupId) {
+    const playerId = player.id;
+    const playerIndex = selectedPlayers.findIndex(p => p.playerId === playerId);
+
+    if (playerIndex === -1) {
+        selectedPlayers.push({ playerId, groupId: localGroupId });
+        groupId = localGroupId;
     } else {
-        player.style.backgroundColor = "white";
+        selectedPlayers.splice(playerIndex, 1);
+        if (selectedPlayers.length === 0) groupId = null;
+    }
+    highlightSelectedPlayer(player);
+    updateOptionsBar();
+}
+
+function updateOptionsBar() {
+    if (selectedPlayers.length > 0) {
+        if (!document.getElementById("options-bar")) {
+            showOptionsBar();
+        }
+    } else {
+        removeOptionsBar();
     }
 }
 
-function showOptionsBar(group_id) {
-    if (selected_players.length === 1) {
-        const optionsBar = document.createElement("div");
-        optionsBar.classList.add("flex-row");
-        optionsBar.classList.add("options-bar");
-        optionsBar.id = "options-bar";
+function highlightSelectedPlayer(player) {
+    player.style.backgroundColor = selectedPlayers.some(p => p.playerId === player.id) ? "lightblue" : "white";
+}
 
-        console.log(group_id);
-        console.log(groupIdsToTypeIds[group_id]);
+function showOptionsBar() {
+    const optionsBar = document.createElement("div");
+    optionsBar.classList.add("flex-row", "options-bar");
+    optionsBar.id = "options-bar";
 
-        // add the buttons with the options
-        const options = group_types[groupIdsToTypeIds[group_id]];
+    const options = groupTypes[groupIdsToTypeIds[groupId]];
+    options.forEach(option => {
+        const button = document.createElement("button");
+        button.innerText = option.text;
+        button.addEventListener("click", () => {
+            option.func(selectedPlayers, TypeIdsToGroupIds[option.id] || null);
+            removeOptionsBar();
+        });
+        optionsBar.appendChild(button);
+    });
 
-        console.log(options);
-
-        for (const option of options) {
-            const button = document.createElement("button");
-            button.innerText = option.text;
-            button.addEventListener("click", function() {
-                option.function(selected_players);
-                removeOptionsBar();
-            });
-            optionsBar.appendChild(button);
-        }
-        
-        document.body.appendChild(optionsBar);
-
-        // change the hight of the class 'scrollable' to make space for the options bar
-        const scrollable = document.getElementsByClassName("scrollable")[0];
-        scrollable.style.height = "calc(100vh - 208px)";
-    }
+    document.body.appendChild(optionsBar);
+    adjustScrollableHeight("calc(100vh - 208px)");
 }
 
 function removeOptionsBar() {
-    if (selected_players.length === 0) {
-        const optionsBar = document.getElementById("options-bar");
-        if (optionsBar) {
-            optionsBar.remove();
-
-            // change the hight of the class 'scrollable' to make space for the options bar
-            const scrollable = document.getElementsByClassName("scrollable")[0];
-            scrollable.style.height = "";
-        }
+    const optionsBar = document.getElementById("options-bar");
+    if (optionsBar) {
+        optionsBar.remove();
+        adjustScrollableHeight();
     }
 }
 
-function fillTypeIDToGroupId() {
-    for (const typeId of typeIds) {
-        const group_id = document.getElementById(typeId).innerText;
-        groupIdsToTypeIds[group_id] = typeId;
+function adjustScrollableHeight(height = "") {
+    document.querySelector(".scrollable").style.height = height;
+}
+
+function mapGroupIdsToTypeIds() {
+    typeIds.forEach(typeId => {
+        const groupElement = document.getElementById(typeId);
+        if (groupElement) groupIdsToTypeIds[groupElement.innerText] = typeId;
+    });
+}
+
+function mapTypeIdsToGroupIds() {
+    typeIds.forEach(typeId => {
+        const groupElement = document.getElementById(typeId);
+        if (groupElement) TypeIdsToGroupIds[typeId] = groupElement.innerText;
+    });
+}
+
+function changePlayerGroup(selectedPlayers, newGroupId) {
+    fetchData(`/match/api/player_designation/`, {
+        players: selectedPlayers,
+        new_group_id: newGroupId
+    });
+}
+
+async function fetchData(url, bodyData) {
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken
+            },
+            body: JSON.stringify(bodyData)
+        });
+        if (response.ok) console.log("Player group updated successfully.");
+        else throw new Error("Error updating player group.");
+    } catch (error) {
+        console.error(error.message);
     }
-
-    console.log(groupIdsToTypeIds);
-}
-
-function changePlayerGroup(selected_players) {
-    // remove the player from the group and add it to the reserve
-    // url = /matches/remove_player_group/match_id/team_id
-    // data in body = {"player_id": player_id, "new_group_id": new_group_id, "old_group_id": old_group_id}
-}
-
-function removePlayerReserve(selected_players) {
-    // remove the player from the reserve
-    // url = /matches/remove_player_reserve/match_id/team_id
-    // data in body = {"player_id": player_id, "old_group_id": old_group_id}
 }

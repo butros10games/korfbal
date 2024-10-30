@@ -10,5 +10,5 @@ __all__ = [
     'player_overview',
     'player_search',
     'player_selection',
-    'player_designation'
+    'player_designation',
 ]
