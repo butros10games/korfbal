@@ -338,23 +338,11 @@ class match_tracker(AsyncWebsocketConsumer):
                 })
                 
     async def get_non_active_players(self):
-        # Get all player groups for the team and remove the players that are already in a group
-        player_groups = await self.player_group_class.get_player_groups()
-        grouped_players = [player for group in player_groups for player in group.players.all()]
-        
-        season = await self.season_request()
-        
-        # Get all players for the team, excluding those that are already in a group
-        team_data_list = await sync_to_async(list)(TeamData.objects.prefetch_related('players', 'players__user').filter(team=self.team, season=season))
-
-        # Get all players for each TeamData object, excluding those that are already in a group
-        all_players = [player for team_data in team_data_list for player in team_data.players.all()]
-        
-        ## romove the players that are already in a group
-        non_play_players = [player for player in all_players if player not in grouped_players]
+        # Get the players that are currently in the reserve player group
+        reserve_group = await PlayerGroup.objects.prefetch_related('players', 'players__user').aget(match_data=self.match_data, team=self.team, starting_type__name='Reserve')
         
         players_json = []
-        for player in non_play_players:
+        for player in reserve_group.players.all():
             try:
                 players_json.append({
                     'id': str(player.id_uuid),
@@ -378,9 +366,14 @@ class match_tracker(AsyncWebsocketConsumer):
         
         player_in = await Player.objects.prefetch_related('user').aget(id_uuid=new_player_id)
         player_out = await Player.objects.prefetch_related('user').aget(id_uuid=old_player_id)
+        
+        player_reserve_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, starting_type__name='Reserve')
         player_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, players__in=[player_out])
         
         await player_group.players.aremove(player_out)
+        await player_reserve_group.players.aadd(player_out)
+        
+        await player_reserve_group.players.aremove(player_in)
         await player_group.players.aadd(player_in)
         
         await PlayerChange.objects.acreate(player_in=player_in, player_out=player_out, player_group=player_group, match_data=self.match_data, match_part = self.current_part, time = time)
@@ -456,11 +449,16 @@ class match_tracker(AsyncWebsocketConsumer):
             # get and delete the last player change event
             player_change = await PlayerChange.objects.prefetch_related('player_group', 'player_in', 'player_out').aget(match_part = event.match_part, time = event.time)
             player_group = await PlayerGroup.objects.aget(id_uuid=player_change.player_group.id_uuid)
+            player_reserve_group = await PlayerGroup.objects.aget(team=self.team, match_data=self.match_data, starting_type__name='Reserve')
             
             await player_group.players.aremove(player_change.player_in)
+            await player_reserve_group.players.aadd(player_change.player_in)
+            
             await player_group.players.aadd(player_change.player_out)
+            await player_reserve_group.players.aremove(player_change.player_out)
             
             await player_group.asave()
+            await player_reserve_group.asave()
             
             await player_change.adelete()
             
@@ -637,6 +635,8 @@ class PlayerGroupClass:
                 'players', 'players__user', 'starting_type', 'current_type'
             ).filter(
                 match_data=self.match_data, team=self.team
+            ).exclude(
+                starting_type__name='Reserve'
             ).order_by(
                 Case(When(current_type__name='Aanval', then=0), default=1), 'starting_type'
             )

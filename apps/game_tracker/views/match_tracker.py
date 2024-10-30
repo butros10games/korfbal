@@ -28,7 +28,7 @@ def match_tracker(request, match_id, team_id):
 
     for team_name in team_names:
         for group_name in player_group_names:
-            PlayerGroup.objects.get_or_create(team=team_name, match_data=match_data, starting_type__name=group_name)
+            PlayerGroup.objects.get(team=team_name, match_data=match_data, starting_type__name=group_name)
     
     button_text = "Start"
     if match_data.status == 'active':
