@@ -6,6 +6,7 @@ class PlayerGroupManager {
         this.csrfToken = null;
         this.matchId = null;
         this.teamId = null;
+        this.doneButton = null;
         this.playerGroupsData = [];
         this.groupTypes = this.initializeGroupTypes();
         this.typeIds = [
@@ -16,6 +17,9 @@ class PlayerGroupManager {
         this.groupIdToTypeId = {};
         this.typeIdToGroupId = {};
         this.groupIdToStartingType = {};
+
+        this.boundLinkBack = this.linkBack.bind(this);
+        this.boundFetchPlayersGroupsData = this.fetchPlayersGroupsData.bind(this);
     }
 
     initializeGroupTypes() {
@@ -39,6 +43,7 @@ class PlayerGroupManager {
     async initialize() {
         // Set CSRF token and parse URL parameters
         this.csrfToken = document.getElementsByName("csrfmiddlewaretoken")[0]?.value || '';
+        this.doneButton = document.getElementById('done-button');
         [this.matchId, this.teamId] = this.parseUrl();
 
         // Fetch initial data and set up the initial state
@@ -276,6 +281,8 @@ class PlayerGroupManager {
         if (!playerField) return;
         playerField.innerHTML = '';
 
+        this.goToMatchOverview();
+
         let nullPlayers = true;
 
         playerGroups.forEach(playerGroup => {
@@ -301,7 +308,9 @@ class PlayerGroupManager {
                     addPlayerButton.style.fontSize = '16px';
                     addPlayerButton.style.margin = '0';
                     addPlayerButton.textContent = 'Speler toevoegen';
-                    addPlayerButton.id = 'add_player';
+                    addPlayerButton.addEventListener('click', () => {
+                        this.fetchPlayersData();
+                    });
 
                     groupDivider.appendChild(addPlayerButton);
                 }
@@ -357,11 +366,134 @@ class PlayerGroupManager {
                 const addPlayerButton = document.createElement('p');
                 addPlayerButton.classList.add('dm-sans-600-normal', 'flex-center', 'add-players-button');
                 addPlayerButton.textContent = 'Voeg spelers toe';
+                addPlayerButton.addEventListener('click', () => {
+                    this.fetchPlayersData();
+                });
     
                 centerDiv.appendChild(addPlayerButton);
                 playerField.appendChild(centerDiv);
             }
         });
+    }
+
+    // request player data from the server
+    async fetchPlayersData() {
+        const data = await this.fetchData(`/match/api/players_team/${this.matchId}/${this.teamId}/`);
+        if (data) {
+            console.log(data);
+
+            this.generatePlayerAddFieldHTML(data.players);
+        }
+    }
+
+    async fetchSearchPlayers(value) {
+        const data = await this.fetchData(`/match/api/player_search/${this.matchId}/${this.teamId}/?search=${value}`);
+        if (data) {
+            console.log(data);
+
+            this.generatePlayerAddFieldHTML(data.players, value);
+        }
+    }
+
+    generatePlayerAddFieldHTML(players, searchText = null) {
+        // Generate the HTML structure for player groups
+        const playerField = document.getElementById('player-field');
+        if (!playerField) return;
+        playerField.innerHTML = '';
+
+        this.fetchPlayersGroupsDataHandler();
+
+        // Add a search field to search for players not currently in the team
+        const searchDiv = document.createElement('div');
+        searchDiv.classList.add('flex-row', 'search-div');
+
+        const searchField = document.createElement('input');
+        searchField.type = 'text';
+        searchField.placeholder = 'Zoek naar spelers';
+        searchField.id = 'search-field';
+        searchField.classList.add('search-field');
+        if (searchText) searchField.value = searchText;
+        searchDiv.appendChild(searchField);
+
+        let searchTimeout;
+
+        searchField.addEventListener('keyup', (event) => {
+            // Clear the timeout if there’s any activity before 3 seconds
+            clearTimeout(searchTimeout);
+
+            // Trigger search immediately if Enter is pressed
+            if (event.key === 'Enter') {
+                const player_name = searchField.value
+                if (player_name === '') {
+                    this.fetchPlayersData();
+                } else {
+                    this.fetchSearchPlayers(searchField.value);
+                }
+            } else {
+                // Set a 3-second delay to start the search
+                searchTimeout = setTimeout(() => {
+                    const player_name = searchField.value
+                    if (player_name === '') {
+                        this.fetchPlayersData();
+                    } else {
+                        this.fetchSearchPlayers(searchField.value);
+                    }
+                }, 2000);
+            }
+        });
+
+        // add search icon
+        const searchIcon = document.createElement('i');
+        searchIcon.classList.add('fas', 'fa-search', 'search-icon');
+        searchDiv.appendChild(searchIcon);
+
+        playerField.appendChild(searchDiv);
+
+        players.forEach(player => {
+            // Create player group container
+            const playerGroupDiv = document.createElement('div');
+            playerGroupDiv.id = player.id_uuid;
+            playerGroupDiv.classList.add('flex-row', 'player');
+
+            // Add profile picture
+            const profileImg = document.createElement('img');
+            profileImg.src = player.get_profile_picture;
+            profileImg.alt = 'profile';
+            profileImg.classList.add('profile_picture');
+            playerGroupDiv.appendChild(profileImg);
+
+            // Add username
+            const username = document.createElement('p');
+            username.classList.add('dm-sans-400-normal');
+            username.style.marginLeft = '16px';
+            username.textContent = truncateMiddle(player.user.username, 20);
+            playerGroupDiv.appendChild(username);
+
+            playerField.appendChild(playerGroupDiv);
+
+            // Add divider line after each player
+            const dividerLine2 = document.createElement('hr');
+            dividerLine2.classList.add('divider');
+            playerField.appendChild(dividerLine2);
+        });
+    }
+
+    linkBack() {
+        window.location.href = `/match/${this.matchId}/`;
+    }
+
+    // Function for first page (Match Overview)
+    goToMatchOverview() {
+        this.doneButton.textContent = 'Wedstrijd overzicht';
+        this.doneButton.removeEventListener('click', this.boundFetchPlayersGroupsData);
+        this.doneButton.addEventListener('click', this.boundLinkBack);
+    }
+    
+    // Function for second page (Fetch Players Groups Data)
+    fetchPlayersGroupsDataHandler() {
+        this.doneButton.textContent = 'Fetch Player Groups';
+        this.doneButton.removeEventListener('click', this.boundLinkBack);
+        this.doneButton.addEventListener('click', this.boundFetchPlayersGroupsData);
     }
 }
 

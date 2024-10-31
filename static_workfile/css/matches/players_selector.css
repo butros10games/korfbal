@@ -61,7 +61,7 @@ body {
     width: calc(100% - 24px);
     height: 48px;
 
-    background-color: gray;
+    background-color: #C8C8C8;
 }
 
 .player {
@@ -111,4 +111,31 @@ body {
 
     background-color: var(--button-color);
     border-radius: 6px;
+}
+
+.search-div {
+    width: calc(100% - 24px);
+    height: 48px;
+    padding: 0 12px;
+
+    background-color: #1b1b1b;
+}
+
+.search-field {
+    width: calc(100% - 48px);
+    height: 46px;
+
+    background-color: #1b1b1b;
+    border: none;
+    color: white;
+    font-size: 16px;
+}
+
+.search-field:focus {
+    outline: none;
+}
+
+.search-icon {
+    width: 32px;
+    height: 32px;
 }

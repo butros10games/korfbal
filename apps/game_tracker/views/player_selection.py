@@ -56,33 +56,38 @@ def players_team(_, match_id, team_id):
     
     ## remove the players that are already in a player group
     players = team_data.players.all()
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
+    player_groups = PlayerGroup.objects.filter(match_data=MatchData.objects.get(match_link=match_data), team=team_model)
     
     for player_group in player_groups:
-        players = players.exclude(id__in=player_group.players.all())
+        players = players.exclude(id_uuid__in=player_group.players.all())
         
-    return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in players]})
+    return JsonResponse({"players": [{"id": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture()} for player in players]})
     
-def player_search(request):
+def player_search(request, match_id, team_id):
     if request.method != "GET":
         return invalid_request
     
-    if not request.GET.get('player_name'):
+    if not request.GET.get('search'):
         return no_player_selected
     
-    if len(request.GET.get('player_name')) < 3:
+    if len(request.GET.get('search')) < 3:
         return JsonResponse({"success": False, "error": "Player name should be at least 3 characters long"})
     
-    if len(request.GET.get('player_name')) > 50:
+    if len(request.GET.get('search')) > 50:
         return JsonResponse({"success": False, "error": "Player name should be at most 50 characters long"})
     
-    # get the name of the player that is searched for
-    player_name = request.GET.get('player_name')
+    match_data = get_object_or_404(Match, id_uuid=match_id)
+    team_model = get_object_or_404(Team, id_uuid=team_id)
     
-    players = Player.objects.filter(user__username__icontains=player_name)
+    # get the name of the player that is searched for
+    player_name = request.GET.get('search')
+    
+    player_groups = PlayerGroup.objects.filter(match_data=MatchData.objects.get(match_link=match_data), team=team_model)
+    
+    players = Player.objects.filter(user__username__icontains=player_name).exclude(id_uuid__in=[player.id_uuid for player_group in player_groups for player in player_group.players.all()])
     
     # return the players that are found in json format
-    return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in players]})
+    return JsonResponse({"players": [{"id": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture() } for player in players]})
 
 def player_selection(request, match_id, team_id):
     if request.method != "POST":
