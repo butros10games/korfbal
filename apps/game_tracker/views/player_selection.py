@@ -18,6 +18,7 @@ def player_overview(request, match_id, team_id):
     
     context = {
         "team_name": player_groups[0].team.__str__(),
+        "match_url": player_groups[0].match_data.match_link.get_absolute_url(),
         "player_groups": player_groups,
     }
     
@@ -53,7 +54,14 @@ def players_team(_, match_id, team_id):
     
     team_data = TeamData.objects.get(team=team_model, season=match_data.season)
     
-    return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in team_data.players.all()]})
+    ## remove the players that are already in a player group
+    players = team_data.players.all()
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
+    
+    for player_group in player_groups:
+        players = players.exclude(id__in=player_group.players.all())
+        
+    return JsonResponse({"players": [{"id": str(player.id_uuid), "name": player.user.username} for player in players]})
     
 def player_search(request):
     if request.method != "GET":
@@ -129,7 +137,7 @@ def player_designation(request):
         
         PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(Player.objects.get(id_uuid=player_id))
         
-        if player_group_model:
+        if new_group_id:
             player_group_model.players.add(Player.objects.get(id_uuid=player_id))
 
     return JsonResponse({"success": True})

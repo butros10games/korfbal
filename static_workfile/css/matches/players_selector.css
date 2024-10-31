@@ -92,3 +92,23 @@ body {
 
     z-index: 1;
 }
+
+.done-button {
+    font-size: 16px;
+    margin: 0;
+    text-decoration: none;
+    color: white; 
+    padding: 6px 14px;
+    background: var(--button-color);
+    border-radius: 6px;
+}
+
+.add-players-button {
+    width: 216px;
+    height: 48px;
+
+    color: white;
+
+    background-color: var(--button-color);
+    border-radius: 6px;
+}

@@ -279,8 +279,12 @@ class PlayerGroupManager {
         if (!playerField) return;
         playerField.innerHTML = '';
 
+        let nullPlayers = true;
+
         playerGroups.forEach(playerGroup => {
             if (playerGroup.players && playerGroup.players.length > 0) {
+                nullPlayers = false;
+
                 // Create group divider
                 const groupDivider = document.createElement('div');
                 groupDivider.classList.add('flex-row', 'group-divider');
@@ -292,6 +296,19 @@ class PlayerGroupManager {
                 groupTitle.textContent = playerGroup.starting_type.name;
 
                 groupDivider.appendChild(groupTitle);
+
+                if (playerGroup.starting_type.name == "Reserve" && playerGroup.players.length > 0) {
+                    const addPlayerButton = document.createElement('p');
+                    addPlayerButton.classList.add('dm-sans-600-normal', 'done-button');
+                    addPlayerButton.style.marginLeft = 'auto';
+                    addPlayerButton.style.fontSize = '16px';
+                    addPlayerButton.style.margin = '0';
+                    addPlayerButton.textContent = 'Speler toevoegen';
+                    addPlayerButton.id = 'add_player';
+
+                    groupDivider.appendChild(addPlayerButton);
+                }
+
                 playerField.appendChild(groupDivider);
 
                 // Create divider line
@@ -333,6 +350,19 @@ class PlayerGroupManager {
                 });
 
                 playerField.appendChild(playerGroupDiv);
+            } else if (playerGroup.starting_type.name == "Reserve") {
+                // create a button to add a player to the reserve group
+                const centerDiv = document.createElement('div');
+                centerDiv.classList.add('flex-center');
+                if (nullPlayers) { centerDiv.style.height = '100%' };
+                centerDiv.style.width = '100%';
+    
+                const addPlayerButton = document.createElement('p');
+                addPlayerButton.classList.add('dm-sans-600-normal', 'flex-center', 'add-players-button');
+                addPlayerButton.textContent = 'Voeg spelers toe';
+    
+                centerDiv.appendChild(addPlayerButton);
+                playerField.appendChild(centerDiv);
             }
         });
     }
@@ -341,5 +371,6 @@ class PlayerGroupManager {
 // Instantiate and initialize the class after DOM content is loaded
 document.addEventListener("DOMContentLoaded", async () => {
     const playerGroupManager = new PlayerGroupManager();
+
     await playerGroupManager.initialize();
 });
