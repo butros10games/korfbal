@@ -25,7 +25,7 @@ def profile_detail(request, player_id=None):
     
     context = {
         "player": player,
-        "profile_picture": ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url,
+        "profile_picture": player.get_profile_picture(),
         "is_own_profile": is_own_profile,
         "display_back": display_back
     }
@@ -41,6 +41,6 @@ def upload_profile_picture(request):
         player.profile_picture.save(profile_picture.name, profile_picture)
 
         # Return the URL of the uploaded image
-        return JsonResponse({'url': player.profile_picture.url})
+        return JsonResponse({'url': player.get_profile_picture()})
 
     return JsonResponse({'error': 'Invalid request'}, status=400)

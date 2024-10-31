@@ -709,7 +709,7 @@ class PlayerGroupClass:
             return {
                 'id': str(player_obj.id_uuid),
                 'name': player_obj.user.username,
-                'profile_picture': player_obj.profile_picture.url if player_obj.profile_picture else None,
+                'profile_picture': player_obj.get_profile_picture(),
                 'get_absolute_url': str(player_obj.get_absolute_url())
             }
         except Player.DoesNotExist:

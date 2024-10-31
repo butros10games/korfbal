@@ -359,7 +359,7 @@ class match_data(AsyncWebsocketConsumer):
                 players_json.append({
                     'id': str(player_json.id_uuid),
                     'name': player_json.user.username,
-                    'profile_picture': player_json.profile_picture.url if player_json.profile_picture else None,
+                    'profile_picture': player_json.get_profile_picture(),
                     'get_absolute_url': str(player_json.get_absolute_url())
                 })
             except Player.DoesNotExist:

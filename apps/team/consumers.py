@@ -219,7 +219,7 @@ class team_data(AsyncWebsocketConsumer):
             {
                 'id': str(player.id_uuid),
                 'name': player.user.username,
-                'profile_picture': ('/media' if 'static' not in player.profile_picture.url else '') + player.profile_picture.url if player.profile_picture else None,
+                'profile_picture': player.get_profile_picture(),
                 'get_absolute_url': str(player.get_absolute_url())
             }
             for player in players_in_team_season_list
