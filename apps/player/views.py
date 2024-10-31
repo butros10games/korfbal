@@ -25,7 +25,7 @@ def profile_detail(request, player_id=None):
     
     context = {
         "player": player,
-        "profile_picture": player.get_profile_picture(),
+        "profile_picture": player.get_profile_picture() if player else None,
         "is_own_profile": is_own_profile,
         "display_back": display_back
     }
