@@ -14,27 +14,17 @@ no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
 to_many_players_selected = JsonResponse({"error": "Too many players selected"}, status=400)
 
 def player_overview(request, match_id, team_id):
-    match_model = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
-    
-    match_data = MatchData.objects.get(match_link=match_model)
-    
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')
+    player_groups = _get_player_groups(match_id, team_id)
     
     context = {
-        "team_model": team_model,
+        "team_name": player_groups[0].team.__str__(),
         "player_groups": player_groups,
     }
     
     return render(request, "matches/players_selector.html", context)
 
 def player_overview_data(_, match_id, team_id):
-    match_model = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
-    
-    match_data = MatchData.objects.get(match_link=match_model)
-    
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')
+    player_groups = _get_player_groups(match_id, team_id)
     
     player_groups_data = []
     for player_group in player_groups:
@@ -143,3 +133,11 @@ def player_designation(request):
             player_group_model.players.add(Player.objects.get(id_uuid=player_id))
 
     return JsonResponse({"success": True})
+
+def _get_player_groups(match_id, team_id):
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    team_model = get_object_or_404(Team, id_uuid=team_id)
+    
+    match_data = MatchData.objects.get(match_link=match_model)
+    
+    return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')

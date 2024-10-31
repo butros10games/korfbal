@@ -28,7 +28,7 @@
             <div class="flex-row" style="width: calc(100% - 32px); margin: 0 16px; height: 48px;">
                 <p class="box-48"></p>
 
-                <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ team_model }}</p>
+                <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ team_name }}</p>
 
                 <p class="dm-sans-600-normal flex-center box-48" style="font-size: 36px; margin: 0;">+</p>
             </div>
@@ -36,23 +36,6 @@
             <hr class="divider">
 
             <div id="player-field" class="scrollable">
-                {% for player_group in player_groups %}
-                {% if player_group.players.all %}
-                    <div class="flex-row group-divider">
-                        <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ player_group.starting_type.name }}</p>
-                    </div>
-                    <hr class="divider">
-                    <div id="{{ player_group.id_uuid }}" class="flex-column player-group">
-                    {% for player in player_group.players.all %}
-                        <div id="{{ player.id_uuid }}" class="flex-row player">
-                            <img src={{ player.get_profile_picture }} alt="profile" class="profile_picture">
-                            <p class="dm-sans-400-normal" style="margin-left: 16px;">{{ player.user.username|truncate_middle:20 }}</p>
-                        </div>
-                        <hr class="divider">
-                    {% endfor %}
-                    </div>
-                {% endif %}
-                {% endfor %}
             </div>
         </div>
 
