@@ -246,9 +246,6 @@ class PlayerGroupManager {
                 newGroup.players.push(player);
             }
         });
-
-        // Remove empty groups
-        this.playerGroupsData = this.playerGroupsData.filter(group => group.players.length > 0);
     }
 
     generatePlayerFieldHTMLFromData() {
