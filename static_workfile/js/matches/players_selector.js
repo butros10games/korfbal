@@ -2,7 +2,9 @@ class PlayerGroupManager {
     constructor() {
         // Initialize properties
         this.selectedPlayers = [];
+        this.selectedPlayersAdd = [];
         this.groupId = null;
+        this.reserveId = "0192c7bb-c664-77fd-8a29-acde6f428c93";
         this.csrfToken = null;
         this.matchId = null;
         this.teamId = null;
@@ -19,7 +21,7 @@ class PlayerGroupManager {
         this.groupIdToStartingType = {};
 
         this.boundLinkBack = this.linkBack.bind(this);
-        this.boundFetchPlayersGroupsData = this.fetchPlayersGroupsData.bind(this);
+        this.boundsetupPlayerGroups = this.outsidesetupPlayerGroups.bind(this);
     }
 
     initializeGroupTypes() {
@@ -40,18 +42,26 @@ class PlayerGroupManager {
         };
     }
 
-    async initialize() {
+    initialize() {
         // Set CSRF token and parse URL parameters
         this.csrfToken = document.getElementsByName("csrfmiddlewaretoken")[0]?.value || '';
         this.doneButton = document.getElementById('done-button');
         [this.matchId, this.teamId] = this.parseUrl();
 
         // Fetch initial data and set up the initial state
+        this.setupPlayerGroups()
+        this.mapGroupIdsToTypeIds();
+        this.mapTypeIdsToGroupIds();
+    }
+
+    outsidesetupPlayerGroups() {
+        this.setupPlayerGroups()
+    }
+
+    async setupPlayerGroups() {
         await this.fetchPlayersGroupsData();
         this.setupPlayerButtons();
         this.getPlayersGroupsData();
-        this.mapGroupIdsToTypeIds();
-        this.mapTypeIdsToGroupIds();
     }
 
     parseUrl() {
@@ -77,11 +87,11 @@ class PlayerGroupManager {
 
     togglePlayerSelection(player, localGroupId) {
         // Add or remove player from the selected list
-        const playerId = player.id;
-        const playerIndex = this.selectedPlayers.findIndex(p => p.playerId === playerId);
+        const id_uuid = player.id;
+        const playerIndex = this.selectedPlayers.findIndex(p => p.id_uuid === id_uuid);
 
         if (playerIndex === -1) {
-            this.selectedPlayers.push({ playerId, groupId: localGroupId });
+            this.selectedPlayers.push({ id_uuid: id_uuid, groupId: localGroupId });
             this.groupId = localGroupId;
         } else {
             this.selectedPlayers.splice(playerIndex, 1);
@@ -93,7 +103,7 @@ class PlayerGroupManager {
 
     highlightSelectedPlayer(player) {
         // Highlight or unhighlight the selected player
-        player.style.backgroundColor = this.selectedPlayers.some(p => p.playerId === player.id) ? "lightblue" : "white";
+        player.style.backgroundColor = this.selectedPlayers.some(p => p.id_uuid === player.id) ? "lightblue" : "white";
     }
 
     updateOptionsBar() {
@@ -220,14 +230,14 @@ class PlayerGroupManager {
     updatePlayersGroupsData(selectedPlayers, newGroupId) {
         // Update the local data to reflect the moved players
         selectedPlayers.forEach(selectedPlayer => {
-            const playerId = selectedPlayer.playerId;
+            const id_uuid = selectedPlayer.id_uuid;
             const oldGroupId = selectedPlayer.groupId;
 
             // Remove player from old group
             const oldGroup = this.playerGroupsData.find(group => group.id_uuid === oldGroupId);
             let player = null;
             if (oldGroup) {
-                const playerIndex = oldGroup.players.findIndex(p => p.id_uuid === playerId);
+                const playerIndex = oldGroup.players.findIndex(p => p.id_uuid === id_uuid);
                 if (playerIndex !== -1) {
                     [player] = oldGroup.players.splice(playerIndex, 1);
                 }
@@ -454,6 +464,9 @@ class PlayerGroupManager {
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.id = player.id_uuid;
             playerGroupDiv.classList.add('flex-row', 'player');
+            if (this.selectedPlayersAdd.some(p => p.id_uuid === player.id_uuid)) {
+                playerGroupDiv.style.backgroundColor = 'lightblue';
+            }
 
             // Add profile picture
             const profileImg = document.createElement('img');
@@ -475,7 +488,107 @@ class PlayerGroupManager {
             const dividerLine2 = document.createElement('hr');
             dividerLine2.classList.add('divider');
             playerField.appendChild(dividerLine2);
+
+            // Add click event listener to add player to the team
+            playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
         });
+
+        if (this.selectedPlayersAdd.length > 0) {
+            const groupDivider = document.createElement('div');
+            groupDivider.classList.add('flex-row', 'group-divider');
+
+            const groupTitle = document.createElement('p');
+            groupTitle.classList.add('dm-sans-600-normal');
+            groupTitle.style.fontSize = '20px';
+            groupTitle.style.margin = '0';
+            groupTitle.textContent = 'Geselecteerde spelers';
+
+            groupDivider.appendChild(groupTitle);
+
+            playerField.appendChild(groupDivider);
+        }
+
+        console.log('selectedPlayers: ', this.selectedPlayersAdd);
+
+        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
+            return !players.some(player => player.id_uuid === selectedPlayer.id_uuid);
+        });
+
+        this.filterdSelectedPlayersAdd.forEach(player => {
+            // Create player group container
+            const playerGroupDiv = document.createElement('div');
+            playerGroupDiv.id = player.id_uuid;
+            playerGroupDiv.classList.add('flex-row', 'player');
+            playerGroupDiv.style.backgroundColor = 'lightblue';
+
+            // Add profile picture
+            const profileImg = document.createElement('img');
+            profileImg.src = player.get_profile_picture;
+            profileImg.alt = 'profile';
+            profileImg.classList.add('profile_picture');
+            playerGroupDiv.appendChild(profileImg);
+
+            // Add username
+            const username = document.createElement('p');
+            username.classList.add('dm-sans-400-normal');
+            username.style.marginLeft = '16px';
+            username.textContent = truncateMiddle(player.user.username, 20);
+            playerGroupDiv.appendChild(username);
+
+            playerField.appendChild(playerGroupDiv);
+
+            // Add divider line after each player
+            const dividerLine2 = document.createElement('hr');
+            dividerLine2.classList.add('divider');
+            playerField.appendChild(dividerLine2);
+
+            // Add click event listener to add player to the team
+            playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
+        });
+    }
+
+    handleSelectedPlayerClick(player) {
+        // change the background color of the element that was clicked
+        const playerElement = document.getElementById(player.id_uuid);
+        if (playerElement.style.backgroundColor === 'lightblue') {
+            playerElement.style.backgroundColor = 'white';
+            this.selectedPlayersAdd = this.selectedPlayersAdd.filter(p => p.id_uuid !== player.id_uuid);
+    
+            if (this.selectedPlayersAdd.length === 0) {
+                this.removeOptionsBar();
+            }
+        } else {
+            playerElement.style.backgroundColor = 'lightblue';
+            this.selectedPlayersAdd.push(player);
+            if (this.selectedPlayersAdd.length > 0) {
+                this.addPlayerOptionMenu();
+            }
+        }
+    }
+
+    addPlayerOptionMenu() {
+        // Create a dropdown menu with options for adding players
+        const optionsBar = document.createElement("div");
+        optionsBar.classList.add("flex-row", "options-bar");
+        optionsBar.id = "options-bar";
+
+        const addPlayerButton = document.createElement("button");
+        addPlayerButton.innerText = "Add player";
+        addPlayerButton.addEventListener("click", () => this.handleAddPlayerClick());
+        optionsBar.appendChild(addPlayerButton);
+
+        document.body.appendChild(optionsBar);
+        this.adjustScrollableHeight("calc(100vh - 208px)");
+    }
+
+    async handleAddPlayerClick() {
+        await this.fetchData(`/match/api/player_designation/`, {
+            players: this.selectedPlayersAdd,
+            new_group_id: this.typeIdToGroupId[this.reserveId]
+        });
+
+        this.selectedPlayersAdd = [];
+        this.boundsetupPlayerGroups();
     }
 
     linkBack() {
@@ -484,16 +597,20 @@ class PlayerGroupManager {
 
     // Function for first page (Match Overview)
     goToMatchOverview() {
+        this.removeOptionsBar();
+
         this.doneButton.textContent = 'Wedstrijd overzicht';
-        this.doneButton.removeEventListener('click', this.boundFetchPlayersGroupsData);
+        this.doneButton.removeEventListener('click', this.boundsetupPlayerGroups);
         this.doneButton.addEventListener('click', this.boundLinkBack);
     }
     
     // Function for second page (Fetch Players Groups Data)
     fetchPlayersGroupsDataHandler() {
-        this.doneButton.textContent = 'Fetch Player Groups';
+        this.removeOptionsBar();
+
+        this.doneButton.textContent = 'Speler groep';
         this.doneButton.removeEventListener('click', this.boundLinkBack);
-        this.doneButton.addEventListener('click', this.boundFetchPlayersGroupsData);
+        this.doneButton.addEventListener('click', this.boundsetupPlayerGroups);
     }
 }
 
@@ -501,5 +618,5 @@ class PlayerGroupManager {
 document.addEventListener("DOMContentLoaded", async () => {
     const playerGroupManager = new PlayerGroupManager();
 
-    await playerGroupManager.initialize();
+    playerGroupManager.initialize();
 });

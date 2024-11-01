@@ -1,7 +1,7 @@
 from .match_detail import match_detail
 from .match_team_selector import match_team_selector
 from .match_tracker import match_tracker
-from .player_selection import player_overview, player_search, player_selection, player_designation, player_overview_data, players_team
+from .player_selection import player_overview, player_search, player_designation, player_overview_data, players_team
 
 __all__ = [
     'match_detail',
@@ -9,7 +9,6 @@ __all__ = [
     'match_tracker',
     'player_overview',
     'player_search',
-    'player_selection',
     'player_designation',
     'player_overview_data',
     'players_team',

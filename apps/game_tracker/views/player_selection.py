@@ -61,7 +61,7 @@ def players_team(_, match_id, team_id):
     for player_group in player_groups:
         players = players.exclude(id_uuid__in=player_group.players.all())
         
-    return JsonResponse({"players": [{"id": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture()} for player in players]})
+    return JsonResponse({"players": [{"id_uuid": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture()} for player in players]})
     
 def player_search(request, match_id, team_id):
     if request.method != "GET":
@@ -87,33 +87,7 @@ def player_search(request, match_id, team_id):
     players = Player.objects.filter(user__username__icontains=player_name).exclude(id_uuid__in=[player.id_uuid for player_group in player_groups for player in player_group.players.all()])
     
     # return the players that are found in json format
-    return JsonResponse({"players": [{"id": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture() } for player in players]})
-
-def player_selection(request, match_id, team_id):
-    if request.method != "POST":
-        return invalid_request
-    
-    if not request.POST.getlist('players'):
-        return no_player_selected
-    
-    if len(request.POST.getlist('players')) > 16:
-        return to_many_players_selected
-    
-    match_data = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
-    
-    reserve_model = GroupTypes.objects.get(name="Reserve")
-    player_group_model = PlayerGroup.objects.get(match_data=match_data, team=team_model, starting_type=reserve_model)
-    
-    # get the player ids from the request
-    player_ids = request.POST.getlist('players')
-    
-    for player_id in player_ids:
-        player_group_model.players.add(Player.objects.get(id_uuid=player_id))
-    
-    player_group_model.save()
-        
-    return JsonResponse({"success": True})
+    return JsonResponse({"players": [{"id_uuid": str(player.id_uuid), "user": { "username": player.user.username }, "get_profile_picture": player.get_profile_picture() } for player in players]})
 
 def player_designation(request):
     if request.method != "POST":
@@ -129,18 +103,23 @@ def player_designation(request):
     
     if not selected_players:
         return no_player_selected
-    
-    if len(selected_players) > 4:
-        return to_many_players_selected
 
     if new_group_id:
         player_group_model = PlayerGroup.objects.get(id_uuid=new_group_id)
+        
+        # check if the player group is reserve or a other group
+        if player_group_model.starting_type.name == "Reserve":
+            if len(selected_players) > 16:
+                return to_many_players_selected
+        elif len(selected_players) > 4:
+            return to_many_players_selected
 
     for player_data in selected_players:
-        player_id = player_data.get('playerId')
+        player_id = player_data.get('id_uuid')
         old_group_id = player_data.get('groupId')
         
-        PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(Player.objects.get(id_uuid=player_id))
+        if old_group_id:
+            PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(Player.objects.get(id_uuid=player_id))
         
         if new_group_id:
             player_group_model.players.add(Player.objects.get(id_uuid=player_id))
