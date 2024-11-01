@@ -342,6 +342,9 @@ class PlayerGroupManager {
                     const playerDiv = document.createElement('div');
                     playerDiv.id = player.id_uuid;
                     playerDiv.classList.add('flex-row', 'player');
+                    if (this.selectedPlayers.some(p => p.id_uuid === player.id_uuid)) {
+                        playerDiv.style.backgroundColor = 'lightblue';
+                    }
 
                     // Add profile picture
                     const profileImg = document.createElement('img');
@@ -384,6 +387,10 @@ class PlayerGroupManager {
                 playerField.appendChild(centerDiv);
             }
         });
+
+        if (this.selectedPlayers.length > 0) {
+            this.updateOptionsBar();
+        }
     }
 
     // request player data from the server
@@ -493,7 +500,11 @@ class PlayerGroupManager {
             playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
         });
 
-        if (this.selectedPlayersAdd.length > 0) {
+        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
+            return !players.some(player => player.id_uuid === selectedPlayer.id_uuid);
+        });
+
+        if (this.filterdSelectedPlayersAdd.length > 0) {
             const groupDivider = document.createElement('div');
             groupDivider.classList.add('flex-row', 'group-divider');
 
@@ -507,12 +518,6 @@ class PlayerGroupManager {
 
             playerField.appendChild(groupDivider);
         }
-
-        console.log('selectedPlayers: ', this.selectedPlayersAdd);
-
-        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
-            return !players.some(player => player.id_uuid === selectedPlayer.id_uuid);
-        });
 
         this.filterdSelectedPlayersAdd.forEach(player => {
             // Create player group container
@@ -545,6 +550,10 @@ class PlayerGroupManager {
             // Add click event listener to add player to the team
             playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
         });
+
+        if (this.selectedPlayersAdd.length > 0) {
+            this.addPlayerOptionMenu();
+        }
     }
 
     handleSelectedPlayerClick(player) {
@@ -553,8 +562,12 @@ class PlayerGroupManager {
         if (playerElement.style.backgroundColor === 'lightblue') {
             playerElement.style.backgroundColor = 'white';
             this.selectedPlayersAdd = this.selectedPlayersAdd.filter(p => p.id_uuid !== player.id_uuid);
+
+            console.log('selectedPlayers: ', this.selectedPlayersAdd);
     
             if (this.selectedPlayersAdd.length === 0) {
+                console.log('remove options bar');
+
                 this.removeOptionsBar();
             }
         } else {
