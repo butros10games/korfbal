@@ -551,32 +551,21 @@ class PlayerGroupManager {
             playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
         });
 
-        if (this.selectedPlayersAdd.length > 0) {
-            this.addPlayerOptionMenu();
-        }
+        this.updateOptionsBarAddPlayers();
     }
 
     handleSelectedPlayerClick(player) {
-        // change the background color of the element that was clicked
         const playerElement = document.getElementById(player.id_uuid);
         if (playerElement.style.backgroundColor === 'lightblue') {
             playerElement.style.backgroundColor = 'white';
             this.selectedPlayersAdd = this.selectedPlayersAdd.filter(p => p.id_uuid !== player.id_uuid);
-
-            console.log('selectedPlayers: ', this.selectedPlayersAdd);
-    
-            if (this.selectedPlayersAdd.length === 0) {
-                console.log('remove options bar');
-
-                this.removeOptionsBar();
-            }
         } else {
             playerElement.style.backgroundColor = 'lightblue';
             this.selectedPlayersAdd.push(player);
-            if (this.selectedPlayersAdd.length > 0) {
-                this.addPlayerOptionMenu();
-            }
         }
+
+        // Update the options bar display
+        this.updateOptionsBarAddPlayers();
     }
 
     addPlayerOptionMenu() {
@@ -602,6 +591,14 @@ class PlayerGroupManager {
 
         this.selectedPlayersAdd = [];
         this.boundsetupPlayerGroups();
+    }
+
+    updateOptionsBarAddPlayers() {
+        if (this.selectedPlayersAdd.length === 0) {
+            this.removeOptionsBar();
+        } else if (!document.getElementById("options-bar")) {
+            this.addPlayerOptionMenu();
+        }
     }
 
     linkBack() {
