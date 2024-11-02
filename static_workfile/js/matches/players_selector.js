@@ -215,6 +215,8 @@ class PlayerGroupManager {
         // Update the local data
         this.updatePlayersGroupsData(selectedPlayers, newGroupId);
 
+        this.selectedPlayers = [];
+
         // Re-render the player field from the updated data
         this.generatePlayerFieldHTMLFromData();
 
@@ -222,7 +224,6 @@ class PlayerGroupManager {
         this.setupPlayerButtons();
 
         // Reset selections
-        this.selectedPlayers = [];
         this.groupId = null;
         this.updateOptionsBar();
     }
