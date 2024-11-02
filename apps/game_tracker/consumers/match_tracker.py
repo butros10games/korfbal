@@ -405,14 +405,18 @@ class match_tracker(AsyncWebsocketConsumer):
         
     async def removed_last_event(self):
         event = await self.get_all_events()
+        
+        print(event)
                 
         if isinstance(event, Shot):
-            # get and delete the last shot event
-            shot = await Shot.objects.prefetch_related('player', 'player__user', 'shot_type').aget(match_part = event.match_part, time = event.time)
+            print('shot found')
+            print('shot: ', event.time)
             
-            player_id = str(shot.player.id_uuid)
+            player_id = str(event.player.id_uuid)
             
-            await shot.adelete()
+            print('player_id: ', player_id)
+            
+            await event.adelete()
             
             # send player shot update message
             await self.channel_layer.group_send(self.channel_names[1], {
@@ -426,14 +430,14 @@ class match_tracker(AsyncWebsocketConsumer):
             })
                 
             # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
-            if shot.scored:
+            if event.scored:
                 for channel_name in [self.channel_names[1], self.channel_names[0]]:
                     await self.channel_layer.group_send(channel_name, {
                         'type': 'send_data',
                         'data': {
                             'command': 'team_goal_change',
-                            'player_name': shot.player.user.username,
-                            'goal_type': shot.shot_type.name,
+                            'player_name': event.player.user.username,
+                            'goal_type': event.shot_type.name,
                             'goals_for': await Shot.objects.filter(match_data=self.match_data, team=self.team, scored=True).acount(),
                             'goals_against': await Shot.objects.filter(match_data=self.match_data, team=self.other_team, scored=True).acount()
                         }

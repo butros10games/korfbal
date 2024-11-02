@@ -476,29 +476,7 @@ class PlayerGroupManager {
                 playerGroupDiv.style.backgroundColor = 'lightblue';
             }
 
-            // Add profile picture
-            const profileImg = document.createElement('img');
-            profileImg.src = player.get_profile_picture;
-            profileImg.alt = 'profile';
-            profileImg.classList.add('profile_picture');
-            playerGroupDiv.appendChild(profileImg);
-
-            // Add username
-            const username = document.createElement('p');
-            username.classList.add('dm-sans-400-normal');
-            username.style.marginLeft = '16px';
-            username.textContent = truncateMiddle(player.user.username, 20);
-            playerGroupDiv.appendChild(username);
-
-            playerField.appendChild(playerGroupDiv);
-
-            // Add divider line after each player
-            const dividerLine2 = document.createElement('hr');
-            dividerLine2.classList.add('divider');
-            playerField.appendChild(dividerLine2);
-
-            // Add click event listener to add player to the team
-            playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
+            this.playerElementHTML(player);
         });
 
         this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
@@ -527,32 +505,36 @@ class PlayerGroupManager {
             playerGroupDiv.classList.add('flex-row', 'player');
             playerGroupDiv.style.backgroundColor = 'lightblue';
 
-            // Add profile picture
-            const profileImg = document.createElement('img');
-            profileImg.src = player.get_profile_picture;
-            profileImg.alt = 'profile';
-            profileImg.classList.add('profile_picture');
-            playerGroupDiv.appendChild(profileImg);
-
-            // Add username
-            const username = document.createElement('p');
-            username.classList.add('dm-sans-400-normal');
-            username.style.marginLeft = '16px';
-            username.textContent = truncateMiddle(player.user.username, 20);
-            playerGroupDiv.appendChild(username);
-
-            playerField.appendChild(playerGroupDiv);
-
-            // Add divider line after each player
-            const dividerLine2 = document.createElement('hr');
-            dividerLine2.classList.add('divider');
-            playerField.appendChild(dividerLine2);
-
-            // Add click event listener to add player to the team
-            playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
+            this.playerElementHTML(player);
         });
 
         this.updateOptionsBarAddPlayers();
+    }
+
+    playerElementHTML(player) {
+        // Add profile picture
+        const profileImg = document.createElement('img');
+        profileImg.src = player.get_profile_picture;
+        profileImg.alt = 'profile';
+        profileImg.classList.add('profile_picture');
+        playerGroupDiv.appendChild(profileImg);
+
+        // Add username
+        const username = document.createElement('p');
+        username.classList.add('dm-sans-400-normal');
+        username.style.marginLeft = '16px';
+        username.textContent = truncateMiddle(player.user.username, 20);
+        playerGroupDiv.appendChild(username);
+
+        playerField.appendChild(playerGroupDiv);
+
+        // Add divider line after each player
+        const dividerLine2 = document.createElement('hr');
+        dividerLine2.classList.add('divider');
+        playerField.appendChild(dividerLine2);
+
+        // Add click event listener to add player to the team
+        playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
     }
 
     handleSelectedPlayerClick(player) {
