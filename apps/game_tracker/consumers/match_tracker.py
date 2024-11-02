@@ -405,16 +405,9 @@ class match_tracker(AsyncWebsocketConsumer):
         
     async def removed_last_event(self):
         event = await self.get_all_events()
-        
-        print(event)
                 
         if isinstance(event, Shot):
-            print('shot found')
-            print('shot: ', event.time)
-            
             player_id = str(event.player.id_uuid)
-            
-            print('player_id: ', player_id)
             
             await event.adelete()
             
