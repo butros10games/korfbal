@@ -140,6 +140,13 @@ function scoringButtonSetup() {
     function addPlayerClickHandlers(playerButtons, team) {
         Array.from(playerButtons).forEach(element => {
             element.style.background = getButtonBackground(team, false);
+    
+            // Remove existing event listener
+            if (element._playerClickHandler) {
+                element.removeEventListener("click", element._playerClickHandler);
+                delete element._playerClickHandler;
+            }
+    
             const playerClickHandler = createPlayerClickHandler(element, team);
             element._playerClickHandler = playerClickHandler;
             element.addEventListener("click", playerClickHandler);
