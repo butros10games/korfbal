@@ -631,7 +631,7 @@ function showGoalTypes(data) {
 
         const goalTypeTitle = document.createElement("p");
         goalTypeTitle.classList.add("flex-center");
-        goalTypeTitle.innerHTML = goalType.name;
+        goalTypeTitle.innerHTML = truncateMiddle(goalType.name, 16);
         goalTypeTitle.style.margin = "0";
         goalTypeTitle.style.fontSize = "14px";
         goalTypeTitle.style.background = "var(--button-color)";
@@ -725,7 +725,7 @@ function showReservePlayer(data) {
 
         const PlayerTitle = document.createElement("p");
         PlayerTitle.classList.add("flex-center");
-        PlayerTitle.innerHTML = Player.name;
+        PlayerTitle.innerHTML = truncateMiddle(Player.name, 16);
         PlayerTitle.style.margin = "0";
         PlayerTitle.style.fontSize = "14px";
         PlayerTitle.style.background = "var(--button-color)";
