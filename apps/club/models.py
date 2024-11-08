@@ -14,6 +14,12 @@ class Club(models.Model):
     
     def get_absolute_url(self):
         return reverse("club_detail", kwargs={"club_id": self.id_uuid})
+    
+    def get_club_logo(self):
+        if 'static' in self.logo.url:
+            return self.logo.url
+        else:
+            return '/media' + self.logo.url
 
 class ClubAdmin(models.Model):
     club = models.ForeignKey('Club', on_delete=models.CASCADE)

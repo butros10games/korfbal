@@ -153,7 +153,7 @@ class profile_data(AsyncWebsocketConsumer):
             {
                 'id': str(team.id_uuid),
                 'name': await sync_to_async(team.__str__)(),
-                'logo': team.club.logo.url if team.club.logo else None,
+                'logo': team.club.get_club_logo(),
                 'get_absolute_url': str(team.get_absolute_url())
             }
             for team in self.teams

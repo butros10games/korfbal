@@ -22,7 +22,7 @@
         <div class="flex-column" style="margin-top: 48px;">
             <div class="flex-column" style="justify-content: flex-end; background-color: #1b1b1b; width: 100%;">
                 <div class="flex-row" style="width: calc(100% - 32px); height: 64px; justify-content: flex-start; margin: 0 16px;">
-                    <a href="/club/{{ team.club.id_uuid }}" style="display: flex;"><img alt="club-logo" src="{{ team.club.logo.url }}" style="height: 48px; width: 48px;"></a>
+                    <a href="/club/{{ team.club.id_uuid }}" style="display: flex;"><img alt="club-logo" src="{{ team.club.get_club_logo }}" style="height: 48px; width: 48px;"></a>
                     <p style="font-weight: 600; color: white; margin-left: 12px;">{{ team }}</p>
                 </div>
                 <div class="icon-container" data-followed="{% if following %}true{% else %}false{% endif %}">

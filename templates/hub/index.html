@@ -30,7 +30,7 @@
                     {% if match %}
                         <a href="{% url 'match_detail' match_id=match.id_uuid %}" class="flex-row" style="justify-content: space-around; margin-top: 12px;">
                             <div class="flex-column" style="width: 128px;">
-                                <img alt="club_logo" src="{{ match.home_team.club.logo.url }}" style="height: 56px; width: 56px;">
+                                <img alt="club_logo" src="{{ match.home_team.club.get_club_logo }}" style="height: 56px; width: 56px;">
                                 <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.home_team|truncate_middle:16 }}</p>
                             </div>
 
@@ -47,7 +47,7 @@
                             </div>
 
                             <div class="flex-column" style="width: 128px;">
-                                <img alt="club_logo" src="{{ match.away_team.club.logo.url }}" style="height: 56px; width: 56px;">
+                                <img alt="club_logo" src="{{ match.away_team.club.get_club_logo }}" style="height: 56px; width: 56px;">
                                 <p style="margin: 0; font-size: 12px; margin-top: 6px;">{{ match.away_team|truncate_middle:16 }}</p>
                             </div>
                         </a>

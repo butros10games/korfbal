@@ -61,7 +61,7 @@ def club_serializer(club):
     return {
         "id": str(club.id_uuid),
         "name": club.name,
-        "img_url": club.logo.url if club.logo else None,
+        "img_url": club.get_club_logo(),
         "competition": None,
         "url": str(club.get_absolute_url())
     }
@@ -76,7 +76,7 @@ def team_serializer(team):
     return {
         "id": str(team.id_uuid),
         "name": str(team),
-        "img_url": team.club.logo.url if team.club.logo else None,
+        "img_url": team.club.get_club_logo(),
         "competition": last_team_data.competition if last_team_data else "",
         "url": str(team.get_absolute_url())
     }

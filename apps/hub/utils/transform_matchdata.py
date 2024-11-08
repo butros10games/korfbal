@@ -25,10 +25,10 @@ async def transform_matchdata(matchs_data):
         match_dict.append({
             'id_uuid': str(match_data.match_link.id_uuid),
             'home_team': await sync_to_async(home_team.__str__)(),
-            'home_team_logo': home_team.club.logo.url if home_team.club.logo else None,
+            'home_team_logo': home_team.club.get_club_logo(),
             'home_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=home_team, scored=True).count)(),
             'away_team': await sync_to_async(away_team.__str__)(),
-            'away_team_logo': away_team.club.logo.url if away_team.club.logo else None,
+            'away_team_logo': away_team.club.get_club_logo(),
             'away_score': await sync_to_async(Shot.objects.filter(match_data=match_data, team=away_team, scored=True).count)(),
             'start_date': formatted_date,
             'start_time': formatted_time,  # Add the time separately

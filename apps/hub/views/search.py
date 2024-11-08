@@ -28,7 +28,7 @@ def serialize_team(team, current_season):
     return {
         "id": str(team.id_uuid),
         "name": str(team),
-        "img_url": team.club.logo.url if team.club.logo else None,
+        "img_url": team.club.get_club_logo(),
         "competition": team_data.competition if team_data else "",
         "url": team.get_absolute_url()
     }
@@ -37,7 +37,7 @@ def serialize_club(club):
     return {
         "id": str(club.id_uuid),
         "name": club.name,
-        "img_url": club.logo.url if club.logo else None,
+        "img_url": club.get_club_logo(),
         "competition": None,
         "url": club.get_absolute_url()
     }
