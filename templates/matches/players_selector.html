@@ -4,22 +4,12 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <title>{{ title }}</title>
         <meta name="description" content="">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/static/css/matches/players_selector.css">
-        <link rel="stylesheet" href="/static/css/color/color.css">
-
-        <link rel="icon" href="/static/images/logo/KWT_logo.png" type="image/x-icon">
         
-        <link rel="manifest" href="/static/json/manifest.json">
-        <script src="/static/js/pwa/service-worker.js"></script>
+        <link rel="stylesheet" href="/static/css/matches/players_selector.css">
 
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Krona+One&family=Merriweather&family=Noto+Sans&display=swap" rel="stylesheet">
+        {% include 'common/imports.html' %}
     </head>
     <body>
         {% include 'overlays/navbar.html' %}

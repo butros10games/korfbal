@@ -4,18 +4,12 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <title>{{ title }}</title>
         <meta name="description" content="">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/static/css/matches/detail.css">
-        <link rel="stylesheet" href="/static/css/color/color.css">
 
-        <link rel="icon" href="/static/images/logo/KWT_logo.png" type="image/x-icon">
+        <link rel="stylesheet" href="/static/css/matches/detail.css">
         
-        <link rel="manifest" href="/static/json/manifest.json">
-        <script src="/static/js/pwa/service-worker.js"></script>
+        {% include 'common/imports.html' %}
     </head>
     <body>
         {% include 'overlays/navbar.html' %}
@@ -26,9 +20,9 @@
                     <p style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">{{ start_date }}</p>
                 </div>
                 <div class="flex-row" style="margin-top: 6px; margin-bottom: 6px;">
-                    <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black;">
+                    <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black; width: 116px;">
                         <img src="{{ match.home_team.club.get_club_logo }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
-                        <h2 style="margin: 4px 0; font-size: 16px;">{{ match.home_team|truncate_middle:12 }}</h2>
+                        <h2 style="margin: 4px 0; font-size: 14px;">{{ match.home_team|truncate_middle:12 }}</h2>
                     </a>
 
                     <div class="flex-column" style="justify-content: center; margin-top: -14px;">
@@ -44,9 +38,9 @@
                         <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
                     </div>
 
-                    <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black;">
+                    <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black; width: 116px;">
                         <img src="{{ match.away_team.club.get_club_logo }}" alt="{{ match.away_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
-                        <h2 style="margin: 4px 0; font-size: 16px;">{{ match.away_team|truncate_middle:12 }}</h2>
+                        <h2 style="margin: 4px 0; font-size: 14px;">{{ match.away_team|truncate_middle:12 }}</h2>
                     </a>
                 </div>
             </div>

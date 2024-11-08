@@ -3,19 +3,12 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="utf-8">
         <title>Login</title>
         <meta name="description" content="Registration">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
         
         <link rel="stylesheet" href="/static/css/authentication/2fa_code.css">
-        <link rel="stylesheet" href="/static/css/color/color.css">
-
-        <link rel="stylesheet" href="https://use.typekit.net/pbm5dyg.css">
-        <link rel="icon" href="/static/images/logo/KWT_logo.png" type="image/x-icon">
-
-        <link rel="manifest" href="/static/json/manifest.json">
-        <script src="/static/js/pwa/service-worker.js"></script>
+        
+        {% include 'common/imports.html' %}
     </head>
     <body class="background-color">
         {% include 'overlays/navbar.html' %}
