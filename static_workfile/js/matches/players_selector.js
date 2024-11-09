@@ -476,7 +476,7 @@ class PlayerGroupManager {
                 playerGroupDiv.style.backgroundColor = 'lightblue';
             }
 
-            this.playerElementHTML(player);
+            this.playerElementHTML(player, playerGroupDiv, playerField);
         });
 
         this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
@@ -505,13 +505,13 @@ class PlayerGroupManager {
             playerGroupDiv.classList.add('flex-row', 'player');
             playerGroupDiv.style.backgroundColor = 'lightblue';
 
-            this.playerElementHTML(player);
+            this.playerElementHTML(player, playerGroupDiv, playerField);
         });
 
         this.updateOptionsBarAddPlayers();
     }
 
-    playerElementHTML(player) {
+    playerElementHTML(player, playerGroupDiv, playerField) {
         // Add profile picture
         const profileImg = document.createElement('img');
         profileImg.src = player.get_profile_picture;
