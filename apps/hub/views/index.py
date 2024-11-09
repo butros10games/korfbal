@@ -20,7 +20,7 @@ def index(request):
         matches = Match.objects.filter(Q(home_team__in=teams) | Q(away_team__in=teams)).order_by('start_time')
         
         # get the match datas of the matches
-        match_data = MatchData.objects.prefetch_related('match_link', "match_link__home_team", "match_link__away_team").filter(match_link__in=matches, status__in=['active', 'Upcomming']).order_by('match_link__start_time').first()
+        match_data = MatchData.objects.prefetch_related('match_link', "match_link__home_team", "match_link__away_team").filter(match_link__in=matches, status__in=['active', 'upcoming']).order_by('match_link__start_time').first()
         
         match = None
         if match_data:
