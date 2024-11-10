@@ -123,7 +123,7 @@ function onMessageReceived(event) {
 
 function updateEvents(data) {
     const events = data.events;
-    const teamPositie = data.team_position;
+    const home_team_id = data.home_team_id;
     let thuis = 0, uit = 0;
 
     const eventContainer = document.createElement("div");
@@ -136,7 +136,7 @@ function updateEvents(data) {
 
             if (event.type == "goal") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
-                const score = wedstrijdPunten(event, thuis, uit, teamPositie);
+                const score = wedstrijdPunten(event, thuis, uit, home_team_id);
                 thuis = score[0];
                 uit = score[1];
                 const midsectionDiv = createMidsectionDiv(event.goal_type + " (\"" + event.time + "\")", truncateMiddle(event.player, 20));
@@ -193,11 +193,11 @@ function updateEvents(data) {
     infoContainer.appendChild(eventContainer);
 }
 
-function wedstrijdPunten(event, thuis, uit, teamPositie) {
-    if (event.for_team) {
-        teamPositie == 'home' ? thuis++ : uit++;
+function wedstrijdPunten(event, thuis, uit, home_team_id) {
+    if (event.team_id == home_team_id) {
+        thuis++;
     } else {
-        teamPositie == 'home' ? uit++ : thuis++;
+        uit++;
     }
     return [thuis, uit];
 }
