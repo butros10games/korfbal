@@ -21,7 +21,7 @@ class team_data(AsyncWebsocketConsumer):
     
     async def connect(self):
         team_id = self.scope['url_route']['kwargs']['id']
-        self.team = await sync_to_async(Team.objects.get)(id_uuid=team_id)
+        self.team = await Team.objects.aget(id_uuid=team_id)
         await self.accept()
         
     async def receive(self, text_data):
@@ -101,7 +101,7 @@ class team_data(AsyncWebsocketConsumer):
         # Check if a specific season is provided
         if season_uuid:
             # Assuming you have a Season object or its UUID
-            season = await sync_to_async(Season.objects.get)(id_uuid=season_uuid)
+            season = await Season.objects.aget(id_uuid=season_uuid)
 
             # Get all TeamData instances for the specified team and season
             team_data_instances = await sync_to_async(list)(TeamData.objects.prefetch_related('players').filter(team=self.team, season=season))
@@ -114,7 +114,7 @@ class team_data(AsyncWebsocketConsumer):
         else:
             # retreve the players of the current season or last season if there is no current season
             try:
-                current_season = await sync_to_async(Season.objects.get)(start_date__lte=datetime.now(), end_date__gte=datetime.now())
+                current_season = await Season.objects.aget(start_date__lte=datetime.now(), end_date__gte=datetime.now())
             except Season.DoesNotExist:
                 current_season = await sync_to_async(Season.objects.filter(end_date__lte=datetime.now()).order_by('-end_date').first)()
             
