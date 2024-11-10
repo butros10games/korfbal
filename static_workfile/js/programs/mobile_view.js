@@ -7,3 +7,6 @@ setFullHeight();
 
 // Reset on resize
 window.addEventListener('resize', setFullHeight);
+
+// Reset on orientation change
+window.addEventListener('orientationchange', setFullHeight);
