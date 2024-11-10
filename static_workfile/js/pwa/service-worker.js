@@ -3,11 +3,28 @@ self.addEventListener('fetch', function(event) {
 });
 
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/static/js/pwa/service-worker.js').then(function(registration) {
+    navigator.serviceWorker.register('/static/js/pwa/service-worker.js')
+        .then(registration => {
             console.log('ServiceWorker registration successful with scope: ', registration.scope);
-        }, function(err) {
+
+            // Listen for updates to the service worker
+            registration.onupdatefound = () => {
+                const installingWorker = registration.installing;
+                installingWorker.onstatechange = () => {
+                    if (installingWorker.state === 'installed') {
+                        if (navigator.serviceWorker.controller) {
+                            // New update available, refresh the page to load the new content
+                            console.log('New content is available; refreshing.');
+                            window.location.reload();
+                        } else {
+                            // Content is cached for offline use
+                            console.log('Content is cached for offline use.');
+                        }
+                    }
+                };
+            };
+        })
+        .catch(err => {
             console.log('ServiceWorker registration failed: ', err);
         });
-    });
 }
