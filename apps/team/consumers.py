@@ -7,7 +7,7 @@ from apps.player.models import Player
 from apps.schedule.models import Season, Match
 from apps.team.models import Team, TeamData
 
-from apps.hub.utils.transform_matchdata import transform_matchdata
+from apps.common import transform_matchdata
 from apps.common import players_stats, general_stats
 
 import json

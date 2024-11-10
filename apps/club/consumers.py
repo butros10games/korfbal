@@ -7,7 +7,7 @@ from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.game_tracker.models import MatchData
 
-from apps.hub.utils.transform_matchdata import transform_matchdata
+from apps.common import transform_matchdata
 
 import json
 import traceback
