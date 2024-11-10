@@ -28,7 +28,7 @@ window.updateMatches = function(data) {
             const home_team_name = document.createElement("p");
             home_team_name.style.margin = "0";
             home_team_name.style.marginTop = "4px";
-            home_team_name.style.fontSize = "12px";
+            home_team_name.style.fontSize = "14px";
             home_team_name.style.textAlign = "center";
             home_team_name.innerHTML = homeTeamText;
 
@@ -61,7 +61,7 @@ window.updateMatches = function(data) {
                 match_hour.style.margin = "0";
                 match_hour.style.marginBottom = "12px";
                 match_hour.style.fontWeight = "600";
-                match_hour.style.fontSize = "18px";
+                match_hour.style.fontSize = "20px";
                 match_hour.style.textAlign = "center";
                 match_hour.innerHTML = element.start_time + "</br>" + " (live)";
 
@@ -91,7 +91,7 @@ window.updateMatches = function(data) {
             const away_team_name = document.createElement("p");
             away_team_name.style.margin = "0";
             away_team_name.style.marginTop = "4px";
-            away_team_name.style.fontSize = "12px";
+            away_team_name.style.fontSize = "14px";
             away_team_name.style.textAlign = "center";
             away_team_name.innerHTML = awayTeamText;
 

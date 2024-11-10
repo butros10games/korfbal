@@ -80,7 +80,7 @@ function updatePlayers(data) {
 
             const player_name = document.createElement("p");
             player_name.classList.add("player-name");
-            player_name.style.fontSize = "14px";
+            player_name.style.fontSize = "16px";
 
             const PlayerName = truncateMiddle(element.name, 22);
 

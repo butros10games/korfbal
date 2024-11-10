@@ -19,7 +19,7 @@ window.updateTeam = function(data) {
 
             const team_name = document.createElement("p");
             team_name.style.margin = "12px 6px";
-            team_name.style.fontSize = "14px";
+            team_name.style.fontSize = "16px";
             team_name.innerHTML = element.name;
 
             const arrow_div = document.createElement("div");

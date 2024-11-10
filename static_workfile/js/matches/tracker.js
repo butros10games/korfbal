@@ -506,7 +506,7 @@ function createPopup(popupTextData) {
     const popupText = document.createElement("p");
     popupText.innerHTML = popupTextData;
     popupText.style.margin = "0";
-    popupText.style.fontSize = "18px";
+    popupText.style.fontSize = "20px";
     popupText.style.fontWeight = "600";
     popupText.style.marginBottom = "12px";
 
@@ -518,7 +518,7 @@ function createPopup(popupTextData) {
     popupButton.style.margin = "0";
     popupButton.style.width = "100%";
     popupButton.style.height = "42px";
-    popupButton.style.fontSize = "14px";
+    popupButton.style.fontSize = "16px";
     popupButton.style.fontWeight = "600";
     popupButton.style.marginBottom = "12px";
     popupButton.style.background = "var(--button-color)";
@@ -633,7 +633,7 @@ function showGoalTypes(data) {
         goalTypeTitle.classList.add("flex-center");
         goalTypeTitle.innerHTML = truncateMiddle(goalType.name, 16);
         goalTypeTitle.style.margin = "0";
-        goalTypeTitle.style.fontSize = "14px";
+        goalTypeTitle.style.fontSize = "16px";
         goalTypeTitle.style.background = "var(--button-color)";
         goalTypeTitle.style.color = "var(--text-color)";
         goalTypeTitle.style.padding = "6px";
@@ -727,7 +727,7 @@ function showReservePlayer(data) {
         PlayerTitle.classList.add("flex-center");
         PlayerTitle.innerHTML = truncateMiddle(Player.name, 16);
         PlayerTitle.style.margin = "0";
-        PlayerTitle.style.fontSize = "14px";
+        PlayerTitle.style.fontSize = "16px";
         PlayerTitle.style.background = "var(--button-color)";
         PlayerTitle.style.color = "var(--text-color)";
         PlayerTitle.style.padding = "6px";
@@ -948,7 +948,7 @@ function showPlayerGroups(data) {
 
                 const playerName = document.createElement("p");
                 playerName.style.margin = "0";
-                playerName.style.fontSize = "14px";
+                playerName.style.fontSize = "16px";
 
                 const playerShots = document.createElement("div");
                 playerShots.classList.add("flex-column");
@@ -956,18 +956,18 @@ function showPlayerGroups(data) {
                 const playerShotsfor = document.createElement("p");
                 playerShotsfor.id = "shots-for";
                 playerShotsfor.style.margin = "0";
-                playerShotsfor.style.fontSize = "14px";
+                playerShotsfor.style.fontSize = "16px";
                 playerShotsfor.style.marginBottom = "-10px";
 
                 const playerShotsAgainst = document.createElement("p");
                 playerShotsAgainst.id = "shots-against";
                 playerShotsAgainst.style.margin = "0";
-                playerShotsAgainst.style.fontSize = "14px";
+                playerShotsAgainst.style.fontSize = "16px";
                 playerShotsAgainst.style.marginTop = "-10px";
 
                 const playerShotsDivider = document.createElement("p");
                 playerShotsDivider.style.margin = "0";
-                playerShotsDivider.style.fontSize = "14px";
+                playerShotsDivider.style.fontSize = "16px";
 
                 if (player) {
                     playerDiv.id = player.id;
@@ -1158,7 +1158,7 @@ function deleteConfirmPopup() {
     const popupText = document.createElement("p");
     popupText.innerHTML = "Event verwijderen?";
     popupText.style.margin = "0";
-    popupText.style.fontSize = "18px";
+    popupText.style.fontSize = "20px";
     popupText.style.fontWeight = "600";
 
     // Create a close button for the popup
@@ -1185,7 +1185,7 @@ function deleteConfirmPopup() {
     popupButton.style.margin = "0";
     popupButton.style.width = "calc(50% - 12px)";
     popupButton.style.height = "42px";
-    popupButton.style.fontSize = "14px";
+    popupButton.style.fontSize = "16px";
     popupButton.style.fontWeight = "600";
     popupButton.style.background = "var(--button-color)";
     popupButton.style.color = "var(--text-color)";
@@ -1217,7 +1217,7 @@ function deleteConfirmPopup() {
     popupButton2.style.margin = "0";
     popupButton2.style.width = "calc(50% - 12px)";
     popupButton2.style.height = "42px";
-    popupButton2.style.fontSize = "14px";
+    popupButton2.style.fontSize = "16px";
     popupButton2.style.fontWeight = "600";
     popupButton2.style.background = "red";
     popupButton2.style.color = "var(--text-color)";

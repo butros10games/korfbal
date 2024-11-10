@@ -36,7 +36,7 @@ function createPlayerDiv(type, player, playerOptions = []) {
     } else {
         const playerName = document.createElement("p");
         playerName.style.margin = "0";
-        playerName.style.fontSize = "14px";
+        playerName.style.fontSize = "16px";
         playerName.innerHTML = player ? truncateMiddle(player.name, 16) : "geen data";
         playerDiv.appendChild(playerName);
     }

@@ -20,8 +20,8 @@
                     <button id="end-half-button" class="switch-button" style="background: red; display: none;">einde</button>
                 </div>
                 <div style="width: calc(100% * 1/3)" class="flex-column">
-                    <p style="font-size: 12px; margin: 0;">Perioide <span id="periode_number">{{ match.current_part }}</span>/{{ match.parts }}</p>
-                    <p id="counter" style="font-size: 16px; font-weight: 600; margin: 0;">{{ time_display }}</p>
+                    <p style="font-size: 14px; margin: 0;">Perioide <span id="periode_number">{{ match.current_part }}</span>/{{ match.parts }}</p>
+                    <p id="counter" style="font-size: 18px; font-weight: 600; margin: 0;">{{ time_display }}</p>
                 </div>
                 <div style="width: calc(100% * 1/3)" class="flex-column">
                     <button id="start-stop-button" class="switch-button">{{ start_stop_button }}</button>
@@ -32,13 +32,13 @@
                 <div id="{{ team_1.id_uuid }}" class="flex-column" style="width: 50%">
                     <p style="margin: 0;">{{ team_1|truncate_middle:14 }}</p>
                     <div id="home-score" style="background: #43ff6480; border-radius: 4px 0 0 4px; width: 100%; height: 46px;" class="flex-center">
-                        <p style="margin: 0; padding: 0; font-size: 24px;">{{ team_1_score }}</p>
+                        <p style="margin: 0; padding: 0; font-size: 26px;">{{ team_1_score }}</p>
                     </div>
                 </div>
                 <div id="{{ team_2.id_uuid }}" class="flex-column" style="width: 50%">
                     <p style="margin: 0;">{{ team_2|truncate_middle:14 }}</p>
                     <div id="away-score" style="background: rgba(235, 0, 0, 0.5); border-radius: 0 4px 4px 0; width: 100%; height: 46px;" class="flex-center">
-                        <p style="margin: 0; padding: 0; font-size: 24px;">{{ team_2_score }}</p>
+                        <p style="margin: 0; padding: 0; font-size: 26px;">{{ team_2_score }}</p>
                     </div>
                 </div>
             </div>

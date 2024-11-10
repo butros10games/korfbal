@@ -94,7 +94,7 @@ body {
 }
 
 .done-button {
-    font-size: 16px;
+    font-size: 18px;
     margin: 0;
     text-decoration: none;
     color: white; 
@@ -128,7 +128,7 @@ body {
     background-color: #1b1b1b;
     border: none;
     color: white;
-    font-size: 16px;
+    font-size: 18px;
 }
 
 .search-field:focus {

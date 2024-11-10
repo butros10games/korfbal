@@ -243,14 +243,14 @@ function createTeamButton(element) {
     const teamName = document.createElement('p');
     teamName.style.fontWeight = '600';
     teamName.style.margin = 0;
-    teamName.style.fontSize = '16px';
+    teamName.style.fontSize = '18px';
     teamName.innerHTML = element.name;
     textContainer.appendChild(teamName);
 
     if (element.competition) {
         const competition = document.createElement('p');
         competition.style.margin = 0;
-        competition.style.fontSize = '12px';
+        competition.style.fontSize = '14px';
         competition.style.color = '#666';
         competition.style.fontWeight = '500';
         competition.style.marginTop = '4px';

@@ -17,22 +17,22 @@
         <div class="flex-column" style="margin-top: 48px;">
             <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px;">
                 <div class="flex-row" style="justify-content: flex-start;">
-                    <p style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">{{ start_date }}</p>
+                    <p style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">{{ start_date }}</p>
                 </div>
                 <div class="flex-row" style="margin-top: 6px; margin-bottom: 6px;">
                     <a href="{{ match.home_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black; width: 120px;">
                         <img src="{{ match.home_team.club.get_club_logo }}" alt="{{ match.home_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
-                        <h2 style="margin: 4px 0; font-size: 14px;">{{ match.home_team|truncate_middle:12 }}</h2>
+                        <h2 style="margin: 4px 0; font-size: 16px;">{{ match.home_team|truncate_middle:12 }}</h2>
                     </a>
 
                     <div class="flex-column" style="justify-content: center; margin-top: -14px;">
                         {% if match_data.status == 'finished' %}
-                            <p style="margin: 0; font-size: 16px; font-weight: 600;">Uitslag</p>
+                            <p style="margin: 0; font-size: 18px; font-weight: 600;">Uitslag</p>
                         {% elif match_data.status == 'active' %}
-                            <p style="font-size: 12px; margin: 0;">Perioide <span id="periode_number">{{ match_data.current_part }}</span>/{{ match_data.parts }}</p>
-                            <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ time_display }}</p>
+                            <p style="font-size: 14px; margin: 0;">Perioide <span id="periode_number">{{ match_data.current_part }}</span>/{{ match_data.parts }}</p>
+                            <p id="counter" style="margin: 0; font-size: 22px; font-weight: 600;">{{ time_display }}</p>
                         {% else %}
-                            <p id="counter" style="margin: 0; font-size: 20px; font-weight: 600;">{{ start_time }}</p> 
+                            <p id="counter" style="margin: 0; font-size: 22px; font-weight: 600;">{{ start_time }}</p> 
                         {% endif %}
 
                         <p id="score" style="margin: 0;">{{ home_score }} / {{ away_score }}</p>
@@ -40,7 +40,7 @@
 
                     <a href="{{ match.away_team.get_absolute_url }}" class="flex-column" style="justify-content: flex-start; text-decoration: none; color: black; width: 120px;">
                         <img src="{{ match.away_team.club.get_club_logo }}" alt="{{ match.away_team }}" width="64px" height="64px" style="border-radius: 50%; object-fit: contain;">
-                        <h2 style="margin: 4px 0; font-size: 14px;">{{ match.away_team|truncate_middle:12 }}</h2>
+                        <h2 style="margin: 4px 0; font-size: 16px;">{{ match.away_team|truncate_middle:12 }}</h2>
                     </a>
                 </div>
             </div>

@@ -314,7 +314,7 @@ function updateGoalStats(data) {
 
         const matchs = document.createElement("p");
         matchs.style.margin = "0";
-        matchs.style.fontSize = "14px";
+        matchs.style.fontSize = "16px";
         matchs.innerHTML = "Wedstrijden";
 
         const matchs_data = document.createElement("p");
@@ -332,7 +332,7 @@ function updateGoalStats(data) {
 
         const total_score = document.createElement("p");
         total_score.style.margin = "0";
-        total_score.style.fontSize = "14px";
+        total_score.style.fontSize = "16px";
         total_score.innerHTML = "Totaal punten";
 
         const total_score_data = document.createElement("p");
@@ -368,7 +368,7 @@ function updateGoalStats(data) {
 
                 const goal_type_name = document.createElement("p");
                 goal_type_name.style.margin = "0";
-                goal_type_name.style.fontSize = "14px";
+                goal_type_name.style.fontSize = "16px";
                 goal_type_name.innerHTML = goalType;
 
                 const goals_data = document.createElement("p");

@@ -1,6 +1,6 @@
 body {
     margin: 0;
-    font-family: termina, sans-serif;
+    font-family: "DM Sans", sans-serif;
 }
 
 .flex-row {
@@ -180,7 +180,7 @@ a {
 }
 
 .event-type {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: bold;
     display: flex;
     justify-content: center;
@@ -192,7 +192,7 @@ a {
 
 .description {
     margin: 0;
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .current-score {

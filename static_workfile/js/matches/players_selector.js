@@ -306,7 +306,7 @@ class PlayerGroupManager {
 
                 const groupTitle = document.createElement('p');
                 groupTitle.classList.add('dm-sans-600-normal');
-                groupTitle.style.fontSize = '20px';
+                groupTitle.style.fontSize = '22px';
                 groupTitle.style.margin = '0';
                 groupTitle.textContent = playerGroup.starting_type.name;
 
@@ -316,7 +316,7 @@ class PlayerGroupManager {
                     const addPlayerButton = document.createElement('p');
                     addPlayerButton.classList.add('dm-sans-600-normal', 'done-button');
                     addPlayerButton.style.marginLeft = 'auto';
-                    addPlayerButton.style.fontSize = '16px';
+                    addPlayerButton.style.fontSize = '18px';
                     addPlayerButton.style.margin = '0';
                     addPlayerButton.textContent = 'Speler toevoegen';
                     addPlayerButton.addEventListener('click', () => {
@@ -489,7 +489,7 @@ class PlayerGroupManager {
 
             const groupTitle = document.createElement('p');
             groupTitle.classList.add('dm-sans-600-normal');
-            groupTitle.style.fontSize = '20px';
+            groupTitle.style.fontSize = '22px';
             groupTitle.style.margin = '0';
             groupTitle.textContent = 'Geselecteerde spelers';
 

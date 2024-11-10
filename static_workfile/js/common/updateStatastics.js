@@ -94,7 +94,7 @@ function general(stats, statsContainer) {
 
     const total_score = document.createElement("p");
     total_score.style.margin = "0";
-    total_score.style.fontSize = "14px";
+    total_score.style.fontSize = "16px";
     total_score.innerHTML = "Totaal punten";
 
     const total_score_data = document.createElement("p");
@@ -131,7 +131,7 @@ function general(stats, statsContainer) {
 
             const goal_type_name = document.createElement("p");
             goal_type_name.style.margin = "0";
-            goal_type_name.style.fontSize = "14px";
+            goal_type_name.style.fontSize = "16px";
             goal_type_name.innerHTML = goalType.name;
 
             const goals_data = document.createElement("p");
@@ -168,14 +168,14 @@ function playerStats(stats, statsContainer) {
     const name = document.createElement("p");
     name.innerHTML = "Naam";
     name.style.margin = "0";
-    name.style.fontSize = "14px";
+    name.style.fontSize = "16px";
 
     const score = document.createElement("p");
     score.classList.add("flex-center");
     score.innerHTML = "Score";
     score.style.width = "80px";
     score.style.margin = "0";
-    score.style.fontSize = "14px";
+    score.style.fontSize = "16px";
     score.style.marginLeft = "auto";
     score.style.marginRight = "12px";
 
@@ -184,7 +184,7 @@ function playerStats(stats, statsContainer) {
     shots.innerHTML = "Schoten";
     shots.style.width = "80px";
     shots.style.margin = "0";
-    shots.style.fontSize = "14px";
+    shots.style.fontSize = "16px";
 
     legend.appendChild(name);
     legend.appendChild(score);
@@ -203,14 +203,14 @@ function playerStats(stats, statsContainer) {
         const playerName = document.createElement("p");
         playerName.innerHTML = truncateMiddle(player.username, 20);
         playerName.style.margin = "0";
-        playerName.style.fontSize = "14px";
+        playerName.style.fontSize = "16px";
 
         const playerScore = document.createElement("p");
         playerScore.classList.add("flex-center");
         playerScore.innerHTML = player.goals_for + " / " + player.goals_against;
         playerScore.style.width = "80px";
         playerScore.style.margin = "0";
-        playerScore.style.fontSize = "14px";
+        playerScore.style.fontSize = "16px";
         playerScore.style.marginLeft = "auto";
         playerScore.style.marginRight = "12px";
 
@@ -219,7 +219,7 @@ function playerStats(stats, statsContainer) {
         playerShots.innerHTML = player.shots_for + " / " + player.shots_against;
         playerShots.style.width = "80px";
         playerShots.style.margin = "0";
-        playerShots.style.fontSize = "14px";
+        playerShots.style.fontSize = "16px";
 
         playerDataDiv.appendChild(playerName);
         playerDataDiv.appendChild(playerScore);

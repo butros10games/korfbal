@@ -42,7 +42,7 @@ window.createScoreDiv = function(score, width) {
 window.getFormattedTime = function(event) {
     let timeout_div = document.createElement("p");
     timeout_div.style.margin = "0";
-    timeout_div.style.fontSize = "14px";
+    timeout_div.style.fontSize = "16px";
 
     const start_time = new Date(event.start_time);
     if (event.end_time == null) {
