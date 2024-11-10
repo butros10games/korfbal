@@ -46,7 +46,7 @@ function onMessageReceived(event) {
             break;
         }
         
-        case "goal_stats": {
+        case "stats": {
             UpdateStatastics(data.data); // imported from common/UpdateStatastics.js
             break;
         }

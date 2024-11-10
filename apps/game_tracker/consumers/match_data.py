@@ -2,12 +2,13 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from apps.game_tracker.models import GoalType, PlayerChange, Pause, PlayerGroup, GroupTypes, Shot, MatchPart, MatchData
+from apps.game_tracker.models import PlayerChange, Pause, PlayerGroup, GroupTypes, Shot, MatchPart, MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
 
 from .common import get_time
+from apps.common import players_stats, general_stats
 
 import json
 import traceback
@@ -105,70 +106,17 @@ class match_data(AsyncWebsocketConsumer):
         }))
         
     async def get_stats_general_request(self):
-        ## get the amount of goals for and against for all the types
-        goal_types = await sync_to_async(list)(GoalType.objects.all())
+        general_stats_json = await general_stats([self.match_data])
         
-        goal_types_json = [
-            {
-                'id': str(goal_type.id_uuid),
-                'name': goal_type.name
-            }
-            for goal_type in goal_types
-        ]
-        
-        team_goal_stats = {}
-        for goal_type in goal_types:
-            goals_for = await Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=True, scored=True).acount()
-            goals_against = await Shot.objects.filter(match_data=self.match_data, shot_type=goal_type, for_team=False, scored=True).acount()
-            
-            team_goal_stats[goal_type.name] = {
-                "goals_by_player": goals_for,
-                "goals_against_player": goals_against
-            }
-        
-        await self.send(text_data=json.dumps({
-            'command': 'stats',
-            'data': {
-                'type': 'general',
-                'stats': {
-                    'shots_for': await Shot.objects.filter(match_data=self.match_data, for_team=True).acount(),
-                    'shots_against': await Shot.objects.filter(match_data=self.match_data, for_team=False).acount(),
-                    'goals_for': await Shot.objects.filter(match_data=self.match_data, for_team=True, scored=True).acount(),
-                    'goals_against': await Shot.objects.filter(match_data=self.match_data, for_team=False, scored=True).acount(),
-                    'team_goal_stats': team_goal_stats,
-                    'goal_types': goal_types_json,
-                }
-            }
-        }))
+        await self.send(text_data=general_stats_json)
         
     async def get_stats_player_request(self):
         ## Get the player stats. shots for and against, goals for and against.
         players = await sync_to_async(list)(Player.objects.prefetch_related('user').filter(Q(team_data_as_player__team=self.match.home_team) | Q(team_data_as_player__team=self.match.away_team)).distinct())
         
-        players_stats = []
-        for player in players:
-            player_stats = {
-                'username': player.user.username,
-                'shots_for': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=True).acount(),
-                'shots_against': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=False).acount(),
-                'goals_for': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=True, scored=True).acount(),
-                'goals_against': await Shot.objects.filter(match_data=self.match_data, player=player, for_team=False, scored=True).acount(),
-            }
-            
-            players_stats.append(player_stats)
-            
-        ## sort the `player_stats` so the player with the most goals for is on top
-        players_stats = sorted(players_stats, key=lambda x: x['goals_for'], reverse=True)
-            
-        await self.send(text_data=json.dumps({
-            'command': 'stats',
-            'data': {
-                'type': 'player_stats',
-                'stats': {
-                    'player_stats': players_stats
-                }
-            }
-        }))
+        player_stats = await players_stats(players, [self.match_data])
+        
+        await self.send(text_data=player_stats)
             
     async def get_events(self, event=None, user_id=None):
         try:   
