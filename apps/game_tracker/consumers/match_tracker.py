@@ -15,7 +15,7 @@ import traceback
 from datetime import datetime
 
 
-class match_tracker(AsyncWebsocketConsumer):
+class MatchTrackerConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.match = None

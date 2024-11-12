@@ -3,7 +3,7 @@ from django.utils import timezone
 from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
 
-class PageRequestRegistrationMiddleware:
+class VisitorTrackingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 

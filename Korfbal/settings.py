@@ -79,7 +79,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'mobiledetect.middleware.DetectMiddleware',
-    'apps.hub.middleware.visitor_tracking.PageRequestRegistrationMiddleware'
+    'apps.common.middleware.VisitorTrackingMiddleware'
 ]
 
 ROOT_URLCONF = 'Korfbal.urls'
@@ -102,7 +102,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 # custom context processors
-                'apps.hub.context_processors.standart_imports',
+                'apps.common.context_processors.standart_imports',
             ],
         },
     },

@@ -8,13 +8,13 @@ from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
 
 from .common import get_time
-from apps.common import players_stats, general_stats
+from apps.common.utils import players_stats, general_stats
 
 import json
 import traceback
 
             
-class match_data(AsyncWebsocketConsumer):
+class MatchDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.match = None

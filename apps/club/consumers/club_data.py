@@ -7,12 +7,12 @@ from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.game_tracker.models import MatchData
 
-from apps.common import transform_matchdata
+from apps.common.utils import transform_matchdata
 
 import json
 import traceback
 
-class club_data(AsyncWebsocketConsumer):
+class ClubDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = None

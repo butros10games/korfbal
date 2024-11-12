@@ -8,13 +8,13 @@ from apps.player.models import Player
 from apps.team.models import Team, TeamData
 from authentication.models import UserProfile
 
-from apps.common import transform_matchdata
+from apps.common.utils import transform_matchdata
 
 import json
 import traceback
 
 
-class profile_data(AsyncWebsocketConsumer):
+class ProfileDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = None

@@ -1,7 +1,7 @@
-from .match_data import match_data
-from .match_tracker import match_tracker
+from .match_data import MatchDataConsumer
+from .match_tracker import MatchTrackerConsumer
 
 __all__ = [
-    'match_data',
-    'match_tracker'
+    'MatchDataConsumer',
+    'MatchTrackerConsumer'
 ]

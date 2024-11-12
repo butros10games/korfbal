@@ -1,6 +1,6 @@
 from django.urls import path
-from . import consumers
+from .consumers import ClubDataConsumer
 
 websocket_urlpatterns = [
-    path('ws/club/<uuid:id>/', consumers.club_data.as_asgi())
+    path('ws/club/<uuid:id>/', ClubDataConsumer.as_asgi())
 ]
