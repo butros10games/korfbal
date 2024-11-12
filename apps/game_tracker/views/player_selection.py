@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from apps.player.models import Player
 from apps.team.models import TeamData, Team
 from apps.schedule.models import Match
-from apps.game_tracker.models import PlayerGroup, MatchData, GroupTypes
+from apps.game_tracker.models import PlayerGroup, MatchData, GroupType
 
 import json
 

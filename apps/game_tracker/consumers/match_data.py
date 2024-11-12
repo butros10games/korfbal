@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from apps.game_tracker.models import PlayerChange, Pause, PlayerGroup, GroupTypes, Shot, MatchPart, MatchData
+from apps.game_tracker.models import PlayerChange, Pause, PlayerGroup, GroupType, Shot, MatchPart, MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
@@ -252,7 +252,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             
             # When there is no connected player group create the player groups
             if player_groups == []:
-                group_types = await sync_to_async(list)(GroupTypes.objects.all())
+                group_types = await sync_to_async(list)(GroupType.objects.all())
                 
                 for group_type in group_types:
                     await sync_to_async(PlayerGroup.objects.create)(match_data=self.match_data, team=team, starting_type=group_type, current_type=group_type)

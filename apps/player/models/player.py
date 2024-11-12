@@ -2,10 +2,10 @@ from django.db import models
 from django.urls import reverse
 from uuidv7 import uuid7
 
+from .constants import team_model_string, club_model_string
+
 from django.contrib.auth.models import User
 
-team_model_string = 'team.Team'
-club_model_string = 'club.Club'
 
 class Player(models.Model):
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)

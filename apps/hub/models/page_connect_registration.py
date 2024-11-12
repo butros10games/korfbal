@@ -1,8 +1,8 @@
 from django.db import models
 
-from uuidv7 import uuid7
+from .constants import player_model_string
 
-player_model_string = 'player.Player'
+from uuidv7 import uuid7
 
 
 class PageConnectRegistration(models.Model):

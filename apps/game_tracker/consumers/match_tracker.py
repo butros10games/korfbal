@@ -3,7 +3,7 @@ from asgiref.sync import sync_to_async
 from django.db.models import Case, When
 from django.utils.timezone import make_aware
 
-from apps.game_tracker.models import MatchData, MatchPart, Pause, Shot, GoalType, PlayerGroup, PlayerChange, GroupTypes
+from apps.game_tracker.models import MatchData, MatchPart, Pause, Shot, GoalType, PlayerGroup, PlayerChange, GroupType
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData, Team
 from apps.player.models import Player
@@ -640,8 +640,8 @@ class PlayerGroupClass:
         )
         
     async def swap_player_group_types(self, team):
-        group_type_a = await GroupTypes.objects.aget(name='Aanval')
-        group_type_v = await GroupTypes.objects.aget(name='Verdediging')
+        group_type_a = await GroupType.objects.aget(name='Aanval')
+        group_type_v = await GroupType.objects.aget(name='Verdediging')
 
         player_group_a = await PlayerGroup.objects.aget(match_data=self.match_data, team=team, current_type=group_type_a)
         player_group_v = await PlayerGroup.objects.aget(match_data=self.match_data, team=team, current_type=group_type_v)
@@ -660,7 +660,7 @@ class PlayerGroupClass:
         return await self._make_player_group_json(player_groups)
     
     async def _create_player_groups(self):
-        group_types = await sync_to_async(list)(GroupTypes.objects.all().order_by('id'))
+        group_types = await sync_to_async(list)(GroupType.objects.all().order_by('id'))
         for group_type in group_types:
             await PlayerGroup.objects.acreate(
                 match_data=self.match_data, team=self.team,
