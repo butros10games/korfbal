@@ -6,7 +6,7 @@ from apps.player.models import Player
 
 def club_detail(request, club_id):
     club = get_object_or_404(Club, id_uuid=club_id)
-    
+
     user_request = request.user
     admin = False
     following = False
@@ -15,11 +15,7 @@ def club_detail(request, club_id):
         admin = club.admin.filter(id_uuid=player.id_uuid).exists()
         
         following = player.club_follow.filter(id_uuid=club_id).exists()
-    
-    context = {
-        "club": club,
-        "admin": admin,
-        "following": following
-    }
-    
+
+    context = {"club": club, "admin": admin, "following": following}
+
     return render(request, "club/detail.html", context)

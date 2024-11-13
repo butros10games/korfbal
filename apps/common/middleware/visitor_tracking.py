@@ -3,6 +3,7 @@ from django.utils import timezone
 from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
 
+
 class VisitorTrackingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -13,8 +14,9 @@ class VisitorTrackingMiddleware:
             try:
                 player = Player.objects.get(user=request.user)
                 page, created = PageConnectRegistration.objects.get_or_create(
-                    player=player, page=request.path)
-                
+                    player=player, page=request.path
+                )
+
                 if not created:
                     # Update the registration date if it's not a new record
                     page.registration_date = timezone.now()
@@ -27,9 +29,9 @@ class VisitorTrackingMiddleware:
             except Player.DoesNotExist:
                 # Handle the case where the player does not exist
                 pass
-        
+
         # Pass the request to the next middleware or view
         response = self.get_response(request)
-        
+
         # Return the response
         return response

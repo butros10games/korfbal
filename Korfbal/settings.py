@@ -20,7 +20,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 
 # Load secrets from private_settings.json
 with open(os.path.join(PROJECT_DIR, "private_settings.json")) as f:
-   secrets = json.load(f)
+    secrets = json.load(f)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = secrets["SECRET_KEY"]
@@ -30,19 +30,17 @@ DEBUG = secrets["DEBUG"]
 
 ALLOWED_HOSTS = ["korfbal.butrosgroot.com"]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://korfbal.butrosgroot.com"
-]
+CSRF_TRUSTED_ORIGINS = ["https://korfbal.butrosgroot.com"]
 
 if DEBUG:
     SECURE_SSL_REDIRECT = False
-    
+
     ALLOWED_HOSTS.extend(["localhost", "127.0.0.1"])
 else:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-    
+
     SECURE_SSL_REDIRECT = True
 
     # Secure cookies
@@ -59,7 +57,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "mobiledetect",
     "phonenumber_field",
-    
     "apps.club",
     "apps.player",
     "apps.team",
@@ -80,7 +77,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mobiledetect.middleware.DetectMiddleware",
-    "apps.common.middleware.VisitorTrackingMiddleware"
+    "apps.common.middleware.VisitorTrackingMiddleware",
 ]
 
 ROOT_URLCONF = "Korfbal.urls"
@@ -153,7 +150,7 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {
             "min_length": 6,
-        }
+        },
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -187,9 +184,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = "static/"
-STATICFILES_DIRS = [
-    "static_workfile/"
-]
+STATICFILES_DIRS = ["static_workfile/"]
 
 TEMPLATE_DIRS = [
     os.path.join(BASE_DIR, "templates"),

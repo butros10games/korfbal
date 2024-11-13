@@ -8,9 +8,9 @@ def truncate_middle(text, max_length):
     Truncate middle filter
     Use `{{ "Some long text"|truncate_middle:10 }}`
     """
-    
+
     text = str(text)
-    
+
     if len(text) <= max_length:
         return text
 
