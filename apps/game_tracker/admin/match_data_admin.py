@@ -10,7 +10,7 @@ class MatchDataAdmin(admin.ModelAdmin):
         "home_score",
         "away_score",
         "part_lenght",
-        "status"
+        "status",
     ]
     show_full_result_count = False
 

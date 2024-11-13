@@ -39,7 +39,7 @@ async def get_time(match_data, current_part):
                     "time": part.start_time.isoformat(),
                     "calc_to": active_pause.start_time.isoformat(),
                     "length": match_data.part_lenght,
-                    "pause_length": pause_time
+                    "pause_length": pause_time,
                 }
             )
         else:
@@ -49,7 +49,7 @@ async def get_time(match_data, current_part):
                     "type": "active",
                     "time": part.start_time.isoformat(),
                     "length": match_data.part_lenght,
-                    "pause_length": pause_time
+                    "pause_length": pause_time,
                 }
             )
     else:

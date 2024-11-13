@@ -61,7 +61,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
                         if command == "wedstrijden"
                         else ["finished"]
                     ),
-                    "" if command == "wedstrijden" else "-"
+                    "" if command == "wedstrijden" else "-",
                 )
 
                 wedstrijden_dict = await transform_matchdata(wedstrijden_data)
@@ -106,11 +106,11 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
         matchs_data = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
-                "match_link", 
-                "match_link__home_team", 
-                "match_link__home_team__club", 
-                "match_link__away_team", 
-                "match_link__away_team__club"
+                "match_link",
+                "match_link__home_team",
+                "match_link__home_team__club",
+                "match_link__away_team",
+                "match_link__away_team__club",
             )
             .filter(match_link__in=matches_non_dub, status__in=status)
             .order_by(order + "match_link__start_time")

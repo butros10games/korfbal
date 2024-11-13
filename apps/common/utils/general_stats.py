@@ -47,7 +47,7 @@ async def general_stats(match_datas):
                     ).acount(),
                     "team_goal_stats": team_goal_stats,
                     "goal_types": goal_types_json,
-                }
-            }
+                },
+            },
         }
     )

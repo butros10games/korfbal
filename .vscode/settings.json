@@ -2,7 +2,8 @@
     "python.analysis.typeCheckingMode": "off",
     "sonarlint.connectedMode.project": {
         "connectionId": "https-sonarqube-butrosgroot-com-",
-        "projectKey": "butros10games_Korfbal_546ecb9d-69bc-44e0-b084-429dbc86ce38"
+        "projectKey": "butros10games_Korfbal_546ecb9d-69bc-44e0-b084-429dbc86ce38",
     },
-    "python.envFile": "${workspaceFolder}/.env"
+    "python.envFile": "${workspaceFolder}/.env",
+    "editor.rulers": [88],
 }

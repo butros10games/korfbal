@@ -11,7 +11,7 @@ class Pause(models.Model):
     start_time = models.DateTimeField(default=None, blank=True, null=True)
     end_time = models.DateTimeField(blank=True, null=True)
     active = models.BooleanField(default=False)
-    
+
     def length(self):
         if self.start_time and self.end_time:
             return self.end_time - self.start_time

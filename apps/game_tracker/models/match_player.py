@@ -10,6 +10,6 @@ class MatchPlayer(models.Model):
     match_data = models.ForeignKey("MatchData", on_delete=models.CASCADE, related_name="players")
     team = models.ForeignKey(team_model_string, on_delete=models.CASCADE, related_name="match_players")
     player = models.ForeignKey(player_model_string, on_delete=models.CASCADE, related_name="match_players")
-    
+
     def __str__(self):
         return str(self.player)

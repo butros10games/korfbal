@@ -14,7 +14,7 @@ async def transform_matchdata(matchs_data):
         start_time_dt = datetime.fromisoformat(
             match_data.match_link.start_time.isoformat()
         )
-        
+
         # Format the date as "za 01 april"
         formatted_date = start_time_dt.strftime(
             "%a %d %b"
@@ -48,7 +48,7 @@ async def transform_matchdata(matchs_data):
                     if match_data.get_winner()
                     else None
                 ),
-                "get_absolute_url": str(match_data.match_link.get_absolute_url())
+                "get_absolute_url": str(match_data.match_link.get_absolute_url()),
             }
         )
 

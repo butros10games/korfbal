@@ -29,14 +29,14 @@ async def players_stats(players, match_datas):
 
     # remove all the players with no shots for or against
     players_stats = [
-        player 
-        for player in players_stats 
+        player
+        for player in players_stats
         if (player["shots_for"] > 0 or player["shots_against"] > 0)
     ]
 
     return json.dumps(
         {
             "command": "stats",
-            "data": {"type": "player_stats", "stats": {"player_stats": players_stats}}
+            "data": {"type": "player_stats", "stats": {"player_stats": players_stats}},
         }
     )
