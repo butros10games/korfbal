@@ -2,7 +2,15 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from apps.game_tracker.models import PlayerChange, Pause, PlayerGroup, GroupType, Shot, MatchPart, MatchData
+from apps.game_tracker.models import (
+    PlayerChange,
+    Pause,
+    PlayerGroup,
+    GroupType,
+    Shot,
+    MatchPart,
+    MatchData
+)
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
@@ -13,65 +21,76 @@ from apps.common.utils import players_stats, general_stats
 import json
 import traceback
 
-            
+
 class MatchDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.match = None
         self.current_part = None
-        
+
     async def connect(self):
         match_id = self.scope["url_route"]["kwargs"]["id"]
-        self.match = await Match.objects.prefetch_related("home_team","away_team").aget(id_uuid=match_id)
+        self.match = await Match.objects.prefetch_related(
+            "home_team","away_team"
+        ).aget(id_uuid=match_id)
         self.match_data = await MatchData.objects.aget(match_link=self.match)
-        
+
         try:
-            self.current_part = await MatchPart.objects.aget(match_data=self.match_data, active=True)
+            self.current_part = await MatchPart.objects.aget(
+                match_data=self.match_data, active=True
+            )
         except MatchPart.DoesNotExist:
             pass
         
-        self.channel_names = ["detail_match_%s" % self.match.id_uuid, "tracker_match_%s" % self.match.id_uuid, "time_match_%s" % self.match.id_uuid]
+        self.channel_names = [
+            "detail_match_%s" % self.match.id_uuid,
+            "tracker_match_%s" % self.match.id_uuid,
+            "time_match_%s" % self.match.id_uuid
+        ]
         for channel_name in [self.channel_names[0], self.channel_names[2]]:
             await self.channel_layer.group_add(channel_name, self.channel_name)
-        
+
         await self.accept()
-        
+
     async def disconnect(self, close_code):
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
-    
+
     async def receive(self, text_data):
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
-            
+
             if command == "match_events":
                 await self.get_events(user_id=json_data["user_id"])
-                
+
             elif command == "get_time":
-                await self.send(text_data=await get_time(self.match_data, self.current_part))
-            
+                await self.send(
+                    text_data=await get_time(self.match_data, self.current_part)
+                )
+
             elif command == "home_team" or command == "away_team":
                 await self.team_request(command, json_data["user_id"])
-                
+
             elif command == "savePlayerGroups":
                 await self.save_player_groups_request(json_data["playerGroups"])
-                
+
             elif command == "get_stats":
                 data_type = json_data["data_type"]
-                
+
                 if data_type == "general":
                     await self.get_stats_general_request()
-                
+
                 elif data_type == "player_stats":
                     await self.get_stats_player_request()
-                    
+
         except Exception as e:
-            await self.send(text_data=json.dumps({
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }))
-            
+            await self.send(
+                text_data=json.dumps(
+                    {"error": str(e), "traceback": traceback.format_exc()}
+                )
+            )
+
     async def team_request(self, command, user_id):
         team = self.match.home_team if command == "home_team" else self.match.away_team
                 

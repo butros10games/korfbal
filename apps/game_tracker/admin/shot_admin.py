@@ -21,6 +21,7 @@ class ShotAdminForm(forms.ModelForm):
         else:
             self.fields["team"].queryset = Team.objects.none()
 
+
 class ShotAdmin(admin.ModelAdmin):
     form = ShotAdminForm
     list_display = ["id_uuid", "player", "match_data", "for_team", "team", "scored"]
@@ -28,5 +29,6 @@ class ShotAdmin(admin.ModelAdmin):
 
     class Meta:
         model = Shot
+
 
 admin.site.register(Shot, ShotAdmin)

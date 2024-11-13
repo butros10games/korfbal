@@ -13,7 +13,7 @@ class Club(models.Model):
     logo = models.ImageField(
         upload_to="club_pictures/",
         default="/static/images/clubs/blank-club-picture.png",
-        blank=True
+        blank=True,
     )
 
     def __str__(self):
