@@ -38,5 +38,5 @@ def index(request):
         "home_score": Shot.objects.filter(match_data=match_data, team=match.home_team, scored=True).count() if match else 0,
         "away_score": Shot.objects.filter(match_data=match_data, team=match.away_team, scored=True).count() if match else 0,
     }
-        
+    
     return render(request, "hub/index.html", context)

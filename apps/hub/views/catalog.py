@@ -26,4 +26,5 @@ def catalog(request):
         "following": following_teams,
         "display_back": True
     }
+    
     return render(request, "hub/catalog.html", context)

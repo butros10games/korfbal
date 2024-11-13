@@ -12,6 +12,7 @@ from apps.common.utils import transform_matchdata
 import json
 import traceback
 
+
 class ClubDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -107,4 +108,3 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         ).filter(match_link__in=matches_non_dub, status__in=status).order_by(order + "match_link__start_time"))
         
         return matchs_data
-            

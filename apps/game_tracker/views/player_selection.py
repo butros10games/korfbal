@@ -13,6 +13,7 @@ json_error = JsonResponse({"error": "Invalid JSON data"}, status=400)
 no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
 to_many_players_selected = JsonResponse({"error": "Too many players selected"}, status=400)
 
+
 def player_overview(request, match_id, team_id):
     player_groups = _get_player_groups(match_id, team_id)
     

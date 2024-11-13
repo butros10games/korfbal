@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'apps.schedule',
     'apps.hub',
     'apps.game_tracker',
+    'apps.common',
     'authentication.apps.AuthenticationConfig',
 ]
 

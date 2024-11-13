@@ -7,6 +7,7 @@ from apps.schedule.models import Season
 
 from datetime import date
 
+
 def team_detail(request, team_id):
     team = get_object_or_404(Team, id_uuid=team_id)
     

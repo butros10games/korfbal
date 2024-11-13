@@ -12,4 +12,3 @@ class PlayerGroupForm(forms.ModelForm):
         if self.instance and self.instance.match_data:
             # Limit the queryset for players to those in the match data
             self.fields['players'].queryset = self.instance.match_data.players.all()
-

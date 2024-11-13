@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from apps.schedule.models import Match
 from apps.game_tracker.models import MatchData, PlayerGroup, GroupType
 
+
 @receiver(post_save, sender=Match)
 def create_matchdata_for_new_match(sender, instance, created, **kwargs):
     if created:

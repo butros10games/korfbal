@@ -335,4 +335,3 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             return await sync_to_async(Season.objects.get)(start_date__lte=self.match.start_time, end_date__gte=self.match.start_time)
         except Season.DoesNotExist:
             return await sync_to_async(Season.objects.filter(end_date__lte=self.match.start_time).order_by('-end_date').first)()
-    
