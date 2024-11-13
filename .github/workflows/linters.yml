@@ -51,10 +51,5 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - run: python -m pip install black
-      - name: Run black
-        run: black --check --exclude 'migrations' .
+      - name: black
+        uses: psf/black@stable
