@@ -19,4 +19,4 @@ def truncate_middle(text, max_length):
     front_chars = chars_to_show // 2
     back_chars = chars_to_show - front_chars
 
-    return text[:front_chars] + '...' + text[-back_chars:]
+    return text[:front_chars] + "..." + text[-back_chars:]

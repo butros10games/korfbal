@@ -27,23 +27,23 @@ async def get_time(match_data, current_part):
         
         if active_pause:
             return json.dumps({
-                'command': 'timer_data',
-                'type': 'pause',
-                'time': part.start_time.isoformat(),
-                'calc_to': active_pause.start_time.isoformat(),
-                'length': match_data.part_lenght,
-                'pause_length': pause_time
+                "command": "timer_data",
+                "type": "pause",
+                "time": part.start_time.isoformat(),
+                "calc_to": active_pause.start_time.isoformat(),
+                "length": match_data.part_lenght,
+                "pause_length": pause_time
             })
         else:
             return json.dumps({
-                'command': 'timer_data',
-                'type': 'active',
-                'time': part.start_time.isoformat(),
-                'length': match_data.part_lenght,
-                'pause_length': pause_time
+                "command": "timer_data",
+                "type": "active",
+                "time": part.start_time.isoformat(),
+                "length": match_data.part_lenght,
+                "pause_length": pause_time
             })
     else:
         return json.dumps({
-            'command': 'timer_data',
-            'type': 'deactive'
+            "command": "timer_data",
+            "type": "deactive"
         })

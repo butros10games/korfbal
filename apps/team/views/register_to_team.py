@@ -16,7 +16,7 @@ def register_to_team(request, team_id):
     try:
         season = Season.objects.get(start_date__lte=date.today(), end_date__gte=date.today())
     except Season.DoesNotExist:
-        season = Season.objects.filter(end_date__lte=date.today()).order_by('-end_date').first()
+        season = Season.objects.filter(end_date__lte=date.today()).order_by("-end_date").first()
     
     if user.is_authenticated:
         player = Player.objects.get(user=user)
@@ -26,7 +26,7 @@ def register_to_team(request, team_id):
         except TeamData.DoesNotExist:
             # get the coach of the previous season
             try:
-                previous_season = Season.objects.filter(end_date__lte=date.today()).order_by('-end_date').first()
+                previous_season = Season.objects.filter(end_date__lte=date.today()).order_by("-end_date").first()
                 previous_team_data = TeamData.objects.get(team=team, season=previous_season)
                 
                 team_data = TeamData.objects.create(team=team, season=season)
@@ -36,6 +36,6 @@ def register_to_team(request, team_id):
         
         team_data.players.add(player)
         
-        return redirect('teams')
+        return redirect("teams")
     else:
-        return redirect('/login/?next=/register_to_team/%s/' % team_id)
+        return redirect("/login/?next=/register_to_team/%s/" % team_id)

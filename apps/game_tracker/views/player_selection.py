@@ -68,20 +68,20 @@ def player_search(request, match_id, team_id):
     if request.method != "GET":
         return invalid_request
     
-    if not request.GET.get('search'):
+    if not request.GET.get("search"):
         return no_player_selected
     
-    if len(request.GET.get('search')) < 3:
+    if len(request.GET.get("search")) < 3:
         return JsonResponse({"success": False, "error": "Player name should be at least 3 characters long"})
     
-    if len(request.GET.get('search')) > 50:
+    if len(request.GET.get("search")) > 50:
         return JsonResponse({"success": False, "error": "Player name should be at most 50 characters long"})
     
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
     
     # get the name of the player that is searched for
-    player_name = request.GET.get('search')
+    player_name = request.GET.get("search")
     
     player_groups = PlayerGroup.objects.filter(match_data=MatchData.objects.get(match_link=match_data), team=team_model)
     
@@ -99,8 +99,8 @@ def player_designation(request):
     except json.JSONDecodeError:
         return json_error
     
-    selected_players = data.get('players', [])
-    new_group_id = data.get('new_group_id')
+    selected_players = data.get("players", [])
+    new_group_id = data.get("new_group_id")
     
     if not selected_players:
         return no_player_selected
@@ -116,8 +116,8 @@ def player_designation(request):
             return to_many_players_selected
 
     for player_data in selected_players:
-        player_id = player_data.get('id_uuid')
-        old_group_id = player_data.get('groupId')
+        player_id = player_data.get("id_uuid")
+        old_group_id = player_data.get("groupId")
         
         if old_group_id:
             PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(Player.objects.get(id_uuid=player_id))
@@ -133,4 +133,4 @@ def _get_player_groups(match_id, team_id):
     
     match_data = MatchData.objects.get(match_link=match_model)
     
-    return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by('starting_type__order')
+    return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by("starting_type__order")

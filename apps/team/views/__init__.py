@@ -3,6 +3,6 @@ from .team_detail import team_detail
 
 
 __all__ = [
-    'register_to_team',
-    'team_detail',
+    "register_to_team",
+    "team_detail",
 ]

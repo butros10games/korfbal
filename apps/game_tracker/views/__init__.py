@@ -4,12 +4,12 @@ from .match_tracker import match_tracker
 from .player_selection import player_overview, player_search, player_designation, player_overview_data, players_team
 
 __all__ = [
-    'match_detail',
-    'match_team_selector',
-    'match_tracker',
-    'player_overview',
-    'player_search',
-    'player_designation',
-    'player_overview_data',
-    'players_team',
+    "match_detail",
+    "match_team_selector",
+    "match_tracker",
+    "player_overview",
+    "player_search",
+    "player_designation",
+    "player_overview_data",
+    "players_team",
 ]

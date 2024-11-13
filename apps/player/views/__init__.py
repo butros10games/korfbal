@@ -3,6 +3,6 @@ from .upload_profile_picture import upload_profile_picture
 
 
 __all__ = [
-    'profile_detail',
-    'upload_profile_picture',
+    "profile_detail",
+    "upload_profile_picture",
 ]

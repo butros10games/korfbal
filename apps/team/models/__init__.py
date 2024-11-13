@@ -3,6 +3,6 @@ from .team import Team
 
 
 __all__ = [
-    'TeamData',
-    'Team',
+    "TeamData",
+    "Team",
 ]

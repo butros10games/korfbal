@@ -1,1 +1,1 @@
-team_model_string = 'team.Team'
+team_model_string = "team.Team"

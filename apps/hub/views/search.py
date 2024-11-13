@@ -43,12 +43,12 @@ def serialize_club(club):
     }
 
 def search(request):
-    search_term = request.GET.get('q', '')
-    category = request.GET.get('category', '')
+    search_term = request.GET.get("q", "")
+    category = request.GET.get("category", "")
 
     results = []
 
-    if category == 'teams':
+    if category == "teams":
         current_season = get_current_season()
         
         #! Moet anders gedaan worden even uitzoeken hoe er alsnog een antwoord gestuurd kan worden
@@ -57,13 +57,13 @@ def search(request):
         
         # Annotate teams with full name (club name + team name) and filter by search term
         teams = Team.objects.annotate(
-            full_name=Concat(F('club__name'), Value(' '), F('name'))
+            full_name=Concat(F("club__name"), Value(" "), F("name"))
         ).filter(full_name__icontains=search_term)
 
         # Serialize each team and add to results
         results = [serialize_team(team, current_season) for team in teams]
 
-    elif category == 'clubs':
+    elif category == "clubs":
         # Filter clubs by search term
         clubs = Club.objects.filter(name__icontains=search_term)
 

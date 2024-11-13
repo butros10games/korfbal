@@ -21,8 +21,8 @@ class VisitorTrackingMiddleware:
                     page.save()
 
                 # Reset the back_counter only if this is not a back navigation
-                if not request.session.pop('is_back_navigation', False):
-                    request.session['back_counter'] = 1
+                if not request.session.pop("is_back_navigation", False):
+                    request.session["back_counter"] = 1
 
             except Player.DoesNotExist:
                 # Handle the case where the player does not exist

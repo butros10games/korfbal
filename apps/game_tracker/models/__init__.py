@@ -10,13 +10,13 @@ from .shot import Shot
 
 
 __all__ = [
-    'GoalType',
-    'GroupType',
-    'MatchData',
-    'MatchPart',
-    'MatchPlayer',
-    'Pause',
-    'PlayerChange',
-    'PlayerGroup',
-    'Shot',
+    "GoalType",
+    "GroupType",
+    "MatchData",
+    "MatchPart",
+    "MatchPlayer",
+    "Pause",
+    "PlayerChange",
+    "PlayerGroup",
+    "Shot",
 ]

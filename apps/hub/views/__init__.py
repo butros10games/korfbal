@@ -6,9 +6,9 @@ from .previous_page import previous_page
 
 
 __all__ = [
-    'index',
-    'catalog',
-    'catalog_data',
-    'search',
-    'previous_page',
+    "index",
+    "catalog",
+    "catalog_data",
+    "search",
+    "previous_page",
 ]

@@ -1,1 +1,1 @@
-player_model_string = 'player.Player'
+player_model_string = "player.Player"

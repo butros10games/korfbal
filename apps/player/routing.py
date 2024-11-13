@@ -3,5 +3,5 @@ from .consumers import ProfileDataConsumer
 
 
 websocket_urlpatterns = [
-    path('ws/profile/<uuid:id>/', ProfileDataConsumer.as_asgi()),
+    path("ws/profile/<uuid:id>/", ProfileDataConsumer.as_asgi()),
 ]

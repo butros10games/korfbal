@@ -15,4 +15,4 @@ def standart_imports(request):
             # Player object does not exist for this user, return None for profile_url and profile_img_url
             pass
     
-    return {'profile_url': profile_url, 'profile_img_url': profile_img_url}
+    return {"profile_url": profile_url, "profile_img_url": profile_img_url}

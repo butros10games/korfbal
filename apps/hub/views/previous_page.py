@@ -10,22 +10,22 @@ def previous_page(request):
     player = Player.objects.get(user=request.user)
     
     # Get the counter from the URL or fallback to the session
-    counter = request.GET.get('counter', request.session.get('back_counter', 1))
+    counter = request.GET.get("counter", request.session.get("back_counter", 1))
     try:
         counter = int(counter)  # Ensure the counter is an integer
     except ValueError:
-        counter = 1  # Fallback to 1 if there's any issue with the value
+        counter = 1  # Fallback to 1 if there"s any issue with the value
     
-    pages = PageConnectRegistration.objects.filter(player=player).order_by('-registration_date').exclude(
-        Q(page__icontains='admin') |
-        Q(page__icontains='selector') | 
-        Q(page__icontains='previous') | 
-        Q(page__icontains='api') |
-        Q(page__icontains='login') |
-        Q(page__icontains='logout') |
-        Q(page__icontains='register') |
-        Q(page__icontains='favicon.ico')
-    ).values_list('page', flat=True)
+    pages = PageConnectRegistration.objects.filter(player=player).order_by("-registration_date").exclude(
+        Q(page__icontains="admin") |
+        Q(page__icontains="selector") | 
+        Q(page__icontains="previous") | 
+        Q(page__icontains="api") |
+        Q(page__icontains="login") |
+        Q(page__icontains="logout") |
+        Q(page__icontains="register") |
+        Q(page__icontains="favicon.ico")
+    ).values_list("page", flat=True)
 
     # Remove consecutive duplicate URLs
     unique_pages = []
@@ -42,13 +42,13 @@ def previous_page(request):
         referer = None
 
     # Update the session counter to allow for further back navigation
-    request.session['back_counter'] = counter + 1
-    request.session['is_back_navigation'] = True
+    request.session["back_counter"] = counter + 1
+    request.session["is_back_navigation"] = True
     request.session.modified = True  # Save the session changes
 
     if referer:
         return HttpResponseRedirect(referer)
     else:
-        request.session['back_counter'] = 1
+        request.session["back_counter"] = 1
         request.session.modified = True
-        return redirect('catalog')
+        return redirect("catalog")

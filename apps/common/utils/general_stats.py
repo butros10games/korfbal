@@ -10,8 +10,8 @@ async def general_stats(match_datas):
     
     goal_types_json = [
         {
-            'id': str(goal_type.id_uuid),
-            'name': goal_type.name
+            "id": str(goal_type.id_uuid),
+            "name": goal_type.name
         }
         for goal_type in goal_types
     ]
@@ -27,16 +27,16 @@ async def general_stats(match_datas):
         }
     
     return json.dumps({
-        'command': 'stats',
-        'data': {
-            'type': 'general',
-            'stats': {
-                'shots_for': await Shot.objects.filter(match_data__in=match_datas, for_team=True).acount(),
-                'shots_against': await Shot.objects.filter(match_data__in=match_datas, for_team=False).acount(),
-                'goals_for': await Shot.objects.filter(match_data__in=match_datas, for_team=True, scored=True).acount(),
-                'goals_against': await Shot.objects.filter(match_data__in=match_datas, for_team=False, scored=True).acount(),
-                'team_goal_stats': team_goal_stats,
-                'goal_types': goal_types_json,
+        "command": "stats",
+        "data": {
+            "type": "general",
+            "stats": {
+                "shots_for": await Shot.objects.filter(match_data__in=match_datas, for_team=True).acount(),
+                "shots_against": await Shot.objects.filter(match_data__in=match_datas, for_team=False).acount(),
+                "goals_for": await Shot.objects.filter(match_data__in=match_datas, for_team=True, scored=True).acount(),
+                "goals_against": await Shot.objects.filter(match_data__in=match_datas, for_team=False, scored=True).acount(),
+                "team_goal_stats": team_goal_stats,
+                "goal_types": goal_types_json,
             }
         }
     })
