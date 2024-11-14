@@ -207,10 +207,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 "match_link__home_team__club", 
                 "match_link__away_team", 
                 "match_link__away_team__club"
-            ).filter(
-                match_link__in=matches_non_dub,
-                status__in=status
-            ).order_by(order + "match_link__start_time")
+            )
+            .filter(match_link__in=matches_non_dub, status__in=status)
+            .order_by(order + "match_link__start_time")
         )
 
         return matchs_data

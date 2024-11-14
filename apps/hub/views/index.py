@@ -48,21 +48,23 @@ def index(request):
             match.start_time.strftime("%a, %d %b") if match else "No upcoming matches",
         ),
         "start_time": match.start_time.strftime("%H:%M") if match else "",
-        "home_score":
-        (
-            Shot.objects.filter(
-                match_data=match_data, team=match.home_team, scored=True
-            ).count()
-            if match
-            else 0,
+        "home_score": (
+            (
+                Shot.objects.filter(
+                    match_data=match_data, team=match.home_team, scored=True
+                ).count()
+                if match
+                else 0,
+            ),
         ),
-        "away_score":
-        (
-            Shot.objects.filter(
-                match_data=match_data, team=match.away_team, scored=True
-            ).count()
-            if match
-            else 0,
+        "away_score": (
+            (
+                Shot.objects.filter(
+                    match_data=match_data, team=match.away_team, scored=True
+                ).count()
+                if match
+                else 0,
+            ),
         ),
     }
 

@@ -209,11 +209,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         matchs_data = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
-                "match_link", 
-                "match_link__home_team", 
-                "match_link__home_team__club", 
-                "match_link__away_team", 
-                "match_link__away_team__club"
+                "match_link",
+                "match_link__home_team",
+                "match_link__home_team__club",
+                "match_link__away_team",
+                "match_link__away_team__club",
             )
             .filter(
                 match_link__in=matches_non_dub,

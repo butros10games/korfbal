@@ -45,6 +45,6 @@ def team_detail(request, team_id):
         else:
             coach = False
 
-    context= {"team": team, "coaching": coach, "following": following}
+    context = {"team": team, "coaching": coach, "following": following}
 
     return render(request, "teams/detail.html", context)
