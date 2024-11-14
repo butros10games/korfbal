@@ -1,12 +1,11 @@
-from django.db.models import Q, F, Value
-from django.http import JsonResponse, Http404
-from django.db.models.functions import Concat
-
-from apps.team.models import Team, TeamData
-from apps.schedule.models import Season
-from apps.club.models import Club
-
 from datetime import date
+
+from apps.club.models import Club
+from apps.schedule.models import Season
+from apps.team.models import Team, TeamData
+from django.db.models import F, Q, Value
+from django.db.models.functions import Concat
+from django.http import Http404, JsonResponse
 
 
 def get_current_season():

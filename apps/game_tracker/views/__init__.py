@@ -2,10 +2,10 @@ from .match_detail import match_detail
 from .match_team_selector import match_team_selector
 from .match_tracker import match_tracker
 from .player_selection import (
-    player_overview,
-    player_search,
     player_designation,
+    player_overview,
     player_overview_data,
+    player_search,
     players_team,
 )
 

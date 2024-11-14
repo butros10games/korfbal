@@ -1,12 +1,11 @@
-from django.shortcuts import render, get_object_or_404
-from django.http import JsonResponse
-
-from apps.player.models import Player
-from apps.team.models import TeamData, Team
-from apps.schedule.models import Match
-from apps.game_tracker.models import PlayerGroup, MatchData
-
 import json
+
+from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.player.models import Player
+from apps.schedule.models import Match
+from apps.team.models import Team, TeamData
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, render
 
 invalid_request = JsonResponse({"error": "Invalid request method"}, status=405)
 json_error = JsonResponse({"error": "Invalid JSON data"}, status=400)

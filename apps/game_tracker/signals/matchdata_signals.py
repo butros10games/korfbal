@@ -1,7 +1,6 @@
+from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-
-from apps.game_tracker.models import MatchData, PlayerGroup, GroupType
 
 
 @receiver(post_save, sender=MatchData)

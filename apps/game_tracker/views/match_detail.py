@@ -1,7 +1,6 @@
-from django.shortcuts import render, get_object_or_404
-
 from apps.game_tracker.models import MatchData, Shot
 from apps.schedule.models import Match
+from django.shortcuts import get_object_or_404, render
 
 from .common import get_time_display
 

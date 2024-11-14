@@ -8,7 +8,6 @@ from .player_change import PlayerChange
 from .player_group import PlayerGroup
 from .shot import Shot
 
-
 __all__ = [
     "GoalType",
     "GroupType",

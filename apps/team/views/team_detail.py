@@ -1,11 +1,10 @@
-from django.shortcuts import render, get_object_or_404
-from django.http import Http404
+from datetime import date
 
-from apps.team.models import Team, TeamData
 from apps.player.models import Player
 from apps.schedule.models import Season
-
-from datetime import date
+from apps.team.models import Team, TeamData
+from django.http import Http404
+from django.shortcuts import get_object_or_404, render
 
 
 def team_detail(request, team_id):

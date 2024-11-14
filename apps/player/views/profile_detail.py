@@ -1,6 +1,5 @@
-from django.shortcuts import render, get_object_or_404
-
 from apps.player.models import Player
+from django.shortcuts import get_object_or_404, render
 
 
 def profile_detail(request, player_id=None):

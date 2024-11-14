@@ -1,8 +1,8 @@
+import json
+
 from asgiref.sync import sync_to_async
 
-from apps.game_tracker.models import Shot, GoalType
-
-import json
+from apps.game_tracker.models import GoalType, Shot
 
 
 async def general_stats(match_datas):

@@ -1,16 +1,15 @@
-from channels.generic.websocket import AsyncWebsocketConsumer
-from asgiref.sync import sync_to_async
-from django.db.models import Q
-
-from apps.team.models import Team
-from apps.player.models import Player
-from apps.schedule.models import Match
-from apps.game_tracker.models import MatchData
-
-from apps.common.utils import transform_matchdata
-
 import json
 import traceback
+
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+from apps.common.utils import transform_matchdata
+from apps.game_tracker.models import MatchData
+from apps.player.models import Player
+from apps.schedule.models import Match
+from apps.team.models import Team
+from django.db.models import Q
 
 
 class ClubDataConsumer(AsyncWebsocketConsumer):

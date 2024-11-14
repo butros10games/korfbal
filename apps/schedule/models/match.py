@@ -1,9 +1,9 @@
+from uuidv7 import uuid7
+
 from django.db import models
 from django.urls import reverse
 
 from .constants import team_model_string
-
-from uuidv7 import uuid7
 
 
 class Match(models.Model):

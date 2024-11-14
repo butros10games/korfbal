@@ -1,6 +1,6 @@
-from django.db import models
-
 from uuidv7 import uuid7
+
+from django.db import models
 
 
 class GroupType(models.Model):

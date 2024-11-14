@@ -1,6 +1,6 @@
 from django.urls import path
-from . import views
 
+from . import views
 
 urlpatterns = [
     path("<uuid:player_id>/", views.profile_detail, name="profile_detail"),

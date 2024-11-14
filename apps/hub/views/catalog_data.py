@@ -1,11 +1,10 @@
-from django.db.models import Q
-from django.http import JsonResponse
+import json
 
+from apps.club.models import Club
 from apps.player.models import Player
 from apps.team.models import Team
-from apps.club.models import Club
-
-import json
+from django.db.models import Q
+from django.http import JsonResponse
 
 
 def catalog_data(request):

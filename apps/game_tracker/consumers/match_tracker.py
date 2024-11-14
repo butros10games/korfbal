@@ -1,27 +1,27 @@
-from channels.generic.websocket import AsyncWebsocketConsumer
-from asgiref.sync import sync_to_async
-from django.db.models import Case, When
-from django.utils.timezone import make_aware
-
-from apps.game_tracker.models import (
-    MatchData,
-    MatchPart,
-    Pause,
-    Shot,
-    GoalType,
-    PlayerGroup,
-    PlayerChange,
-    GroupType,
-)
-from apps.schedule.models import Match, Season
-from apps.team.models import TeamData, Team
-from apps.player.models import Player
-
-from .common import get_time
-
 import json
 import traceback
 from datetime import datetime
+
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+from apps.game_tracker.models import (
+    GoalType,
+    GroupType,
+    MatchData,
+    MatchPart,
+    Pause,
+    PlayerChange,
+    PlayerGroup,
+    Shot,
+)
+from apps.player.models import Player
+from apps.schedule.models import Match, Season
+from apps.team.models import Team, TeamData
+from django.db.models import Case, When
+from django.utils.timezone import make_aware
+
+from .common import get_time
 
 
 class MatchTrackerConsumer(AsyncWebsocketConsumer):

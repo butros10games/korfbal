@@ -1,8 +1,7 @@
-from django.shortcuts import render, get_object_or_404
-
-from apps.game_tracker.models import MatchData, PlayerGroup, Shot, Pause, MatchPart
-from apps.team.models import Team
+from apps.game_tracker.models import MatchData, MatchPart, Pause, PlayerGroup, Shot
 from apps.schedule.models import Match
+from apps.team.models import Team
+from django.shortcuts import get_object_or_404, render
 
 from .common import get_time_display
 

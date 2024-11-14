@@ -1,19 +1,21 @@
+import json
+
 from asgiref.sync import sync_to_async
 
 from apps.game_tracker.models import MatchPart, Pause
 
-import json
-
 
 async def get_time(match_data, current_part):
-    # check if there is a active part if there is a active part send the start time of the part and lenght of a match part
+    # check if there is a active part if there is a active part send the start time of
+    # the part and lenght of a match part
     try:
         part = await MatchPart.objects.aget(match_data=match_data, active=True)
     except MatchPart.DoesNotExist:
         part = False
 
     if part:
-        # check if there is a active pause if there is a active pause send the start time of the pause
+        # check if there is a active pause if there is a active pause send the start
+        # time of the pause
         try:
             active_pause = await Pause.objects.aget(
                 match_data=match_data, active=True, match_part=current_part

@@ -1,6 +1,6 @@
 from django.urls import path
-from . import views
 
+from . import views
 
 urlpatterns = [
     path("detail/<uuid:team_id>", views.team_detail, name="team_detail"),

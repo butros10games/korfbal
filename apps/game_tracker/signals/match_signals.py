@@ -1,8 +1,7 @@
+from apps.game_tracker.models import MatchData
+from apps.schedule.models import Match
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-
-from apps.schedule.models import Match
-from apps.game_tracker.models import MatchData
 
 
 @receiver(post_save, sender=Match)

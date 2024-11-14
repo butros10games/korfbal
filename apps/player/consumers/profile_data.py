@@ -1,17 +1,16 @@
-from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
-from django.db.models import Q
-
-from apps.game_tracker.models import Shot, GoalType, MatchData
-from apps.schedule.models import Match
-from apps.player.models import Player
-from apps.team.models import Team, TeamData
-from authentication.models import UserProfile
-
-from apps.common.utils import transform_matchdata
-
 import json
 import traceback
+
+from asgiref.sync import sync_to_async
+from authentication.models import UserProfile
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+from apps.common.utils import transform_matchdata
+from apps.game_tracker.models import GoalType, MatchData, Shot
+from apps.player.models import Player
+from apps.schedule.models import Match
+from apps.team.models import Team, TeamData
+from django.db.models import Q
 
 
 class ProfileDataConsumer(AsyncWebsocketConsumer):

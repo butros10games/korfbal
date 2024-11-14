@@ -1,8 +1,8 @@
+from uuidv7 import uuid7
+
 from django.db import models
 
 from .constants import player_model_string
-
-from uuidv7 import uuid7
 
 
 class PlayerChange(models.Model):

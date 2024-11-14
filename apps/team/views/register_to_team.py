@@ -1,10 +1,9 @@
-from django.shortcuts import get_object_or_404, redirect
+from datetime import date
 
-from apps.team.models import Team, TeamData
 from apps.player.models import Player
 from apps.schedule.models import Season
-
-from datetime import date
+from apps.team.models import Team, TeamData
+from django.shortcuts import get_object_or_404, redirect
 
 
 # this view handels the registration of a player to a team.

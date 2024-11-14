@@ -1,8 +1,7 @@
-from django.shortcuts import render, redirect, get_object_or_404
-
 from apps.player.models import Player
-from apps.team.models import TeamData
 from apps.schedule.models import Match
+from apps.team.models import TeamData
+from django.shortcuts import get_object_or_404, redirect, render
 
 
 def match_team_selector(request, match_id):

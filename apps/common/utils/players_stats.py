@@ -1,6 +1,6 @@
-from apps.game_tracker.models import Shot
-
 import json
+
+from apps.game_tracker.models import Shot
 
 
 async def players_stats(players, match_datas):
@@ -24,7 +24,7 @@ async def players_stats(players, match_datas):
 
         players_stats.append(player_stats)
 
-    ## sort the `player_stats` so the player with the most goals for is on top
+    # sort the `player_stats` so the player with the most goals for is on top
     players_stats = sorted(players_stats, key=lambda x: x["goals_for"], reverse=True)
 
     # remove all the players with no shots for or against

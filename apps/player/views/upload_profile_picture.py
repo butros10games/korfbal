@@ -1,6 +1,5 @@
-from django.http import JsonResponse
-
 from apps.player.models import Player
+from django.http import JsonResponse
 
 
 def upload_profile_picture(request):

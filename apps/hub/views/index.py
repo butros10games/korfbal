@@ -1,11 +1,10 @@
+from apps.game_tracker.models import MatchData, Shot
+from apps.player.models import Player
+from apps.schedule.models import Match
+from apps.team.models import Team
+from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
-from django.db.models import Q
-
-from apps.player.models import Player
-from apps.team.models import Team
-from apps.schedule.models import Match
-from apps.game_tracker.models import Shot, MatchData
 
 
 def index(request):

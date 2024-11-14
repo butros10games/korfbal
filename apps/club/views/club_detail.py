@@ -1,7 +1,6 @@
-from django.shortcuts import render, get_object_or_404
-
 from apps.club.models import Club
 from apps.player.models import Player
+from django.shortcuts import get_object_or_404, render
 
 
 def club_detail(request, club_id):

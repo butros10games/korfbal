@@ -1,9 +1,9 @@
+import locale
+from datetime import datetime
+
 from asgiref.sync import sync_to_async
 
 from apps.game_tracker.models import Shot
-
-from datetime import datetime
-import locale
 
 
 async def transform_matchdata(matchs_data):

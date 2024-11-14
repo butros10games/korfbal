@@ -12,7 +12,8 @@ def standart_imports(request):
             profile_url = player.get_absolute_url
             profile_img_url = player.get_profile_picture()
         except Player.DoesNotExist:
-            # Player object does not exist for this user, return None for profile_url and profile_img_url
+            # Player object does not exist for this user, return None for profile_url
+            # and profile_img_url
             pass
 
     return {"profile_url": profile_url, "profile_img_url": profile_img_url}

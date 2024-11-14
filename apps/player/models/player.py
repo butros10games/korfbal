@@ -1,10 +1,10 @@
-from django.db import models
-from django.urls import reverse
 from uuidv7 import uuid7
 
-from .constants import team_model_string, club_model_string
-
 from django.contrib.auth.models import User
+from django.db import models
+from django.urls import reverse
+
+from .constants import club_model_string, team_model_string
 
 
 class Player(models.Model):

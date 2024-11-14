@@ -1,9 +1,8 @@
-from django.shortcuts import redirect
-from django.http import HttpResponseRedirect
-from django.db.models import Q
-
-from apps.player.models import Player
 from apps.hub.models import PageConnectRegistration
+from apps.player.models import Player
+from django.db.models import Q
+from django.http import HttpResponseRedirect
+from django.shortcuts import redirect
 
 
 def previous_page(request):

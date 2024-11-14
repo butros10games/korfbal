@@ -1,6 +1,6 @@
 from django.urls import path
-from .consumers import MatchDataConsumer, MatchTrackerConsumer
 
+from .consumers import MatchDataConsumer, MatchTrackerConsumer
 
 websocket_urlpatterns = [
     path("ws/match/<uuid:id>/", MatchDataConsumer.as_asgi()),

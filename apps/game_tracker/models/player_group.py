@@ -1,9 +1,9 @@
-from django.db import models
-from django.core.exceptions import ValidationError
-
-from .constants import team_model_string, player_model_string
-
 from uuidv7 import uuid7
+
+from django.core.exceptions import ValidationError
+from django.db import models
+
+from .constants import player_model_string, team_model_string
 
 
 class PlayerGroup(models.Model):
