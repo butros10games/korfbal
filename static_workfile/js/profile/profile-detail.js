@@ -2,10 +2,10 @@ let socket;
 let player_id;
 let WebSocket_url;
 let csrfToken;
-let profilePicture = document.getElementById("profilePic-container");
-let infoContainer = document.getElementById("info-container");
-let carousel = document.querySelector('.carousel');
-let buttons = document.querySelectorAll('.button');
+const profilePicture = document.getElementById("profilePic-container");
+const infoContainer = document.getElementById("info-container");
+const carousel = document.querySelector('.carousel');
+const buttons = document.querySelectorAll('.button');
 
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
@@ -257,7 +257,7 @@ function updateSettings(data) {
     saveButton.classList.add("save-button");
 
     saveButton.addEventListener("click", function(event) {
-        event.preventDefault();  // Prevent form submission
+        event.preventDefault(); // Prevent form submission
 
         saveButton.classList.add("loading");
 

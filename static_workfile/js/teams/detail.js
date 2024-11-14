@@ -3,9 +3,9 @@ let socket;
 let team_id;
 let user_id;
 let WebSocket_url;
-let infoContainer = document.getElementById("info-container");
-let carousel = document.querySelector('.carousel');
-let buttons = document.querySelectorAll('.button');
+const infoContainer = document.getElementById("info-container");
+const carousel = document.querySelector('.carousel');
+const buttons = document.querySelectorAll('.button');
 
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
@@ -31,7 +31,7 @@ window.addEventListener("DOMContentLoaded", function() {
     };
 
     setupCarousel(carousel, buttons, { 'user_id': user_id }, 'get_stats');
-    setupFollowButton(user_id)
+    setupFollowButton(user_id);
 });
 
 function onMessageReceived(event) {
