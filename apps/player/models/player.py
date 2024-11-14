@@ -14,7 +14,7 @@ class Player(models.Model):
     profile_picture = models.ImageField(
         upload_to="profile_pictures/",
         default="/static/images/player/blank-profile-picture.png",
-        blank=True
+        blank=True,
     )
 
     team_follow = models.ManyToManyField(team_model_string, blank=True)

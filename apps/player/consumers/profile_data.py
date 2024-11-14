@@ -24,9 +24,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         player_id = self.scope["url_route"]["kwargs"]["id"]
-        self.player = await Player.objects.prefetch_related(
-            "user"
-        ).aget(id_uuid=player_id)
+        self.player = await Player.objects.prefetch_related("user").aget(
+            id_uuid=player_id
+        )
         self.user = self.player.user
         self.user_profile = await UserProfile.objects.aget(user=self.user)
         self.teams = await sync_to_async(list)(
@@ -49,23 +49,27 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 await self.player_stats_request()
 
             if command == "settings_request":
-                await self.send(text_data=json.dumps({
-                    "command": "settings_request",
-                    "username": self.user.username,
-                    "email": self.user.email,
-                    "first_name": self.user.first_name,
-                    "last_name": self.user.last_name,
-                    "email_2fa": self.user_profile.email_2fa
-                }))
+                await self.send(
+                    text_data=json.dumps(
+                        {
+                            "command": "settings_request",
+                            "username": self.user.username,
+                            "email": self.user.email,
+                            "first_name": self.user.first_name,
+                            "last_name": self.user.last_name,
+                            "email_2fa": self.user_profile.email_2fa,
+                        }
+                    )
+                )
 
             if command == "settings_update":
                 await self.settings_update_request(json_data["data"])
 
             if command == "update_profile_picture_url":
                 await self.settings_update_request(json_data["url"])
- 
+
             if command == "teams":
-               await self.teams_request()
+                await self.teams_request()
 
             if command == "upcomming_matches" or command == "past_matches":
                 await self.matches_request(command)
@@ -90,24 +94,24 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         for goal_type in goal_types:
             goals_by_player = await Shot.objects.filter(
-                match_data__in=all_finished_match_data, 
-                shot_type=goal_type, 
+                match_data__in=all_finished_match_data,
+                shot_type=goal_type,
                 player=self.player,
                 for_team=True,
-                scored=True
+                scored=True,
             ).acount()
 
             goals_against_player = await Shot.objects.filter(
-                match_data__in=all_finished_match_data, 
-                shot_type=goal_type, 
+                match_data__in=all_finished_match_data,
+                shot_type=goal_type,
                 player=self.player,
                 for_team=False,
-                scored=True
+                scored=True,
             ).acount()
 
             player_goal_stats[goal_type.name] = {
                 "goals_by_player": goals_by_player,
-                "goals_against_player": goals_against_player
+                "goals_against_player": goals_against_player,
             }
 
             total_goals_for += goals_by_player
@@ -115,14 +119,18 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
             scoring_types.append(goal_type.name)
 
-        await self.send(text_data=json.dumps({
-            "command": "player_goal_stats",
-            "player_goal_stats": player_goal_stats,
-            "scoring_types": scoring_types,
-            "played_matches": len(all_finished_match_data),
-            "total_goals_for": total_goals_for,
-            "total_goals_against": total_goals_against,
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "command": "player_goal_stats",
+                    "player_goal_stats": player_goal_stats,
+                    "scoring_types": scoring_types,
+                    "played_matches": len(all_finished_match_data),
+                    "total_goals_for": total_goals_for,
+                    "total_goals_against": total_goals_against,
+                }
+            )
+        )
 
     async def settings_update_request(self, data):
         username = data["username"]
@@ -140,15 +148,12 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         self.user_profile.email_2fa = email_2fa
         await self.user_profile.asave()
 
-        await self.send(
-            text_data=json.dumps(
-                {"command": "settings_updated"}
-            )
-        )
+        await self.send(text_data=json.dumps({"command": "settings_updated"}))
 
     async def update_profile_picture_url_request(self, url):
         if url:
-            self.player.profile_picture = url  # Assuming "url" contains the relative path of the image
+            # Assuming "url" contains the relative path of the image
+            self.player.profile_picture = url
             await self.player.asave()
 
             # Send a response back to the client if needed
@@ -164,7 +169,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 "id": str(team.id_uuid),
                 "name": await sync_to_async(team.__str__)(),
                 "logo": team.club.get_club_logo(),
-                "get_absolute_url": str(team.get_absolute_url())
+                "get_absolute_url": str(team.get_absolute_url()),
             }
             for team in self.teams
         ]
@@ -177,15 +182,19 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
     async def matches_request(self, command):
         wedstrijden_data = await self.get_matchs_data(
             ["upcoming", "active"] if command == "upcomming_matches" else ["finished"],
-            "" if command == "upcomming_matches" else "-"
+            "" if command == "upcomming_matches" else "-",
         )
 
         wedstrijden_dict = await transform_matchdata(wedstrijden_data)
 
-        await self.send(text_data=json.dumps({
-            "command": "matches",
-            "wedstrijden": wedstrijden_dict
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "command": "matches",
+                    "wedstrijden": wedstrijden_dict
+                }
+            )
+        )
 
     async def get_matchs_data(self, status, order):
         matches = await sync_to_async(list)(Match.objects.filter(

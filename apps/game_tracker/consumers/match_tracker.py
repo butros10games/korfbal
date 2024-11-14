@@ -199,7 +199,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         player__id_uuid=player_id,
                         match_data=self.match_data,
                         for_team=False,
-                    ).acount()
+                    ).acount(),
                 },
             },
         )
@@ -799,9 +799,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 "time": time_in_minutes,
                 "length": last_event.length().total_seconds(),
                 "start_time": (
-                    last_event.start_time.isoformat()
-                    if last_event.start_time
-                    else None
+                    last_event.start_time.isoformat() if last_event.start_time else None
                 ),
                 "end_time": (
                     last_event.end_time.isoformat() if last_event.end_time else None

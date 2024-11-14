@@ -8,6 +8,7 @@ from apps.club.models import Club
 
 from datetime import date
 
+
 def get_current_season():
     today = date.today()
     # Attempt to find the current season
@@ -23,6 +24,7 @@ def get_current_season():
         season = None
     return season
 
+
 def serialize_team(team, current_season):
     team_data = TeamData.objects.filter(team=team, season=current_season).first()
     return {
@@ -30,8 +32,9 @@ def serialize_team(team, current_season):
         "name": str(team),
         "img_url": team.club.get_club_logo(),
         "competition": team_data.competition if team_data else "",
-        "url": team.get_absolute_url()
+        "url": team.get_absolute_url(),
     }
+
 
 def serialize_club(club):
     return {
@@ -39,8 +42,9 @@ def serialize_club(club):
         "name": club.name,
         "img_url": club.get_club_logo(),
         "competition": None,
-        "url": club.get_absolute_url()
+        "url": club.get_absolute_url(),
     }
+
 
 def search(request):
     search_term = request.GET.get("q", "")
@@ -70,8 +74,6 @@ def search(request):
         # Serialize each club and add to results
         results = [serialize_club(club) for club in clubs]
 
-    context = {
-        "results": results
-    }
+    context = {"results": results}
 
     return JsonResponse(context)

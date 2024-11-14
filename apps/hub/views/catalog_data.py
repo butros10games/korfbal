@@ -21,7 +21,7 @@ def catalog_data(request):
 
     if "value" not in data:
         return JsonResponse({"error": "No value provided"})
-        
+
     selection = data["value"]
 
     if selection in ["clubs", "teams"] and user.is_authenticated:
@@ -44,21 +44,23 @@ def catalog_data(request):
                 player,
                 mapping["connected_query"],
                 mapping["following_relation"],
-                mapping["serializer_func"]
+                mapping["serializer_func"],
             )
 
     context = {
         "type": selection,
         "connected": connected_list,
-        "following": following_list
+        "following": following_list,
     }
 
     return JsonResponse(context)
+
 
 def connected_clubs_query(player):
     return Club.objects.filter(
         Q(teams__team_data__players=player) | Q(teams__team_data__coach=player)
     ).distinct()
+
 
 def club_serializer(club):
     return {
@@ -66,13 +68,15 @@ def club_serializer(club):
         "name": club.name,
         "img_url": club.get_club_logo(),
         "competition": None,
-        "url": str(club.get_absolute_url())
+        "url": str(club.get_absolute_url()),
     }
+
 
 def connected_teams_query(player):
     return Team.objects.filter(
         Q(team_data__players=player) | Q(team_data__coach=player)
     ).distinct()
+
 
 def team_serializer(team):
     last_team_data = team.team_data.last() if team.team_data else None
@@ -81,19 +85,17 @@ def team_serializer(team):
         "name": str(team),
         "img_url": team.club.get_club_logo(),
         "competition": last_team_data.competition if last_team_data else "",
-        "url": str(team.get_absolute_url())
+        "url": str(team.get_absolute_url()),
     }
 
+
 def get_connected_and_following_objects(
-    player,
-    connected_query,
-    following_relation,
-    serializer_func
+    player, connected_query, following_relation, serializer_func
 ):
     connected_objs = connected_query(player)
-    following_objs = getattr(
-        player, following_relation
-    ).exclude(id_uuid__in=connected_objs)
+    following_objs = getattr(player, following_relation).exclude(
+        id_uuid__in=connected_objs
+    )
 
     connected_list = [serializer_func(obj) for obj in connected_objs]
     following_list = [serializer_func(obj) for obj in following_objs]

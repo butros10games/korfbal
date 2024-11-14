@@ -25,6 +25,7 @@ def player_overview(request, match_id, team_id):
 
     return render(request, "matches/players_selector.html", context)
 
+
 def player_overview_data(_, match_id, team_id):
     player_groups = _get_player_groups(match_id, team_id)
 
@@ -32,22 +33,27 @@ def player_overview_data(_, match_id, team_id):
     for player_group in player_groups:
         players_data = []
         for player in player_group.players.all():
-            players_data.append({
-                "id_uuid": str(player.id_uuid),
-                "user": {
-                    "username": player.user.username
+            players_data.append(
+                {
+                    "id_uuid": str(player.id_uuid),
+                    "user": {
+                        "username": player.user.username
+                    },
+                    "get_profile_picture": player.get_profile_picture()
+                }
+            )
+        player_groups_data.append(
+            {
+                "id_uuid": str(player_group.id_uuid),
+                "starting_type": {
+                    "name": player_group.starting_type.name
                 },
-                "get_profile_picture": player.get_profile_picture()
-            })
-        player_groups_data.append({
-            "id_uuid": str(player_group.id_uuid),
-            "starting_type": {
-                "name": player_group.starting_type.name
-            },
-            "players": players_data
-        })
+                "players": players_data
+            }
+        )
 
     return JsonResponse({"player_groups": player_groups_data})
+
 
 def players_team(_, match_id, team_id):
     match_data = get_object_or_404(Match, id_uuid=match_id)
@@ -69,13 +75,14 @@ def players_team(_, match_id, team_id):
             "players": [
                 {
                     "id_uuid": str(player.id_uuid),
-                    "user": { "username": player.user.username },
-                    "get_profile_picture": player.get_profile_picture()
+                    "user": {"username": player.user.username},
+                    "get_profile_picture": player.get_profile_picture(),
                 }
                 for player in players
             ]
         }
     )
+
 
 def player_search(request, match_id, team_id):
     if request.method != "GET":
@@ -95,7 +102,7 @@ def player_search(request, match_id, team_id):
     if len(request.GET.get("search")) > 50:
         return JsonResponse(
             {
-                "success": False, 
+                "success": False,
                 "error": "Player name should be at most 50 characters long",
             }
         )
@@ -110,9 +117,7 @@ def player_search(request, match_id, team_id):
         match_data=MatchData.objects.get(match_link=match_data), team=team_model
     )
 
-    players = Player.objects.filter(
-        user__username__icontains=player_name
-    ).exclude(
+    players = Player.objects.filter(user__username__icontains=player_name).exclude(
         id_uuid__in=[
             player.id_uuid
             for player_group in player_groups
@@ -126,13 +131,14 @@ def player_search(request, match_id, team_id):
             "players": [
                 {
                     "id_uuid": str(player.id_uuid),
-                    "user": { "username": player.user.username },
-                    "get_profile_picture": player.get_profile_picture()
+                    "user": {"username": player.user.username},
+                    "get_profile_picture": player.get_profile_picture(),
                 }
                 for player in players
             ]
         }
     )
+
 
 def player_designation(request):
     if request.method != "POST":
@@ -164,14 +170,15 @@ def player_designation(request):
         old_group_id = player_data.get("groupId")
 
         if old_group_id:
-            PlayerGroup.objects.get(
-                id_uuid=old_group_id
-            ).players.remove(Player.objects.get(id_uuid=player_id))
+            PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(
+                Player.objects.get(id_uuid=player_id)
+            )
 
         if new_group_id:
             player_group_model.players.add(Player.objects.get(id_uuid=player_id))
 
     return JsonResponse({"success": True})
+
 
 def _get_player_groups(match_id, team_id):
     match_model = get_object_or_404(Match, id_uuid=match_id)
@@ -179,7 +186,6 @@ def _get_player_groups(match_id, team_id):
 
     match_data = MatchData.objects.get(match_link=match_model)
 
-    return PlayerGroup.objects.filter(
-        match_data=match_data,
-        team=team_model
-    ).order_by("starting_type__order")
+    return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by(
+        "starting_type__order"
+    )

@@ -16,18 +16,21 @@ def previous_page(request):
     except ValueError:
         counter = 1  # Fallback to 1 if there"s any issue with the value
 
-    pages = PageConnectRegistration.objects.filter(
-        player=player
-    ).order_by("-registration_date").exclude(
-        Q(page__icontains="admin") |
-        Q(page__icontains="selector") | 
-        Q(page__icontains="previous") | 
-        Q(page__icontains="api") |
-        Q(page__icontains="login") |
-        Q(page__icontains="logout") |
-        Q(page__icontains="register") |
-        Q(page__icontains="favicon.ico")
-    ).values_list("page", flat=True)
+    pages = (
+        PageConnectRegistration.objects.filter(player=player)
+        .order_by("-registration_date")
+        .exclude(
+            Q(page__icontains="admin")
+            | Q(page__icontains="selector")
+            | Q(page__icontains="previous")
+            | Q(page__icontains="api")
+            | Q(page__icontains="login")
+            | Q(page__icontains="logout")
+            | Q(page__icontains="register")
+            | Q(page__icontains="favicon.ico")
+        )
+        .values_list("page", flat=True)
+    )
 
     # Remove consecutive duplicate URLs
     unique_pages = []

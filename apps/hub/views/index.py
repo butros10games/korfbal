@@ -24,11 +24,14 @@ def index(request):
         ).order_by("start_time")
 
         # get the match datas of the matches
-        match_data = MatchData.objects.prefetch_related(
-            "match_link", "match_link__home_team", "match_link__away_team"
-        ).filter(
-            match_link__in=matches, status__in=["active", "upcoming"]
-        ).order_by("match_link__start_time").first()
+        match_data = (
+            MatchData.objects.prefetch_related(
+                "match_link", "match_link__home_team", "match_link__away_team"
+            )
+            .filter(match_link__in=matches, status__in=["active", "upcoming"])
+            .order_by("match_link__start_time")
+            .first()
+        )
 
         match = None
         if match_data:
@@ -42,21 +45,23 @@ def index(request):
         "match": match,
         "match_data": match_data,
         "match_date": (
-            match.start_time.strftime("%a, %d %b")
-            if match
-            else "No upcoming matches",
+            match.start_time.strftime("%a, %d %b") if match else "No upcoming matches",
         ),
         "start_time": match.start_time.strftime("%H:%M") if match else "",
-        "home_score": Shot.objects.filter(
-            match_data=match_data,
-            team=match.home_team,
-            scored=True
-        ).count() if match else 0,
-        "away_score": Shot.objects.filter(
-            match_data=match_data,
-            team=match.away_team,
-            scored=True
-        ).count() if match else 0,
+        "home_score": (
+            Shot.objects.filter(
+                match_data=match_data, team=match.home_team, scored=True
+            ).count()
+            if match
+            else 0,
+        ),
+        "away_score": (
+            Shot.objects.filter(
+                match_data=match_data, team=match.away_team, scored=True
+            ).count()
+            if match
+            else 0,
+        ),
     }
 
     return render(request, "hub/index.html", context)

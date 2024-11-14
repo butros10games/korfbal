@@ -26,7 +26,7 @@ def catalog(request):
     context = {
         "connected": connected_teams,
         "following": following_teams,
-        "display_back": True
+        "display_back": True,
     }
 
     return render(request, "hub/catalog.html", context)
