@@ -22,7 +22,7 @@ def match_detail(request, match_id):
         ).count(),
         "away_score": Shot.objects.filter(
             match_data=match_data, team=match_model.away_team, scored=True
-        ).count()
+        ).count(),
     }
 
     return render(request, "matches/detail.html", context)

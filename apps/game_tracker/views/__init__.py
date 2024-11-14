@@ -6,7 +6,7 @@ from .player_selection import (
     player_search,
     player_designation,
     player_overview_data,
-    players_team
+    players_team,
 )
 
 __all__ = [

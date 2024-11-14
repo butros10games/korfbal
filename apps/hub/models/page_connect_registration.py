@@ -10,7 +10,7 @@ class PageConnectRegistration(models.Model):
     player = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
-        related_name="page_connect_registrations"
+        related_name="page_connect_registrations",
     )
     page = models.CharField(max_length=255)
     registration_date = models.DateTimeField(auto_now_add=True)

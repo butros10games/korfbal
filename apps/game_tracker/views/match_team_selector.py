@@ -34,8 +34,6 @@ def match_team_selector(request, match_id):
             "match_tracker", match_id=match_id, team_id=connected_teams[0].id_uuid
         )
 
-    context = {
-        "match": match_data
-    }
+    context = {"match": match_data}
 
     return render(request, "matches/team_selector.html", context)

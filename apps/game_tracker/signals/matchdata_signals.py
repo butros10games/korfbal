@@ -13,7 +13,7 @@ def create_player_groups_for_new_matchdata(sender, instance, created, **kwargs):
                 match_data=instance,
                 starting_type=group_type,
                 current_type=group_type,
-                team=instance.match_link.home_team
+                team=instance.match_link.home_team,
             )
 
         for group_type in all_group_types:
@@ -21,5 +21,5 @@ def create_player_groups_for_new_matchdata(sender, instance, created, **kwargs):
                 match_data=instance,
                 starting_type=group_type,
                 current_type=group_type,
-                team=instance.match_link.away_team
+                team=instance.match_link.away_team,
             )

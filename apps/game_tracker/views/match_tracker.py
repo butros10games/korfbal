@@ -38,11 +38,10 @@ def match_tracker(request, match_id, team_id):
 
     button_text = "Start"
     if match_data.status == "active":
-        if Pause.objects.filter(
-            match_data=match_data, active=True
-        ).exists() or not MatchPart.objects.filter(
-            match_data=match_data, active=True
-        ).exists():
+        if (
+        Pause.objects.filter(match_data=match_data, active=True).exists()
+        or not MatchPart.objects.filter(match_data=match_data, active=True).exists()
+        ):
             button_text = "Start"
         else:
             button_text = "Pause"
@@ -56,7 +55,7 @@ def match_tracker(request, match_id, team_id):
         "team_2": opponent_data,
         "team_2_score": team_2_score,
         "start_date": match_model.start_time.strftime("%A, %d %B"),
-        "start_time": match_model.start_time.strftime("%H:%M")
+        "start_time": match_model.start_time.strftime("%H:%M"),
     }
 
     return render(request, "matches/tracker.html", context)

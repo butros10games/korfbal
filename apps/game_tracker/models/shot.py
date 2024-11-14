@@ -34,6 +34,6 @@ class Shot(models.Model):
         on_delete=models.CASCADE,
         related_name="shots",
         blank=True,
-        null=True
+        null=True,
     )
     time = models.DateTimeField(default=None, blank=True, null=True)
