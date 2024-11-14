@@ -51,5 +51,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: black
+      - name: Black
         uses: psf/black@stable
+  

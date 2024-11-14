@@ -54,7 +54,7 @@ def index(request):
                     match_data=match_data, team=match.home_team, scored=True
                 ).count()
                 if match
-                else 0,
+                else 0
             ),
         ),
         "away_score": (
@@ -63,7 +63,7 @@ def index(request):
                     match_data=match_data, team=match.away_team, scored=True
                 ).count()
                 if match
-                else 0,
+                else 0
             ),
         ),
     }

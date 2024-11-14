@@ -1,0 +1,24 @@
+[tool.black]
+line-length = 88
+target-version = ['py313']
+exclude = '''
+/(
+    migrations
+  | \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.nox
+  | \.tox
+  | \.env
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+default_section = "THIRDPARTY"
+known_first_party = "django"
