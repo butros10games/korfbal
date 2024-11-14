@@ -427,7 +427,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     {
                         "error": str(e),
                         "traceback": traceback.format_exc(),
-                        "player_groups": player_groups
+                        "player_groups": player_groups,
                     }
                 )
             )

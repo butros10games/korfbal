@@ -39,8 +39,8 @@ def match_tracker(request, match_id, team_id):
     button_text = "Start"
     if match_data.status == "active":
         if (
-        Pause.objects.filter(match_data=match_data, active=True).exists()
-        or not MatchPart.objects.filter(match_data=match_data, active=True).exists()
+            Pause.objects.filter(match_data=match_data, active=True).exists()
+            or not MatchPart.objects.filter(match_data=match_data, active=True).exists()
         ):
             button_text = "Start"
         else:
