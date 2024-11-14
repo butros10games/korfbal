@@ -105,7 +105,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "playerGroups": player_groups_array,
                     "players": players_json,
                     "is_coach": await self.checkIfAcces(user_id, team),
-                    "finished": True if self.match_data.status == "finished" else False
+                    "finished": True if self.match_data.status == "finished" else False,
                 }
             )
         )
@@ -126,7 +126,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps({"command": "savePlayerGroups", "status": "success"})
         )
-        
+
     async def get_stats_general_request(self):
         general_stats_json = await general_stats([self.match_data])
 
@@ -163,7 +163,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                             events_dict.append(await self.event_player_change(event))
                         elif isinstance(event, Pause):
                             events_dict.append(await self.event_pause(event))
-            
+
             await self.send(
                 text_data=json.dumps(
                     {
@@ -173,7 +173,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         "access": (
                             await self.check_access(user_id, self.match)
                             if user_id
-                            else False,
+                            else False
                         ),
                         "status": self.match_data.status,
                     }
@@ -203,7 +203,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 "player_out__user",
                 "player_group",
                 "player_group__team",
-                "match_part"
+                "match_part",
             )
             .filter(player_group__match_data=self.match_data)
             .order_by("time")
@@ -230,7 +230,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 match_data=self.match_data,
                 active=False,
                 start_time__lt=event.time,
-                start_time__gte=event.match_part.start_time
+                start_time__gte=event.match_part.start_time,
             )
         )
         pause_time = 0
@@ -275,7 +275,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 match_data=self.match_data,
                 active=False,
                 start_time__lt=event.time,
-                start_time__gte=event.match_part.start_time
+                start_time__gte=event.match_part.start_time,
             )
         )
         pause_time = 0
@@ -306,7 +306,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "time": time_in_minutes,
             "player_in": event.player_in.user.username,
             "player_out": event.player_out.user.username,
-            "player_group": str(event.player_group.id_uuid)
+            "player_group": str(event.player_group.id_uuid),
         }
 
     async def event_pause(self, event):
@@ -316,7 +316,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 match_data=self.match_data,
                 active=False,
                 start_time__lt=event.start_time,
-                start_time__gte=event.match_part.start_time
+                start_time__gte=event.match_part.start_time,
             )
         )
         pause_time = 0
@@ -327,7 +327,10 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         time_in_minutes = round(
             (
                 (event.start_time - event.match_part.start_time).total_seconds()
-                + (int(event.match_part.part_number - 1) * int(self.match_data.part_lenght))
+                + (
+                    int(event.match_part.part_number - 1)
+                    * int(self.match_data.part_lenght)
+                )
                 - pause_time
             )
             / 60
@@ -348,7 +351,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "time": time_in_minutes,
             "length": event.length().total_seconds(),
             "start_time": event.start_time.isoformat() if event.start_time else None,
-            "end_time": event.end_time.isoformat() if event.end_time else None
+            "end_time": event.end_time.isoformat() if event.end_time else None,
         }
 
     async def check_access(self, user_id, match):
@@ -388,7 +391,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         match_data=self.match_data,
                         team=team,
                         starting_type=group_type,
-                        current_type=group_type
+                        current_type=group_type,
                     )
 
                 player_groups = await sync_to_async(list)(
@@ -442,7 +445,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         for player in players:
             try:
-                player_json = await Player.objects.prefetch_related("user").aget(id_uuid=player)
+                player_json = await Player.objects.prefetch_related("user").aget(
+                    id_uuid=player
+                )
 
                 players_json.append(
                     {
@@ -496,6 +501,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 end_date__gte=self.match.start_time,
             )
         except Season.DoesNotExist:
-            return await Season.objects.filter(
-                end_date__lte=self.match.start_time
-            ).order_by("-end_date").afirst()
+            return (
+                await Season.objects.filter(end_date__lte=self.match.start_time)
+                .order_by("-end_date")
+                .afirst()
+            )

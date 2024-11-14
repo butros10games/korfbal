@@ -28,4 +28,6 @@ class MatchData(models.Model):
             return None
 
     def __str__(self):
-        return str(self.match_link.home_team.name + " - " + self.match_link.away_team.name)
+        return str(
+            self.match_link.home_team.name + " - " + self.match_link.away_team.name
+        )

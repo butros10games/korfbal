@@ -9,40 +9,43 @@ import json
 
 
 def catalog_data(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"})
+
     connected_list = []
     following_list = []
     selection = None
 
     user = request.user
+    data = json.loads(request.body.decode("utf-8"))
 
-    if request.method == "POST":
-        data = json.loads(request.body.decode("utf-8"))
+    if "value" not in data:
+        return JsonResponse({"error": "No value provided"})
+        
+    selection = data["value"]
 
-        if "value" in data:
-            selection = data["value"]
-
-            if selection in ["clubs", "teams"] and user.is_authenticated:
-                player = Player.objects.get(user=user)
-                SELECTION_MAP = {
-                    "clubs": {
-                        "connected_query": connected_clubs_query,
-                        "following_relation": "club_follow",
-                        "serializer_func": club_serializer,
-                    },
-                    "teams": {
-                        "connected_query": connected_teams_query,
-                        "following_relation": "team_follow",
-                        "serializer_func": team_serializer,
-                    },
-                }
-                mapping = SELECTION_MAP.get(selection)
-                if mapping:
-                    connected_list, following_list = get_connected_and_following_objects(
-                        player,
-                        mapping["connected_query"],
-                        mapping["following_relation"],
-                        mapping["serializer_func"]
-                    )
+    if selection in ["clubs", "teams"] and user.is_authenticated:
+        player = Player.objects.get(user=user)
+        SELECTION_MAP = {
+            "clubs": {
+                "connected_query": connected_clubs_query,
+                "following_relation": "club_follow",
+                "serializer_func": club_serializer,
+            },
+            "teams": {
+                "connected_query": connected_teams_query,
+                "following_relation": "team_follow",
+                "serializer_func": team_serializer,
+            },
+        }
+        mapping = SELECTION_MAP.get(selection)
+        if mapping:
+            connected_list, following_list = get_connected_and_following_objects(
+                player,
+                mapping["connected_query"],
+                mapping["following_relation"],
+                mapping["serializer_func"]
+            )
 
     context = {
         "type": selection,
@@ -81,11 +84,18 @@ def team_serializer(team):
         "url": str(team.get_absolute_url())
     }
 
-def get_connected_and_following_objects(player, connected_query, following_relation, serializer_func):
+def get_connected_and_following_objects(
+    player,
+    connected_query,
+    following_relation,
+    serializer_func
+):
     connected_objs = connected_query(player)
-    following_objs = getattr(player, following_relation).exclude(id_uuid__in=connected_objs)
-    
+    following_objs = getattr(
+        player, following_relation
+    ).exclude(id_uuid__in=connected_objs)
+
     connected_list = [serializer_func(obj) for obj in connected_objs]
     following_list = [serializer_func(obj) for obj in following_objs]
-    
+
     return connected_list, following_list

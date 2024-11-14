@@ -8,6 +8,6 @@ class Season(models.Model):
     name = models.CharField(max_length=255, unique=True)
     start_date = models.DateField()
     end_date = models.DateField()
-    
+
     def __str__(self):
         return str(self.name)

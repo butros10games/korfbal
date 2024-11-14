@@ -9,7 +9,17 @@ def create_player_groups_for_new_matchdata(sender, instance, created, **kwargs):
     if created:
         all_group_types = GroupType.objects.all()
         for group_type in all_group_types:
-            PlayerGroup.objects.create(match_data=instance, starting_type=group_type, current_type=group_type, team=instance.match_link.home_team)
-            
+            PlayerGroup.objects.create(
+                match_data=instance,
+                starting_type=group_type,
+                current_type=group_type,
+                team=instance.match_link.home_team
+            )
+
         for group_type in all_group_types:
-            PlayerGroup.objects.create(match_data=instance, starting_type=group_type, current_type=group_type, team=instance.match_link.away_team)
+            PlayerGroup.objects.create(
+                match_data=instance,
+                starting_type=group_type,
+                current_type=group_type,
+                team=instance.match_link.away_team
+            )

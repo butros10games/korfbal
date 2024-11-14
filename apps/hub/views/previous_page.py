@@ -8,15 +8,17 @@ from apps.hub.models import PageConnectRegistration
 
 def previous_page(request):
     player = Player.objects.get(user=request.user)
-    
+
     # Get the counter from the URL or fallback to the session
     counter = request.GET.get("counter", request.session.get("back_counter", 1))
     try:
         counter = int(counter)  # Ensure the counter is an integer
     except ValueError:
         counter = 1  # Fallback to 1 if there"s any issue with the value
-    
-    pages = PageConnectRegistration.objects.filter(player=player).order_by("-registration_date").exclude(
+
+    pages = PageConnectRegistration.objects.filter(
+        player=player
+    ).order_by("-registration_date").exclude(
         Q(page__icontains="admin") |
         Q(page__icontains="selector") | 
         Q(page__icontains="previous") | 

@@ -30,10 +30,12 @@ def match_team_selector(request, match_id):
 
     # If the user is connected to only one team, redirect them to the tracker page
     if len(connected_teams) == 1:
-        return redirect("match_tracker", match_id=match_id, team_id=connected_teams[0].id_uuid)
+        return redirect(
+            "match_tracker", match_id=match_id, team_id=connected_teams[0].id_uuid
+        )
 
     context = {
         "match": match_data
     }
-    
+
     return render(request, "matches/team_selector.html", context)

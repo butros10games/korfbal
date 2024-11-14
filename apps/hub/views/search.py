@@ -50,11 +50,11 @@ def search(request):
 
     if category == "teams":
         current_season = get_current_season()
-        
+
         #! Moet anders gedaan worden even uitzoeken hoe er alsnog een antwoord gestuurd kan worden
         if not current_season:
             return JsonResponse({"results": results})
-        
+
         # Annotate teams with full name (club name + team name) and filter by search term
         teams = Team.objects.annotate(
             full_name=Concat(F("club__name"), Value(" "), F("name"))
