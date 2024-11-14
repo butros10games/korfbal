@@ -10,9 +10,9 @@ class Team(models.Model):
     club = models.ForeignKey(
         "club.Club", on_delete=models.CASCADE, related_name="teams"
     )
-    
+
     def __str__(self):
         return str(self.club.name) + " " + str(self.name)
-    
+
     def get_absolute_url(self):
         return reverse("team_detail", kwargs={"team_id": self.id_uuid})

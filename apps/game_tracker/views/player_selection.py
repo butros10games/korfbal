@@ -36,19 +36,15 @@ def player_overview_data(_, match_id, team_id):
             players_data.append(
                 {
                     "id_uuid": str(player.id_uuid),
-                    "user": {
-                        "username": player.user.username
-                    },
-                    "get_profile_picture": player.get_profile_picture()
+                    "user": {"username": player.user.username},
+                    "get_profile_picture": player.get_profile_picture(),
                 }
             )
         player_groups_data.append(
             {
                 "id_uuid": str(player_group.id_uuid),
-                "starting_type": {
-                    "name": player_group.starting_type.name
-                },
-                "players": players_data
+                "starting_type": {"name": player_group.starting_type.name},
+                "players": players_data,
             }
         )
 

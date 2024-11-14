@@ -58,7 +58,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
     async def matches_request(self, command):
         wedstrijden_data = await self.get_matchs_data(
             ["upcoming", "active"] if command == "wedstrijden" else ["finished"],
-            "" if command == "wedstrijden" else "-"
+            "" if command == "wedstrijden" else "-",
         )
 
         wedstrijden_dict = await transform_matchdata(wedstrijden_data)
@@ -90,9 +90,9 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
     async def team_stats_player_request(self):
         # Fetch players and matches in bulk
         players = await sync_to_async(list)(
-            Player.objects.prefetch_related(
-                "user"
-            ).filter(team_data_as_player__team=self.team).distinct()
+            Player.objects.prefetch_related("user")
+            .filter(team_data_as_player__team=self.team)
+            .distinct()
         )
 
         matches = await sync_to_async(list)(
@@ -124,17 +124,17 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
             # Get all TeamData instances for the specified team and season
             team_data_instances = await sync_to_async(list)(
-                TeamData.objects.prefetch_related(
-                    "players"
-                ).filter(team=self.team, season=season)
+                TeamData.objects.prefetch_related("players").filter(
+                    team=self.team, season=season
+                )
             )
 
             # Iterate through the TeamData instances and collect players
             for team_data_instance in team_data_instances:
                 all_players = await sync_to_async(team_data_instance.players.all)()
-                players_prefetch = await sync_to_async(
-                    all_players.prefetch_related
-                )("user")
+                players_prefetch = await sync_to_async(all_players.prefetch_related)(
+                    "user"
+                )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
         else:
             # retreve the players of the current season or last season if there is no current season
@@ -143,25 +143,25 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                     start_date__lte=datetime.now(), end_date__gte=datetime.now()
                 )
             except Season.DoesNotExist:
-                current_season = await sync_to_async(
-                    Season.objects.filter(
-                        end_date__lte=datetime.now()
-                    ).order_by("-end_date").first
-                )()
+                current_season = (
+                    await Season.objects.filter(end_date__lte=datetime.now())
+                    .order_by("-end_date")
+                    .afirst()
+                )
 
             # Get the team data instances for the current season
             all_team_data_instances = await sync_to_async(list)(
-                TeamData.objects.prefetch_related(
-                    "players"
-                ).filter(team=self.team, season=current_season)
+                TeamData.objects.prefetch_related("players").filter(
+                    team=self.team, season=current_season
+                )
             )
 
             # Iterate through all TeamData instances and collect players
             for team_data_instance in all_team_data_instances:
                 all_players = await sync_to_async(team_data_instance.players.all)()
-                players_prefetch = await sync_to_async(
-                    all_players.prefetch_related
-                )("user")
+                players_prefetch = await sync_to_async(all_players.prefetch_related)(
+                    "user"
+                )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
 
         players_in_team_season_list = await sync_to_async(list)(players_in_team_season)
@@ -171,15 +171,19 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 "id": str(player.id_uuid),
                 "name": player.user.username,
                 "profile_picture": player.get_profile_picture(),
-                "get_absolute_url": str(player.get_absolute_url())
+                "get_absolute_url": str(player.get_absolute_url()),
             }
             for player in players_in_team_season_list
         ]
 
-        await self.send(text_data=json.dumps({
-            "command": "spelers",
-            "spelers": players_in_team_season_dict,
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "command": "spelers",
+                    "spelers": players_in_team_season_dict,
+                }
+            )
+        )
 
     async def follow_request(self, follow, user_id):
         player = await Player.objects.aget(user=user_id)
@@ -191,28 +195,31 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             await player.team_follow.aremove(self.team)
 
         await self.send(
-            text_data=json.dumps(
-                {"command": "follow", "status": "success"}
-            )
+            text_data=json.dumps({"command": "follow", "status": "success"})
         )
 
     async def get_matchs_data(self, status, order):
-        matches = await sync_to_async(list)(Match.objects.filter(
-           Q(home_team=self.team) | 
-           Q(away_team=self.team)
-        ).distinct())
+        matches = await sync_to_async(list)(
+            Match.objects.filter(
+                Q(home_team=self.team) | Q(away_team=self.team)
+            ).distinct()
+        )
 
         matches_non_dub = list(dict.fromkeys(matches))
-    
-        matchs_data = await sync_to_async(list)(MatchData.objects.prefetch_related(
-            "match_link", 
-            "match_link__home_team", 
-            "match_link__home_team__club", 
-            "match_link__away_team", 
-            "match_link__away_team__club"
-        ).filter(
-            match_link__in=matches_non_dub,
-            status__in=status,
-        ).order_by(order + "match_link__start_time"))
+
+        matchs_data = await sync_to_async(list)(
+            MatchData.objects.prefetch_related(
+                "match_link", 
+                "match_link__home_team", 
+                "match_link__home_team__club", 
+                "match_link__away_team", 
+                "match_link__away_team__club"
+            )
+            .filter(
+                match_link__in=matches_non_dub,
+                status__in=status,
+            )
+            .order_by(order + "match_link__start_time")
+        )
 
         return matchs_data

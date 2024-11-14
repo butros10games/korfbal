@@ -174,10 +174,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             for team in self.teams
         ]
 
-        await self.send(text_data=json.dumps({
-            "command": "teams",
-            "teams": teams_dict
-        }))
+        await self.send(text_data=json.dumps({"command": "teams", "teams": teams_dict}))
 
     async def matches_request(self, command):
         wedstrijden_data = await self.get_matchs_data(
@@ -189,30 +186,31 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         await self.send(
             text_data=json.dumps(
-                {
-                    "command": "matches",
-                    "wedstrijden": wedstrijden_dict
-                }
+                {"command": "matches", "wedstrijden": wedstrijden_dict}
             )
         )
 
     async def get_matchs_data(self, status, order):
-        matches = await sync_to_async(list)(Match.objects.filter(
-            Q(home_team__team_data__in=self.team_data) |
-            Q(away_team__team_data__in=self.team_data)
-        ).distinct())
+        matches = await sync_to_async(list)(
+            Match.objects.filter(
+                Q(home_team__team_data__in=self.team_data)
+                | Q(away_team__team_data__in=self.team_data)
+            ).distinct()
+        )
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        matchs_data = await sync_to_async(list)(MatchData.objects.prefetch_related(
-            "match_link", 
-            "match_link__home_team", 
-            "match_link__home_team__club", 
-            "match_link__away_team", 
-            "match_link__away_team__club"
-        ).filter(
-            match_link__in=matches_non_dub,
-            status__in=status
-        ).order_by(order + "match_link__start_time"))
+        matchs_data = await sync_to_async(list)(
+            MatchData.objects.prefetch_related(
+                "match_link", 
+                "match_link__home_team", 
+                "match_link__home_team__club", 
+                "match_link__away_team", 
+                "match_link__away_team__club"
+            ).filter(
+                match_link__in=matches_non_dub,
+                status__in=status
+            ).order_by(order + "match_link__start_time")
+        )
 
         return matchs_data

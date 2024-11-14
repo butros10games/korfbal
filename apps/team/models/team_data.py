@@ -15,6 +15,6 @@ class TeamData(models.Model):
         "schedule.Season", on_delete=models.CASCADE, related_name="team_data"
     )
     competition = models.CharField(max_length=255, blank=True)
-    
+
     def __str__(self):
         return str(self.team.name)
