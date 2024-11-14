@@ -56,7 +56,7 @@ def players_team(_, match_id, team_id):
 
     team_data = TeamData.objects.get(team=team_model, season=match_data.season)
 
-    ## remove the players that are already in a player group
+    # remove the players that are already in a player group
     players = team_data.players.all()
     player_groups = PlayerGroup.objects.filter(
         match_data=MatchData.objects.get(match_link=match_data), team=team_model

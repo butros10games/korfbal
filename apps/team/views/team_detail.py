@@ -26,7 +26,8 @@ def team_detail(request, team_id):
     if not current_season:
         current_season = Season.objects.filter(end_date__lte=today).last()
 
-    # If no season is found, then there might be an error in data or there's currently no active season
+    # If no season is found, then there might be an error in data or there's currently
+    # no active season
     if not current_season:
         raise Http404("No active season found")
 

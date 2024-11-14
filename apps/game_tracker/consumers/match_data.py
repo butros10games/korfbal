@@ -133,7 +133,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=general_stats_json)
 
     async def get_stats_player_request(self):
-        ## Get the player stats. shots for and against, goals for and against.
+        # Get the player stats. shots for and against, goals for and against.
         players = await sync_to_async(list)(
             Player.objects.prefetch_related("user")
             .filter(
@@ -224,7 +224,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return events
 
     async def event_shot(self, event):
-        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        # calculate the time of the pauses before the event happend. By requesting the
+        # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=self.match_data,
@@ -269,7 +270,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_player_change(self, event):
-        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        # calculate the time of the pauses before the event happend. By requesting the
+        # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=self.match_data,
@@ -310,7 +312,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_pause(self, event):
-        # calculate the time of the pauses before the event happend. By requesting the pauses that are before the event and summing the length of the pauses
+        # calculate the time of the pauses before the event happend. By requesting the
+        # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=self.match_data,
@@ -323,7 +326,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         for pause in pauses:
             pause_time += pause.length().total_seconds()
 
-        # calculate the time in minutes sinds the real_start_time of the match and the start_time of the pause
+        # calculate the time in minutes sinds the real_start_time of the match and the
+        # start_time of the pause
         time_in_minutes = round(
             (
                 (event.start_time - event.match_part.start_time).total_seconds()

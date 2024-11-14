@@ -54,7 +54,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             Pause.objects.filter(match_data=self.match_data, active=True).exists
         )()
 
-        # Set the pause status based on the existence of an active pause or the match status
+        # Set the pause status based on the existence of an active pause or the match
+        # status
         self.is_paused = is_pause_active or self.match_data.status != "active"
 
         if self.team == self.match.home_team:
@@ -168,7 +169,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def shot_reg(self, player_id, time, for_team):
-        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        # check if the match is paused and if it is paused decline the request except
+        # for the start/stop command
         if self.is_paused:
             await self.send(
                 text_data=json.dumps({"error": self.match_is_paused_message})
@@ -221,7 +223,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def goal_reg(self, player_id, goal_type, for_team, time):
-        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        # check if the match is paused and if it is paused decline the request except
+        # for the start/stop command
         if self.is_paused:
             await self.send(
                 text_data=json.dumps({"error": self.match_is_paused_message})
@@ -491,7 +494,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def wissel_reg(self, new_player_id, old_player_id, time):
-        # check if the match is paused and if it is paused decline the request except for the start/stop command
+        # check if the match is paused and if it is paused decline the request except
+        # for the start/stop command
         if self.is_paused:
             await self.send(
                 text_data=json.dumps({"error": self.match_is_paused_message})
@@ -529,7 +533,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             time=time,
         )
 
-        ## get the shot count for the new player
+        # get the shot count for the new player
         shots_for = await Shot.objects.filter(
             player=player_in, match_data=self.match_data, for_team=True
         ).acount()
@@ -591,7 +595,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 },
             )
 
-            # check if the shot was a goal and if it was a goal check if it was a switch goal and if it was a switch goal swap the player group types back
+            # check if the shot was a goal and if it was a goal check if it was a switch
+            # goal and if it was a switch goal swap the player group types back
             if not event.scored:
                 return
 
@@ -748,7 +753,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
     async def send_last_event(self):
         last_event = await self.get_all_events()
 
-        if last_event == None:
+        if last_event is None:
             return
 
         if isinstance(last_event, Shot):
@@ -817,7 +822,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if not event_time:
             raise ValueError("Event must have either `time` or `start_time` attribute")
 
-        # Calculate the time of the pauses before the event happened by summing the length of the pauses
+        # Calculate the time of the pauses before the event happened by summing the
+        # length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=self.match_data,
@@ -828,7 +834,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
         pause_time = sum([pause.length().total_seconds() for pause in pauses])
 
-        # Calculate the time in minutes since the real_start_time of the match and the event time
+        # Calculate the time in minutes since the real_start_time of the match and the
+        # event time
         time_in_minutes = round(
             (
                 (event_time - event.match_part.start_time).total_seconds()

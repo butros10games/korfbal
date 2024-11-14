@@ -7,7 +7,9 @@ from django.shortcuts import get_object_or_404, redirect
 
 
 # this view handels the registration of a player to a team.
-# if the user is logedin the users gets added to the team if the user is not registerd the user gets redirected to the login page with a next parameter
+# if the user is logedin the users gets added to the team,
+# if the user is not registerd the user gets redirected to the login page with a next
+# parameter
 def register_to_team(request, team_id):
     team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user

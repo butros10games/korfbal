@@ -4,11 +4,10 @@ from apps.schedule.models import Match
 from apps.team.models import Team
 from django.db.models import Q
 from django.shortcuts import render
-from django.utils import timezone
 
 
 def index(request):
-    ## get the players first upcoming match
+    # get the players first upcoming match
     # get the player
     user_request = request.user
     if user_request.is_authenticated:

@@ -3,9 +3,9 @@ from datetime import date
 from apps.club.models import Club
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
-from django.db.models import F, Q, Value
+from django.db.models import F, Value
 from django.db.models.functions import Concat
-from django.http import Http404, JsonResponse
+from django.http import JsonResponse
 
 
 def get_current_season():
@@ -54,11 +54,13 @@ def search(request):
     if category == "teams":
         current_season = get_current_season()
 
-        #! Moet anders gedaan worden even uitzoeken hoe er alsnog een antwoord gestuurd kan worden
+        #! Moet anders gedaan worden even uitzoeken hoe er alsnog een antwoord gestuurd
+        #! kan worden
         if not current_season:
             return JsonResponse({"results": results})
 
-        # Annotate teams with full name (club name + team name) and filter by search term
+        # Annotate teams with full name (club name + team name) and
+        # filter by search term
         teams = Team.objects.annotate(
             full_name=Concat(F("club__name"), Value(" "), F("name"))
         ).filter(full_name__icontains=search_term)

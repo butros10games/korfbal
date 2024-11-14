@@ -6,4 +6,4 @@ class PlayerConfig(AppConfig):
     name = "apps.player"
 
     def ready(self):
-        import apps.player.signals
+        import apps.player.signals # noqa

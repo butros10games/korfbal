@@ -135,7 +135,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
         else:
-            # retreve the players of the current season or last season if there is no current season
+            # retreve the players of the current season or
+            # last season if there is no current season
             try:
                 current_season = await Season.objects.aget(
                     start_date__lte=datetime.now(), end_date__gte=datetime.now()

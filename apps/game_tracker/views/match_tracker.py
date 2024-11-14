@@ -11,7 +11,8 @@ def match_tracker(request, match_id, team_id):
     match_data = MatchData.objects.get(match_link=match_model)
     team_data = get_object_or_404(Team, id_uuid=team_id)
 
-    # get the two teams that are playing and make the first team the team from team_data and the second team the opponent
+    # get the two teams that are playing and make the first team the team from team_data
+    # and the second team the opponent
     if match_model.home_team == team_data:
         opponent_data = match_model.away_team
     else:
@@ -25,7 +26,8 @@ def match_tracker(request, match_id, team_id):
         match_data=match_data, team=opponent_data, scored=True
     ).count()
 
-    ## Check if the "aanval" and "verdediging" playerGroups are created for the both teams
+    # Check if the "aanval" and "verdediging" playerGroups are created for the both
+    # teams
     team_names = [match_model.home_team, match_model.away_team]
     player_group_names = ["Aanval", "Verdediging"]
 

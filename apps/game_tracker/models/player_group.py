@@ -31,7 +31,9 @@ class PlayerGroup(models.Model):
 
         if invalid_players.exists():
             raise ValidationError(
-                f"Invalid players selected: {', '.join([str(player) for player in invalid_players])}. Players must be part of the match data."
+                f"""Invalid players selected:
+                {', '.join([str(player) for player in invalid_players])}.
+                Players must be part of the match data."""
             )
 
     def __str__(self):
