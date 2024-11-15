@@ -1,6 +1,11 @@
 "use strict";
 
+import { truncateMiddle } from "../utils";
+import { cleanDomCarousel } from "./utils";
+
 export const updateMatches = function(data, maxLength, infoContainer) {
+    cleanDomCarousel(infoContainer);
+
     if (data.wedstrijden.length > 0) {
         for (const element of data.wedstrijden) {
             const match_container = document.createElement("a");

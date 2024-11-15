@@ -1,9 +1,9 @@
 "use strict";
 
 import { truncateMiddle } from "../utils";
-import { cleanDom } from "./utils";
+import { cleanDomCarousel } from "./utils";
 
-export const updateStatastics = function(data, infoContainer, socket, user_id) {
+export const updateStatistics = function(data, infoContainer, socket, user_id) {
     const stats = data.stats;
 
     const statsContainer = document.createElement("div");
@@ -12,7 +12,7 @@ export const updateStatastics = function(data, infoContainer, socket, user_id) {
     if (stats) {
         // check if the buttons already exist and if they exist skip the creation of the buttons
         if (!document.querySelector(".stat-selector-button")) {
-            cleanDom(infoContainer);
+            cleanDomCarousel(infoContainer);
 
             const statSelectorButtonField = document.createElement("div");
             statSelectorButtonField.classList.add("flex-row");

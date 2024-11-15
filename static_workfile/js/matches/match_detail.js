@@ -68,7 +68,7 @@ function onMessageReceived(event) {
         }
 
         case "stats": {
-            UpdateStatastics(data.data, infoContainer, socket, user_id); // imported from common/updateStatastics.js
+            updateStatistics(data.data, infoContainer, socket, user_id); // imported from common/updateStatistics.js
             break;
         }
 

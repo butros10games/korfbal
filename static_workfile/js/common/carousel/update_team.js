@@ -1,6 +1,10 @@
 "use strict";
 
+import { cleanDomCarousel } from "./utils";
+
 export const updateTeam = function(data, infoContainer) {
+    cleanDomCarousel(infoContainer);
+
     if (data.teams.length > 0) {
         for (const element of data.teams) {
             const team_container = document.createElement("a");
