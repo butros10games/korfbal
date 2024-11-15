@@ -1,4 +1,9 @@
-window.UpdateStatastics = function(data) {
+"use strict";
+
+import { truncateMiddle } from "../utils";
+import { cleanDom } from "./utils";
+
+export const updateStatastics = function(data, infoContainer, socket, user_id) {
     const stats = data.stats;
 
     const statsContainer = document.createElement("div");
@@ -26,7 +31,7 @@ window.UpdateStatastics = function(data) {
                 button.classList.add("stat-selector-button");
 
                 // add to the first button a active class
-                if (type.type == 'general') {
+                if (type.type === 'general') {
                     button.classList.add("active");
                 }
 
@@ -40,8 +45,8 @@ window.UpdateStatastics = function(data) {
 
                     // add active class to the button and remove it by the other buttons
                     const buttons = document.querySelectorAll(".stat-selector-button");
-                    buttons.forEach((button) => {
-                        button.classList.remove("active");
+                    buttons.forEach((button_selector) => {
+                        button_selector.classList.remove("active");
                     });
                     this.classList.add("active");
                 });
@@ -59,9 +64,9 @@ window.UpdateStatastics = function(data) {
 
         console.log(data);
 
-        if (data.type == "general") {
+        if (data.type === "general") {
             general(stats, statsContainer);
-        } else if (data.type == "player_stats") {
+        } else if (data.type === "player_stats") {
             playerStats(stats, statsContainer);
         }
     } else {
@@ -73,7 +78,7 @@ window.UpdateStatastics = function(data) {
     }
 
     infoContainer.appendChild(statsContainer);
-}
+};
 
 function general(stats, statsContainer) {
     const goals_container = document.createElement("div");

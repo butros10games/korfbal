@@ -1,4 +1,6 @@
-window.updateTeam = function(data) {
+"use strict";
+
+export const updateTeam = function(data, infoContainer) {
     if (data.teams.length > 0) {
         for (const element of data.teams) {
             const team_container = document.createElement("a");
@@ -46,4 +48,4 @@ window.updateTeam = function(data) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen teams</p>";
     }
-}
+};

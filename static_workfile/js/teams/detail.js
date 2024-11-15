@@ -1,3 +1,5 @@
+"use strict";
+
 // run when dom is loaded
 let socket;
 let team_id;
@@ -30,8 +32,8 @@ window.addEventListener("DOMContentLoaded", function() {
         requestInitalData(".button.active", socket, { 'user_id': user_id });
     };
 
-    setupCarousel(carousel, buttons, { 'user_id': user_id }, 'get_stats');
-    setupFollowButton(user_id);
+    setupCarousel(carousel, buttons, socket, { 'user_id': user_id }, 'get_stats');
+    setupFollowButton(user_id, socket);
 });
 
 function onMessageReceived(event) {
@@ -42,12 +44,12 @@ function onMessageReceived(event) {
         case "wedstrijden": {
             cleanDom(infoContainer);
 
-            updateMatches(data); // imported from common/updateMatches.js
+            updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
             break;
         }
         
         case "stats": {
-            UpdateStatastics(data.data); // imported from common/UpdateStatastics.js
+            UpdateStatastics(data.data, infoContainer, socket, user_id); // imported from common/UpdateStatastics.js
             break;
         }
 

@@ -1,10 +1,12 @@
+"use strict";
+
 let socket;
 let match_id;
 let user_id;
 let WebSocket_url;
-let infoContainer = document.getElementById("info-container");
-let carousel = document.querySelector('.carousel');
-let buttons = document.querySelectorAll('.button');
+const infoContainer = document.getElementById("info-container");
+const carousel = document.querySelector('.carousel');
+const buttons = document.querySelectorAll('.button');
 
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
 const url = window.location.href;
@@ -32,7 +34,7 @@ window.addEventListener("DOMContentLoaded", function() {
         socket.send(JSON.stringify({'command': 'get_time'}));
     };
 
-    setupCarousel(carousel, buttons, { 'user_id': user_id }, 'get_stats');
+    setupCarousel(carousel, buttons, socket, { 'user_id': user_id }, 'get_stats');
 });
 
 function onMessageReceived(event) {
@@ -51,7 +53,7 @@ function onMessageReceived(event) {
             cleanDom(infoContainer);
 
             if (data.is_coach && !data.finished) {
-                updateplayerGroups(data, infoContainer); // imported from matches/common/updateplayerGroups.js
+                updatePlayerGroups(data, infoContainer, socket); // imported from matches/common/updatePlayerGroups.js
             } else {
                 showPlayerGroups(data, infoContainer); // imported from matches/common/showPlayerGroups.js
             }
@@ -66,7 +68,7 @@ function onMessageReceived(event) {
         }
 
         case "stats": {
-            UpdateStatastics(data.data); // imported from common/updateStatastics.js
+            UpdateStatastics(data.data, infoContainer, socket, user_id); // imported from common/updateStatastics.js
             break;
         }
 
@@ -77,10 +79,17 @@ function onMessageReceived(event) {
             }
 
             if (data.type === "active") {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000);
+                timer = new CountdownTimer(
+                    data.time, data.length * 1000, null, data.pause_length * 1000
+                );
                 timer.start();
             } else if (data.type === "pause") {
-                timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000);
+                timer = new CountdownTimer(
+                    data.time,
+                    data.length * 1000,
+                    data.calc_to,
+                    data.pause_length * 1000,
+                );
             } else if (data.type === "start") {
                 timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
                 timer.start();
@@ -110,7 +119,7 @@ function onMessageReceived(event) {
 
             timer = null;
 
-            let timer_p = document.getElementById("counter");
+            const timer_p = document.getElementById("counter");
     
             // convert seconds to minutes and seconds
             const minutes = data.part_length / 60;
@@ -134,7 +143,7 @@ function updateEvents(data) {
             const eventDiv = document.createElement("div");
             eventDiv.classList.add("event", "flex-row");
 
-            if (event.type == "goal") {
+            if (event.type === "goal") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
                 const score = wedstrijdPunten(event, thuis, uit, home_team_id);
                 thuis = score[0];
@@ -145,20 +154,20 @@ function updateEvents(data) {
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(scoreDiv);
-            } else if (event.type == "wissel") {
+            } else if (event.type === "wissel") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
                 const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
                 const endSectionDiv = document.createElement("div");
-                endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+                endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(endSectionDiv);
-            } else if (event.type == "pauze") {
+            } else if (event.type === "pauze") {
                 const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
                 const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
                 const endSectionDiv = document.createElement("div");
-                endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+                endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
@@ -175,7 +184,7 @@ function updateEvents(data) {
     }
 
     // Adding the tracker button if required
-    if (data.access && data.status != 'finished') {
+    if (data.access && data.status !== 'finished') {
         const buttonContainer = document.createElement("div");
         buttonContainer.classList.add("flex-center");
         buttonContainer.style.marginTop = "12px";
@@ -194,7 +203,7 @@ function updateEvents(data) {
 }
 
 function wedstrijdPunten(event, thuis, uit, home_team_id) {
-    if (event.team_id == home_team_id) {
+    if (event.team_id === home_team_id) {
         thuis++;
     } else {
         uit++;

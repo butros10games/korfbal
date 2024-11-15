@@ -1,3 +1,5 @@
+"use strict";
+
 function createPlayerGroupTitle(playerGroup) {
     const playerGroupTitle = document.createElement("div");
     playerGroupTitle.classList.add("flex-row", "player-group-title");
@@ -62,7 +64,7 @@ function createPlayerGroupContainer(playerGroups, renderPlayerDiv) {
             playerGroupPlayers.style.alignItems = 'stretch';
 
             for (let i = 0; i < 4; i++) {
-                let player = playerGroup.players[i];
+                const player = playerGroup.players[i];
                 const playerDiv = renderPlayerDiv(player);
                 playerGroupPlayers.appendChild(playerDiv);
             }
@@ -82,7 +84,7 @@ function createPlayerGroupContainer(playerGroups, renderPlayerDiv) {
     return playerGroupContainer;
 }
 
-window.updateplayerGroups = function(data, container) {
+window.updatePlayerGroups = function(data, container, socket) {
     const playerOptions = data.players.map(dataPlayer => {
         const option = document.createElement("option");
         option.value = dataPlayer.id;
@@ -90,13 +92,15 @@ window.updateplayerGroups = function(data, container) {
         return option;
     });
 
-    const playerGroupContainer = createPlayerGroupContainer(data.playerGroups, (player) => {
-        const playerDiv = createPlayerDiv('select', player, playerOptions);
-        playerDiv.addEventListener('change', function() {
-            onPlayerSelectChange(this);
-        });
-        return playerDiv;
-    });
+    const playerGroupContainer = createPlayerGroupContainer(data.playerGroups, 
+        (player) => {
+            const playerDiv = createPlayerDiv('select', player, playerOptions);
+            playerDiv.addEventListener('change', function() {
+                onPlayerSelectChange(this);
+            });
+            return playerDiv;
+        }
+    );
 
     const buttonDiv = document.createElement("div");
     buttonDiv.classList.add("flex-center");
@@ -105,26 +109,28 @@ window.updateplayerGroups = function(data, container) {
     const saveButton = document.createElement("button");
     saveButton.id = "saveButton";
     saveButton.innerHTML = "Save";
-    saveButton.style.display = "none";  // Initially hidden
+    saveButton.style.display = "none"; // Initially hidden
     buttonDiv.appendChild(saveButton);
 
     saveButton.addEventListener('click', function() {
-        savePlayerGroups();
+        savePlayerGroups(socket);
     });
 
     playerGroupContainer.appendChild(buttonDiv);
     container.appendChild(playerGroupContainer);
-}
+};
 
 window.showPlayerGroups = function(data, container) {
-    const playerGroupContainer = createPlayerGroupContainer(data.playerGroups, (player) => {
-        return createPlayerDiv('div', player);
-    });
+    const playerGroupContainer = createPlayerGroupContainer(data.playerGroups, 
+        (player) => {
+            return createPlayerDiv('div', player);
+        }
+    );
 
     container.appendChild(playerGroupContainer);
-}
+};
 
-window.savePlayerGroups = function() {
+window.savePlayerGroups = function(socket) {
     const playerGroups = document.querySelectorAll('.player-group');
     const playerGroupData = [];
 
@@ -153,4 +159,4 @@ window.savePlayerGroups = function() {
         'command': 'savePlayerGroups',
         'playerGroups': playerGroupData
     }));
-}
+};

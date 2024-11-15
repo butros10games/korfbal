@@ -1,9 +1,16 @@
+"use strict";
+
 class CountdownTimer {
-    constructor(startTimeISO, lengthInMilliseconds, pauseTimeISO = null, offsetInMilliseconds = 0, showEndHalfButton = false) {
+    constructor(startTimeISO,
+        lengthInMilliseconds,
+        pauseTimeISO = null,
+        offsetInMilliseconds = 0,
+        showEndHalfButton = false,
+    ) {
         this.lengthInMilliseconds = lengthInMilliseconds;
         
         this.startTime = new Date(startTimeISO);
-        this.totalLength = lengthInMilliseconds + offsetInMilliseconds;  // Include the offset
+        this.totalLength = lengthInMilliseconds + offsetInMilliseconds; // Include the offset
         this.endTime = new Date(this.startTime.getTime() + this.totalLength);
         
         this.offset = offsetInMilliseconds;
@@ -17,7 +24,7 @@ class CountdownTimer {
 
     updateDisplay() {
         this.now = this.pauseTimeISO ? new Date(this.pauseTimeISO) : new Date();
-        let timeLeft = this.totalLength - (this.now - this.startTime);
+        const timeLeft = this.totalLength - (this.now - this.startTime);
     
         const sign = timeLeft < 0 ? '-' : '';
         const absTime = Math.abs(timeLeft);

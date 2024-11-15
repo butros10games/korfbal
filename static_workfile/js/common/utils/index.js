@@ -1,0 +1,1 @@
+export { truncateMiddle } from "./truncate_middle.js";

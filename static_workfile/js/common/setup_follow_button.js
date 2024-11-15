@@ -1,4 +1,6 @@
-window.setupFollowButton = function(id) {
+"use strict";
+
+window.setupFollowButton = function(id, socket) {
     document.querySelector('.icon-container').addEventListener('click', function() {
         const isFollowed = this.getAttribute('data-followed') === 'true';
         
@@ -11,4 +13,4 @@ window.setupFollowButton = function(id) {
             'followed': !isFollowed
         }));
     });
-}
+};

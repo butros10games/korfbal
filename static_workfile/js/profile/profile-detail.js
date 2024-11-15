@@ -1,3 +1,5 @@
+"use strict";
+
 let socket;
 let player_id;
 let WebSocket_url;
@@ -30,7 +32,7 @@ window.addEventListener("DOMContentLoaded", function() {
         requestInitalData(".button.active", socket);
     };
 
-    setupCarousel(carousel, buttons);
+    setupCarousel(carousel, buttons, socket);
     setupProfilePicture();
 });
 
@@ -66,7 +68,7 @@ function setupProfilePicture() {
                 reader.onload = function(e) {
                     imagePreview.src = e.target.result;
                     imageModal.style.display = 'flex'; // Show the modal
-                }
+                };
                 reader.readAsDataURL(blob);
             }
         });
@@ -85,7 +87,7 @@ function setupProfilePicture() {
         saveButton.addEventListener('click', function() {
             const file = fileInput.files[0];
             if (file) {
-                let blob = file;
+                const blob = file;
         
                 // Convert HEIC to JPEG before upload if necessary
                 if (file.name.toLowerCase().endsWith('.heic')) {
@@ -166,14 +168,14 @@ function onMessageReceived(event) {
         case "teams": {
             cleanDom();
 
-            updateTeam(data); // imported from common/updateTeam.js
+            updateTeam(data, infoContainer); // imported from common/updateTeam.js
             break;
         }
 
         case "matches": {
             cleanDom();
 
-            updateMatches(data); // imported from common/updateMatches.js
+            updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
             break;
         }
     }

@@ -1,4 +1,6 @@
-window.updateMatches = function(data) {
+"use strict";
+
+export const updateMatches = function(data, maxLength, infoContainer) {
     if (data.wedstrijden.length > 0) {
         for (const element of data.wedstrijden) {
             const match_container = document.createElement("a");
@@ -106,4 +108,4 @@ window.updateMatches = function(data) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
     }
-}
+};

@@ -1,3 +1,5 @@
+"use strict";
+
 class PlayerGroupManager {
     constructor() {
         // Initialize properties
@@ -49,13 +51,13 @@ class PlayerGroupManager {
         [this.matchId, this.teamId] = this.parseUrl();
 
         // Fetch initial data and set up the initial state
-        this.setupPlayerGroups()
+        this.setupPlayerGroups();
         this.mapGroupIdsToTypeIds();
         this.mapTypeIdsToGroupIds();
     }
 
     outsidesetupPlayerGroups() {
-        this.setupPlayerGroups()
+        this.setupPlayerGroups();
     }
 
     async setupPlayerGroups() {
@@ -91,11 +93,11 @@ class PlayerGroupManager {
         const playerIndex = this.selectedPlayers.findIndex(p => p.id_uuid === id_uuid);
 
         if (playerIndex === -1) {
-            this.selectedPlayers.push({ id_uuid: id_uuid, groupId: localGroupId });
+            this.selectedPlayers.push({id_uuid: id_uuid, groupId: localGroupId});
             this.groupId = localGroupId;
         } else {
             this.selectedPlayers.splice(playerIndex, 1);
-            if (this.selectedPlayers.length === 0) this.groupId = null;
+            if (this.selectedPlayers.length === 0) {this.groupId = null;};
         }
         this.highlightSelectedPlayer(player);
         this.updateOptionsBar();
@@ -103,7 +105,9 @@ class PlayerGroupManager {
 
     highlightSelectedPlayer(player) {
         // Highlight or unhighlight the selected player
-        player.style.backgroundColor = this.selectedPlayers.some(p => p.id_uuid === player.id) ? "lightblue" : "white";
+        player.style.backgroundColor = this.selectedPlayers.some(
+            p => p.id_uuid === player.id
+        ) ? "lightblue" : "white";
     }
 
     updateOptionsBar() {
@@ -138,11 +142,18 @@ class PlayerGroupManager {
     handleOptionClick(option) {
         // Handle the action when an option button is clicked
         const targetGroupId = this.typeIdToGroupId[option.id] || null;
-        const playersGroupData = this.playerGroupsData.find(group => group.id_uuid === targetGroupId);
+        const playersGroupData = this.playerGroupsData.find(
+            group => group.id_uuid === targetGroupId
+        );
         const numberPlayersGroup = playersGroupData?.players?.length || 0;
 
-        if (option.player_max && numberPlayersGroup + this.selectedPlayers.length > option.player_max) {
-            alert(`You have selected too many players for the group. Group max: ${option.player_max}.`);
+        if (option.player_max &&
+            numberPlayersGroup + this.selectedPlayers.length > option.player_max
+        ) {
+            alert(
+                `You have selected too many players for the group.
+                Group max: ${option.player_max}.`
+            );
             return;
         }
 
@@ -171,7 +182,7 @@ class PlayerGroupManager {
         // Map group IDs to type IDs
         this.typeIds.forEach(typeId => {
             const groupElement = document.getElementById(typeId);
-            if (groupElement) this.groupIdToTypeId[groupElement.innerText] = typeId;
+            if (groupElement) {this.groupIdToTypeId[groupElement.innerText] = typeId;};
         });
     }
 
@@ -179,7 +190,7 @@ class PlayerGroupManager {
         // Map type IDs to group IDs
         this.typeIds.forEach(typeId => {
             const groupElement = document.getElementById(typeId);
-            if (groupElement) this.typeIdToGroupId[typeId] = groupElement.innerText;
+            if (groupElement) {this.typeIdToGroupId[typeId] = groupElement.innerText;};
         });
     }
 
@@ -192,7 +203,9 @@ class PlayerGroupManager {
 
     async fetchPlayersGroupsData() {
         // Fetch player groups data from the server
-        const data = await this.fetchData(`/match/api/player_overview_data/${this.matchId}/${this.teamId}/`);
+        const data = await this.fetchData(
+            `/match/api/player_overview_data/${this.matchId}/${this.teamId}/`
+        );
         if (data) {
             this.playerGroupsData = data.player_groups; // Store the full data
 
@@ -235,10 +248,14 @@ class PlayerGroupManager {
             const oldGroupId = selectedPlayer.groupId;
 
             // Remove player from old group
-            const oldGroup = this.playerGroupsData.find(group => group.id_uuid === oldGroupId);
+            const oldGroup = this.playerGroupsData.find(
+                group => group.id_uuid === oldGroupId
+            );
             let player = null;
             if (oldGroup) {
-                const playerIndex = oldGroup.players.findIndex(p => p.id_uuid === id_uuid);
+                const playerIndex = oldGroup.players.findIndex(
+                    p => p.id_uuid === id_uuid
+                );
                 if (playerIndex !== -1) {
                     [player] = oldGroup.players.splice(playerIndex, 1);
                 }
@@ -246,7 +263,9 @@ class PlayerGroupManager {
 
             // Add player to new group
             if (newGroupId && player) {
-                let newGroup = this.playerGroupsData.find(group => group.id_uuid === newGroupId);
+                let newGroup = this.playerGroupsData.find(
+                    group => group.id_uuid === newGroupId
+                );
                 if (!newGroup) {
                     // Create new group if it doesn't exist
                     const startingType = this.groupIdToStartingType[newGroupId] || { name: "Unknown" };
@@ -279,8 +298,8 @@ class PlayerGroupManager {
                 },
                 body: bodyData ? JSON.stringify(bodyData) : null
             });
-            if (response.ok) return await response.json();
-            else throw new Error("Error fetching data.");
+            if (response.ok) {return await response.json();}
+            else {throw new Error("Error fetching data.");};
         } catch (error) {
             console.error(error.message);
         }
@@ -289,7 +308,7 @@ class PlayerGroupManager {
     generatePlayerFieldHTML(playerGroups) {
         // Generate the HTML structure for player groups
         const playerField = document.getElementById('player-field');
-        if (!playerField) return;
+        if (!playerField) {return;};
         playerField.innerHTML = '';
 
         this.goToMatchOverview();
@@ -312,7 +331,7 @@ class PlayerGroupManager {
 
                 groupDivider.appendChild(groupTitle);
 
-                if (playerGroup.starting_type.name == "Reserve" && playerGroup.players.length > 0) {
+                if (playerGroup.starting_type.name === "Reserve" && playerGroup.players.length > 0) {
                     const addPlayerButton = document.createElement('p');
                     addPlayerButton.classList.add('dm-sans-600-normal', 'done-button');
                     addPlayerButton.style.marginLeft = 'auto';
@@ -370,11 +389,11 @@ class PlayerGroupManager {
                 });
 
                 playerField.appendChild(playerGroupDiv);
-            } else if (playerGroup.starting_type.name == "Reserve") {
+            } else if (playerGroup.starting_type.name === "Reserve") {
                 // create a button to add a player to the reserve group
                 const centerDiv = document.createElement('div');
                 centerDiv.classList.add('flex-center');
-                if (nullPlayers) { centerDiv.style.height = '100%' };
+                if (nullPlayers) {centerDiv.style.height = '100%';};
                 centerDiv.style.width = '100%';
     
                 const addPlayerButton = document.createElement('p');
@@ -416,7 +435,7 @@ class PlayerGroupManager {
     generatePlayerAddFieldHTML(players, searchText = null) {
         // Generate the HTML structure for player groups
         const playerField = document.getElementById('player-field');
-        if (!playerField) return;
+        if (!playerField) {return;};
         playerField.innerHTML = '';
 
         this.fetchPlayersGroupsDataHandler();
@@ -430,7 +449,7 @@ class PlayerGroupManager {
         searchField.placeholder = 'Zoek naar spelers';
         searchField.id = 'search-field';
         searchField.classList.add('search-field');
-        if (searchText) searchField.value = searchText;
+        if (searchText) {searchField.value = searchText;};
         searchDiv.appendChild(searchField);
 
         let searchTimeout;
@@ -441,7 +460,7 @@ class PlayerGroupManager {
 
             // Trigger search immediately if Enter is pressed
             if (event.key === 'Enter') {
-                const player_name = searchField.value
+                const player_name = searchField.value;
                 if (player_name === '') {
                     this.fetchPlayersData();
                 } else {
@@ -450,7 +469,7 @@ class PlayerGroupManager {
             } else {
                 // Set a 3-second delay to start the search
                 searchTimeout = setTimeout(() => {
-                    const player_name = searchField.value
+                    const player_name = searchField.value;
                     if (player_name === '') {
                         this.fetchPlayersData();
                     } else {
@@ -479,9 +498,13 @@ class PlayerGroupManager {
             this.playerElementHTML(player, playerGroupDiv, playerField);
         });
 
-        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(selectedPlayer => {
-            return !players.some(player => player.id_uuid === selectedPlayer.id_uuid);
-        });
+        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(
+            selectedPlayer => {
+                return !players.some(
+                    player => player.id_uuid === selectedPlayer.id_uuid
+                );
+            }
+        );
 
         if (this.filterdSelectedPlayersAdd.length > 0) {
             const groupDivider = document.createElement('div');
@@ -541,7 +564,9 @@ class PlayerGroupManager {
         const playerElement = document.getElementById(player.id_uuid);
         if (playerElement.style.backgroundColor === 'lightblue') {
             playerElement.style.backgroundColor = 'white';
-            this.selectedPlayersAdd = this.selectedPlayersAdd.filter(p => p.id_uuid !== player.id_uuid);
+            this.selectedPlayersAdd = this.selectedPlayersAdd.filter(
+                p => p.id_uuid !== player.id_uuid
+            );
         } else {
             playerElement.style.backgroundColor = 'lightblue';
             this.selectedPlayersAdd.push(player);

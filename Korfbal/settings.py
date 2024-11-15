@@ -186,7 +186,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = "static/"
-STATICFILES_DIRS = ["static_workfile/"]
+STATICFILES_DIRS = [
+    BASE_DIR / "static_workfile",
+    BASE_DIR / "static_workfile" / "webpack_bundles",
+]
 
 TEMPLATE_DIRS = [
     os.path.join(BASE_DIR, "templates"),
@@ -222,4 +225,11 @@ STORAGES = {
             "root_path": os.path.join(secrets["SFTP_REMOTE_PATH"], "static"),
         },
     },
+}
+
+WEBPACK_LOADER = {
+    "DEFAULT": {
+        "BUNDLE_DIR_NAME": "webpack_bundles/",  # Subdirectory for Webpack bundles
+        "STATS_FILE": BASE_DIR / "webpack-stats.json",
+    }
 }

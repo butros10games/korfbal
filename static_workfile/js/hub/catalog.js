@@ -1,3 +1,5 @@
+"use strict";
+
 let selectedValue;
 let oldSearchTerm = '';
 let searchTimer;
@@ -12,7 +14,7 @@ let teamsContainer;
 
 let csrfToken;
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", function() {
     teamsContainer = document.querySelector('.teams-container');
     csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
@@ -128,7 +130,7 @@ function makeFetchRequest(url, bodyData = null) {
             'X-CSRFToken': csrfToken
         },
     };
-    if (bodyData) options.body = JSON.stringify(bodyData);
+    if (bodyData) {options.body = JSON.stringify(bodyData);};
 
     return fetch(url, options).then(response => response.json());
 }
@@ -192,7 +194,7 @@ function createButtonDiv(buttonArray) {
     buttonArray.forEach(button => {
         const buttonElement = document.createElement('div');
         buttonElement.classList.add('selection-button', 'flex-center');
-        if (button === 'Aangesloten') buttonElement.classList.add('active');
+        if (button === 'Aangesloten') {buttonElement.classList.add('active');};
         buttonElement.innerHTML = button;
         buttonElement.addEventListener('click', () => handleButtonClick(buttonElement, button));
         buttonDiv.appendChild(buttonElement);
@@ -203,7 +205,7 @@ function createButtonDiv(buttonArray) {
 
 function handleButtonClick(buttonElement, button) {
     const buttons = document.querySelectorAll('.selection-button');
-    buttons.forEach(button => button.classList.remove('active'));
+    buttons.forEach(buttonSelect => buttonSelect.classList.remove('active'));
     buttonElement.classList.add('active');
 
     document.getElementById(button).style.display = 'flex';

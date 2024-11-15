@@ -1,3 +1,5 @@
+"use strict";
+
 // Helper function to create the event type div
 window.createEventTypeDiv = function(type, width, backgroundColor) {
     const eventTypeDiv = document.createElement("div");
@@ -6,7 +8,7 @@ window.createEventTypeDiv = function(type, width, backgroundColor) {
     eventTypeDiv.style.width = width;
     eventTypeDiv.style.backgroundColor = backgroundColor;
     return eventTypeDiv;
-}
+};
 
 // Helper function to create the midsection div with description and player info
 window.createMidsectionDiv = function(description, playerText) {
@@ -26,7 +28,7 @@ window.createMidsectionDiv = function(description, playerText) {
     midsectionDiv.appendChild(playerName);
 
     return midsectionDiv;
-}
+};
 
 // Helper function to create score div
 window.createScoreDiv = function(score, width) {
@@ -37,19 +39,19 @@ window.createScoreDiv = function(score, width) {
     currentScoreDiv.innerHTML = score;
     currentScoreDiv.style.width = width;
     return currentScoreDiv;
-}
+};
 
 window.getFormattedTime = function(event) {
-    let timeout_div = document.createElement("p");
+    const timeout_div = document.createElement("p");
     timeout_div.style.margin = "0";
     timeout_div.style.fontSize = "16px";
 
     const start_time = new Date(event.start_time);
-    if (event.end_time == null) {
+    if (event.end_time === null) {
         timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0');
     } else {
         const end_time = new Date(event.end_time);
         timeout_div.innerHTML = start_time.getHours().toString().padStart(2, '0') + ":" + start_time.getMinutes().toString().padStart(2, '0') + " - " + end_time.getHours().toString().padStart(2, '0') + ":" + end_time.getMinutes().toString().padStart(2, '0');
     }
     return timeout_div.outerHTML;
-}
+};

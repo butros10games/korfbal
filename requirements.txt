@@ -14,3 +14,4 @@ django_authentication
 uuidv7
 django_cached_paginator
 django-phonenumber-field[phonenumbers]
+django-webpack-loader

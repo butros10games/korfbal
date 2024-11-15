@@ -1,4 +1,6 @@
-window.truncateMiddle = function(text, maxLength) {
+"use strict";
+
+export const truncateMiddle = function(text, maxLength) {
     if (text.length <= maxLength) {
         return text;
     }
@@ -9,4 +11,4 @@ window.truncateMiddle = function(text, maxLength) {
     const backChars = Math.floor(charsToShow / 2);
   
     return text.substr(0, frontChars) + '...' + text.substr(text.length - backChars);
-}
+};

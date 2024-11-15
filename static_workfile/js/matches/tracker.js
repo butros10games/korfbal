@@ -1,3 +1,5 @@
+"use strict";
+
 let socket;
 let firstUUID;
 let secondUUID;
@@ -40,8 +42,8 @@ window.addEventListener("DOMContentLoaded", function() {
     scoringButtonSetup();
     startStopButtonSetup();
 
-    setupSwipeDelete()
-    deleteButtonSetup()
+    setupSwipeDelete();
+    deleteButtonSetup();
 });
 
 function initializeButtons() {
@@ -51,7 +53,7 @@ function initializeButtons() {
             const data = {
                 "command": "event",
                 "event": element.id,
-            }
+            };
             socket.send(JSON.stringify(data));
         });
     }
@@ -60,7 +62,7 @@ function initializeButtons() {
     endHalfButton.addEventListener("click", function() {
         const data = {
             "command": "part_end",
-        }
+        };
         socket.send(JSON.stringify(data));
     });
 }
@@ -71,7 +73,7 @@ function startStopButtonSetup() {
     startStopButton.addEventListener("click", function() {
         const data = {
             "command": "start/pause",
-        }
+        };
 
         socket.send(JSON.stringify(data));
     });
@@ -154,7 +156,7 @@ function scoringButtonSetup() {
     }
 
     function createPlayerClickHandler(element, team) {
-        return function () {
+        return function() {
             const data = { "command": "get_goal_types" };
             last_goal_Data = {
                 "player_id": element.id,
@@ -180,13 +182,13 @@ function shotButtonReg(team) {
         delete element._playerClickHandler;
 
         // set a other click event to the player buttons to register shots
-        const playerClickHandler = function () {
+        const playerClickHandler = function() {
             const data = {
                 "command": "shot_reg",
                 "player_id": element.id,
                 "time": new Date().toISOString(),
                 "for_team": team === "home",
-            }
+            };
 
             console.log(data);
 
@@ -347,7 +349,7 @@ function errorProcessing(data) {
 
 function lastEvent(data) {
     cleanDom(eventsDiv);
-    resetSwipe()
+    resetSwipe();
     
     updateEvent(data);
 }
@@ -364,7 +366,7 @@ function playerGroups(data) {
         shotButtonReg("home");
         shotButtonReg("away");
     } else {
-        updateplayerGroups(data, playersDiv); // imported from matches/common/updateplayerGroups.js
+        updatePlayerGroups(data, playersDiv, socket); // imported from matches/common/updatePlayerGroups.js
     }
 }
 
@@ -376,14 +378,18 @@ function timerData(data, startStopButton) {
     }
 
     if (data.type === "active") {
-        timer = new CountdownTimer(data.time, data.length * 1000, null, data.pause_length * 1000, true);
+        timer = new CountdownTimer(
+            data.time, data.length * 1000, null, data.pause_length * 1000, true
+        );
         timer.start();
 
         // set the pause button to pause
         startStopButton.innerHTML = "Pause";
 
     } else if (data.type === "pause") {
-        timer = new CountdownTimer(data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true);
+        timer = new CountdownTimer(
+            data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true
+        );
         timer.stop();
 
         // set the pause button to start
@@ -440,7 +446,7 @@ function partEnd(data, startStopButton) {
     // destroy the timer
     timer = null;
 
-    let timer_p = document.getElementById("counter");
+    const timer_p = document.getElementById("counter");
     
     // convert seconds to minutes and seconds
     const minutes = data.part_length / 60;
@@ -561,7 +567,7 @@ function playerChange(data) {
     shots_for.innerHTML = data.player_in_shots_for;
     shots_against.innerHTML = data.player_in_shots_against;
 
-    playerSwitch()
+    playerSwitch();
 
     // remove the overlay
     const overlay = document.getElementById("overlay");
@@ -644,15 +650,15 @@ function showGoalTypes(data) {
         goalTypeTitle.style.userSelect = "none";
 
         goalTypeDiv.addEventListener("click", function() {
-            const data = {
+            const data_send = {
                 "command": "goal_reg",
                 "goal_type": goalType.id,
                 "player_id": last_goal_Data.player_id,
                 "time": last_goal_Data.time,
                 "for_team": last_goal_Data.for_team,
-            }
+            };
 
-            socket.send(JSON.stringify(data));
+            socket.send(JSON.stringify(data_send));
         });
 
         goalTypeDiv.appendChild(goalTypeTitle);
@@ -738,14 +744,14 @@ function showReservePlayer(data) {
         PlayerTitle.style.userSelect = "none";
 
         PlayerDiv.addEventListener("click", function() {
-            const data = {
+            const data_send = {
                 "command": "wissel_reg",
                 "new_player_id": Player.id,
                 "old_player_id": playerSwitchData.player_id,
                 "time": playerSwitchData.time,
-            }
+            };
 
-            console.log(data);
+            console.log(data_send);
 
             socket.send(JSON.stringify(data));
         });
@@ -791,7 +797,7 @@ function updateEvent(data) {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
             const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
             const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
@@ -802,7 +808,7 @@ function updateEvent(data) {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
             const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
             const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
@@ -813,7 +819,7 @@ function updateEvent(data) {
             const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#43ff644d' : '#eb00004d');
             const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player, 20));
             const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px";  // For spacing/alignment purposes
+            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
@@ -937,7 +943,7 @@ function showPlayerGroups(data) {
             playerGroupPlayers.id = playerGroup.current_type;
         
             for (let i = 0; i < 4; i++) {
-                let player = playerGroup.players[i];
+                const player = playerGroup.players[i];
         
                 const playerDiv = document.createElement("div");
                 playerDiv.classList.add("player-selector", "flex-center");
@@ -1060,15 +1066,15 @@ function playerSwitch() {
                 delete element._playerClickHandler;
             }
 
-            const playerClickHandler = function () {
+            const playerClickHandler = function() {
                 playerSwitchData = {
                     "player_id": element.id,
                     "time": new Date().toISOString(),
-                }
+                };
 
                 const data = {
                     "command": "get_non_active_players"
-                }
+                };
 
                 socket.send(JSON.stringify(data));
             };
@@ -1095,7 +1101,7 @@ function setupSwipeDelete() {
     };
 
     const onTouchMove = (e) => {
-        if (!isSwiping) return;
+        if (!isSwiping) {return;};
 
         currentX = e.touches[0].clientX;
         const distance = startX - currentX;
@@ -1204,7 +1210,7 @@ function deleteConfirmPopup() {
         // send the delete command to the server
         const data = {
             "command": "remove_last_event"
-        }
+        };
 
         socket.send(JSON.stringify(data));
     });
