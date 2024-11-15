@@ -1,6 +1,7 @@
 "use strict";
 
 export const updateSettings = function(data, infoContainer, socket) {
+    const profilePicture = document.getElementById("profilePic-container");
     profilePicture.classList.add("active-img");
 
     // Main container for settings

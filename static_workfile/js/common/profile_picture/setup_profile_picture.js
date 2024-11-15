@@ -3,7 +3,7 @@
 import { heic2any } from "../utils";
 import { uploadImage } from "./utils";
 
-export const setupProfilePicture = function() {
+export const setupProfilePicture = function(csrfToken) {
     const imageModal = document.getElementById('imageModal');
     const closeModalButton = document.getElementById('closeModal');
 

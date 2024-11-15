@@ -1,24 +1,8 @@
 {
-  "status": "done",
-  "assets": {
-    "club_detail.bundle.js": {
-      "name": "club_detail.bundle.js",
-      "path": "C:\\Users\\butro\\Documents\\MonoRepo\\Django\\Korfbal\\static_workfile\\webpack_bundles\\club_detail.bundle.js",
-      "publicPath": "/static_workfile/webpack_bundles/club_detail.bundle.js"
-    },
-    "hub_index.bundle.js": {
-      "name": "hub_index.bundle.js",
-      "path": "C:\\Users\\butro\\Documents\\MonoRepo\\Django\\Korfbal\\static_workfile\\webpack_bundles\\hub_index.bundle.js",
-      "publicPath": "/static_workfile/webpack_bundles/hub_index.bundle.js"
-    }
-  },
-  "chunks": {
-    "club_detail": [
-      "club_detail.bundle.js"
-    ],
-    "hub_index": [
-      "hub_index.bundle.js"
-    ]
-  },
-  "publicPath": "/static_workfile/webpack_bundles/"
+  "status": "error",
+  "assets": {},
+  "chunks": {},
+  "publicPath": "/static_workfile/webpack_bundles/",
+  "error": "ModuleNotFoundError",
+  "message": "Module not found: Error: Can't resolve './static_workfile/js/matches/player_selector.js' in 'C:\\Users\\butro\\Documents\\MonoRepo\\Django\\Korfbal'"
 }

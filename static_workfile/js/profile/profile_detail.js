@@ -1,25 +1,21 @@
 "use strict";
 
 import { setupCarousel, updateMatches, updateTeam, updateSettings, updateGoalStats } from "../common/carousel";
+import { setupProfilePicture } from "../common/profile_picture";
 import { initializeSocket, requestInitalData } from "../common/websockets";
 
-let socket;
-let player_id;
-let WebSocket_url;
-let csrfToken;
-const profilePicture = document.getElementById("profilePic-container");
-const infoContainer = document.getElementById("info-container");
-const carousel = document.querySelector('.carousel');
-const buttons = document.querySelectorAll('.button');
-
-const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
-const url = window.location.href;
-const maxLength = 14;
-
 window.addEventListener("DOMContentLoaded", function() {
-    csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    const carousel = document.querySelector('.carousel');
+    const buttons = document.querySelectorAll('.button');
+    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
+    const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
+    const url = window.location.href;
+    
     const matches = regex.exec(url);
+
+    let player_id;
+
     if (matches) {
         player_id = matches[1];
         console.log(player_id);
@@ -27,19 +23,23 @@ window.addEventListener("DOMContentLoaded", function() {
         console.log("No UUID found in the URL.");
     }
 
-    WebSocket_url = "wss://" + window.location.host + "/ws/profile/" + player_id + "/";
-    socket = initializeSocket(WebSocket_url, onMessageReceived);
+    const WebSocket_url = "wss://" + window.location.host + "/ws/profile/" + player_id + "/";
+    const socket = initializeSocket(WebSocket_url, onMessageReceived);
 
-    socket.onopen = function() {
+    if (socket) {
+        socket.onopen = function() {
         console.log("WebSocket connection established, sending initial data...");
         requestInitalData(".button.active", socket);
     };
-
+        setupCarousel(carousel, buttons, socket);
+    }
     setupCarousel(carousel, buttons, socket);
-    setupProfilePicture();
+    setupProfilePicture(csrfToken);
 });
 
 function onMessageReceived(event) {
+    const infoContainer = document.getElementById("info-container");
+    const maxLength = 14;
     const data = JSON.parse(event.data);
     console.log(data);
 

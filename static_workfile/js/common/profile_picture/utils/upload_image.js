@@ -1,6 +1,6 @@
 "use strict";
 
-export const uploadImage = function(blob) {
+export const uploadImage = function(blob, csrfToken) {
     const formData = new FormData();
     formData.append('profile_picture', blob, 'profile_picture.jpg'); // Set a default filename for the JPEG
 
