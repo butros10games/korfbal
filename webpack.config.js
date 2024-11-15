@@ -6,9 +6,9 @@ module.exports = {
     hub_index: './static_workfile/js/index.js',
     club_detail: './static_workfile/js/clubs/club_detail.js',
     match_detail: './static_workfile/js/matches/match_detail.js',
-    players_selector: './static_workfile/js/matches/player_selector.js',
+    players_selector: './static_workfile/js/matches/players_selector.js',
     match_tracker: './static_workfile/js/matches/match_tracker.js',
-    profile_detail: './static_workfile/js/profiles/profile_detail.js',
+    profile_detail: './static_workfile/js/profile/profile_detail.js',
     teams_detail: './static_workfile/js/teams/team_detail.js',
   },
   output: {

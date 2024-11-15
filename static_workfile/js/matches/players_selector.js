@@ -1,5 +1,7 @@
 "use strict";
 
+import { truncateMiddle } from "../common/utils";
+
 class PlayerGroupManager {
     constructor() {
         // Initialize properties

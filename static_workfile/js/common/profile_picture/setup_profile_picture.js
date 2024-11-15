@@ -1,6 +1,5 @@
 "use strict";
 
-import { heic2any } from "../utils";
 import { uploadImage } from "./utils";
 
 export const setupProfilePicture = function(csrfToken) {
