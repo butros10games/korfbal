@@ -5,11 +5,11 @@ import { truncateMiddle } from "../common/utils";
 import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from "../common/carousel/events_utils";
 import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from "../common/swipeDelete";
 import { updatePlayerGroups } from "../common/carousel";
+import { initializeSocket } from "../common/websockets/index.js";
 
 let socket;
 let firstUUID;
 let secondUUID;
-let WebSocket_url;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
 const url = window.location.href;
 
@@ -38,23 +38,33 @@ window.addEventListener("DOMContentLoaded", function() {
         console.log("Not enough UUIDs found in the URL.");
     }
 
-    WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
+    const WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
+    socket = initializeSocket(WebSocket_url, (event) =>
+        onMessageReceived(event, socket)
+    );
+
+    if (socket) {
+        socket.onopen = function() {
+            console.log("WebSocket connection established, sending initial data...");
+            requestInitalData(socket);
+        };
+    };
 
     load_icon_small(eventsDiv);
     load_icon(playersDiv);
-    initializeSocket(WebSocket_url);
-    initializeButtons();
-    scoringButtonSetup();
-    startStopButtonSetup();
+    
+    initializeButtons(socket);
+    scoringButtonSetup(socket);
+    startStopButtonSetup(socket);
 
     setupSwipeDelete();
     deleteButtonSetup(socket);
 });
 
-function initializeButtons() {
+function initializeButtons(socket) {
     const buttons = document.getElementsByClassName("button");
     for (const element of buttons) {
-        element.addEventListener("click", function() {
+        element.addEventListener("click", () => {
             const data = {
                 "command": "event",
                 "event": element.id,
@@ -64,7 +74,7 @@ function initializeButtons() {
     }
 
     const endHalfButton = document.getElementById("end-half-button");
-    endHalfButton.addEventListener("click", function() {
+    endHalfButton.addEventListener("click", () => {
         const data = {
             "command": "part_end",
         };
@@ -72,7 +82,7 @@ function initializeButtons() {
     });
 }
 
-function startStopButtonSetup() {
+function startStopButtonSetup(socket) {
     const startStopButton = document.getElementById("start-stop-button");
 
     startStopButton.addEventListener("click", function() {
@@ -84,17 +94,17 @@ function startStopButtonSetup() {
     });
 }
 
-function scoringButtonSetup() {
+function scoringButtonSetup(socket) {
     const homeScoreButton = document.getElementById("home-score");
     const awayScoreButton = document.getElementById("away-score");
 
-    function toggleButton(button, team) {
+    function toggleButton(button, team, socket) {
         if (button.classList.contains("activated")) {
             deactivateButton(button, team);
-            shotButtonReg(team);
+            shotButtonReg(team, socket);
         } else {
             deactivateActivatedButton();
-            activateButton(button, team);
+            activateButton(button, team, socket);
         }
     }
 
@@ -113,11 +123,11 @@ function scoringButtonSetup() {
         }
     }
 
-    function activateButton(button, team) {
+    function activateButton(button, team, socket) {
         const playerButtons = getPlayerButtons(team);
         button.style.background = getButtonBackground(team, true);
         button.classList.add("activated");
-        addPlayerClickHandlers(playerButtons, team);
+        addPlayerClickHandlers(playerButtons, team, socket);
     }
 
     function getPlayerButtons(team) {
@@ -144,23 +154,24 @@ function scoringButtonSetup() {
         });
     }
 
-    function addPlayerClickHandlers(playerButtons, team) {
+    function addPlayerClickHandlers(playerButtons, team, socket) {
         Array.from(playerButtons).forEach(element => {
             element.style.background = getButtonBackground(team, false);
     
-            // Remove existing event listener
+            // If a previous handler exists, remove it
             if (element._playerClickHandler) {
                 element.removeEventListener("click", element._playerClickHandler);
                 delete element._playerClickHandler;
             }
     
-            const playerClickHandler = createPlayerClickHandler(element, team);
+            // Create a new handler and store it in _playerClickHandler
+            const playerClickHandler = createPlayerClickHandler(element, team, socket);
             element._playerClickHandler = playerClickHandler;
             element.addEventListener("click", playerClickHandler);
         });
     }
 
-    function createPlayerClickHandler(element, team) {
+    function createPlayerClickHandler(element, team, socket) {
         return function() {
             const data = { "command": "get_goal_types" };
             last_goal_Data = {
@@ -172,11 +183,15 @@ function scoringButtonSetup() {
         };
     }
 
-    homeScoreButton.addEventListener("click", () => toggleButton(homeScoreButton, "home"));
-    awayScoreButton.addEventListener("click", () => toggleButton(awayScoreButton, "away"));
+    homeScoreButton.addEventListener("click", () => toggleButton(
+        homeScoreButton, "home", socket
+    ));
+    awayScoreButton.addEventListener("click", () => toggleButton(
+        awayScoreButton, "away", socket
+    ));
 }
 
-function shotButtonReg(team) {
+function shotButtonReg(team, socket) {
     const playerButtonsContainer = document.getElementById(team === "home" ? "Aanval" : "Verdediging");
     const playerButtons = playerButtonsContainer.getElementsByClassName("player-selector");
     
@@ -205,7 +220,7 @@ function shotButtonReg(team) {
     });
 }
 
-function requestInitalData() {
+function requestInitalData(socket) {
     socket.send(JSON.stringify({
         'command': 'playerGroups',
     }));
@@ -219,41 +234,7 @@ function requestInitalData() {
     }));
 }
 
-// Function to initialize WebSocket
-function initializeSocket(url) {
-    // Close the current connection if it exists
-    if (socket) {
-        socket.onclose = null; // Clear the onclose handler to prevent console error logging
-        socket.close();
-    }
-    
-    // Create a new WebSocket connection
-    socket = new WebSocket(url);
-    
-    // On successful connection
-    socket.onopen = function(e) {
-        console.log("Connection established!");
-        requestInitalData();
-    };
-    
-    // On message received
-    socket.onmessage = onMessageReceived;
-    
-    // On connection closed
-    socket.onclose = function(event) {
-        if (event.wasClean) {
-            console.log(`Connection closed cleanly, code=${event.code}, reason=${event.reason}`);
-        } else {
-            console.error('Connection died');
-        }
-
-        console.log("Attempting to reconnect...");
-        // Attempt to reconnect
-        setTimeout(() => initializeSocket(url), 3000);
-    };
-}
-
-function onMessageReceived(event) {
+function onMessageReceived(event, socket) {
     const data = JSON.parse(event.data);
     const startStopButton = document.getElementById("start-stop-button");
 
@@ -269,7 +250,7 @@ function onMessageReceived(event) {
         }
         
         case "playerGroups": {
-            playerGroups(data);
+            playerGroups(data, socket);
             break;
         }
 
@@ -279,7 +260,7 @@ function onMessageReceived(event) {
         }
 
         case "goal_types": {
-            showGoalTypes(data);
+            showGoalTypes(data, socket);
             break;
         }
 
@@ -299,12 +280,12 @@ function onMessageReceived(event) {
         }
 
         case "non_active_players": {
-            showReservePlayer(data);
+            showReservePlayer(data, socket);
             break;
         }
 
         case "player_change": {
-            playerChange(data);
+            playerChange(data, socket);
             break;
         }
 
@@ -359,15 +340,15 @@ function lastEvent(data) {
     updateEvent(data);
 }
 
-function playerGroups(data) {
+function playerGroups(data, socket) {
     cleanDom(eventsDiv);
     cleanDom(playersDiv);
 
     if (data.match_active) {
-        showPlayerGroups(data);
+        showPlayerGroups(data, socket);
 
-        shotButtonReg("home");
-        shotButtonReg("away");
+        shotButtonReg("home", socket);
+        shotButtonReg("away", socket);
     } else {
         updatePlayerGroups(data, playersDiv, socket); // imported from matches/common/updatePlayerGroups.js
     }
@@ -556,7 +537,7 @@ function cleanDom(element) {
     element.classList.remove("flex-start-wrap");
 }
 
-function playerChange(data) {
+function playerChange(data, socket) {
     // look for the player button
     const playerButtonData = document.getElementById(data.player_out_id);
 
@@ -570,7 +551,7 @@ function playerChange(data) {
     shots_for.innerHTML = data.player_in_shots_for;
     shots_against.innerHTML = data.player_in_shots_against;
 
-    playerSwitch();
+    playerSwitch(socket);
 
     // remove the overlay
     const overlay = document.getElementById("overlay");
@@ -588,7 +569,7 @@ function teamGoalChange(data) {
     secondTeamP.innerHTML = data.goals_against;
 }
 
-function showGoalTypes(data) {
+function showGoalTypes(data, socket) {
     // Create the overlay container
     const overlay = document.createElement("div");
     overlay.id = "overlay";
@@ -682,7 +663,7 @@ function showGoalTypes(data) {
     document.body.style.overflow = "hidden";
 }
 
-function showReservePlayer(data) {
+function showReservePlayer(data, socket) {
     // Create the overlay container
     const overlay = document.createElement("div");
     overlay.id = "overlay";
@@ -756,7 +737,7 @@ function showReservePlayer(data) {
 
             console.log(data_send);
 
-            socket.send(JSON.stringify(data));
+            socket.send(JSON.stringify(data_send));
         });
 
         PlayerDiv.appendChild(PlayerTitle);
@@ -875,7 +856,7 @@ function updatePlayerShot(data) {
     }
 }
 
-function showPlayerGroups(data) {
+function showPlayerGroups(data, socket) {
     const homeScoreButton = document.getElementById("home-score");
     const awayScoreButton = document.getElementById("away-score");
 
@@ -929,7 +910,7 @@ function showPlayerGroups(data) {
                 switchButtonDiv.style.width = "96px";
 
                 switchButtonDiv.addEventListener("click", function() {
-                    playerSwitch();
+                    playerSwitch(socket);
                 });
 
                 playerGroupTitleDiv.appendChild(switchButtonDiv);
@@ -1018,57 +999,52 @@ function showPlayerGroups(data) {
     playersDiv.appendChild(playerGroupContainer);
 }
 
-function playerSwitch() {
-    // add to the wissel button a active tag and change the color
+function playerSwitch(socket) {
     const switchButton = document.getElementById("switch-button");
     
     if (switchButton.classList.contains("activated")) {
         switchButton.classList.remove("activated");
         switchButton.style.background = "";
 
-        // remove the color from the player buttons and remove the event listeners
         const playerButtons = document.getElementsByClassName("player-selector");
 
         Array.from(playerButtons).forEach(element => {
             element.style.background = "";
             if (element._playerClickHandler) {
                 element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler;
+                delete element._playerClickHandler; // Properly remove handler reference
             }
         });
 
-        shotButtonReg("home");
-        shotButtonReg("away");
+        shotButtonReg("home", socket);
+        shotButtonReg("away", socket);
     } else {
         switchButton.classList.add("activated");
         switchButton.style.background = "#4169e152";
 
-        // change the color on the player buttons and remove the event listeners and add a event listener to the player buttons to switch the player clicked on
         const playerButtons = document.getElementsByClassName("player-selector");
 
         Array.from(playerButtons).forEach(element => {
             const homeScoreButton = document.getElementById("home-score");
             const awayScoreButton = document.getElementById("away-score");
 
-            // remove the activated class from the buttons and remove the color
             if (homeScoreButton.classList.contains("activated")) {
                 homeScoreButton.classList.remove("activated");
-
                 homeScoreButton.style.background = "#43ff6480";
             }
 
             if (awayScoreButton.classList.contains("activated")) {
                 awayScoreButton.classList.remove("activated");
-
                 awayScoreButton.style.background = "rgba(235, 0, 0, 0.5)";
             }
 
             element.style.background = "#4169e152";
             if (element._playerClickHandler) {
                 element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler;
+                delete element._playerClickHandler; // Properly remove handler reference
             }
 
+            // Add new handler
             const playerClickHandler = function() {
                 playerSwitchData = {
                     "player_id": element.id,
