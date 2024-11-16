@@ -3,7 +3,7 @@ const BundleTracker = require('webpack-bundle-tracker');
 
 module.exports = {
   entry: {
-    hub_index: './static_workfile/js/index.js',
+    hub_catalog: './static_workfile/js/hub/hub_catalog.js',
     club_detail: './static_workfile/js/clubs/club_detail.js',
     match_detail: './static_workfile/js/matches/match_detail.js',
     players_selector: './static_workfile/js/matches/players_selector.js',
