@@ -36,9 +36,10 @@ window.addEventListener("DOMContentLoaded", function() {
     setupCarousel(carousel, buttons, socket, { 'user_id': user_id }, 'get_stats');
 });
 
+let timer = null;
+
 function onMessageReceived(event, match_id, user_id, socket) {
     const infoContainer = document.getElementById("info-container");
-    let timer = null;
 
     const data = JSON.parse(event.data);
     console.log(data);
