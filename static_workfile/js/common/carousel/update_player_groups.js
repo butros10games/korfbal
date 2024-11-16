@@ -1,5 +1,3 @@
-"use strict";
-
 import { truncateMiddle } from "../utils";
 import { createPlayerGroupContainer, createPlayerDiv, savePlayerGroups, onPlayerSelectChange } from "./events_utils";
 

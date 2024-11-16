@@ -1,5 +1,3 @@
-"use strict";
-
 import { truncateMiddle } from "../utils";
 import { cleanDomCarousel } from "./utils";
 
@@ -39,4 +37,4 @@ export const updatePlayers = function(data, infoContainer) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen spelers toegevoegd</p>";
     }
-}
+};

@@ -1,6 +1,3 @@
-"use strict";
-
-
 export const requestInitalData = function(buttonSelector, socket, moreData = null) {
     const button = document.querySelector(buttonSelector);
     if (button) {

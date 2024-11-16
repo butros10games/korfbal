@@ -1,5 +1,3 @@
-"use strict";
-
 export const initializeSocket = function(url, onMessageReceived) {
     let socket;
 

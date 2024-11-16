@@ -1,5 +1,3 @@
-"use strict";
-
 export const resetSwipe = function() {
     // Assuming swipeContent is the element you want to reset
     const swipeContent = document.getElementById('match-event');
@@ -10,4 +8,4 @@ export const resetSwipe = function() {
     // Reset any classes that might have been added or removed during swipe
     swipeContent.classList.remove('transition-back');
     swipeContent.classList.remove('swiped-left'); // If this class is added on swipe
-}
+};

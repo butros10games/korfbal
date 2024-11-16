@@ -1,5 +1,3 @@
-"use strict";
-
 export const setupSwipeDelete = function() {
     const matchEvent = document.getElementById('match-event-swipe');
     const swipeContent = document.getElementById('match-event');
@@ -39,4 +37,4 @@ export const setupSwipeDelete = function() {
     swipeContent.addEventListener('touchstart', onTouchStart, { passive: true });
     swipeContent.addEventListener('touchmove', onTouchMove, { passive: true });
     swipeContent.addEventListener('touchend', onTouchEnd, false);
-}
+};

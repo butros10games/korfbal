@@ -1,8 +1,7 @@
-"use strict";
-
 import { setupCarousel, updatePlayerGroups, showPlayerGroups, updateStatistics, updateEvents } from "../common/carousel/index.js";
 import { initializeSocket, requestInitalData } from "../common/websockets/index.js";
 import { cleanDomCarousel } from "../common/carousel/utils";
+import { CountdownTimer } from "./common";
 
 window.addEventListener("DOMContentLoaded", function() {
     const carousel = document.querySelector('.carousel');

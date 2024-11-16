@@ -1,5 +1,3 @@
-"use strict";
-
 export const onPlayerSelectChange = function(changedSelect) {
     const allSelectors = document.querySelectorAll('.player-selector');
     allSelectors.forEach(select => {

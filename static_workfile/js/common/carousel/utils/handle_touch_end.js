@@ -1,6 +1,6 @@
-"use strict";
-
-export const handleTouchEnd = function(isDragging, touchStartX, touchEndX, currentPosition, carouselElement, buttonWidth) {
+export const handleTouchEnd = function(
+    isDragging, touchStartX, touchEndX, currentPosition, carouselElement, buttonWidth
+) {
     if (!isDragging) {
         return;
     }
@@ -25,4 +25,4 @@ export const handleTouchEnd = function(isDragging, touchStartX, touchEndX, curre
         isDragging: false,
         currentPosition,
     };
-}
+};

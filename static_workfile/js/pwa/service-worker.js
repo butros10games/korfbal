@@ -1,5 +1,3 @@
-"use strict";
-
 self.addEventListener('fetch', function(event) {
     // This is a minimal no-op service worker.
 });

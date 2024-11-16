@@ -1,6 +1,6 @@
-"use strict";
-
-export const handleButtonClick = function(socket, isAutoScrolling, button, buttons, extraData, statsName) {
+export const handleButtonClick = function(
+    socket, isAutoScrolling, button, buttons, extraData, statsName
+) {
     if (isAutoScrolling) {
         return;
     }
@@ -15,7 +15,7 @@ export const handleButtonClick = function(socket, isAutoScrolling, button, butto
     sendDataToServer(socket, button, extraData, statsName);
 
     return isAutoScrolling;
-}
+};
 
 function sendDataToServer(socket, button, extraData, statsName) {
     const data = button.getAttribute('data');
@@ -31,4 +31,4 @@ function sendDataToServer(socket, button, extraData, statsName) {
     }
 
     socket.send(JSON.stringify(payload));
-}
+};

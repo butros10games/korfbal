@@ -1,5 +1,3 @@
-"use strict";
-
 export const deleteConfirmPopup = function(socket) {
     // Create the overlay container
     const overlay = document.createElement("div");
@@ -120,4 +118,4 @@ export const deleteConfirmPopup = function(socket) {
     popup.addEventListener("click", function(event) {
         event.stopPropagation();
     });
-}
+};

@@ -1,5 +1,3 @@
-"use strict";
-
 let selectedValue;
 let oldSearchTerm = '';
 let searchTimer;

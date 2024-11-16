@@ -1,5 +1,3 @@
-"use strict";
-
 import { uploadImage } from "./utils";
 
 export const setupProfilePicture = function(csrfToken) {
@@ -63,15 +61,15 @@ export const setupProfilePicture = function(csrfToken) {
                         quality: 0.7
                     })
                     .then(convertedBlob => {
-                        uploadImage(convertedBlob);
+                        uploadImage(convertedBlob, imageModal);
                     })
                     .catch(error => {
                         console.error('Error converting HEIC to JPEG:', error);
                     });
                 } else {
-                    uploadImage(blob);
+                    uploadImage(blob, imageModal);
                 }
             }
         });
     }
-}
+};

@@ -1,5 +1,3 @@
-"use strict";
-
 import { setupCarousel, updateMatches, updatePlayers, updateStatistics } from "../common/carousel/index.js";
 import { initializeSocket, requestInitalData } from "../common/websockets/index.js";
 import { setupFollowButton } from "../common/setup_follow_button.js";
@@ -29,7 +27,7 @@ window.addEventListener("DOMContentLoaded", function() {
     });
 
     if (socket) {
-        socket.onopen = function () {
+        socket.onopen = function() {
             console.log("WebSocket connection established, sending initial data...");
             requestInitalData(".button.active", socket, { 'user_id': user_id });
         };

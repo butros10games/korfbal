@@ -1,5 +1,3 @@
-"use strict";
-
 export const setupFollowButton = function(id, socket) {
     document.querySelector('.icon-container').addEventListener('click', function() {
         const isFollowed = this.getAttribute('data-followed') === 'true';

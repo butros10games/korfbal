@@ -1,5 +1,3 @@
-"use strict";
-
 export const savePlayerGroups = function(socket) {
     const playerGroups = document.querySelectorAll('.player-group');
     const playerGroupData = [];

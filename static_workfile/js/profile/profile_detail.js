@@ -1,5 +1,3 @@
-"use strict";
-
 import { setupCarousel, updateMatches, updateTeam, updateSettings, updateGoalStats } from "../common/carousel";
 import { setupProfilePicture } from "../common/profile_picture";
 import { initializeSocket, requestInitalData } from "../common/websockets";
@@ -24,7 +22,9 @@ window.addEventListener("DOMContentLoaded", function() {
     }
 
     const WebSocket_url = "wss://" + window.location.host + "/ws/profile/" + player_id + "/";
-    const socket = initializeSocket(WebSocket_url, onMessageReceived);
+    const socket = initializeSocket(WebSocket_url, (event) =>
+        onMessageReceived(event, socket)
+    );
 
     if (socket) {
         socket.onopen = function() {
@@ -37,22 +37,23 @@ window.addEventListener("DOMContentLoaded", function() {
     setupProfilePicture(csrfToken);
 });
 
-function onMessageReceived(event) {
+function onMessageReceived(event, socket) {
     const infoContainer = document.getElementById("info-container");
+    const profilePicture = document.getElementById("profilePic-container");
     const maxLength = 14;
     const data = JSON.parse(event.data);
     console.log(data);
 
     switch(data.command) {
         case "settings_request": {
-            cleanDom();
+            cleanDom(infoContainer, profilePicture);
 
-            updateSettings(data);
+            updateSettings(data, infoContainer, socket);
             break;
         }
         
         case "player_goal_stats": {
-            cleanDom();
+            cleanDom(infoContainer, profilePicture);
 
             updateGoalStats(data, infoContainer); // imported from common/updateGoalStats.js
             break;
@@ -74,14 +75,14 @@ function onMessageReceived(event) {
         }
 
         case "teams": {
-            cleanDom();
+            cleanDom(infoContainer, profilePicture);
 
             updateTeam(data, infoContainer); // imported from common/updateTeam.js
             break;
         }
 
         case "matches": {
-            cleanDom();
+            cleanDom(infoContainer, profilePicture);
 
             updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
             break;
@@ -89,10 +90,10 @@ function onMessageReceived(event) {
     }
 }
 
-function cleanDom() {
-    infoContainer.innerHTML = "";
-    infoContainer.classList.remove("flex-center");
-    infoContainer.classList.remove("flex-start-wrap");
+function cleanDom(element, profilePicture) {
+    element.innerHTML = "";
+    element.classList.remove("flex-center");
+    element.classList.remove("flex-start-wrap");
 
     profilePicture.classList.remove("active-img");
 }

@@ -1,5 +1,3 @@
-"use strict";
-
 import { wedstrijdPunten, truncateMiddle } from "../utils";
 import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from "./events_utils";
 
@@ -73,4 +71,4 @@ export const updateEvents = function(data, infoContainer, match_id) {
     }
 
     infoContainer.appendChild(eventContainer);
-}
+};

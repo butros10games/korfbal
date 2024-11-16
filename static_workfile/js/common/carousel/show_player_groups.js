@@ -1,5 +1,3 @@
-"use strict";
-
 import { createPlayerGroupContainer, createPlayerDiv } from "./events_utils";
 
 export const showPlayerGroups = function(data, container) {

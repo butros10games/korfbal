@@ -1,5 +1,3 @@
-"use strict";
-
 import { truncateMiddle } from "../../utils";
 
 function createPlayerGroupTitle(playerGroup) {
@@ -46,7 +44,7 @@ export const createPlayerDiv = function(type, player, playerOptions = []) {
     }
 
     return playerDiv;
-}
+};
 
 export const createPlayerGroupContainer = function(playerGroups, renderPlayerDiv) {
     const playerGroupContainer = document.createElement("div");
@@ -84,4 +82,4 @@ export const createPlayerGroupContainer = function(playerGroups, renderPlayerDiv
     }
 
     return playerGroupContainer;
-}
+};

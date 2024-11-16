@@ -1,5 +1,3 @@
-"use strict";
-
 import { CountdownTimer } from "./common";
 import { truncateMiddle } from "../common/utils";
 import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from "../common/carousel/events_utils";
@@ -7,13 +5,11 @@ import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from "../common/swipe
 import { updatePlayerGroups } from "../common/carousel";
 import { initializeSocket } from "../common/websockets/index.js";
 
-let socket;
 let firstUUID;
 let secondUUID;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
 const url = window.location.href;
 
-let eventsDiv;
 let playersDiv;
 let last_goal_Data;
 
@@ -22,7 +18,7 @@ let timer = null;
 let playerSwitchData;
 
 window.addEventListener("DOMContentLoaded", function() {
-    eventsDiv = document.getElementById("match-event");
+    const eventsDiv = document.getElementById("match-event");
     playersDiv = document.getElementById("players");
 
     const matches = url.match(regex);
@@ -39,8 +35,8 @@ window.addEventListener("DOMContentLoaded", function() {
     }
 
     const WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
-    socket = initializeSocket(WebSocket_url, (event) =>
-        onMessageReceived(event, socket)
+    const socket = initializeSocket(WebSocket_url, (event) =>
+        onMessageReceived(event, socket, eventsDiv)
     );
 
     if (socket) {
@@ -234,7 +230,7 @@ function requestInitalData(socket) {
     }));
 }
 
-function onMessageReceived(event, socket) {
+function onMessageReceived(event, socket, eventsDiv) {
     const data = JSON.parse(event.data);
     const startStopButton = document.getElementById("start-stop-button");
 
@@ -245,12 +241,12 @@ function onMessageReceived(event, socket) {
 
     switch(data.command) {
         case "last_event": {
-            lastEvent(data);
+            lastEvent(data, eventsDiv);
             break;
         }
         
         case "playerGroups": {
-            playerGroups(data, socket);
+            playerGroups(data, socket, eventsDiv);
             break;
         }
 
@@ -333,14 +329,14 @@ function errorProcessing(data) {
     }
 }
 
-function lastEvent(data) {
+function lastEvent(data, eventsDiv) {
     cleanDom(eventsDiv);
     resetSwipe();
     
     updateEvent(data);
 }
 
-function playerGroups(data, socket) {
+function playerGroups(data, socket, eventsDiv) {
     cleanDom(eventsDiv);
     cleanDom(playersDiv);
 
@@ -840,9 +836,9 @@ function updateEvent(data) {
 }
 
 function updatePlayerShot(data) {
-    const playerGroups = document.getElementsByClassName("player-group-players");
+    const playerGroupsElement = document.getElementsByClassName("player-group-players");
 
-    for (const playerGroup of playerGroups) {
+    for (const playerGroup of playerGroupsElement) {
         // Use attribute selector syntax
         const playerDiv = playerGroup.querySelector(`[id="${data.player_id}"]`);
 
@@ -874,13 +870,13 @@ function showPlayerGroups(data, socket) {
     }
 
     let switchButton = false;
-    const playerGroups = data.playerGroups;
+    const playerGroupsData = data.playerGroups;
 
     const playerGroupContainer = document.createElement("div");
     playerGroupContainer.classList.add("player-group-container");
 
-    if (playerGroups.length > 0) {
-        playerGroups.forEach(playerGroup => {
+    if (playerGroupsData.length > 0) {
+        playerGroupsData.forEach(playerGroup => {
             const playerGroupDiv = document.createElement("div");
             playerGroupDiv.classList.add("player-group");
             playerGroupDiv.classList.add("flex-column");

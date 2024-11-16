@@ -1,6 +1,4 @@
-"use strict";
-
-export const uploadImage = function(blob, csrfToken) {
+export const uploadImage = function(blob, csrfToken, imageModal) {
     const formData = new FormData();
     formData.append('profile_picture', blob, 'profile_picture.jpg'); // Set a default filename for the JPEG
 
@@ -19,4 +17,4 @@ export const uploadImage = function(blob, csrfToken) {
     .catch(error => {
         console.error('Error:', error);
     });
-}
+};

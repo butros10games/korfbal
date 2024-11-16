@@ -1,5 +1,3 @@
-"use strict";
-
 import { deleteConfirmPopup } from "./utils";
 
 export const deleteButtonSetup = function(socket) {
@@ -8,4 +6,4 @@ export const deleteButtonSetup = function(socket) {
     deleteButton.addEventListener('click', () => {
         deleteConfirmPopup(socket);
     });
-}
+};

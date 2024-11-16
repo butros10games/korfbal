@@ -1,5 +1,3 @@
-"use strict";
-
 export const updateGoalStats = function(data, infoContainer) {
     if (data.played_matches > 0) {
         const goals_container = document.createElement("div");
@@ -93,4 +91,4 @@ export const updateGoalStats = function(data, infoContainer) {
         infoContainer.classList.add("flex-center");
         infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen doelpunten gemaakt</p>";
     }
-}
+};

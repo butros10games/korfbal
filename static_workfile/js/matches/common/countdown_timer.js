@@ -1,5 +1,3 @@
-"use strict";
-
 export class CountdownTimer {
     constructor(startTimeISO,
         lengthInMilliseconds,

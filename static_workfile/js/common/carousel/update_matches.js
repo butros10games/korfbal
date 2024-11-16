@@ -1,5 +1,3 @@
-"use strict";
-
 import { truncateMiddle } from "../utils";
 import { cleanDomCarousel } from "./utils";
 

@@ -1,5 +1,3 @@
-"use strict";
-
 import { cleanDomCarousel } from "./utils";
 
 export const updateTeam = function(data, infoContainer) {

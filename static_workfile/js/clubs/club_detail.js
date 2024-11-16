@@ -1,5 +1,3 @@
-"use strict";
-
 import { setupCarousel, updateMatches, updateTeam } from "../common/carousel";
 import { initializeSocket, requestInitalData } from "../common/websockets";
 import { setupFollowButton } from "../common/setup_follow_button.js";

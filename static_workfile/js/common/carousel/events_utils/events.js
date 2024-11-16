@@ -1,5 +1,3 @@
-"use strict";
-
 // Helper function to create the event type div
 export const createEventTypeDiv = function(type, width, backgroundColor) {
     const eventTypeDiv = document.createElement("div");

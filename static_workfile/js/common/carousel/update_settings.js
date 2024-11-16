@@ -1,5 +1,3 @@
-"use strict";
-
 export const updateSettings = function(data, infoContainer, socket) {
     const profilePicture = document.getElementById("profilePic-container");
     profilePicture.classList.add("active-img");
@@ -107,4 +105,4 @@ export const updateSettings = function(data, infoContainer, socket) {
     // Append the settingsContainer to the main container (assuming it's named infoContainer)
     infoContainer.innerHTML = ""; // Clear existing content
     infoContainer.appendChild(settingsContainer);
-}
+};

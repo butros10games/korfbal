@@ -45,11 +45,12 @@ export default [
 		},
 		languageOptions: {
 			ecmaVersion: "latest",
-			sourceType: "script",
+			sourceType: "module",
 			globals: {
 				...globals.browser,
 				...globals.commonjs,
 				django: false,
+				heic2any: "readonly",
 			},
 		},
 	},
