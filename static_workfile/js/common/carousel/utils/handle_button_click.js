@@ -12,7 +12,7 @@ export const handleButtonClick = function(socket, isAutoScrolling, button, butto
     button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     setTimeout(() => isAutoScrolling = false, 500);
 
-    sendDataToServer(button, extraData, statsName);
+    sendDataToServer(socket, button, extraData, statsName);
 
     return isAutoScrolling;
 }

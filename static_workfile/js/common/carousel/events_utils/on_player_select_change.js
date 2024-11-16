@@ -1,6 +1,6 @@
 "use strict";
 
-window.onPlayerSelectChange = function(changedSelect) {
+export const onPlayerSelectChange = function(changedSelect) {
     const allSelectors = document.querySelectorAll('.player-selector');
     allSelectors.forEach(select => {
         // Skip the select that was changed

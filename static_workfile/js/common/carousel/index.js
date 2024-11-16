@@ -5,3 +5,6 @@ export { updateTeam } from './update_team.js';
 export { updatePlayers } from './update_players.js';
 export { updateSettings } from './update_settings.js';
 export { updateGoalStats } from './update_goal_stats.js';
+export { updatePlayerGroups } from './update_player_groups.js';
+export { showPlayerGroups } from './show_player_groups.js';
+export { updateEvents } from './update_events.js';

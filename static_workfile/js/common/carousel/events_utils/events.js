@@ -1,7 +1,7 @@
 "use strict";
 
 // Helper function to create the event type div
-window.createEventTypeDiv = function(type, width, backgroundColor) {
+export const createEventTypeDiv = function(type, width, backgroundColor) {
     const eventTypeDiv = document.createElement("div");
     eventTypeDiv.classList.add("event-type", "flex-center");
     eventTypeDiv.innerHTML = type;
@@ -11,7 +11,7 @@ window.createEventTypeDiv = function(type, width, backgroundColor) {
 };
 
 // Helper function to create the midsection div with description and player info
-window.createMidsectionDiv = function(description, playerText) {
+export const createMidsectionDiv = function(description, playerText) {
     const midsectionDiv = document.createElement("div");
     midsectionDiv.classList.add("flex-column");
     midsectionDiv.style.justifyContent = 'center';
@@ -31,7 +31,7 @@ window.createMidsectionDiv = function(description, playerText) {
 };
 
 // Helper function to create score div
-window.createScoreDiv = function(score, width) {
+export const createScoreDiv = function(score, width) {
     const currentScoreDiv = document.createElement("div");
     currentScoreDiv.classList.add("current-score");
     currentScoreDiv.classList.add("flex-column");
@@ -41,7 +41,7 @@ window.createScoreDiv = function(score, width) {
     return currentScoreDiv;
 };
 
-window.getFormattedTime = function(event) {
+export const getFormattedTime = function(event) {
     const timeout_div = document.createElement("p");
     timeout_div.style.margin = "0";
     timeout_div.style.fontSize = "16px";

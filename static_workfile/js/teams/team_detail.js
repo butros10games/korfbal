@@ -1,6 +1,6 @@
 "use strict";
 
-import { setupCarousel, updateMatches, updatePlayers } from "../common/carousel/index.js";
+import { setupCarousel, updateMatches, updatePlayers, updateStatistics } from "../common/carousel/index.js";
 import { initializeSocket, requestInitalData } from "../common/websockets/index.js";
 import { setupFollowButton } from "../common/setup_follow_button.js";
 
@@ -24,10 +24,12 @@ window.addEventListener("DOMContentLoaded", function() {
     }
 
     const WebSocket_url = "wss://" + window.location.host + "/ws/teams/" + team_id + "/";
-    const socket = initializeSocket(WebSocket_url, onMessageReceived);
+    const socket = initializeSocket(WebSocket_url, (event) => {
+        onMessageReceived(event, socket, user_id);
+    });
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log("WebSocket connection established, sending initial data...");
             requestInitalData(".button.active", socket, { 'user_id': user_id });
         };
@@ -39,25 +41,25 @@ window.addEventListener("DOMContentLoaded", function() {
     setupFollowButton(user_id, socket);
 });
 
-function onMessageReceived(event) {
+function onMessageReceived(event, socket, user_id) {
     const infoContainer = document.getElementById("info-container");
     const maxLength = 14;
     const data = JSON.parse(event.data);
     console.log(data);
 
-    switch(data.command) {
+    switch (data.command) {
         case "wedstrijden": {
             updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
             break;
         }
-        
+
         case "stats": {
             updateStatistics(data.data, infoContainer, socket, user_id); // imported from common/updateStatistics.js
             break;
         }
 
         case "spelers": {
-            updatePlayers(data);
+            updatePlayers(data, infoContainer);
             break;
         }
     }

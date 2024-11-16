@@ -1,6 +1,6 @@
 "use strict";
 
-class CountdownTimer {
+export class CountdownTimer {
     constructor(startTimeISO,
         lengthInMilliseconds,
         pauseTimeISO = null,
