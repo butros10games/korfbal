@@ -1,6 +1,6 @@
 # Project Name
 
-Short description of your project, what it does, and its main features.
+This project is build to keep track of korfbal matches. in a better way then to do it on paper.
 
 ## Table of Contents
 

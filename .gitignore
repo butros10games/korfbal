@@ -172,3 +172,4 @@ yarn-error.log*
 rollhelper-extension.zip
 
 webpack_bundles/
+node_modules/
