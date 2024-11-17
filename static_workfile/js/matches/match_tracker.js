@@ -4,6 +4,8 @@ import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTi
 import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from "../common/swipeDelete";
 import { updatePlayerGroups } from "../common/carousel";
 import { initializeSocket } from "../common/websockets/index.js";
+import { scoringButtonSetup } from "../common/scoring_button/index.js";
+import { sharedData } from './shared_data.js';
 
 let firstUUID;
 let secondUUID;
@@ -11,7 +13,6 @@ const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
 const url = window.location.href;
 
 let playersDiv;
-let last_goal_Data;
 
 let timer = null;
 
@@ -90,102 +91,7 @@ function startStopButtonSetup(socket) {
     });
 }
 
-function scoringButtonSetup(socket) {
-    const homeScoreButton = document.getElementById("home-score");
-    const awayScoreButton = document.getElementById("away-score");
 
-    function toggleButton(button, team, socket) {
-        if (button.classList.contains("activated")) {
-            deactivateButton(button, team);
-            shotButtonReg(team, socket);
-        } else {
-            deactivateActivatedButton();
-            activateButton(button, team, socket);
-        }
-    }
-
-    function deactivateButton(button, team) {
-        const playerButtons = getPlayerButtons(team);
-        button.style.background = getButtonBackground(team, false);
-        button.classList.remove("activated");
-        removePlayerClickHandlers(playerButtons);
-    }
-
-    function deactivateActivatedButton() {
-        const activatedButton = document.querySelector(".activated");
-        if (activatedButton) {
-            const team = activatedButton === homeScoreButton ? "home" : "away";
-            deactivateButton(activatedButton, team);
-        }
-    }
-
-    function activateButton(button, team, socket) {
-        const playerButtons = getPlayerButtons(team);
-        button.style.background = getButtonBackground(team, true);
-        button.classList.add("activated");
-        addPlayerClickHandlers(playerButtons, team, socket);
-    }
-
-    function getPlayerButtons(team) {
-        const containerId = team === "home" ? "Aanval" : "Verdediging";
-        const playerButtonsContainer = document.getElementById(containerId);
-        return playerButtonsContainer.getElementsByClassName("player-selector");
-    }
-
-    function getButtonBackground(team, isActive) {
-        if (team === "home") {
-            return isActive ? "#43ff64" : "#43ff6480";
-        } else {
-            return isActive ? "rgba(235, 0, 0, 0.7)" : "rgba(235, 0, 0, 0.5)";
-        }
-    }
-
-    function removePlayerClickHandlers(playerButtons) {
-        Array.from(playerButtons).forEach(element => {
-            element.style.background = "";
-            if (element._playerClickHandler) {
-                element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler;
-            }
-        });
-    }
-
-    function addPlayerClickHandlers(playerButtons, team, socket) {
-        Array.from(playerButtons).forEach(element => {
-            element.style.background = getButtonBackground(team, false);
-    
-            // If a previous handler exists, remove it
-            if (element._playerClickHandler) {
-                element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler;
-            }
-    
-            // Create a new handler and store it in _playerClickHandler
-            const playerClickHandler = createPlayerClickHandler(element, team, socket);
-            element._playerClickHandler = playerClickHandler;
-            element.addEventListener("click", playerClickHandler);
-        });
-    }
-
-    function createPlayerClickHandler(element, team, socket) {
-        return function() {
-            const data = { "command": "get_goal_types" };
-            last_goal_Data = {
-                "player_id": element.id,
-                "time": new Date().toISOString(),
-                "for_team": team === "home",
-            };
-            socket.send(JSON.stringify(data));
-        };
-    }
-
-    homeScoreButton.addEventListener("click", () => toggleButton(
-        homeScoreButton, "home", socket
-    ));
-    awayScoreButton.addEventListener("click", () => toggleButton(
-        awayScoreButton, "away", socket
-    ));
-}
 
 function shotButtonReg(team, socket) {
     const playerButtonsContainer = document.getElementById(team === "home" ? "Aanval" : "Verdediging");
@@ -194,8 +100,8 @@ function shotButtonReg(team, socket) {
     // Remove event listeners from the deactivated button
     Array.from(playerButtons).forEach(element => {
         element.style.background = "";
-        element.removeEventListener("click", element._playerClickHandler);
-        delete element._playerClickHandler;
+        element.removeEventListener("click", element.playerClickHandler);
+        delete element.playerClickHandler;
 
         // set a other click event to the player buttons to register shots
         const playerClickHandler = function() {
@@ -211,7 +117,7 @@ function shotButtonReg(team, socket) {
             socket.send(JSON.stringify(data));
         };
 
-        element._playerClickHandler = playerClickHandler;
+        element.playerClickHandler = playerClickHandler;
         element.addEventListener("click", playerClickHandler);
     });
 }
@@ -630,6 +536,8 @@ function showGoalTypes(data, socket) {
         goalTypeTitle.style.userSelect = "none";
 
         goalTypeDiv.addEventListener("click", function() {
+            const last_goal_Data = sharedData.last_goal_Data;
+
             const data_send = {
                 "command": "goal_reg",
                 "goal_type": goalType.id,
@@ -1006,9 +914,9 @@ function playerSwitch(socket) {
 
         Array.from(playerButtons).forEach(element => {
             element.style.background = "";
-            if (element._playerClickHandler) {
-                element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler; // Properly remove handler reference
+            if (element.playerClickHandler) {
+                element.removeEventListener("click", element.playerClickHandler);
+                delete element.playerClickHandler; // Properly remove handler reference
             }
         });
 
@@ -1035,9 +943,9 @@ function playerSwitch(socket) {
             }
 
             element.style.background = "#4169e152";
-            if (element._playerClickHandler) {
-                element.removeEventListener("click", element._playerClickHandler);
-                delete element._playerClickHandler; // Properly remove handler reference
+            if (element.playerClickHandler) {
+                element.removeEventListener("click", element.playerClickHandler);
+                delete element.playerClickHandler; // Properly remove handler reference
             }
 
             // Add new handler
@@ -1054,7 +962,7 @@ function playerSwitch(socket) {
                 socket.send(JSON.stringify(data));
             };
 
-            element._playerClickHandler = playerClickHandler;
+            element.playerClickHandler = playerClickHandler;
             element.addEventListener("click", playerClickHandler);
         });
     }

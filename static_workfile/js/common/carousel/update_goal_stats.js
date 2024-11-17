@@ -59,7 +59,9 @@ export const updateGoalStats = function(data, infoContainer) {
 
         // Iterate through goal_stats object
         for (const goalType in data.player_goal_stats) {
-            if (data.player_goal_stats.hasOwnProperty(goalType)) {
+            if (Object.prototype.hasOwnProperty.call(
+                data.player_goal_stats, goalType
+            )) {
                 const goalStat = data.player_goal_stats[goalType];
 
                 // Create a div for each goal type's stats

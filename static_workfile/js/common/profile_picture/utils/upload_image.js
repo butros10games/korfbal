@@ -9,12 +9,12 @@ export const uploadImage = function(blob, csrfToken, imageModal) {
             'X-CSRFToken': csrfToken
         }
     })
-    .then(response => response.json())
-    .then(data => {
-        imageModal.style.display = 'none'; // Hide the modal
-        document.getElementById('profilePic').src = '/media' + data.url;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
+        .then(response => response.json())
+        .then(data => {
+            imageModal.style.display = 'none'; // Hide the modal
+            document.getElementById('profilePic').src = '/media' + data.url;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
 };

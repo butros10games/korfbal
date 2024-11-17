@@ -28,9 +28,9 @@ window.addEventListener("DOMContentLoaded", function() {
 
     if (socket) {
         socket.onopen = function() {
-        console.log("WebSocket connection established, sending initial data...");
-        requestInitalData(".button.active", socket);
-    };
+            console.log("WebSocket connection established, sending initial data...");
+            requestInitalData(".button.active", socket);
+        };
         setupCarousel(carousel, buttons, socket);
     }
     setupCarousel(carousel, buttons, socket);

@@ -60,12 +60,12 @@ export const setupProfilePicture = function(csrfToken) {
                         toType: "image/jpeg",
                         quality: 0.7
                     })
-                    .then(convertedBlob => {
-                        uploadImage(convertedBlob, imageModal);
-                    })
-                    .catch(error => {
-                        console.error('Error converting HEIC to JPEG:', error);
-                    });
+                        .then(convertedBlob => {
+                            uploadImage(convertedBlob, imageModal);
+                        })
+                        .catch(error => {
+                            console.error('Error converting HEIC to JPEG:', error);
+                        });
                 } else {
                     uploadImage(blob, imageModal);
                 }
