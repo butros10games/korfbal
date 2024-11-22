@@ -33,18 +33,14 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         self, text_data: Optional[str] = None, bytes_data: Optional[bytes] = None
     ) -> None:
         if text_data is None:
-            await self.send(
-                text_data=json.dumps({"error": "No data received"})
-            )
+            await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
         try:
             json_data: Dict[str, Any] = json.loads(text_data)
             command: str = json_data["command"]
         except json.JSONDecodeError:
-            await self.send(
-                text_data=json.dumps({"error": "Invalid JSON"})
-            )
+            await self.send(text_data=json.dumps({"error": "Invalid JSON"}))
             return
 
         if command == "teams":
@@ -52,9 +48,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         elif command in {"wedstrijden", "ended_matches"}:
             await self.matches_request(command)
         elif command == "follow":
-            await self.follow_request(
-                json_data["followed"], json_data["user_id"]
-            )
+            await self.follow_request(json_data["followed"], json_data["user_id"])
 
     async def teams_request(self) -> None:
         teams: List[Team] = await sync_to_async(list)(
@@ -72,9 +66,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             for team in teams
         ]
 
-        await self.send(
-            text_data=json.dumps({"command": "teams", "teams": teams_json})
-        )
+        await self.send(text_data=json.dumps({"command": "teams", "teams": teams_json}))
 
     async def matches_request(self, command: str) -> None:
         teams: List[Team] = await sync_to_async(list)(

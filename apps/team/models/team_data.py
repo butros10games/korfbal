@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class TeamData(models.Model):
-    team  = models.ForeignKey("Team", on_delete=models.CASCADE, related_name="team_data")
+    team = models.ForeignKey("Team", on_delete=models.CASCADE, related_name="team_data")
     coach = models.ManyToManyField(
         player_model_string, related_name="team_data_as_coach", blank=True
     )
