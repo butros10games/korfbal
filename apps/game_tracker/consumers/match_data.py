@@ -56,7 +56,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
-    async def receive(self, text_data):
+    async def receive(self, text_data=None, bytes_data=None):
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]

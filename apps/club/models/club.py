@@ -16,13 +16,13 @@ class Club(models.Model):
         blank=True,
     )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.name)
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("club_detail", kwargs={"club_id": self.id_uuid})
 
-    def get_club_logo(self):
+    def get_club_logo(self) -> str:
         if "static" in self.logo.url:
             return self.logo.url
         else:

@@ -23,7 +23,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         self.team = await Team.objects.aget(id_uuid=team_id)
         await self.accept()
 
-    async def receive(self, text_data):
+    async def receive(self, text_data=None, bytes_data=None):
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]

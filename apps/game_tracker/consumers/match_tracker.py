@@ -88,7 +88,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard(self.channel_names[1], self.channel_name)
         await self.channel_layer.group_discard(self.channel_names[2], self.channel_name)
 
-    async def receive(self, text_data):
+    async def receive(self, text_data=None, bytes_data=None):
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]

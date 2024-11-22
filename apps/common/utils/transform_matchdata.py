@@ -6,7 +6,7 @@ from asgiref.sync import sync_to_async
 from apps.game_tracker.models import Shot
 
 
-async def transform_matchdata(matchs_data):
+async def transform_matchdata(matchs_data: list) -> list:
     match_dict = []
     locale.setlocale(locale.LC_TIME, "nl_NL.utf8")
 

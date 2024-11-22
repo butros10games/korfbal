@@ -1,0 +1,10 @@
+{
+    "typeCheckingMode": "strict",
+    "reportMissingTypeStubs": false,
+    "reportMissingImports": false,
+    "useLibraryCodeForTypes": true,
+    "extraPaths": [
+      "./.env/lib/python3.13/site-packages"
+    ]
+  }
+  

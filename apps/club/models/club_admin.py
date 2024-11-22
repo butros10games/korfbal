@@ -8,5 +8,5 @@ class ClubAdmin(models.Model):
     class Meta:
         unique_together = ("club", "player")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.player} - {self.club}"
