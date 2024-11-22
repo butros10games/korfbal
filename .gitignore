@@ -140,7 +140,7 @@ private_settings.json
 
 BattleBot/
 NatureTech/
-Django/Korfbal/
+Django/korfbal/
 Django/skinscentre/
 
 .pre_commit_bump_done

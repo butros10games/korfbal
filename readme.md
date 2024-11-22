@@ -17,11 +17,11 @@ Can be found [here](docs/project-structure.md)
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/butros10games/Korfbal.git
+   git clone https://github.com/butros10games/korfbal.git
    ```
 2. Navigate to the project directory:
    ```bash
-   cd Korfbal
+   cd korfbal
    ```
 3. Install the dependencies:
    ```bash
@@ -38,7 +38,7 @@ python manage.py runserver
 
 ## Features
 
-- Korfbal wedstijden bij te houden
+- korfbal wedstijden bij te houden
 - Feature 2: Description of feature 2
 - Feature 3: Description of feature 3
 

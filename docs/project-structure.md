@@ -10,7 +10,7 @@ Kwt Project
 ├── .vscode/
 │   ├── settings.json
 │   └── sftp.json
-├── Korfbal/
+├── korfbal/
 │   ├── __init__.py
 │   ├── asgi.py
 │   ├── settings.py
