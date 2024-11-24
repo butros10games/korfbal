@@ -1,3 +1,5 @@
+"""This module contains the view for the hub index page."""
+
 from apps.game_tracker.models import MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -7,6 +9,14 @@ from django.shortcuts import render
 
 
 def index(request):
+    """View for the hub index page.
+
+    Args:
+        request (HttpRequest): The request object.
+
+    Returns:
+        HttpResponse: The response object
+    """
     # get the players first upcoming match
     # get the player
     user_request = request.user

@@ -1,3 +1,5 @@
+"""URLs for the club app http."""
+
 from django.urls import path
 
 from . import views

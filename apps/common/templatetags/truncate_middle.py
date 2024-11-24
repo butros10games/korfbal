@@ -1,3 +1,5 @@
+"""Truncate middle template filter."""
+
 from django import template
 
 register = template.Library()
@@ -6,10 +8,15 @@ register = template.Library()
 @register.filter
 def truncate_middle(text, max_length):
     """
-    Truncate middle filter
-    Use `{{ "Some long text"|truncate_middle:10 }}`
-    """
+    Truncate the text in the middle if it is longer than the max_length.
 
+    Args:
+        text: The text to truncate.
+        max_length: The maximum length of the text.
+
+    Returns:
+        The truncated text.
+    """
     text = str(text)
 
     if len(text) <= max_length:

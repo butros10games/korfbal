@@ -1,3 +1,5 @@
+"""This module contains the view for fetching data for the catalog page."""
+
 import json
 
 from apps.club.models import Club
@@ -8,6 +10,15 @@ from django.http import JsonResponse
 
 
 def catalog_data(request):
+    """
+    View for fetching data for the catalog page.
+
+    Args:
+        request (HttpRequest): The request object.
+
+    Returns:
+        JsonResponse: The response object.
+    """
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method"})
 
@@ -56,12 +67,30 @@ def catalog_data(request):
 
 
 def connected_clubs_query(player):
+    """
+    Get the clubs the player is connected to.
+
+    Args:
+        player (Player): The player object.
+
+    Returns:
+        QuerySet: The queryset of the clubs the player is connected to.
+    """
     return Club.objects.filter(
         Q(teams__team_data__players=player) | Q(teams__team_data__coach=player)
     ).distinct()
 
 
 def club_serializer(club):
+    """
+    Serialize the club object.
+
+    Args:
+        club (Club): The club object.
+
+    Returns:
+        dict: The serialized club object.
+    """
     return {
         "id": str(club.id_uuid),
         "name": club.name,
@@ -72,12 +101,30 @@ def club_serializer(club):
 
 
 def connected_teams_query(player):
+    """
+    Get the teams the player is connected to.
+
+    Args:
+        player (Player): The player object.
+
+    Returns:
+        QuerySet: The queryset of the teams the player is connected to.
+    """
     return Team.objects.filter(
         Q(team_data__players=player) | Q(team_data__coach=player)
     ).distinct()
 
 
 def team_serializer(team):
+    """
+    Serialize the team object.
+
+    Args:
+        team (Team): The team object.
+
+    Returns:
+        dict: The serialized team object.
+    """
     last_team_data = team.team_data.last() if team.team_data else None
     return {
         "id": str(team.id_uuid),
@@ -91,6 +138,18 @@ def team_serializer(team):
 def get_connected_and_following_objects(
     player, connected_query, following_relation, serializer_func
 ):
+    """
+    Get the connected and following objects for the player.
+
+    Args:
+        player (Player): The player object.
+        connected_query (function): The function to get the connected objects.
+        following_relation (str): The name of the following relation.
+        serializer_func (function): The function to serialize the object.
+
+    Returns:
+        tuple: The connected and following objects.
+    """
     connected_objs = connected_query(player)
     following_objs = getattr(player, following_relation).exclude(
         id_uuid__in=connected_objs

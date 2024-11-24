@@ -1,3 +1,5 @@
+"""This module contains the view for the team registration page."""
+
 from datetime import date
 
 from apps.player.models import Player
@@ -6,11 +8,17 @@ from apps.team.models import Team, TeamData
 from django.shortcuts import get_object_or_404, redirect
 
 
-# this view handels the registration of a player to a team.
-# if the user is logedin the users gets added to the team,
-# if the user is not registerd the user gets redirected to the login page with a next
-# parameter
 def register_to_team(request, team_id):
+    """
+    View for the team registration page.
+
+    Args:
+        request (HttpRequest): The request object.
+        team_id (str): The UUID of the team.
+
+    Returns:
+        HttpResponse: The response object.
+    """
     team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user
 

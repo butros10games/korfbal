@@ -1,3 +1,5 @@
+"""View for displaying a match's details."""
+
 from apps.game_tracker.models import MatchData, Shot
 from apps.schedule.models import Match
 from django.shortcuts import get_object_or_404, render
@@ -6,6 +8,16 @@ from .common import get_time_display
 
 
 def match_detail(request, match_id):
+    """
+    Render the match detail page.
+
+    Args:
+        request: The request object.
+        match_id: The id of the match.
+
+    Returns:
+        The rendered match detail page.
+    """
     match_model = get_object_or_404(Match, id_uuid=match_id)
 
     match_data = MatchData.objects.get(match_link=match_model)

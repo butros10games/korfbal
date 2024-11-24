@@ -1,3 +1,5 @@
+"""This module contains the views for the player selection in the game tracker app."""
+
 import json
 
 from apps.game_tracker.models import MatchData, PlayerGroup
@@ -14,6 +16,17 @@ to_many_players = JsonResponse({"error": "Too many players selected"}, status=40
 
 
 def player_overview(request, match_id, team_id):
+    """
+    Render the player overview page.
+
+    Args:
+        request: The request object.
+        match_id: The id of the match.
+        team_id: The id of the team.
+
+    Returns:
+        The rendered player overview page.
+    """
     player_groups = _get_player_groups(match_id, team_id)
 
     context = {
@@ -26,6 +39,17 @@ def player_overview(request, match_id, team_id):
 
 
 def player_overview_data(_, match_id, team_id):
+    """
+    Get the player groups for a match and team.
+
+    Args:
+        _: The request object.
+        match_id: The id of the match.
+        team_id: The id of the team.
+
+    Returns:
+        The player groups for the match and team in JSON format.
+    """
     player_groups = _get_player_groups(match_id, team_id)
 
     player_groups_data = []
@@ -51,6 +75,17 @@ def player_overview_data(_, match_id, team_id):
 
 
 def players_team(_, match_id, team_id):
+    """
+    Get the players that are not in a player group for a match and team.
+
+    Args:
+        _: The request object.
+        match_id: The id of the match.
+        team_id: The id of the team.
+
+    Returns:
+        The players that are not in a player group for the match and team in JSON format.  # noqa E501
+    """
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
@@ -80,6 +115,17 @@ def players_team(_, match_id, team_id):
 
 
 def player_search(request, match_id, team_id):
+    """
+    Search for players by name.
+
+    Args:
+        request: The request object.
+        match_id: The id of the match.
+        team_id: The id of the team.
+
+    Returns:
+        The players that match the search query in JSON format.
+    """
     if request.method != "GET":
         return invalid_request
 
@@ -136,6 +182,15 @@ def player_search(request, match_id, team_id):
 
 
 def player_designation(request):
+    """
+    Designate players to a player group.
+
+    Args:
+        request: The request object.
+
+    Returns:
+        The response to the request.
+    """
     if request.method != "POST":
         return invalid_request
 
@@ -176,6 +231,16 @@ def player_designation(request):
 
 
 def _get_player_groups(match_id, team_id):
+    """
+    Get the player groups for a match and team.
+
+    Args:
+        match_id: The id of the match.
+        team_id: The id of the team.
+
+    Returns:
+        The player groups for the match and team.
+    """
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
 

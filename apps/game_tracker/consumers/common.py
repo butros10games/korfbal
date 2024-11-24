@@ -1,3 +1,5 @@
+"""This module contains common functions for the game_tracker app consumers."""
+
 import json
 
 from asgiref.sync import sync_to_async
@@ -6,6 +8,16 @@ from apps.game_tracker.models import MatchPart, Pause
 
 
 async def get_time(match_data, current_part):
+    """
+    Get the time for the match.
+
+    Args:
+        match_data: The match data object.
+        current_part: The current part of the match.
+
+    Returns:
+        The time for the match.
+    """
     # check if there is a active part if there is a active part send the start time of
     # the part and lenght of a match part
     try:

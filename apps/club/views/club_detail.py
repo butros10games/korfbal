@@ -1,9 +1,21 @@
+"""This module contains the view for the club detail page."""
+
 from apps.club.models import Club
 from apps.player.models import Player
 from django.shortcuts import get_object_or_404, render
 
 
 def club_detail(request, club_id):
+    """
+    Render the club detail page.
+
+    Args:
+        request: The request object.
+        club_id: The id of the club.
+
+    Returns:
+        The rendered club detail page.
+    """
     club = get_object_or_404(Club, id_uuid=club_id)
 
     user_request = request.user

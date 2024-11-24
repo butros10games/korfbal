@@ -1,3 +1,5 @@
+"""This package contains the models for the game_tracker app."""
+
 from .goal_type import GoalType
 from .group_type import GroupType
 from .match_data import MatchData

@@ -1,14 +1,19 @@
+"""Middleware to track the pages visited by the player."""
+
 from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
 from django.utils import timezone
 
 
 class VisitorTrackingMiddleware:
+    """Middleware to track the pages visited by the player."""
+
     def __init__(self, get_response):
+        """Initialize the middleware."""
         self.get_response = get_response
 
     def __call__(self, request):
-        # Process the request
+        """Process the request."""
         if request.user.is_authenticated:
             try:
                 player = Player.objects.get(user=request.user)

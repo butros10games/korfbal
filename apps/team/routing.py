@@ -1,3 +1,5 @@
+"""Routing for the team app websockets."""
+
 from django.urls import path
 
 from .consumers import TeamDataConsumer

@@ -1,3 +1,5 @@
+"""This module contains the Shot model for the game_tracker app."""
+
 from uuidv7 import uuid7
 
 from django.db import models
@@ -6,6 +8,8 @@ from .constants import player_model_string, team_model_string
 
 
 class Shot(models.Model):
+    """Model for a shot in a match."""
+
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     player = models.ForeignKey(
         player_model_string, on_delete=models.CASCADE, related_name="shots"

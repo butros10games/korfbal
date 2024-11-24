@@ -1,7 +1,18 @@
+"""Context processor to add profile_url and profile_img_url to the context."""
+
 from apps.player.models import Player
 
 
 def standart_imports(request):
+    """
+    Add profile_url and profile_img_url to the context.
+
+    Args:
+        request: The request object.
+
+    Returns:
+        A dictionary containing the profile_url and profile_img_url.
+    """
     profile_url = None
     profile_img_url = None
     user_request = request.user

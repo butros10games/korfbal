@@ -1,3 +1,5 @@
+"""Search view for searching teams and clubs."""
+
 from datetime import date
 
 from apps.club.models import Club
@@ -9,6 +11,11 @@ from django.http import JsonResponse
 
 
 def get_current_season():
+    """Get the current season.
+
+    Returns:
+        Season: The current season.
+    """
     today = date.today()
     # Attempt to find the current season
     season = Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
@@ -25,6 +32,15 @@ def get_current_season():
 
 
 def serialize_team(team, current_season):
+    """Serialize a team.
+
+    Args:
+        team (Team): The team to serialize.
+        current_season (Season): The current season.
+
+    Returns:
+        dict: The serialized team.
+    """
     team_data = TeamData.objects.filter(team=team, season=current_season).first()
     return {
         "id": str(team.id_uuid),
@@ -36,6 +52,14 @@ def serialize_team(team, current_season):
 
 
 def serialize_club(club):
+    """Serialize a club.
+
+    Args:
+        club (Club): The club to serialize.
+
+    Returns:
+        dict: The serialized club.
+    """
     return {
         "id": str(club.id_uuid),
         "name": club.name,
@@ -46,6 +70,14 @@ def serialize_club(club):
 
 
 def search(request):
+    """Search view for searching teams and clubs.
+
+    Args:
+        request (HttpRequest): The request object.
+
+    Returns:
+        JsonResponse: The JSON response object.
+    """
     search_term = request.GET.get("q", "")
     category = request.GET.get("category", "")
 

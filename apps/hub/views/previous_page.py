@@ -1,3 +1,5 @@
+"""This module contains the view for navigating back to the previous page."""
+
 from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
 from django.db.models import Q
@@ -6,6 +8,15 @@ from django.shortcuts import redirect
 
 
 def previous_page(request):
+    """
+    View for navigating back to the previous page.
+
+    Args:
+        request (HttpRequest): The request object.
+
+    Returns:
+        HttpResponseRedirect: The response object.
+    """
     player = Player.objects.get(user=request.user)
 
     # Get the counter from the URL or fallback to the session

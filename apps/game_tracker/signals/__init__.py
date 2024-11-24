@@ -1,3 +1,5 @@
+"""This module contains signals for the game_tracker app."""
+
 from .match_signals import create_matchdata_for_new_match
 from .matchdata_signals import create_player_groups_for_new_matchdata
 

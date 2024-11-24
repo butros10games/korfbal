@@ -1,3 +1,5 @@
+"""URLs for the hub app http."""
+
 from django.urls import path
 
 from . import views

@@ -1,3 +1,5 @@
+"""This module contains the TeamDataConsumer class that handles the websocket connection for the team data page."""  # noqa: E501
+
 import json
 import traceback
 from datetime import datetime
@@ -14,16 +16,30 @@ from django.db.models import Q
 
 
 class TeamDataConsumer(AsyncWebsocketConsumer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Websocket consumer for the team data page."""
+
+    def __init__(self):
+        """Initialize the TeamDataConsumer."""
+        super().__init__()
         self.team = None
 
     async def connect(self):
+        """Connect to the websocket."""
         team_id = self.scope["url_route"]["kwargs"]["id"]
         self.team = await Team.objects.aget(id_uuid=team_id)
         await self.accept()
 
-    async def receive(self, text_data=None, bytes_data=None):
+    async def receive(self, text_data=None, bytes_data=None) -> None:
+        """
+        Receive the data from the websocket.
+
+        Args:
+            text_data (str): The data received from the websocket.
+            bytes_data (bytes): The bytes data received from the websocket.
+
+        Raises:
+            Exception: If an error occurs while processing the data.
+        """
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
@@ -53,7 +69,13 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def matches_request(self, command):
+    async def matches_request(self, command: str) -> None:
+        """
+        Handle the request for matches.
+
+        Args:
+            command (str): The command to determine the type of matches to fetch.
+        """
         wedstrijden_data = await self.get_matchs_data(
             ["upcoming", "active"] if command == "wedstrijden" else ["finished"],
             "" if command == "wedstrijden" else "-",
@@ -67,7 +89,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def team_stats_general_request(self):
+    async def team_stats_general_request(self) -> None:
+        """Handle the request for general team statistics."""
         # get a list of all the matches of the team
         matches = await sync_to_async(list)(
             Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
@@ -85,7 +108,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         await self.send(text_data=general_stats_json)
 
-    async def team_stats_player_request(self):
+    async def team_stats_player_request(self) -> None:
+        """Handle the request for player statistics."""
         # Fetch players and matches in bulk
         players = await sync_to_async(list)(
             Player.objects.prefetch_related("user")
@@ -106,7 +130,13 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         # Prepare and send data
         await self.send(text_data=player_stats)
 
-    async def player_request(self, json_data):
+    async def player_request(self, json_data: dict) -> None:
+        """
+        Handle the request for players.
+
+        Args:
+            json_data (dict): The JSON data containing the request.
+        """
         if "season_uuid" in json_data:
             season_uuid = json_data["season_uuid"]
         else:
@@ -184,7 +214,14 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def follow_request(self, follow, user_id):
+    async def follow_request(self, follow: bool, user_id: str) -> None:
+        """
+        Handle the request to follow or unfollow the team.
+
+        Args:
+            follow (bool): The status of the follow request.
+            user_id (str): The UUID of the user.
+        """
         player = await Player.objects.aget(user=user_id)
 
         if follow:
@@ -197,7 +234,17 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "follow", "status": "success"})
         )
 
-    async def get_matchs_data(self, status, order):
+    async def get_matchs_data(self, status: list, order: str) -> list:
+        """
+        Get the match data of the team.
+
+        Args:
+            status (list): The status of the matches.
+            order (str): The order of the matches.
+
+        Returns:
+            list: The list of match data.
+        """
         matches = await sync_to_async(list)(
             Match.objects.filter(
                 Q(home_team=self.team) | Q(away_team=self.team)

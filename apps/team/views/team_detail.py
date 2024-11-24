@@ -1,3 +1,5 @@
+"""This module contains the view for the team detail page."""
+
 from datetime import date
 
 from apps.player.models import Player
@@ -8,6 +10,15 @@ from django.shortcuts import get_object_or_404, render
 
 
 def team_detail(request, team_id):
+    """View for the team detail page.
+
+    Args:
+        request (HttpRequest): The request object.
+        team_id (str): The UUID of the team.
+
+    Returns:
+        HttpResponse: The response object.
+    """
     team = get_object_or_404(Team, id_uuid=team_id)
 
     # Get current date

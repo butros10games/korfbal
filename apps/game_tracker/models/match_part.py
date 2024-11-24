@@ -1,9 +1,13 @@
+"""Model for a part of a match."""
+
 from uuidv7 import uuid7
 
 from django.db import models
 
 
 class MatchPart(models.Model):
+    """Model for a part of a match."""
+
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     match_data = models.ForeignKey(
         "MatchData", on_delete=models.CASCADE, related_name="match_parts"

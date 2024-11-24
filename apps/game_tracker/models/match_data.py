@@ -1,9 +1,13 @@
+"""Model for MatchData."""
+
 from uuidv7 import uuid7
 
 from django.db import models
 
 
 class MatchData(models.Model):
+    """Model for MatchData."""
+
     STATUS_CHOICES = [
         ("upcoming", "Upcoming"),
         ("active", "Active"),
@@ -20,6 +24,7 @@ class MatchData(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="upcoming")
 
     def get_winner(self):
+        """Return the winner of the match."""
         if self.home_score > self.away_score:
             return self.home_team
         elif self.home_score < self.away_score:
@@ -28,6 +33,7 @@ class MatchData(models.Model):
             return None
 
     def __str__(self):
+        """Return the string representation of the match."""
         return str(
             self.match_link.home_team.name + " - " + self.match_link.away_team.name
         )

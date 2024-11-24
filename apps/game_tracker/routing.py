@@ -1,3 +1,5 @@
+"""Routing for the game_tracker app websocket."""
+
 from django.urls import path
 
 from .consumers import MatchDataConsumer, MatchTrackerConsumer

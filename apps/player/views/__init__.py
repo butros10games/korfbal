@@ -1,3 +1,5 @@
+"""This module contains all views for the player app."""
+
 from .profile_detail import profile_detail
 from .upload_profile_picture import upload_profile_picture
 

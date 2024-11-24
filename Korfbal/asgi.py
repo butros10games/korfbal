@@ -1,3 +1,5 @@
+"""ASGI config for korfbal project."""
+
 import os
 
 from channels.auth import AuthMiddlewareStack

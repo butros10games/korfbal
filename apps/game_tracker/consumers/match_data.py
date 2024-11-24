@@ -1,3 +1,5 @@
+"""This module contains the MatchDataConsumer class. This class is used to handle the websocket connection for the match data."""  # noqa E501
+
 import json
 import traceback
 
@@ -23,12 +25,16 @@ from .common import get_time
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
+    """This class is used to handle the websocket connection for the match data."""
+
     def __init__(self, *args, **kwargs):
+        """Initialize the MatchDataConsumer."""
         super().__init__(*args, **kwargs)
         self.match = None
         self.current_part = None
 
     async def connect(self):
+        """Connect to the websocket."""
         match_id = self.scope["url_route"]["kwargs"]["id"]
         self.match = await Match.objects.prefetch_related(
             "home_team", "away_team"
@@ -53,10 +59,21 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def disconnect(self, close_code):
+        """Disconnect from the websocket."""
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
+        """
+        Receive data from the websocket.
+
+        Args:
+            text_data: The data received from the websocket.
+            bytes_data: The bytes data received from the websocket.
+
+        Returns:
+            The data received from the websocket.
+        """
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
@@ -92,6 +109,16 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def team_request(self, command, user_id):
+        """
+        Get the team data for the home or away team.
+
+        Args:
+            command: The command to get the home or away team.
+            user_id: The id of the user.
+
+        Returns:
+            The team data for the home or away team.
+        """
         team = self.match.home_team if command == "home_team" else self.match.away_team
 
         player_groups_array = await self.makePlayerGroupList(team)
@@ -111,6 +138,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def save_player_groups_request(self, player_groups):
+        """
+        Save the player groups.
+
+        Args:
+            player_groups: The player groups to save.
+
+        Returns:
+            The status of the save.
+        """
         for player_group in player_groups:
             group = await PlayerGroup.objects.aget(id_uuid=player_group["id"])
             await group.players.aclear()
@@ -128,11 +164,13 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_stats_general_request(self):
+        """Get the general stats for the match."""
         general_stats_json = await general_stats([self.match_data])
 
         await self.send(text_data=general_stats_json)
 
     async def get_stats_player_request(self):
+        """Get the player stats for the match."""
         # Get the player stats. shots for and against, goals for and against.
         players = await sync_to_async(list)(
             Player.objects.prefetch_related("user")
@@ -148,6 +186,16 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=player_stats)
 
     async def get_events(self, event=None, user_id=None):
+        """
+        Get the events for the match.
+
+        Args:
+            event: The event to get.
+            user_id: The id of the user.
+
+        Returns:
+            The events for the match.
+        """
         try:
             events_dict = []
 
@@ -188,6 +236,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def get_all_events(self):
+        """Get all the events for the match."""
         goals = await sync_to_async(list)(
             Shot.objects.prefetch_related(
                 "player__user", "shot_type", "match_part", "team"
@@ -224,6 +273,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return events
 
     async def event_shot(self, event):
+        """
+        Get the event for a shot.
+
+        Args:
+            event: The event to get.
+
+        Returns:
+            The event for a shot.
+        """
         # calculate the time of the pauses before the event happend. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
@@ -270,6 +328,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_player_change(self, event):
+        """
+        Get the event for a player change.
+
+        Args:
+            event: The event to get.
+
+        Returns:
+            The event for a player change.
+        """
         # calculate the time of the pauses before the event happend. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
@@ -312,6 +379,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_pause(self, event):
+        """
+        Get the event for a pause.
+
+        Args:
+            event: The event to get.
+
+        Returns:
+            The event for a pause.
+        """
         # calculate the time of the pauses before the event happend. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
@@ -359,6 +435,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def check_access(self, user_id, match):
+        """Check if the user has access to the match."""
         player = await Player.objects.aget(user=user_id)
 
         # Combine queries for players and coaches for both home and away teams
@@ -377,6 +454,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return access
 
     async def makePlayerGroupList(self, team):
+        """Make a list of player groups for a team."""
         try:
             player_groups = await sync_to_async(list)(
                 PlayerGroup.objects.prefetch_related(
@@ -437,6 +515,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def makePlayerList(self, team):
+        """Make a list of players for a team."""
         # get the season of the match
         season = await self.season_request()
 
@@ -470,6 +549,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return players_json
 
     async def checkIfAcces(self, user_id, team):
+        """Check if the user has access to the team."""
         player = await Player.objects.aget(user=user_id)
 
         players = await sync_to_async(list)(
@@ -495,10 +575,22 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return access
 
     async def send_data(self, event):
+        """
+        Send data to the websocket.
+
+        Args:
+            event: The event to send.
+        """
         data = event["data"]
         await self.send(text_data=json.dumps(data))
 
     async def season_request(self):
+        """
+        Get the season of the match.
+
+        Returns:
+            The season of the match.
+        """
         try:
             return await Season.objects.aget(
                 start_date__lte=self.match.start_time,

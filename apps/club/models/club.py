@@ -1,3 +1,5 @@
+"""This module contains the Club model."""
+
 from uuidv7 import uuid7
 
 from django.db import models
@@ -5,6 +7,8 @@ from django.urls import reverse
 
 
 class Club(models.Model):
+    """Model for a club."""
+
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     admin = models.ManyToManyField(
@@ -17,12 +21,15 @@ class Club(models.Model):
     )
 
     def __str__(self) -> str:
+        """Return the name of the club."""
         return str(self.name)
 
     def get_absolute_url(self) -> str:
+        """Return the absolute url of the club."""
         return reverse("club_detail", kwargs={"club_id": self.id_uuid})
 
     def get_club_logo(self) -> str:
+        """Return the club logo."""
         if "static" in self.logo.url:
             return self.logo.url
         else:

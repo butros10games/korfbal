@@ -1,3 +1,5 @@
+"""URLs for the team app https."""
+
 from django.urls import path
 
 from . import views

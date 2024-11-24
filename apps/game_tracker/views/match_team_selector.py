@@ -1,3 +1,5 @@
+"""This module contains the view for the match team selector page."""
+
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import TeamData
@@ -5,6 +7,16 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 
 def match_team_selector(request, match_id):
+    """
+    Render the match team selector page.
+
+    Args:
+        request: The request object.
+        match_id: The id of the match.
+
+    Returns:
+        The rendered match team selector page.
+    """
     # Retrieve the match or return 404
     match_data = get_object_or_404(Match, id_uuid=match_id)
 

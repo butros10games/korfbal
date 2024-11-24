@@ -1,3 +1,5 @@
+"""This module contains the function to transform match data to a dictionary."""
+
 import locale
 from datetime import datetime
 
@@ -7,6 +9,15 @@ from apps.game_tracker.models import Shot
 
 
 async def transform_matchdata(matchs_data: list) -> list:
+    """
+    Transform the match data to a dictionary.
+
+    Args:
+        matchs_data {list} -- A list of match data.
+
+    Returns:
+        list -- A list of dictionaries containing the match data.
+    """
     match_dict = []
     locale.setlocale(locale.LC_TIME, "nl_NL.utf8")
 

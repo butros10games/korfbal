@@ -1,3 +1,5 @@
+"""This module contains the view for the catalog page."""
+
 from apps.player.models import Player
 from apps.team.models import Team
 from django.db.models import Q
@@ -5,6 +7,14 @@ from django.shortcuts import render
 
 
 def catalog(request):
+    """View for the catalog page.
+
+    Args:
+        request (HttpRequest): The request object.
+
+    Returns:
+        HttpResponse: The response object.
+    """
     connected_teams = None
     following_teams = None
     user = request.user

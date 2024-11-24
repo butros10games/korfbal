@@ -1,3 +1,5 @@
+"""This module contains the PlayerGroup model."""
+
 from uuidv7 import uuid7
 
 from django.core.exceptions import ValidationError
@@ -7,6 +9,8 @@ from .constants import player_model_string, team_model_string
 
 
 class PlayerGroup(models.Model):
+    """Model for a group of players in a match."""
+
     id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
     players = models.ManyToManyField(
         player_model_string, related_name="player_groups", blank=True
@@ -25,6 +29,7 @@ class PlayerGroup(models.Model):
     )
 
     def clean(self):
+        """Validate the player group."""
         # Ensure that all selected players are part of the match's players field
         valid_players = self.match_data.players.all()
         invalid_players = self.players.exclude(id__in=valid_players)
@@ -37,4 +42,5 @@ class PlayerGroup(models.Model):
             )
 
     def __str__(self):
+        """Return the string representation of the player group."""
         return f"Player Group {self.id_uuid}"

@@ -1,8 +1,20 @@
+"""This module contains the view for the player profile detail page."""
+
 from apps.player.models import Player
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 
-def profile_detail(request, player_id=None):
+def profile_detail(request, player_id=None) -> HttpResponse:
+    """View for the player profile detail page.
+
+    Args:
+        request (HttpRequest): The request object.
+        player_id (str): The UUID of the player.
+
+    Returns:
+        HttpResponse: The response object.
+    """
     player = None
     user = request.user
 

@@ -1,3 +1,5 @@
+"""This module contains the ProfileDataConsumer class."""
+
 import json
 import traceback
 
@@ -14,14 +16,18 @@ from django.db.models import Q
 
 
 class ProfileDataConsumer(AsyncWebsocketConsumer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Websocket consumer for the profile data."""
+
+    def __init__(self):
+        """Initialize the ProfileDataConsumer."""
+        super().__init__()
         self.user = None
         self.player = None
         self.user_profile = None
         self.teams = None
 
     async def connect(self):
+        """Connect to the websocket."""
         player_id = self.scope["url_route"]["kwargs"]["id"]
         self.player = await Player.objects.prefetch_related("user").aget(
             id_uuid=player_id
@@ -40,6 +46,13 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(self, text_data=None, bytes_data=None):
+        """
+        Receive the data from the websocket.
+
+        Args:
+            text_data (str): The text data.
+            bytes_data (bytes): The bytes data.
+        """
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
@@ -81,6 +94,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def player_stats_request(self):
+        """Send the player stats to the client."""
         total_goals_for = 0
         total_goals_against = 0
 
@@ -132,6 +146,12 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def settings_update_request(self, data):
+        """
+        Update the user settings.
+
+        Args:
+            data (dict): The data to update.
+        """
         username = data["username"]
         email = data["email"]
         first_name = data["first_name"]
@@ -150,6 +170,12 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"command": "settings_updated"}))
 
     async def update_profile_picture_url_request(self, url):
+        """
+        Update the profile picture URL.
+
+        Args:
+            url (str): The URL of the profile picture.
+        """
         if url:
             # Assuming "url" contains the relative path of the image
             self.player.profile_picture = url
@@ -163,6 +189,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def teams_request(self):
+        """Send the teams to the client."""
         teams_dict = [
             {
                 "id": str(team.id_uuid),
@@ -176,6 +203,12 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"command": "teams", "teams": teams_dict}))
 
     async def matches_request(self, command):
+        """
+        Send the matches to the client.
+
+        Args:
+            command (str): The command to get the matches.
+        """
         wedstrijden_data = await self.get_matchs_data(
             ["upcoming", "active"] if command == "upcomming_matches" else ["finished"],
             "" if command == "upcomming_matches" else "-",
@@ -190,6 +223,16 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_matchs_data(self, status, order):
+        """
+        Get the match data.
+
+        Args:
+            status (list): The status of the match data.
+            order (str): The order of the match data.
+
+        Returns:
+            list: The list of match data.
+        """
         matches = await sync_to_async(list)(
             Match.objects.filter(
                 Q(home_team__team_data__in=self.team_data)
