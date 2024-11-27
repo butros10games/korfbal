@@ -122,7 +122,7 @@ function general(stats, statsContainer) {
     // Iterate through goal_stats object
     for (const goalType of stats.goal_types) {
         console.log(goalType);
-        if (Object.prototype.hasOwnProperty.call(stats.team_goal_stats, goalType)) {
+        if (Object.hasOwn(stats.team_goal_stats, goalType)) {
             const goalStat = stats.team_goal_stats[goalType.name];
 
             // Create a div for each goal type's stats
