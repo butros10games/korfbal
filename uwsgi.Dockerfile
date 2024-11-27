@@ -27,4 +27,4 @@ RUN mkdir -p /kwt_uwsgi/logs
 # Expose the uwsgi port
 EXPOSE 1664
 
-CMD ["uwsgi", "--ini", "uwsgi-docker.ini"]
+CMD ["uwsgi", "--ini", "/kwt_uwsgi/uwsgi-docker.ini"]
