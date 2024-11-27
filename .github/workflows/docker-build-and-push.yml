@@ -27,11 +27,11 @@ jobs:
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }} -f uwsgi.Dockerfile .
           docker push ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
-          docker push ${{ secrets.DOCKER_USERNAME }}/uwsgi:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
 
       # Build and push Daphne Docker image
       - name: Build and Push Daphne Image
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }} -f daphne.Dockerfile .
           docker push ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
-          docker push ${{ secrets.DOCKER_USERNAME }}/daphne:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
