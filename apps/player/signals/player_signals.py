@@ -7,7 +7,7 @@ from django.dispatch import receiver
 
 
 @receiver(post_save, sender=User)
-def create_player_for_new_user(sender, instance, created):
+def create_player_for_new_user(sender, instance, created, **kwargs):
     """
     Create a Player instance when a new user is created.
 

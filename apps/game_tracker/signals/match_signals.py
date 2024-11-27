@@ -7,7 +7,7 @@ from django.dispatch import receiver
 
 
 @receiver(post_save, sender=Match)
-def create_matchdata_for_new_match(sender, instance, created):
+def create_matchdata_for_new_match(sender, instance, created, **kwargs):
     """
     Create a MatchData instance for a new Match instance.
 

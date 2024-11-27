@@ -1,0 +1,11 @@
+--extra-index-url https://pypi.butrosgroot.com/
+
+django
+psycopg2-binary
+django-mobile-detect
+daphne
+channels
+channels-redis
+django_authentication
+uuidv7
+django-phonenumber-field[phonenumbers]
