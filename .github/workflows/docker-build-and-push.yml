@@ -1,0 +1,35 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Build and push uWSGI Docker image
+      - name: Build and Push uWSGI Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }} -f uwsgi.Dockerfile .
+          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
+
+      # Build and push Daphne Docker image
+      - name: Build and Push Daphne Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }} -f daphne.Dockerfile .
+          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
