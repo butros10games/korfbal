@@ -10,6 +10,7 @@ exclude = '''
   | \.mypy_cache
   | \.nox
   | \.tox
+  | \.venv
   | \.env
   | _build
   | buck-out

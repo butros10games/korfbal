@@ -1,9 +1,8 @@
-"""
-Django settings for korfbal project.
-"""
+"""Django settings for korfbal project."""
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file in the project root
@@ -19,9 +18,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.environ.get(
-    "ALLOWED_HOSTS", "korfbal.butrosgroot.com"
-).split(",")
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "korfbal.butrosgroot.com").split(",")
 
 CSRF_TRUSTED_ORIGINS = os.environ.get(
     "CSRF_TRUSTED_ORIGINS", "https://korfbal.butrosgroot.com"
@@ -135,7 +132,7 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:{os.environ.get('REDIS_PORT', '6379')}/1",
+        "LOCATION": f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:{os.environ.get('REDIS_PORT', '6379')}/1",  # noqa E501
     }
 }
 

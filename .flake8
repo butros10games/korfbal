@@ -1,4 +1,4 @@
 [flake8]
-exclude = .git,__pycache__,migrations,.env,node_modules
+exclude = .git,__pycache__,migrations,.venv,.env,node_modules
 extend-ignore = E203, E265
 max-line-length = 88
