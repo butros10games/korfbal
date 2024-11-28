@@ -3,23 +3,23 @@ FROM python:3.13-slim
 
 # Install system dependencies for PostgreSQL and psycopg2-binary
 RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    gcc \
     curl \
+    gcc \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /kwt_uwsgi
 
 # Copy requirements file and install dependencies
-COPY ./requirements/uwsgi.txt /kwt_uwsgi/
+COPY /requirements/uwsgi.txt /kwt_uwsgi/
 RUN pip install --no-cache-dir -r uwsgi.txt
 
 # Copy application files
-COPY ./apps/ /kwt_uwsgi/apps/
-COPY ./korfbal/ /kwt_uwsgi/korfbal/
-COPY ./templates/ /kwt_uwsgi/templates/
-COPY ./manage.py /kwt_uwsgi/
-COPY ./uwsgi-docker.ini /kwt_uwsgi/
+COPY /apps/ /kwt_uwsgi/apps/
+COPY /korfbal/ /kwt_uwsgi/korfbal/
+COPY /templates/ /kwt_uwsgi/templates/
+COPY /manage.py /kwt_uwsgi/
+COPY /uwsgi-docker.ini /kwt_uwsgi/
 
 # Create a directory for logs
 RUN mkdir -p /kwt_uwsgi/logs
