@@ -17,3 +17,4 @@ django-phonenumber-field[phonenumbers]
 django-webpack-loader
 generate_project_structure
 django-stubs
+python-dotenv

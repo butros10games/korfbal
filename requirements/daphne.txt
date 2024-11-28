@@ -9,3 +9,4 @@ channels-redis
 django_authentication
 uuidv7
 django-phonenumber-field[phonenumbers]
+python-dotenv
