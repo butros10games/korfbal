@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /kwt_daphne
 
 # Install Python dependencies
-COPY requirements/daphne.txt /kwt_daphne/
+COPY ./requirements/daphne.txt /kwt_daphne/
 RUN pip install --no-cache-dir -r daphne.txt
 
 # Copy application files
-COPY apps/ /kwt_daphne/apps/
-COPY korfbal/ /kwt_daphne/korfbal/
-COPY manage.py /kwt_daphne/
+COPY ./apps/ /kwt_daphne/apps/
+COPY ./korfbal/ /kwt_daphne/korfbal/
+COPY ./manage.py /kwt_daphne/
 
 # Expose the Daphne port
 EXPOSE 8001
