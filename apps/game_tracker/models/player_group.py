@@ -28,18 +28,40 @@ class PlayerGroup(models.Model):
         "GroupType", on_delete=models.CASCADE, related_name="current_player_groups"
     )
 
-    def clean(self):
-        """Validate the player group."""
-        # Ensure that all selected players are part of the match's players field
-        valid_players = self.match_data.players.all()
-        invalid_players = self.players.exclude(id_uuid__in=valid_players)
+    def save(self, *args, **kwargs):
+        """
+        Save the player group.
 
-        if invalid_players.exists():
-            raise ValidationError(
-                f"""Invalid players selected:
-                {', '.join([str(player) for player in invalid_players])}.
-                Players must be part of the match data."""
+        Check if the incomming player/players are in the reserve player group(if this
+        player group is not the reserve) connected to the team and matchdata.
+
+        If the incomming player/players is in the reserve player group, remove the
+        player/players from the reserve player group.
+
+        If the player/players is not in the reserve player group, raise a validation
+        error.
+        """
+        if self.pk:
+            # Retrieve the current list of players from the database
+            current_players = set(self.__class__.objects.get(pk=self.pk).players.all())
+        else:
+            current_players = set()
+
+        new_players = set(self.players.all()) - current_players
+
+        if self.starting_type.name != "Reserve":
+            reserve_player_group = self.match_data.player_groups.get(
+                starting_type__name="Reserve"
             )
+            for player in new_players:
+                if player in reserve_player_group.players.all():
+                    reserve_player_group.players.remove(player)
+                else:
+                    raise ValidationError(
+                        f"{player} is not in the reserve player group."
+                    )
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         """Return the string representation of the player group."""
