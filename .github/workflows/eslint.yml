@@ -11,27 +11,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-    - name: Install Dependencies
-      run: npm ci
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
-    - name: Run ESLint
-      run: npm run lint
+      - name: Install Dependencies
+        run: npm ci
 
-    - name: Ensure ESLint Report Exists
-      run: |
-        touch eslint-report.txt
+      - name: Run ESLint
+        run: npm run lint
 
-    - name: Upload ESLint Results
-      if: ${{ failure() }}
-      uses: actions/upload-artifact@v3
-      with:
-        name: eslint-results
-        path: eslint-report.txt
+      - name: Ensure ESLint Report Exists
+        run: |
+          touch eslint-report.txt
+
+      - name: Upload ESLint Results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: eslint-results
+          path: eslint-report.txt

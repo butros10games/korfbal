@@ -23,16 +23,25 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
   
       - name: Build and Push uWSGI Image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }} -f uwsgi.Dockerfile .
-          docker tag ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }} ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
-          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
-          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: uwsgi.Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
+            ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # Build and push Daphne Docker image with version and latest tags
       - name: Build and Push Daphne Image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }} -f daphne.Dockerfile .
-          docker tag ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }} ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
-          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
-          docker push ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: daphne.Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
+            ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
