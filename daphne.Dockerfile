@@ -5,7 +5,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     gcc \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    locales \
+    && rm -rf /var/lib/apt/lists/* && \
+    locale-gen nl_NL.utf8 && \
+    update-locale LANG=nl_NL.utf8
+
+# Set environment variables for the locale
+ENV LANG nl_NL.utf8
+ENV LANGUAGE nl_NL:en
+ENV LC_ALL nl_NL.utf8
 
 WORKDIR /kwt_daphne
 
