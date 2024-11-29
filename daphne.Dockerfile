@@ -6,14 +6,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     locales \
-    && rm -rf /var/lib/apt/lists/* \
-    && locale-gen nl_NL.utf8 \
-    && update-locale LANG=nl_NL.utf8
+    && echo "nl_NL.UTF-8 UTF-8" >> /etc/locale.gen \
+    && locale-gen \
+    && /usr/sbin/update-locale LANG=nl_NL.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for the locale
-ENV LANG nl_NL.utf8
-ENV LANGUAGE nl_NL:en
-ENV LC_ALL nl_NL.utf8
+ENV LANG=nl_NL.utf8
+ENV LANGUAGE=nl_NL:en
+ENV LC_ALL=nl_NL.utf8
 
 WORKDIR /kwt_daphne
 
