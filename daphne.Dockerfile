@@ -1,14 +1,14 @@
 FROM python:3.13-slim
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
     libpq-dev \
     locales \
-    && rm -rf /var/lib/apt/lists/* && \
-    locale-gen nl_NL.utf8 && \
-    update-locale LANG=nl_NL.utf8
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen nl_NL.utf8 \
+    && update-locale LANG=nl_NL.utf8
 
 # Set environment variables for the locale
 ENV LANG nl_NL.utf8

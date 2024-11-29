@@ -4,6 +4,7 @@ django
 psycopg2-binary
 django-mobile-detect
 daphne
+django-storages[sftp]
 channels
 channels-redis
 django_authentication

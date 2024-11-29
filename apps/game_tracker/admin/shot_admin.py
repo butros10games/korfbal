@@ -22,7 +22,7 @@ class ShotAdminForm(forms.ModelForm):
 
         super(ShotAdminForm, self).__init__(*args, **kwargs)
         if "instance" in kwargs and kwargs["instance"]:
-            match = kwargs["instance"].match_data
+            match = kwargs["instance"].match_data.match_link
             self.fields["team"].queryset = Team.objects.filter(
                 Q(home_matches=match) | Q(away_matches=match)
             ).distinct()
