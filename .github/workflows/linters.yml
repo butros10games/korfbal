@@ -23,17 +23,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-flake8-6.1.0
+          key: ${{ runner.os }}-pip-flake8
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - run: python -m pip install flake8==6.1.0
+      - run: python -m pip install flake8
 
       - name: flake8
         uses: liskin/gh-problem-matcher-wrap@e7b7beaaafa52524748b31a381160759d68d61fb
@@ -50,17 +50,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-isort-5.12.0
+          key: ${{ runner.os }}-pip-isort
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - run: python -m pip install isort==5.12.0
+      - run: python -m pip install isort
 
       - name: isort
         uses: liskin/gh-problem-matcher-wrap@e7b7beaaafa52524748b31a381160759d68d61fb
@@ -77,17 +77,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-black-23.9.1
+          key: ${{ runner.os }}-pip-black
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - run: python -m pip install black==23.9.1
+      - run: python -m pip install black
 
       - name: Black
         run: black --check --diff .
