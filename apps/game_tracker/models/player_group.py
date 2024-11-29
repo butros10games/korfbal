@@ -32,7 +32,7 @@ class PlayerGroup(models.Model):
         """Validate the player group."""
         # Ensure that all selected players are part of the match's players field
         valid_players = self.match_data.players.all()
-        invalid_players = self.players.exclude(id__in=valid_players)
+        invalid_players = self.players.exclude(id_uuid__in=valid_players)
 
         if invalid_players.exists():
             raise ValidationError(
