@@ -19,7 +19,7 @@ COPY /apps/ /kwt_uwsgi/apps/
 COPY /korfbal/ /kwt_uwsgi/korfbal/
 COPY /templates/ /kwt_uwsgi/templates/
 COPY /manage.py /kwt_uwsgi/
-COPY /uwsgi-docker.ini /kwt_uwsgi/
+COPY /.env /kwt_uwsgi/.env
 
 # Create a directory for logs
 RUN mkdir -p /kwt_uwsgi/logs
@@ -27,4 +27,4 @@ RUN mkdir -p /kwt_uwsgi/logs
 # Expose the uwsgi port
 EXPOSE 1664
 
-CMD ["uwsgi", "--ini", "/kwt_uwsgi/uwsgi-docker.ini"]
+CMD ["sh", "-c", "set -a && . /kwt_uwsgi/.env && exec uwsgi"]

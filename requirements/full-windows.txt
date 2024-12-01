@@ -1,0 +1,19 @@
+--extra-index-url https://pypi.butrosgroot.com/
+
+django
+psycopg2-binary
+django-mobile-detect
+django_ratelimit
+Pillow
+daphne
+channels
+channels-redis
+django-storages[sftp]
+django_authentication
+uuidv7
+django_cached_paginator
+django-phonenumber-field[phonenumbers]
+django-webpack-loader
+generate_project_structure
+django-stubs
+python-dotenv

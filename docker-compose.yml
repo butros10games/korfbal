@@ -1,0 +1,94 @@
+services:
+  kwt-uwsgi:
+    build:
+      context: .
+      dockerfile: uwsgi.Dockerfile
+    container_name: kwt-uwsgi
+    command: python manage.py runserver 0.0.0.0:1664
+    ports:
+      - "1664:1664"
+    env_file:
+      - .env
+    volumes:
+      - ./apps:/kwt_uwsgi/apps
+      - ./korfbal:/kwt_uwsgi/korfbal
+      - ./templates:/kwt_uwsgi/templates
+      - ./manage.py:/kwt_uwsgi/manage.py
+      - ./.env:/kwt_uwsgi/.env
+    networks:
+      - kwt-net
+
+  kwt-daphne:
+    build:
+      context: .
+      dockerfile: daphne.Dockerfile
+    container_name: kwt-daphne
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./apps:/kwt_uwsgi/apps
+      - ./korfbal:/kwt_uwsgi/korfbal
+      - ./manage.py:/kwt_uwsgi/manage.py
+    depends_on:
+      - kwt-redis
+    networks:
+      - kwt-net
+
+  kwt-redis:
+    image: redis:latest
+    container_name: kwt-redis
+    networks:
+      - kwt-net
+
+  kwt-nginx:
+    build:
+      context: .
+      dockerfile: nginx.Dockerfile
+    container_name: kwt-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - kwt-uwsgi
+      - kwt-daphne
+    volumes:
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - kwt-net
+
+  kwt-sftp:
+    image: atmoz/sftp
+    container_name: kwt-sftp
+    ports:
+      - "2222:22"
+    volumes:
+      - ./sftp-data:/home/sftpuser/upload
+    environment:
+      SFTP_USERS: "sftpuser:password:1001"
+    networks:
+      - kwt-net
+
+  collectstatic:
+    build:
+      context: .
+      dockerfile: collectstatic.Dockerfile
+    container_name: collectstatic
+    depends_on:
+      - kwt-uwsgi
+      - kwt-sftp
+    env_file:
+      - .env
+    volumes:
+      - ./apps:/kwt_uwsgi/apps
+      - ./korfbal:/kwt_uwsgi/korfbal
+      - ./static_workfile:/kwt_uwsgi/static_workfile
+      - ./manage.py:/kwt_uwsgi/manage.py
+    networks:
+      - kwt-net
+
+networks:
+  kwt-net:
+    driver: bridge

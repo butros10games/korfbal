@@ -1,4 +1,4 @@
-import { sharedData } from '../../matches/shared_data.js';
+import { sharedData } from '../../../matches/shared_data.js';
 
 export const createPlayerClickHandler = function(element, team, socket) {
     return function() {
