@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from storages.backends.s3boto3 import S3Boto3Storage
 
 # Load environment variables from .env file in the project root
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -121,11 +122,11 @@ CHANNEL_LAYERS = {
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("DB_NAME"),
-        "USER": os.environ.get("DB_USER"),
-        "PASSWORD": os.environ.get("DB_PASSWORD"),
-        "HOST": os.environ.get("DB_HOST"),
-        "PORT": os.environ.get("DB_PORT"),
+        "NAME": os.environ.get("POSTGRES_DB"),
+        "USER": os.environ.get("POSTGRES_USER"),
+        "PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
+        "HOST": os.environ.get("POSTGRES_HOST"),
+        "PORT": os.environ.get("POSTGRES_PORT"),
     }
 }
 
@@ -159,6 +160,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Email settings
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_USE_TLS = True
@@ -167,65 +171,60 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_PORT = os.environ.get("EMAIL_PORT", "587")
 
 # Internationalization
-# https://docs.djangoproject.com/en/4.1/topics/i18n/
-
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/4.1/howto/static-files/
-
-STATIC_URL = "static/"
-STATIC_ROOT = "static/"
-STATICFILES_DIRS = [
-    BASE_DIR / "static_workfile",
-    BASE_DIR / "static_workfile" / "webpack_bundles",
-]
-
+# Templates
 TEMPLATE_DIRS = [
     os.path.join(BASE_DIR, "templates"),
 ]
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
+# Internal Minio URL for application use
+AWS_S3_ENDPOINT_URL = os.environ.get("MINIO_URL", "http://kwt-minio:9000")
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# Public URL for serving static files to the browser
+AWS_S3_CUSTOM_DOMAIN = os.environ.get("MINIO_PUBLIC_URL", "http://localhost:9000")
+
+AWS_ACCESS_KEY_ID = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+AWS_SECRET_ACCESS_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
+AWS_STORAGE_BUCKET_NAME = os.environ.get("STATIC_BUCKET", "static")
+AWS_MEDIA_BUCKET_NAME = os.environ.get("MEDIA_BUCKET", "media")
+AWS_QUERYSTRING_AUTH = False
+
+AWS_S3_CONFIG = {
+    "use_threads": False,
+    "retries": {
+        "max_attempts": 5,
+        "mode": "standard",
+    },
+}
 
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.sftpstorage.SFTPStorage",
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
-            "host": os.environ.get("SFTP_HOST"),
-            "params": {
-                "username": os.environ.get("SFTP_USER"),
-                "password": os.environ.get("SFTP_PASSWORD"),
-                "port": int(os.environ.get("SFTP_PORT", "22")),
-            },
-            "root_path": os.path.join(os.environ.get("SFTP_REMOTE_PATH", ""), "media"),
+            "bucket_name": AWS_MEDIA_BUCKET_NAME,
         },
     },
     "staticfiles": {
-        "BACKEND": "storages.backends.sftpstorage.SFTPStorage",
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
-            "host": os.environ.get("SFTP_HOST"),
-            "params": {
-                "username": os.environ.get("SFTP_USER"),
-                "password": os.environ.get("SFTP_PASSWORD"),
-                "port": int(os.environ.get("SFTP_PORT", "22")),
-            },
-            "root_path": os.path.join(os.environ.get("SFTP_REMOTE_PATH", ""), "static"),
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
         },
     },
 }
 
+STATIC_URL = f"{AWS_S3_CUSTOM_DOMAIN}/{AWS_STORAGE_BUCKET_NAME}/"
+MEDIA_URL = f"{AWS_S3_CUSTOM_DOMAIN}/{AWS_MEDIA_BUCKET_NAME}/"
+
+STATICFILES_STORAGE = "storages.backends.s3boto3.S3StaticStorage"
+STATICFILES_DIRS = ["static_workfile"]
+
 WEBPACK_LOADER = {
     "DEFAULT": {
-        "BUNDLE_DIR_NAME": "webpack_bundles/",  # Subdirectory for Webpack bundles
+        "BUNDLE_DIR_NAME": "webpack_bundles/",
         "STATS_FILE": BASE_DIR / "webpack-stats.json",
     }
 }

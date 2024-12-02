@@ -9,7 +9,7 @@ uwsgi
 daphne
 channels
 channels-redis
-django-storages[sftp]
+django-storages[boto3]
 django_authentication
 uuidv7
 django_cached_paginator

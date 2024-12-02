@@ -173,3 +173,6 @@ rollhelper-extension.zip
 
 webpack_bundles/
 node_modules/
+
+minio_data/
+postgres_data/

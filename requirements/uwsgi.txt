@@ -6,7 +6,7 @@ django-mobile-detect
 django_ratelimit
 Pillow
 uwsgi
-django-storages[sftp]
+django-storages[boto3]
 django_authentication
 uuidv7
 django_cached_paginator
