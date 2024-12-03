@@ -110,7 +110,7 @@ function performSearch(searchTerm) {
     loadIcon();
     oldSearchTerm = searchTerm;
 
-    const apiUrl = `https://korfbal.butrosgroot.com/api/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
+    const apiUrl = `https://${window.location.host}/api/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
     return makeFetchRequest(apiUrl)
         .then(data => {
             displaySearchResults(data.results);

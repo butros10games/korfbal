@@ -194,7 +194,6 @@ AWS_MEDIA_BUCKET_NAME = os.environ.get("MEDIA_BUCKET", "media")
 AWS_QUERYSTRING_AUTH = False
 
 AWS_S3_CONFIG = {
-    "use_threads": False,
     "retries": {
         "max_attempts": 5,
         "mode": "standard",

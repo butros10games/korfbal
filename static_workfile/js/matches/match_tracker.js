@@ -36,8 +36,8 @@ window.addEventListener("DOMContentLoaded", function() {
         console.log("Not enough UUIDs found in the URL.");
     }
 
-    const WebSocket_url = "wss://" + window.location.host + "/ws/match/tracker/" + firstUUID + "/" + secondUUID + "/";
-    const socket = initializeSocket(WebSocket_url, (event) =>
+    const WebSocketUrl = `wss://"${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
+    const socket = initializeSocket(WebSocketUrl, (event) =>
         onMessageReceived(event, socket, eventsDiv)
     );
 
