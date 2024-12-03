@@ -1,5 +1,4 @@
 const path = require('path');
-const BundleTracker = require('webpack-bundle-tracker');
 
 module.exports = {
   entry: {
@@ -31,11 +30,5 @@ module.exports = {
       },
     ],
   },
-  plugins: [
-    new BundleTracker({
-      path: __dirname, // Directory where webpack-stats.json will be saved
-      filename: 'webpack-stats.json', // File name without any path
-    }),
-  ],
   mode: 'production',
 };
