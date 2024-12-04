@@ -16,14 +16,12 @@ COPY ../requirements/uwsgi.txt /app/
 RUN pip install --no-cache-dir -r uwsgi.txt
 
 # Add the project files
-COPY ../apps/ /kwt_uwsgi/apps/
-COPY ../korfbal/ /kwt_uwsgi/korfbal/
-COPY ../static_workfile/ /kwt_uwsgi/static_workfile/
-COPY ../manage.py /kwt_uwsgi/
-COPY ../package.json /kwt_uwsgi/
-COPY ../webpack.config.js /kwt_uwsgi/
-
-WORKDIR /kwt_uwsgi/
+COPY ../apps/ /app/apps/
+COPY ../korfbal/ /app/korfbal/
+COPY ../static_workfile/ /app/static_workfile/
+COPY ../manage.py /app/
+COPY ../package.json /app/
+COPY ../webpack.config.js /app/
 
 RUN npm install
 
