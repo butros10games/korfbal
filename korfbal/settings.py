@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from storages.backends.s3boto3 import S3Boto3Storage
 
 # Load environment variables from .env file in the project root
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -191,7 +190,7 @@ AWS_ACCESS_KEY_ID = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
 AWS_SECRET_ACCESS_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
 AWS_STORAGE_BUCKET_NAME = os.environ.get("STATIC_BUCKET", "static")
 AWS_MEDIA_BUCKET_NAME = os.environ.get("MEDIA_BUCKET", "media")
-AWS_QUERYSTRING_AUTH = False
+AWS_QUERYSTRING_AUTH = True
 
 AWS_S3_CONFIG = {
     "retries": {

@@ -88,8 +88,6 @@ services:
     depends_on:
       - kwt-uwsgi
       - kwt-daphne
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
     networks:
       - kwt-net
 

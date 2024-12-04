@@ -32,7 +32,7 @@ ADD https://dl.min.io/client/mc/release/linux-amd64/mc /usr/local/bin/mc
 RUN chmod +x /usr/local/bin/mc
 
 # Entrypoint script
-COPY ../collectstatic_entrypoint.sh /app/
-RUN chmod +x /app/collectstatic_entrypoint.sh
+COPY ../configs/collectstatic/entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
 
-ENTRYPOINT ["/app/collectstatic_entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
