@@ -60,6 +60,16 @@ export default [
 			sourceType: "module",
 		},
 	},
+    {
+		files: ["configs/webpack/webpack.config.js"],
+		languageOptions: {
+			ecmaVersion: "latest",
+			sourceType: "script",
+			globals: {
+				...globals.node,
+			},
+		},
+	},
 	{
 		ignores: [
 			"static_workfile/js/**/*.min.js",

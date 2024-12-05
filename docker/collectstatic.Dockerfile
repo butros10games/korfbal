@@ -21,7 +21,7 @@ COPY ../korfbal/ /app/korfbal/
 COPY ../static_workfile/ /app/static_workfile/
 COPY ../manage.py /app/
 COPY ../package.json /app/
-COPY ../webpack.config.js /app/
+COPY ../configs/webpack/webpack.config.js /app/
 
 RUN npm install
 
