@@ -16,9 +16,12 @@ ENV LANG=nl_NL.utf8
 ENV LANGUAGE=nl_NL:en
 ENV LC_ALL=nl_NL.utf8
 
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
 WORKDIR /kwt_daphne
 
-# Install Python dependencies
+# Copy requirements file and install dependencies
 COPY ../requirements/daphne.txt /kwt_daphne/
 RUN pip install --no-cache-dir -r daphne.txt
 
@@ -26,6 +29,12 @@ RUN pip install --no-cache-dir -r daphne.txt
 COPY ../apps/ /kwt_daphne/apps/
 COPY ../korfbal/ /kwt_daphne/korfbal/
 COPY ../manage.py /kwt_daphne/
+
+# Change ownership of the application files
+RUN chown -R appuser:appuser /kwt_daphne
+
+# Switch to the non-root user
+USER appuser
 
 # Expose the Daphne port
 EXPOSE 8001

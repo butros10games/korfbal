@@ -2,11 +2,14 @@
 FROM python:3.13-slim
 
 # Install system dependencies for PostgreSQL and psycopg2-binary
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /kwt_uwsgi
 
@@ -20,10 +23,14 @@ COPY ../korfbal/ /kwt_uwsgi/korfbal/
 COPY ../templates/ /kwt_uwsgi/templates/
 COPY ../manage.py /kwt_uwsgi/
 
-# Create a directory for logs
-RUN mkdir -p /kwt_uwsgi/logs
+# Create a directory for logs and change ownership
+RUN mkdir -p /kwt_uwsgi/logs && chown -R appuser:appuser /kwt_uwsgi
+
+# Switch to the non-root user
+USER appuser
 
 # Expose the uwsgi port
 EXPOSE 1664
 
+# Run uwsgi server
 CMD ["sh", "-c", "set -a && . /kwt_uwsgi/.env && exec uwsgi"]

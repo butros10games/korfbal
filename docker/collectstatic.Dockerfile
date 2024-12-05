@@ -1,17 +1,19 @@
 FROM python:3.13-slim
 
-# Install system dependencies for PostgreSQL and psycopg2-binary
-RUN apt-get update && apt-get install -y \
+# Install system dependencies for PostgreSQL, psycopg2-binary, and Node.js
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
-    libpq-dev && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    libpq-dev \
+    wget \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install required packages
+# Install required Python packages
 COPY ../requirements/uwsgi.txt /app/
 RUN pip install --no-cache-dir -r uwsgi.txt
 
@@ -23,13 +25,21 @@ COPY ../manage.py /app/
 COPY ../package.json /app/
 COPY ../configs/webpack/webpack.config.js /app/
 
+# Install Node.js packages
 RUN npm install
 
 # Install MinIO client (mc)
-RUN apt-get update && apt-get install -y wget && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
 ADD https://dl.min.io/client/mc/release/linux-amd64/mc /usr/local/bin/mc
 RUN chmod +x /usr/local/bin/mc
+
+# Create a non-root user and group
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Change ownership of the application files
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-root user
+USER appuser
 
 # Entrypoint script
 COPY ../configs/collectstatic/entrypoint.sh /app/
