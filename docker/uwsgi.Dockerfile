@@ -6,10 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user and group
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /kwt_uwsgi
 
