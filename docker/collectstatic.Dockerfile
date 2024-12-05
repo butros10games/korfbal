@@ -6,10 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     wget \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x -o nodesource_setup.sh \
+    && bash nodesource_setup.sh \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* nodesource_setup.sh
 
 WORKDIR /app
 
@@ -26,7 +27,7 @@ COPY ../package.json /app/
 COPY ../configs/webpack/webpack.config.js /app/
 
 # Install Node.js packages
-RUN npm install
+RUN npm install --ignore-scripts
 
 # Install MinIO client (mc)
 ADD https://dl.min.io/client/mc/release/linux-amd64/mc /usr/local/bin/mc
