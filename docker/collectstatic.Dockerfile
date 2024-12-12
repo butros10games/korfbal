@@ -2,15 +2,19 @@ FROM python:3.13-slim
 
 # Install system dependencies for PostgreSQL, psycopg2-binary, and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     gcc \
     libpq-dev \
     wget \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x -o nodesource_setup.sh \
-    && bash nodesource_setup.sh \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add nodesource_setup.sh securely using ADD
+ADD https://deb.nodesource.com/setup_18.x /tmp/nodesource_setup.sh
+RUN bash /tmp/nodesource_setup.sh \
+    && apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* nodesource_setup.sh
+    && rm -rf /var/lib/apt/lists/* /tmp/nodesource_setup.sh
 
 WORKDIR /app
 
