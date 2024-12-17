@@ -55,10 +55,10 @@ jobs:
         run: |
           # Ensure target directory exists
           mkdir -p monorepo/${{ env.TARGET_LOCATION }}
-      
+        
           # Rsync files to the target directory
           echo "Syncing files to monorepo/${{ env.TARGET_LOCATION }}/"
-          rsync -av --delete --exclude '.git/' ./ monorepo/${{ env.TARGET_LOCATION }}/
+          rsync -av --delete --exclude '.git/' ./ monorepo/${{ env.TARGET_LOCATION }}
 
       # Step 4: Commit and Push Changes
       - name: Commit and Push Changes
