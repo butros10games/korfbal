@@ -3,11 +3,11 @@ name: Sync Repositories
 on:
   push:
     branches:
-      - main
+      - main  # Trigger on every push to the standalone repo
 
 env:
   SOURCE_BRANCH_NAME: ${{ github.ref_name }}
-  TARGET_LOCATION: apps/django_projects/korfbal/
+  TARGET_LOCATION: apps/django_projects/korfbal
 
 jobs:
   sync_changes:
@@ -17,57 +17,62 @@ jobs:
       contents: read
 
     steps:
-      # Step 1: Checkout Source Repo
-      - name: Checkout Code
+      # Step 1: Checkout Standalone Repo
+      - name: Checkout Standalone Repo
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 0  # Fetch full history
 
-      # Step 2: Install GitHub CLI
-      - name: Setup GH CLI
-        run: |
-          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
-
-      # Step 3: Push Changes to Monorepo
-      - name: Push Changes to Monorepo
+      # Step 2: Sparse Checkout of Monorepo Target Directory
+      - name: Sparse Checkout of Monorepo
         env:
           GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         run: |
-          # Variables for target repository and branch
+          # Define variables
           TARGET_REPO="${{ vars.SYNC_TARGET_REPO }}"
           TARGET_BRANCH="${{ vars.SYNC_TARGET_BRANCH_NAME }}"
-          SOURCE_BRANCH="${{ env.SOURCE_BRANCH_NAME }}"
+          TARGET_LOCATION="${{ env.TARGET_LOCATION }}"
 
-          echo "Syncing changes to $TARGET_REPO on branch $TARGET_BRANCH"
+          echo "Cloning monorepo with sparse checkout for $TARGET_LOCATION..."
 
-          # Clone the monorepo
-          git clone -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
+          # Initialize a bare clone of the monorepo
+          git clone --no-checkout --depth=1 -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
           cd monorepo
 
-          # Ensure target location exists
-          mkdir -p ${{ env.TARGET_LOCATION }}
+          # Enable sparse checkout and fetch only the target directory
+          git sparse-checkout init --cone
+          git sparse-checkout set $TARGET_LOCATION
 
-          # Sync files to the target location
+          # Checkout only the target directory
+          git checkout
+
+          echo "Monorepo target directory structure:"
+          ls -la $TARGET_LOCATION
+
+      # Step 3: Sync Files to the Target Directory
+      - name: Sync Files to Monorepo
+        run: |
+          # Sync files into the sparse-checked target directory
           echo "Syncing files to ${{ env.TARGET_LOCATION }}..."
-          rsync -av --delete --exclude '.git/' ../ ${{ env.TARGET_LOCATION }}
+          rsync -av --delete --exclude '.git/' ./ monorepo/${{ env.TARGET_LOCATION }}
 
-          # Debug: Show contents of the target directory
-          echo "Contents of ${{ env.TARGET_LOCATION }} after rsync:"
-          ls -la ${{ env.TARGET_LOCATION }}
+          # Verify the updated directory
+          echo "Updated contents of ${{ env.TARGET_LOCATION }}:"
+          ls -la monorepo/${{ env.TARGET_LOCATION }}
 
-          # Stage only changes in the target directory
+      # Step 4: Commit and Push Changes
+      - name: Commit and Push Changes
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: |
+          cd monorepo
           git add ${{ env.TARGET_LOCATION }}
 
-          # Commit and push changes
+          # Commit and push only if there are changes
           if git diff --cached --exit-code; then
-              echo "No changes to sync."
+            echo "No changes to commit."
           else
-              git commit -m "Sync kwt app: $(date +'%Y-%m-%d %H:%M:%S')"
-              git push
+            git commit -m "Sync standalone app: $(date +'%Y-%m-%d %H:%M:%S')"
+            git push https://$GH_TOKEN@github.com/${{ vars.SYNC_TARGET_REPO }}.git HEAD:$TARGET_BRANCH
           fi
