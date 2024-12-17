@@ -50,10 +50,6 @@ jobs:
           git clone -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
           cd monorepo
 
-          # Debug: Show contents of the standalone repo
-          echo "Contents of standalone repository:"
-          ls -la ../
-
           # Ensure target location exists
           mkdir -p ${{ env.TARGET_LOCATION }}
 
@@ -65,8 +61,10 @@ jobs:
           echo "Contents of ${{ env.TARGET_LOCATION }} after rsync:"
           ls -la ${{ env.TARGET_LOCATION }}
 
+          # Stage only changes in the target directory
+          git add ${{ env.TARGET_LOCATION }}
+
           # Commit and push changes
-          git add .
           if git diff --cached --exit-code; then
               echo "No changes to sync."
           else
