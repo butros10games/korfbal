@@ -1,4 +1,4 @@
-name: Sync Repositories
+name: Sync to monorepo
 
 on:
   push:
@@ -11,6 +11,7 @@ env:
 
 jobs:
   sync_changes:
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -74,10 +75,12 @@ jobs:
 
           git add ${{ env.TARGET_LOCATION }}
 
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+
           # Commit and push only if there are changes
           if git diff --cached --exit-code; then
             echo "No changes to commit."
           else
-            git commit -m "Sync standalone app: $(date +'%Y-%m-%d %H:%M:%S')"
+            git commit -m "Sync from korfbal: $(date +'%Y-%m-%d %H:%M:%S') - $COMMIT_MESSAGE"
             git push https://$GH_TOKEN@github.com/${{ vars.SYNC_TARGET_REPO }}.git HEAD:${{ vars.SYNC_TARGET_BRANCH_NAME }}
           fi
