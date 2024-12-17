@@ -24,6 +24,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0  # Fetch full history
 
+      - name: Configure git identity (local)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"  
+
       # Step 2: Sparse Checkout of Monorepo Target Directory
       - name: Sparse Checkout of Monorepo
         env:
