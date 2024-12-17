@@ -30,14 +30,12 @@ jobs:
           GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         run: |
           # Define variables
-          TARGET_REPO="${{ vars.SYNC_TARGET_REPO }}"
-          TARGET_BRANCH="${{ vars.SYNC_TARGET_BRANCH_NAME }}"
           TARGET_LOCATION="${{ env.TARGET_LOCATION }}"
 
           echo "Cloning monorepo with sparse checkout for $TARGET_LOCATION..."
 
           # Initialize a bare clone of the monorepo
-          git clone --no-checkout --depth=1 -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
+          git clone --no-checkout --depth=1 -b ${{ vars.SYNC_TARGET_BRANCH_NAME }} https://$GH_TOKEN@github.com/${{ vars.SYNC_TARGET_REPO }}.git monorepo
           cd monorepo
 
           # Enable sparse checkout and fetch only the target directory
@@ -81,5 +79,5 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "Sync standalone app: $(date +'%Y-%m-%d %H:%M:%S')"
-            git push https://$GH_TOKEN@github.com/${{ vars.SYNC_TARGET_REPO }}.git HEAD:$TARGET_BRANCH
+            git push https://$GH_TOKEN@github.com/${{ vars.SYNC_TARGET_REPO }}.git HEAD:${{ vars.SYNC_TARGET_BRANCH_NAME }}
           fi
