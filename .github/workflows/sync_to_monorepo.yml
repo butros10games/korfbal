@@ -7,7 +7,7 @@ on:
 
 env:
   SOURCE_BRANCH_NAME: ${{ github.ref_name }}
-  TARGET_LOCATION: apps/django_projects/korfbal
+  TARGET_LOCATION: apps/django_projects/korfbal/
 
 jobs:
   sync_changes:
@@ -43,16 +43,27 @@ jobs:
           TARGET_REPO="${{ vars.SYNC_TARGET_REPO }}"
           TARGET_BRANCH="${{ vars.SYNC_TARGET_BRANCH_NAME }}"
           SOURCE_BRANCH="${{ env.SOURCE_BRANCH_NAME }}"
-          
+
           echo "Syncing changes to $TARGET_REPO on branch $TARGET_BRANCH"
 
           # Clone the monorepo
           git clone -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
           cd monorepo
 
-          # Copy files from source repo into target subdirectory
+          # Debug: Show contents of the standalone repo
+          echo "Contents of standalone repository:"
+          ls -la ../
+
+          # Ensure target location exists
           mkdir -p ${{ env.TARGET_LOCATION }}
+
+          # Sync files to the target location
+          echo "Syncing files to ${{ env.TARGET_LOCATION }}..."
           rsync -av --delete --exclude '.git/' ../ ${{ env.TARGET_LOCATION }}
+
+          # Debug: Show contents of the target directory
+          echo "Contents of ${{ env.TARGET_LOCATION }} after rsync:"
+          ls -la ${{ env.TARGET_LOCATION }}
 
           # Commit and push changes
           git add .
