@@ -1,0 +1,64 @@
+name: Sync Repositories
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  SOURCE_BRANCH_NAME: ${{ github.ref_name }}
+  TARGET_LOCATION: apps/django_projects/korfbal
+
+jobs:
+  sync_changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      # Step 1: Checkout Source Repo
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Step 2: Install GitHub CLI
+      - name: Setup GH CLI
+        run: |
+          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
+
+      # Step 3: Push Changes to Monorepo
+      - name: Push Changes to Monorepo
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: |
+          # Variables for target repository and branch
+          TARGET_REPO="${{ vars.SYNC_TARGET_REPO }}"
+          TARGET_BRANCH="${{ vars.SYNC_TARGET_BRANCH_NAME }}"
+          SOURCE_BRANCH="${{ env.SOURCE_BRANCH_NAME }}"
+          
+          echo "Syncing changes to $TARGET_REPO on branch $TARGET_BRANCH"
+
+          # Clone the monorepo
+          git clone -b $TARGET_BRANCH https://$GH_TOKEN@github.com/$TARGET_REPO.git monorepo
+          cd monorepo
+
+          # Copy files from source repo into target subdirectory
+          mkdir -p ${{ env.TARGET_LOCATION }}
+          rsync -av --delete --exclude '.git/' ../ ${{ env.TARGET_LOCATION }}
+
+          # Commit and push changes
+          git add .
+          if git diff --cached --exit-code; then
+              echo "No changes to sync."
+          else
+              git commit -m "Sync kwt app: $(date +'%Y-%m-%d %H:%M:%S')"
+              git push
+          fi
