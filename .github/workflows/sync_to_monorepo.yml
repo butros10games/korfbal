@@ -53,13 +53,12 @@ jobs:
       # Step 3: Sync Files to the Target Directory
       - name: Sync Files to Monorepo
         run: |
-          # Sync files into the sparse-checked target directory
-          echo "Syncing files to ${{ env.TARGET_LOCATION }}..."
-          rsync -av --delete --exclude '.git/' ./ monorepo/${{ env.TARGET_LOCATION }}
-
-          # Verify the updated directory
-          echo "Updated contents of ${{ env.TARGET_LOCATION }}:"
-          ls -la monorepo/${{ env.TARGET_LOCATION }}
+          # Ensure target directory exists
+          mkdir -p monorepo/${{ env.TARGET_LOCATION }}
+      
+          # Rsync files to the target directory
+          echo "Syncing files to monorepo/${{ env.TARGET_LOCATION }}/"
+          rsync -av --delete --exclude '.git/' ./ monorepo/${{ env.TARGET_LOCATION }}/
 
       # Step 4: Commit and Push Changes
       - name: Commit and Push Changes
