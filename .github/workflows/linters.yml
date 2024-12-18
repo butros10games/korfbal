@@ -14,13 +14,10 @@ permissions:
 
 jobs:
   flake8:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: ${{ !contains(github.event.head_commit.message, 'Sync from monorepo') }}
     name: flake8
     runs-on: ubuntu-latest
     steps:
-      - name: Debug actor
-        run: echo "Actor ${{ github.actor }}"
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -46,7 +43,7 @@ jobs:
           run: flake8 --exclude=migrations
 
   isort:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: ${{ !contains(github.event.head_commit.message, 'Sync from monorepo') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,7 +71,7 @@ jobs:
           run: isort --check --diff . --skip=migrations
 
   black:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: ${{ !contains(github.event.head_commit.message, 'Sync from monorepo') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

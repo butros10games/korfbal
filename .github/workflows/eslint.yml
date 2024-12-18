@@ -8,7 +8,7 @@ on:
 
 jobs:
   eslint:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: ${{ !contains(github.event.head_commit.message, 'Sync from monorepo') }}
     runs-on: ubuntu-latest
 
     steps:
