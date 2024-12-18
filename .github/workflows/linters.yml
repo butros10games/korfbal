@@ -18,6 +18,9 @@ jobs:
     name: flake8
     runs-on: ubuntu-latest
     steps:
+      - name: Debug actor
+        run: echo "Actor ${{ github.actor }}"
+
       - name: Checkout
         uses: actions/checkout@v4
 
