@@ -1,9 +1,10 @@
 """Signals for the Match model."""
 
-from apps.game_tracker.models import MatchData
-from apps.schedule.models import Match
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+from apps.game_tracker.models import MatchData
+from apps.schedule.models import Match
 
 
 @receiver(post_save, sender=Match)

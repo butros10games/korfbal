@@ -1,9 +1,8 @@
 """This module contains the Match model."""
 
-from uuidv7 import uuid7
-
 from django.db import models
 from django.urls import reverse
+from uuidv7 import uuid7
 
 from .constants import team_model_string
 

@@ -1,8 +1,9 @@
 """Middleware to track the pages visited by the player."""
 
+from django.utils import timezone
+
 from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
-from django.utils import timezone
 
 
 class VisitorTrackingMiddleware:

@@ -2,10 +2,11 @@
 
 from datetime import date
 
+from django.shortcuts import get_object_or_404, redirect
+
 from apps.player.models import Player
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
-from django.shortcuts import get_object_or_404, redirect
 
 
 def register_to_team(request, team_id):

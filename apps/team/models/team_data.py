@@ -7,9 +7,8 @@ from django.db import models
 from .constants import player_model_string
 
 if TYPE_CHECKING:
-    from schedule.models import Season  # noqa: F401
-
     from django.db.models import QuerySet  # noqa: F401
+    from schedule.models import Season  # noqa: F401
 
     from ..models import Team  # noqa: F401
 

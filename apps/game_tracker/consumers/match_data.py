@@ -5,6 +5,7 @@ import traceback
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q
 
 from apps.common.utils import general_stats, players_stats
 from apps.game_tracker.models import (
@@ -19,7 +20,6 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
-from django.db.models import Q
 
 from .common import get_time
 

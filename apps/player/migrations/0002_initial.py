@@ -10,20 +10,24 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('player', '0001_initial'),
-        ('team', '0001_initial'),
+        ("player", "0001_initial"),
+        ("team", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='team_follow',
-            field=models.ManyToManyField(blank=True, to='team.team'),
+            model_name="player",
+            name="team_follow",
+            field=models.ManyToManyField(blank=True, to="team.team"),
         ),
         migrations.AddField(
-            model_name='player',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='players', to=settings.AUTH_USER_MODEL),
+            model_name="player",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="players",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

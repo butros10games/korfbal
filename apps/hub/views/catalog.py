@@ -1,9 +1,10 @@
 """This module contains the view for the catalog page."""
 
-from apps.player.models import Player
-from apps.team.models import Team
 from django.db.models import Q
 from django.shortcuts import render
+
+from apps.player.models import Player
+from apps.team.models import Team
 
 
 def catalog(request):

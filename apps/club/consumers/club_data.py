@@ -5,13 +5,13 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q
 
 from apps.common.utils import transform_matchdata
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team
-from django.db.models import Q
 
 
 class TeamJSON(TypedDict):

@@ -1,10 +1,9 @@
 """This module contains the Player model for the player app."""
 
-from uuidv7 import uuid7
-
 from django.contrib.auth.models import User
 from django.db import models
 from django.urls import reverse
+from uuidv7 import uuid7
 
 from .constants import club_model_string, team_model_string
 

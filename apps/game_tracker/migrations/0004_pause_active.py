@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('game_tracker', '0003_matchpart_active'),
+        ("game_tracker", "0003_matchpart_active"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pause',
-            name='active',
+            model_name="pause",
+            name="active",
             field=models.BooleanField(default=False),
         ),
     ]

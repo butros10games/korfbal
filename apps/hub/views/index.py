@@ -1,11 +1,12 @@
 """This module contains the view for the hub index page."""
 
+from django.db.models import Q
+from django.shortcuts import render
+
 from apps.game_tracker.models import MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team
-from django.db.models import Q
-from django.shortcuts import render
 
 
 def index(request):

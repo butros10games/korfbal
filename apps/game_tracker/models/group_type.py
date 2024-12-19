@@ -1,8 +1,7 @@
 """Model for GroupType."""
 
-from uuidv7 import uuid7
-
 from django.db import models
+from uuidv7 import uuid7
 
 
 class GroupType(models.Model):

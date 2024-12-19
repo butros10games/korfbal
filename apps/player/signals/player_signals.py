@@ -1,9 +1,10 @@
 """This file contains signals for the Player model."""
 
-from apps.player.models import Player
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+from apps.player.models import Player
 
 
 @receiver(post_save, sender=User)

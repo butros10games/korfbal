@@ -9,24 +9,36 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('schedule', '0001_initial'),
-        ('team', '0001_initial'),
+        ("schedule", "0001_initial"),
+        ("team", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='match',
-            name='away_team',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='away_matches', to='team.team'),
+            model_name="match",
+            name="away_team",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="away_matches",
+                to="team.team",
+            ),
         ),
         migrations.AddField(
-            model_name='match',
-            name='home_team',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='home_matches', to='team.team'),
+            model_name="match",
+            name="home_team",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="home_matches",
+                to="team.team",
+            ),
         ),
         migrations.AddField(
-            model_name='match',
-            name='season',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='matches', to='schedule.season'),
+            model_name="match",
+            name="season",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="matches",
+                to="schedule.season",
+            ),
         ),
     ]

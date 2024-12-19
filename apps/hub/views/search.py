@@ -2,12 +2,13 @@
 
 from datetime import date
 
-from apps.club.models import Club
-from apps.schedule.models import Season
-from apps.team.models import Team, TeamData
 from django.db.models import F, Value
 from django.db.models.functions import Concat
 from django.http import JsonResponse
+
+from apps.club.models import Club
+from apps.schedule.models import Season
+from apps.team.models import Team, TeamData
 
 
 def get_current_season():

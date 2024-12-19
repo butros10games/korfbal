@@ -6,6 +6,8 @@ from datetime import datetime
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Case, When
+from django.utils.timezone import make_aware
 
 from apps.game_tracker.models import (
     GoalType,
@@ -20,8 +22,6 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from django.db.models import Case, When
-from django.utils.timezone import make_aware
 
 from .common import get_time
 

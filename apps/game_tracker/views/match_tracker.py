@@ -1,9 +1,10 @@
 """This module contains the view for the match tracker page."""
 
+from django.shortcuts import get_object_or_404, render
+
 from apps.game_tracker.models import MatchData, MatchPart, Pause, PlayerGroup, Shot
 from apps.schedule.models import Match
 from apps.team.models import Team
-from django.shortcuts import get_object_or_404, render
 
 from .common import get_time_display
 

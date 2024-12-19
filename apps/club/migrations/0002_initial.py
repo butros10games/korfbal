@@ -9,23 +9,30 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('club', '0001_initial'),
-        ('player', '0001_initial'),
+        ("club", "0001_initial"),
+        ("player", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='clubadmin',
-            name='player',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='player.player'),
+            model_name="clubadmin",
+            name="player",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, to="player.player"
+            ),
         ),
         migrations.AddField(
-            model_name='club',
-            name='admin',
-            field=models.ManyToManyField(blank=True, related_name='clubs', through='club.ClubAdmin', to='player.player'),
+            model_name="club",
+            name="admin",
+            field=models.ManyToManyField(
+                blank=True,
+                related_name="clubs",
+                through="club.ClubAdmin",
+                to="player.player",
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='clubadmin',
-            unique_together={('club', 'player')},
+            name="clubadmin",
+            unique_together={("club", "player")},
         ),
     ]

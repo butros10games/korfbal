@@ -1,8 +1,9 @@
 """This module contains the view for the player profile detail page."""
 
-from apps.player.models import Player
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+
+from apps.player.models import Player
 
 
 def profile_detail(request, player_id=None) -> HttpResponse:

@@ -6,13 +6,13 @@ from datetime import datetime
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q
 
 from apps.common.utils import general_stats, players_stats, transform_matchdata
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from django.db.models import Q
 
 
 class TeamDataConsumer(AsyncWebsocketConsumer):

@@ -1,8 +1,7 @@
 """This module contains the Shot model for the game_tracker app."""
 
-from uuidv7 import uuid7
-
 from django.db import models
+from uuidv7 import uuid7
 
 from .constants import player_model_string, team_model_string
 

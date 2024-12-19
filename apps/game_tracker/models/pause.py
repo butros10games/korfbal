@@ -2,9 +2,8 @@
 
 from datetime import timedelta
 
-from uuidv7 import uuid7
-
 from django.db import models
+from uuidv7 import uuid7
 
 
 class Pause(models.Model):

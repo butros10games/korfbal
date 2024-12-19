@@ -9,14 +9,18 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('hub', '0001_initial'),
-        ('player', '0001_initial'),
+        ("hub", "0001_initial"),
+        ("player", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pageconnectregistration',
-            name='player',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='page_connect_registrations', to='player.player'),
+            model_name="pageconnectregistration",
+            name="player",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="page_connect_registrations",
+                to="player.player",
+            ),
         ),
     ]

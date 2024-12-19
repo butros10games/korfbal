@@ -1,9 +1,8 @@
 """This module contains the PlayerGroup model."""
 
-from uuidv7 import uuid7
-
 from django.core.exceptions import ValidationError
 from django.db import models
+from uuidv7 import uuid7
 
 from .constants import player_model_string, team_model_string
 
