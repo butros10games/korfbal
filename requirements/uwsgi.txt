@@ -5,7 +5,7 @@ psycopg2-binary
 django-mobile-detect
 django_ratelimit
 Pillow
-uwsgi
+pyuwsgi
 django-storages[boto3]
 django_authentication
 uuidv7
