@@ -40,7 +40,11 @@ RUN chmod +x /usr/local/bin/mc
 # Copy entrypoint script
 COPY ../configs/collectstatic/entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh \
-    && groupadd -r appuser && useradd -r -g appuser appuser && chown -R appuser:appuser /app
+    && groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser \
+    && chown -R appuser:appuser /home/appuser /app
+
+# Ensure HOME is set so mc knows where to store config
+ENV HOME=/home/appuser
 
 # Switch to the non-root user
 USER appuser

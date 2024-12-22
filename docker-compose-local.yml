@@ -32,6 +32,7 @@ services:
       - ./korfbal:/app/korfbal
       - ./static_workfile:/app/static_workfile
       - ./manage.py:/app/manage.py
+      - ./configs/collectstatic/entrypoint.sh:/app/entrypoint.sh
     depends_on:
       kwt-migrate:
         condition: service_completed_successfully
@@ -85,6 +86,7 @@ services:
     container_name: kwt-nginx
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - kwt-uwsgi
       - kwt-daphne
@@ -109,14 +111,15 @@ services:
 
   kwt-pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: pgadmin
+    container_name: kwt-pgadmin
     env_file:
       - .env
     ports:
       - "5050:80"
     volumes:
       - pgadmin:/var/lib/pgadmin
-    restart: unless-stopped
+    networks:
+      - kwt-net
 
   kwt-minio:
     image: minio/minio:latest

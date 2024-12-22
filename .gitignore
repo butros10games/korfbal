@@ -149,3 +149,5 @@ Chess-Challenge-main/Chess-Challenge/obj/Debug/net6.0/Chess-Challenge.GeneratedM
 scripts/git/hooks/
 *_venv/
 .history
+
+webpack_bundles/
