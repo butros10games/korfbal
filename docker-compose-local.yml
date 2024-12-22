@@ -107,6 +107,17 @@ services:
       retries: 5
       start_period: 5s
 
+  kwt-pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    env_file:
+      - .env
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    restart: unless-stopped
+
   kwt-minio:
     image: minio/minio:latest
     container_name: kwt-minio
@@ -132,5 +143,22 @@ networks:
 
 volumes:
   minio-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./local_dev_files/minio
 
   postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./local_dev_files/postgressql
+
+  pgadmin:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./local_dev_files/pgadmin
