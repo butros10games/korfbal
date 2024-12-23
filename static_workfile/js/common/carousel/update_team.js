@@ -33,7 +33,7 @@ export const updateTeam = function(data, infoContainer) {
             arrow_div.style.marginLeft = "auto";
 
             const arrow = document.createElement("img");
-            arrow.src = "/static/images/arrow.svg";
+            arrow.src = `https://static.${window.location.origin}/images/arrow.svg`;
             arrow.style.width = "18px";
             // rotated arrow 90 degrees
             arrow.style.transform = "rotate(-90deg)";

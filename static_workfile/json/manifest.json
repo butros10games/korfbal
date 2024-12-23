@@ -3,7 +3,7 @@
     "name": "korfbal Wedstrijd Tracker",
     "icons": [
       {
-            "src": "/static/images/logo/KWT_logo.png",
+            "src": "https://static.korfbal.butrosgroot.com/images/logo/KWT_logo.png",
             "sizes": "512x512",
             "type": "image/png"
       }

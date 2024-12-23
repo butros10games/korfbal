@@ -3,7 +3,7 @@ self.addEventListener('fetch', function(event) {
 });
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/js/pwa/service-worker.js')
+    navigator.serviceWorker.register(`https://static.${window.location.origin}/js/pwa/service-worker.js`)
         .then(registration => {
             console.log('ServiceWorker registration successful with scope: ', registration.scope);
 

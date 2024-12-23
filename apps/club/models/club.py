@@ -33,4 +33,5 @@ class Club(models.Model):
         """Return the club logo."""
         if self.logo:
             return self.logo.url
-        return f"{settings.STATIC_URL}images/clubs/blank-club-picture.png"
+        static_url = settings.STATIC_URL[1:] if settings.STATIC_URL.startswith("/") else settings.STATIC_URL
+        return f"https://{static_url}images/clubs/blank-club-picture.png"
