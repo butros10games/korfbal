@@ -1,8 +1,6 @@
 services:
   kwt-uwsgi:
-    build:
-      context: .
-      dockerfile: ./docker/uwsgi.Dockerfile
+    image: butros10/kwt-uwsgi:latest
     container_name: kwt-uwsgi
     ports:
       - "1664:1664"
@@ -12,9 +10,7 @@ services:
       - kwt-net
 
   kwt-daphne:
-    build:
-      context: .
-      dockerfile: ./docker/daphne.Dockerfile
+    image: butros10/kwt-daphne:latest
     container_name: kwt-daphne
     ports:
       - "8001:8001"
@@ -31,21 +27,6 @@ services:
     networks:
       - kwt-net
 
-  kwt-nginx:
-    build:
-      context: .
-      dockerfile: ./docker/nginx.Dockerfile
-    container_name: kwt-nginx
-    ports:
-      - "80:80"
-    depends_on:
-      - kwt-uwsgi
-      - kwt-daphne
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-    networks:
-      - kwt-net
-
   kwt-minio:
     image: minio/minio:latest
     container_name: kwt-minio
@@ -57,14 +38,12 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - ./minio_data:/data
+      - /home/butros/kwt/:/data
     networks:
       - kwt-net
 
   kwt-collectstatic:
-    build:
-      context: .
-      dockerfile: ./docker/collectstatic.Dockerfile
+    image: kwt-collectstatic:latest
     container_name: kwt-collectstatic
     depends_on:
       - kwt-minio
@@ -74,23 +53,11 @@ services:
       - kwt-net
 
   kwt-migrate:
-    build:
-      context: .
-      dockerfile: ./docker/uwsgi.Dockerfile
+    image: kwt-nginx:latest
     container_name: kwt-migrate
     command: python manage.py migrate
     env_file:
       - .env
-    networks:
-      - kwt-net
-  
-  kwt-postgres:
-    image: postgres:latest
-    container_name: kwt-postgres
-    env_file:
-      - .env
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
     networks:
       - kwt-net
 
