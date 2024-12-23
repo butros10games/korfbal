@@ -6,7 +6,7 @@
         <title>{{ title }}</title>
         <meta name="description" content="">
         
-        <link rel="stylesheet" href="/static/css/matches/tracker.css">
+        <link rel="stylesheet" href="{% static 'css/matches/tracker.css' %}">
         
         {% include 'common/imports.html' %}
     </head>
@@ -32,6 +32,6 @@
             </div>
         </div>
 
-        <script src="/static/js/programs/mobile_view.js"></script>
+        <script src="{% static 'js/programs/mobile_view.js' %}"></script>
     </body>
 </html>

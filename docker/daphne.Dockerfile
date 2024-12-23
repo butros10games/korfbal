@@ -26,9 +26,9 @@ COPY ../requirements/daphne.txt /kwt_daphne/
 RUN pip install --no-cache-dir -r daphne.txt
 
 # Copy application files
-COPY ../apps/ /kwt_daphne/apps/
-COPY ../korfbal/ /kwt_daphne/korfbal/
 COPY ../manage.py /kwt_daphne/
+COPY ../korfbal/ /kwt_daphne/korfbal/
+COPY ../apps/ /kwt_daphne/apps/
 
 # Change ownership of the application files
 RUN chown -R appuser:appuser /kwt_daphne

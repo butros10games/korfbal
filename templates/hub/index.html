@@ -7,7 +7,7 @@
         <title>{{ title }}</title>
         <meta name="description" content="">
 
-        <link rel="stylesheet" href="/static/css/index.css">
+        <link rel="stylesheet" href="{% static 'css/index.css' %}">
         
         {% include 'common/imports.html' %}
     </head>
@@ -50,7 +50,7 @@
 
                 <div class="flex-center" style="border-top: 1px solid #0000004a; width: 100%">
                     <p style="font-size: 14px; font-weight: 600; margin: 8px 0">Volledig programma</p>
-                    <img alt="arrow" src="/static/images/arrow.svg" style="height: 12px; width: 12px; margin-left: 6px; transform: rotate(-90deg);">
+                    <img alt="arrow" src="{% static 'images/arrow.svg' %}" style="height: 12px; width: 12px; margin-left: 6px; transform: rotate(-90deg);">
                 </div>
                 {% else %}
                     <a href="{% url 'login' %}" class="login_button flex-center">Login</a>

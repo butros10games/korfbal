@@ -7,6 +7,8 @@ from uuidv7 import uuid7
 
 from .constants import club_model_string, team_model_string
 
+from django.conf import settings
+
 
 class Player(models.Model):
     """Model for Player."""
@@ -16,8 +18,8 @@ class Player(models.Model):
 
     profile_picture = models.ImageField(
         upload_to="profile_pictures/",
-        default="/static/images/player/blank-profile-picture.png",
         blank=True,
+        null=True,
     )
 
     team_follow = models.ManyToManyField(team_model_string, blank=True)
@@ -33,7 +35,6 @@ class Player(models.Model):
 
     def get_profile_picture(self):
         """Return the profile picture of the player."""
-        if "static" in self.profile_picture.url:
+        if self.profile_picture:
             return self.profile_picture.url
-        else:
-            return "/media" + self.profile_picture.url
+        return f"{settings.STATIC_URL}images/clubs/blank-profile-picture.png.png"

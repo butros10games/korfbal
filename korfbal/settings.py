@@ -2,52 +2,83 @@
 
 import os
 from pathlib import Path
-
 from dotenv import load_dotenv
 
-# Load environment variables from .env file in the project root
+
+# ------------------------------------------------------------------------------
+# Helper Functions
+# ------------------------------------------------------------------------------
+def get_bool_env(env_key: str, default: bool = False) -> bool:
+    """
+    Return True if the environment variable is set to 'true' or '1' (case-insensitive).
+    Otherwise, return the default value.
+    """
+    return os.getenv(env_key, str(default)).lower() in ["true", "1"]
+
+
+def get_list_env(env_key: str, default=None, delimiter: str = ",") -> list[str]:
+    """
+    Split the environment variable by the given delimiter and return as a list.
+    If the env variable is not set, return the default list.
+    """
+    if default is None:
+        default = []
+    val = os.getenv(env_key, None)
+    return val.split(delimiter) if val else default
+
+
+# ------------------------------------------------------------------------------
+# Base Directories and Environment
+# ------------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+load_dotenv(BASE_DIR / ".env")  # Load environment variables from the .env file
 
-# Build paths inside the project like this: BASE_DIR / "subdir".
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR / "korfbal"
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY")
+# ------------------------------------------------------------------------------
+# Security & Debug
+# ------------------------------------------------------------------------------
+SECRET_KEY = os.getenv("SECRET_KEY")  # Provide a default for dev
+DEBUG = get_bool_env("DEBUG", default=False)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DEBUG", "False") == "True"
-
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "korfbal.butrosgroot.com").split(",")
-
-CSRF_TRUSTED_ORIGINS = os.environ.get(
-    "CSRF_TRUSTED_ORIGINS", "https://korfbal.butrosgroot.com"
-).split(",")
+ALLOWED_HOSTS = get_list_env("ALLOWED_HOSTS", default=["korfbal.butrosgroot.com"])
+CSRF_TRUSTED_ORIGINS = get_list_env(
+    "CSRF_TRUSTED_ORIGINS",
+    default=["https://korfbal.butrosgroot.com"]
+)
 
 if DEBUG:
+    # Debug-specific settings
     SECURE_SSL_REDIRECT = False
     ALLOWED_HOSTS.extend(["localhost", "127.0.0.1"])
 else:
+    # Production security settings
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-
     SECURE_SSL_REDIRECT = True
 
     # Secure cookies
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
-# Application definition
+# ------------------------------------------------------------------------------
+# Application Definition
+# ------------------------------------------------------------------------------
 INSTALLED_APPS = [
+    # Django apps
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # Third-party
     "mobiledetect",
     "phonenumber_field",
+
+    # Local apps
     "apps.club",
     "apps.player",
     "apps.team",
@@ -72,6 +103,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "korfbal.urls"
+ASGI_APPLICATION = "korfbal.asgi.application"
 LOGIN_URL = "login"
 
 AUTHENTICATION_BACKENDS = [
@@ -79,10 +111,13 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
 ]
 
+# ------------------------------------------------------------------------------
+# Templates
+# ------------------------------------------------------------------------------
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [os.path.join(BASE_DIR, "templates")],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -97,16 +132,17 @@ TEMPLATES = [
     },
 ]
 
-ASGI_APPLICATION = "korfbal.asgi.application"
-
+# ------------------------------------------------------------------------------
+# Channels & Redis
+# ------------------------------------------------------------------------------
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [
                 (
-                    os.environ.get("REDIS_HOST", "127.0.0.1"),
-                    int(os.environ.get("REDIS_PORT", "6379")),
+                    os.getenv("REDIS_HOST", "127.0.0.1"),
+                    int(os.getenv("REDIS_PORT", "6379")),
                 )
             ],
             "capacity": 100,
@@ -115,35 +151,41 @@ CHANNEL_LAYERS = {
     },
 }
 
+# ------------------------------------------------------------------------------
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
-
+# ------------------------------------------------------------------------------
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB"),
-        "USER": os.environ.get("POSTGRES_USER"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD"),
-        "HOST": os.environ.get("POSTGRES_HOST"),
-        "PORT": os.environ.get("POSTGRES_PORT"),
+        "NAME": os.getenv("POSTGRES_DB"),
+        "USER": os.getenv("POSTGRES_USER"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "HOST": os.getenv("POSTGRES_HOST"),
+        "PORT": os.getenv("POSTGRES_PORT"),
     }
 }
 
+# ------------------------------------------------------------------------------
+# Caches
+# ------------------------------------------------------------------------------
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:{os.environ.get('REDIS_PORT', '6379')}/1",  # noqa E501
+        "LOCATION": (
+            f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:"
+            f"{os.getenv('REDIS_PORT', '6379')}/1"
+        ),
     }
 }
 
-# Password validation
+# ------------------------------------------------------------------------------
+# Password Validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
-
+# ------------------------------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": (
-            "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-        )
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -161,35 +203,42 @@ AUTH_PASSWORD_VALIDATORS = [
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Email settings
+# ------------------------------------------------------------------------------
+# Email Settings
+# ------------------------------------------------------------------------------
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.environ.get("EMAIL_USER")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_PASSWORD")
-EMAIL_PORT = os.environ.get("EMAIL_PORT", "587")
+EMAIL_HOST_USER = os.getenv("EMAIL_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_PORT = os.getenv("EMAIL_PORT", "587")
 
+# ------------------------------------------------------------------------------
 # Internationalization
+# ------------------------------------------------------------------------------
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# Templates
-TEMPLATE_DIRS = [
-    os.path.join(BASE_DIR, "templates"),
-]
+# ------------------------------------------------------------------------------
+# Template Directories
+# ------------------------------------------------------------------------------
+TEMPLATE_DIRS = [BASE_DIR / "templates"]
 
-# Internal Minio URL for application use
-AWS_S3_ENDPOINT_URL = os.environ.get("MINIO_URL", "http://kwt-minio:9000")
+# ------------------------------------------------------------------------------
+# MinIO / S3 Settings
+# ------------------------------------------------------------------------------
+AWS_S3_ENDPOINT_URL = os.getenv("MINIO_URL", "http://kwt-minio:9000")
+AWS_S3_CUSTOM_DOMAIN = os.getenv("MINIO_PUBLIC_DOMAIN", "localhost")
 
-# Public URL for serving static files to the browser
-AWS_S3_CUSTOM_DOMAIN = os.environ.get("MINIO_PUBLIC_URL", "http://localhost:9000")
+AWS_STATIC_CUSTOM_DOMAIN = f"static.{AWS_S3_CUSTOM_DOMAIN}"
+AWS_MEDIA_CUSTOM_DOMAIN = f"media.{AWS_S3_CUSTOM_DOMAIN}"
 
-AWS_ACCESS_KEY_ID = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
-AWS_SECRET_ACCESS_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
-AWS_STORAGE_BUCKET_NAME = os.environ.get("STATIC_BUCKET", "static")
-AWS_MEDIA_BUCKET_NAME = os.environ.get("MEDIA_BUCKET", "media")
+AWS_ACCESS_KEY_ID = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+AWS_SECRET_ACCESS_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+AWS_STORAGE_BUCKET_NAME = os.getenv("STATIC_BUCKET", "static")
+AWS_MEDIA_BUCKET_NAME = os.getenv("MEDIA_BUCKET", "media")
 AWS_QUERYSTRING_AUTH = True
 
 AWS_S3_CONFIG = {
@@ -204,25 +253,27 @@ STORAGES = {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
             "bucket_name": AWS_MEDIA_BUCKET_NAME,
+            "default_acl": "public-read",
+            "querystring_auth": False,
+            "custom_domain": AWS_MEDIA_CUSTOM_DOMAIN,
         },
     },
     "staticfiles": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
         "OPTIONS": {
             "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "default_acl": "public-read",
+            "querystring_auth": False,
+            "custom_domain": AWS_STATIC_CUSTOM_DOMAIN,
         },
     },
 }
 
-STATIC_URL = f"{AWS_S3_CUSTOM_DOMAIN}/{AWS_STORAGE_BUCKET_NAME}/"
-MEDIA_URL = f"{AWS_S3_CUSTOM_DOMAIN}/{AWS_MEDIA_BUCKET_NAME}/"
+# ------------------------------------------------------------------------------
+# Static & Media Files
+# ------------------------------------------------------------------------------
+STATIC_URL = f"{AWS_STATIC_CUSTOM_DOMAIN}/"
+MEDIA_URL = f"{AWS_MEDIA_CUSTOM_DOMAIN}/"
 
-STATICFILES_STORAGE = "storages.backends.s3boto3.S3StaticStorage"
-STATICFILES_DIRS = ["static_workfile"]
-
-WEBPACK_LOADER = {
-    "DEFAULT": {
-        "BUNDLE_DIR_NAME": "webpack_bundles/",
-        "STATS_FILE": BASE_DIR / "webpack-stats.json",
-    }
-}
+STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+STATICFILES_DIRS = [BASE_DIR / "static_workfile"]

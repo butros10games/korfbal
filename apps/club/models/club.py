@@ -4,6 +4,8 @@ from django.db import models
 from django.urls import reverse
 from uuidv7 import uuid7
 
+from django.conf import settings
+
 
 class Club(models.Model):
     """Model for a club."""
@@ -15,8 +17,8 @@ class Club(models.Model):
     )
     logo = models.ImageField(
         upload_to="club_pictures/",
-        default="/static/images/clubs/blank-club-picture.png",
         blank=True,
+        null=True,
     )
 
     def __str__(self) -> str:
@@ -29,7 +31,6 @@ class Club(models.Model):
 
     def get_club_logo(self) -> str:
         """Return the club logo."""
-        if "static" in self.logo.url:
+        if self.logo:
             return self.logo.url
-        else:
-            return "/media" + self.logo.url
+        return f"{settings.STATIC_URL}images/clubs/blank-club-picture.png"

@@ -1,12 +1,14 @@
+{% load static %}
+
 <link rel="stylesheet" href="https://use.typekit.net/pbm5dyg.css">
-<link rel="stylesheet" href="/static/css/overlays/navbar.css">
+<link rel="stylesheet" href="{% static 'css/overlays/navbar.css' %}">
 
 <div class="stickyTopNav">
     <div style="width: calc(100% *1/3); display: flex; justify-content: flex-start; align-items: center;">
         {% if display_back %}
         {% else %}
         <a href="{% url 'previous_page' %}?counter={{ request.session.back_counter|default:1 }}" style="display: flex; justify-content: flex-start; align-items: center; margin-left: 12px;">
-            <img style="width: 32px; height: 32px;" alt="back button" src="/static/images/arrow-left.svg">
+            <img style="width: 32px; height: 32px;" alt="back button" src="{% static 'images/arrow-left.svg' %}">
         </a>
         {% endif %}
     </div>
@@ -17,16 +19,16 @@
 
 <div class="stickyBottomNav">
     <ul>
-        <li><a href="{% url 'index' %}" style="width: 42px;"><img alt="home" src="/static/images/navbar/home.svg"></a></li>
-        <li><a href="{% url 'catalog' %}" style="width: 42px;"><img alt="catalog" src="/static/images/navbar/group.svg"></a></li>
+        <li><a href="{% url 'index' %}" style="width: 42px;"><img alt="home" src="{% static 'images/navbar/home.svg' %}"></a></li>
+        <li><a href="{% url 'catalog' %}" style="width: 42px;"><img alt="catalog" src="{% static 'images/navbar/group.svg' %}"></a></li>
         {% if user.is_authenticated %}
             {% if profile_img_url %}
             <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" style="height: 32px; width: auto; border-radius: 50%; border: 2px solid white;" src="{{ profile_img_url }}"></a></li>
             {% else %}
-            <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" src="/static/images/navbar/profile.svg"></a></li>
+            <li><a href="{{ profile_url }}" style="width: 42px;"><img alt="profile" src="{% static 'images/navbar/profile.svg' %}"></a></li>
             {% endif %}
         {% else %}
-            <li><a href="{% url 'login' %}" style="width: 42px;"><img alt="login" src="/static/images/navbar/login.svg"></a></li>
+            <li><a href="{% url 'login' %}" style="width: 42px;"><img alt="login" src="{% static 'images/navbar/login.svg' %}"></a></li>
         {% endif %}
     </ul>
 </div>

@@ -16,6 +16,9 @@ RUN bash /tmp/nodesource_setup.sh \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/nodesource_setup.sh
 
+ENV NO_UPDATE_NOTIFIER=1
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
 WORKDIR /app
 
 # Install Python packages
@@ -23,9 +26,6 @@ COPY ../requirements/uwsgi.txt /app/
 RUN pip install --no-cache-dir -r uwsgi.txt
 
 # Copy project files
-COPY ../apps/ /app/apps/
-COPY ../korfbal/ /app/korfbal/
-COPY ../static_workfile/ /app/static_workfile/
 COPY ../manage.py /app/
 COPY ../package.json /app/
 COPY ../configs/webpack/webpack.config.js /app/
@@ -45,6 +45,10 @@ RUN chmod +x /app/entrypoint.sh \
 
 # Ensure HOME is set so mc knows where to store config
 ENV HOME=/home/appuser
+
+COPY ../korfbal/ /app/korfbal/
+COPY ../apps/ /app/apps/
+COPY ../static_workfile/ /app/static_workfile/
 
 # Switch to the non-root user
 USER appuser
