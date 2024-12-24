@@ -49,6 +49,7 @@ ENV HOME=/home/appuser
 COPY ../korfbal/ /app/korfbal/
 COPY ../apps/ /app/apps/
 COPY ../static_workfile/ /app/static_workfile/
+RUN chown -R appuser:appuser /app/static_workfile/
 
 # Switch to the non-root user
 USER appuser

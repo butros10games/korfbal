@@ -35,15 +35,15 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9100:9000"
+      - "9101:9001"
     volumes:
       - /home/butros/kwt/:/data
     networks:
       - kwt-net
 
   kwt-collectstatic:
-    image: kwt-collectstatic:latest
+    image: butros10/kwt-collectstatic:latest
     container_name: kwt-collectstatic
     depends_on:
       - kwt-minio
@@ -53,7 +53,7 @@ services:
       - kwt-net
 
   kwt-migrate:
-    image: kwt-nginx:latest
+    image: butros10/kwt-uwsgi:latest
     container_name: kwt-migrate
     command: python manage.py migrate
     env_file:

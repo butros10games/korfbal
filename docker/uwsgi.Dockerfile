@@ -16,6 +16,7 @@ COPY ../requirements/uwsgi.txt /kwt_uwsgi/
 RUN pip install --no-cache-dir -r uwsgi.txt
 
 # Copy application files
+COPY ../configs/uwsgi/uwsgi.ini /kwt_uwsgi/
 COPY ../manage.py /kwt_uwsgi/
 COPY ../korfbal/ /kwt_uwsgi/korfbal/
 COPY ../apps/ /kwt_uwsgi/apps/
@@ -31,4 +32,4 @@ USER appuser
 EXPOSE 1664
 
 # Run uwsgi server
-CMD ["sh", "-c", "set -a && . /kwt_uwsgi/.env && exec uwsgi"]
+CMD ["uwsgi", "--ini", "/kwt_uwsgi/uwsgi.ini"]
