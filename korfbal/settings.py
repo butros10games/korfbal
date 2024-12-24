@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 
@@ -12,7 +13,7 @@ def get_bool_env(env_key: str, default: bool = False) -> bool:
     """
     Return True if the environment variable is set to 'true' or '1' (case-insensitive).
     Otherwise, return the default value.
-    """
+    """  # noqa: D205
     return os.getenv(env_key, str(default)).lower() in ["true", "1"]
 
 
@@ -20,7 +21,7 @@ def get_list_env(env_key: str, default=None, delimiter: str = ",") -> list[str]:
     """
     Split the environment variable by the given delimiter and return as a list.
     If the env variable is not set, return the default list.
-    """
+    """  # noqa: D205
     if default is None:
         default = []
     val = os.getenv(env_key, None)
@@ -43,8 +44,7 @@ DEBUG = get_bool_env("DEBUG", default=False)
 
 ALLOWED_HOSTS = get_list_env("ALLOWED_HOSTS", default=["korfbal.butrosgroot.com"])
 CSRF_TRUSTED_ORIGINS = get_list_env(
-    "CSRF_TRUSTED_ORIGINS",
-    default=["https://korfbal.butrosgroot.com"]
+    "CSRF_TRUSTED_ORIGINS", default=["https://korfbal.butrosgroot.com"]
 )
 
 if DEBUG:
@@ -73,11 +73,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
     # Third-party
     "mobiledetect",
     "phonenumber_field",
-
     # Local apps
     "apps.club",
     "apps.player",
@@ -185,7 +183,7 @@ CACHES = {
 # ------------------------------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",  # noqa E501
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",

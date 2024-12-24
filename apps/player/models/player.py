@@ -1,13 +1,12 @@
 """This module contains the Player model for the player app."""
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
 from django.urls import reverse
 from uuidv7 import uuid7
 
 from .constants import club_model_string, team_model_string
-
-from django.conf import settings
 
 
 class Player(models.Model):
@@ -37,5 +36,9 @@ class Player(models.Model):
         """Return the profile picture of the player."""
         if self.profile_picture:
             return self.profile_picture.url
-        static_url = settings.STATIC_URL[1:] if settings.STATIC_URL.startswith("/") else settings.STATIC_URL
+        static_url = (
+            settings.STATIC_URL[1:]
+            if settings.STATIC_URL.startswith("/")
+            else settings.STATIC_URL
+        )
         return f"https://{static_url}images/player/blank-profile-picture.png"

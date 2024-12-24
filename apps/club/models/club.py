@@ -1,10 +1,9 @@
 """This module contains the Club model."""
 
+from django.conf import settings
 from django.db import models
 from django.urls import reverse
 from uuidv7 import uuid7
-
-from django.conf import settings
 
 
 class Club(models.Model):
@@ -33,5 +32,9 @@ class Club(models.Model):
         """Return the club logo."""
         if self.logo:
             return self.logo.url
-        static_url = settings.STATIC_URL[1:] if settings.STATIC_URL.startswith("/") else settings.STATIC_URL
+        static_url = (
+            settings.STATIC_URL[1:]
+            if settings.STATIC_URL.startswith("/")
+            else settings.STATIC_URL
+        )
         return f"https://{static_url}images/clubs/blank-club-picture.png"
