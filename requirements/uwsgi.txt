@@ -13,3 +13,4 @@ django_cached_paginator
 django-phonenumber-field[phonenumbers]
 django-webpack-loader
 python-dotenv
+redis

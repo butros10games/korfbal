@@ -82,7 +82,7 @@ function general(stats, statsContainer) {
     const goals_container = document.createElement("div");
     goals_container.classList.add("flex-column");
     goals_container.id = "dataField";
-    goals_container.style.width = "calc(100% - 24px))";
+    goals_container.style.width = "calc(100% - 24px)";
     goals_container.style.padding = "12px";
 
     const row_1 = document.createElement("div");
