@@ -1,1 +1,0 @@
-export { setupProfilePicture } from "./setup_profile_picture.js";

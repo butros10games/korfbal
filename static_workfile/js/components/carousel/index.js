@@ -1,0 +1,10 @@
+export { setupCarousel } from './setupCarousel.js';
+export { updateMatches } from './updateMatches.js';
+export { updateStatistics } from './updateStatastics.js';
+export { updateTeam } from './updateTeam.js';
+export { updatePlayers } from './updatePlayers.js';
+export { updateSettings } from './updateSettings.js';
+export { updateGoalStats } from './updateGoalStats.js';
+export { updatePlayerGroups } from './updatePlayerGroups.js';
+export { showPlayerGroups } from './showPlayerGroups.js';
+export { updateEvents } from './updateEvents.js';

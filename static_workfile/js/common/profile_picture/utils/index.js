@@ -1,1 +1,0 @@
-export { uploadImage } from './upload_image.js';
