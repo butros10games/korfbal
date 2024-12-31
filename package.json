@@ -90,7 +90,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint static_workfile/js/**/*.js"
+    "lint": "eslint static_workfile/js/**/*.js",
+    "lint-fix": "eslint static_workfile/js/**/*.js --fix"
   },
   "keywords": [],
   "author": "",

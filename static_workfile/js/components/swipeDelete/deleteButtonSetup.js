@@ -1,4 +1,4 @@
-import { deleteConfirmPopup } from "./utils";
+import { deleteConfirmPopup } from './utils';
 
 export const deleteButtonSetup = function(socket) {
     const deleteButton = document.getElementById('deleteButton');

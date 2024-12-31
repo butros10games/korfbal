@@ -1,5 +1,5 @@
 export const cleanDomCarousel = function(container) {
-    container.innerHTML = "";
-    container.classList.remove("flex-center");
-    container.classList.remove("flex-start-wrap");
+    container.innerHTML = '';
+    container.classList.remove('flex-center');
+    container.classList.remove('flex-start-wrap');
 };

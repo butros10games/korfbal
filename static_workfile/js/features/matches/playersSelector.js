@@ -1,4 +1,4 @@
-import { truncateMiddle } from "../common/utils";
+import { truncateMiddle } from '../common/utils';
 
 class PlayerGroupManager {
     constructor() {
@@ -6,7 +6,7 @@ class PlayerGroupManager {
         this.selectedPlayers = [];
         this.selectedPlayersAdd = [];
         this.groupId = null;
-        this.reserveId = "0192c7bb-c664-77fd-8a29-acde6f428c93";
+        this.reserveId = '0192c7bb-c664-77fd-8a29-acde6f428c93';
         this.csrfToken = null;
         this.matchId = null;
         this.teamId = null;
@@ -14,9 +14,9 @@ class PlayerGroupManager {
         this.playerGroupsData = [];
         this.groupTypes = this.initializeGroupTypes();
         this.typeIds = [
-            "01927d88-6878-7d0f-acbf-28c251fbc2b5",
-            "01927d88-57ef-7339-a791-67cf856bfea1",
-            "0192c7bb-c664-77fd-8a29-acde6f428c93"
+            '01927d88-6878-7d0f-acbf-28c251fbc2b5',
+            '01927d88-57ef-7339-a791-67cf856bfea1',
+            '0192c7bb-c664-77fd-8a29-acde6f428c93'
         ];
         this.groupIdToTypeId = {};
         this.typeIdToGroupId = {};
@@ -30,23 +30,23 @@ class PlayerGroupManager {
         // Define group types with corresponding actions
         const changeGroupBound = this.changePlayerGroup.bind(this);
         return {
-            "01927d88-6878-7d0f-acbf-28c251fbc2b5": [
-                { text: "Remove", func: changeGroupBound, id: "0192c7bb-c664-77fd-8a29-acde6f428c93" } // Attack
+            '01927d88-6878-7d0f-acbf-28c251fbc2b5': [
+                { text: 'Remove', func: changeGroupBound, id: '0192c7bb-c664-77fd-8a29-acde6f428c93' } // Attack
             ],
-            "01927d88-57ef-7339-a791-67cf856bfea1": [
-                { text: "Remove", func: changeGroupBound, id: "0192c7bb-c664-77fd-8a29-acde6f428c93" } // Defense
+            '01927d88-57ef-7339-a791-67cf856bfea1': [
+                { text: 'Remove', func: changeGroupBound, id: '0192c7bb-c664-77fd-8a29-acde6f428c93' } // Defense
             ],
-            "0192c7bb-c664-77fd-8a29-acde6f428c93": [
-                { text: "Remove", func: changeGroupBound },
-                { text: "Attack", func: changeGroupBound, id: "01927d88-6878-7d0f-acbf-28c251fbc2b5", player_max: 4 },
-                { text: "Defense", func: changeGroupBound, id: "01927d88-57ef-7339-a791-67cf856bfea1", player_max: 4 }
+            '0192c7bb-c664-77fd-8a29-acde6f428c93': [
+                { text: 'Remove', func: changeGroupBound },
+                { text: 'Attack', func: changeGroupBound, id: '01927d88-6878-7d0f-acbf-28c251fbc2b5', player_max: 4 },
+                { text: 'Defense', func: changeGroupBound, id: '01927d88-57ef-7339-a791-67cf856bfea1', player_max: 4 }
             ] // Reserve
         };
     }
 
     initialize() {
         // Set CSRF token and parse URL parameters
-        this.csrfToken = document.getElementsByName("csrfmiddlewaretoken")[0]?.value || '';
+        this.csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0]?.value || '';
         this.doneButton = document.getElementById('done-button');
         [this.matchId, this.teamId] = this.parseUrl();
 
@@ -68,14 +68,14 @@ class PlayerGroupManager {
 
     parseUrl() {
         // Extract matchId and teamId from the URL
-        const urlParts = window.location.href.split("/");
+        const urlParts = window.location.href.split('/');
         return [urlParts[urlParts.length - 3], urlParts[urlParts.length - 2]];
     }
 
     setupPlayerButtons() {
         // Add click event listeners to all player elements
-        document.querySelectorAll(".player").forEach(player => {
-            player.addEventListener("click", () => this.handlePlayerSelection(player));
+        document.querySelectorAll('.player').forEach(player => {
+            player.addEventListener('click', () => this.handlePlayerSelection(player));
         });
     }
 
@@ -93,7 +93,7 @@ class PlayerGroupManager {
         const playerIndex = this.selectedPlayers.findIndex(p => p.id_uuid === id_uuid);
 
         if (playerIndex === -1) {
-            this.selectedPlayers.push({id_uuid: id_uuid, groupId: localGroupId});
+            this.selectedPlayers.push({ id_uuid: id_uuid, groupId: localGroupId });
             this.groupId = localGroupId;
         } else {
             this.selectedPlayers.splice(playerIndex, 1);
@@ -107,13 +107,13 @@ class PlayerGroupManager {
         // Highlight or unhighlight the selected player
         player.style.backgroundColor = this.selectedPlayers.some(
             p => p.id_uuid === player.id
-        ) ? "lightblue" : "white";
+        ) ? 'lightblue' : 'white';
     }
 
     updateOptionsBar() {
         // Show or hide the options bar based on selection
         if (this.selectedPlayers.length > 0) {
-            if (!document.getElementById("options-bar")) {
+            if (!document.getElementById('options-bar')) {
                 this.showOptionsBar();
             }
         } else {
@@ -123,20 +123,20 @@ class PlayerGroupManager {
 
     showOptionsBar() {
         // Create and display the options bar with appropriate buttons
-        const optionsBar = document.createElement("div");
-        optionsBar.classList.add("flex-row", "options-bar");
-        optionsBar.id = "options-bar";
+        const optionsBar = document.createElement('div');
+        optionsBar.classList.add('flex-row', 'options-bar');
+        optionsBar.id = 'options-bar';
 
         const options = this.groupTypes[this.groupIdToTypeId[this.groupId]] || [];
         options.forEach(option => {
-            const button = document.createElement("button");
+            const button = document.createElement('button');
             button.innerText = option.text;
-            button.addEventListener("click", () => this.handleOptionClick(option));
+            button.addEventListener('click', () => this.handleOptionClick(option));
             optionsBar.appendChild(button);
         });
 
         document.body.appendChild(optionsBar);
-        this.adjustScrollableHeight("calc(100vh - 208px)");
+        this.adjustScrollableHeight('calc(100vh - 208px)');
     }
 
     handleOptionClick(option) {
@@ -163,16 +163,16 @@ class PlayerGroupManager {
 
     removeOptionsBar() {
         // Remove the options bar from the DOM
-        const optionsBar = document.getElementById("options-bar");
+        const optionsBar = document.getElementById('options-bar');
         if (optionsBar) {
             optionsBar.remove();
             this.adjustScrollableHeight();
         }
     }
 
-    adjustScrollableHeight(height = "") {
+    adjustScrollableHeight(height = '') {
         // Adjust the height of the scrollable container
-        const scrollableElement = document.querySelector(".scrollable");
+        const scrollableElement = document.querySelector('.scrollable');
         if (scrollableElement) {
             scrollableElement.style.height = height;
         }
@@ -220,7 +220,7 @@ class PlayerGroupManager {
 
     async changePlayerGroup(selectedPlayers, newGroupId) {
         // Send a request to change the player group
-        await this.fetchData(`/match/api/player_designation/`, {
+        await this.fetchData('/match/api/player_designation/', {
             players: selectedPlayers,
             new_group_id: newGroupId
         });
@@ -268,7 +268,7 @@ class PlayerGroupManager {
                 );
                 if (!newGroup) {
                     // Create new group if it doesn't exist
-                    const startingType = this.groupIdToStartingType[newGroupId] || { name: "Unknown" };
+                    const startingType = this.groupIdToStartingType[newGroupId] || { name: 'Unknown' };
                     newGroup = {
                         id_uuid: newGroupId,
                         starting_type: startingType,
@@ -291,15 +291,15 @@ class PlayerGroupManager {
         // Fetch data from the server with optional POST data
         try {
             const response = await fetch(url, {
-                method: bodyData ? "POST" : "GET",
+                method: bodyData ? 'POST' : 'GET',
                 headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": this.csrfToken
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
                 },
                 body: bodyData ? JSON.stringify(bodyData) : null
             });
             if (response.ok) {return await response.json();}
-            else {throw new Error("Error fetching data.");};
+            else {throw new Error('Error fetching data.');};
         } catch (error) {
             console.error(error.message);
         }
@@ -331,7 +331,7 @@ class PlayerGroupManager {
 
                 groupDivider.appendChild(groupTitle);
 
-                if (playerGroup.starting_type.name === "Reserve" && playerGroup.players.length > 0) {
+                if (playerGroup.starting_type.name === 'Reserve' && playerGroup.players.length > 0) {
                     const addPlayerButton = document.createElement('p');
                     addPlayerButton.classList.add('dm-sans-600-normal', 'done-button');
                     addPlayerButton.style.marginLeft = 'auto';
@@ -389,20 +389,20 @@ class PlayerGroupManager {
                 });
 
                 playerField.appendChild(playerGroupDiv);
-            } else if (playerGroup.starting_type.name === "Reserve") {
+            } else if (playerGroup.starting_type.name === 'Reserve') {
                 // create a button to add a player to the reserve group
                 const centerDiv = document.createElement('div');
                 centerDiv.classList.add('flex-center');
                 if (nullPlayers) {centerDiv.style.height = '100%';};
                 centerDiv.style.width = '100%';
-    
+
                 const addPlayerButton = document.createElement('p');
                 addPlayerButton.classList.add('dm-sans-600-normal', 'flex-center', 'add-players-button');
                 addPlayerButton.textContent = 'Voeg spelers toe';
                 addPlayerButton.addEventListener('click', () => {
                     this.fetchPlayersData();
                 });
-    
+
                 centerDiv.appendChild(addPlayerButton);
                 playerField.appendChild(centerDiv);
             }
@@ -499,11 +499,9 @@ class PlayerGroupManager {
         });
 
         this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(
-            selectedPlayer => {
-                return !players.some(
-                    player => player.id_uuid === selectedPlayer.id_uuid
-                );
-            }
+            selectedPlayer => !players.some(
+                player => player.id_uuid === selectedPlayer.id_uuid
+            )
         );
 
         if (this.filterdSelectedPlayersAdd.length > 0) {
@@ -578,21 +576,21 @@ class PlayerGroupManager {
 
     addPlayerOptionMenu() {
         // Create a dropdown menu with options for adding players
-        const optionsBar = document.createElement("div");
-        optionsBar.classList.add("flex-row", "options-bar");
-        optionsBar.id = "options-bar";
+        const optionsBar = document.createElement('div');
+        optionsBar.classList.add('flex-row', 'options-bar');
+        optionsBar.id = 'options-bar';
 
-        const addPlayerButton = document.createElement("button");
-        addPlayerButton.innerText = "Add player";
-        addPlayerButton.addEventListener("click", () => this.handleAddPlayerClick());
+        const addPlayerButton = document.createElement('button');
+        addPlayerButton.innerText = 'Add player';
+        addPlayerButton.addEventListener('click', () => this.handleAddPlayerClick());
         optionsBar.appendChild(addPlayerButton);
 
         document.body.appendChild(optionsBar);
-        this.adjustScrollableHeight("calc(100vh - 208px)");
+        this.adjustScrollableHeight('calc(100vh - 208px)');
     }
 
     async handleAddPlayerClick() {
-        await this.fetchData(`/match/api/player_designation/`, {
+        await this.fetchData('/match/api/player_designation/', {
             players: this.selectedPlayersAdd,
             new_group_id: this.typeIdToGroupId[this.reserveId]
         });
@@ -604,7 +602,7 @@ class PlayerGroupManager {
     updateOptionsBarAddPlayers() {
         if (this.selectedPlayersAdd.length === 0) {
             this.removeOptionsBar();
-        } else if (!document.getElementById("options-bar")) {
+        } else if (!document.getElementById('options-bar')) {
             this.addPlayerOptionMenu();
         }
     }
@@ -621,7 +619,7 @@ class PlayerGroupManager {
         this.doneButton.removeEventListener('click', this.boundsetupPlayerGroups);
         this.doneButton.addEventListener('click', this.boundLinkBack);
     }
-    
+
     // Function for second page (Fetch Players Groups Data)
     fetchPlayersGroupsDataHandler() {
         this.removeOptionsBar();
@@ -633,7 +631,7 @@ class PlayerGroupManager {
 }
 
 // Instantiate and initialize the class after DOM content is loaded
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const playerGroupManager = new PlayerGroupManager();
 
     playerGroupManager.initialize();

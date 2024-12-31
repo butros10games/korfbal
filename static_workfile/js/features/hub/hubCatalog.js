@@ -12,7 +12,7 @@ let teamsContainer;
 
 let csrfToken;
 
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener('DOMContentLoaded', () => {
     teamsContainer = document.querySelector('.teams-container');
     csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
 
@@ -21,13 +21,13 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 function loadIcon() {
-    teamsContainer.classList.add("flex-center");
+    teamsContainer.classList.add('flex-center');
     teamsContainer.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom() {
-    teamsContainer.innerHTML = "";
-    teamsContainer.classList.remove("flex-center", "flex-start-wrap");
+    teamsContainer.innerHTML = '';
+    teamsContainer.classList.remove('flex-center', 'flex-start-wrap');
 }
 
 function setupTypeSelection() {

@@ -46,7 +46,7 @@ export const setupCarousel = function(
 
     // setup nav buttons
     buttons.forEach((button, _) => {
-        button.addEventListener("click", () => {
+        button.addEventListener('click', () => {
             isAutoScrolling = handleButtonClick(
                 socket, isAutoScrolling, button, buttons, extraData, statsName
             );

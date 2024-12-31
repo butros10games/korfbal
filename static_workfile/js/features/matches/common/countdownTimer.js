@@ -6,11 +6,11 @@ export class CountdownTimer {
         showEndHalfButton = false,
     ) {
         this.lengthInMilliseconds = lengthInMilliseconds;
-        
+
         this.startTime = new Date(startTimeISO);
         this.totalLength = lengthInMilliseconds + offsetInMilliseconds; // Include the offset
         this.endTime = new Date(this.startTime.getTime() + this.totalLength);
-        
+
         this.offset = offsetInMilliseconds;
         this.pauseTimeISO = pauseTimeISO;
         this.interval = null;
@@ -23,23 +23,23 @@ export class CountdownTimer {
     updateDisplay() {
         this.now = this.pauseTimeISO ? new Date(this.pauseTimeISO) : new Date();
         const timeLeft = this.totalLength - (this.now - this.startTime);
-    
+
         const sign = timeLeft < 0 ? '-' : '';
         const absTime = Math.abs(timeLeft);
-    
+
         const minutes = Math.floor(absTime / 60000);
         const seconds = Math.floor((absTime % 60000) / 1000);
-    
+
         // Update the counter display on the website
         document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
+
         // Conditionally display the "end-half-button"
         if (this.showEndHalfButton) {
-            const endHalfButton = document.getElementById("end-half-button");
-            if (minutes < 1 || sign === "-") {
-                endHalfButton.style.display = "block";
-            } else if (minutes > 1 && endHalfButton.style.display === "block") {
-                endHalfButton.style.display = "none";
+            const endHalfButton = document.getElementById('end-half-button');
+            if (minutes < 1 || sign === '-') {
+                endHalfButton.style.display = 'block';
+            } else if (minutes > 1 && endHalfButton.style.display === 'block') {
+                endHalfButton.style.display = 'none';
             }
         }
     }

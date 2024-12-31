@@ -1,4 +1,4 @@
-import { uploadImage } from "./utils";
+import { uploadImage } from './utils';
 
 export const setupProfilePicture = function(csrfToken) {
     const imageModal = document.getElementById('imageModal');
@@ -8,18 +8,18 @@ export const setupProfilePicture = function(csrfToken) {
     const fileInput = document.getElementById('profilePicInput');
     const imagePreview = document.getElementById('imagePreview');
     if (fileInput) {
-        fileInput.addEventListener('change', async function() {
+        fileInput.addEventListener('change', async () => {
             const file = fileInput.files[0];
             if (file) {
                 let blob = file;
-        
+
                 // Check if the file is a HEIC file
                 if (file.name.toLowerCase().endsWith('.heic')) {
                     try {
                         // Convert HEIC to JPEG
                         blob = await heic2any({
                             blob: file,
-                            toType: "image/jpeg",
+                            toType: 'image/jpeg',
                             quality: 0.7 // Adjust quality as needed
                         });
                     } catch (error) {
@@ -27,7 +27,7 @@ export const setupProfilePicture = function(csrfToken) {
                         return;
                     }
                 }
-        
+
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     imagePreview.src = e.target.result;
@@ -40,7 +40,7 @@ export const setupProfilePicture = function(csrfToken) {
 
     // Close modal when the close button is clicked
     if (closeModalButton) {
-        closeModalButton.addEventListener('click', function() {
+        closeModalButton.addEventListener('click', () => {
             imageModal.style.display = 'none'; // Hide the modal
         });
     }
@@ -48,16 +48,16 @@ export const setupProfilePicture = function(csrfToken) {
     // Add event listener for save button
     const saveButton = document.getElementById('saveProfilePic');
     if (saveButton) {
-        saveButton.addEventListener('click', function() {
+        saveButton.addEventListener('click', () => {
             const file = fileInput.files[0];
             if (file) {
                 const blob = file;
-        
+
                 // Convert HEIC to JPEG before upload if necessary
                 if (file.name.toLowerCase().endsWith('.heic')) {
                     heic2any({
                         blob: file,
-                        toType: "image/jpeg",
+                        toType: 'image/jpeg',
                         quality: 0.7
                     })
                         .then(convertedBlob => {

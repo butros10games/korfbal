@@ -14,7 +14,7 @@ export default [
             "eqeqeq": ["error"],
             "indent": ["error", 4, { "SwitchCase": 1 }],
             "key-spacing": ["error", { "beforeColon": false, "afterColon": true }],
-            "linebreak-style": ["error", "unix"],
+            "linebreak-style": ["off"],
             "new-cap": ["off", { "newIsCap": true, "capIsNew": true }],
             "no-alert": ["off"],
             "no-console": "warn",

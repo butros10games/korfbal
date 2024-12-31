@@ -10,7 +10,7 @@ export const initializeSocket = function(url, onMessageReceived) {
         socket = new WebSocket(url);
 
         socket.onopen = function() {
-            console.log("Connection established!");
+            console.log('Connection established!');
         };
 
         socket.onmessage = onMessageReceived;

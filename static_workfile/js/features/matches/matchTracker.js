@@ -1,12 +1,12 @@
-import { CountdownTimer } from "./common/index.js";
-import { truncateMiddle } from "../common/utils";
-import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from "../common/carousel/events_utils";
-import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from "../common/swipeDelete";
-import { updatePlayerGroups } from "../common/carousel";
-import { initializeSocket } from "../common/websockets/index.js";
-import { scoringButtonSetup } from "../common/scoring_button/index.js";
+import { CountdownTimer } from './common/index.js';
+import { truncateMiddle } from '../common/utils';
+import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from '../common/carousel/events_utils';
+import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../common/swipeDelete';
+import { updatePlayerGroups } from '../common/carousel';
+import { initializeSocket } from '../common/websockets/index.js';
+import { scoringButtonSetup } from '../common/scoring_button/index.js';
 import { sharedData } from './sharedData.js';
-import { shotButtonReg } from "../common/scoring_button/utils/index.js";
+import { shotButtonReg } from '../common/scoring_button/utils/index.js';
 
 let firstUUID;
 let secondUUID;
@@ -19,9 +19,9 @@ let timer = null;
 
 let playerSwitchData;
 
-window.addEventListener("DOMContentLoaded", function() {
-    const eventsDiv = document.getElementById("match-event");
-    playersDiv = document.getElementById("players");
+window.addEventListener('DOMContentLoaded', () => {
+    const eventsDiv = document.getElementById('match-event');
+    playersDiv = document.getElementById('players');
 
     const matches = url.match(regex);
 
@@ -30,10 +30,10 @@ window.addEventListener("DOMContentLoaded", function() {
     if (matches && matches.length >= 2) {
         firstUUID = matches[0];
         secondUUID = matches[1];
-        console.log("First UUID:", firstUUID);
-        console.log("Second UUID:", secondUUID);
+        console.log('First UUID:', firstUUID);
+        console.log('Second UUID:', secondUUID);
     } else {
-        console.log("Not enough UUIDs found in the URL.");
+        console.log('Not enough UUIDs found in the URL.');
     }
 
     const WebSocketUrl = `wss://"${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
@@ -43,14 +43,14 @@ window.addEventListener("DOMContentLoaded", function() {
 
     if (socket) {
         socket.onopen = function() {
-            console.log("WebSocket connection established, sending initial data...");
+            console.log('WebSocket connection established, sending initial data...');
             requestInitalData(socket);
         };
     };
 
     load_icon_small(eventsDiv);
     load_icon(playersDiv);
-    
+
     initializeButtons(socket);
     scoringButtonSetup(socket);
     startStopButtonSetup(socket);
@@ -60,32 +60,32 @@ window.addEventListener("DOMContentLoaded", function() {
 });
 
 function initializeButtons(socket) {
-    const buttons = document.getElementsByClassName("button");
+    const buttons = document.getElementsByClassName('button');
     for (const element of buttons) {
-        element.addEventListener("click", () => {
+        element.addEventListener('click', () => {
             const data = {
-                "command": "event",
-                "event": element.id,
+                'command': 'event',
+                'event': element.id,
             };
             socket.send(JSON.stringify(data));
         });
     }
 
-    const endHalfButton = document.getElementById("end-half-button");
-    endHalfButton.addEventListener("click", () => {
+    const endHalfButton = document.getElementById('end-half-button');
+    endHalfButton.addEventListener('click', () => {
         const data = {
-            "command": "part_end",
+            'command': 'part_end',
         };
         socket.send(JSON.stringify(data));
     });
 }
 
 function startStopButtonSetup(socket) {
-    const startStopButton = document.getElementById("start-stop-button");
+    const startStopButton = document.getElementById('start-stop-button');
 
-    startStopButton.addEventListener("click", function() {
+    startStopButton.addEventListener('click', () => {
         const data = {
-            "command": "start/pause",
+            'command': 'start/pause',
         };
 
         socket.send(JSON.stringify(data));
@@ -108,7 +108,7 @@ function requestInitalData(socket) {
 
 function onMessageReceived(event, socket, eventsDiv) {
     const data = JSON.parse(event.data);
-    const startStopButton = document.getElementById("start-stop-button");
+    const startStopButton = document.getElementById('start-stop-button');
 
     if (data.error) {
         errorProcessing(data);
@@ -116,57 +116,57 @@ function onMessageReceived(event, socket, eventsDiv) {
     }
 
     switch(data.command) {
-        case "last_event": {
+        case 'last_event': {
             lastEvent(data, eventsDiv);
             break;
         }
-        
-        case "playerGroups": {
+
+        case 'playerGroups': {
             playerGroups(data, socket, eventsDiv);
             break;
         }
 
-        case "player_shot_change": {
+        case 'player_shot_change': {
             updatePlayerShot(data);
             break;
         }
 
-        case "goal_types": {
+        case 'goal_types': {
             showGoalTypes(data, socket);
             break;
         }
 
-        case "timer_data": {
+        case 'timer_data': {
             timerData(data, startStopButton);
             break;
         }
 
-        case "pause": {
+        case 'pause': {
             pauseTimer(data, startStopButton);
             break;
         }
 
-        case "team_goal_change": {
+        case 'team_goal_change': {
             teamGoalChangeFunction(data);
             break;
         }
 
-        case "non_active_players": {
+        case 'non_active_players': {
             showReservePlayer(data, socket);
             break;
         }
 
-        case "player_change": {
+        case 'player_change': {
             playerChange(data, socket);
             break;
         }
 
-        case "part_end": {
+        case 'part_end': {
             partEnd(data, startStopButton);
             break;
         }
 
-        case "match_end": {
+        case 'match_end': {
             matchEnd(data, startStopButton);
             break;
         }
@@ -174,22 +174,22 @@ function onMessageReceived(event, socket, eventsDiv) {
 }
 
 function errorProcessing(data) {
-    if (data.error === "match is paused") {
+    if (data.error === 'match is paused') {
         // give a notification like popup that the match is paused
-        const overlay = document.createElement("div");
-        overlay.id = "overlay";
-        overlay.classList.add("overlay");
-        
-        const popupElements = createPopup("De wedstrijd is gepauzeerd.");
+        const overlay = document.createElement('div');
+        overlay.id = 'overlay';
+        overlay.classList.add('overlay');
+
+        const popupElements = createPopup('De wedstrijd is gepauzeerd.');
         const popup = popupElements[0];
         const popupButton = popupElements[1];
 
-        popupButton.addEventListener("click", function() {
+        popupButton.addEventListener('click', () => {
             // Remove the popup and overlay when the close button is clicked
             overlay.remove();
 
             // remove the scroll lock
-            document.body.style.overflow = "";
+            document.body.style.overflow = '';
         });
 
         popup.appendChild(popupButton);
@@ -201,14 +201,14 @@ function errorProcessing(data) {
         document.body.appendChild(overlay);
 
         // Disable scrolling on the body while the overlay is open
-        document.body.style.overflow = "hidden";
+        document.body.style.overflow = 'hidden';
     }
 }
 
 function lastEvent(data, eventsDiv) {
     cleanDom(eventsDiv);
     resetSwipe();
-    
+
     updateEvent(data);
 }
 
@@ -219,8 +219,8 @@ function playerGroups(data, socket, eventsDiv) {
     if (data.match_active) {
         showPlayerGroups(data, socket);
 
-        shotButtonReg("home", socket);
-        shotButtonReg("away", socket);
+        shotButtonReg('home', socket);
+        shotButtonReg('away', socket);
     } else {
         updatePlayerGroups(data, playersDiv, socket); // imported from matches/common/updatePlayerGroups.js
     }
@@ -233,46 +233,46 @@ function timerData(data, startStopButton) {
         timer = null;
     }
 
-    if (data.type === "active") {
+    if (data.type === 'active') {
         timer = new CountdownTimer(
             data.time, data.length * 1000, null, data.pause_length * 1000, true
         );
         timer.start();
 
         // set the pause button to pause
-        startStopButton.innerHTML = "Pause";
+        startStopButton.innerHTML = 'Pause';
 
-    } else if (data.type === "pause") {
+    } else if (data.type === 'pause') {
         timer = new CountdownTimer(
             data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true
         );
         timer.stop();
 
         // set the pause button to start
-        startStopButton.innerHTML = "Start";
+        startStopButton.innerHTML = 'Start';
 
-    } else if (data.type === "start") {
+    } else if (data.type === 'start') {
         timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
         timer.start();
 
-        startStopButton.innerHTML = "Pause";
+        startStopButton.innerHTML = 'Pause';
     }
 }
 
 function pauseTimer(data, startStopButton) {
     if (data.pause === true) {
         timer.stop();
-        console.log("Timer paused");
+        console.log('Timer paused');
 
         // set the pause button to start
-        startStopButton.innerHTML = "Start";
+        startStopButton.innerHTML = 'Start';
 
     } else if (data.pause === false) {
         timer.start(data.pause_time);
-        console.log("Timer resumed");
+        console.log('Timer resumed');
 
         // set the pause button to pause
-        startStopButton.innerHTML = "Pause";
+        startStopButton.innerHTML = 'Pause';
     }
 }
 
@@ -280,20 +280,20 @@ function teamGoalChangeFunction(data) {
     teamGoalChange(data);
 
     // remove overlay
-    const overlay = document.getElementById("overlay");
+    const overlay = document.getElementById('overlay');
     if (overlay) {
         overlay.remove();
     }
 
     // remove the collor change from the buttons
-    const activatedButton = document.querySelector(".activated");
+    const activatedButton = document.querySelector('.activated');
     if (activatedButton) {
         activatedButton.click();
     }
 }
 
 function partEnd(data, startStopButton) {
-    const periode_p = document.getElementById("periode_number");
+    const periode_p = document.getElementById('periode_number');
     periode_p.innerHTML = data.part;
 
     // reset the timer
@@ -302,20 +302,20 @@ function partEnd(data, startStopButton) {
     // destroy the timer
     timer = null;
 
-    const timer_p = document.getElementById("counter");
-    
+    const timer_p = document.getElementById('counter');
+
     // convert seconds to minutes and seconds
     const minutes = data.part_length / 60;
     const seconds = data.part_length % 60;
-    
-    timer_p.innerHTML = minutes + ":" + seconds.toString().padStart(2, '0');
+
+    timer_p.innerHTML = minutes + ':' + seconds.toString().padStart(2, '0');
 
     // hide the end half button
-    const endHalfButton = document.getElementById("end-half-button");
-    endHalfButton.style.display = "none";
+    const endHalfButton = document.getElementById('end-half-button');
+    endHalfButton.style.display = 'none';
 
     // change the start/pause button to start
-    startStopButton.innerHTML = "start";
+    startStopButton.innerHTML = 'start';
 }
 
 function matchEnd(data, startStopButton) {
@@ -326,26 +326,26 @@ function matchEnd(data, startStopButton) {
     }
 
     // set the pause button to start
-    startStopButton.innerHTML = "match ended";
+    startStopButton.innerHTML = 'match ended';
 
     // add a overlay with the match end and a button when pressed it goes back to the match detail page
-    const overlay_ended = document.createElement("div");
-    overlay_ended.id = "overlay";
-    overlay_ended.classList.add("overlay");
+    const overlay_ended = document.createElement('div');
+    overlay_ended.id = 'overlay';
+    overlay_ended.classList.add('overlay');
 
-    const popupElements = createPopup("De wedstrijd is afgelopen.");
+    const popupElements = createPopup('De wedstrijd is afgelopen.');
     const popup = popupElements[0];
     const popupButton = popupElements[1];
 
-    popupButton.addEventListener("click", function() {
+    popupButton.addEventListener('click', () => {
         // Remove the popup and overlay when the close button is clicked
         overlay_ended.remove();
 
         // remove the scroll lock
-        document.body.style.overflow = "";
+        document.body.style.overflow = '';
 
         // go back to the match detail page
-        window.location.href = "/match/" + data.match_id + "/";
+        window.location.href = '/match/' + data.match_id + '/';
     });
 
     popup.appendChild(popupButton);
@@ -357,56 +357,56 @@ function matchEnd(data, startStopButton) {
     document.body.appendChild(overlay_ended);
 
     // Disable scrolling on the body while the overlay is open
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
 }
 
 function createPopup(popupTextData) {
     // Create the popup container
-    const popup = document.createElement("div");
-    popup.classList.add("popup");
+    const popup = document.createElement('div');
+    popup.classList.add('popup');
 
-    const popupText = document.createElement("p");
+    const popupText = document.createElement('p');
     popupText.innerHTML = popupTextData;
-    popupText.style.margin = "0";
-    popupText.style.fontSize = "20px";
-    popupText.style.fontWeight = "600";
-    popupText.style.marginBottom = "12px";
+    popupText.style.margin = '0';
+    popupText.style.fontSize = '20px';
+    popupText.style.fontWeight = '600';
+    popupText.style.marginBottom = '12px';
 
     popup.appendChild(popupText);
 
-    const popupButton = document.createElement("button");
-    popupButton.classList.add("button");
-    popupButton.innerHTML = "OK";
-    popupButton.style.margin = "0";
-    popupButton.style.width = "100%";
-    popupButton.style.height = "42px";
-    popupButton.style.fontSize = "16px";
-    popupButton.style.fontWeight = "600";
-    popupButton.style.marginBottom = "12px";
-    popupButton.style.background = "var(--button-color)";
-    popupButton.style.color = "var(--text-color)";
-    popupButton.style.border = "none";
-    popupButton.style.borderRadius = "4px";
-    popupButton.style.cursor = "pointer";
-    popupButton.style.userSelect = "none";
+    const popupButton = document.createElement('button');
+    popupButton.classList.add('button');
+    popupButton.innerHTML = 'OK';
+    popupButton.style.margin = '0';
+    popupButton.style.width = '100%';
+    popupButton.style.height = '42px';
+    popupButton.style.fontSize = '16px';
+    popupButton.style.fontWeight = '600';
+    popupButton.style.marginBottom = '12px';
+    popupButton.style.background = 'var(--button-color)';
+    popupButton.style.color = 'var(--text-color)';
+    popupButton.style.border = 'none';
+    popupButton.style.borderRadius = '4px';
+    popupButton.style.cursor = 'pointer';
+    popupButton.style.userSelect = 'none';
 
     return [popup, popupButton];
 }
 
 function load_icon(element) {
-    element.classList.add("flex-center");
+    element.classList.add('flex-center');
     element.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function load_icon_small(element) {
-    element.classList.add("flex-center");
+    element.classList.add('flex-center');
     element.innerHTML = "<div id='load_icon' class='small-lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom(element) {
-    element.innerHTML = "";
-    element.classList.remove("flex-center");
-    element.classList.remove("flex-start-wrap");
+    element.innerHTML = '';
+    element.classList.remove('flex-center');
+    element.classList.remove('flex-start-wrap');
 }
 
 function playerChange(data, socket) {
@@ -414,11 +414,11 @@ function playerChange(data, socket) {
     const playerButtonData = document.getElementById(data.player_out_id);
 
     playerButtonData.id = data.player_in_id;
-    playerButtonData.querySelector("p").innerHTML = data.player_in;
-    
+    playerButtonData.querySelector('p').innerHTML = data.player_in;
+
     // change the player shot registration points
-    const shots_for = playerButtonData.querySelector("#shots-for");
-    const shots_against = playerButtonData.querySelector("#shots-against");
+    const shots_for = playerButtonData.querySelector('#shots-for');
+    const shots_against = playerButtonData.querySelector('#shots-against');
 
     shots_for.innerHTML = data.player_in_shots_for;
     shots_against.innerHTML = data.player_in_shots_against;
@@ -426,16 +426,16 @@ function playerChange(data, socket) {
     playerSwitch(socket);
 
     // remove the overlay
-    const overlay = document.getElementById("overlay");
+    const overlay = document.getElementById('overlay');
     overlay.remove();
 }
 
 function teamGoalChange(data) {
-    const first_team = document.getElementById("home-score");
-    const firstTeamP = first_team.querySelector("p");
+    const first_team = document.getElementById('home-score');
+    const firstTeamP = first_team.querySelector('p');
 
-    const second_team = document.getElementById("away-score");
-    const secondTeamP = second_team.querySelector("p");
+    const second_team = document.getElementById('away-score');
+    const secondTeamP = second_team.querySelector('p');
 
     firstTeamP.innerHTML = data.goals_for;
     secondTeamP.innerHTML = data.goals_against;
@@ -443,35 +443,35 @@ function teamGoalChange(data) {
 
 function showGoalTypes(data, socket) {
     // Create the overlay container
-    const overlay = document.createElement("div");
-    overlay.id = "overlay";
-    overlay.classList.add("overlay");
-    
+    const overlay = document.createElement('div');
+    overlay.id = 'overlay';
+    overlay.classList.add('overlay');
+
     // Create the popup container
-    const popup = document.createElement("div");
-    popup.classList.add("popup");
-    
+    const popup = document.createElement('div');
+    popup.classList.add('popup');
+
     // Create the content for the popup
-    const goalTypesContainer = document.createElement("div");
-    goalTypesContainer.classList.add("goal-types-container");
-    goalTypesContainer.style.display = "flex";
-    goalTypesContainer.style.flexWrap = "wrap"; // Add this line to wrap the buttons to a second line
+    const goalTypesContainer = document.createElement('div');
+    goalTypesContainer.classList.add('goal-types-container');
+    goalTypesContainer.style.display = 'flex';
+    goalTypesContainer.style.flexWrap = 'wrap'; // Add this line to wrap the buttons to a second line
 
-    const TopLineContainer = document.createElement("div");
-    TopLineContainer.classList.add("flex-row");
-    TopLineContainer.style.marginBottom = "12px";
+    const TopLineContainer = document.createElement('div');
+    TopLineContainer.classList.add('flex-row');
+    TopLineContainer.style.marginBottom = '12px';
 
-    const goalTypesTitle = document.createElement("p");
-    goalTypesTitle.innerHTML = "Doelpunt type";
-    goalTypesTitle.style.margin = "0";
+    const goalTypesTitle = document.createElement('p');
+    goalTypesTitle.innerHTML = 'Doelpunt type';
+    goalTypesTitle.style.margin = '0';
 
     TopLineContainer.appendChild(goalTypesTitle);
 
     // Create a close button for the popup
-    const closeButton = document.createElement("button");
-    closeButton.classList.add("close-button");
-    closeButton.innerHTML = "Close";
-    closeButton.addEventListener("click", function() {
+    const closeButton = document.createElement('button');
+    closeButton.classList.add('close-button');
+    closeButton.innerHTML = 'Close';
+    closeButton.addEventListener('click', () => {
         // Remove the popup and overlay when the close button is clicked
         overlay.remove();
     });
@@ -481,39 +481,39 @@ function showGoalTypes(data, socket) {
     goalTypesContainer.appendChild(TopLineContainer);
 
     for (const goalType of data.goal_types) {
-        const goalTypeDiv = document.createElement("div");
-        goalTypeDiv.classList.add("goal-type");
-        goalTypeDiv.classList.add("flex-center");
-        goalTypeDiv.style.flexGrow = "1";
-        goalTypeDiv.style.flexBasis = "calc(50% - 32px)"; 
-        goalTypeDiv.style.textAlign = "center";
-        goalTypeDiv.style.margin = "0 12px 6px 12px";
-        goalTypeDiv.style.width = "calc(100% - 12px)";
+        const goalTypeDiv = document.createElement('div');
+        goalTypeDiv.classList.add('goal-type');
+        goalTypeDiv.classList.add('flex-center');
+        goalTypeDiv.style.flexGrow = '1';
+        goalTypeDiv.style.flexBasis = 'calc(50% - 32px)';
+        goalTypeDiv.style.textAlign = 'center';
+        goalTypeDiv.style.margin = '0 12px 6px 12px';
+        goalTypeDiv.style.width = 'calc(100% - 12px)';
         goalTypeDiv.style.background = goalType.color;
 
-        const goalTypeTitle = document.createElement("p");
-        goalTypeTitle.classList.add("flex-center");
+        const goalTypeTitle = document.createElement('p');
+        goalTypeTitle.classList.add('flex-center');
         goalTypeTitle.innerHTML = truncateMiddle(goalType.name, 16);
-        goalTypeTitle.style.margin = "0";
-        goalTypeTitle.style.fontSize = "16px";
-        goalTypeTitle.style.background = "var(--button-color)";
-        goalTypeTitle.style.color = "var(--text-color)";
-        goalTypeTitle.style.padding = "6px";
-        goalTypeTitle.style.borderRadius = "4px";
-        goalTypeTitle.style.width = "100%";
-        goalTypeTitle.style.height = "42px";
-        goalTypeTitle.style.cursor = "pointer";
-        goalTypeTitle.style.userSelect = "none";
+        goalTypeTitle.style.margin = '0';
+        goalTypeTitle.style.fontSize = '16px';
+        goalTypeTitle.style.background = 'var(--button-color)';
+        goalTypeTitle.style.color = 'var(--text-color)';
+        goalTypeTitle.style.padding = '6px';
+        goalTypeTitle.style.borderRadius = '4px';
+        goalTypeTitle.style.width = '100%';
+        goalTypeTitle.style.height = '42px';
+        goalTypeTitle.style.cursor = 'pointer';
+        goalTypeTitle.style.userSelect = 'none';
 
-        goalTypeDiv.addEventListener("click", function() {
+        goalTypeDiv.addEventListener('click', () => {
             const last_goal_Data = sharedData.last_goal_Data;
 
             const data_send = {
-                "command": "goal_reg",
-                "goal_type": goalType.id,
-                "player_id": last_goal_Data.player_id,
-                "time": last_goal_Data.time,
-                "for_team": last_goal_Data.for_team,
+                'command': 'goal_reg',
+                'goal_type': goalType.id,
+                'player_id': last_goal_Data.player_id,
+                'time': last_goal_Data.time,
+                'for_team': last_goal_Data.for_team,
             };
 
             socket.send(JSON.stringify(data_send));
@@ -526,48 +526,48 @@ function showGoalTypes(data, socket) {
 
     // Append the close button and goalTypesContainer to the popup
     popup.appendChild(goalTypesContainer);
-    
+
     // Append the popup to the overlay
     overlay.appendChild(popup);
-    
+
     // Append the overlay to the body to cover the entire screen
     document.body.appendChild(overlay);
-    
+
     // Disable scrolling on the body while the overlay is open
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
 }
 
 function showReservePlayer(data, socket) {
     // Create the overlay container
-    const overlay = document.createElement("div");
-    overlay.id = "overlay";
-    overlay.classList.add("overlay");
-    
+    const overlay = document.createElement('div');
+    overlay.id = 'overlay';
+    overlay.classList.add('overlay');
+
     // Create the popup container
-    const popup = document.createElement("div");
-    popup.classList.add("popup");
-    
+    const popup = document.createElement('div');
+    popup.classList.add('popup');
+
     // Create the content for the popup
-    const PlayersContainer = document.createElement("div");
-    PlayersContainer.classList.add("goal-types-container");
-    PlayersContainer.style.display = "flex";
-    PlayersContainer.style.flexWrap = "wrap"; // Add this line to wrap the buttons to a second line
+    const PlayersContainer = document.createElement('div');
+    PlayersContainer.classList.add('goal-types-container');
+    PlayersContainer.style.display = 'flex';
+    PlayersContainer.style.flexWrap = 'wrap'; // Add this line to wrap the buttons to a second line
 
-    const TopLineContainer = document.createElement("div");
-    TopLineContainer.classList.add("flex-row");
-    TopLineContainer.style.marginBottom = "12px";
+    const TopLineContainer = document.createElement('div');
+    TopLineContainer.classList.add('flex-row');
+    TopLineContainer.style.marginBottom = '12px';
 
-    const PlayersTitle = document.createElement("p");
-    PlayersTitle.innerHTML = "Doelpunt type";
-    PlayersTitle.style.margin = "0";
+    const PlayersTitle = document.createElement('p');
+    PlayersTitle.innerHTML = 'Doelpunt type';
+    PlayersTitle.style.margin = '0';
 
     TopLineContainer.appendChild(PlayersTitle);
 
     // Create a close button for the popup
-    const closeButton = document.createElement("button");
-    closeButton.classList.add("close-button");
-    closeButton.innerHTML = "Close";
-    closeButton.addEventListener("click", function() {
+    const closeButton = document.createElement('button');
+    closeButton.classList.add('close-button');
+    closeButton.innerHTML = 'Close';
+    closeButton.addEventListener('click', () => {
         // Remove the popup and overlay when the close button is clicked
         overlay.remove();
     });
@@ -577,36 +577,36 @@ function showReservePlayer(data, socket) {
     PlayersContainer.appendChild(TopLineContainer);
 
     for (const Player of data.players) {
-        const PlayerDiv = document.createElement("div");
-        PlayerDiv.classList.add("goal-type");
-        PlayerDiv.classList.add("flex-center");
-        PlayerDiv.style.flexGrow = "1";
-        PlayerDiv.style.flexBasis = "calc(50% - 32px)"; 
-        PlayerDiv.style.textAlign = "center";
-        PlayerDiv.style.margin = "0 12px 6px 12px";
-        PlayerDiv.style.width = "calc(100% - 12px)";
+        const PlayerDiv = document.createElement('div');
+        PlayerDiv.classList.add('goal-type');
+        PlayerDiv.classList.add('flex-center');
+        PlayerDiv.style.flexGrow = '1';
+        PlayerDiv.style.flexBasis = 'calc(50% - 32px)';
+        PlayerDiv.style.textAlign = 'center';
+        PlayerDiv.style.margin = '0 12px 6px 12px';
+        PlayerDiv.style.width = 'calc(100% - 12px)';
         PlayerDiv.style.background = Player.color;
 
-        const PlayerTitle = document.createElement("p");
-        PlayerTitle.classList.add("flex-center");
+        const PlayerTitle = document.createElement('p');
+        PlayerTitle.classList.add('flex-center');
         PlayerTitle.innerHTML = truncateMiddle(Player.name, 16);
-        PlayerTitle.style.margin = "0";
-        PlayerTitle.style.fontSize = "16px";
-        PlayerTitle.style.background = "var(--button-color)";
-        PlayerTitle.style.color = "var(--text-color)";
-        PlayerTitle.style.padding = "6px";
-        PlayerTitle.style.borderRadius = "4px";
-        PlayerTitle.style.width = "100%";
-        PlayerTitle.style.height = "42px";
-        PlayerTitle.style.cursor = "pointer";
-        PlayerTitle.style.userSelect = "none";
+        PlayerTitle.style.margin = '0';
+        PlayerTitle.style.fontSize = '16px';
+        PlayerTitle.style.background = 'var(--button-color)';
+        PlayerTitle.style.color = 'var(--text-color)';
+        PlayerTitle.style.padding = '6px';
+        PlayerTitle.style.borderRadius = '4px';
+        PlayerTitle.style.width = '100%';
+        PlayerTitle.style.height = '42px';
+        PlayerTitle.style.cursor = 'pointer';
+        PlayerTitle.style.userSelect = 'none';
 
-        PlayerDiv.addEventListener("click", function() {
+        PlayerDiv.addEventListener('click', () => {
             const data_send = {
-                "command": "wissel_reg",
-                "new_player_id": Player.id,
-                "old_player_id": playerSwitchData.player_id,
-                "time": playerSwitchData.time,
+                'command': 'wissel_reg',
+                'new_player_id': Player.id,
+                'old_player_id': playerSwitchData.player_id,
+                'time': playerSwitchData.time,
             };
 
             console.log(data_send);
@@ -621,108 +621,108 @@ function showReservePlayer(data, socket) {
 
     // Append the close button and PlayersContainer to the popup
     popup.appendChild(PlayersContainer);
-    
+
     // Append the popup to the overlay
     overlay.appendChild(popup);
-    
+
     // Append the overlay to the body to cover the entire screen
     document.body.appendChild(overlay);
-    
+
     // Disable scrolling on the body while the overlay is open
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
 }
 
 function updateEvent(data) {
     const event = data.last_event;
-    const eventsDiv = document.createElement("div");
-    eventsDiv.style.display = "flex";
+    const eventsDiv = document.createElement('div');
+    eventsDiv.style.display = 'flex';
     eventsDiv.style.justifyContent = 'space-between';
-    eventsDiv.style.width = "100%";
-    eventsDiv.style.height = "100%";
+    eventsDiv.style.width = '100%';
+    eventsDiv.style.height = '100%';
 
     switch (event.type) {
-        case "goal": {
-            const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
-            const midsectionDiv = createMidsectionDiv(event.shot_type + " (\"" + event.time + "\")", truncateMiddle(event.player, 20));
-            const scoreDiv = createScoreDiv(event.goals_for + "-" + event.goals_against, "84px");
+        case 'goal': {
+            const eventTypeDiv = createEventTypeDiv(event.type, '64px', event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
+            const midsectionDiv = createMidsectionDiv(event.shot_type + ' ("' + event.time + '")', truncateMiddle(event.player, 20));
+            const scoreDiv = createScoreDiv(event.goals_for + '-' + event.goals_against, '84px');
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
             eventsDiv.appendChild(scoreDiv);
             break;
         }
-        case "wissel": {
-            const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#eb9834');
-            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player_in, 15) + " --> " + truncateMiddle(event.player_out, 15));
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
+        case 'wissel': {
+            const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#eb9834');
+            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', truncateMiddle(event.player_in, 15) + ' --> ' + truncateMiddle(event.player_out, 15));
+            const endSectionDiv = document.createElement('div');
+            endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
             eventsDiv.appendChild(endSectionDiv);
             break;
         }
-        case "pause": {
-            const eventTypeDiv = createEventTypeDiv(event.type, "64px", '#2196F3');
-            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", getFormattedTime(event));
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
+        case 'pause': {
+            const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#2196F3');
+            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', getFormattedTime(event));
+            const endSectionDiv = document.createElement('div');
+            endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
             eventsDiv.appendChild(endSectionDiv);
             break;
         }
-        case "shot": {
-            const eventTypeDiv = createEventTypeDiv(event.type, "64px", event.for_team ? '#43ff644d' : '#eb00004d');
-            const midsectionDiv = createMidsectionDiv("(\"" + event.time + "\")", truncateMiddle(event.player, 20));
-            const endSectionDiv = document.createElement("div");
-            endSectionDiv.style.width = "84px"; // For spacing/alignment purposes
+        case 'shot': {
+            const eventTypeDiv = createEventTypeDiv(event.type, '64px', event.for_team ? '#43ff644d' : '#eb00004d');
+            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', truncateMiddle(event.player, 20));
+            const endSectionDiv = document.createElement('div');
+            endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
             eventsDiv.appendChild(endSectionDiv);
             break;
         }
-        case "no_event": {
-            const textElement = document.createElement("p");
-            textElement.classList.add("flex-center");
-            textElement.style.margin = "0";
-            textElement.style.height = "64px";
-            textElement.innerHTML = "Geen events gevonden.";
-            textElement.style.width = "100%";
+        case 'no_event': {
+            const textElement = document.createElement('p');
+            textElement.classList.add('flex-center');
+            textElement.style.margin = '0';
+            textElement.style.height = '64px';
+            textElement.innerHTML = 'Geen events gevonden.';
+            textElement.style.width = '100%';
 
             eventsDiv.appendChild(textElement);
             break;
         }
         default: {
-            console.warn("Unknown event type: ", event.type);
-            const defaultElement = document.createElement("p");
-            defaultElement.innerHTML = "Onbekend event type: " + event.type;
+            console.warn('Unknown event type: ', event.type);
+            const defaultElement = document.createElement('p');
+            defaultElement.innerHTML = 'Onbekend event type: ' + event.type;
             eventsDiv.appendChild(defaultElement);
             break;
         }
     }
 
     // Append eventsDiv to the container (assuming there's a container in the DOM to append it to)
-    const eventContainer = document.getElementById("match-event"); // Replace with the actual container ID
+    const eventContainer = document.getElementById('match-event'); // Replace with the actual container ID
     if (eventContainer) {
         eventContainer.appendChild(eventsDiv);
     } else {
-        console.error("Event container not found");
+        console.error('Event container not found');
     }
 }
 
 function updatePlayerShot(data) {
-    const playerGroupsElement = document.getElementsByClassName("player-group-players");
+    const playerGroupsElement = document.getElementsByClassName('player-group-players');
 
     for (const playerGroup of playerGroupsElement) {
         // Use attribute selector syntax
         const playerDiv = playerGroup.querySelector(`[id="${data.player_id}"]`);
 
         if (playerDiv) {
-            const shotsFor = playerDiv.querySelector("#shots-for");
-            const shotsAgainst = playerDiv.querySelector("#shots-against");
+            const shotsFor = playerDiv.querySelector('#shots-for');
+            const shotsAgainst = playerDiv.querySelector('#shots-against');
 
             shotsFor.innerHTML = data.shots_for;
             shotsAgainst.innerHTML = data.shots_against;
@@ -731,59 +731,59 @@ function updatePlayerShot(data) {
 }
 
 function showPlayerGroups(data, socket) {
-    const homeScoreButton = document.getElementById("home-score");
-    const awayScoreButton = document.getElementById("away-score");
+    const homeScoreButton = document.getElementById('home-score');
+    const awayScoreButton = document.getElementById('away-score');
 
     // remove the activated class from the buttons and remove the color
-    if (homeScoreButton.classList.contains("activated")) {
-        homeScoreButton.classList.remove("activated");
+    if (homeScoreButton.classList.contains('activated')) {
+        homeScoreButton.classList.remove('activated');
 
-        homeScoreButton.style.background = "#43ff6480";
+        homeScoreButton.style.background = '#43ff6480';
     }
 
-    if (awayScoreButton.classList.contains("activated")) {
-        awayScoreButton.classList.remove("activated");
+    if (awayScoreButton.classList.contains('activated')) {
+        awayScoreButton.classList.remove('activated');
 
-        awayScoreButton.style.background = "rgba(235, 0, 0, 0.5)";
+        awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
     }
 
     let switchButton = false;
     const playerGroupsData = data.playerGroups;
 
-    const playerGroupContainer = document.createElement("div");
-    playerGroupContainer.classList.add("player-group-container");
+    const playerGroupContainer = document.createElement('div');
+    playerGroupContainer.classList.add('player-group-container');
 
     if (playerGroupsData.length > 0) {
         playerGroupsData.forEach(playerGroup => {
-            const playerGroupDiv = document.createElement("div");
-            playerGroupDiv.classList.add("player-group");
-            playerGroupDiv.classList.add("flex-column");
-            playerGroupDiv.style.marginTop = "12px";
+            const playerGroupDiv = document.createElement('div');
+            playerGroupDiv.classList.add('player-group');
+            playerGroupDiv.classList.add('flex-column');
+            playerGroupDiv.style.marginTop = '12px';
 
-            const playerGroupTitleDiv = document.createElement("div");
-            playerGroupTitleDiv.classList.add("flex-row");
-            playerGroupTitleDiv.classList.add("player-group-title");
-            playerGroupTitleDiv.style.marginBottom = "6px";
-            playerGroupTitleDiv.style.margin = "0 12px 6px 12px";
-            playerGroupTitleDiv.style.width = "calc(100% - 24px)";
+            const playerGroupTitleDiv = document.createElement('div');
+            playerGroupTitleDiv.classList.add('flex-row');
+            playerGroupTitleDiv.classList.add('player-group-title');
+            playerGroupTitleDiv.style.marginBottom = '6px';
+            playerGroupTitleDiv.style.margin = '0 12px 6px 12px';
+            playerGroupTitleDiv.style.width = 'calc(100% - 24px)';
 
-            const playerGroupTitle = document.createElement("div");
-            playerGroupTitle.style.fontWeight = "600";
+            const playerGroupTitle = document.createElement('div');
+            playerGroupTitle.style.fontWeight = '600';
             playerGroupTitle.innerHTML = playerGroup.current_type;
             playerGroupTitle.id = playerGroup.id;
 
             playerGroupTitleDiv.appendChild(playerGroupTitle);
 
             if (!switchButton) {
-                const switchButtonDiv = document.createElement("div");
-                switchButtonDiv.innerHTML = "Wissel";
-                switchButtonDiv.id = "switch-button";
+                const switchButtonDiv = document.createElement('div');
+                switchButtonDiv.innerHTML = 'Wissel';
+                switchButtonDiv.id = 'switch-button';
 
-                switchButtonDiv.classList.add("switch-button");
-                switchButtonDiv.classList.add("flex-center");
-                switchButtonDiv.style.width = "96px";
+                switchButtonDiv.classList.add('switch-button');
+                switchButtonDiv.classList.add('flex-center');
+                switchButtonDiv.style.width = '96px';
 
-                switchButtonDiv.addEventListener("click", function() {
+                switchButtonDiv.addEventListener('click', () => {
                     playerSwitch(socket);
                 });
 
@@ -792,59 +792,59 @@ function showPlayerGroups(data, socket) {
                 switchButton = true;
             }
 
-            const playerGroupPlayers = document.createElement("div");
-            playerGroupPlayers.classList.add("player-group-players");
-            playerGroupPlayers.classList.add("flex-row");
-            playerGroupPlayers.style.flexWrap = "wrap";
+            const playerGroupPlayers = document.createElement('div');
+            playerGroupPlayers.classList.add('player-group-players');
+            playerGroupPlayers.classList.add('flex-row');
+            playerGroupPlayers.style.flexWrap = 'wrap';
             playerGroupPlayers.style.alignItems = 'stretch';
 
             playerGroupPlayers.id = playerGroup.current_type;
-        
+
             for (let i = 0; i < 4; i++) {
                 const player = playerGroup.players[i];
-        
-                const playerDiv = document.createElement("div");
-                playerDiv.classList.add("player-selector", "flex-center");
-                playerDiv.style.flexGrow = "1";
-                playerDiv.style.flexBasis = "calc(50% - 44px)"; 
-                playerDiv.style.padding = "0 6px";
-                playerDiv.style.textAlign = "center";
 
-                const playerName = document.createElement("p");
-                playerName.style.margin = "0";
-                playerName.style.fontSize = "16px";
+                const playerDiv = document.createElement('div');
+                playerDiv.classList.add('player-selector', 'flex-center');
+                playerDiv.style.flexGrow = '1';
+                playerDiv.style.flexBasis = 'calc(50% - 44px)';
+                playerDiv.style.padding = '0 6px';
+                playerDiv.style.textAlign = 'center';
 
-                const playerShots = document.createElement("div");
-                playerShots.classList.add("flex-column");
+                const playerName = document.createElement('p');
+                playerName.style.margin = '0';
+                playerName.style.fontSize = '16px';
 
-                const playerShotsfor = document.createElement("p");
-                playerShotsfor.id = "shots-for";
-                playerShotsfor.style.margin = "0";
-                playerShotsfor.style.fontSize = "16px";
-                playerShotsfor.style.marginBottom = "-10px";
+                const playerShots = document.createElement('div');
+                playerShots.classList.add('flex-column');
 
-                const playerShotsAgainst = document.createElement("p");
-                playerShotsAgainst.id = "shots-against";
-                playerShotsAgainst.style.margin = "0";
-                playerShotsAgainst.style.fontSize = "16px";
-                playerShotsAgainst.style.marginTop = "-10px";
+                const playerShotsfor = document.createElement('p');
+                playerShotsfor.id = 'shots-for';
+                playerShotsfor.style.margin = '0';
+                playerShotsfor.style.fontSize = '16px';
+                playerShotsfor.style.marginBottom = '-10px';
 
-                const playerShotsDivider = document.createElement("p");
-                playerShotsDivider.style.margin = "0";
-                playerShotsDivider.style.fontSize = "16px";
+                const playerShotsAgainst = document.createElement('p');
+                playerShotsAgainst.id = 'shots-against';
+                playerShotsAgainst.style.margin = '0';
+                playerShotsAgainst.style.fontSize = '16px';
+                playerShotsAgainst.style.marginTop = '-10px';
+
+                const playerShotsDivider = document.createElement('p');
+                playerShotsDivider.style.margin = '0';
+                playerShotsDivider.style.fontSize = '16px';
 
                 if (player) {
                     playerDiv.id = player.id;
-                    playerDiv.style.justifyContent = "space-between";
+                    playerDiv.style.justifyContent = 'space-between';
 
 
                     playerName.innerHTML = truncateMiddle(player.name, 16);
                     playerShotsfor.innerHTML = player.shots_for;
                     playerShotsAgainst.innerHTML = player.shots_against;
 
-                    playerShotsDivider.innerHTML = "-";
+                    playerShotsDivider.innerHTML = '-';
                 } else {
-                    playerName.innerHTML = "geen data";
+                    playerName.innerHTML = 'geen data';
                 }
 
                 playerShots.appendChild(playerShotsfor);
@@ -853,7 +853,7 @@ function showPlayerGroups(data, socket) {
 
                 playerDiv.appendChild(playerName);
                 playerDiv.appendChild(playerShots);
-        
+
                 playerGroupPlayers.appendChild(playerDiv);
             }
 
@@ -863,9 +863,9 @@ function showPlayerGroups(data, socket) {
             playerGroupContainer.appendChild(playerGroupDiv);
         });
     } else {
-        const textElement = document.createElement("p");
-        textElement.classList.add("flex-center");
-        textElement.innerHTML = "<p>Geen spelersgroepen gevonden.</p>";
+        const textElement = document.createElement('p');
+        textElement.classList.add('flex-center');
+        textElement.innerHTML = '<p>Geen spelersgroepen gevonden.</p>';
 
         playerGroupContainer.appendChild(textElement);
     }
@@ -874,66 +874,66 @@ function showPlayerGroups(data, socket) {
 }
 
 function playerSwitch(socket) {
-    const switchButton = document.getElementById("switch-button");
-    
-    if (switchButton.classList.contains("activated")) {
-        switchButton.classList.remove("activated");
-        switchButton.style.background = "";
+    const switchButton = document.getElementById('switch-button');
 
-        const playerButtons = document.getElementsByClassName("player-selector");
+    if (switchButton.classList.contains('activated')) {
+        switchButton.classList.remove('activated');
+        switchButton.style.background = '';
+
+        const playerButtons = document.getElementsByClassName('player-selector');
 
         Array.from(playerButtons).forEach(element => {
-            element.style.background = "";
+            element.style.background = '';
             if (element.playerClickHandler) {
-                element.removeEventListener("click", element.playerClickHandler);
+                element.removeEventListener('click', element.playerClickHandler);
                 delete element.playerClickHandler; // Properly remove handler reference
             }
         });
 
-        shotButtonReg("home", socket);
-        shotButtonReg("away", socket);
+        shotButtonReg('home', socket);
+        shotButtonReg('away', socket);
     } else {
-        switchButton.classList.add("activated");
-        switchButton.style.background = "#4169e152";
+        switchButton.classList.add('activated');
+        switchButton.style.background = '#4169e152';
 
-        const playerButtons = document.getElementsByClassName("player-selector");
+        const playerButtons = document.getElementsByClassName('player-selector');
 
         Array.from(playerButtons).forEach(element => {
-            const homeScoreButton = document.getElementById("home-score");
-            const awayScoreButton = document.getElementById("away-score");
+            const homeScoreButton = document.getElementById('home-score');
+            const awayScoreButton = document.getElementById('away-score');
 
-            if (homeScoreButton.classList.contains("activated")) {
-                homeScoreButton.classList.remove("activated");
-                homeScoreButton.style.background = "#43ff6480";
+            if (homeScoreButton.classList.contains('activated')) {
+                homeScoreButton.classList.remove('activated');
+                homeScoreButton.style.background = '#43ff6480';
             }
 
-            if (awayScoreButton.classList.contains("activated")) {
-                awayScoreButton.classList.remove("activated");
-                awayScoreButton.style.background = "rgba(235, 0, 0, 0.5)";
+            if (awayScoreButton.classList.contains('activated')) {
+                awayScoreButton.classList.remove('activated');
+                awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
             }
 
-            element.style.background = "#4169e152";
+            element.style.background = '#4169e152';
             if (element.playerClickHandler) {
-                element.removeEventListener("click", element.playerClickHandler);
+                element.removeEventListener('click', element.playerClickHandler);
                 delete element.playerClickHandler; // Properly remove handler reference
             }
 
             // Add new handler
             const playerClickHandler = function() {
                 playerSwitchData = {
-                    "player_id": element.id,
-                    "time": new Date().toISOString(),
+                    'player_id': element.id,
+                    'time': new Date().toISOString(),
                 };
 
                 const data = {
-                    "command": "get_non_active_players"
+                    'command': 'get_non_active_players'
                 };
 
                 socket.send(JSON.stringify(data));
             };
 
             element.playerClickHandler = playerClickHandler;
-            element.addEventListener("click", playerClickHandler);
+            element.addEventListener('click', playerClickHandler);
         });
     }
 }

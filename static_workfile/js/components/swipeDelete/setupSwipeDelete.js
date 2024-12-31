@@ -1,7 +1,7 @@
 export const setupSwipeDelete = function() {
     const matchEvent = document.getElementById('match-event-swipe');
     const swipeContent = document.getElementById('match-event');
-    swipeContent.style.transform = `translateX(0px)`;
+    swipeContent.style.transform = 'translateX(0px)';
     let startX, currentX, isSwiping = false;
 
     const onTouchStart = (e) => {

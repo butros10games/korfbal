@@ -1,2 +1,2 @@
-export { toggleButton } from "./toggleButton.js";
-export { shotButtonReg } from "./shotButtonReg.js";
+export { toggleButton } from './toggleButton.js';
+export { shotButtonReg } from './shotButtonReg.js';

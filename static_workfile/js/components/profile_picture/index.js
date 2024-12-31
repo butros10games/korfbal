@@ -1,1 +1,1 @@
-export { setupProfilePicture } from "./setupProfilePicture.js";
+export { setupProfilePicture } from './setupProfilePicture.js';

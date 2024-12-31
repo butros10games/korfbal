@@ -11,5 +11,5 @@ export const onPlayerSelectChange = function(changedSelect) {
     });
 
     // Show the save button
-    document.getElementById("saveButton").style.display = "block";
+    document.getElementById('saveButton').style.display = 'block';
 };
