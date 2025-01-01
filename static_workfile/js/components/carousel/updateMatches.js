@@ -1,7 +1,7 @@
 import { truncateMiddle } from '../utils';
 import { cleanDomCarousel } from './utils';
 
-export const updateMatches = function(data, maxLength, infoContainer) {
+export const updateMatches = function (data, maxLength, infoContainer) {
     cleanDomCarousel(infoContainer);
 
     if (data.wedstrijden.length > 0) {
@@ -42,7 +42,6 @@ export const updateMatches = function(data, maxLength, infoContainer) {
 
             match_container.appendChild(home_team_container);
 
-
             const match_date_container = document.createElement('div');
             match_date_container.classList.add('flex-column');
 
@@ -82,7 +81,6 @@ export const updateMatches = function(data, maxLength, infoContainer) {
             }
             match_container.appendChild(match_date_container);
 
-
             const away_team_container = document.createElement('div');
             away_team_container.classList.add('flex-column');
             away_team_container.style.width = '128px';
@@ -109,6 +107,7 @@ export const updateMatches = function(data, maxLength, infoContainer) {
         }
     } else {
         infoContainer.classList.add('flex-center');
-        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
+        infoContainer.innerHTML =
+            "<p style='text-align: center;'>Er zijn nog geen aankomende of gespeelde wedstrijden</p>";
     }
 };

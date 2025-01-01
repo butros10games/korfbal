@@ -3,9 +3,13 @@ self.addEventListener('fetch', (event) => {
 });
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register(`https://static.${window.location.hostname}/js/pwa/service-worker.js`)
-        .then(registration => {
-            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+    navigator.serviceWorker
+        .register(`https://static.${window.location.hostname}/js/pwa/service-worker.js`)
+        .then((registration) => {
+            console.log(
+                'ServiceWorker registration successful with scope: ',
+                registration.scope,
+            );
 
             // Listen for updates to the service worker
             registration.onupdatefound = () => {
@@ -24,7 +28,7 @@ if ('serviceWorker' in navigator) {
                 };
             };
         })
-        .catch(err => {
+        .catch((err) => {
             console.log('ServiceWorker registration failed: ', err);
         });
 }

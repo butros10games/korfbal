@@ -1,4 +1,4 @@
-export const deleteButtonSetup = function(socket) {
+export const deleteButtonSetup = function (socket) {
     const deleteButton = document.getElementById('deleteButton');
 
     deleteButton.addEventListener('click', () => {
@@ -6,7 +6,7 @@ export const deleteButtonSetup = function(socket) {
     });
 };
 
-export const resetSwipe = function() {
+export const resetSwipe = function () {
     // Assuming swipeContent is the element you want to reset
     const swipeContent = document.getElementById('match-event');
 
@@ -18,14 +18,18 @@ export const resetSwipe = function() {
     swipeContent.classList.remove('swiped-left'); // If this class is added on swipe
 };
 
-export const setupSwipeDelete = function() {
+export const setupSwipeDelete = function () {
     const matchEvent = document.getElementById('match-event-swipe');
     const swipeContent = document.getElementById('match-event');
     swipeContent.style.transform = 'translateX(0px)';
-    let startX, currentX, isSwiping = false;
+    let startX,
+        currentX,
+        isSwiping = false;
 
     const onTouchStart = (e) => {
-        const transform = window.getComputedStyle(swipeContent).getPropertyValue('transform');
+        const transform = window
+            .getComputedStyle(swipeContent)
+            .getPropertyValue('transform');
         const transformX = transform.split(',')[4].trim();
 
         startX = e.touches[0].clientX - parseInt(transformX);
@@ -34,7 +38,9 @@ export const setupSwipeDelete = function() {
     };
 
     const onTouchMove = (e) => {
-        if (!isSwiping) {return;};
+        if (!isSwiping) {
+            return;
+        }
 
         currentX = e.touches[0].clientX;
         const distance = startX - currentX;
@@ -49,7 +55,9 @@ export const setupSwipeDelete = function() {
         isSwiping = false;
         const swipeDistance = startX - currentX;
         const isSwipeLeft = swipeDistance > 50;
-        swipeContent.style.transform = isSwipeLeft ? 'translateX(-100px)' : 'translateX(0px)';
+        swipeContent.style.transform = isSwipeLeft
+            ? 'translateX(-100px)'
+            : 'translateX(0px)';
         swipeContent.classList.add('transition-back');
         matchEvent.classList.toggle('swiped-left', isSwipeLeft);
     };
@@ -59,7 +67,7 @@ export const setupSwipeDelete = function() {
     swipeContent.addEventListener('touchend', onTouchEnd, false);
 };
 
-const deleteConfirmPopup = function(socket) {
+const deleteConfirmPopup = function (socket) {
     // Create the overlay container
     const overlay = document.createElement('div');
     overlay.id = 'overlay';
@@ -122,7 +130,7 @@ const deleteConfirmPopup = function(socket) {
 
         // send the delete command to the server
         const data = {
-            'command': 'remove_last_event'
+            command: 'remove_last_event',
         };
 
         socket.send(JSON.stringify(data));

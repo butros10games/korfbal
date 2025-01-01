@@ -13,7 +13,7 @@ function createPlayerGroupTitle(playerGroup) {
     return playerGroupTitle;
 }
 
-export const createPlayerDiv = function(type, player, playerOptions = []) {
+export const createPlayerDiv = function (type, player, playerOptions = []) {
     const playerDiv = document.createElement(type === 'select' ? 'select' : 'div');
     playerDiv.classList.add('player-selector', 'flex-row');
     playerDiv.style.flexGrow = '1';
@@ -21,7 +21,7 @@ export const createPlayerDiv = function(type, player, playerOptions = []) {
     playerDiv.style.textAlign = 'center';
 
     if (type === 'select') {
-        playerOptions.forEach(option => {
+        playerOptions.forEach((option) => {
             playerDiv.appendChild(option.cloneNode(true));
         });
 
@@ -46,12 +46,12 @@ export const createPlayerDiv = function(type, player, playerOptions = []) {
     return playerDiv;
 };
 
-export const createPlayerGroupContainer = function(playerGroups, renderPlayerDiv) {
+export const createPlayerGroupContainer = function (playerGroups, renderPlayerDiv) {
     const playerGroupContainer = document.createElement('div');
     playerGroupContainer.classList.add('player-group-container');
 
     if (playerGroups.length > 0) {
-        playerGroups.forEach(playerGroup => {
+        playerGroups.forEach((playerGroup) => {
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.classList.add('player-group', 'flex-column');
             playerGroupDiv.style.marginTop = '12px';

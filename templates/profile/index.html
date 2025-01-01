@@ -1,12 +1,12 @@
 {% load static %}
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
     <head>
         <title>{{ title }}</title>
-        <meta name="description" content="">
+        <meta name="description" content="" />
 
-        <link rel="stylesheet" href="{% static 'css/teams/index.css' %}">
+        <link rel="stylesheet" href="{% static 'css/teams/index.css' %}" />
 
         {% include 'common/imports.html' %}
 
@@ -15,15 +15,27 @@
     <body>
         {% include 'overlays/navbar.html' %}
 
-        <div class="flex-column" style="margin-top: 64px;">
-            <div class="flex-column" style="height: 170px; justify-content: center; width: 100%;">
+        <div class="flex-column" style="margin-top: 64px">
+            <div
+                class="flex-column"
+                style="height: 170px; justify-content: center; width: 100%"
+            >
                 <div id="profilePic-container" class="profile-container">
-                    <img src="{{ profile_picture }}" alt="profile" class="profile-pic" id="profilePic">
+                    <img
+                        src="{{ profile_picture }}"
+                        alt="profile"
+                        class="profile-pic"
+                        id="profilePic"
+                    />
                     <div id="overlay" class="overlay">
-                        <img src="{% static 'images/player/edit-button-svgrepo-com.svg' %}" alt="Overlay Icon" class="overlay-icon">
+                        <img
+                            src="{% static 'images/player/edit-button-svgrepo-com.svg' %}"
+                            alt="Overlay Icon"
+                            class="overlay-icon"
+                        />
                     </div>
                 </div>
-                <p style="margin-bottom: 0;">{{ player.user.username }}</p>
+                <p style="margin-bottom: 0">{{ player.user.username }}</p>
             </div>
 
             <div class="carousel-container">
@@ -37,33 +49,45 @@
                     {% endif %}
                 </div>
             </div>
-            <div id="info-container" style="height: calc((var(--vh, 1vh) * 100) - 339.5px); width: 100%; overflow-y: scroll;">
-
-            </div>
+            <div
+                id="info-container"
+                style="
+                    height: calc((var(--vh, 1vh) * 100) - 339.5px);
+                    width: 100%;
+                    overflow-y: scroll;
+                "
+            ></div>
         </div>
 
         {% if is_own_profile %}
-            <input type="file" id="profilePicInput" style="display: none;" accept="image/*">
-            <div id="imageModal" class="modal">
-                <div class="modal-content">
-                    <h4>Change Profile Picture</h4>
-                    <img id="imagePreview" src="" alt="Preview" class="image-preview">
-                    <button id="saveProfilePic">Save</button>
-                    <button id="closeModal">Cancel</button>
-                </div>
+        <input
+            type="file"
+            id="profilePicInput"
+            style="display: none"
+            accept="image/*"
+        />
+        <div id="imageModal" class="modal">
+            <div class="modal-content">
+                <h4>Change Profile Picture</h4>
+                <img id="imagePreview" src="" alt="Preview" class="image-preview" />
+                <button id="saveProfilePic">Save</button>
+                <button id="closeModal">Cancel</button>
             </div>
-            <script>
-                const profilePic = document.getElementById('overlay');
-                profilePic.onclick = function() {
-                    // check if profilePic-container has the class active-img
-                    if (document.getElementById("profilePic-container").classList.contains("active-img")) {
-                        document.getElementById('profilePicInput').click();
-                    }
-                };
-            </script>
-        {% endif %}
-        
-        {% csrf_token %}
+        </div>
+        <script>
+            const profilePic = document.getElementById('overlay');
+            profilePic.onclick = function () {
+                // check if profilePic-container has the class active-img
+                if (
+                    document
+                        .getElementById('profilePic-container')
+                        .classList.contains('active-img')
+                ) {
+                    document.getElementById('profilePicInput').click();
+                }
+            };
+        </script>
+        {% endif %} {% csrf_token %}
 
         <script src="{% static 'webpack_bundles/profile_detail.bundle.js' %}"></script>
         <script src="{% static 'js/programs/mobile_view.js' %}"></script>

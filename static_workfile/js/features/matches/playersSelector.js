@@ -16,7 +16,7 @@ class PlayerGroupManager {
         this.typeIds = [
             '01927d88-6878-7d0f-acbf-28c251fbc2b5',
             '01927d88-57ef-7339-a791-67cf856bfea1',
-            '0192c7bb-c664-77fd-8a29-acde6f428c93'
+            '0192c7bb-c664-77fd-8a29-acde6f428c93',
         ];
         this.groupIdToTypeId = {};
         this.typeIdToGroupId = {};
@@ -31,22 +31,41 @@ class PlayerGroupManager {
         const changeGroupBound = this.changePlayerGroup.bind(this);
         return {
             '01927d88-6878-7d0f-acbf-28c251fbc2b5': [
-                { text: 'Remove', func: changeGroupBound, id: '0192c7bb-c664-77fd-8a29-acde6f428c93' } // Attack
+                {
+                    text: 'Remove',
+                    func: changeGroupBound,
+                    id: '0192c7bb-c664-77fd-8a29-acde6f428c93',
+                }, // Attack
             ],
             '01927d88-57ef-7339-a791-67cf856bfea1': [
-                { text: 'Remove', func: changeGroupBound, id: '0192c7bb-c664-77fd-8a29-acde6f428c93' } // Defense
+                {
+                    text: 'Remove',
+                    func: changeGroupBound,
+                    id: '0192c7bb-c664-77fd-8a29-acde6f428c93',
+                }, // Defense
             ],
             '0192c7bb-c664-77fd-8a29-acde6f428c93': [
                 { text: 'Remove', func: changeGroupBound },
-                { text: 'Attack', func: changeGroupBound, id: '01927d88-6878-7d0f-acbf-28c251fbc2b5', player_max: 4 },
-                { text: 'Defense', func: changeGroupBound, id: '01927d88-57ef-7339-a791-67cf856bfea1', player_max: 4 }
-            ] // Reserve
+                {
+                    text: 'Attack',
+                    func: changeGroupBound,
+                    id: '01927d88-6878-7d0f-acbf-28c251fbc2b5',
+                    player_max: 4,
+                },
+                {
+                    text: 'Defense',
+                    func: changeGroupBound,
+                    id: '01927d88-57ef-7339-a791-67cf856bfea1',
+                    player_max: 4,
+                },
+            ], // Reserve
         };
     }
 
     initialize() {
         // Set CSRF token and parse URL parameters
-        this.csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0]?.value || '';
+        this.csrfToken =
+            document.getElementsByName('csrfmiddlewaretoken')[0]?.value || '';
         this.doneButton = document.getElementById('done-button');
         [this.matchId, this.teamId] = this.parseUrl();
 
@@ -74,7 +93,7 @@ class PlayerGroupManager {
 
     setupPlayerButtons() {
         // Add click event listeners to all player elements
-        document.querySelectorAll('.player').forEach(player => {
+        document.querySelectorAll('.player').forEach((player) => {
             player.addEventListener('click', () => this.handlePlayerSelection(player));
         });
     }
@@ -90,14 +109,18 @@ class PlayerGroupManager {
     togglePlayerSelection(player, localGroupId) {
         // Add or remove player from the selected list
         const id_uuid = player.id;
-        const playerIndex = this.selectedPlayers.findIndex(p => p.id_uuid === id_uuid);
+        const playerIndex = this.selectedPlayers.findIndex(
+            (p) => p.id_uuid === id_uuid,
+        );
 
         if (playerIndex === -1) {
             this.selectedPlayers.push({ id_uuid: id_uuid, groupId: localGroupId });
             this.groupId = localGroupId;
         } else {
             this.selectedPlayers.splice(playerIndex, 1);
-            if (this.selectedPlayers.length === 0) {this.groupId = null;};
+            if (this.selectedPlayers.length === 0) {
+                this.groupId = null;
+            }
         }
         this.highlightSelectedPlayer(player);
         this.updateOptionsBar();
@@ -106,8 +129,10 @@ class PlayerGroupManager {
     highlightSelectedPlayer(player) {
         // Highlight or unhighlight the selected player
         player.style.backgroundColor = this.selectedPlayers.some(
-            p => p.id_uuid === player.id
-        ) ? 'lightblue' : 'white';
+            (p) => p.id_uuid === player.id,
+        )
+            ? 'lightblue'
+            : 'white';
     }
 
     updateOptionsBar() {
@@ -128,7 +153,7 @@ class PlayerGroupManager {
         optionsBar.id = 'options-bar';
 
         const options = this.groupTypes[this.groupIdToTypeId[this.groupId]] || [];
-        options.forEach(option => {
+        options.forEach((option) => {
             const button = document.createElement('button');
             button.innerText = option.text;
             button.addEventListener('click', () => this.handleOptionClick(option));
@@ -143,16 +168,17 @@ class PlayerGroupManager {
         // Handle the action when an option button is clicked
         const targetGroupId = this.typeIdToGroupId[option.id] || null;
         const playersGroupData = this.playerGroupsData.find(
-            group => group.id_uuid === targetGroupId
+            (group) => group.id_uuid === targetGroupId,
         );
         const numberPlayersGroup = playersGroupData?.players?.length || 0;
 
-        if (option.player_max &&
+        if (
+            option.player_max &&
             numberPlayersGroup + this.selectedPlayers.length > option.player_max
         ) {
             alert(
                 `You have selected too many players for the group.
-                Group max: ${option.player_max}.`
+                Group max: ${option.player_max}.`,
             );
             return;
         }
@@ -180,23 +206,27 @@ class PlayerGroupManager {
 
     mapGroupIdsToTypeIds() {
         // Map group IDs to type IDs
-        this.typeIds.forEach(typeId => {
+        this.typeIds.forEach((typeId) => {
             const groupElement = document.getElementById(typeId);
-            if (groupElement) {this.groupIdToTypeId[groupElement.innerText] = typeId;};
+            if (groupElement) {
+                this.groupIdToTypeId[groupElement.innerText] = typeId;
+            }
         });
     }
 
     mapTypeIdsToGroupIds() {
         // Map type IDs to group IDs
-        this.typeIds.forEach(typeId => {
+        this.typeIds.forEach((typeId) => {
             const groupElement = document.getElementById(typeId);
-            if (groupElement) {this.typeIdToGroupId[typeId] = groupElement.innerText;};
+            if (groupElement) {
+                this.typeIdToGroupId[typeId] = groupElement.innerText;
+            }
         });
     }
 
     getPlayersGroupsData() {
         // Collect data about player groups from the stored data
-        this.playerGroupsData.forEach(group => {
+        this.playerGroupsData.forEach((group) => {
             this.groupIdToStartingType[group.id_uuid] = group.starting_type;
         });
     }
@@ -204,13 +234,13 @@ class PlayerGroupManager {
     async fetchPlayersGroupsData() {
         // Fetch player groups data from the server
         const data = await this.fetchData(
-            `/match/api/player_overview_data/${this.matchId}/${this.teamId}/`
+            `/match/api/player_overview_data/${this.matchId}/${this.teamId}/`,
         );
         if (data) {
             this.playerGroupsData = data.player_groups; // Store the full data
 
             // Create mapping from group IDs to starting types
-            this.playerGroupsData.forEach(group => {
+            this.playerGroupsData.forEach((group) => {
                 this.groupIdToStartingType[group.id_uuid] = group.starting_type;
             });
 
@@ -222,7 +252,7 @@ class PlayerGroupManager {
         // Send a request to change the player group
         await this.fetchData('/match/api/player_designation/', {
             players: selectedPlayers,
-            new_group_id: newGroupId
+            new_group_id: newGroupId,
         });
 
         // Update the local data
@@ -243,18 +273,18 @@ class PlayerGroupManager {
 
     updatePlayersGroupsData(selectedPlayers, newGroupId) {
         // Update the local data to reflect the moved players
-        selectedPlayers.forEach(selectedPlayer => {
+        selectedPlayers.forEach((selectedPlayer) => {
             const id_uuid = selectedPlayer.id_uuid;
             const oldGroupId = selectedPlayer.groupId;
 
             // Remove player from old group
             const oldGroup = this.playerGroupsData.find(
-                group => group.id_uuid === oldGroupId
+                (group) => group.id_uuid === oldGroupId,
             );
             let player = null;
             if (oldGroup) {
                 const playerIndex = oldGroup.players.findIndex(
-                    p => p.id_uuid === id_uuid
+                    (p) => p.id_uuid === id_uuid,
                 );
                 if (playerIndex !== -1) {
                     [player] = oldGroup.players.splice(playerIndex, 1);
@@ -264,15 +294,17 @@ class PlayerGroupManager {
             // Add player to new group
             if (newGroupId && player) {
                 let newGroup = this.playerGroupsData.find(
-                    group => group.id_uuid === newGroupId
+                    (group) => group.id_uuid === newGroupId,
                 );
                 if (!newGroup) {
                     // Create new group if it doesn't exist
-                    const startingType = this.groupIdToStartingType[newGroupId] || { name: 'Unknown' };
+                    const startingType = this.groupIdToStartingType[newGroupId] || {
+                        name: 'Unknown',
+                    };
                     newGroup = {
                         id_uuid: newGroupId,
                         starting_type: startingType,
-                        players: []
+                        players: [],
                     };
                     this.playerGroupsData.push(newGroup);
                     // Update the mapping
@@ -294,12 +326,15 @@ class PlayerGroupManager {
                 method: bodyData ? 'POST' : 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'X-CSRFToken': this.csrfToken,
                 },
-                body: bodyData ? JSON.stringify(bodyData) : null
+                body: bodyData ? JSON.stringify(bodyData) : null,
             });
-            if (response.ok) {return await response.json();}
-            else {throw new Error('Error fetching data.');};
+            if (response.ok) {
+                return await response.json();
+            } else {
+                throw new Error('Error fetching data.');
+            }
         } catch (error) {
             console.error(error.message);
         }
@@ -308,14 +343,16 @@ class PlayerGroupManager {
     generatePlayerFieldHTML(playerGroups) {
         // Generate the HTML structure for player groups
         const playerField = document.getElementById('player-field');
-        if (!playerField) {return;};
+        if (!playerField) {
+            return;
+        }
         playerField.innerHTML = '';
 
         this.goToMatchOverview();
 
         let nullPlayers = true;
 
-        playerGroups.forEach(playerGroup => {
+        playerGroups.forEach((playerGroup) => {
             if (playerGroup.players && playerGroup.players.length > 0) {
                 nullPlayers = false;
 
@@ -331,7 +368,10 @@ class PlayerGroupManager {
 
                 groupDivider.appendChild(groupTitle);
 
-                if (playerGroup.starting_type.name === 'Reserve' && playerGroup.players.length > 0) {
+                if (
+                    playerGroup.starting_type.name === 'Reserve' &&
+                    playerGroup.players.length > 0
+                ) {
                     const addPlayerButton = document.createElement('p');
                     addPlayerButton.classList.add('dm-sans-600-normal', 'done-button');
                     addPlayerButton.style.marginLeft = 'auto';
@@ -358,11 +398,13 @@ class PlayerGroupManager {
                 playerGroupDiv.classList.add('flex-column', 'player-group');
 
                 // Add players within the group
-                playerGroup.players.forEach(player => {
+                playerGroup.players.forEach((player) => {
                     const playerDiv = document.createElement('div');
                     playerDiv.id = player.id_uuid;
                     playerDiv.classList.add('flex-row', 'player');
-                    if (this.selectedPlayers.some(p => p.id_uuid === player.id_uuid)) {
+                    if (
+                        this.selectedPlayers.some((p) => p.id_uuid === player.id_uuid)
+                    ) {
                         playerDiv.style.backgroundColor = 'lightblue';
                     }
 
@@ -393,11 +435,17 @@ class PlayerGroupManager {
                 // create a button to add a player to the reserve group
                 const centerDiv = document.createElement('div');
                 centerDiv.classList.add('flex-center');
-                if (nullPlayers) {centerDiv.style.height = '100%';};
+                if (nullPlayers) {
+                    centerDiv.style.height = '100%';
+                }
                 centerDiv.style.width = '100%';
 
                 const addPlayerButton = document.createElement('p');
-                addPlayerButton.classList.add('dm-sans-600-normal', 'flex-center', 'add-players-button');
+                addPlayerButton.classList.add(
+                    'dm-sans-600-normal',
+                    'flex-center',
+                    'add-players-button',
+                );
                 addPlayerButton.textContent = 'Voeg spelers toe';
                 addPlayerButton.addEventListener('click', () => {
                     this.fetchPlayersData();
@@ -415,7 +463,9 @@ class PlayerGroupManager {
 
     // request player data from the server
     async fetchPlayersData() {
-        const data = await this.fetchData(`/match/api/players_team/${this.matchId}/${this.teamId}/`);
+        const data = await this.fetchData(
+            `/match/api/players_team/${this.matchId}/${this.teamId}/`,
+        );
         if (data) {
             console.log(data);
 
@@ -424,7 +474,9 @@ class PlayerGroupManager {
     }
 
     async fetchSearchPlayers(value) {
-        const data = await this.fetchData(`/match/api/player_search/${this.matchId}/${this.teamId}/?search=${value}`);
+        const data = await this.fetchData(
+            `/match/api/player_search/${this.matchId}/${this.teamId}/?search=${value}`,
+        );
         if (data) {
             console.log(data);
 
@@ -435,7 +487,9 @@ class PlayerGroupManager {
     generatePlayerAddFieldHTML(players, searchText = null) {
         // Generate the HTML structure for player groups
         const playerField = document.getElementById('player-field');
-        if (!playerField) {return;};
+        if (!playerField) {
+            return;
+        }
         playerField.innerHTML = '';
 
         this.fetchPlayersGroupsDataHandler();
@@ -449,7 +503,9 @@ class PlayerGroupManager {
         searchField.placeholder = 'Zoek naar spelers';
         searchField.id = 'search-field';
         searchField.classList.add('search-field');
-        if (searchText) {searchField.value = searchText;};
+        if (searchText) {
+            searchField.value = searchText;
+        }
         searchDiv.appendChild(searchField);
 
         let searchTimeout;
@@ -486,12 +542,12 @@ class PlayerGroupManager {
 
         playerField.appendChild(searchDiv);
 
-        players.forEach(player => {
+        players.forEach((player) => {
             // Create player group container
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.id = player.id_uuid;
             playerGroupDiv.classList.add('flex-row', 'player');
-            if (this.selectedPlayersAdd.some(p => p.id_uuid === player.id_uuid)) {
+            if (this.selectedPlayersAdd.some((p) => p.id_uuid === player.id_uuid)) {
                 playerGroupDiv.style.backgroundColor = 'lightblue';
             }
 
@@ -499,9 +555,8 @@ class PlayerGroupManager {
         });
 
         this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(
-            selectedPlayer => !players.some(
-                player => player.id_uuid === selectedPlayer.id_uuid
-            )
+            (selectedPlayer) =>
+                !players.some((player) => player.id_uuid === selectedPlayer.id_uuid),
         );
 
         if (this.filterdSelectedPlayersAdd.length > 0) {
@@ -519,7 +574,7 @@ class PlayerGroupManager {
             playerField.appendChild(groupDivider);
         }
 
-        this.filterdSelectedPlayersAdd.forEach(player => {
+        this.filterdSelectedPlayersAdd.forEach((player) => {
             // Create player group container
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.id = player.id_uuid;
@@ -555,7 +610,9 @@ class PlayerGroupManager {
         playerField.appendChild(dividerLine2);
 
         // Add click event listener to add player to the team
-        playerGroupDiv.addEventListener('click', () => this.handleSelectedPlayerClick(player));
+        playerGroupDiv.addEventListener('click', () =>
+            this.handleSelectedPlayerClick(player),
+        );
     }
 
     handleSelectedPlayerClick(player) {
@@ -563,7 +620,7 @@ class PlayerGroupManager {
         if (playerElement.style.backgroundColor === 'lightblue') {
             playerElement.style.backgroundColor = 'white';
             this.selectedPlayersAdd = this.selectedPlayersAdd.filter(
-                p => p.id_uuid !== player.id_uuid
+                (p) => p.id_uuid !== player.id_uuid,
             );
         } else {
             playerElement.style.backgroundColor = 'lightblue';
@@ -592,7 +649,7 @@ class PlayerGroupManager {
     async handleAddPlayerClick() {
         await this.fetchData('/match/api/player_designation/', {
             players: this.selectedPlayersAdd,
-            new_group_id: this.typeIdToGroupId[this.reserveId]
+            new_group_id: this.typeIdToGroupId[this.reserveId],
         });
 
         this.selectedPlayersAdd = [];

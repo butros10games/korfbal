@@ -1,53 +1,53 @@
 name: Build and Push Docker Images
 
 on:
-  push:
-    tags:
-      - "*"
+    push:
+        tags:
+            - '*'
 
 jobs:
-  build-and-push:
-    name: Build and Push Docker Images
-    runs-on: ubuntu-latest
+    build-and-push:
+        name: Build and Push Docker Images
+        runs-on: ubuntu-latest
 
-    steps:
-      # Checkout the repository
-      - name: Checkout Code
-        uses: actions/checkout@v3
+        steps:
+            # Checkout the repository
+            - name: Checkout Code
+              uses: actions/checkout@v3
 
-      # Set up Docker Buildx with docker-container driver
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          driver: docker-container
+            # Set up Docker Buildx with docker-container driver
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v2
+              with:
+                  driver: docker-container
 
-      # Log in to Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-  
-      - name: Build and Push uWSGI Image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: uwsgi.Dockerfile
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
-            ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            # Log in to Docker Hub
+            - name: Log in to Docker Hub
+              uses: docker/login-action@v2
+              with:
+                  username: ${{ secrets.DOCKER_USERNAME }}
+                  password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Daphne Image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: daphne.Dockerfile
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
-            ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            - name: Build and Push uWSGI Image
+              uses: docker/build-push-action@v4
+              with:
+                  context: .
+                  file: uwsgi.Dockerfile
+                  push: true
+                  tags: |
+                      ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:${{ github.ref_name }}
+                      ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            - name: Build and Push Daphne Image
+              uses: docker/build-push-action@v4
+              with:
+                  context: .
+                  file: daphne.Dockerfile
+                  push: true
+                  tags: |
+                      ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
+                      ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max

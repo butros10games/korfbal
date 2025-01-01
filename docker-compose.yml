@@ -1,71 +1,71 @@
 services:
-  kwt-uwsgi:
-    image: butros10/kwt-uwsgi:latest
-    container_name: kwt-uwsgi
-    ports:
-      - "1664:1664"
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - kwt-net
+    kwt-uwsgi:
+        image: butros10/kwt-uwsgi:latest
+        container_name: kwt-uwsgi
+        ports:
+            - '1664:1664'
+        env_file:
+            - .env
+        restart: unless-stopped
+        networks:
+            - kwt-net
 
-  kwt-daphne:
-    image: butros10/kwt-daphne:latest
-    container_name: kwt-daphne
-    ports:
-      - "8001:8001"
-    env_file:
-      - .env
-    depends_on:
-      - kwt-redis
-    restart: unless-stopped
-    networks:
-      - kwt-net
+    kwt-daphne:
+        image: butros10/kwt-daphne:latest
+        container_name: kwt-daphne
+        ports:
+            - '8001:8001'
+        env_file:
+            - .env
+        depends_on:
+            - kwt-redis
+        restart: unless-stopped
+        networks:
+            - kwt-net
 
-  kwt-redis:
-    image: redis:latest
-    container_name: kwt-redis
-    networks:
-      - kwt-net
+    kwt-redis:
+        image: redis:latest
+        container_name: kwt-redis
+        networks:
+            - kwt-net
 
-  kwt-minio:
-    image: minio/minio:latest
-    container_name: kwt-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9100:9000"
-      - "9101:9001"
-    volumes:
-      - /home/butros/kwt/:/data
-    restart: unless-stopped
-    networks:
-      - kwt-net
+    kwt-minio:
+        image: minio/minio:latest
+        container_name: kwt-minio
+        command: server /data --console-address ":9001"
+        environment:
+            MINIO_ROOT_USER: minioadmin
+            MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+            - '9100:9000'
+            - '9101:9001'
+        volumes:
+            - /home/butros/kwt/:/data
+        restart: unless-stopped
+        networks:
+            - kwt-net
 
-  kwt-collectstatic:
-    image: butros10/kwt-collectstatic:latest
-    container_name: kwt-collectstatic
-    depends_on:
-      - kwt-minio
-    environment:
-      - .env
-    restart: unless-stopped
-    networks:
-      - kwt-net
+    kwt-collectstatic:
+        image: butros10/kwt-collectstatic:latest
+        container_name: kwt-collectstatic
+        depends_on:
+            - kwt-minio
+        environment:
+            - .env
+        restart: unless-stopped
+        networks:
+            - kwt-net
 
-  kwt-migrate:
-    image: butros10/kwt-uwsgi:latest
-    container_name: kwt-migrate
-    command: python manage.py migrate
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - kwt-net
+    kwt-migrate:
+        image: butros10/kwt-uwsgi:latest
+        container_name: kwt-migrate
+        command: python manage.py migrate
+        env_file:
+            - .env
+        restart: unless-stopped
+        networks:
+            - kwt-net
 
 networks:
-  kwt-net:
-    driver: bridge
+    kwt-net:
+        driver: bridge

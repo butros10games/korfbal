@@ -1,4 +1,4 @@
-export const handleTouchStart = function(e, carouselElement, currentPosition) {
+export const handleTouchStart = function (e, carouselElement, currentPosition) {
     const touchStartX = e.touches[0].clientX;
     carouselElement.style.transition = 'none';
 
@@ -9,8 +9,12 @@ export const handleTouchStart = function(e, carouselElement, currentPosition) {
     };
 };
 
-export const handleTouchMove = function(
-    e, isDragging, touchStartX, carouselElement, startPosition
+export const handleTouchMove = function (
+    e,
+    isDragging,
+    touchStartX,
+    carouselElement,
+    startPosition,
 ) {
     if (!isDragging) {
         return;
@@ -27,8 +31,13 @@ export const handleTouchMove = function(
     };
 };
 
-export const handleTouchEnd = function(
-    isDragging, touchStartX, touchEndX, currentPosition, carouselElement, buttonWidth
+export const handleTouchEnd = function (
+    isDragging,
+    touchStartX,
+    touchEndX,
+    currentPosition,
+    carouselElement,
+    buttonWidth,
 ) {
     if (!isDragging) {
         return;
@@ -43,7 +52,7 @@ export const handleTouchEnd = function(
 
     currentPosition = Math.max(
         currentPosition,
-        -(carouselElement.scrollWidth - carouselElement.clientWidth)
+        -(carouselElement.scrollWidth - carouselElement.clientWidth),
     );
     currentPosition = Math.min(currentPosition, 0);
 
@@ -58,19 +67,24 @@ export const handleTouchEnd = function(
 
 // Button actions
 
-export const handleButtonClick = function(
-    socket, isAutoScrolling, button, buttons, extraData, statsName
+export const handleButtonClick = function (
+    socket,
+    isAutoScrolling,
+    button,
+    buttons,
+    extraData,
+    statsName,
 ) {
     if (isAutoScrolling) {
         return;
     }
 
-    buttons.forEach(el => el.classList.remove('active'));
+    buttons.forEach((el) => el.classList.remove('active'));
     button.classList.add('active');
 
     isAutoScrolling = true;
     button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    setTimeout(() => isAutoScrolling = false, 500);
+    setTimeout(() => (isAutoScrolling = false), 500);
 
     sendDataToServer(socket, button, extraData, statsName);
 
@@ -79,7 +93,7 @@ export const handleButtonClick = function(
 
 function sendDataToServer(socket, button, extraData, statsName) {
     const data = button.getAttribute('data');
-    const payload = { 'command': data };
+    const payload = { command: data };
 
     // Merge ExtraData into the payload if ExtraData is provided
     if (extraData) {
@@ -87,8 +101,8 @@ function sendDataToServer(socket, button, extraData, statsName) {
     }
 
     if (data === statsName) {
-        Object.assign(payload, { 'data_type': 'general' });
+        Object.assign(payload, { data_type: 'general' });
     }
 
     socket.send(JSON.stringify(payload));
-};
+}

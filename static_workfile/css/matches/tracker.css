@@ -1,6 +1,6 @@
 body {
     margin: 0;
-    font-family: "DM Sans", sans-serif;
+    font-family: 'DM Sans', sans-serif;
 }
 
 .flex-row {
@@ -47,7 +47,7 @@ a {
 }
 
 .player-selector {
-    background-color: #D9D9D9;
+    background-color: #d9d9d9;
     color: black;
     border-radius: 4px;
     height: 46px;
@@ -131,10 +131,10 @@ a {
 
 @keyframes lds-ring {
     0% {
-      transform: rotate(0deg);
+        transform: rotate(0deg);
     }
     100% {
-      transform: rotate(360deg);
+        transform: rotate(360deg);
     }
 }
 
@@ -172,10 +172,10 @@ a {
 
 @keyframes small-lds-ring {
     0% {
-      transform: rotate(0deg);
+        transform: rotate(0deg);
     }
     100% {
-      transform: rotate(360deg);
+        transform: rotate(360deg);
     }
 }
 

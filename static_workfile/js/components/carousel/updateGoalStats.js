@@ -1,4 +1,4 @@
-export const updateGoalStats = function(data, infoContainer) {
+export const updateGoalStats = function (data, infoContainer) {
     if (data.played_matches > 0) {
         const goals_container = document.createElement('div');
         goals_container.classList.add('flex-column');
@@ -40,7 +40,8 @@ export const updateGoalStats = function(data, infoContainer) {
 
         const total_score_data = document.createElement('p');
         total_score_data.style.margin = '0';
-        total_score_data.innerHTML = data.total_goals_for + '/' + data.total_goals_against;
+        total_score_data.innerHTML =
+            data.total_goals_for + '/' + data.total_goals_against;
 
         total_score_container.appendChild(total_score);
         total_score_container.appendChild(total_score_data);
@@ -59,9 +60,7 @@ export const updateGoalStats = function(data, infoContainer) {
 
         // Iterate through goal_stats object
         for (const goalType in data.player_goal_stats) {
-            if (Object.hasOwn(
-                data.player_goal_stats, goalType
-            )) {
+            if (Object.hasOwn(data.player_goal_stats, goalType)) {
                 const goalStat = data.player_goal_stats[goalType];
 
                 // Create a div for each goal type's stats
@@ -78,7 +77,8 @@ export const updateGoalStats = function(data, infoContainer) {
 
                 const goals_data = document.createElement('p');
                 goals_data.style.margin = '0';
-                goals_data.innerHTML = goalStat.goals_by_player + '/' + goalStat.goals_against_player;
+                goals_data.innerHTML =
+                    goalStat.goals_by_player + '/' + goalStat.goals_against_player;
 
                 goal_type_container.appendChild(goal_type_name);
                 goal_type_container.appendChild(goals_data);
@@ -91,6 +91,7 @@ export const updateGoalStats = function(data, infoContainer) {
         infoContainer.appendChild(goals_container);
     } else {
         infoContainer.classList.add('flex-center');
-        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen doelpunten gemaakt</p>";
+        infoContainer.innerHTML =
+            "<p style='text-align: center;'>Er zijn nog geen doelpunten gemaakt</p>";
     }
 };

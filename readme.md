@@ -16,17 +16,17 @@ Can be found [here](docs/project-structure.md)
 ### Steps
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/butros10games/korfbal.git
-   ```
+    ```bash
+    git clone https://github.com/butros10games/korfbal.git
+    ```
 2. Navigate to the project directory:
-   ```bash
-   cd korfbal
-   ```
+    ```bash
+    cd korfbal
+    ```
 3. Install the dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Usage
 

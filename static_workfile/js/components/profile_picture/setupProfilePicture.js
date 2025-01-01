@@ -1,6 +1,6 @@
 import { uploadImage } from './utils';
 
-export const setupProfilePicture = function(csrfToken) {
+export const setupProfilePicture = function (csrfToken) {
     const imageModal = document.getElementById('imageModal');
     const closeModalButton = document.getElementById('closeModal');
 
@@ -20,7 +20,7 @@ export const setupProfilePicture = function(csrfToken) {
                         blob = await heic2any({
                             blob: file,
                             toType: 'image/jpeg',
-                            quality: 0.7 // Adjust quality as needed
+                            quality: 0.7, // Adjust quality as needed
                         });
                     } catch (error) {
                         console.error('Error converting HEIC to JPEG:', error);
@@ -29,7 +29,7 @@ export const setupProfilePicture = function(csrfToken) {
                 }
 
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = function (e) {
                     imagePreview.src = e.target.result;
                     imageModal.style.display = 'flex'; // Show the modal
                 };
@@ -58,12 +58,12 @@ export const setupProfilePicture = function(csrfToken) {
                     heic2any({
                         blob: file,
                         toType: 'image/jpeg',
-                        quality: 0.7
+                        quality: 0.7,
                     })
-                        .then(convertedBlob => {
+                        .then((convertedBlob) => {
                             uploadImage(convertedBlob, imageModal);
                         })
-                        .catch(error => {
+                        .catch((error) => {
                             console.error('Error converting HEIC to JPEG:', error);
                         });
                 } else {

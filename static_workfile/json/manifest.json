@@ -2,11 +2,11 @@
     "short_name": "KWT",
     "name": "korfbal Wedstrijd Tracker",
     "icons": [
-      {
+        {
             "src": "https://static.korfbal.butrosgroot.com/images/logo/KWT_logo.png",
             "sizes": "512x512",
             "type": "image/png"
-      }
+        }
     ],
     "start_url": "/catalog/",
     "background_color": "#1b1b1b",

@@ -1,7 +1,7 @@
 body {
     margin: 0;
     padding: 0;
-    
+
     display: inline-flex;
     flex-direction: column;
     justify-content: space-around;
@@ -9,7 +9,7 @@ body {
     position: relative;
     width: 100%;
 
-    font-family: "DM Sans", sans-serif;
+    font-family: 'DM Sans', sans-serif;
 }
 
 .background-color {
@@ -22,14 +22,14 @@ body {
     height: 0;
 }
 
-.hidden{
-	display: none!important;
+.hidden {
+    display: none !important;
 }
 
 .CHK2 {
     width: 100%;
     min-height: 100vh;
-    
+
     background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
@@ -74,10 +74,10 @@ body {
     font-size: 32px;
     font-weight: 400;
     font-style: normal;
-    letter-spacing: .01em;
+    letter-spacing: 0.01em;
     text-transform: none;
     margin: 0;
-    padding: 0; 
+    padding: 0;
     color: var(--text-color);
 
     margin-bottom: 2vh;
@@ -87,7 +87,7 @@ body {
     font-size: calc((1.5 - 1) * 1.2vh + 1rem);
     font-weight: 700;
     font-style: normal;
-    letter-spacing: .01em;
+    letter-spacing: 0.01em;
     text-transform: none;
     margin-bottom: 0;
     padding-bottom: 0;
@@ -113,7 +113,7 @@ body {
     font-size: 14px;
     font-weight: 400;
     font-style: normal;
-    letter-spacing: .01em;
+    letter-spacing: 0.01em;
     text-transform: none;
     color: var(--text-color);
 
@@ -167,9 +167,9 @@ body {
     margin-bottom: 1vh;
 }
 
-.form-container input[type="text"],
-.form-container input[type="email"],
-.form-container input[type="password"] {
+.form-container input[type='text'],
+.form-container input[type='email'],
+.form-container input[type='password'] {
     border: 2px #ebebeb;
     border-style: solid;
     background-color: #ffffff;
@@ -188,14 +188,14 @@ body {
 .form-container p,
 .form-container li {
     margin: 0;
-    
+
     font-weight: 400;
     font-style: normal;
     font-size: 14px;
 }
 
 .CHK2-button {
-    background-color: var(--button-color); 
+    background-color: var(--button-color);
     border: 0;
 
     color: var(--text-color);

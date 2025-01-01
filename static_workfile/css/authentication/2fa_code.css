@@ -49,7 +49,7 @@ body {
 /* Label style */
 .form-group label {
     display: inline-block;
-    margin-bottom: .5rem;
+    margin-bottom: 0.5rem;
 }
 
 /* Input field style */
@@ -63,8 +63,10 @@ body {
     background-color: #fff;
     background-clip: padding-box;
     border: 1px solid #ced4da;
-    border-radius: .25rem;
-    transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+    border-radius: 0.25rem;
+    transition:
+        border-color 0.15s ease-in-out,
+        box-shadow 0.15s ease-in-out;
 }
 
 /* Button style */
@@ -82,10 +84,14 @@ body {
 
     border-radius: 4px;
 
-    background: linear-gradient(to right, var(--button-color) 50%, var(--primary_color) 50%);
+    background: linear-gradient(
+        to right,
+        var(--button-color) 50%,
+        var(--primary_color) 50%
+    );
     background-size: 200% 100%;
     background-position: right bottom;
-    transition: all .5s ease-out;
+    transition: all 0.5s ease-out;
 
     cursor: pointer;
 }

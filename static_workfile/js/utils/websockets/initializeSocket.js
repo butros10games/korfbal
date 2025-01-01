@@ -1,4 +1,4 @@
-export const initializeSocket = function(url, onMessageReceived) {
+export const initializeSocket = function (url, onMessageReceived) {
     let socket;
 
     function connect() {
@@ -9,18 +9,20 @@ export const initializeSocket = function(url, onMessageReceived) {
 
         socket = new WebSocket(url);
 
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('Connection established!');
         };
 
         socket.onmessage = onMessageReceived;
 
-        socket.onclose = function(event) {
+        socket.onclose = function (event) {
             if (!event.wasClean) {
                 console.error('Connection died, attempting to reconnect...');
                 setTimeout(connect, 3000);
             } else {
-                console.log(`Connection closed cleanly, code=${event.code}, reason=${event.reason}`);
+                console.log(
+                    `Connection closed cleanly, code=${event.code}, reason=${event.reason}`,
+                );
             }
         };
     }

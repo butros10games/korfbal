@@ -1,36 +1,48 @@
 {% load static %}
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
     <head>
         <title>{{ title }}</title>
-        <meta name="description" content="">
-        
-        <link rel="stylesheet" href="{% static 'css/matches/players_selector.css' %}">
+        <meta name="description" content="" />
+
+        <link rel="stylesheet" href="{% static 'css/matches/players_selector.css' %}" />
 
         {% include 'common/imports.html' %}
     </head>
     <body>
         {% include 'overlays/navbar.html' %}
 
-        <div class="flex-column" style="margin-top: 48px;">
-            <div class="flex-row" style="width: calc(100% - 32px); margin: 0 16px; height: 48px;">
-                <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0;">{{ team_name }}</p>
+        <div class="flex-column" style="margin-top: 48px">
+            <div
+                class="flex-row"
+                style="width: calc(100% - 32px); margin: 0 16px; height: 48px"
+            >
+                <p class="dm-sans-600-normal" style="font-size: 20px; margin: 0">
+                    {{ team_name }}
+                </p>
 
-                <p id="done-button" class="dm-sans-600-normal done-button" style="margin-left: auto;">Klaar</p>
+                <p
+                    id="done-button"
+                    class="dm-sans-600-normal done-button"
+                    style="margin-left: auto"
+                >
+                    Klaar
+                </p>
             </div>
 
-            <hr class="divider">
+            <hr class="divider" />
 
-            <div id="player-field" class="scrollable">
-            </div>
+            <div id="player-field" class="scrollable"></div>
         </div>
 
-        <p style="display: none;" id="user_id">{{ request.user.id }}</p>
-        <p style="display: none;" id="team_id">{% csrf_token %}</p>
+        <p style="display: none" id="user_id">{{ request.user.id }}</p>
+        <p style="display: none" id="team_id">{% csrf_token %}</p>
 
         {% for player_group in player_groups %}
-            <p style="display: none;" id="{{ player_group.starting_type.id_uuid }}">{{ player_group.id_uuid }}</p>
+        <p style="display: none" id="{{ player_group.starting_type.id_uuid }}">
+            {{ player_group.id_uuid }}
+        </p>
         {% endfor %}
 
         <script src="{% static 'webpack_bundles/players_selector.bundle.js' %}"></script>

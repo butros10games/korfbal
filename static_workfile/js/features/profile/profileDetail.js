@@ -1,4 +1,10 @@
-import { setupCarousel, updateMatches, updateTeam, updateSettings, updateGoalStats } from '../common/carousel';
+import {
+    setupCarousel,
+    updateMatches,
+    updateTeam,
+    updateSettings,
+    updateGoalStats,
+} from '../common/carousel';
 import { setupProfilePicture } from '../common/profile_picture';
 import { initializeSocket, requestInitialData } from '../common/websockets';
 
@@ -23,11 +29,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const WebSocketUrl = `wss://${window.location.host}/ws/profile/${player_id}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, socket)
+        onMessageReceived(event, socket),
     );
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket);
         };
@@ -44,7 +50,7 @@ function onMessageReceived(event, socket) {
     const data = JSON.parse(event.data);
     console.log(data);
 
-    switch(data.command) {
+    switch (data.command) {
         case 'settings_request': {
             cleanDom(infoContainer, profilePicture);
 

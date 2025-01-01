@@ -1,12 +1,12 @@
 {% load static %}
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
     <head>
         <title>Login</title>
-        <meta name="description" content="Registration">
-        
-        <link rel="stylesheet" href="{% static 'css/authentication/2fa_code.css' %}">
+        <meta name="description" content="Registration" />
+
+        <link rel="stylesheet" href="{% static 'css/authentication/2fa_code.css' %}" />
 
         {% include 'common/imports.html' %}
     </head>
@@ -16,12 +16,46 @@
         <div class="container text-font">
             <div class="row">
                 <div class="col-md-6">
-                    <h2 style="font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 10px;">Bevestigingsmail Verzonden</h2>
-                    <p style="font-family: 'DM Sans', sans-serif; font-size: 14px; color: #fff; margin-bottom: 5px;">Er is een e-mail naar je verzonden om je adres te verifiëren. Controleer alsjeblieft je inbox.</p>
-                    <p style="font-family: 'DM Sans', sans-serif; font-size: 14px; color: #fff;">Als je de e-mail niet in je inbox vindt, controleer dan ook de spammap.</p>
-                    
+                    <h2
+                        style="
+                            font-family: 'DM Sans', sans-serif;
+                            font-size: 16px;
+                            font-weight: bold;
+                            color: #fff;
+                            margin-bottom: 10px;
+                        "
+                    >
+                        Bevestigingsmail Verzonden
+                    </h2>
+                    <p
+                        style="
+                            font-family: 'DM Sans', sans-serif;
+                            font-size: 14px;
+                            color: #fff;
+                            margin-bottom: 5px;
+                        "
+                    >
+                        Er is een e-mail naar je verzonden om je adres te verifiëren.
+                        Controleer alsjeblieft je inbox.
+                    </p>
+                    <p
+                        style="
+                            font-family: 'DM Sans', sans-serif;
+                            font-size: 14px;
+                            color: #fff;
+                        "
+                    >
+                        Als je de e-mail niet in je inbox vindt, controleer dan ook de
+                        spammap.
+                    </p>
+
                     <div class="flex-row">
-                        <a href="{% url 'login' %}" class="btn btn-primary" style="font-family: 'DM Sans', sans-serif; margin-top: 20px;">Terug naar Login</a>
+                        <a
+                            href="{% url 'login' %}"
+                            class="btn btn-primary"
+                            style="font-family: 'DM Sans', sans-serif; margin-top: 20px"
+                            >Terug naar Login</a
+                        >
                     </div>
                 </div>
             </div>

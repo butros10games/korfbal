@@ -1,7 +1,7 @@
 import { truncateMiddle } from '../utils';
 import { cleanDomCarousel } from './utils';
 
-export const updateStatistics = function(data, infoContainer, socket, user_id) {
+export const updateStatistics = function (data, infoContainer, socket, user_id) {
     const stats = data.stats;
 
     const statsContainer = document.createElement('div');
@@ -21,10 +21,10 @@ export const updateStatistics = function(data, infoContainer, socket, user_id) {
             const buttonTypes = [
                 { name: 'generaal', type: 'general' },
                 { name: 'verloop', type: 'progression' },
-                { name: 'spelers', type: 'player_stats' }
+                { name: 'spelers', type: 'player_stats' },
             ];
 
-            buttonTypes.forEach(type => {
+            buttonTypes.forEach((type) => {
                 const button = document.createElement('button');
                 button.classList.add('stat-selector-button');
 
@@ -34,12 +34,14 @@ export const updateStatistics = function(data, infoContainer, socket, user_id) {
                 }
 
                 button.innerHTML = type.name;
-                button.addEventListener('click', function() {
-                    socket.send(JSON.stringify({
-                        'command': 'get_stats',
-                        'user_id': user_id,
-                        'data_type': type.type
-                    }));
+                button.addEventListener('click', function () {
+                    socket.send(
+                        JSON.stringify({
+                            command: 'get_stats',
+                            user_id: user_id,
+                            data_type: type.type,
+                        }),
+                    );
 
                     // add active class to the button and remove it by the other buttons
                     const buttons = document.querySelectorAll('.stat-selector-button');
@@ -139,7 +141,8 @@ function general(stats, statsContainer) {
 
             const goals_data = document.createElement('p');
             goals_data.style.margin = '0';
-            goals_data.innerHTML = goalStat.goals_by_player + '/' + goalStat.goals_against_player;
+            goals_data.innerHTML =
+                goalStat.goals_by_player + '/' + goalStat.goals_against_player;
 
             goal_type_container.appendChild(goal_type_name);
             goal_type_container.appendChild(goals_data);
@@ -195,7 +198,7 @@ function playerStats(stats, statsContainer) {
 
     playerSelectorField.appendChild(legend);
 
-    stats.player_stats.forEach(player => {
+    stats.player_stats.forEach((player) => {
         const playerDataDiv = document.createElement('div');
         playerDataDiv.classList.add('flex-row');
         playerDataDiv.style.justifyContent = 'space-between';

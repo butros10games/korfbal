@@ -1,4 +1,4 @@
-export const truncateMiddle = function(text, maxLength) {
+export const truncateMiddle = function (text, maxLength) {
     if (text.length <= maxLength) {
         return text;
     }

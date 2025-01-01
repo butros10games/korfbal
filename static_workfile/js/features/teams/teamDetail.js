@@ -1,4 +1,9 @@
-import { setupCarousel, updateMatches, updatePlayers, updateStatistics } from '../common/carousel/index.js';
+import {
+    setupCarousel,
+    updateMatches,
+    updatePlayers,
+    updateStatistics,
+} from '../common/carousel/index.js';
 import { initializeSocket, requestInitialData } from '../common/websockets/index.js';
 import { setupFollowButton } from '../../common/setupFollowButton.js';
 
@@ -27,15 +32,15 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData('.button.active', socket, { 'user_id': user_id });
+            requestInitialData('.button.active', socket, { user_id: user_id });
         };
     } else {
         console.error('Failed to initialize WebSocket connection.');
     }
 
-    setupCarousel(carousel, buttons, socket, { 'user_id': user_id }, 'get_stats');
+    setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');
     setupFollowButton(user_id, socket);
 });
 
@@ -62,4 +67,3 @@ function onMessageReceived(event, socket, user_id) {
         }
     }
 }
-

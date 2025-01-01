@@ -1,6 +1,6 @@
 import { cleanDomCarousel } from './utils';
 
-export const updateTeam = function(data, infoContainer) {
+export const updateTeam = function (data, infoContainer) {
     cleanDomCarousel(infoContainer);
 
     if (data.teams.length > 0) {
@@ -48,6 +48,7 @@ export const updateTeam = function(data, infoContainer) {
         }
     } else {
         infoContainer.classList.add('flex-center');
-        infoContainer.innerHTML = "<p style='text-align: center;'>Er zijn nog geen teams</p>";
+        infoContainer.innerHTML =
+            "<p style='text-align: center;'>Er zijn nog geen teams</p>";
     }
 };

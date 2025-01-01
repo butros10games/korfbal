@@ -1,5 +1,6 @@
 export class CountdownTimer {
-    constructor(startTimeISO,
+    constructor(
+        startTimeISO,
         lengthInMilliseconds,
         pauseTimeISO = null,
         offsetInMilliseconds = 0,
@@ -31,7 +32,8 @@ export class CountdownTimer {
         const seconds = Math.floor((absTime % 60000) / 1000);
 
         // Update the counter display on the website
-        document.getElementById('counter').innerText = `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
+        document.getElementById('counter').innerText =
+            `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
 
         // Conditionally display the "end-half-button"
         if (this.showEndHalfButton) {
@@ -46,7 +48,7 @@ export class CountdownTimer {
 
     start(pause_time = null) {
         if (pause_time) {
-            this.totalLength = this.lengthInMilliseconds + (pause_time * 1000);
+            this.totalLength = this.lengthInMilliseconds + pause_time * 1000;
         }
 
         this.pauseTimeISO = null;

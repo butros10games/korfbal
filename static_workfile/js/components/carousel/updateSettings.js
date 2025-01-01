@@ -1,4 +1,4 @@
-export const updateSettings = function(data, infoContainer, socket) {
+export const updateSettings = function (data, infoContainer, socket) {
     const profilePicture = document.getElementById('profilePic-container');
     profilePicture.classList.add('active-img');
 
@@ -18,10 +18,10 @@ export const updateSettings = function(data, infoContainer, socket) {
         { name: 'email', label: 'Email', type: 'email' },
         { name: 'first_name', label: 'First Name', type: 'text' },
         { name: 'last_name', label: 'Last Name', type: 'text' },
-        { name: 'email_2fa', label: '2FA Enabled', type: 'checkbox' }
+        { name: 'email_2fa', label: '2FA Enabled', type: 'checkbox' },
     ];
 
-    fields.forEach(field => {
+    fields.forEach((field) => {
         const inputShell = document.createElement('div');
 
         if (field.type === 'checkbox') {
@@ -45,7 +45,10 @@ export const updateSettings = function(data, infoContainer, socket) {
         } else {
             input = document.createElement('input');
             input.type = field.type;
-            input.value = data[field.name] && data[field.name].trim() !== '' ? data[field.name] : '';
+            input.value =
+                data[field.name] && data[field.name].trim() !== ''
+                    ? data[field.name]
+                    : '';
             input.placeholder = field.label + '...';
             input.classList.add('text-input');
         }
@@ -75,18 +78,20 @@ export const updateSettings = function(data, infoContainer, socket) {
 
         // Gather input values
         const formData = {
-            'username': document.getElementById('username').value,
-            'email': document.getElementById('email').value,
-            'first_name': document.getElementById('first_name').value,
-            'last_name': document.getElementById('last_name').value,
-            'email_2fa': document.getElementById('email_2fa').checked
+            username: document.getElementById('username').value,
+            email: document.getElementById('email').value,
+            first_name: document.getElementById('first_name').value,
+            last_name: document.getElementById('last_name').value,
+            email_2fa: document.getElementById('email_2fa').checked,
         };
 
         // Send data to server
-        socket.send(JSON.stringify({
-            'command': 'settings_update',
-            'data': formData
-        }));
+        socket.send(
+            JSON.stringify({
+                command: 'settings_update',
+                data: formData,
+            }),
+        );
     });
 
     settingsText.appendChild(saveButton);

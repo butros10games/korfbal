@@ -1,6 +1,11 @@
-import { handleTouchStart, handleTouchMove, handleTouchEnd, handleButtonClick } from './utils';
+import {
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    handleButtonClick,
+} from './utils';
 
-export const setupCarousel = function(
+export const setupCarousel = function (
     carouselElement,
     buttons,
     socket,
@@ -24,7 +29,11 @@ export const setupCarousel = function(
     });
     carouselElement.addEventListener('touchmove', (e) => {
         const result = handleTouchMove(
-            e, isDragging, touchStartX, carouselElement, startPosition
+            e,
+            isDragging,
+            touchStartX,
+            carouselElement,
+            startPosition,
         );
 
         touchEndX = result.touchEndX;
@@ -48,7 +57,12 @@ export const setupCarousel = function(
     buttons.forEach((button, _) => {
         button.addEventListener('click', () => {
             isAutoScrolling = handleButtonClick(
-                socket, isAutoScrolling, button, buttons, extraData, statsName
+                socket,
+                isAutoScrolling,
+                button,
+                buttons,
+                extraData,
+                statsName,
             );
         });
     });

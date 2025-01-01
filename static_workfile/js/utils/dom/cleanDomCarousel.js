@@ -1,4 +1,4 @@
-export const cleanDomCarousel = function(container) {
+export const cleanDomCarousel = function (container) {
     container.innerHTML = '';
     container.classList.remove('flex-center');
     container.classList.remove('flex-start-wrap');

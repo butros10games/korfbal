@@ -1,29 +1,29 @@
 name: Build
 
 on:
-  push:
-    branches:
-      - main
+    push:
+        branches:
+            - main
 
 jobs:
-  build:
-    name: Build and analyze
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for better relevancy of analysis
+    build:
+        name: Build and analyze
+        runs-on: ubuntu-latest
 
-      - name: Cache SonarQube dependencies
-        uses: actions/cache@v3
-        with:
-          path: .sonar/cache
-          key: ${{ runner.os }}-sonar-${{ hashFiles('**/sonar-project.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-sonar-
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Shallow clones should be disabled for better relevancy of analysis
 
-      - uses: sonarsource/sonarqube-scan-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+            - name: Cache SonarQube dependencies
+              uses: actions/cache@v3
+              with:
+                  path: .sonar/cache
+                  key: ${{ runner.os }}-sonar-${{ hashFiles('**/sonar-project.properties') }}
+                  restore-keys: |
+                      ${{ runner.os }}-sonar-
+
+            - uses: sonarsource/sonarqube-scan-action@v3
+              env:
+                  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+                  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

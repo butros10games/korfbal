@@ -3,14 +3,14 @@ body {
 }
 
 .dm-sans-400-normal {
-    font-family: "DM Sans", sans-serif;
+    font-family: 'DM Sans', sans-serif;
     font-optical-sizing: auto;
     font-weight: 400;
     font-style: normal;
 }
 
 .dm-sans-600-normal {
-    font-family: "DM Sans", sans-serif;
+    font-family: 'DM Sans', sans-serif;
     font-optical-sizing: auto;
     font-weight: 600;
     font-style: normal;
@@ -61,7 +61,7 @@ body {
     width: calc(100% - 24px);
     height: 48px;
 
-    background-color: #C8C8C8;
+    background-color: #c8c8c8;
 }
 
 .player {
@@ -97,7 +97,7 @@ body {
     font-size: 18px;
     margin: 0;
     text-decoration: none;
-    color: white; 
+    color: white;
     padding: 6px 14px;
     background: var(--button-color);
     border-radius: 6px;

@@ -1,4 +1,4 @@
-export const uploadImage = function(blob, csrfToken, imageModal) {
+export const uploadImage = function (blob, csrfToken, imageModal) {
     const formData = new FormData();
     formData.append('profile_picture', blob, 'profile_picture.jpg'); // Set a default filename for the JPEG
 
@@ -6,15 +6,15 @@ export const uploadImage = function(blob, csrfToken, imageModal) {
         method: 'POST',
         body: formData,
         headers: {
-            'X-CSRFToken': csrfToken
-        }
+            'X-CSRFToken': csrfToken,
+        },
     })
-        .then(response => response.json())
-        .then(data => {
+        .then((response) => response.json())
+        .then((data) => {
             imageModal.style.display = 'none'; // Hide the modal
             document.getElementById('profilePic').src = '/media' + data.url;
         })
-        .catch(error => {
+        .catch((error) => {
             console.error('Error:', error);
         });
 };

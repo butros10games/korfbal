@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function loadIcon() {
     teamsContainer.classList.add('flex-center');
-    teamsContainer.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
+    teamsContainer.innerHTML =
+        "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom() {
@@ -53,8 +54,8 @@ function ajaxRequestIndex(value) {
     loadIcon();
 
     makeFetchRequest('/api/catalog/data', { value: value })
-        .then(data => displayNormalIndex(data))
-        .catch(error => console.error('Error:', error));
+        .then((data) => displayNormalIndex(data))
+        .catch((error) => console.error('Error:', error));
 }
 
 function setupSearch() {
@@ -112,12 +113,12 @@ function performSearch(searchTerm) {
 
     const apiUrl = `https://${window.location.host}/api/search/?q=${encodeURIComponent(searchTerm)}&category=${encodeURIComponent(selectedValue)}`;
     return makeFetchRequest(apiUrl)
-        .then(data => {
+        .then((data) => {
             displaySearchResults(data.results);
             searchInput.value = '';
             addPastRequest(searchTerm);
         })
-        .catch(error => console.error('Error:', error));
+        .catch((error) => console.error('Error:', error));
 }
 
 function makeFetchRequest(url, bodyData = null) {
@@ -125,17 +126,19 @@ function makeFetchRequest(url, bodyData = null) {
         method: bodyData ? 'POST' : 'GET',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken
+            'X-CSRFToken': csrfToken,
         },
     };
-    if (bodyData) {options.body = JSON.stringify(bodyData);};
+    if (bodyData) {
+        options.body = JSON.stringify(bodyData);
+    }
 
-    return fetch(url, options).then(response => response.json());
+    return fetch(url, options).then((response) => response.json());
 }
 
 function addPastRequest(searchTerm) {
     const previousRequests = document.querySelectorAll('.past-request');
-    previousRequests.forEach(element => element.remove());
+    previousRequests.forEach((element) => element.remove());
 
     const pastRequest = document.createElement('div');
     pastRequest.classList.add('past-request');
@@ -167,7 +170,7 @@ function displaySearchResults(results) {
         return;
     }
 
-    results.forEach(element => {
+    results.forEach((element) => {
         teamsContainer.appendChild(createTeamButton(element));
     });
 }
@@ -177,8 +180,16 @@ function displayNormalIndex(data) {
     const buttonDiv = createButtonDiv(['Aangesloten', 'Volgend']);
     teamsContainer.appendChild(buttonDiv);
 
-    const connectedDiv = createTeamListDiv('Aangesloten', data.connected, 'You are not playing in any teams yet ):');
-    const followingDiv = createTeamListDiv('Volgend', data.following, 'You are not following any teams yet ):');
+    const connectedDiv = createTeamListDiv(
+        'Aangesloten',
+        data.connected,
+        'You are not playing in any teams yet ):',
+    );
+    const followingDiv = createTeamListDiv(
+        'Volgend',
+        data.following,
+        'You are not following any teams yet ):',
+    );
     followingDiv.style.display = 'none';
 
     teamsContainer.appendChild(connectedDiv);
@@ -189,12 +200,16 @@ function createButtonDiv(buttonArray) {
     const buttonDiv = document.createElement('div');
     buttonDiv.classList.add('flex-row');
 
-    buttonArray.forEach(button => {
+    buttonArray.forEach((button) => {
         const buttonElement = document.createElement('div');
         buttonElement.classList.add('selection-button', 'flex-center');
-        if (button === 'Aangesloten') {buttonElement.classList.add('active');};
+        if (button === 'Aangesloten') {
+            buttonElement.classList.add('active');
+        }
         buttonElement.innerHTML = button;
-        buttonElement.addEventListener('click', () => handleButtonClick(buttonElement, button));
+        buttonElement.addEventListener('click', () =>
+            handleButtonClick(buttonElement, button),
+        );
         buttonDiv.appendChild(buttonElement);
     });
 
@@ -203,11 +218,13 @@ function createButtonDiv(buttonArray) {
 
 function handleButtonClick(buttonElement, button) {
     const buttons = document.querySelectorAll('.selection-button');
-    buttons.forEach(buttonSelect => buttonSelect.classList.remove('active'));
+    buttons.forEach((buttonSelect) => buttonSelect.classList.remove('active'));
     buttonElement.classList.add('active');
 
     document.getElementById(button).style.display = 'flex';
-    document.getElementById(button === 'Aangesloten' ? 'Volgend' : 'Aangesloten').style.display = 'none';
+    document.getElementById(
+        button === 'Aangesloten' ? 'Volgend' : 'Aangesloten',
+    ).style.display = 'none';
 }
 
 function createTeamListDiv(id, teams, emptyMessage) {
@@ -216,7 +233,7 @@ function createTeamListDiv(id, teams, emptyMessage) {
     div.classList.add('flex-column');
 
     if (teams.length > 0) {
-        teams.forEach(team => div.appendChild(createTeamButton(team)));
+        teams.forEach((team) => div.appendChild(createTeamButton(team)));
     } else {
         const emptyText = document.createElement('p');
         emptyText.innerHTML = emptyMessage;

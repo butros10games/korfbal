@@ -2,7 +2,7 @@ import { shotButtonReg } from './shotButtonReg.js';
 import { removePlayerClickHandlers } from './removePlayerClickHandlers.js';
 import { addPlayerClickHandlers } from './addPlayerClickHandlers.js';
 
-export const toggleButton = function(button, team, socket, homeScoreButton) {
+export const toggleButton = function (button, team, socket, homeScoreButton) {
     if (button.classList.contains('activated')) {
         deactivateButton(button, team);
         shotButtonReg(team, socket);
@@ -12,7 +12,7 @@ export const toggleButton = function(button, team, socket, homeScoreButton) {
     }
 };
 
-export const getButtonBackground = function(team, isActive) {
+export const getButtonBackground = function (team, isActive) {
     if (team === 'home') {
         return isActive ? '#43ff64' : '#43ff6480';
     } else {
@@ -20,14 +20,14 @@ export const getButtonBackground = function(team, isActive) {
     }
 };
 
-const deactivateButton = function(button, team) {
+const deactivateButton = function (button, team) {
     const playerButtons = getPlayerButtons(team);
     button.style.background = getButtonBackground(team, false);
     button.classList.remove('activated');
     removePlayerClickHandlers(playerButtons);
 };
 
-const deactivateActivatedButton = function(homeScoreButton) {
+const deactivateActivatedButton = function (homeScoreButton) {
     const activatedButton = document.querySelector('.activated');
     if (activatedButton) {
         const team = activatedButton === homeScoreButton ? 'home' : 'away';
@@ -35,14 +35,14 @@ const deactivateActivatedButton = function(homeScoreButton) {
     }
 };
 
-const activateButton = function(button, team, socket) {
+const activateButton = function (button, team, socket) {
     const playerButtons = getPlayerButtons(team);
     button.style.background = getButtonBackground(team, true);
     button.classList.add('activated');
     addPlayerClickHandlers(playerButtons, team, socket);
 };
 
-const getPlayerButtons = function(team) {
+const getPlayerButtons = function (team) {
     const containerId = team === 'home' ? 'Aanval' : 'Verdediging';
     const playerButtonsContainer = document.getElementById(containerId);
     return playerButtonsContainer.getElementsByClassName('player-selector');

@@ -1,8 +1,10 @@
-export const onPlayerSelectChange = function(changedSelect) {
+export const onPlayerSelectChange = function (changedSelect) {
     const allSelectors = document.querySelectorAll('.player-selector');
-    allSelectors.forEach(select => {
+    allSelectors.forEach((select) => {
         // Skip the select that was changed
-        if (select === changedSelect) {return;};
+        if (select === changedSelect) {
+            return;
+        }
 
         // If another select has the same value, reset it
         if (select.value === changedSelect.value) {

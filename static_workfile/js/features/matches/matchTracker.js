@@ -1,6 +1,11 @@
 import { CountdownTimer } from './common/index.js';
 import { truncateMiddle } from '../common/utils';
-import { createEventTypeDiv, createMidsectionDiv, createScoreDiv, getFormattedTime } from '../common/carousel/events_utils';
+import {
+    createEventTypeDiv,
+    createMidsectionDiv,
+    createScoreDiv,
+    getFormattedTime,
+} from '../common/carousel/events_utils';
 import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../common/swipeDelete';
 import { updatePlayerGroups } from '../common/carousel';
 import { initializeSocket } from '../common/websockets/index.js';
@@ -38,15 +43,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, socket, eventsDiv)
+        onMessageReceived(event, socket, eventsDiv),
     );
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData(socket);
         };
-    };
+    }
 
     load_icon_small(eventsDiv);
     load_icon(playersDiv);
@@ -64,8 +69,8 @@ function initializeButtons(socket) {
     for (const element of buttons) {
         element.addEventListener('click', () => {
             const data = {
-                'command': 'event',
-                'event': element.id,
+                command: 'event',
+                event: element.id,
             };
             socket.send(JSON.stringify(data));
         });
@@ -74,7 +79,7 @@ function initializeButtons(socket) {
     const endHalfButton = document.getElementById('end-half-button');
     endHalfButton.addEventListener('click', () => {
         const data = {
-            'command': 'part_end',
+            command: 'part_end',
         };
         socket.send(JSON.stringify(data));
     });
@@ -85,7 +90,7 @@ function startStopButtonSetup(socket) {
 
     startStopButton.addEventListener('click', () => {
         const data = {
-            'command': 'start/pause',
+            command: 'start/pause',
         };
 
         socket.send(JSON.stringify(data));
@@ -93,17 +98,23 @@ function startStopButtonSetup(socket) {
 }
 
 function requestInitialData(socket) {
-    socket.send(JSON.stringify({
-        'command': 'playerGroups',
-    }));
+    socket.send(
+        JSON.stringify({
+            command: 'playerGroups',
+        }),
+    );
 
-    socket.send(JSON.stringify({
-        'command': 'last_event',
-    }));
+    socket.send(
+        JSON.stringify({
+            command: 'last_event',
+        }),
+    );
 
-    socket.send(JSON.stringify({
-        'command': 'get_time',
-    }));
+    socket.send(
+        JSON.stringify({
+            command: 'get_time',
+        }),
+    );
 }
 
 function onMessageReceived(event, socket, eventsDiv) {
@@ -115,7 +126,7 @@ function onMessageReceived(event, socket, eventsDiv) {
         return;
     }
 
-    switch(data.command) {
+    switch (data.command) {
         case 'last_event': {
             lastEvent(data, eventsDiv);
             break;
@@ -235,22 +246,28 @@ function timerData(data, startStopButton) {
 
     if (data.type === 'active') {
         timer = new CountdownTimer(
-            data.time, data.length * 1000, null, data.pause_length * 1000, true
+            data.time,
+            data.length * 1000,
+            null,
+            data.pause_length * 1000,
+            true,
         );
         timer.start();
 
         // set the pause button to pause
         startStopButton.innerHTML = 'Pause';
-
     } else if (data.type === 'pause') {
         timer = new CountdownTimer(
-            data.time, data.length * 1000, data.calc_to, data.pause_length * 1000, true
+            data.time,
+            data.length * 1000,
+            data.calc_to,
+            data.pause_length * 1000,
+            true,
         );
         timer.stop();
 
         // set the pause button to start
         startStopButton.innerHTML = 'Start';
-
     } else if (data.type === 'start') {
         timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
         timer.start();
@@ -266,7 +283,6 @@ function pauseTimer(data, startStopButton) {
 
         // set the pause button to start
         startStopButton.innerHTML = 'Start';
-
     } else if (data.pause === false) {
         timer.start(data.pause_time);
         console.log('Timer resumed');
@@ -395,12 +411,14 @@ function createPopup(popupTextData) {
 
 function load_icon(element) {
     element.classList.add('flex-center');
-    element.innerHTML = "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
+    element.innerHTML =
+        "<div id='load_icon' class='lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function load_icon_small(element) {
     element.classList.add('flex-center');
-    element.innerHTML = "<div id='load_icon' class='small-lds-ring'><div></div><div></div><div></div><div></div></div>";
+    element.innerHTML =
+        "<div id='load_icon' class='small-lds-ring'><div></div><div></div><div></div><div></div></div>";
 }
 
 function cleanDom(element) {
@@ -509,11 +527,11 @@ function showGoalTypes(data, socket) {
             const last_goal_Data = sharedData.last_goal_Data;
 
             const data_send = {
-                'command': 'goal_reg',
-                'goal_type': goalType.id,
-                'player_id': last_goal_Data.player_id,
-                'time': last_goal_Data.time,
-                'for_team': last_goal_Data.for_team,
+                command: 'goal_reg',
+                goal_type: goalType.id,
+                player_id: last_goal_Data.player_id,
+                time: last_goal_Data.time,
+                for_team: last_goal_Data.for_team,
             };
 
             socket.send(JSON.stringify(data_send));
@@ -603,10 +621,10 @@ function showReservePlayer(data, socket) {
 
         PlayerDiv.addEventListener('click', () => {
             const data_send = {
-                'command': 'wissel_reg',
-                'new_player_id': Player.id,
-                'old_player_id': playerSwitchData.player_id,
-                'time': playerSwitchData.time,
+                command: 'wissel_reg',
+                new_player_id: Player.id,
+                old_player_id: playerSwitchData.player_id,
+                time: playerSwitchData.time,
             };
 
             console.log(data_send);
@@ -642,9 +660,19 @@ function updateEvent(data) {
 
     switch (event.type) {
         case 'goal': {
-            const eventTypeDiv = createEventTypeDiv(event.type, '64px', event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)');
-            const midsectionDiv = createMidsectionDiv(event.shot_type + ' ("' + event.time + '")', truncateMiddle(event.player, 20));
-            const scoreDiv = createScoreDiv(event.goals_for + '-' + event.goals_against, '84px');
+            const eventTypeDiv = createEventTypeDiv(
+                event.type,
+                '64px',
+                event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)',
+            );
+            const midsectionDiv = createMidsectionDiv(
+                event.shot_type + ' ("' + event.time + '")',
+                truncateMiddle(event.player, 20),
+            );
+            const scoreDiv = createScoreDiv(
+                event.goals_for + '-' + event.goals_against,
+                '84px',
+            );
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
@@ -653,7 +681,12 @@ function updateEvent(data) {
         }
         case 'wissel': {
             const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#eb9834');
-            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', truncateMiddle(event.player_in, 15) + ' --> ' + truncateMiddle(event.player_out, 15));
+            const midsectionDiv = createMidsectionDiv(
+                '("' + event.time + '")',
+                truncateMiddle(event.player_in, 15) +
+                    ' --> ' +
+                    truncateMiddle(event.player_out, 15),
+            );
             const endSectionDiv = document.createElement('div');
             endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
@@ -664,7 +697,10 @@ function updateEvent(data) {
         }
         case 'pause': {
             const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#2196F3');
-            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', getFormattedTime(event));
+            const midsectionDiv = createMidsectionDiv(
+                '("' + event.time + '")',
+                getFormattedTime(event),
+            );
             const endSectionDiv = document.createElement('div');
             endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
@@ -674,8 +710,15 @@ function updateEvent(data) {
             break;
         }
         case 'shot': {
-            const eventTypeDiv = createEventTypeDiv(event.type, '64px', event.for_team ? '#43ff644d' : '#eb00004d');
-            const midsectionDiv = createMidsectionDiv('("' + event.time + '")', truncateMiddle(event.player, 20));
+            const eventTypeDiv = createEventTypeDiv(
+                event.type,
+                '64px',
+                event.for_team ? '#43ff644d' : '#eb00004d',
+            );
+            const midsectionDiv = createMidsectionDiv(
+                '("' + event.time + '")',
+                truncateMiddle(event.player, 20),
+            );
             const endSectionDiv = document.createElement('div');
             endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
 
@@ -754,7 +797,7 @@ function showPlayerGroups(data, socket) {
     playerGroupContainer.classList.add('player-group-container');
 
     if (playerGroupsData.length > 0) {
-        playerGroupsData.forEach(playerGroup => {
+        playerGroupsData.forEach((playerGroup) => {
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.classList.add('player-group');
             playerGroupDiv.classList.add('flex-column');
@@ -837,7 +880,6 @@ function showPlayerGroups(data, socket) {
                     playerDiv.id = player.id;
                     playerDiv.style.justifyContent = 'space-between';
 
-
                     playerName.innerHTML = truncateMiddle(player.name, 16);
                     playerShotsfor.innerHTML = player.shots_for;
                     playerShotsAgainst.innerHTML = player.shots_against;
@@ -882,7 +924,7 @@ function playerSwitch(socket) {
 
         const playerButtons = document.getElementsByClassName('player-selector');
 
-        Array.from(playerButtons).forEach(element => {
+        Array.from(playerButtons).forEach((element) => {
             element.style.background = '';
             if (element.playerClickHandler) {
                 element.removeEventListener('click', element.playerClickHandler);
@@ -898,7 +940,7 @@ function playerSwitch(socket) {
 
         const playerButtons = document.getElementsByClassName('player-selector');
 
-        Array.from(playerButtons).forEach(element => {
+        Array.from(playerButtons).forEach((element) => {
             const homeScoreButton = document.getElementById('home-score');
             const awayScoreButton = document.getElementById('away-score');
 
@@ -919,14 +961,14 @@ function playerSwitch(socket) {
             }
 
             // Add new handler
-            const playerClickHandler = function() {
+            const playerClickHandler = function () {
                 playerSwitchData = {
-                    'player_id': element.id,
-                    'time': new Date().toISOString(),
+                    player_id: element.id,
+                    time: new Date().toISOString(),
                 };
 
                 const data = {
-                    'command': 'get_non_active_players'
+                    command: 'get_non_active_players',
                 };
 
                 socket.send(JSON.stringify(data));

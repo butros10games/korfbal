@@ -1,13 +1,13 @@
 {% load static %}
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
     <head>
         <title>Login</title>
-        <meta name="description" content="Registration">
-        
-        <link rel="stylesheet" href="{% static 'css/authentication/2fa_code.css' %}">
-        
+        <meta name="description" content="Registration" />
+
+        <link rel="stylesheet" href="{% static 'css/authentication/2fa_code.css' %}" />
+
         {% include 'common/imports.html' %}
     </head>
     <body class="background-color">
@@ -17,20 +17,28 @@
             <div class="row">
                 <div class="col-md-6">
                     <h2 style="font-size: 20px">Enter 2FA Code</h2>
-                    <p style="font-size: 16px">Please enter the 2FA code sent to your email to continue.</p>
-                    
+                    <p style="font-size: 16px">
+                        Please enter the 2FA code sent to your email to continue.
+                    </p>
+
                     <form action="{% url 'verify_2fa_code' %}" method="post">
                         {% csrf_token %}
-                        
+
                         <div class="form-group">
-                            <input type="text" class="form-control" id="code" name="code" required>
+                            <input
+                                type="text"
+                                class="form-control"
+                                id="code"
+                                name="code"
+                                required
+                            />
                         </div>
-                        
+
                         <button type="submit" class="button">Verify</button>
                     </form>
 
                     {% for message in messages %}
-                        <p class="CHK2-P">{{ message }}</p>
+                    <p class="CHK2-P">{{ message }}</p>
                     {% endfor %}
                 </div>
             </div>

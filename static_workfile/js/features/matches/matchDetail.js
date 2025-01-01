@@ -1,4 +1,10 @@
-import { setupCarousel, updatePlayerGroups, showPlayerGroups, updateStatistics, updateEvents } from '../common/carousel/index.js';
+import {
+    setupCarousel,
+    updatePlayerGroups,
+    showPlayerGroups,
+    updateStatistics,
+    updateEvents,
+} from '../common/carousel/index.js';
 import { initializeSocket, requestInitialData } from '../common/websockets/index.js';
 import { cleanDomCarousel } from '../common/carousel/utils';
 import { CountdownTimer } from './common/index.js';
@@ -22,17 +28,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, match_id, user_id, socket)
+        onMessageReceived(event, match_id, user_id, socket),
     );
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData('.button.active', socket, { 'user_id': user_id });
+            requestInitialData('.button.active', socket, { user_id: user_id });
         };
-    };
+    }
 
-    setupCarousel(carousel, buttons, socket, { 'user_id': user_id }, 'get_stats');
+    setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');
 });
 
 let timer = null;
@@ -43,7 +49,7 @@ function onMessageReceived(event, match_id, user_id, socket) {
     const data = JSON.parse(event.data);
     console.log(data);
 
-    switch(data.command) {
+    switch (data.command) {
         case 'events': {
             cleanDomCarousel(infoContainer);
 
@@ -82,7 +88,10 @@ function onMessageReceived(event, match_id, user_id, socket) {
 
             if (data.type === 'active') {
                 timer = new CountdownTimer(
-                    data.time, data.length * 1000, null, data.pause_length * 1000
+                    data.time,
+                    data.length * 1000,
+                    null,
+                    data.pause_length * 1000,
                 );
                 timer.start();
             } else if (data.type === 'pause') {
@@ -104,7 +113,6 @@ function onMessageReceived(event, match_id, user_id, socket) {
             if (data.pause === true) {
                 timer.stop();
                 console.log('Timer paused');
-
             } else if (data.pause === false) {
                 timer.start(data.pause_time);
                 console.log('Timer resumed');

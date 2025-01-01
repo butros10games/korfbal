@@ -1,167 +1,167 @@
 services:
-  kwt-migrate:
-    build:
-      context: .
-      dockerfile: ./docker/uwsgi.Dockerfile
-    container_name: kwt-migrate
-    command: python manage.py migrate
-    env_file:
-      - .env
-    networks:
-      - kwt-net
-    volumes:
-      - ./apps:/kwt_uwsgi/apps
-      - ./korfbal:/kwt_uwsgi/korfbal
-      - ./manage.py:/kwt_uwsgi/manage.py
-    depends_on:
-      kwt-postgres:
-        condition: service_healthy
+    kwt-migrate:
+        build:
+            context: .
+            dockerfile: ./docker/uwsgi.Dockerfile
+        container_name: kwt-migrate
+        command: python manage.py migrate
+        env_file:
+            - .env
+        networks:
+            - kwt-net
+        volumes:
+            - ./apps:/kwt_uwsgi/apps
+            - ./korfbal:/kwt_uwsgi/korfbal
+            - ./manage.py:/kwt_uwsgi/manage.py
+        depends_on:
+            kwt-postgres:
+                condition: service_healthy
 
-  kwt-collectstatic:
-    build:
-      context: .
-      dockerfile: ./docker/collectstatic.Dockerfile
-    container_name: kwt-collectstatic
-    command: python manage.py collectstatic --noinput
-    env_file:
-      - .env
-    networks:
-      - kwt-net
-    volumes:
-      - ./apps:/app/apps
-      - ./korfbal:/app/korfbal
-      - ./static_workfile:/app/static_workfile
-      - ./manage.py:/app/manage.py
-      - ./configs/collectstatic/entrypoint.sh:/app/entrypoint.sh
-    depends_on:
-      kwt-migrate:
-        condition: service_completed_successfully
+    kwt-collectstatic:
+        build:
+            context: .
+            dockerfile: ./docker/collectstatic.Dockerfile
+        container_name: kwt-collectstatic
+        command: python manage.py collectstatic --noinput
+        env_file:
+            - .env
+        networks:
+            - kwt-net
+        volumes:
+            - ./apps:/app/apps
+            - ./korfbal:/app/korfbal
+            - ./static_workfile:/app/static_workfile
+            - ./manage.py:/app/manage.py
+            - ./configs/collectstatic/entrypoint.sh:/app/entrypoint.sh
+        depends_on:
+            kwt-migrate:
+                condition: service_completed_successfully
 
-  kwt-uwsgi:
-    build:
-      context: .
-      dockerfile: ./docker/uwsgi.Dockerfile
-    container_name: kwt-uwsgi
-    command: python manage.py runserver 0.0.0.0:1664
-    env_file:
-      - .env
-    volumes:
-      - ./apps:/kwt_uwsgi/apps
-      - ./korfbal:/kwt_uwsgi/korfbal
-      - ./templates:/kwt_uwsgi/templates
-      - ./manage.py:/kwt_uwsgi/manage.py
-    networks:
-      - kwt-net
-    depends_on:
-      kwt-collectstatic:
-        condition: service_completed_successfully
+    kwt-uwsgi:
+        build:
+            context: .
+            dockerfile: ./docker/uwsgi.Dockerfile
+        container_name: kwt-uwsgi
+        command: python manage.py runserver 0.0.0.0:1664
+        env_file:
+            - .env
+        volumes:
+            - ./apps:/kwt_uwsgi/apps
+            - ./korfbal:/kwt_uwsgi/korfbal
+            - ./templates:/kwt_uwsgi/templates
+            - ./manage.py:/kwt_uwsgi/manage.py
+        networks:
+            - kwt-net
+        depends_on:
+            kwt-collectstatic:
+                condition: service_completed_successfully
 
-  kwt-daphne:
-    build:
-      context: .
-      dockerfile: ./docker/daphne.Dockerfile
-    container_name: kwt-daphne
-    env_file:
-      - .env
-    volumes:
-      - ./apps:/kwt_uwsgi/apps
-      - ./korfbal:/kwt_uwsgi/korfbal
-      - ./manage.py:/kwt_uwsgi/manage.py
-    depends_on:
-      kwt-collectstatic:
-          condition: service_completed_successfully
-    networks:
-      - kwt-net
+    kwt-daphne:
+        build:
+            context: .
+            dockerfile: ./docker/daphne.Dockerfile
+        container_name: kwt-daphne
+        env_file:
+            - .env
+        volumes:
+            - ./apps:/kwt_uwsgi/apps
+            - ./korfbal:/kwt_uwsgi/korfbal
+            - ./manage.py:/kwt_uwsgi/manage.py
+        depends_on:
+            kwt-collectstatic:
+                condition: service_completed_successfully
+        networks:
+            - kwt-net
 
-  kwt-redis:
-    image: redis:latest
-    container_name: kwt-redis
-    networks:
-      - kwt-net
+    kwt-redis:
+        image: redis:latest
+        container_name: kwt-redis
+        networks:
+            - kwt-net
 
-  kwt-nginx:
-    build:
-      context: .
-      dockerfile: ./docker/nginx.Dockerfile
-    container_name: kwt-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - kwt-uwsgi
-      - kwt-daphne
-    networks:
-      - kwt-net
+    kwt-nginx:
+        build:
+            context: .
+            dockerfile: ./docker/nginx.Dockerfile
+        container_name: kwt-nginx
+        ports:
+            - '80:80'
+            - '443:443'
+        depends_on:
+            - kwt-uwsgi
+            - kwt-daphne
+        networks:
+            - kwt-net
 
-  kwt-postgres:
-    image: postgres:latest
-    container_name: kwt-postgres
-    env_file:
-      - .env
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - kwt-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U korfbal"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
+    kwt-postgres:
+        image: postgres:latest
+        container_name: kwt-postgres
+        env_file:
+            - .env
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        networks:
+            - kwt-net
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U korfbal']
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 5s
 
-  kwt-pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: kwt-pgadmin
-    env_file:
-      - .env
-    ports:
-      - "5050:80"
-    volumes:
-      - pgadmin:/var/lib/pgadmin
-    networks:
-      - kwt-net
+    kwt-pgadmin:
+        image: dpage/pgadmin4:latest
+        container_name: kwt-pgadmin
+        env_file:
+            - .env
+        ports:
+            - '5050:80'
+        volumes:
+            - pgadmin:/var/lib/pgadmin
+        networks:
+            - kwt-net
 
-  kwt-minio:
-    image: minio/minio:latest
-    container_name: kwt-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-    networks:
-      - kwt-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    kwt-minio:
+        image: minio/minio:latest
+        container_name: kwt-minio
+        command: server /data --console-address ":9001"
+        environment:
+            MINIO_ROOT_USER: minioadmin
+            MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+            - '9001:9001'
+        volumes:
+            - minio-data:/data
+        networks:
+            - kwt-net
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+            interval: 30s
+            timeout: 10s
+            retries: 5
 
 networks:
-  kwt-net:
-    driver: bridge
+    kwt-net:
+        driver: bridge
 
 volumes:
-  minio-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./local_dev_files/minio
+    minio-data:
+        driver: local
+        driver_opts:
+            type: none
+            o: bind
+            device: ./local_dev_files/minio
 
-  postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./local_dev_files/postgressql
+    postgres_data:
+        driver: local
+        driver_opts:
+            type: none
+            o: bind
+            device: ./local_dev_files/postgressql
 
-  pgadmin:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./local_dev_files/pgadmin
+    pgadmin:
+        driver: local
+        driver_opts:
+            type: none
+            o: bind
+            device: ./local_dev_files/pgadmin

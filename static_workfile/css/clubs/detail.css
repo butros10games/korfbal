@@ -1,6 +1,6 @@
 body {
     margin: 0;
-    font-family: "DM Sans", sans-serif;
+    font-family: 'DM Sans', sans-serif;
 }
 
 .flex-row {
@@ -91,14 +91,16 @@ a {
     top: 0;
     height: 32px;
     width: auto;
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    transition:
+        opacity 0.3s ease,
+        transform 0.3s ease;
     transform: scale(0.8); /* initial scaled down state */
     opacity: 0;
 }
 
 /* Initial visibility based on data-followed attribute */
-.icon-container[data-followed="true"] #follow-full,
-.icon-container[data-followed="false"] #follow-outline {
+.icon-container[data-followed='true'] #follow-full,
+.icon-container[data-followed='false'] #follow-outline {
     opacity: 1;
     transform: scale(1); /* scale back to original size */
 }
@@ -147,10 +149,10 @@ a {
 
 @keyframes lds-ring {
     0% {
-      transform: rotate(0deg);
+        transform: rotate(0deg);
     }
     100% {
-      transform: rotate(360deg);
+        transform: rotate(360deg);
     }
 }
 
@@ -159,7 +161,7 @@ a {
     justify-content: center;
     align-items: center;
 
-    background-color: transparent; 
+    background-color: transparent;
     border: 2px solid var(--button-color);
 
     color: black;

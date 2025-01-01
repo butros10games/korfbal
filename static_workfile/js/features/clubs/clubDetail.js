@@ -2,7 +2,6 @@ import { setupCarousel, updateMatches, updateTeam } from '../common/carousel';
 import { initializeSocket, requestInitialData } from '../common/websockets';
 import { setupFollowButton } from '../../common/setupFollowButton.js';
 
-
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
     const buttons = document.querySelectorAll('.button');
@@ -25,7 +24,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const socket = initializeSocket(WebSocketUrl, onMessageReceived);
 
     if (socket) {
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket);
         };
@@ -42,7 +41,7 @@ function onMessageReceived(event) {
     const infoContainer = document.getElementById('info-container');
     const maxLength = 14;
 
-    switch(data.command) {
+    switch (data.command) {
         case 'wedstrijden':
             updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
             break;
