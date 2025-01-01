@@ -1,6 +1,6 @@
 import { setupCarousel, updateMatches, updateTeam, updateSettings, updateGoalStats } from '../common/carousel';
 import { setupProfilePicture } from '../common/profile_picture';
-import { initializeSocket, requestInitalData } from '../common/websockets';
+import { initializeSocket, requestInitialData } from '../common/websockets';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
@@ -29,7 +29,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (socket) {
         socket.onopen = function() {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitalData('.button.active', socket);
+            requestInitialData('.button.active', socket);
         };
         setupCarousel(carousel, buttons, socket);
     }

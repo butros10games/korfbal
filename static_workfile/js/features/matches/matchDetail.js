@@ -1,5 +1,5 @@
 import { setupCarousel, updatePlayerGroups, showPlayerGroups, updateStatistics, updateEvents } from '../common/carousel/index.js';
-import { initializeSocket, requestInitalData } from '../common/websockets/index.js';
+import { initializeSocket, requestInitialData } from '../common/websockets/index.js';
 import { cleanDomCarousel } from '../common/carousel/utils';
 import { CountdownTimer } from './common/index.js';
 
@@ -20,7 +20,7 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://"${window.location.host}"/ws/match/"${match_id}/`;
+    const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
         onMessageReceived(event, match_id, user_id, socket)
     );
@@ -28,7 +28,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (socket) {
         socket.onopen = function() {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitalData('.button.active', socket, { 'user_id': user_id });
+            requestInitialData('.button.active', socket, { 'user_id': user_id });
         };
     };
 

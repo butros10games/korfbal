@@ -67,7 +67,7 @@ export const updateGoalStats = function(data, infoContainer) {
                 // Create a div for each goal type's stats
                 const goal_type_container = document.createElement('div');
                 goal_type_container.classList.add('flex-column');
-                goal_type_container.style.marginbottom = '12px';
+                goal_type_container.style.marginBottom = '12px';
                 goal_type_container.style.width = '104px';
                 goal_type_container.style.marginBottom = '12px';
 

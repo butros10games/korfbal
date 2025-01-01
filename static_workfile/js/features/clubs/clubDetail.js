@@ -1,5 +1,5 @@
 import { setupCarousel, updateMatches, updateTeam } from '../common/carousel';
-import { initializeSocket, requestInitalData } from '../common/websockets';
+import { initializeSocket, requestInitialData } from '../common/websockets';
 import { setupFollowButton } from '../../common/setupFollowButton.js';
 
 
@@ -21,13 +21,13 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://"${window.location.host}"/ws/club/"${team_id}/`;
+    const WebSocketUrl = `wss://${window.location.host}/ws/club/${team_id}/`;
     const socket = initializeSocket(WebSocketUrl, onMessageReceived);
 
     if (socket) {
         socket.onopen = function() {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitalData('.button.active', socket);
+            requestInitialData('.button.active', socket);
         };
     } else {
         console.error('Failed to initialize WebSocket connection.');

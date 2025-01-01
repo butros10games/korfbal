@@ -1,4 +1,4 @@
-export const requestInitalData = function(buttonSelector, socket, moreData = null) {
+export const requestInitialData = function(buttonSelector, socket, moreData = null) {
     const button = document.querySelector(buttonSelector);
     if (button) {
         const data = button.getAttribute('data');

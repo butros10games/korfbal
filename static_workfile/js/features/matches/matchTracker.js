@@ -36,7 +36,7 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('Not enough UUIDs found in the URL.');
     }
 
-    const WebSocketUrl = `wss://"${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
+    const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
         onMessageReceived(event, socket, eventsDiv)
     );
@@ -44,7 +44,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (socket) {
         socket.onopen = function() {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitalData(socket);
+            requestInitialData(socket);
         };
     };
 
@@ -92,7 +92,7 @@ function startStopButtonSetup(socket) {
     });
 }
 
-function requestInitalData(socket) {
+function requestInitialData(socket) {
     socket.send(JSON.stringify({
         'command': 'playerGroups',
     }));
@@ -285,7 +285,7 @@ function teamGoalChangeFunction(data) {
         overlay.remove();
     }
 
-    // remove the collor change from the buttons
+    // remove the color change from the buttons
     const activatedButton = document.querySelector('.activated');
     if (activatedButton) {
         activatedButton.click();
@@ -326,9 +326,9 @@ function matchEnd(data, startStopButton) {
     }
 
     // set the pause button to start
-    startStopButton.innerHTML = 'match ended';
+    startStopButton.innerHTML = 'Match ended.';
 
-    // add a overlay with the match end and a button when pressed it goes back to the match detail page
+    // Add an overlay with the match end and a button when pressed it goes back to the match detail page
     const overlay_ended = document.createElement('div');
     overlay_ended.id = 'overlay';
     overlay_ended.classList.add('overlay');
