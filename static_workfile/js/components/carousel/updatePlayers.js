@@ -1,5 +1,5 @@
-import { truncateMiddle } from '../utils';
-import { cleanDomCarousel } from './utils';
+import { truncateMiddle } from '../../utils';
+import { cleanDomCarousel } from '../../utils/dom';
 
 export const updatePlayers = function (data, infoContainer) {
     cleanDomCarousel(infoContainer);

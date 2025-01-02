@@ -30,3 +30,31 @@ export const initializeSocket = function (url, onMessageReceived) {
     connect();
     return socket;
 };
+
+export const requestInitialData = function (buttonSelector, socket, moreData = null) {
+    const button = document.querySelector(buttonSelector);
+    if (button) {
+        const data = button.getAttribute('data');
+        const payload = { command: data };
+
+        // Merge moreData into the payload if moreData is provided
+        if (moreData) {
+            Object.assign(payload, moreData);
+        }
+
+        socket.send(JSON.stringify(payload));
+    }
+};
+
+export function onMessageReceived(commandHandlers) {
+    return function (event) {
+        const data = JSON.parse(event.data);
+        const { command } = data;
+    
+        if (commandHandlers[command]) {
+            commandHandlers[command](data);
+        } else {
+            console.warn('No handler for command:', command);
+        }
+    };
+}

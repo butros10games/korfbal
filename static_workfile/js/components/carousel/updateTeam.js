@@ -1,4 +1,4 @@
-import { cleanDomCarousel } from './utils';
+import { cleanDomCarousel } from '../../utils/dom';
 
 export const updateTeam = function (data, infoContainer) {
     cleanDomCarousel(infoContainer);

@@ -2,13 +2,13 @@ const path = require('path');
 
 module.exports = {
     entry: {
-        hub_catalog: './static_workfile/js/features/hub/hub_catalog.js',
-        club_detail: './static_workfile/js/features/clubs/club_detail.js',
-        match_detail: './static_workfile/js/features/matches/match_detail.js',
-        players_selector: './static_workfile/js/features/matches/players_selector.js',
-        match_tracker: './static_workfile/js/features/matches/match_tracker.js',
-        profile_detail: './static_workfile/js/features/profile/profile_detail.js',
-        teams_detail: './static_workfile/js/features/teams/team_detail.js',
+        hub_catalog: './static_workfile/js/features/hub/hubCatalog.js',
+        club_detail: './static_workfile/js/features/clubs/clubDetail.js',
+        match_detail: './static_workfile/js/features/matches/matchDetail.js',
+        players_selector: './static_workfile/js/features/matches/playersSelector.js',
+        match_tracker: './static_workfile/js/features/matches/matchTracker.js',
+        profile_detail: './static_workfile/js/features/profile/profileDetail.js',
+        teams_detail: './static_workfile/js/features/teams/teamDetail.js',
     },
     output: {
         path: path.resolve(__dirname, 'static_workfile/webpack_bundles'),

@@ -1,17 +1,16 @@
 import { CountdownTimer } from './common/index.js';
-import { truncateMiddle } from '../common/utils';
+import { truncateMiddle } from '../../utils';
 import {
     createEventTypeDiv,
     createMidsectionDiv,
     createScoreDiv,
     getFormattedTime,
-} from '../common/carousel/events_utils';
-import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../common/swipeDelete';
-import { updatePlayerGroups } from '../common/carousel';
-import { initializeSocket } from '../common/websockets/index.js';
-import { scoringButtonSetup } from '../common/scoring_button/index.js';
+} from '../../utils/events';
+import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../../components/swipe_delete';
+import { updatePlayerGroups } from '../../components/carousel';
+import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
+import { scoringButtonSetup, shotButtonReg } from '../../components/scoring_button/index.js';
 import { sharedData } from './sharedData.js';
-import { shotButtonReg } from '../common/scoring_button/utils/index.js';
 
 let firstUUID;
 let secondUUID;
@@ -41,10 +40,25 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('Not enough UUIDs found in the URL.');
     }
 
+    const startStopButton = document.getElementById('start-stop-button');
+
+    const commandHandlers = {
+        'last_event': (data) => lastEvent(data, eventsDiv),
+        'playerGroups': (data) => playerGroups(data, socket, eventsDiv),
+        'player_shot_change': (data) => updatePlayerShot(data),
+        'goal_types': (data) => showGoalTypes(data, socket),
+        'timer_data': (data) => timerData(data, startStopButton),
+        'pause': (data) => pauseTimer(data, startStopButton),
+        'team_goal_change': (data) => teamGoalChangeFunction(data),
+        'non_active_players': (data) => showReservePlayer(data, socket),
+        'player_change': (data) => playerChange(data, socket),
+        'part_end': (data) => partEnd(data, startStopButton),
+        'match_end': (data) => matchEnd(data, startStopButton),
+        'error': (data) => errorProcessing(data.data),
+    };
+
     const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
-    const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, socket, eventsDiv),
-    );
+    const socket = initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers));
 
     if (socket) {
         socket.onopen = function () {
@@ -115,73 +129,6 @@ function requestInitialData(socket) {
             command: 'get_time',
         }),
     );
-}
-
-function onMessageReceived(event, socket, eventsDiv) {
-    const data = JSON.parse(event.data);
-    const startStopButton = document.getElementById('start-stop-button');
-
-    if (data.error) {
-        errorProcessing(data);
-        return;
-    }
-
-    switch (data.command) {
-        case 'last_event': {
-            lastEvent(data, eventsDiv);
-            break;
-        }
-
-        case 'playerGroups': {
-            playerGroups(data, socket, eventsDiv);
-            break;
-        }
-
-        case 'player_shot_change': {
-            updatePlayerShot(data);
-            break;
-        }
-
-        case 'goal_types': {
-            showGoalTypes(data, socket);
-            break;
-        }
-
-        case 'timer_data': {
-            timerData(data, startStopButton);
-            break;
-        }
-
-        case 'pause': {
-            pauseTimer(data, startStopButton);
-            break;
-        }
-
-        case 'team_goal_change': {
-            teamGoalChangeFunction(data);
-            break;
-        }
-
-        case 'non_active_players': {
-            showReservePlayer(data, socket);
-            break;
-        }
-
-        case 'player_change': {
-            playerChange(data, socket);
-            break;
-        }
-
-        case 'part_end': {
-            partEnd(data, startStopButton);
-            break;
-        }
-
-        case 'match_end': {
-            matchEnd(data, startStopButton);
-            break;
-        }
-    }
 }
 
 function errorProcessing(data) {

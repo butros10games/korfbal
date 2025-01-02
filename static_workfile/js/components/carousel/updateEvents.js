@@ -1,10 +1,11 @@
-import { wedstrijdPunten, truncateMiddle } from '../utils';
+import { truncateMiddle } from '../../utils';
 import {
+    wedstrijdPunten,
     createEventTypeDiv,
     createMidsectionDiv,
     createScoreDiv,
     getFormattedTime,
-} from './events_utils';
+} from '../../utils/events';
 
 export const updateEvents = function (data, infoContainer, match_id) {
     const events = data.events;

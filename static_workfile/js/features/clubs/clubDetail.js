@@ -1,5 +1,5 @@
-import { setupCarousel, updateMatches, updateTeam } from '../common/carousel';
-import { initializeSocket, requestInitialData } from '../common/websockets';
+import { setupCarousel, updateMatches, updateTeam } from '../../components/carousel';
+import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets';
 import { setupFollowButton } from '../../common/setupFollowButton.js';
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -11,6 +11,14 @@ window.addEventListener('DOMContentLoaded', () => {
     const user_id = document.getElementById('user_id').innerText;
     const matches = regex.exec(url);
 
+    const infoContainer = document.getElementById('info-container');
+    const maxLength = 14;
+
+    const commandHandlers = {
+        'wedstrijden': (data) => updateMatches(data, maxLength, infoContainer),
+        'teams': (data) => updateTeam(data, infoContainer),
+    };
+
     let team_id;
 
     if (matches) {
@@ -21,7 +29,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const WebSocketUrl = `wss://${window.location.host}/ws/club/${team_id}/`;
-    const socket = initializeSocket(WebSocketUrl, onMessageReceived);
+    const socket = initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers));
 
     if (socket) {
         socket.onopen = function () {
@@ -35,19 +43,3 @@ window.addEventListener('DOMContentLoaded', () => {
     setupCarousel(carousel, buttons, socket);
     setupFollowButton(user_id, socket);
 });
-
-function onMessageReceived(event) {
-    const data = JSON.parse(event.data);
-    const infoContainer = document.getElementById('info-container');
-    const maxLength = 14;
-
-    switch (data.command) {
-        case 'wedstrijden':
-            updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
-            break;
-
-        case 'teams':
-            updateTeam(data, infoContainer); // imported from common/updateTeam.js
-            break;
-    }
-}

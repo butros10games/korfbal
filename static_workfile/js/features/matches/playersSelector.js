@@ -1,4 +1,4 @@
-import { truncateMiddle } from '../common/utils';
+import { truncateMiddle } from '../../utils/';
 
 class PlayerGroupManager {
     constructor() {

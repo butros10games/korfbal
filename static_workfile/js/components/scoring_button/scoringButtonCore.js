@@ -1,6 +1,4 @@
-import { shotButtonReg } from './shotButtonReg.js';
-import { removePlayerClickHandlers } from './removePlayerClickHandlers.js';
-import { addPlayerClickHandlers } from './addPlayerClickHandlers.js';
+import { shotButtonReg, removePlayerClickHandlers, addPlayerClickHandlers } from './scoringButtonHandlers.js';
 
 export const toggleButton = function (button, team, socket, homeScoreButton) {
     if (button.classList.contains('activated')) {

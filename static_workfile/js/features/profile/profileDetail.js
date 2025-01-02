@@ -4,9 +4,9 @@ import {
     updateTeam,
     updateSettings,
     updateGoalStats,
-} from '../common/carousel';
-import { setupProfilePicture } from '../common/profile_picture';
-import { initializeSocket, requestInitialData } from '../common/websockets';
+} from '../../components/carousel';
+import { setupProfilePicture } from '../../components/profile_picture';
+import { initializeSocket, requestInitialData } from '../../utils/websockets';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');

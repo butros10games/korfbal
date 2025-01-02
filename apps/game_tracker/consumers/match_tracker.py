@@ -164,7 +164,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()}
+                    {"data": {"error": str(e), "traceback": traceback.format_exc()}}
                 )
             )
 
@@ -204,7 +204,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"error": self.match_is_paused_message})
+                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
             )
             return
 
@@ -268,7 +268,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"error": self.match_is_paused_message})
+                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
             )
             return
 
@@ -549,7 +549,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"error": self.match_is_paused_message})
+                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
             )
             return
 

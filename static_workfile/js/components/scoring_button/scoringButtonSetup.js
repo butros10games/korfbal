@@ -1,4 +1,4 @@
-import { toggleButton } from './utils';
+import { toggleButton } from './scoringButtonCore.js';
 
 export const scoringButtonSetup = function (socket) {
     const homeScoreButton = document.getElementById('home-score');

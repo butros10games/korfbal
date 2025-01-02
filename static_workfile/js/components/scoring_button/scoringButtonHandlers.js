@@ -1,5 +1,5 @@
-import { sharedData } from '../../../features/matches/sharedData.js';
-import { getButtonBackground } from './getButtonBackground.js';
+import { sharedData } from '../../features/matches/sharedData.js';
+import { getButtonBackground } from './scoringButtonCore.js';
 
 export const addPlayerClickHandlers = function (playerButtons, team, socket) {
     Array.from(playerButtons).forEach((element) => {

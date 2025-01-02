@@ -1,0 +1,1 @@
+export { cleanDomCarousel } from './cleanDomCarousel.js';

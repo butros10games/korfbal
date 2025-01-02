@@ -4,9 +4,9 @@ import {
     showPlayerGroups,
     updateStatistics,
     updateEvents,
-} from '../common/carousel/index.js';
-import { initializeSocket, requestInitialData } from '../common/websockets/index.js';
-import { cleanDomCarousel } from '../common/carousel/utils';
+} from '../../components/carousel/index.js';
+import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
+import { cleanDomCarousel } from '../../utils/dom/';
 import { CountdownTimer } from './common/index.js';
 
 window.addEventListener('DOMContentLoaded', () => {
