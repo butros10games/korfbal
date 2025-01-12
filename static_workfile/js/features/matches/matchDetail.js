@@ -5,16 +5,16 @@ import {
     updateStatistics,
     updateEvents,
 } from '../../components/carousel/index.js';
+import { CountdownTimer } from '../../components/countdown_timer/index.js';
 import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
 import { cleanDomCarousel } from '../../utils/dom/';
-import { CountdownTimer } from './common/index.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
     const buttons = document.querySelectorAll('.button');
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
     const url = window.location.href;
-    const user_id = document.getElementById('user_id').innerText;
+    const user_id = document.getElementById('user_id').innerText.trim();
     const matches = regex.exec(url);
 
     let match_id;

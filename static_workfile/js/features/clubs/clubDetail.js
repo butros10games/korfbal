@@ -8,7 +8,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
     const url = window.location.href;
 
-    const user_id = document.getElementById('user_id').innerText;
+    const user_id = document.getElementById('user_id').innerText.trim();
     const matches = regex.exec(url);
 
     const infoContainer = document.getElementById('info-container');

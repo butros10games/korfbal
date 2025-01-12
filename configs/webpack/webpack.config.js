@@ -13,7 +13,7 @@ module.exports = {
     output: {
         path: path.resolve(__dirname, 'static_workfile/webpack_bundles'),
         filename: '[name].bundle.js',
-        publicPath: '/static_workfile/webpack_bundles/',
+        publicPath: '../../static_workfile/webpack_bundles/',
         clean: true,
     },
     module: {

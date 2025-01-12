@@ -1,4 +1,3 @@
-import { CountdownTimer } from './common/index.js';
 import { truncateMiddle } from '../../utils';
 import {
     createEventTypeDiv,
@@ -7,6 +6,7 @@ import {
     getFormattedTime,
 } from '../../utils/events';
 import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../../components/swipe_delete';
+import { CountdownTimer } from '../../components/countdown_timer/index.js';
 import { updatePlayerGroups } from '../../components/carousel';
 import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
 import { scoringButtonSetup, shotButtonReg } from '../../components/scoring_button/index.js';

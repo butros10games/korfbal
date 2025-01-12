@@ -26,6 +26,7 @@ services:
     kwt-redis:
         image: redis:latest
         container_name: kwt-redis
+        restart: unless-stopped
         networks:
             - kwt-net
 
@@ -52,7 +53,6 @@ services:
             - kwt-minio
         environment:
             - .env
-        restart: unless-stopped
         networks:
             - kwt-net
 
@@ -62,7 +62,6 @@ services:
         command: python manage.py migrate
         env_file:
             - .env
-        restart: unless-stopped
         networks:
             - kwt-net
 

@@ -205,23 +205,26 @@ class PlayerGroupManager {
     }
 
     mapGroupIdsToTypeIds() {
-        // Map group IDs to type IDs
         this.typeIds.forEach((typeId) => {
+            // We expect an element in the DOM with id == this typeId
             const groupElement = document.getElementById(typeId);
             if (groupElement) {
-                this.groupIdToTypeId[groupElement.innerText] = typeId;
+                this.groupIdToTypeId[groupElement.innerText.trim()] = typeId;
             }
         });
+
+        console.log("groupIdToTypeId: ", this.groupIdToTypeId);
     }
 
     mapTypeIdsToGroupIds() {
-        // Map type IDs to group IDs
         this.typeIds.forEach((typeId) => {
             const groupElement = document.getElementById(typeId);
             if (groupElement) {
-                this.typeIdToGroupId[typeId] = groupElement.innerText;
+                this.typeIdToGroupId[typeId] = groupElement.innerText.trim();
             }
         });
+
+        console.log("typeIdToGroupId: ", this.typeIdToGroupId);
     }
 
     getPlayersGroupsData() {

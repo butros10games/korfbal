@@ -50,7 +50,7 @@ class PlayerGroup(models.Model):
 
         if self.starting_type.name != "Reserve":
             reserve_player_group = self.match_data.player_groups.get(
-                starting_type__name="Reserve"
+                starting_type__name="Reserve", team=self.team
             )
             for player in new_players:
                 if player in reserve_player_group.players.all():
