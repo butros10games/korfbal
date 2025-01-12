@@ -26,6 +26,8 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
+    console.log('Match ID:', match_id);
+
     const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
     const socket = initializeSocket(WebSocketUrl, (event) =>
         onMessageReceived(event, match_id, user_id, socket),

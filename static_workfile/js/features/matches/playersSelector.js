@@ -249,23 +249,26 @@ class PlayerGroupManager {
     }
 
     async changePlayerGroup(selectedPlayers, newGroupId) {
+        // Clean up newGroupId by removing leading and trailing whitespace and newline characters
+        newGroupId = newGroupId.trim();
+    
         // Send a request to change the player group
         await this.fetchData('/match/api/player_designation/', {
             players: selectedPlayers,
             new_group_id: newGroupId,
         });
-
+    
         // Update the local data
         this.updatePlayersGroupsData(selectedPlayers, newGroupId);
-
+    
         this.selectedPlayers = [];
-
+    
         // Re-render the player field from the updated data
         this.generatePlayerFieldHTMLFromData();
-
+    
         // Set up player buttons again
         this.setupPlayerButtons();
-
+    
         // Reset selections
         this.groupId = null;
         this.updateOptionsBar();
@@ -647,11 +650,14 @@ class PlayerGroupManager {
     }
 
     async handleAddPlayerClick() {
+        // Clean up new_group_id by removing leading and trailing whitespace and newline characters
+        const newGroupId = this.typeIdToGroupId[this.reserveId].trim();
+    
         await this.fetchData('/match/api/player_designation/', {
             players: this.selectedPlayersAdd,
-            new_group_id: this.typeIdToGroupId[this.reserveId],
+            new_group_id: newGroupId,
         });
-
+    
         this.selectedPlayersAdd = [];
         this.boundsetupPlayerGroups();
     }
