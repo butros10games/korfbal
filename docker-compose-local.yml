@@ -30,7 +30,7 @@ services:
         volumes:
             - ./apps:/app/apps
             - ./korfbal:/app/korfbal
-            - ./static_workfile:/app/static_workfile
+            - ./static_build:/app/static_build
             - ./manage.py:/app/manage.py
             - ./configs/collectstatic/entrypoint.sh:/app/entrypoint.sh
         depends_on:

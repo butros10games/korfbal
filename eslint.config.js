@@ -7,7 +7,7 @@ import configPrettier from 'eslint-config-prettier';
 export default [
     js.configs.recommended,
     {
-        files: ['static_workfile/js/**/*.js'],
+        files: ['static_build/js/**/*.js'],
         rules: {
             camelcase: ['off', { properties: 'always' }],
             'comma-spacing': ['error', { before: false, after: true }],
@@ -71,7 +71,7 @@ export default [
         },
     },
     {
-        files: ['static_workfile/js/**/*.mjs'],
+        files: ['static_build/js/**/*.mjs'],
         languageOptions: {
             sourceType: 'module',
         },
@@ -88,8 +88,8 @@ export default [
     },
     {
         ignores: [
-            'static_workfile/js/**/*.min.js',
-            'static_workfile/js/vendor/**/*.js',
+            'static_build/js/**/*.min.js',
+            'static_build/js/vendor/**/*.js',
             'node_modules/**',
             'tests/**/*.js',
         ],

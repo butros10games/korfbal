@@ -93,8 +93,8 @@
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "lint": "eslint static_workfile/js/**/*.js",
-        "lint-fix": "eslint static_workfile/js/**/*.js --fix",
+        "lint": "eslint static_build/js/**/*.js",
+        "lint-fix": "eslint static_build/js/**/*.js --fix",
         "build": "webpack --mode production --config configs/webpack/webpack.config.js"
     },
     "keywords": [],
