@@ -13,7 +13,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         """Handle the command."""
         self.stdout.write("Copying files from build directory to static directory...")
-        call(["cp", "-r", "build/*", "static_workfile/"])
+        call(["cp", "-r", "static_build/*", "static_workfile/"])
         self.stdout.write("Files copied.")
         
         self.stdout.write("Running Webpack...")

@@ -35,8 +35,7 @@ services:
         container_name: kwt-minio
         command: server /data --console-address ":9001"
         environment:
-            MINIO_ROOT_USER: minioadmin
-            MINIO_ROOT_PASSWORD: minioadmin
+            - .env
         ports:
             - '9100:9000'
             - '9101:9001'
