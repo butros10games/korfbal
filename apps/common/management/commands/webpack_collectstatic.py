@@ -12,9 +12,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         """Handle the command."""
+        self.stdout.write("Copying files from build directory to static directory...")
+        call(["cp", "-r", "build/*", "static_workfile/"])
+        self.stdout.write("Files copied.")
+        
         self.stdout.write("Running Webpack...")
         call(["npx", "webpack", "--config", "webpack.config.js"])
         self.stdout.write("Webpack build completed.")
+        
+        self.stdout.write("Removing the js files. To remove redundant files.")
+        call(["rm", "-r", "static_workfile/js"])
+        self.stdout.write("Js files removed.")
 
         self.stdout.write("Collecting static files...")
         call(["python", "manage.py", "collectstatic", "--noinput"])

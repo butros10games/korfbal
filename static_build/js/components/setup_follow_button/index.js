@@ -1,0 +1,1 @@
+export { setupFollowButton } from './setupFollowButton.js';

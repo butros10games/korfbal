@@ -1,6 +1,6 @@
 import { setupCarousel, updateMatches, updateTeam } from '../../components/carousel';
 import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets';
-import { setupFollowButton } from '../../common/setupFollowButton.js';
+import { setupFollowButton } from '../../components/setup_follow_button';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');

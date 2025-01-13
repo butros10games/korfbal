@@ -5,7 +5,7 @@ import {
     updateStatistics,
 } from '../../components/carousel/index.js';
 import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets/index.js';
-import { setupFollowButton } from '../../common/setupFollowButton.js';
+import { setupFollowButton } from '../../components/setup_follow_button';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
