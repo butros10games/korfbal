@@ -54,7 +54,7 @@ window.addEventListener('DOMContentLoaded', () => {
         'player_change': (data) => playerChange(data, socket),
         'part_end': (data) => partEnd(data, startStopButton),
         'match_end': (data) => matchEnd(data, startStopButton),
-        'error': (data) => errorProcessing(data.data),
+        'error': (data) => errorProcessing(data),
     };
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;

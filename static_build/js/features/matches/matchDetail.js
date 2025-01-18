@@ -37,6 +37,7 @@ window.addEventListener('DOMContentLoaded', () => {
         socket.onopen = function () {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket, { user_id: user_id });
+            socket.send(JSON.stringify({ command: 'get_time' }));
         };
     }
 

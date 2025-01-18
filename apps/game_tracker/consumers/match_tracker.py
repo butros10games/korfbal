@@ -164,7 +164,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"data": {"error": str(e), "traceback": traceback.format_exc()}}
+                    {"command": "error", "error": str(e), "traceback": traceback.format_exc()}
                 )
             )
 
@@ -204,7 +204,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
+                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
             )
             return
 
@@ -268,7 +268,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
+                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
             )
             return
 
@@ -549,7 +549,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"data": {"error": self.match_is_paused_message}})
+                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
             )
             return
 
@@ -649,42 +649,40 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             # check if the shot was a goal and if it was a goal check if it was a switch
             # goal and if it was a switch goal swap the player group types back
-            if not event.scored:
-                return
-
-            for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                await self.channel_layer.group_send(
-                    channel_name,
-                    {
-                        "type": "send_data",
-                        "data": {
-                            "command": "team_goal_change",
-                            "player_name": event.player.user.username,
-                            "goal_type": event.shot_type.name,
-                            "goals_for": await Shot.objects.filter(
-                                match_data=self.match_data,
-                                team=self.team,
-                                scored=True,
-                            ).acount(),
-                            "goals_against": await Shot.objects.filter(
-                                match_data=self.match_data,
-                                team=self.other_team,
-                                scored=True,
-                            ).acount(),
+            if event.scored:
+                for channel_name in [self.channel_names[1], self.channel_names[0]]:
+                    await self.channel_layer.group_send(
+                        channel_name,
+                        {
+                            "type": "send_data",
+                            "data": {
+                                "command": "team_goal_change",
+                                "player_name": event.player.user.username,
+                                "goal_type": event.shot_type.name,
+                                "goals_for": await Shot.objects.filter(
+                                    match_data=self.match_data,
+                                    team=self.team,
+                                    scored=True,
+                                ).acount(),
+                                "goals_against": await Shot.objects.filter(
+                                    match_data=self.match_data,
+                                    team=self.other_team,
+                                    scored=True,
+                                ).acount(),
+                            },
                         },
-                    },
-                )
+                    )
 
-            number_of_shots = await Shot.objects.filter(
-                match_data=self.match_data, scored=True
-            ).acount()
-            if (number_of_shots) % 2 == 1:
-                await self.player_group_class.swap_player_group_types(self.team)
-                await self.player_group_class.swap_player_group_types(self.other_team)
+                number_of_shots = await Shot.objects.filter(
+                    match_data=self.match_data, scored=True
+                ).acount()
+                if (number_of_shots) % 2 == 1:
+                    await self.player_group_class.swap_player_group_types(self.team)
+                    await self.player_group_class.swap_player_group_types(self.other_team)
 
-                await self.send(
-                    text_data=await self.player_group_class.player_group_request()
-                )
+                    await self.send(
+                        text_data=await self.player_group_class.player_group_request()
+                    )
 
         elif isinstance(event, PlayerChange):
             # get and delete the last player change event
