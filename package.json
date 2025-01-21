@@ -18,7 +18,7 @@
         "chalk": "^4.1.2",
         "color-convert": "^2.0.1",
         "color-name": "^2.0.0",
-        "concat-map": "^0.0.1",
+        "concat-map": "^0.0.2",
         "cross-spawn": "^7.0.5",
         "debug": "^4.3.7",
         "deep-is": "^0.1.4",
