@@ -224,14 +224,6 @@ USE_TZ = True
 # ------------------------------------------------------------------------------
 TEMPLATE_DIRS = [BASE_DIR / "templates"]
 
-# ------------------------------------------------------------------------------
-# Static & Media Files
-# ------------------------------------------------------------------------------
-STATIC_URL = f"{AWS_STATIC_CUSTOM_DOMAIN}/"
-MEDIA_URL = f"{AWS_MEDIA_CUSTOM_DOMAIN}/"
-
-STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
 
 # ------------------------------------------------------------------------------
 # MinIO / S3 Settings
@@ -254,6 +246,15 @@ AWS_S3_CONFIG = {
         "mode": "standard",
     },
 }
+
+# ------------------------------------------------------------------------------
+# Static & Media Files
+# ------------------------------------------------------------------------------
+STATIC_URL = f"{AWS_STATIC_CUSTOM_DOMAIN}/"
+MEDIA_URL = f"{AWS_MEDIA_CUSTOM_DOMAIN}/"
+
+STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
 
 STORAGES = {
     "default": {

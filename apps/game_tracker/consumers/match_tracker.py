@@ -164,7 +164,11 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": str(e), "traceback": traceback.format_exc()}
+                    {
+                        "command": "error",
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                    }
                 )
             )
 
@@ -204,7 +208,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
+                text_data=json.dumps(
+                    {"command": "error", "error": self.match_is_paused_message}
+                )
             )
             return
 
@@ -268,7 +274,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
+                text_data=json.dumps(
+                    {"command": "error", "error": self.match_is_paused_message}
+                )
             )
             return
 
@@ -549,7 +557,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         # for the start/stop command
         if self.is_paused:
             await self.send(
-                text_data=json.dumps({"command": "error", "error": self.match_is_paused_message})
+                text_data=json.dumps(
+                    {"command": "error", "error": self.match_is_paused_message}
+                )
             )
             return
 
@@ -678,7 +688,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 ).acount()
                 if (number_of_shots) % 2 == 1:
                     await self.player_group_class.swap_player_group_types(self.team)
-                    await self.player_group_class.swap_player_group_types(self.other_team)
+                    await self.player_group_class.swap_player_group_types(
+                        self.other_team
+                    )
 
                     await self.send(
                         text_data=await self.player_group_class.player_group_request()

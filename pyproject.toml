@@ -7,21 +7,21 @@ line-length = 88
 target-version = ['py313']
 exclude = '''
 /(
-    migrations
-  | \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.nox
-  | \.tox
-  | \.venv
-  | \.env
-  | venv
-  | _build
-  | buck-out
-  | build
-  | dist
-  | node_modules
+	migrations
+	| \.eggs
+	| \.git
+	| \.hg
+	| \.mypy_cache
+	| \.nox
+	| \.tox
+	| \.venv
+	| \.env
+	| venv
+	| _build
+	| buck-out
+	| build
+	| dist
+	| node_modules
 )/
 '''
 
@@ -37,3 +37,19 @@ skip = [
     "venv",
     "node_modules",
 ]
+
+[tool.flake8]
+exclude = [
+	".git",
+	"__pycache__",
+	"migrations",
+	".venv",
+	".env",
+	"node_modules",
+]
+extend-ignore = [
+	"E203",
+	"E265",
+]
+max-line-length = 88
+count = true
