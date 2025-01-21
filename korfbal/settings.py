@@ -225,6 +225,15 @@ USE_TZ = True
 TEMPLATE_DIRS = [BASE_DIR / "templates"]
 
 # ------------------------------------------------------------------------------
+# Static & Media Files
+# ------------------------------------------------------------------------------
+STATIC_URL = f"{AWS_STATIC_CUSTOM_DOMAIN}/"
+MEDIA_URL = f"{AWS_MEDIA_CUSTOM_DOMAIN}/"
+
+STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
+
+# ------------------------------------------------------------------------------
 # MinIO / S3 Settings
 # ------------------------------------------------------------------------------
 AWS_S3_ENDPOINT_URL = os.getenv("MINIO_URL", "http://kwt-minio:9000")
@@ -248,7 +257,7 @@ AWS_S3_CONFIG = {
 
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "BACKEND": STATICFILES_STORAGE,
         "OPTIONS": {
             "bucket_name": AWS_MEDIA_BUCKET_NAME,
             "default_acl": "public-read",
@@ -257,7 +266,7 @@ STORAGES = {
         },
     },
     "staticfiles": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "BACKEND": STATICFILES_STORAGE,
         "OPTIONS": {
             "bucket_name": AWS_STORAGE_BUCKET_NAME,
             "default_acl": "public-read",
@@ -266,12 +275,3 @@ STORAGES = {
         },
     },
 }
-
-# ------------------------------------------------------------------------------
-# Static & Media Files
-# ------------------------------------------------------------------------------
-STATIC_URL = f"{AWS_STATIC_CUSTOM_DOMAIN}/"
-MEDIA_URL = f"{AWS_MEDIA_CUSTOM_DOMAIN}/"
-
-STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
