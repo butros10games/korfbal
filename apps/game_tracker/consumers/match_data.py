@@ -436,6 +436,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
     async def check_access(self, user_id, match):
         """Check if the user has access to the match."""
+        if user_id is None:
+            return False
+
         player = await Player.objects.aget(user=user_id)
 
         # Combine queries for players and coaches for both home and away teams
@@ -550,6 +553,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
     async def checkIfAcces(self, user_id, team):
         """Check if the user has access to the team."""
+        if user_id is None:
+            return False
+
         player = await Player.objects.aget(user=user_id)
 
         players = await sync_to_async(list)(

@@ -19,6 +19,8 @@ export const createPlayerDiv = function (type, player, playerOptions = []) {
     playerDiv.style.flexGrow = '1';
     playerDiv.style.flexBasis = 'calc(50% - 32px)';
     playerDiv.style.textAlign = 'center';
+    playerDiv.style.fontSize = '14px';
+    playerDiv.style.fontWeight = '300';
 
     if (type === 'select') {
         playerOptions.forEach((option) => {

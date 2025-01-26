@@ -64,6 +64,8 @@ export const setupCarousel = function (
                 extraData,
                 statsName,
             );
+            // Reset isAutoScrolling after handling the button click
+            isAutoScrolling = false;
         });
     });
 };

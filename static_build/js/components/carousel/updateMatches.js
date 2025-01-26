@@ -44,6 +44,7 @@ export const updateMatches = function (data, maxLength, infoContainer) {
 
             const match_date_container = document.createElement('div');
             match_date_container.classList.add('flex-column');
+            match_date_container.style.width = '80px';
 
             const match_date = document.createElement('p');
             match_date.style.margin = '0';

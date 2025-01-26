@@ -1,6 +1,7 @@
 import { setupCarousel, updateMatches, updateTeam } from '../../components/carousel';
 import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets';
 import { setupFollowButton } from '../../components/setup_follow_button';
+import { readUserId } from '../../utils/dom/';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
@@ -8,7 +9,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
     const url = window.location.href;
 
-    const user_id = document.getElementById('user_id').innerText.trim();
+    const user_id = readUserId();
     const matches = regex.exec(url);
 
     const infoContainer = document.getElementById('info-container');
