@@ -36,16 +36,14 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const WebSocketUrl = `wss://${window.location.host}/ws/teams/${team_id}/`;
-    const socket = initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers));
-
-    if (socket) {
-        socket.onopen = function () {
+    const socket = initializeSocket(
+        WebSocketUrl,
+        onMessageReceived(commandHandlers),
+        (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket, { user_id: user_id });
-        };
-    } else {
-        console.error('Failed to initialize WebSocket connection.');
-    }
+        }
+    );
 
     setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');
     setupFollowButton(user_id, socket);

@@ -28,17 +28,15 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const WebSocketUrl = `wss://${window.location.host}/ws/profile/${player_id}/`;
-    const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, socket),
-    );
-
-    if (socket) {
-        socket.onopen = function () {
+    const socket = initializeSocket(
+        WebSocketUrl,
+        (event) => onMessageReceived(event, socket),
+        (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket);
-        };
-        setupCarousel(carousel, buttons, socket);
-    }
+        }
+    );
+    
     setupCarousel(carousel, buttons, socket);
     setupProfilePicture(csrfToken);
 });

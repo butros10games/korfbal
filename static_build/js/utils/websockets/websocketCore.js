@@ -1,16 +1,31 @@
-export const initializeSocket = function (url, onMessageReceived) {
+export const initializeSocket = function (url, onMessageReceived, onOpenCallback) {
     let socket;
+    const socketWrapper = {
+        send(data) {
+            // Always forward to the latest socket instance
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(data);
+            } else {
+                console.warn('Socket is not open. Could not send:', data);
+            }
+        }
+    };
 
     function connect() {
         if (socket) {
+            // Avoid duplicates or old references
             socket.onclose = null;
             socket.close();
         }
 
         socket = new WebSocket(url);
 
-        socket.onopen = function () {
+        // The onopen that is called every time, including reconnect
+        socket.onopen = function() {
             console.log('Connection established!');
+            if (typeof onOpenCallback === 'function') {
+                onOpenCallback(socket);
+            }
         };
 
         socket.onmessage = onMessageReceived;
@@ -25,10 +40,15 @@ export const initializeSocket = function (url, onMessageReceived) {
                 );
             }
         };
+
+        socket.onerror = function (error) {
+            console.error('WebSocket error:', error);
+            socket.close();
+        };
     }
 
     connect();
-    return socket;
+    return socketWrapper;
 };
 
 export const requestInitialData = function (buttonSelector, socket, moreData = null) {

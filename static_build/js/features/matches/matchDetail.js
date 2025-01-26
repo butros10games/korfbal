@@ -29,17 +29,15 @@ window.addEventListener('DOMContentLoaded', () => {
     console.log('Match ID:', match_id);
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
-    const socket = initializeSocket(WebSocketUrl, (event) =>
-        onMessageReceived(event, match_id, user_id, socket),
-    );
-
-    if (socket) {
-        socket.onopen = function () {
+    const socket = initializeSocket(
+        WebSocketUrl,
+        (event) => onMessageReceived(event, match_id, user_id, socket),
+        (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket, { user_id: user_id });
             socket.send(JSON.stringify({ command: 'get_time' }));
-        };
-    }
+        }
+    );
 
     setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');
 });

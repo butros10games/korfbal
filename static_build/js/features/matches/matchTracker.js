@@ -58,14 +58,14 @@ window.addEventListener('DOMContentLoaded', () => {
     };
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
-    const socket = initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers));
-
-    if (socket) {
-        socket.onopen = function () {
+    const socket = initializeSocket(
+        WebSocketUrl,
+        onMessageReceived(commandHandlers),
+        (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData(socket);
-        };
-    }
+        },
+    );
 
     load_icon_small(eventsDiv);
     load_icon(playersDiv);
@@ -806,6 +806,7 @@ function showPlayerGroups(data, socket) {
 
                 const playerShots = document.createElement('div');
                 playerShots.classList.add('flex-column');
+                playerShots.style.width = '16px';
 
                 const playerShotsfor = document.createElement('p');
                 playerShotsfor.id = 'shots-for';
