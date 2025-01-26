@@ -9,6 +9,8 @@ module.exports = {
         match_tracker: './static_build/js/features/matches/matchTracker.js',
         profile_detail: './static_build/js/features/profile/profileDetail.js',
         teams_detail: './static_build/js/features/teams/teamDetail.js',
+        mobile_view: './static_build/js/features/mobile/mobileView.js',
+        service_worker: './static_build/js/features/pwa/serviceWorker.js',
     },
     output: {
         path: path.resolve(__dirname, 'static_workfile/webpack_bundles'),

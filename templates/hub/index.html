@@ -1,149 +1,139 @@
-{% load static %} {% load truncate_middle %}
+{% extends "common/base.html" %}
+{% load static %}
+{% load truncate_middle %}
 
-<!doctype html>
-<html lang="en">
-    <head>
-        <title>{{ title }}</title>
-        <meta name="description" content="" />
+{% block title %}{{ title }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
 
-        <link rel="stylesheet" href="{% static 'css/index.css' %}" />
+{% block content %}
+<div
+    class="flex-column"
+    style="
+        padding: 0 12px 0 12px;
+        border-bottom: 1px solid #000000b3;
+        width: calc(100% - 24px);
+    "
+>
+    {% if user.is_authenticated %}
+    <p
+        style="
+            margin: 0;
+            font-size: 16px;
+            margin-top: 6px;
+            margin-right: auto;
+        "
+    >
+        Volgende wedstrijd
+    </p>
+    <p style="margin: 0; font-size: 14px; color: gray; margin-right: auto">
+        {{ match_date }}
+    </p>
 
-        {% include 'common/imports.html' %}
-    </head>
-    <body>
-        {% include 'overlays/navbar.html' %}
+    <div
+        class="flex-column"
+        style="height: 156px; justify-content: center; width: 100%"
+    >
+        {% if match %}
+        <a
+            href="{% url 'match_detail' match_id=match.id_uuid %}"
+            class="flex-row"
+            style="justify-content: space-around; margin-top: 12px"
+        >
+            <div class="flex-column" style="width: 128px">
+                <img
+                    alt="club_logo"
+                    src="{{ match.home_team.club.get_club_logo }}"
+                    style="height: 56px; width: 56px"
+                />
+                <p style="margin: 0; font-size: 14px; margin-top: 6px">
+                    {{ match.home_team|truncate_middle:16 }}
+                </p>
+            </div>
 
-        <div class="flex-column" style="margin-top: 48px; width: 100%">
             <div
                 class="flex-column"
-                style="
-                    padding: 0 12px 0 12px;
-                    border-bottom: 1px solid #000000b3;
-                    width: calc(100% - 24px);
-                "
+                style="justify-content: center; margin-top: -14px"
             >
-                {% if user.is_authenticated %}
+                {% if match_data.status == 'finished' %}
+                <p style="margin: 0; font-size: 18px; font-weight: 600">
+                    Uitslag
+                </p>
+                {% elif match_data.status == 'active' %}
                 <p
-                    style="
-                        margin: 0;
-                        font-size: 16px;
-                        margin-top: 6px;
-                        margin-right: auto;
-                    "
+                    id="counter"
+                    style="margin: 0; font-size: 22px; font-weight: 600"
                 >
-                    Volgende wedstrijd
+                    {{ time_display }}
                 </p>
-                <p style="margin: 0; font-size: 14px; color: gray; margin-right: auto">
-                    {{ match_date }}
-                </p>
-
-                <div
-                    class="flex-column"
-                    style="height: 156px; justify-content: center; width: 100%"
-                >
-                    {% if match %}
-                    <a
-                        href="{% url 'match_detail' match_id=match.id_uuid %}"
-                        class="flex-row"
-                        style="justify-content: space-around; margin-top: 12px"
-                    >
-                        <div class="flex-column" style="width: 128px">
-                            <img
-                                alt="club_logo"
-                                src="{{ match.home_team.club.get_club_logo }}"
-                                style="height: 56px; width: 56px"
-                            />
-                            <p style="margin: 0; font-size: 14px; margin-top: 6px">
-                                {{ match.home_team|truncate_middle:16 }}
-                            </p>
-                        </div>
-
-                        <div
-                            class="flex-column"
-                            style="justify-content: center; margin-top: -14px"
-                        >
-                            {% if match_data.status == 'finished' %}
-                            <p style="margin: 0; font-size: 18px; font-weight: 600">
-                                Uitslag
-                            </p>
-                            {% elif match_data.status == 'active' %}
-                            <p
-                                id="counter"
-                                style="margin: 0; font-size: 22px; font-weight: 600"
-                            >
-                                {{ time_display }}
-                            </p>
-                            {% else %}
-                            <p
-                                id="counter"
-                                style="margin: 0; font-size: 22px; font-weight: 600"
-                            >
-                                {{ start_time }}
-                            </p>
-                            {% endif %}
-
-                            <p id="score" style="margin: 0">
-                                {{ home_score }} / {{ away_score }}
-                            </p>
-                        </div>
-
-                        <div class="flex-column" style="width: 128px">
-                            <img
-                                alt="club_logo"
-                                src="{{ match.away_team.club.get_club_logo }}"
-                                style="height: 56px; width: 56px"
-                            />
-                            <p style="margin: 0; font-size: 14px; margin-top: 6px">
-                                {{ match.away_team|truncate_middle:16 }}
-                            </p>
-                        </div>
-                    </a>
-                    {% endif %}
-                </div>
-
-                <div
-                    class="flex-center"
-                    style="border-top: 1px solid #0000004a; width: 100%"
-                >
-                    <p style="font-size: 14px; font-weight: 600; margin: 8px 0">
-                        Volledig programma
-                    </p>
-                    <img
-                        alt="arrow"
-                        src="{% static 'images/arrow.svg' %}"
-                        style="
-                            height: 12px;
-                            width: 12px;
-                            margin-left: 6px;
-                            transform: rotate(-90deg);
-                        "
-                    />
-                </div>
                 {% else %}
-                <a href="{% url 'login' %}" class="login_button flex-center">Login</a>
-                {% endif %}
-            </div>
-
-            <div
-                class="flex-column"
-                style="
-                    margin-top: 12px;
-                    padding: 0 12px 0 12px;
-                    width: calc(100% - 24px);
-                "
-            >
                 <p
-                    style="
-                        margin: 0;
-                        font-size: 16px;
-                        font-weight: 600;
-                        margin-top: 6px;
-                        margin-right: auto;
-                    "
+                    id="counter"
+                    style="margin: 0; font-size: 22px; font-weight: 600"
                 >
-                    Updates
+                    {{ start_time }}
+                </p>
+                {% endif %}
+
+                <p id="score" style="margin: 0">
+                    {{ home_score }} / {{ away_score }}
                 </p>
             </div>
-        </div>
-    </body>
-</html>
+
+            <div class="flex-column" style="width: 128px">
+                <img
+                    alt="club_logo"
+                    src="{{ match.away_team.club.get_club_logo }}"
+                    style="height: 56px; width: 56px"
+                />
+                <p style="margin: 0; font-size: 14px; margin-top: 6px">
+                    {{ match.away_team|truncate_middle:16 }}
+                </p>
+            </div>
+        </a>
+        {% endif %}
+    </div>
+
+    <div
+        class="flex-center"
+        style="border-top: 1px solid #0000004a; width: 100%"
+    >
+        <p style="font-size: 14px; font-weight: 600; margin: 8px 0">
+            Volledig programma
+        </p>
+        <img
+            alt="arrow"
+            src="{% static 'images/arrow.svg' %}"
+            style="
+                height: 12px;
+                width: 12px;
+                margin-left: 6px;
+                transform: rotate(-90deg);
+            "
+        />
+    </div>
+    {% else %}
+    <a href="{% url 'login' %}" class="login_button flex-center">Login</a>
+    {% endif %}
+</div>
+
+<div
+    class="flex-column"
+    style="
+        margin-top: 12px;
+        padding: 0 12px 0 12px;
+        width: calc(100% - 24px);
+    "
+>
+    <p
+        style="
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 6px;
+            margin-right: auto;
+        "
+    >
+        Updates
+    </p>
+</div>
+{% endblock %}

@@ -28,7 +28,6 @@ RUN pip install --no-cache-dir -r uwsgi.txt
 # Copy project files
 COPY ../manage.py /app/
 COPY ../package.json /app/
-COPY ../configs/webpack/webpack.config.js /app/
 
 # Install Node.js packages
 RUN npm install --ignore-scripts
@@ -46,6 +45,7 @@ RUN chmod +x /app/entrypoint.sh \
 # Ensure HOME is set so mc knows where to store config
 ENV HOME=/home/appuser
 
+COPY ../configs/webpack/webpack.config.js /app/
 COPY ../korfbal/ /app/korfbal/
 COPY ../apps/ /app/apps/
 COPY ../static_build/ /app/static_build/

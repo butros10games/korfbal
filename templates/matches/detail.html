@@ -1,134 +1,124 @@
-{% load static %} {% load truncate_middle %}
+{% extends "common/base.html" %}
+{% load static %}
+{% load truncate_middle %}
 
-<!doctype html>
-<html lang="en">
-    <head>
-        <title>{{ title }}</title>
-        <meta name="description" content="" />
+{% block title %}{{ title }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
 
-        <link rel="stylesheet" href="{% static 'css/matches/detail.css' %}" />
+{% block content %}
+<div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px">
+    <div class="flex-row" style="justify-content: flex-start">
+        <p style="font-weight: 600; font-size: 16px; margin-bottom: 8px">
+            {{ start_date }}
+        </p>
+    </div>
+    <div class="flex-row" style="margin-top: 6px; margin-bottom: 6px">
+        <a
+            href="{{ match.home_team.get_absolute_url }}"
+            class="flex-column"
+            style="
+                justify-content: flex-start;
+                text-decoration: none;
+                color: black;
+                width: 120px;
+            "
+        >
+            <img
+                src="{{ match.home_team.club.get_club_logo }}"
+                alt="{{ match.home_team }}"
+                width="64px"
+                height="64px"
+                style="border-radius: 50%; object-fit: contain"
+            />
+            <h2 style="margin: 4px 0; font-size: 16px">
+                {{ match.home_team|truncate_middle:12 }}
+            </h2>
+        </a>
 
-        {% include 'common/imports.html' %}
-    </head>
-    <body>
-        {% include 'overlays/navbar.html' %}
+        <div
+            class="flex-column"
+            style="justify-content: center; margin-top: -14px"
+        >
+            {% if match_data.status == 'finished' %}
+            <p style="margin: 0; font-size: 18px; font-weight: 600">
+                Uitslag
+            </p>
+            {% elif match_data.status == 'active' %}
+            <p style="font-size: 14px; margin: 0">
+                Perioide
+                <span id="periode_number"
+                    >{{ match_data.current_part }}</span
+                >/{{ match_data.parts }}
+            </p>
+            <p
+                id="counter"
+                style="margin: 0; font-size: 22px; font-weight: 600"
+            >
+                {{ time_display }}
+            </p>
+            {% else %}
+            <p
+                id="counter"
+                style="margin: 0; font-size: 22px; font-weight: 600"
+            >
+                {{ start_time }}
+            </p>
+            {% endif %}
 
-        <div class="flex-column" style="margin-top: 48px">
-            <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px">
-                <div class="flex-row" style="justify-content: flex-start">
-                    <p style="font-weight: 600; font-size: 16px; margin-bottom: 8px">
-                        {{ start_date }}
-                    </p>
-                </div>
-                <div class="flex-row" style="margin-top: 6px; margin-bottom: 6px">
-                    <a
-                        href="{{ match.home_team.get_absolute_url }}"
-                        class="flex-column"
-                        style="
-                            justify-content: flex-start;
-                            text-decoration: none;
-                            color: black;
-                            width: 120px;
-                        "
-                    >
-                        <img
-                            src="{{ match.home_team.club.get_club_logo }}"
-                            alt="{{ match.home_team }}"
-                            width="64px"
-                            height="64px"
-                            style="border-radius: 50%; object-fit: contain"
-                        />
-                        <h2 style="margin: 4px 0; font-size: 16px">
-                            {{ match.home_team|truncate_middle:12 }}
-                        </h2>
-                    </a>
-
-                    <div
-                        class="flex-column"
-                        style="justify-content: center; margin-top: -14px"
-                    >
-                        {% if match_data.status == 'finished' %}
-                        <p style="margin: 0; font-size: 18px; font-weight: 600">
-                            Uitslag
-                        </p>
-                        {% elif match_data.status == 'active' %}
-                        <p style="font-size: 14px; margin: 0">
-                            Perioide
-                            <span id="periode_number"
-                                >{{ match_data.current_part }}</span
-                            >/{{ match_data.parts }}
-                        </p>
-                        <p
-                            id="counter"
-                            style="margin: 0; font-size: 22px; font-weight: 600"
-                        >
-                            {{ time_display }}
-                        </p>
-                        {% else %}
-                        <p
-                            id="counter"
-                            style="margin: 0; font-size: 22px; font-weight: 600"
-                        >
-                            {{ start_time }}
-                        </p>
-                        {% endif %}
-
-                        <p id="score" style="margin: 0">
-                            {{ home_score }} / {{ away_score }}
-                        </p>
-                    </div>
-
-                    <a
-                        href="{{ match.away_team.get_absolute_url }}"
-                        class="flex-column"
-                        style="
-                            justify-content: flex-start;
-                            text-decoration: none;
-                            color: black;
-                            width: 120px;
-                        "
-                    >
-                        <img
-                            src="{{ match.away_team.club.get_club_logo }}"
-                            alt="{{ match.away_team }}"
-                            width="64px"
-                            height="64px"
-                            style="border-radius: 50%; object-fit: contain"
-                        />
-                        <h2 style="margin: 4px 0; font-size: 16px">
-                            {{ match.away_team|truncate_middle:12 }}
-                        </h2>
-                    </a>
-                </div>
-            </div>
-
-            <div class="carousel-container">
-                <div class="carousel">
-                    <a class="button active" data="match_events">Events</a>
-                    <a class="button" data="home_team"
-                        >{{ match.home_team|truncate_middle:12 }}</a
-                    >
-                    <a class="button" data="away_team"
-                        >{{ match.away_team|truncate_middle:12 }}</a
-                    >
-                    {% if match_data.status != 'upcomming' %}
-                    <a class="button" data="get_stats">statastieken</a>
-                    {% endif %}
-                </div>
-            </div>
-            <div
-                id="info-container"
-                style="
-                    height: calc((var(--vh, 1vh) * 100) - 304px);
-                    width: 100%;
-                    overflow-y: scroll;
-                "
-            ></div>
+            <p id="score" style="margin: 0">
+                {{ home_score }} / {{ away_score }}
+            </p>
         </div>
 
-        <p style="display: none" id="user_id">{{ request.user.id }}</p>
+        <a
+            href="{{ match.away_team.get_absolute_url }}"
+            class="flex-column"
+            style="
+                justify-content: flex-start;
+                text-decoration: none;
+                color: black;
+                width: 120px;
+            "
+        >
+            <img
+                src="{{ match.away_team.club.get_club_logo }}"
+                alt="{{ match.away_team }}"
+                width="64px"
+                height="64px"
+                style="border-radius: 50%; object-fit: contain"
+            />
+            <h2 style="margin: 4px 0; font-size: 16px">
+                {{ match.away_team|truncate_middle:12 }}
+            </h2>
+        </a>
+    </div>
+</div>
 
-        <script src="{% static 'webpack_bundles/match_detail.bundle.js' %}"></script>
-        <script src="{% static 'js/programs/mobile_view.js' %}"></script>
-    </body>
-</html>
+<div class="carousel-container">
+    <div class="carousel">
+        <a class="button active" data="match_events">Events</a>
+        <a class="button" data="home_team"
+            >{{ match.home_team|truncate_middle:12 }}</a
+        >
+        <a class="button" data="away_team"
+            >{{ match.away_team|truncate_middle:12 }}</a
+        >
+        {% if match_data.status != 'upcomming' %}
+        <a class="button" data="get_stats">statastieken</a>
+        {% endif %}
+    </div>
+</div>
+<div
+    id="info-container"
+    style="
+        height: calc((var(--vh, 1vh) * 100) - 304px);
+        width: 100%;
+        overflow-y: scroll;
+    "
+></div>
+
+<p style="display: none" id="user_id">{{ request.user.id }}</p>
+
+<script src="{% static 'webpack_bundles/match_detail.bundle.js' %}"></script>
+<script src="{% static 'webpack_bundles/mobile_view.bundle.js' %}"></script>
+{% endblock %}

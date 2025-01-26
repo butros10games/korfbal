@@ -8,7 +8,7 @@
 <link rel="icon" href="{% static 'images/logo/KWT_logo.png' %}" type="image/x-icon" />
 
 <link rel="manifest" href="{% static 'json/manifest.json' %}" />
-<script src="{% static 'js/pwa/service-worker.js' %}"></script>
+<script src="{% static 'webpack_bundles/service_worker.bundle.js' %}"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,3 +16,5 @@
     href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Krona+One&family=Merriweather&family=Noto+Sans&display=swap"
     rel="stylesheet"
 />
+
+<link rel="stylesheet" href="{% static 'css/combined.css' %}">

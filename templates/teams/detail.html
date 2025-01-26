@@ -1,94 +1,83 @@
+{% extends "common/base.html" %}
 {% load static %}
 
-<!doctype html>
-<html lang="en">
-    <head>
-        <title>{{ title }}</title>
-        <meta name="description" content="" />
+{% block title %}{{ title }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
 
-        <link rel="stylesheet" href="{% static 'css/teams/index.css' %}" />
+{% block content %}
+<div
+    class="flex-column"
+    style="
+        justify-content: flex-end;
+        background-color: #1b1b1b;
+        width: 100%;
+    "
+>
+    <div
+        class="flex-row"
+        style="
+            width: calc(100% - 32px);
+            height: 64px;
+            justify-content: flex-start;
+            margin: 0 16px;
+        "
+    >
+        <a href="/club/{{ team.club.id_uuid }}" style="display: flex"
+            ><img
+                alt="club-logo"
+                src="{{ team.club.get_club_logo }}"
+                style="height: 48px; width: 48px"
+        /></a>
+        <p style="font-weight: 600; color: white; margin-left: 12px">
+            {{ team }}
+        </p>
+    </div>
+    <div
+        class="icon-container"
+        data-followed="{% if following %}true{% else %}false{% endif %}"
+    >
+        <img
+            id="follow-full"
+            src="{% static 'images/heart-full.svg' %}"
+            alt="volgen"
+            class="volgen-icon"
+        />
+        <img
+            id="follow-outline"
+            src="{% static 'images/heart-outline.svg' %}"
+            alt="volgen"
+            class="volgen-icon"
+        />
+    </div>
+    {% if coaching %}
+    <img
+        id="settings"
+        src="{% static 'images/settings.svg' %}"
+        alt="instellingen"
+        class="settings-icon"
+    />
+    {% endif %}
+</div>
 
-        {% include 'common/imports.html' %}
-    </head>
-    <body>
-        {% include 'overlays/navbar.html' %}
+<div class="carousel-container">
+    <div class="carousel">
+        <a class="button active" data="wedstrijden">Programma</a>
+        <a class="button" data="ended_matches">Uitslagen</a>
+        <a class="button" data="get_stats">Team stats</a>
+        <a class="button" data="spelers">Spelers</a>
+    </div>
+</div>
+<div
+    id="info-container"
+    style="
+        height: calc((var(--vh, 1vh) * 100) - 218.5px);
+        width: 100%;
+        overflow-y: scroll;
+    "
+></div>
 
-        <div class="flex-column" style="margin-top: 48px">
-            <div
-                class="flex-column"
-                style="
-                    justify-content: flex-end;
-                    background-color: #1b1b1b;
-                    width: 100%;
-                "
-            >
-                <div
-                    class="flex-row"
-                    style="
-                        width: calc(100% - 32px);
-                        height: 64px;
-                        justify-content: flex-start;
-                        margin: 0 16px;
-                    "
-                >
-                    <a href="/club/{{ team.club.id_uuid }}" style="display: flex"
-                        ><img
-                            alt="club-logo"
-                            src="{{ team.club.get_club_logo }}"
-                            style="height: 48px; width: 48px"
-                    /></a>
-                    <p style="font-weight: 600; color: white; margin-left: 12px">
-                        {{ team }}
-                    </p>
-                </div>
-                <div
-                    class="icon-container"
-                    data-followed="{% if following %}true{% else %}false{% endif %}"
-                >
-                    <img
-                        id="follow-full"
-                        src="{% static 'images/heart-full.svg' %}"
-                        alt="volgen"
-                        class="volgen-icon"
-                    />
-                    <img
-                        id="follow-outline"
-                        src="{% static 'images/heart-outline.svg' %}"
-                        alt="volgen"
-                        class="volgen-icon"
-                    />
-                </div>
-                {% if coaching %}
-                <img
-                    id="settings"
-                    src="{% static 'images/settings.svg' %}"
-                    alt="instellingen"
-                    class="settings-icon"
-                />
-                {% endif %}
-            </div>
+<p style="display: none" id="user_id">{{ request.user.id }}</p>
 
-            <div class="carousel-container">
-                <div class="carousel">
-                    <a class="button active" data="wedstrijden">Programma</a>
-                    <a class="button" data="ended_matches">Uitslagen</a>
-                    <a class="button" data="get_stats">Team stats</a>
-                    <a class="button" data="spelers">Spelers</a>
-                </div>
-            </div>
-            <div
-                id="info-container"
-                style="
-                    height: calc((var(--vh, 1vh) * 100) - 218.5px);
-                    width: 100%;
-                    overflow-y: scroll;
-                "
-            ></div>
-        </div>
-
-        <p style="display: none" id="user_id">{{ request.user.id }}</p>
-
-        <script src="{% static 'webpack_bundles/teams_detail.bundle.js' %}"></script>
-        <script src="{% static 'js/programs/mobile_view.js' %}"></script>
-    </body>
-</html>
+<script src="{% static 'webpack_bundles/teams_detail.bundle.js' %}"></script>
+<script src="{% static 'webpack_bundles/mobile_view.bundle.js' %}"></script>
+{% endblock %}
