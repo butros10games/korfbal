@@ -39,7 +39,7 @@
             class="flex-row"
             style="justify-content: space-around; margin-top: 12px"
         >
-            <div class="flex-column" style="width: 128px">
+            <div class="flex-column" style="width: calc(50% - 48px)">
                 <img
                     alt="club_logo"
                     src="{{ match.home_team.club.get_club_logo }}"
@@ -52,7 +52,7 @@
 
             <div
                 class="flex-column"
-                style="justify-content: center; margin-top: -14px"
+                style="justify-content: center; margin-top: -14px; width: 80px"
             >
                 {% if match_data.status == 'finished' %}
                 <p style="margin: 0; font-size: 18px; font-weight: 600">
@@ -74,12 +74,14 @@
                 </p>
                 {% endif %}
 
+                {% if match_data.status == 'active' or match_data.status == 'finished' %}
                 <p id="score" style="margin: 0">
                     {{ home_score }} / {{ away_score }}
                 </p>
+                {% endif %}
             </div>
 
-            <div class="flex-column" style="width: 128px">
+            <div class="flex-column" style="width: calc(50% - 48px)">
                 <img
                     alt="club_logo"
                     src="{{ match.away_team.club.get_club_logo }}"
