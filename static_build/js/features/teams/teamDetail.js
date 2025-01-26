@@ -21,7 +21,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const maxLength = 14;
     const commandHandlers = {
         'wedstrijden': (data) => updateMatches(data, maxLength, infoContainer),
-        'stats': (data) => updateStatistics(data.data, infoContainer),
+        'stats': (data) => updateStatistics(data.data, infoContainer, socket, user_id),
         'spelers': (data) => updatePlayers(data, infoContainer),
     };
 
