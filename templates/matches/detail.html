@@ -65,9 +65,11 @@
             </p>
             {% endif %}
 
+            {% if match_data.status == 'active' or match_data.status == 'finished' %}
             <p id="score" style="margin: 0">
                 {{ home_score }} / {{ away_score }}
             </p>
+            {% endif %}
         </div>
 
         <a

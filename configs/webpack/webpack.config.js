@@ -3,6 +3,7 @@ const path = require('path');
 module.exports = {
     entry: {
         hub_catalog: './static_build/js/features/hub/hubCatalog.js',
+        landing: './static_build/js/features/hub/landing.js',
         club_detail: './static_build/js/features/clubs/clubDetail.js',
         match_detail: './static_build/js/features/matches/matchDetail.js',
         players_selector: './static_build/js/features/matches/playersSelector.js',

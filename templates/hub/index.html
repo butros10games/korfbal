@@ -59,6 +59,12 @@
                     Uitslag
                 </p>
                 {% elif match_data.status == 'active' %}
+                <p style="font-size: 14px; margin: 0">
+                    Perioide
+                    <span id="periode_number"
+                        >{{ match_data.current_part }}</span
+                    >/{{ match_data.parts }}
+                </p>
                 <p
                     id="counter"
                     style="margin: 0; font-size: 22px; font-weight: 600"
@@ -138,4 +144,10 @@
         Updates
     </p>
 </div>
+
+<div id="match_id" style="display: none;">{{ match.id_uuid }}</div>
+
+<script src="{% static 'webpack_bundles/landing.bundle.js' %}"></script>
+<script src="{% static 'webpack_bundles/mobile_view.bundle.js' %}"></script>
+
 {% endblock %}

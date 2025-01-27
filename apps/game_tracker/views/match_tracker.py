@@ -6,7 +6,7 @@ from apps.game_tracker.models import MatchData, MatchPart, Pause, PlayerGroup, S
 from apps.schedule.models import Match
 from apps.team.models import Team
 
-from .common import get_time_display
+from apps.common.utils import get_time_display
 
 
 def match_tracker(request, match_id, team_id):

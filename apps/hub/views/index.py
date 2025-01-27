@@ -8,6 +8,8 @@ from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team
 
+from apps.common.utils import get_time_display
+
 
 def index(request):
     """View for the hub index page.
@@ -57,6 +59,7 @@ def index(request):
             match.start_time.strftime("%a, %d %b") if match else "No upcoming matches"
         ),
         "start_time": match.start_time.strftime("%H:%M") if match else "",
+        "time_display": get_time_display(match_data),
         "home_score": (
             Shot.objects.filter(
                 match_data=match_data, team=match.home_team, scored=True
