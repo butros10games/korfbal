@@ -50,6 +50,7 @@ async def get_time(match_data, current_part):
                 {
                     "command": "timer_data",
                     "type": "pause",
+                    "match_data_id": str(match_data.id_uuid),
                     "time": part.start_time.isoformat(),
                     "calc_to": active_pause.start_time.isoformat(),
                     "length": match_data.part_lenght,
@@ -61,10 +62,36 @@ async def get_time(match_data, current_part):
                 {
                     "command": "timer_data",
                     "type": "active",
+                    "match_data_id": str(match_data.id_uuid),
                     "time": part.start_time.isoformat(),
                     "length": match_data.part_lenght,
                     "pause_length": pause_time,
                 }
             )
     else:
-        return json.dumps({"command": "timer_data", "type": "deactive"})
+        return json.dumps(
+            {
+                "command": "timer_data",
+                "type": "deactive",
+                "match_data_id": str(match_data.id_uuid)
+            }
+        )
+
+
+def get_time_display(match_data):
+    """
+    Get the time display for the match.
+
+    Args:
+        match_data: The match data object.
+
+    Returns:
+        The time display for the match.
+    """
+    time_left = match_data.part_lenght
+
+    # convert the seconds to minutes and seconds to display on the page make the numbers
+    # look nice with the %02d
+    minutes = int(time_left / 60)
+    seconds = int(time_left % 60)
+    return "%02d:%02d" % (minutes, seconds)

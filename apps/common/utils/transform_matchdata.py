@@ -6,6 +6,7 @@ from datetime import datetime
 from asgiref.sync import sync_to_async
 
 from apps.game_tracker.models import Shot
+from .time_utils import get_time_display
 
 
 async def transform_matchdata(matchs_data: list) -> list:
@@ -40,6 +41,7 @@ async def transform_matchdata(matchs_data: list) -> list:
         match_dict.append(
             {
                 "id_uuid": str(match_data.match_link.id_uuid),
+                "match_data_id": str(match_data.id_uuid),
                 "home_team": await sync_to_async(home_team.__str__)(),
                 "home_team_logo": home_team.club.get_club_logo(),
                 "home_score": await Shot.objects.filter(
@@ -51,8 +53,11 @@ async def transform_matchdata(matchs_data: list) -> list:
                     match_data=match_data, team=away_team, scored=True
                 ).acount(),
                 "start_date": formatted_date,
-                "start_time": formatted_time,  # Add the time separately
+                "start_time": formatted_time,
+                "current_part": match_data.current_part,
+                "parts": match_data.parts,
                 "length": match_data.part_lenght,
+                "time_display": get_time_display(match_data),
                 "status": match_data.status,
                 "winner": (
                     await sync_to_async(match_data.get_winner().__str__)()

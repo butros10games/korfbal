@@ -3,6 +3,12 @@
 from .general_stats import general_stats
 from .players_stats import players_stats
 from .transform_matchdata import transform_matchdata
-from .get_time_display import get_time_display
+from .time_utils import get_time, get_time_display
 
-__all__ = ["general_stats", "players_stats", "transform_matchdata", "get_time_display"]
+__all__ = [
+    "general_stats",
+    "players_stats",
+    "transform_matchdata",
+    "get_time_display",
+    "get_time",
+]

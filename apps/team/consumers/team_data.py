@@ -9,10 +9,11 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
 from apps.common.utils import general_stats, players_stats, transform_matchdata
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import MatchData, MatchPart
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
+from apps.common.utils import get_time
 
 
 class TeamDataConsumer(AsyncWebsocketConsumer):
@@ -27,6 +28,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         """Connect to the websocket."""
         team_id = self.scope["url_route"]["kwargs"]["id"]
         self.team = await Team.objects.aget(id_uuid=team_id)
+        self.subscribed_channels = []
         await self.accept()
 
     async def receive(self, text_data=None, bytes_data=None) -> None:
@@ -61,6 +63,27 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
             elif command == "follow":
                 await self.follow_request(json_data["followed"], json_data["user_id"])
+
+            elif command == "get_time":
+                match_data = await MatchData.objects.prefetch_related(
+                    "match_link"
+                ).aget(id_uuid=json_data["match_data_id"])
+
+                current_part = await MatchPart.objects.aget(
+                    match_data=match_data, active=True
+                )
+
+                # Subscribe to time data channel
+                if match_data.match_link.id_uuid not in self.subscribed_channels:
+                    await self.channel_layer.group_add(
+                        f"time_match_{match_data.match_link.id_uuid}", self.channel_name
+                    )
+
+                    self.subscribed_channels.append(match_data.match_link.id_uuid)
+
+                await self.send(
+                    text_data=await get_time(match_data, current_part)
+                )
 
         except Exception as e:
             await self.send(
@@ -269,3 +292,13 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         )
 
         return matchs_data
+
+    async def send_data(self, event):
+        """
+        Send data to the websocket.
+
+        Args:
+            event: The event to send.
+        """
+        data = event["data"]
+        await self.send(text_data=json.dumps(data))

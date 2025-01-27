@@ -1,17 +1,39 @@
 import { truncateMiddle } from '../../utils';
 import { cleanDomCarousel } from '../../utils/dom';
 
-export const updateMatches = function (data, maxLength, infoContainer) {
+export const updateMatches = function (data, maxLength, infoContainer, socket) {
     cleanDomCarousel(infoContainer);
+    let current_date = null;
 
     if (data.wedstrijden.length > 0) {
         for (const element of data.wedstrijden) {
+            // Date container
+            if (element.start_date !== current_date) {
+                const date_container = document.createElement('div');
+                date_container.classList.add('flex-center');
+                date_container.style.width = '100%';
+                date_container.style.padding = '6px 0';
+                date_container.style.backgroundColor = 'var(--off-white)';
+                date_container.style.borderBottom = '1px solid var(--gray)';
+
+                const date = document.createElement('p');
+                date.style.margin = '0';
+                date.style.fontWeight = '600';
+                date.style.color = 'var(--primary_color)';
+                date.innerHTML = element.start_date;
+
+                date_container.appendChild(date);
+                infoContainer.appendChild(date_container);
+
+                current_date = element.start_date;
+            }
+
             const match_container = document.createElement('a');
             match_container.classList.add('match-container');
             match_container.classList.add('flex-row');
             match_container.style.justifyContent = 'space-around';
             match_container.style.padding = '12px';
-            match_container.style.borderBottom = '1px solid #000';
+            match_container.style.borderBottom = '1px solid var(--gray)';
             match_container.style.width = 'calc(100% - 24px)';
             match_container.style.textDecoration = 'none';
             match_container.style.color = '#000';
@@ -42,45 +64,57 @@ export const updateMatches = function (data, maxLength, infoContainer) {
 
             match_container.appendChild(home_team_container);
 
-            const match_date_container = document.createElement('div');
-            match_date_container.classList.add('flex-column');
-            match_date_container.style.width = '80px';
-
-            const match_date = document.createElement('p');
-            match_date.style.margin = '0';
-            match_date.style.marginBottom = '12px';
-            match_date.innerHTML = element.start_date;
-
-            match_date_container.appendChild(match_date);
+            const match_middle_container = document.createElement('div');
+            match_middle_container.classList.add('flex-column');
+            match_middle_container.style.width = '80px';
 
             if (element.status === 'finished') {
                 const match_score = document.createElement('p');
                 match_score.style.margin = '0';
                 match_score.style.marginBottom = '12px';
+                match_score.style.fontSize = '22px';
                 match_score.style.fontWeight = '600';
                 match_score.innerHTML = element.home_score + ' - ' + element.away_score;
 
-                match_date_container.appendChild(match_score);
+                match_middle_container.appendChild(match_score);
             } else if (element.status === 'active') {
-                const match_hour = document.createElement('p');
-                match_hour.style.margin = '0';
-                match_hour.style.marginBottom = '12px';
-                match_hour.style.fontWeight = '600';
-                match_hour.style.fontSize = '20px';
-                match_hour.style.textAlign = 'center';
-                match_hour.innerHTML = element.start_time + '</br>' + ' (live)';
+                const match_period = document.createElement('p');
+                match_period.style.fontSize = '14px';
+                match_period.style.margin = '0';
+                match_period.innerHTML = `Periode <span id="periode_number">${element.current_part}</span>/${element.parts}`;
 
-                match_date_container.appendChild(match_hour);
+                const match_counter = document.createElement('p');
+                match_counter.id = 'counter_' + element.match_data_id;
+                match_counter.style.margin = '0';
+                match_counter.style.fontSize = '22px';
+                match_counter.style.fontWeight = '600';
+                match_counter.innerHTML = element.time_display;
+
+                const match_score = document.createElement('p');
+                match_score.id = 'score';
+                match_score.style.margin = '0';
+                match_score.innerHTML = element.home_score + ' - ' + element.away_score;
+
+                match_middle_container.appendChild(match_period);
+                match_middle_container.appendChild(match_counter);
+                match_middle_container.appendChild(match_score);
+
+                socket.send(
+                    JSON.stringify(
+                        { command: 'get_time', match_data_id: element.match_data_id }
+                    )
+                );
             } else {
                 const match_hour = document.createElement('p');
                 match_hour.style.margin = '0';
                 match_hour.style.marginBottom = '12px';
+                match_hour.style.fontSize = '22px';
                 match_hour.style.fontWeight = '600';
                 match_hour.innerHTML = element.start_time;
 
-                match_date_container.appendChild(match_hour);
+                match_middle_container.appendChild(match_hour);
             }
-            match_container.appendChild(match_date_container);
+            match_container.appendChild(match_middle_container);
 
             const away_team_container = document.createElement('div');
             away_team_container.classList.add('flex-column');

@@ -22,8 +22,7 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-
-from .common import get_time
+from apps.common.utils import get_time
 
 
 class MatchTrackerConsumer(AsyncWebsocketConsumer):
@@ -398,6 +397,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                             "type": "start",
                             "time": part.start_time.isoformat(),
                             "length": self.match_data.part_lenght,
+                            "match_data_id": str(self.match_data.id_uuid),
                         },
                     },
                 )
@@ -417,7 +417,11 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 )
 
                 self.is_paused = True
-                pause_message = {"command": "pause", "pause": True}
+                pause_message = {
+                    "command": "pause",
+                    "pause": True,
+                    "match_data_id": str(self.match_data.id_uuid)
+                }
             else:
                 naive_datetime = datetime.now()
                 aware_datetime = make_aware(naive_datetime)
@@ -442,6 +446,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     "command": "pause",
                     "pause": False,
                     "pause_time": pause_time,
+                    "match_data_id": str(self.match_data.id_uuid),
                 }
 
             for channel_name in [self.channel_names[2]]:
@@ -495,6 +500,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                             "command": "part_end",
                             "part": self.match_data.current_part,
                             "part_length": self.match_data.part_lenght,
+                            "match_data_id": str(self.match_data.id_uuid),
                         },
                     },
                 )
@@ -517,6 +523,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "data": {
                             "command": "match_end",
                             "match_id": str(self.match.id_uuid),
+                            "match_data_id": str(self.match_data.id_uuid),
                         },
                     },
                 )

@@ -5,6 +5,7 @@ export class CountdownTimer {
         pauseTimeISO = null,
         offsetInMilliseconds = 0,
         showEndHalfButton = false,
+        domId = 'counter',
     ) {
         this.lengthInMilliseconds = lengthInMilliseconds;
 
@@ -16,6 +17,7 @@ export class CountdownTimer {
         this.pauseTimeISO = pauseTimeISO;
         this.interval = null;
         this.showEndHalfButton = showEndHalfButton;
+        this.domId = domId;
 
         // Call updateDisplay immediately upon construction to set the initial value
         this.updateDisplay();
@@ -32,7 +34,7 @@ export class CountdownTimer {
         const seconds = Math.floor((absTime % 60000) / 1000);
 
         // Update the counter display on the website
-        document.getElementById('counter').innerText =
+        document.getElementById(this.domId).innerText =
             `${sign}${minutes}:${seconds.toString().padStart(2, '0')}`;
 
         // Conditionally display the "end-half-button"

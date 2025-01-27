@@ -20,8 +20,7 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
-
-from .common import get_time
+from apps.common.utils import get_time
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
