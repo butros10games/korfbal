@@ -34,6 +34,9 @@ function onMessageReceived(event) {
                     data.length * 1000,
                     null,
                     data.pause_length * 1000,
+                    false,
+                    'counter',
+                    data.server_time,
                 );
                 timer.start();
             } else if (data.type === 'pause') {
@@ -42,9 +45,20 @@ function onMessageReceived(event) {
                     data.length * 1000,
                     data.calc_to,
                     data.pause_length * 1000,
+                    false,
+                    'counter',
+                    data.server_time,
                 );
             } else if (data.type === 'start') {
-                timer = new CountdownTimer(data.time, data.length * 1000, null, 0);
+                timer = new CountdownTimer(
+                    data.time,
+                    data.length * 1000,
+                    null,
+                    0,
+                    false,
+                    'counter',
+                    data.server_time,
+                );
                 timer.start();
             }
 

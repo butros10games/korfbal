@@ -2,7 +2,7 @@
 
 import json
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -119,7 +119,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             elif command == "shot_reg":
                 await self.shot_reg(
-                    json_data["player_id"], json_data["time"], json_data["for_team"]
+                    json_data["player_id"], json_data["for_team"]
                 )
 
             elif command == "get_goal_types":
@@ -130,7 +130,6 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     json_data["player_id"],
                     json_data["goal_type"],
                     json_data["for_team"],
-                    json_data["time"],
                 )
 
             elif command == "start/pause":
@@ -154,7 +153,6 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 await self.wissel_reg(
                     json_data["new_player_id"],
                     json_data["old_player_id"],
-                    json_data["time"],
                 )
 
             elif command == "remove_last_event":
@@ -194,13 +192,12 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "savePlayerGroups", "status": "success"})
         )
 
-    async def shot_reg(self, player_id, time, for_team):
+    async def shot_reg(self, player_id, for_team):
         """
         Register a shot for a player.
 
         Args:
             player_id: The id of the player.
-            time: The time of the shot.
             for_team: A boolean indicating if the shot is for the team.
         """
         # check if the match is paused and if it is paused decline the request except
@@ -217,7 +214,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=time,
+            time=datetime.now(),
             for_team=for_team,
         )
 
@@ -259,7 +256,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def goal_reg(self, player_id, goal_type, for_team, time):
+    async def goal_reg(self, player_id, goal_type, for_team):
         """
         Register a goal for a player.
 
@@ -267,7 +264,6 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player_id: The id of the player.
             goal_type: The type of the goal.
             for_team: A boolean indicating if the goal is for the team.
-            time: The time of the goal.
         """
         # check if the match is paused and if it is paused decline the request except
         # for the start/stop command
@@ -291,7 +287,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=time,
+            time=datetime.now(),
             shot_type=goal_type,
             for_team=for_team,
             team=team,
@@ -387,18 +383,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     text_data=await self.player_group_class.player_group_request()
                 )
 
+            time_message = await get_time(self.match_data, self.current_part)
+
             for channel_name in [self.channel_names[2]]:
                 await self.channel_layer.group_send(
                     channel_name,
                     {
                         "type": "send_data",
-                        "data": {
-                            "command": "timer_data",
-                            "type": "start",
-                            "time": part.start_time.isoformat(),
-                            "length": self.match_data.part_lenght,
-                            "match_data_id": str(self.match_data.id_uuid),
-                        },
+                        "data": json.loads(time_message),
                     },
                 )
         else:
@@ -447,6 +439,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     "pause": False,
                     "pause_time": pause_time,
                     "match_data_id": str(self.match_data.id_uuid),
+                    "server_time": datetime.now(timezone.utc).isoformat(),
                 }
 
             for channel_name in [self.channel_names[2]]:
@@ -551,14 +544,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def wissel_reg(self, new_player_id, old_player_id, time):
+    async def wissel_reg(self, new_player_id, old_player_id):
         """
         Register a player change.
 
         Args:
             new_player_id: The id of the new player.
             old_player_id: The id of the old player.
-            time: The time of the player change.
         """
         # check if the match is paused and if it is paused decline the request except
         # for the start/stop command
@@ -598,7 +590,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player_group=player_group,
             match_data=self.match_data,
             match_part=self.current_part,
-            time=time,
+            time=datetime.now(),
         )
 
         # get the shot count for the new player

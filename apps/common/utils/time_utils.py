@@ -1,6 +1,8 @@
 """This module contains common functions for the game_tracker app consumers."""
 
 import json
+from datetime import datetime, timezone
+
 
 from asgiref.sync import sync_to_async
 
@@ -55,6 +57,7 @@ async def get_time(match_data, current_part):
                     "calc_to": active_pause.start_time.isoformat(),
                     "length": match_data.part_lenght,
                     "pause_length": pause_time,
+                    "server_time": datetime.now(timezone.utc).isoformat(),
                 }
             )
         else:
@@ -66,6 +69,7 @@ async def get_time(match_data, current_part):
                     "time": part.start_time.isoformat(),
                     "length": match_data.part_lenght,
                     "pause_length": pause_time,
+                    "server_time": datetime.now(timezone.utc).isoformat(),
                 }
             )
     else:

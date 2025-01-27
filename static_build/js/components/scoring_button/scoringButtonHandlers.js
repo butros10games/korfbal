@@ -23,7 +23,6 @@ export const createPlayerClickHandler = function (element, team, socket) {
         const data = { command: 'get_goal_types' };
         const last_goal_Data = {
             player_id: element.id,
-            time: new Date().toISOString(),
             for_team: team === 'home',
         };
 
@@ -60,7 +59,6 @@ export const shotButtonReg = function (team, socket) {
             const data = {
                 command: 'shot_reg',
                 player_id: element.id,
-                time: new Date().toISOString(),
                 for_team: team === 'home',
             };
 

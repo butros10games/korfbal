@@ -198,6 +198,8 @@ function timerData(data, startStopButton) {
             null,
             data.pause_length * 1000,
             true,
+            'counter',
+            data.server_time,
         );
         timer.start();
 
@@ -210,13 +212,23 @@ function timerData(data, startStopButton) {
             data.calc_to,
             data.pause_length * 1000,
             true,
+            'counter',
+            data.server_time,
         );
         timer.stop();
 
         // set the pause button to start
         startStopButton.innerHTML = 'Start';
     } else if (data.type === 'start') {
-        timer = new CountdownTimer(data.time, data.length * 1000, null, 0, true);
+        timer = new CountdownTimer(
+            data.time,
+            data.length * 1000,
+            null,
+            0,
+            true,
+            'counter',
+            data.server_time,
+        );
         timer.start();
 
         startStopButton.innerHTML = 'Pause';
@@ -477,7 +489,6 @@ function showGoalTypes(data, socket) {
                 command: 'goal_reg',
                 goal_type: goalType.id,
                 player_id: last_goal_Data.player_id,
-                time: last_goal_Data.time,
                 for_team: last_goal_Data.for_team,
             };
 
@@ -570,8 +581,7 @@ function showReservePlayer(data, socket) {
             const data_send = {
                 command: 'wissel_reg',
                 new_player_id: Player.id,
-                old_player_id: playerSwitchData.player_id,
-                time: playerSwitchData.time,
+                old_player_id: playerSwitchData.player_id
             };
 
             console.log(data_send);
@@ -911,8 +921,7 @@ function playerSwitch(socket) {
             // Add new handler
             const playerClickHandler = function () {
                 playerSwitchData = {
-                    player_id: element.id,
-                    time: new Date().toISOString(),
+                    player_id: element.id
                 };
 
                 const data = {

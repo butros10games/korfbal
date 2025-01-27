@@ -86,7 +86,8 @@ function timer_data(data, existingTimer) {
             null,
             data.pause_length * 1000,
             false,
-            `counter_${data.match_data_id}`
+            `counter_${data.match_data_id}`,
+            data.server_time,
         );
         existingTimer.start();
     } else if (data.type === 'pause') {
@@ -97,7 +98,8 @@ function timer_data(data, existingTimer) {
             data.calc_to,
             data.pause_length * 1000,
             false,
-            `counter_${data.match_data_id}`
+            `counter_${data.match_data_id}`,
+            data.server_time,
         );
         // Not explicitly starting it here, waiting for another message?
     } else if (data.type === 'start') {
@@ -108,7 +110,8 @@ function timer_data(data, existingTimer) {
             null,
             0,
             false,
-            `counter_${data.match_data_id}`
+            `counter_${data.match_data_id}`,
+            data.server_time,
         );
         existingTimer.start();
     }
