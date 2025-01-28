@@ -173,3 +173,13 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps({"command": "follow", "status": "success"})
         )
+
+    async def send_data(self, event):
+        """
+        Send data to the websocket.
+
+        Args:
+            event: The event to send.
+        """
+        data = event["data"]
+        await self.send(text_data=json.dumps(data))

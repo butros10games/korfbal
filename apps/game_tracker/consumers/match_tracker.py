@@ -407,11 +407,6 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 )
 
                 self.is_paused = True
-                pause_message = {
-                    "command": "pause",
-                    "pause": True,
-                    "match_data_id": str(self.match_data.id_uuid),
-                }
             else:
                 naive_datetime = datetime.now()
                 aware_datetime = make_aware(naive_datetime)
@@ -421,24 +416,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
                 self.is_paused = False
 
-                pauses = await sync_to_async(list)(
-                    Pause.objects.filter(
-                        match_data=self.match_data,
-                        active=False,
-                        match_part=self.current_part,
-                    )
-                )
-                pause_time = 0
-                for pause in pauses:
-                    pause_time += pause.length().total_seconds()
-
-                pause_message = {
-                    "command": "pause",
-                    "pause": False,
-                    "pause_time": pause_time,
-                    "match_data_id": str(self.match_data.id_uuid),
-                    "server_time": datetime.now(timezone.utc).isoformat(),
-                }
+            pause_message = await get_time(self.match_data, self.current_part)
+            pause_message = json.loads(pause_message)
 
             for channel_name in [self.channel_names[2]]:
                 await self.channel_layer.group_send(
