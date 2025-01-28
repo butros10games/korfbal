@@ -138,7 +138,7 @@ function errorProcessing(data) {
         overlay.id = 'overlay';
         overlay.classList.add('overlay');
 
-        const popupElements = createPopup('De wedstrijd is gepauzeerd.');
+        const popupElements = createPopup('De wedstrijd is geintermissionerd.');
         const popup = popupElements[0];
         const popupButton = popupElements[1];
 
@@ -579,7 +579,7 @@ function showReservePlayer(data, socket) {
 
         PlayerDiv.addEventListener('click', () => {
             const data_send = {
-                command: 'wissel_reg',
+                command: 'substitute_reg',
                 new_player_id: Player.id,
                 old_player_id: playerSwitchData.player_id
             };
@@ -636,7 +636,7 @@ function updateEvent(data) {
             eventsDiv.appendChild(scoreDiv);
             break;
         }
-        case 'wissel': {
+        case 'substitute': {
             const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#eb9834');
             const midsectionDiv = createMidsectionDiv(
                 '("' + event.time + '")',

@@ -3,7 +3,7 @@
 from apps.player.models import Player
 
 
-def standart_imports(request):
+def standard_imports(request):
     """
     Add profile_url and profile_img_url to the context.
 

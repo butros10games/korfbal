@@ -6,15 +6,16 @@ from datetime import datetime
 from asgiref.sync import sync_to_async
 
 from apps.game_tracker.models import Shot
+
 from .time_utils import get_time_display
 
 
-async def transform_matchdata(matchs_data: list) -> list:
+async def transform_match_data(matches_data: list) -> list:
     """
     Transform the match data to a dictionary.
 
     Args:
-        matchs_data {list} -- A list of match data.
+        matches_data {list} -- A list of match data.
 
     Returns:
         list -- A list of dictionaries containing the match data.
@@ -22,7 +23,7 @@ async def transform_matchdata(matchs_data: list) -> list:
     match_dict = []
     locale.setlocale(locale.LC_TIME, "nl_NL.utf8")
 
-    for match_data in matchs_data:
+    for match_data in matches_data:
         start_time_dt = datetime.fromisoformat(
             match_data.match_link.start_time.isoformat()
         )

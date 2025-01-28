@@ -7,7 +7,8 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import transform_matchdata, get_time_display_pause
+from apps.common.utils import get_time_display_pause
+from apps.django_projects.korfbal.apps.common.utils import transform_match_data
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -61,7 +62,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
         if command == "teams":
             await self.teams_request()
-        elif command in {"wedstrijden", "ended_matches"}:
+        elif command in {"matches", "ended_matches"}:
             await self.matches_request(command)
         elif command == "follow":
             await self.follow_request(json_data["followed"], json_data["user_id"])
@@ -101,25 +102,25 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
         status: List[str]
         order: str
-        if command == "wedstrijden":
+        if command == "matches":
             status = ["upcoming", "active"]
             order = ""
         else:
             status = ["finished"]
             order = "-"
 
-        wedstrijden_data: List[MatchData] = await self.get_matchs_data(
+        matches_data: List[MatchData] = await self.get_matches_data(
             team_ids, status, order
         )
-        wedstrijden_dict = await transform_matchdata(wedstrijden_data)
+        matches_dict = await transform_match_data(matches_data)
 
         await self.send(
             text_data=json.dumps(
-                {"command": "wedstrijden", "wedstrijden": wedstrijden_dict}
+                {"command": "matches", "matches": matches_dict}
             )
         )
 
-    async def get_matchs_data(
+    async def get_matches_data(
         self, team_ids: List[str], status: List[str], order: str
     ) -> List[MatchData]:
         """
@@ -140,7 +141,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         )
         matches_non_dub: List[Match] = list(dict.fromkeys(matches))
 
-        matchs_data: List[MatchData] = await sync_to_async(list)(
+        matches_data: List[MatchData] = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -152,7 +153,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             .order_by(order + "match_link__start_time")
         )
 
-        return matchs_data
+        return matches_data
 
     async def follow_request(self, follow: bool, user_id: str) -> None:
         """

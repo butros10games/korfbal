@@ -11,23 +11,23 @@ export const updateGoalStats = function (data, infoContainer) {
         row_1.style.width = '100%';
         row_1.style.marginBottom = '24px';
 
-        const matchs_container = document.createElement('div');
-        matchs_container.classList.add('flex-column');
-        matchs_container.style.width = '144px';
+        const matches_container = document.createElement('div');
+        matches_container.classList.add('flex-column');
+        matches_container.style.width = '144px';
 
-        const matchs = document.createElement('p');
-        matchs.style.margin = '0';
-        matchs.style.fontSize = '16px';
-        matchs.innerHTML = 'Wedstrijden';
+        const matches = document.createElement('p');
+        matches.style.margin = '0';
+        matches.style.fontSize = '16px';
+        matches.innerHTML = 'Wedstrijden';
 
-        const matchs_data = document.createElement('p');
-        matchs_data.style.margin = '0';
-        matchs_data.innerHTML = data.played_matches;
+        const matches_data = document.createElement('p');
+        matches_data.style.margin = '0';
+        matches_data.innerHTML = data.played_matches;
 
-        matchs_container.appendChild(matchs);
-        matchs_container.appendChild(matchs_data);
+        matches_container.appendChild(matches);
+        matches_container.appendChild(matches_data);
 
-        row_1.appendChild(matchs_container);
+        row_1.appendChild(matches_container);
 
         const total_score_container = document.createElement('div');
         total_score_container.classList.add('flex-column');

@@ -7,12 +7,12 @@ from asgiref.sync import sync_to_async
 from apps.game_tracker.models import GoalType, Shot
 
 
-async def general_stats(match_datas):
+async def general_stats(match_dataset):
     """
     Return the general statistics of a match.
 
     Args:
-        match_datas {list} -- A list of match datas.
+        match_dataset {list} -- A list of multiple match data objects.
 
     Returns:
         str -- A JSON string containing the general statistics of the match.
@@ -27,10 +27,16 @@ async def general_stats(match_datas):
     team_goal_stats = {}
     for goal_type in goal_types:
         goals_for = await Shot.objects.filter(
-            match_data__in=match_datas, shot_type=goal_type, for_team=True, scored=True
+            match_data__in=match_dataset,
+            shot_type=goal_type,
+            for_team=True,
+            scored=True,
         ).acount()
         goals_against = await Shot.objects.filter(
-            match_data__in=match_datas, shot_type=goal_type, for_team=False, scored=True
+            match_data__in=match_dataset,
+            shot_type=goal_type,
+            for_team=False,
+            scored=True,
         ).acount()
 
         team_goal_stats[goal_type.name] = {
@@ -45,16 +51,16 @@ async def general_stats(match_datas):
                 "type": "general",
                 "stats": {
                     "shots_for": await Shot.objects.filter(
-                        match_data__in=match_datas, for_team=True
+                        match_data__in=match_dataset, for_team=True
                     ).acount(),
                     "shots_against": await Shot.objects.filter(
-                        match_data__in=match_datas, for_team=False
+                        match_data__in=match_dataset, for_team=False
                     ).acount(),
                     "goals_for": await Shot.objects.filter(
-                        match_data__in=match_datas, for_team=True, scored=True
+                        match_data__in=match_dataset, for_team=True, scored=True
                     ).acount(),
                     "goals_against": await Shot.objects.filter(
-                        match_data__in=match_datas, for_team=False, scored=True
+                        match_data__in=match_dataset, for_team=False, scored=True
                     ).acount(),
                     "team_goal_stats": team_goal_stats,
                     "goal_types": goal_types_json,

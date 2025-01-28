@@ -5,8 +5,8 @@ export const updateMatches = function (data, maxLength, infoContainer, socket) {
     cleanDomCarousel(infoContainer);
     let current_date = null;
 
-    if (data.wedstrijden.length > 0) {
-        for (const element of data.wedstrijden) {
+    if (data.matches.length > 0) {
+        for (const element of data.matches) {
             // Date container
             if (element.start_date !== current_date) {
                 const date_container = document.createElement('div');

@@ -3,12 +3,11 @@
 from django.db.models import Q
 from django.shortcuts import render
 
+from apps.common.utils import get_time_display
 from apps.game_tracker.models import MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team
-
-from apps.common.utils import get_time_display
 
 
 def index(request):
@@ -34,7 +33,7 @@ def index(request):
             Q(home_team__in=teams) | Q(away_team__in=teams)
         ).order_by("start_time")
 
-        # get the match datas of the matches
+        # get the match data of the matches
         match_data = (
             MatchData.objects.prefetch_related(
                 "match_link", "match_link__home_team", "match_link__away_team"

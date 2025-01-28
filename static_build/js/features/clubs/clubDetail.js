@@ -20,7 +20,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const maxLength = 14;
 
     const commandHandlers = {
-        'wedstrijden': (data) => updateMatches(data, maxLength, infoContainer, socket),
+        'matches': (data) => updateMatches(data, maxLength, infoContainer, socket),
         'teams': (data) => updateTeam(data, infoContainer),
         'timer_data':  (data) => {
             const currentTimer = timers[data.match_data_id];

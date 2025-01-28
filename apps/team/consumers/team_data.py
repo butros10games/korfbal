@@ -9,13 +9,15 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
 from apps.common.utils import (
-    general_stats, players_stats, transform_matchdata, get_time_display_pause
+    general_stats,
+    get_time_display_pause,
+    players_stats,
 )
-from apps.game_tracker.models import MatchData, MatchPart
+from apps.django_projects.korfbal.apps.common.utils import transform_match_data
+from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from apps.common.utils import get_time
 
 
 class TeamDataConsumer(AsyncWebsocketConsumer):
@@ -48,7 +50,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             json_data = json.loads(text_data)
             command = json_data["command"]
 
-            if command == "wedstrijden" or command == "ended_matches":
+            if command == "matches" or command == "ended_matches":
                 await self.matches_request(command)
 
             elif command == "get_stats":
@@ -60,7 +62,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 elif data_type == "player_stats":
                     await self.team_stats_player_request()
 
-            elif command == "spelers":
+            elif command == "players":
                 await self.player_request(json_data)
 
             elif command == "follow":
@@ -83,16 +85,16 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         Args:
             command (str): The command to determine the type of matches to fetch.
         """
-        wedstrijden_data = await self.get_matchs_data(
-            ["upcoming", "active"] if command == "wedstrijden" else ["finished"],
-            "" if command == "wedstrijden" else "-",
+        matches_data = await self.get_matches_data(
+            ["upcoming", "active"] if command == "matches" else ["finished"],
+            "" if command == "matches" else "-",
         )
 
-        wedstrijden_dict = await transform_matchdata(wedstrijden_data)
+        matches_dict = await transform_match_data(matches_data)
 
         await self.send(
             text_data=json.dumps(
-                {"command": "wedstrijden", "wedstrijden": wedstrijden_dict}
+                {"command": "matches", "matches": matches_dict}
             )
         )
 
@@ -103,7 +105,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
         )
 
-        match_datas = await sync_to_async(list)(
+        match_dataset = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -111,7 +113,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             ).filter(match_link__in=matches)
         )
 
-        general_stats_json = await general_stats(match_datas)
+        general_stats_json = await general_stats(match_dataset)
 
         await self.send(text_data=general_stats_json)
 
@@ -128,11 +130,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
         )
 
-        match_datas = await sync_to_async(list)(
+        match_dataset = await sync_to_async(list)(
             MatchData.objects.filter(match_link__in=matches)
         )
 
-        player_stats = await players_stats(players, match_datas)
+        player_stats = await players_stats(players, match_dataset)
 
         # Prepare and send data
         await self.send(text_data=player_stats)
@@ -172,7 +174,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
         else:
-            # retreve the players of the current season or
+            # retrieve the players of the current season or
             # last season if there is no current season
             try:
                 current_season = await Season.objects.aget(
@@ -215,8 +217,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps(
                 {
-                    "command": "spelers",
-                    "spelers": players_in_team_season_dict,
+                    "command": "players",
+                    "players": players_in_team_season_dict,
                 }
             )
         )
@@ -241,7 +243,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "follow", "status": "success"})
         )
 
-    async def get_matchs_data(self, status: list, order: str) -> list:
+    async def get_matches_data(self, status: list, order: str) -> list:
         """
         Get the match data of the team.
 
@@ -260,7 +262,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        matchs_data = await sync_to_async(list)(
+        matches_data = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -275,7 +277,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             .order_by(order + "match_link__start_time")
         )
 
-        return matchs_data
+        return matches_data
 
     async def send_data(self, event):
         """

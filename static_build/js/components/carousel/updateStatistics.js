@@ -21,7 +21,7 @@ export const updateStatistics = function (data, infoContainer, socket, user_id) 
             const buttonTypes = [
                 { name: 'generaal', type: 'general' },
                 { name: 'verloop', type: 'progression' },
-                { name: 'spelers', type: 'player_stats' },
+                { name: 'players', type: 'player_stats' },
             ];
 
             buttonTypes.forEach((type) => {

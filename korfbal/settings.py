@@ -124,7 +124,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 # custom context processors
-                "apps.common.context_processors.standart_imports",
+                "apps.common.context_processors.standard_imports",
             ],
         },
     },

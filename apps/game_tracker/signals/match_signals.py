@@ -8,7 +8,7 @@ from apps.schedule.models import Match
 
 
 @receiver(post_save, sender=Match)
-def create_matchdata_for_new_match(sender, instance, created, **kwargs):
+def create_match_data_for_new_match(sender, instance, created, **kwargs):
     """
     Create a MatchData instance for a new Match instance.
 

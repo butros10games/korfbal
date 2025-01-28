@@ -7,7 +7,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import general_stats, players_stats
+from apps.common.utils import general_stats, get_time, players_stats
 from apps.game_tracker.models import (
     GroupType,
     MatchData,
@@ -20,7 +20,6 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import TeamData
-from apps.common.utils import get_time
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
@@ -130,7 +129,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "command": "playerGroups",
                     "playerGroups": player_groups_array,
                     "players": players_json,
-                    "is_coach": await self.checkIfAcces(user_id, team),
+                    "is_coach": await self.checkIfAccess(user_id, team),
                     "finished": True if self.match_data.status == "finished" else False,
                 }
             )
@@ -199,7 +198,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             events_dict = []
 
             # check if there is a part active or the match is finished
-            if self.match_data.status != "upcomming":
+            if self.match_data.status != "upcoming":
                 events = await self.get_all_events()
 
                 for event in events:
@@ -281,7 +280,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         Returns:
             The event for a shot.
         """
-        # calculate the time of the pauses before the event happend. By requesting the
+        # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
@@ -336,7 +335,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         Returns:
             The event for a player change.
         """
-        # calculate the time of the pauses before the event happend. By requesting the
+        # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
@@ -370,7 +369,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
         return {
-            "type": "wissel",
+            "type": "substitute",
             "time": time_in_minutes,
             "player_in": event.player_in.user.username,
             "player_out": event.player_out.user.username,
@@ -387,7 +386,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         Returns:
             The event for a pause.
         """
-        # calculate the time of the pauses before the event happend. By requesting the
+        # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
@@ -426,7 +425,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
         return {
-            "type": "pauze",
+            "type": "intermission",
             "time": time_in_minutes,
             "length": event.length().total_seconds(),
             "start_time": event.start_time.isoformat() if event.start_time else None,
@@ -550,7 +549,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return players_json
 
-    async def checkIfAcces(self, user_id, team):
+    async def checkIfAccess(self, user_id, team):
         """Check if the user has access to the team."""
         if user_id is None:
             return False

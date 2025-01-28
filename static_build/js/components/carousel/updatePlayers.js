@@ -4,10 +4,10 @@ import { cleanDomCarousel } from '../../utils/dom';
 export const updatePlayers = function (data, infoContainer) {
     cleanDomCarousel(infoContainer);
 
-    if (data.spelers.length > 0) {
+    if (data.players.length > 0) {
         infoContainer.classList.add('flex-start-wrap');
 
-        for (const element of data.spelers) {
+        for (const element of data.players) {
             const player_container = document.createElement('a');
             player_container.href = element.get_absolute_url;
             player_container.style.textDecoration = 'none';

@@ -7,7 +7,8 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import transform_matchdata, get_time_display_pause
+from apps.common.utils import get_time_display_pause
+from apps.django_projects.korfbal.apps.common.utils import transform_match_data
 from apps.game_tracker.models import GoalType, MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -25,7 +26,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         self.player = None
         self.user_profile = None
         self.teams = None
-        self.subscribed_channels: List[str] = []
+        self.subscribed_channels = []
 
     async def connect(self):
         """Connect to the websocket."""
@@ -84,9 +85,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             if command == "teams":
                 await self.teams_request()
 
-            if command == "upcomming_matches" or command == "past_matches":
+            if command == "upcoming_matches" or command == "past_matches":
                 await self.matches_request(command)
-            
+
             elif command == "get_time":
                 await get_time_display_pause(self, json_data)
 
@@ -102,7 +103,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         total_goals_for = 0
         total_goals_against = 0
 
-        all_finished_match_data = await self.get_matchs_data(["finished"], "-")
+        all_finished_match_data = await self.get_matches_data(["finished"], "-")
 
         goal_types = await sync_to_async(list)(GoalType.objects.all())
 
@@ -213,20 +214,20 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         Args:
             command (str): The command to get the matches.
         """
-        wedstrijden_data = await self.get_matchs_data(
-            ["upcoming", "active"] if command == "upcomming_matches" else ["finished"],
-            "" if command == "upcomming_matches" else "-",
+        matches_data = await self.get_matches_data(
+            ["upcoming", "active"] if command == "upcoming_matches" else ["finished"],
+            "" if command == "upcoming_matches" else "-",
         )
 
-        wedstrijden_dict = await transform_matchdata(wedstrijden_data)
+        matches_dict = await transform_match_data(matches_data)
 
         await self.send(
             text_data=json.dumps(
-                {"command": "matches", "wedstrijden": wedstrijden_dict}
+                {"command": "matches", "matches": matches_dict}
             )
         )
 
-    async def get_matchs_data(self, status, order):
+    async def get_matches_data(self, status, order):
         """
         Get the match data.
 
@@ -246,7 +247,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        matchs_data = await sync_to_async(list)(
+        matches_data = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -258,4 +259,4 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             .order_by(order + "match_link__start_time")
         )
 
-        return matchs_data
+        return matches_data

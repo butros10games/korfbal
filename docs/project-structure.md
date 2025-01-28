@@ -43,7 +43,7 @@ Kwt Project
 │   ├── common/
 │   │   ├── context_processors/
 │   │   │   ├── __init__.py
-│   │   │   └── standart_imports.py
+│   │   │   └── standard_imports.py
 │   │   ├── management/
 │   │   │   └── commands/
 │   │   │       └── webpack_collectstatic.py
@@ -58,7 +58,7 @@ Kwt Project
 │   │   │   ├── __init__.py
 │   │   │   ├── general_stats.py
 │   │   │   ├── players_stats.py
-│   │   │   └── transform_matchdata.py
+│   │   │   └── transform_match_data.py
 │   │   ├── __init__.py
 │   │   └── apps.py
 │   ├── game_tracker/

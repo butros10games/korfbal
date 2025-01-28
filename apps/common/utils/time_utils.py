@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from asgiref.sync import sync_to_async
 
-from apps.game_tracker.models import MatchPart, Pause, MatchData
+from apps.game_tracker.models import MatchData, MatchPart, Pause
 
 
 async def get_time(match_data, current_part):
@@ -76,7 +76,7 @@ async def get_time(match_data, current_part):
             {
                 "command": "timer_data",
                 "type": "deactivated",
-                "match_data_id": str(match_data.id_uuid)
+                "match_data_id": str(match_data.id_uuid),
             }
         )
 
@@ -110,13 +110,11 @@ async def get_time_display_pause(self, json_data):
     Returns:
         The time display for the pause.
     """
-    match_data = await MatchData.objects.prefetch_related(
-        "match_link"
-    ).aget(id_uuid=json_data["match_data_id"])
-
-    current_part = await MatchPart.objects.aget(
-        match_data=match_data, active=True
+    match_data = await MatchData.objects.prefetch_related("match_link").aget(
+        id_uuid=json_data["match_data_id"]
     )
+
+    current_part = await MatchPart.objects.aget(match_data=match_data, active=True)
 
     # Subscribe to time data channel
     if match_data.match_link.id_uuid not in self.subscribed_channels:
@@ -126,6 +124,4 @@ async def get_time_display_pause(self, json_data):
 
         self.subscribed_channels.append(match_data.match_link.id_uuid)
 
-    await self.send(
-        text_data=await get_time(match_data, current_part)
-    )
+    await self.send(text_data=await get_time(match_data, current_part))

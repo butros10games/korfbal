@@ -7,7 +7,7 @@ from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
 
 
 @receiver(post_save, sender=MatchData)
-def create_player_groups_for_new_matchdata(sender, instance, created, **kwargs):
+def create_player_groups_for_new_match_data(sender, instance, created, **kwargs):
     """
     Create player groups for a new match data instance.
 

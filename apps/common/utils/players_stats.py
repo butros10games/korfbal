@@ -5,13 +5,13 @@ import json
 from apps.game_tracker.models import Shot
 
 
-async def players_stats(players, match_datas):
+async def players_stats(players, match_dataset):
     """
     Return the statistics of the players in a match.
 
     Args:
         players {list} -- A list of players.
-        match_datas {list} -- A list of match datas.
+        match_dataset {list} -- A list of multiple match data elements.
 
     Returns:
         str -- A JSON string containing the statistics of the players in the match.
@@ -21,16 +21,16 @@ async def players_stats(players, match_datas):
         player_stats = {
             "username": player.user.username,
             "shots_for": await Shot.objects.filter(
-                match_data__in=match_datas, player=player, for_team=True
+                match_data__in=match_dataset, player=player, for_team=True
             ).acount(),
             "shots_against": await Shot.objects.filter(
-                match_data__in=match_datas, player=player, for_team=False
+                match_data__in=match_dataset, player=player, for_team=False
             ).acount(),
             "goals_for": await Shot.objects.filter(
-                match_data__in=match_datas, player=player, for_team=True, scored=True
+                match_data__in=match_dataset, player=player, for_team=True, scored=True
             ).acount(),
             "goals_against": await Shot.objects.filter(
-                match_data__in=match_datas, player=player, for_team=False, scored=True
+                match_data__in=match_dataset, player=player, for_team=False, scored=True
             ).acount(),
         }
 

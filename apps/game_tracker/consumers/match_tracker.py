@@ -9,6 +9,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Case, When
 from django.utils.timezone import make_aware
 
+from apps.common.utils import get_time
 from apps.game_tracker.models import (
     GoalType,
     GroupType,
@@ -22,7 +23,6 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from apps.common.utils import get_time
 
 
 class MatchTrackerConsumer(AsyncWebsocketConsumer):
@@ -118,9 +118,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 await self.save_player_groups(json_data["playerGroups"])
 
             elif command == "shot_reg":
-                await self.shot_reg(
-                    json_data["player_id"], json_data["for_team"]
-                )
+                await self.shot_reg(json_data["player_id"], json_data["for_team"])
 
             elif command == "get_goal_types":
                 await self.get_goal_types()
@@ -149,8 +147,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             elif command == "get_non_active_players":
                 await self.get_non_active_players()
 
-            elif command == "wissel_reg":
-                await self.wissel_reg(
+            elif command == "substitute_reg":
+                await self.substitute_reg(
                     json_data["new_player_id"],
                     json_data["old_player_id"],
                 )
@@ -412,7 +410,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 pause_message = {
                     "command": "pause",
                     "pause": True,
-                    "match_data_id": str(self.match_data.id_uuid)
+                    "match_data_id": str(self.match_data.id_uuid),
                 }
             else:
                 naive_datetime = datetime.now()
@@ -544,7 +542,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def wissel_reg(self, new_player_id, old_player_id):
+    async def substitute_reg(self, new_player_id, old_player_id):
         """
         Register a player change.
 
@@ -853,7 +851,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             time_in_minutes = await self.time_calc(last_event)
 
             events_dict = {
-                "type": "wissel",
+                "type": "substitute",
                 "time": time_in_minutes,
                 "player_in": player_in_username,
                 "player_out": player_out_username,

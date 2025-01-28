@@ -87,8 +87,6 @@ def search(request):
     if category == "teams":
         current_season = get_current_season()
 
-        #! Moet anders gedaan worden even uitzoeken hoe er alsnog een antwoord gestuurd
-        #! kan worden
         if not current_season:
             return JsonResponse({"results": results})
 

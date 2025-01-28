@@ -2,10 +2,9 @@
 
 from django.shortcuts import get_object_or_404, render
 
+from apps.common.utils import get_time_display
 from apps.game_tracker.models import MatchData, Shot
 from apps.schedule.models import Match
-
-from apps.common.utils import get_time_display
 
 
 def match_detail(request, match_id):

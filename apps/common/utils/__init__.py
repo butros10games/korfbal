@@ -2,13 +2,13 @@
 
 from .general_stats import general_stats
 from .players_stats import players_stats
-from .transform_matchdata import transform_matchdata
 from .time_utils import get_time, get_time_display, get_time_display_pause
+from .transform_match_data import transform_match_data
 
 __all__ = [
     "general_stats",
     "players_stats",
-    "transform_matchdata",
+    "transform_match_data",
     "get_time_display",
     "get_time",
     "get_time_display_pause",

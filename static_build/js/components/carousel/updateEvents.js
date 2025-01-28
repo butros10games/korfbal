@@ -39,7 +39,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(scoreDiv);
-            } else if (event.type === 'wissel') {
+            } else if (event.type === 'substitute') {
                 const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#eb9834');
                 const midsectionDiv = createMidsectionDiv(
                     '("' + event.time + '")',
@@ -53,7 +53,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(endSectionDiv);
-            } else if (event.type === 'pauze') {
+            } else if (event.type === 'intermission') {
                 const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#2196F3');
                 const midsectionDiv = createMidsectionDiv(
                     '("' + event.time + '")',
