@@ -34,7 +34,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
                     event.goal_type + ' ("' + event.time + '")',
                     truncateMiddle(event.player, 20),
                 );
-                const scoreDiv = createScoreDiv(thuis + '-' + uit, '64px');
+                const scoreDiv = createScoreDiv(thuis + '-' + uit, '84px');
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);

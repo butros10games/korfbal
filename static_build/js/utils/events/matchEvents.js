@@ -13,6 +13,7 @@ export const createMidsectionDiv = function (description, playerText) {
     const midsectionDiv = document.createElement('div');
     midsectionDiv.classList.add('flex-column');
     midsectionDiv.style.justifyContent = 'center';
+    midsectionDiv.style.width = 'calc(100% - 168px)';
 
     const descriptionDiv = document.createElement('div');
     descriptionDiv.classList.add('description');
@@ -31,7 +32,6 @@ export const createMidsectionDiv = function (description, playerText) {
 // Helper function to create score div
 export const createScoreDiv = function (score, width) {
     const currentScoreDiv = document.createElement('div');
-    currentScoreDiv.classList.add('current-score');
     currentScoreDiv.classList.add('flex-column');
     currentScoreDiv.style.justifyContent = 'center';
     currentScoreDiv.innerHTML = score;
