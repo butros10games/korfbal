@@ -8,7 +8,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
 from apps.common.utils import get_time_display_pause
-from apps.django_projects.korfbal.apps.common.utils import transform_match_data
+from apps.common.utils import transform_match_data
 from apps.game_tracker.models import GoalType, MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match

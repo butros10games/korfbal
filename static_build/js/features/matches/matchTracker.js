@@ -138,7 +138,7 @@ function errorProcessing(data) {
         overlay.id = 'overlay';
         overlay.classList.add('overlay');
 
-        const popupElements = createPopup('De wedstrijd is geintermissionerd.');
+        const popupElements = createPopup('De wedstrijd is gepauzeerd.');
         const popup = popupElements[0];
         const popupButton = popupElements[1];
 
