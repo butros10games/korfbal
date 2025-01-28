@@ -818,11 +818,11 @@ function showPlayerGroups(data, socket) {
                 playerShots.classList.add('flex-column');
                 playerShots.style.width = '16px';
 
-                const playerShotsfor = document.createElement('p');
-                playerShotsfor.id = 'shots-for';
-                playerShotsfor.style.margin = '0';
-                playerShotsfor.style.fontSize = '16px';
-                playerShotsfor.style.marginBottom = '-10px';
+                const playerShotsFor = document.createElement('p');
+                playerShotsFor.id = 'shots-for';
+                playerShotsFor.style.margin = '0';
+                playerShotsFor.style.fontSize = '16px';
+                playerShotsFor.style.marginBottom = '-10px';
 
                 const playerShotsAgainst = document.createElement('p');
                 playerShotsAgainst.id = 'shots-against';
@@ -839,7 +839,7 @@ function showPlayerGroups(data, socket) {
                     playerDiv.style.justifyContent = 'space-between';
 
                     playerName.innerHTML = truncateMiddle(player.name, 16);
-                    playerShotsfor.innerHTML = player.shots_for;
+                    playerShotsFor.innerHTML = player.shots_for;
                     playerShotsAgainst.innerHTML = player.shots_against;
 
                     playerShotsDivider.innerHTML = '-';
@@ -847,7 +847,7 @@ function showPlayerGroups(data, socket) {
                     playerName.innerHTML = 'geen data';
                 }
 
-                playerShots.appendChild(playerShotsfor);
+                playerShots.appendChild(playerShotsFor);
                 playerShots.appendChild(playerShotsDivider);
                 playerShots.appendChild(playerShotsAgainst);
 

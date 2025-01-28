@@ -27,10 +27,10 @@ export const createPlayerDiv = function (type, player, playerOptions = []) {
             playerDiv.appendChild(option.cloneNode(true));
         });
 
-        const nietIngevuldOption = document.createElement('option');
-        nietIngevuldOption.value = NaN;
-        nietIngevuldOption.innerHTML = 'Niet ingevuld';
-        playerDiv.appendChild(nietIngevuldOption.cloneNode(true));
+        const notFilledOption = document.createElement('option');
+        notFilledOption.value = NaN;
+        notFilledOption.innerHTML = 'Niet ingevuld';
+        playerDiv.appendChild(notFilledOption.cloneNode(true));
 
         if (player) {
             playerDiv.value = player.id;

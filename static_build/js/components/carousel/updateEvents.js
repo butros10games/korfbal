@@ -1,6 +1,6 @@
 import { truncateMiddle } from '../../utils';
 import {
-    wedstrijdPunten,
+    matchPoints,
     createEventTypeDiv,
     createMidsectionDiv,
     createScoreDiv,
@@ -10,8 +10,8 @@ import {
 export const updateEvents = function (data, infoContainer, match_id) {
     const events = data.events;
     const home_team_id = data.home_team_id;
-    let thuis = 0,
-        uit = 0;
+    let home = 0,
+        away = 0;
 
     const eventContainer = document.createElement('div');
     eventContainer.classList.add('event-container');
@@ -27,14 +27,14 @@ export const updateEvents = function (data, infoContainer, match_id) {
                     '64px',
                     event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)',
                 );
-                const score = wedstrijdPunten(event, thuis, uit, home_team_id);
-                thuis = score[0];
-                uit = score[1];
+                const score = matchPoints(event, home, away, home_team_id);
+                home = score[0];
+                away = score[1];
                 const midsectionDiv = createMidsectionDiv(
                     event.goal_type + ' ("' + event.time + '")',
                     truncateMiddle(event.player, 20),
                 );
-                const scoreDiv = createScoreDiv(thuis + '-' + uit, '84px');
+                const scoreDiv = createScoreDiv(home + '-' + away, '84px');
 
                 eventDiv.appendChild(eventTypeDiv);
                 eventDiv.appendChild(midsectionDiv);

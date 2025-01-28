@@ -23,7 +23,7 @@ class PlayerGroupManager {
         this.groupIdToStartingType = {};
 
         this.boundLinkBack = this.linkBack.bind(this);
-        this.boundsetupPlayerGroups = this.outsidesetupPlayerGroups.bind(this);
+        this.boundSetupPlayerGroups = this.outsideSetupPlayerGroups.bind(this);
     }
 
     initializeGroupTypes() {
@@ -75,7 +75,7 @@ class PlayerGroupManager {
         this.mapTypeIdsToGroupIds();
     }
 
-    outsidesetupPlayerGroups() {
+    outsideSetupPlayerGroups() {
         this.setupPlayerGroups();
     }
 
@@ -560,12 +560,12 @@ class PlayerGroupManager {
             this.playerElementHTML(player, playerGroupDiv, playerField);
         });
 
-        this.filterdSelectedPlayersAdd = this.selectedPlayersAdd.filter(
+        this.filteredSelectedPlayersAdd = this.selectedPlayersAdd.filter(
             (selectedPlayer) =>
                 !players.some((player) => player.id_uuid === selectedPlayer.id_uuid),
         );
 
-        if (this.filterdSelectedPlayersAdd.length > 0) {
+        if (this.filteredSelectedPlayersAdd.length > 0) {
             const groupDivider = document.createElement('div');
             groupDivider.classList.add('flex-row', 'group-divider');
 
@@ -580,7 +580,7 @@ class PlayerGroupManager {
             playerField.appendChild(groupDivider);
         }
 
-        this.filterdSelectedPlayersAdd.forEach((player) => {
+        this.filteredSelectedPlayersAdd.forEach((player) => {
             // Create player group container
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.id = player.id_uuid;
@@ -662,7 +662,7 @@ class PlayerGroupManager {
         });
     
         this.selectedPlayersAdd = [];
-        this.boundsetupPlayerGroups();
+        this.boundSetupPlayerGroups();
     }
 
     updateOptionsBarAddPlayers() {
@@ -682,7 +682,7 @@ class PlayerGroupManager {
         this.removeOptionsBar();
 
         this.doneButton.textContent = 'Wedstrijd overzicht';
-        this.doneButton.removeEventListener('click', this.boundsetupPlayerGroups);
+        this.doneButton.removeEventListener('click', this.boundSetupPlayerGroups);
         this.doneButton.addEventListener('click', this.boundLinkBack);
     }
 
@@ -692,7 +692,7 @@ class PlayerGroupManager {
 
         this.doneButton.textContent = 'Speler groep';
         this.doneButton.removeEventListener('click', this.boundLinkBack);
-        this.doneButton.addEventListener('click', this.boundsetupPlayerGroups);
+        this.doneButton.addEventListener('click', this.boundSetupPlayerGroups);
     }
 }
 

@@ -21,7 +21,7 @@ export const updateStatistics = function (data, infoContainer, socket, user_id) 
             const buttonTypes = [
                 { name: 'generaal', type: 'general' },
                 { name: 'verloop', type: 'progression' },
-                { name: 'players', type: 'player_stats' },
+                { name: 'spelers', type: 'player_stats' },
             ];
 
             buttonTypes.forEach((type) => {
@@ -163,7 +163,7 @@ function playerStats(stats, statsContainer) {
     playerSelectorField.style.margin = '24px 12px 0 12px';
     playerSelectorField.style.width = 'calc(100% - 24px)';
 
-    // create a lagenda for the player stats
+    // create a legenda for the player stats
     const legend = document.createElement('div');
     legend.classList.add('flex-row');
     legend.style.justifyContent = 'space-between';

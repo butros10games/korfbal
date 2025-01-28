@@ -1,2 +1,2 @@
 export { truncateMiddle } from './truncateMiddle.js';
-export { wedstrijdPunten } from './events/wedstrijdPunten.js';
+export { matchPoints } from './events/matchPoints.js';
