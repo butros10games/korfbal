@@ -24,15 +24,15 @@ window.addEventListener('DOMContentLoaded', () => {
         'teams': (data) => updateTeam(data, infoContainer),
         'timer_data':  (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = timer_data(data, currentTimer);
+            timers[data.match_data_id] = timer_data(data, currentTimer, `counter_${data.match_data_id}`);
         },
         'pause':       (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = pause(data, currentTimer);
+            timers[data.match_data_id] = pause(data, currentTimer, `counter_${data.match_data_id}`);
         },
         'part_end':    (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = part_end(data, currentTimer);
+            timers[data.match_data_id] = part_end(data, currentTimer, `counter_${data.match_data_id}`);
         },
     };
 

@@ -50,42 +50,7 @@
                 </p>
             </div>
 
-            <div
-                class="flex-column"
-                style="justify-content: center; margin-top: -14px; width: 80px"
-            >
-                {% if match_data.status == 'finished' %}
-                <p style="margin: 0; font-size: 18px; font-weight: 600">
-                    Uitslag
-                </p>
-                {% elif match_data.status == 'active' %}
-                <p style="font-size: 14px; margin: 0">
-                    Perioide
-                    <span id="periode_number"
-                        >{{ match_data.current_part }}</span
-                    >/{{ match_data.parts }}
-                </p>
-                <p
-                    id="counter"
-                    style="margin: 0; font-size: 22px; font-weight: 600"
-                >
-                    {{ time_display }}
-                </p>
-                {% else %}
-                <p
-                    id="counter"
-                    style="margin: 0; font-size: 22px; font-weight: 600"
-                >
-                    {{ start_time }}
-                </p>
-                {% endif %}
-
-                {% if match_data.status == 'active' or match_data.status == 'finished' %}
-                <p id="score" style="margin: 0">
-                    {{ home_score }} / {{ away_score }}
-                </p>
-                {% endif %}
-            </div>
+            {% include 'components/match_middle_display.html' %}
 
             <div class="flex-column" style="width: calc(50% - 48px)">
                 <img

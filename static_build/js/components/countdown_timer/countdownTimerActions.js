@@ -6,7 +6,7 @@ import { CountdownTimer } from './countdownTimer.js';
  * @param {CountdownTimer|null} existingTimer Existing timer instance (if any).
  * @returns {CountdownTimer|null} Updated or new CountdownTimer instance.
  */
-export const timer_data = function(data, existingTimer) {
+export const timer_data = function(data, existingTimer, counterId) {
     // If a timer already exists, destroy it before creating a new one.
     if (existingTimer) {
         existingTimer.destroy();
@@ -22,7 +22,7 @@ export const timer_data = function(data, existingTimer) {
             null,
             data.pause_length * 1000,
             false,
-            `counter_${data.match_data_id}`,
+            counterId,
             data.server_time,
         );
         existingTimer.start();
@@ -34,7 +34,7 @@ export const timer_data = function(data, existingTimer) {
             data.calc_to,
             data.pause_length * 1000,
             false,
-            `counter_${data.match_data_id}`,
+            counterId,
             data.server_time,
         );
         // Not explicitly starting it here, waiting for another message?
@@ -46,7 +46,7 @@ export const timer_data = function(data, existingTimer) {
             null,
             0,
             false,
-            `counter_${data.match_data_id}`,
+            counterId,
             data.server_time,
         );
         existingTimer.start();
