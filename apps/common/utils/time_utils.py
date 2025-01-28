@@ -3,10 +3,9 @@
 import json
 from datetime import datetime, timezone
 
-
 from asgiref.sync import sync_to_async
 
-from apps.game_tracker.models import MatchPart, Pause
+from apps.game_tracker.models import MatchPart, Pause, MatchData
 
 
 async def get_time(match_data, current_part):
@@ -99,3 +98,33 @@ def get_time_display(match_data):
     minutes = int(time_left / 60)
     seconds = int(time_left % 60)
     return "%02d:%02d" % (minutes, seconds)
+
+async def get_time_display_pause(self, json_data):
+    """
+    Get the time display for the pause.
+    
+    Args:
+        time_left: The time left for the pause.
+        
+    Returns:
+        The time display for the pause.
+    """
+    match_data = await MatchData.objects.prefetch_related(
+        "match_link"
+    ).aget(id_uuid=json_data["match_data_id"])
+
+    current_part = await MatchPart.objects.aget(
+        match_data=match_data, active=True
+    )
+
+    # Subscribe to time data channel
+    if match_data.match_link.id_uuid not in self.subscribed_channels:
+        await self.channel_layer.group_add(
+            f"time_match_{match_data.match_link.id_uuid}", self.channel_name
+        )
+
+        self.subscribed_channels.append(match_data.match_link.id_uuid)
+
+    await self.send(
+        text_data=await get_time(match_data, current_part)
+    )

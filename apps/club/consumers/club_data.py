@@ -7,7 +7,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import transform_matchdata
+from apps.common.utils import transform_matchdata, get_time_display_pause
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -31,6 +31,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.player: Optional[Player] = None
         self.club: Optional[str] = None
+        self.subscribed_channels: List[str] = []
 
     async def connect(self) -> None:
         """Connect the websocket."""
@@ -64,6 +65,8 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             await self.matches_request(command)
         elif command == "follow":
             await self.follow_request(json_data["followed"], json_data["user_id"])
+        elif command == "get_time":
+            await get_time_display_pause(self, json_data)
 
     async def teams_request(self) -> None:
         """Send the teams data to the client."""
