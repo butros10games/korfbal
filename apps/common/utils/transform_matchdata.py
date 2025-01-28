@@ -56,7 +56,7 @@ async def transform_matchdata(matchs_data: list) -> list:
                 "start_time": formatted_time,
                 "current_part": match_data.current_part,
                 "parts": match_data.parts,
-                "length": match_data.part_lenght,
+                "length": match_data.part_length,
                 "time_display": get_time_display(match_data),
                 "status": match_data.status,
                 "winner": (

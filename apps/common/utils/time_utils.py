@@ -20,7 +20,7 @@ async def get_time(match_data, current_part):
         The time for the match.
     """
     # check if there is a active part if there is a active part send the start time of
-    # the part and lenght of a match part
+    # the part and length of a match part
     try:
         part = await MatchPart.objects.aget(match_data=match_data, active=True)
     except MatchPart.DoesNotExist:
@@ -54,7 +54,7 @@ async def get_time(match_data, current_part):
                     "match_data_id": str(match_data.id_uuid),
                     "time": part.start_time.isoformat(),
                     "calc_to": active_pause.start_time.isoformat(),
-                    "length": match_data.part_lenght,
+                    "length": match_data.part_length,
                     "pause_length": pause_time,
                     "server_time": datetime.now(timezone.utc).isoformat(),
                 }
@@ -66,7 +66,7 @@ async def get_time(match_data, current_part):
                     "type": "active",
                     "match_data_id": str(match_data.id_uuid),
                     "time": part.start_time.isoformat(),
-                    "length": match_data.part_lenght,
+                    "length": match_data.part_length,
                     "pause_length": pause_time,
                     "server_time": datetime.now(timezone.utc).isoformat(),
                 }
@@ -75,7 +75,7 @@ async def get_time(match_data, current_part):
         return json.dumps(
             {
                 "command": "timer_data",
-                "type": "deactive",
+                "type": "deactivated",
                 "match_data_id": str(match_data.id_uuid)
             }
         )
@@ -91,7 +91,7 @@ def get_time_display(match_data):
     Returns:
         The time display for the match.
     """
-    time_left = match_data.part_lenght
+    time_left = match_data.part_length
 
     # convert the seconds to minutes and seconds to display on the page make the numbers
     # look nice with the %02d
@@ -99,13 +99,14 @@ def get_time_display(match_data):
     seconds = int(time_left % 60)
     return "%02d:%02d" % (minutes, seconds)
 
+
 async def get_time_display_pause(self, json_data):
     """
     Get the time display for the pause.
-    
+
     Args:
         time_left: The time left for the pause.
-        
+
     Returns:
         The time display for the pause.
     """

@@ -19,7 +19,7 @@ class MatchData(models.Model):
     away_score = models.IntegerField(default=0)
     parts = models.IntegerField(default=2)
     current_part = models.IntegerField(default=1)
-    part_lenght = models.IntegerField(default=1800)
+    part_length = models.IntegerField(default=1800)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="upcoming")
 
     def get_winner(self):

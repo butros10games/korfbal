@@ -492,7 +492,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "data": {
                             "command": "part_end",
                             "part": self.match_data.current_part,
-                            "part_length": self.match_data.part_lenght,
+                            "part_length": self.match_data.part_length,
                             "match_data_id": str(self.match_data.id_uuid),
                         },
                     },
@@ -913,7 +913,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 (event_time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_lenght)
+                    * int(self.match_data.part_length)
                 )
                 - pause_time
             )
@@ -921,7 +921,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_lenght) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (

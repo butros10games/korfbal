@@ -300,7 +300,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_lenght)
+                    * int(self.match_data.part_length)
                 )
                 - pause_time
             )
@@ -308,7 +308,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_lenght) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -353,14 +353,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         time_in_minutes = round(
             (
                 (event.time - event.match_part.start_time).total_seconds()
-                + ((event.match_part.part_number - 1) * self.match_data.part_lenght)
+                + ((event.match_part.part_number - 1) * self.match_data.part_length)
                 - pause_time
             )
             / 60
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_lenght) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -408,7 +408,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.start_time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_lenght)
+                    * int(self.match_data.part_length)
                 )
                 - pause_time
             )
@@ -416,7 +416,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_lenght) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (

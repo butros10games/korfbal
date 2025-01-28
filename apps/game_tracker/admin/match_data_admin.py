@@ -13,7 +13,7 @@ class MatchDataAdmin(admin.ModelAdmin):
         "__str__",
         "home_score",
         "away_score",
-        "part_lenght",
+        "part_length",
         "status",
     ]
     show_full_result_count = False
