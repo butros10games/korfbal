@@ -437,7 +437,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
 
             pause.active = False
-            pause.end_time = make_aware(datetime.now(timezone.utc))
+            pause.end_time = datetime.now(timezone.utc)
             await pause.asave()
 
         except Pause.DoesNotExist:
