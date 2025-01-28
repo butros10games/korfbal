@@ -88,7 +88,7 @@ function onMessageReceived(event, socket) {
         case 'matches': {
             cleanDom(infoContainer, profilePicture);
 
-            updateMatches(data, maxLength, infoContainer); // imported from common/updateMatches.js
+            updateMatches(data, maxLength, infoContainer, socket); // imported from common/updateMatches.js
             break;
         }
     }

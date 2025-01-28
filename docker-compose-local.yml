@@ -32,7 +32,6 @@ services:
             - ./korfbal:/app/korfbal
             - ./static_build:/app/static_build
             - ./manage.py:/app/manage.py
-            - ./configs/collectstatic/entrypoint.sh:/app/entrypoint.sh
         depends_on:
             kwt-migrate:
                 condition: service_completed_successfully

@@ -59,7 +59,7 @@ def index(request):
             match.start_time.strftime("%a, %d %b") if match else "No upcoming matches"
         ),
         "start_time": match.start_time.strftime("%H:%M") if match else "",
-        "time_display": get_time_display(match_data),
+        "time_display": get_time_display(match_data) if match_data else "",
         "home_score": (
             Shot.objects.filter(
                 match_data=match_data, team=match.home_team, scored=True
