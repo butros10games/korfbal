@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Case, When
-from django.utils.timezone import make_aware
 
 from apps.common.utils import get_time
 from apps.game_tracker.models import (
@@ -212,7 +211,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(),
+            time=datetime.now(timezone.utc),
             for_team=for_team,
         )
 
@@ -285,7 +284,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(),
+            time=datetime.now(timezone.utc),
             shot_type=goal_type,
             for_team=for_team,
             team=team,
@@ -362,7 +361,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             part = await MatchPart.objects.acreate(
                 match_data=self.match_data,
                 active=True,
-                start_time=datetime.now(),
+                start_time=datetime.now(timezone.utc),
                 part_number=self.match_data.current_part,
             )
 
@@ -402,16 +401,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 pause = await Pause.objects.acreate(
                     match_data=self.match_data,
                     active=True,
-                    start_time=datetime.now(),
+                    start_time=datetime.now(timezone.utc),
                     match_part=self.current_part,
                 )
 
                 self.is_paused = True
             else:
-                naive_datetime = datetime.now()
-                aware_datetime = make_aware(naive_datetime)
                 pause.active = False
-                pause.end_time = aware_datetime
+                pause.end_time = datetime.now(timezone.utc)
                 await pause.asave()
 
                 self.is_paused = False
@@ -440,7 +437,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
 
             pause.active = False
-            pause.end_time = make_aware(datetime.now())
+            pause.end_time = make_aware(datetime.now(timezone.utc))
             await pause.asave()
 
         except Pause.DoesNotExist:
@@ -455,7 +452,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     match_data=self.match_data, active=True
                 )
                 match_part.active = False
-                match_part.end_time = datetime.now()
+                match_part.end_time = datetime.now(timezone.utc)
                 await match_part.asave()
 
             except MatchPart.DoesNotExist:
@@ -482,7 +479,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 match_data=self.match_data, active=True
             )
             match_part.active = False
-            match_part.end_time = make_aware(datetime.now())
+            match_part.end_time = datetime.now(timezone.utc)
             await match_part.asave()
 
             for channel_name in [self.channel_names[2]]:
@@ -567,7 +564,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player_group=player_group,
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(),
+            time=datetime.now(timezone.utc),
         )
 
         # get the shot count for the new player
