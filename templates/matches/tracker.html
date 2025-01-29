@@ -8,14 +8,14 @@
 {% block content %}
 <div class="flex-row" style="width: 100%; margin: 12px 0;">
     <div style="width: calc(100% * 1/3)" class="flex-column">
-        <button id="end-half-button" class="switch-button" style="background: red; display: none;">einde</button>
+        <button id="end-half-button" class="pause-button" style="background: red; display: none;">einde</button>
     </div>
     <div style="width: calc(100% * 1/3)" class="flex-column">
         <p style="font-size: 14px; margin: 0;">Perioide <span id="periode_number">{{ match.current_part }}</span>/{{ match.parts }}</p>
         <p id="counter" style="font-size: 18px; font-weight: 600; margin: 0;">{{ time_display }}</p>
     </div>
     <div style="width: calc(100% * 1/3)" class="flex-column">
-        <button id="start-stop-button" class="switch-button">{{ start_stop_button }}</button>
+        <button id="start-stop-button" class="pause-button">{{ start_stop_button }}</button>
     </div>
 </div>
 

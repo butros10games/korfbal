@@ -29,6 +29,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const matches = url.match(regex);
 
+    const actions = [
+        { id: 'switch-button', name: 'Wissel', action: () => playerSwitch(socket) },
+        { id: 'timeout', name: 'timeout', action: () => sendTimeout(socket) },
+    ];
+
     console.log(matches);
 
     if (matches && matches.length >= 2) {
@@ -44,8 +49,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const commandHandlers = {
         'last_event': (data) => lastEvent(data, eventsDiv),
-        'playerGroups': (data) => playerGroups(data, socket, eventsDiv),
+        'playerGroups': (data) => playerGroups(data, socket, eventsDiv, actions),
         'player_shot_change': (data) => updatePlayerShot(data),
+        'player_goal_change': (data) => updatePlayerGoals(data),
         'goal_types': (data) => showGoalTypes(data, socket),
         'timer_data': (data) => timerData(data, startStopButton),
         'pause': (data) => pauseTimer(data, startStopButton),
@@ -170,12 +176,13 @@ function lastEvent(data, eventsDiv) {
     updateEvent(data);
 }
 
-function playerGroups(data, socket, eventsDiv) {
+function playerGroups(data, socket, eventsDiv, actions) {
     cleanDom(eventsDiv);
     cleanDom(playersDiv);
 
     if (data.match_active) {
         showPlayerGroups(data, socket);
+        showActionMenu(actions);
 
         shotButtonReg('home', socket);
         shotButtonReg('away', socket);
@@ -205,6 +212,7 @@ function timerData(data, startStopButton) {
 
         // set the pause button to pause
         startStopButton.innerHTML = 'Pause';
+        document.getElementById('timeout').classList.remove('action-red');
     } else if (data.type === 'pause') {
         timer = new CountdownTimer(
             data.time,
@@ -219,6 +227,7 @@ function timerData(data, startStopButton) {
 
         // set the pause button to start
         startStopButton.innerHTML = 'Start';
+        document.getElementById('timeout').classList.add('action-red');
     } else if (data.type === 'start') {
         timer = new CountdownTimer(
             data.time,
@@ -232,6 +241,7 @@ function timerData(data, startStopButton) {
         timer.start();
 
         startStopButton.innerHTML = 'Pause';
+        document.getElementById('timeout').classList.add('action-red');
     }
 }
 
@@ -534,7 +544,7 @@ function showReservePlayer(data, socket) {
     TopLineContainer.style.marginBottom = '12px';
 
     const PlayersTitle = document.createElement('p');
-    PlayersTitle.innerHTML = 'Doelpunt type';
+    PlayersTitle.innerHTML = 'Reserve spelers';
     PlayersTitle.style.margin = '0';
 
     TopLineContainer.appendChild(PlayersTitle);
@@ -618,7 +628,7 @@ function updateEvent(data) {
     switch (event.type) {
         case 'goal': {
             const eventTypeDiv = createEventTypeDiv(
-                event.type,
+                event.name,
                 '64px',
                 event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)',
             );
@@ -637,7 +647,7 @@ function updateEvent(data) {
             break;
         }
         case 'substitute': {
-            const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#eb9834');
+            const eventTypeDiv = createEventTypeDiv(event.name, '64px', '#eb9834');
             const midsectionDiv = createMidsectionDiv(
                 '("' + event.time + '")',
                 truncateMiddle(event.player_in, 15) +
@@ -653,7 +663,7 @@ function updateEvent(data) {
             break;
         }
         case 'pause': {
-            const eventTypeDiv = createEventTypeDiv(event.type, '64px', '#2196F3');
+            const eventTypeDiv = createEventTypeDiv(event.name, '64px', '#2196F3');
             const midsectionDiv = createMidsectionDiv(
                 '("' + event.time + '")',
                 getFormattedTime(event),
@@ -668,7 +678,7 @@ function updateEvent(data) {
         }
         case 'shot': {
             const eventTypeDiv = createEventTypeDiv(
-                event.type,
+                event.name,
                 '64px',
                 event.for_team ? '#43ff644d' : '#eb00004d',
             );
@@ -678,6 +688,24 @@ function updateEvent(data) {
             );
             const endSectionDiv = document.createElement('div');
             endSectionDiv.style.width = '84px'; // For spacing/alignment purposes
+
+            eventsDiv.appendChild(eventTypeDiv);
+            eventsDiv.appendChild(midsectionDiv);
+            eventsDiv.appendChild(endSectionDiv);
+            break;
+        }
+        case 'attack': {
+            const eventTypeDiv = createEventTypeDiv(
+                event.name,
+                '64px',
+                event.for_team ? '#43ff644d' : '#eb00004d',
+            );
+            const midsectionDiv = createMidsectionDiv(
+                '("' + event.time + '")',
+                truncateMiddle(event.team, 20),
+            );
+            const endSectionDiv = document.createElement('div');
+            endSectionDiv.style.width = '84px';
 
             eventsDiv.appendChild(eventTypeDiv);
             eventsDiv.appendChild(midsectionDiv);
@@ -730,147 +758,195 @@ function updatePlayerShot(data) {
     }
 }
 
+function updatePlayerGoals(data) {
+    const playerGroupsElement = document.getElementsByClassName('player-group-players');
+
+    for (const playerGroup of playerGroupsElement) {
+        // Use attribute selector syntax
+        const playerDiv = playerGroup.querySelector(`[id="${data.player_id}"]`);
+
+        if (playerDiv) {
+            const goalsFor = playerDiv.querySelector('#goals-for');
+            const goalsAgainst = playerDiv.querySelector('#goals-against');
+
+            goalsFor.innerHTML = data.goals_for;
+            goalsAgainst.innerHTML = data.goals_against;
+        }
+    }
+}
+
 function showPlayerGroups(data, socket) {
     const homeScoreButton = document.getElementById('home-score');
     const awayScoreButton = document.getElementById('away-score');
 
-    // remove the activated class from the buttons and remove the color
+    // Remove the activated class from the buttons and reset their color
     if (homeScoreButton.classList.contains('activated')) {
         homeScoreButton.classList.remove('activated');
-
         homeScoreButton.style.background = '#43ff6480';
     }
 
     if (awayScoreButton.classList.contains('activated')) {
         awayScoreButton.classList.remove('activated');
-
         awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
     }
 
-    let switchButton = false;
+    let AttackButton = false;
     const playerGroupsData = data.playerGroups;
 
-    const playerGroupContainer = document.createElement('div');
-    playerGroupContainer.classList.add('player-group-container');
+    const playerGroupContainer = createDivWithClass('player-group-container');
 
-    if (playerGroupsData.length > 0) {
-        playerGroupsData.forEach((playerGroup) => {
-            const playerGroupDiv = document.createElement('div');
-            playerGroupDiv.classList.add('player-group');
-            playerGroupDiv.classList.add('flex-column');
-            playerGroupDiv.style.marginTop = '12px';
+    playerGroupsData.forEach((playerGroup, index) => {
+        const playerGroupDiv = createDivWithClass('player-group', 'flex-column');
+        playerGroupDiv.style.marginTop = '12px';
 
-            const playerGroupTitleDiv = document.createElement('div');
-            playerGroupTitleDiv.classList.add('flex-row');
-            playerGroupTitleDiv.classList.add('player-group-title');
-            playerGroupTitleDiv.style.marginBottom = '6px';
-            playerGroupTitleDiv.style.margin = '0 12px 6px 12px';
-            playerGroupTitleDiv.style.width = 'calc(100% - 24px)';
+        const playerGroupTitleDiv = createDivWithClass('flex-row', 'player-group-title');
+        playerGroupTitleDiv.style.marginBottom = '6px';
+        playerGroupTitleDiv.style.margin = '0 12px 6px 12px';
+        playerGroupTitleDiv.style.width = 'calc(100% - 24px)';
 
-            const playerGroupTitle = document.createElement('div');
-            playerGroupTitle.style.fontWeight = '600';
-            playerGroupTitle.innerHTML = playerGroup.current_type;
-            playerGroupTitle.id = playerGroup.id;
+        const playerGroupTitle = document.createElement('div');
+        playerGroupTitle.style.fontWeight = '600';
+        playerGroupTitle.innerHTML = playerGroup.current_type;
+        playerGroupTitle.id = playerGroup.id;
 
-            playerGroupTitleDiv.appendChild(playerGroupTitle);
+        playerGroupTitleDiv.appendChild(playerGroupTitle);
 
-            if (!switchButton) {
-                const switchButtonDiv = document.createElement('div');
-                switchButtonDiv.innerHTML = 'Wissel';
-                switchButtonDiv.id = 'switch-button';
+        if (index == 0) {
+            const AttackButtonDiv = createDivWithClass('attack-button', 'flex-center');
+            AttackButtonDiv.innerHTML = 'Nieuwe aanval';
+            AttackButtonDiv.id = 'attack-button';
+            AttackButtonDiv.style.width = '128px';
 
-                switchButtonDiv.classList.add('switch-button');
-                switchButtonDiv.classList.add('flex-center');
-                switchButtonDiv.style.width = '96px';
+            AttackButtonDiv.addEventListener('click', () => {
+                socket.send(JSON.stringify({ command: "new_attack" }));
+            });
 
-                switchButtonDiv.addEventListener('click', () => {
-                    playerSwitch(socket);
-                });
+            playerGroupTitleDiv.appendChild(AttackButtonDiv);
+            AttackButton = true;
+        }
 
-                playerGroupTitleDiv.appendChild(switchButtonDiv);
+        const playerGroupPlayers = createDivWithClass('player-group-players', 'flex-row');
+        playerGroupPlayers.style.flexWrap = 'wrap';
+        playerGroupPlayers.style.alignItems = 'stretch';
+        playerGroupPlayers.id = playerGroup.current_type;
 
-                switchButton = true;
-            }
+        playerGroup.players.forEach((player) => {
+            const playerDiv = createDivWithClass('player-selector', 'flex-center');
+            playerDiv.id = player.id;
+            playerDiv.style.flexGrow = '1';
+            playerDiv.style.flexBasis = 'calc(50% - 44px)';
+            playerDiv.style.padding = '0 6px';
+            playerDiv.style.textAlign = 'center';
+            playerDiv.style.justifyContent = 'space-between';
+            
+            const playerName = document.createElement('p');
+            playerName.style.margin = '0';
+            playerName.style.fontSize = '16px';
+            playerName.innerHTML = truncateMiddle(player.name, 16);
 
-            const playerGroupPlayers = document.createElement('div');
-            playerGroupPlayers.classList.add('player-group-players');
-            playerGroupPlayers.classList.add('flex-row');
-            playerGroupPlayers.style.flexWrap = 'wrap';
-            playerGroupPlayers.style.alignItems = 'stretch';
+            const playerShots = shotDisplay(
+                player.shots_for, player.shots_against, "shots"
+            );
+            playerShots.style.marginLeft = 'auto';
 
-            playerGroupPlayers.id = playerGroup.current_type;
+            const playerGoals = shotDisplay(
+                player.goals_for, player.goals_against, "goals"
+            );
 
-            for (let i = 0; i < 4; i++) {
-                const player = playerGroup.players[i];
+            playerDiv.appendChild(playerName);
+            playerDiv.appendChild(playerShots);
+            playerDiv.appendChild(playerGoals);
 
-                const playerDiv = document.createElement('div');
-                playerDiv.classList.add('player-selector', 'flex-center');
-                playerDiv.style.flexGrow = '1';
-                playerDiv.style.flexBasis = 'calc(50% - 44px)';
-                playerDiv.style.padding = '0 6px';
-                playerDiv.style.textAlign = 'center';
-
-                const playerName = document.createElement('p');
-                playerName.style.margin = '0';
-                playerName.style.fontSize = '16px';
-
-                const playerShots = document.createElement('div');
-                playerShots.classList.add('flex-column');
-                playerShots.style.width = '16px';
-
-                const playerShotsFor = document.createElement('p');
-                playerShotsFor.id = 'shots-for';
-                playerShotsFor.style.margin = '0';
-                playerShotsFor.style.fontSize = '16px';
-                playerShotsFor.style.marginBottom = '-10px';
-
-                const playerShotsAgainst = document.createElement('p');
-                playerShotsAgainst.id = 'shots-against';
-                playerShotsAgainst.style.margin = '0';
-                playerShotsAgainst.style.fontSize = '16px';
-                playerShotsAgainst.style.marginTop = '-10px';
-
-                const playerShotsDivider = document.createElement('p');
-                playerShotsDivider.style.margin = '0';
-                playerShotsDivider.style.fontSize = '16px';
-
-                if (player) {
-                    playerDiv.id = player.id;
-                    playerDiv.style.justifyContent = 'space-between';
-
-                    playerName.innerHTML = truncateMiddle(player.name, 16);
-                    playerShotsFor.innerHTML = player.shots_for;
-                    playerShotsAgainst.innerHTML = player.shots_against;
-
-                    playerShotsDivider.innerHTML = '-';
-                } else {
-                    playerName.innerHTML = 'geen data';
-                }
-
-                playerShots.appendChild(playerShotsFor);
-                playerShots.appendChild(playerShotsDivider);
-                playerShots.appendChild(playerShotsAgainst);
-
-                playerDiv.appendChild(playerName);
-                playerDiv.appendChild(playerShots);
-
-                playerGroupPlayers.appendChild(playerDiv);
-            }
-
-            playerGroupDiv.appendChild(playerGroupTitleDiv);
-            playerGroupDiv.appendChild(playerGroupPlayers);
-
-            playerGroupContainer.appendChild(playerGroupDiv);
+            playerGroupPlayers.appendChild(playerDiv);
         });
-    } else {
-        const textElement = document.createElement('p');
-        textElement.classList.add('flex-center');
-        textElement.innerHTML = '<p>Geen spelersgroepen gevonden.</p>';
 
-        playerGroupContainer.appendChild(textElement);
-    }
+        playerGroupDiv.appendChild(playerGroupTitleDiv);
+        playerGroupDiv.appendChild(playerGroupPlayers);
+
+        playerGroupContainer.appendChild(playerGroupDiv);
+    });
 
     playersDiv.appendChild(playerGroupContainer);
+}
+
+function shotDisplay(home, against, idType) {
+    const playerShots = createDivWithClass('flex-column');
+    playerShots.style.width = '20px';
+
+    const playerShotsFor = document.createElement('p');
+    playerShotsFor.id = `${idType}-for`;
+    playerShotsFor.style.margin = '0';
+    playerShotsFor.style.fontSize = '16px';
+    playerShotsFor.style.marginBottom = '-10px';
+    playerShotsFor.innerHTML = home;
+
+    const playerShotsDivider = document.createElement('p');
+    playerShotsDivider.style.margin = '0';
+    playerShotsDivider.style.fontSize = '16px';
+    playerShotsDivider.innerHTML = '-';
+
+    const playerShotsAgainst = document.createElement('p');
+    playerShotsAgainst.id = `${idType}-against`;
+    playerShotsAgainst.style.margin = '0';
+    playerShotsAgainst.style.fontSize = '16px';
+    playerShotsAgainst.style.marginTop = '-10px';
+    playerShotsAgainst.innerHTML = against;
+
+    playerShots.appendChild(playerShotsFor);
+    playerShots.appendChild(playerShotsDivider);
+    playerShots.appendChild(playerShotsAgainst);
+
+    return playerShots;
+}
+
+function showActionMenu(actions) {
+    const actionsContainer = createDivWithClass('player-group-container');
+    const actionGroupDiv = createDivWithClass('player-group', 'flex-column');
+    actionGroupDiv.style.marginTop = '12px';
+
+    const actionGroupTitleDiv = createDivWithClass('flex-row', 'player-group-title');
+    actionGroupTitleDiv.style.margin = '0 12px 6px 12px';
+    actionGroupTitleDiv.style.width = 'calc(100% - 24px)';
+
+    const actionGroupTitle = document.createElement('div');
+    actionGroupTitle.style.fontWeight = '600';
+    actionGroupTitle.innerHTML = 'Acties';
+    actionGroupTitleDiv.appendChild(actionGroupTitle);
+
+    const actionGroupActions = createDivWithClass('player-group-players', 'flex-row');
+    actionGroupActions.style.flexWrap = 'wrap';
+    actionGroupActions.style.alignItems = 'stretch';
+
+    actions.forEach((action) => {
+        const actionDiv = createDivWithClass('action-selector', 'flex-center');
+        actionDiv.style.flexGrow = '1';
+        actionDiv.style.flexBasis = 'calc(50% - 44px)';
+        actionDiv.style.padding = '0 6px';
+        actionDiv.style.textAlign = 'center';
+        actionDiv.id = action.id;
+
+        const actionName = document.createElement('p');
+        actionName.style.margin = '0';
+        actionName.style.fontSize = '16px';
+        actionName.innerHTML = truncateMiddle(action.name, 16);
+
+        actionDiv.appendChild(actionName);
+        actionDiv.addEventListener('click', action.action);
+
+        actionGroupActions.appendChild(actionDiv);
+    });
+
+    actionGroupDiv.appendChild(actionGroupTitleDiv);
+    actionGroupDiv.appendChild(actionGroupActions);
+    actionsContainer.appendChild(actionGroupDiv);
+
+    playersDiv.appendChild(actionsContainer);
+}
+
+function createDivWithClass(...classNames) {
+    const div = document.createElement('div');
+    classNames.forEach(className => div.classList.add(className));
+    return div;
 }
 
 function playerSwitch(socket) {
@@ -934,5 +1010,20 @@ function playerSwitch(socket) {
             element.playerClickHandler = playerClickHandler;
             element.addEventListener('click', playerClickHandler);
         });
+    }
+}
+
+function sendTimeout(socket) {
+    // Check if the class action-red is not present
+    const timeoutButton = document.getElementById('timeout');
+
+    if (!timeoutButton.classList.contains('action-red')) {
+        const data = {
+            command: 'timeout',
+        };
+
+        socket.send(JSON.stringify(data));
+    } else {
+        errorProcessing({ error: 'match is paused' });
     }
 }
