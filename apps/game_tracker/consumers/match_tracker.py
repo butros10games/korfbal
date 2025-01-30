@@ -883,6 +883,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
                 data_add = {
                     "type": "goal",
+                    "name": "punt",
                     "goals_for": goals_for,
                     "goals_against": goals_against,
                 }
