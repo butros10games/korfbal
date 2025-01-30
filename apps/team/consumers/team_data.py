@@ -12,8 +12,8 @@ from apps.common.utils import (
     general_stats,
     get_time_display_pause,
     players_stats,
+    transform_match_data,
 )
-from apps.common.utils import transform_match_data
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
@@ -93,9 +93,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         matches_dict = await transform_match_data(matches_data)
 
         await self.send(
-            text_data=json.dumps(
-                {"command": "matches", "matches": matches_dict}
-            )
+            text_data=json.dumps({"command": "matches", "matches": matches_dict})
         )
 
     async def team_stats_general_request(self) -> None:

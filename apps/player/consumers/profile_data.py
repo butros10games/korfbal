@@ -7,8 +7,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import get_time_display_pause
-from apps.common.utils import transform_match_data
+from apps.common.utils import get_time_display_pause, transform_match_data
 from apps.game_tracker.models import GoalType, MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -222,9 +221,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         matches_dict = await transform_match_data(matches_data)
 
         await self.send(
-            text_data=json.dumps(
-                {"command": "matches", "matches": matches_dict}
-            )
+            text_data=json.dumps({"command": "matches", "matches": matches_dict})
         )
 
     async def get_matches_data(self, status, order):

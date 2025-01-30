@@ -416,6 +416,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             pause=pause,
         )
 
+        await self.send_last_event()
+
     async def start_pause(self):
         """Start or pause the match."""
         try:
