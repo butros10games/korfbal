@@ -85,6 +85,7 @@
 ></div>
 
 <p style="display: none" id="user_id">{{ request.user.id }}</p>
+{% csrf_token %}
 
 <script src="{% static 'webpack_bundles/match_detail.bundle.js' %}"></script>
 <script src="{% static 'webpack_bundles/mobile_view.bundle.js' %}"></script>

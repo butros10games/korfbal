@@ -867,15 +867,14 @@ option {
 
 .scrollable {
     width: 100%;
-    height: calc(100vh - 160px);
+    height: calc(100%);
     overflow-y: auto;
     position: relative;
 }
 
 .group-divider {
-    padding: 0 12px;
+    padding: 6px 12px;
     width: calc(100% - 24px);
-    height: 48px;
     background-color: #c8c8c8;
 }
 
@@ -911,6 +910,7 @@ option {
     padding: 6px 14px;
     background: var(--button-color);
     border-radius: 6px;
+    cursor: pointer;
 }
 
 .add-players-button {
@@ -919,6 +919,7 @@ option {
     color: white;
     background-color: var(--button-color);
     border-radius: 6px;
+    cursor: pointer;
 }
 
 /* FILE 5 only */
@@ -965,4 +966,34 @@ option {
     border-radius: 4px;
     transition-duration: 0.4s;
     cursor: pointer;
+}
+
+.cross-icon {
+    position: relative;     /* Needed to position pseudo-elements absolutely */
+    display: inline-block;  /* So it can size according to width & height */
+    width: 24px;            /* Icon width  */
+    height: 24px;           /* Icon height */
+    cursor: pointer;        /* Show pointer on hover */
+}
+
+.cross-icon::before,
+.cross-icon::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;              /* Start at the middle horizontally */
+    width: 2px;             /* Thickness of the line */
+    height: 100%;
+    background-color: white;/* Color of the lines */
+    transform-origin: center;
+}
+
+/* Diagonal line leaning one way ( \ ) */
+.cross-icon::before {
+    transform: translateX(-50%) rotate(45deg);
+}
+
+/* Diagonal line leaning the other way ( / ) */
+.cross-icon::after {
+    transform: translateX(-50%) rotate(-45deg);
 }

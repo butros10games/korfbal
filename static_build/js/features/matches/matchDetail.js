@@ -8,6 +8,7 @@ import {
 import { CountdownTimer } from '../../components/countdown_timer/index.js';
 import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
 import { cleanDomCarousel, readUserId } from '../../utils/dom/';
+import { PlayerGroupManager } from '../../components/player_group/index.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
@@ -61,11 +62,17 @@ function onMessageReceived(event, match_id, user_id, socket) {
         case 'playerGroups': {
             cleanDomCarousel(infoContainer);
 
-            if (data.is_coach && !data.finished) {
-                updatePlayerGroups(data, infoContainer, socket); // imported from matches/common/updatePlayerGroups.js
-            } else {
-                showPlayerGroups(data, infoContainer); // imported from matches/common/showPlayerGroups.js
-            }
+            const access = data.is_coach && !data.finished
+
+            const playerGroupManager = new PlayerGroupManager(
+                "info-container",
+                access,
+                data.match_id,
+                data.team_id,
+                data.group_id_to_type_id,
+                data.type_id_to_group_id,
+            );
+            playerGroupManager.initialize();
             break;
         }
 
