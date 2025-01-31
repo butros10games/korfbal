@@ -16,6 +16,7 @@ from apps.game_tracker.models import (
     PlayerChange,
     PlayerGroup,
     Shot,
+    Timeout,
 )
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
@@ -318,6 +319,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return {
             "type": "goal",
+            "name": "Gescoord",
             "time": time_in_minutes,
             "player": event.player.user.username,
             "goal_type": event.shot_type.name,
@@ -370,6 +372,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return {
             "type": "substitute",
+            "name": "Wissel",
             "time": time_in_minutes,
             "player_in": event.player_in.user.username,
             "player_out": event.player_out.user.username,
@@ -424,8 +427,11 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 + str(left_over).split(".")[0]
             )
 
+        timeout = await Timeout.objects.filter(pause=event).afirst()
+
         return {
             "type": "intermission",
+            "name": "Time-out" if timeout else "Pauze",
             "time": time_in_minutes,
             "length": event.length().total_seconds(),
             "start_time": event.start_time.isoformat() if event.start_time else None,

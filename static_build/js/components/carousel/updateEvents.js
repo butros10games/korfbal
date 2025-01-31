@@ -23,7 +23,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
 
             if (event.type === 'goal') {
                 const eventTypeDiv = createEventTypeDiv(
-                    "Score",
+                    event.name,
                     '64px',
                     event.for_team ? '#4CAF50' : 'rgba(235, 0, 0, 0.7)',
                 );
@@ -40,7 +40,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(scoreDiv);
             } else if (event.type === 'substitute') {
-                const eventTypeDiv = createEventTypeDiv("Wissel", '64px', '#eb9834');
+                const eventTypeDiv = createEventTypeDiv(event.name, '64px', '#eb9834');
                 const midsectionDiv = createMidsectionDiv(
                     '("' + event.time + '")',
                     truncateMiddle(event.player_in, 15) +
@@ -54,7 +54,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
                 eventDiv.appendChild(midsectionDiv);
                 eventDiv.appendChild(endSectionDiv);
             } else if (event.type === 'intermission') {
-                const eventTypeDiv = createEventTypeDiv("Pauze", '64px', '#2196F3');
+                const eventTypeDiv = createEventTypeDiv(event.name, '64px', '#2196F3');
                 const midsectionDiv = createMidsectionDiv(
                     '("' + event.time + '")',
                     getFormattedTime(event),

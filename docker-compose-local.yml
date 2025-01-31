@@ -63,9 +63,9 @@ services:
         env_file:
             - .env
         volumes:
-            - ./apps:/kwt_uwsgi/apps
-            - ./korfbal:/kwt_uwsgi/korfbal
-            - ./manage.py:/kwt_uwsgi/manage.py
+            - ./apps:/kwt_daphne/apps
+            - ./korfbal:/kwt_daphne/korfbal
+            - ./manage.py:/kwt_daphne/manage.py
         depends_on:
             kwt-collectstatic:
                 condition: service_completed_successfully
