@@ -639,6 +639,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         shots_against = await Shot.objects.filter(
             player=player_in, match_data=self.match_data, for_team=False
         ).acount()
+        
+        goals_for = await Shot.objects.filter(
+            player=player_in, match_data=self.match_data, for_team=True, scored=True
+        ).acount()
+        goals_against = await Shot.objects.filter(
+            player=player_in, match_data=self.match_data, for_team=False, scored=True
+        ).acount()
 
         for channel_name in [self.channel_names[1]]:
             await self.channel_layer.group_send(
@@ -651,6 +658,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "player_in_id": str(player_in.id_uuid),
                         "player_in_shots_for": shots_for,
                         "player_in_shots_against": shots_against,
+                        "player_in_goals_for": goals_for,
+                        "player_in_goals_against": goals_against,
                         "player_out": player_out.user.username,
                         "player_out_id": str(player_out.id_uuid),
                         "player_group": str(player_group.id_uuid),
@@ -1032,6 +1041,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             team=self.team,
             time=datetime.now(timezone.utc),
         )
+
+        await self.send_last_event()
 
 
 class PlayerGroupClass:

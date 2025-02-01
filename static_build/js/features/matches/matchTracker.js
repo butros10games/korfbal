@@ -407,8 +407,14 @@ function playerChange(data, socket) {
     const shots_for = playerButtonData.querySelector('#shots-for');
     const shots_against = playerButtonData.querySelector('#shots-against');
 
+    const goals_for = playerButtonData.querySelector('#goals-for');
+    const goals_against = playerButtonData.querySelector('#goals-for');
+
     shots_for.innerHTML = data.player_in_shots_for;
     shots_against.innerHTML = data.player_in_shots_against;
+
+    goals_for.innerHTML = data.player_in_goals_for;
+    goals_against.innerHTML = data.player_in_goals_against;
 
     playerSwitch(socket);
 
@@ -698,7 +704,7 @@ function updateEvent(data) {
             const eventTypeDiv = createEventTypeDiv(
                 event.name,
                 '64px',
-                event.for_team ? '#43ff644d' : '#eb00004d',
+                '#43ff644d',
             );
             const midsectionDiv = createMidsectionDiv(
                 '("' + event.time + '")',
@@ -822,7 +828,6 @@ function showPlayerGroups(data, socket) {
             });
 
             playerGroupTitleDiv.appendChild(AttackButtonDiv);
-            AttackButton = true;
         }
 
         const playerGroupPlayers = createDivWithClass('player-group-players', 'flex-row');
