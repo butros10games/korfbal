@@ -18,3 +18,4 @@ django-webpack-loader
 generate_project_structure
 django-stubs
 python-dotenv
+django-cryptography

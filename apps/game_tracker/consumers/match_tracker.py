@@ -639,7 +639,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         shots_against = await Shot.objects.filter(
             player=player_in, match_data=self.match_data, for_team=False
         ).acount()
-        
+
         goals_for = await Shot.objects.filter(
             player=player_in, match_data=self.match_data, for_team=True, scored=True
         ).acount()

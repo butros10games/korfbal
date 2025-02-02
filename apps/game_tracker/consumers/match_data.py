@@ -128,19 +128,19 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "team_id": str(team.id_uuid),
                     "group_id_to_type_id": {
                         str(group.id_uuid): str(group.starting_type.id_uuid)
-                        for group in await sync_to_async(
-                            list
-                        )(PlayerGroup.objects.prefetch_related("starting_type").filter(
-                            team=team, match_data=self.match_data
-                        ))
+                        for group in await sync_to_async(list)(
+                            PlayerGroup.objects.prefetch_related(
+                                "starting_type"
+                            ).filter(team=team, match_data=self.match_data)
+                        )
                     },
                     "type_id_to_group_id": {
                         str(group.starting_type.id_uuid): str(group.id_uuid)
-                        for group in await sync_to_async(
-                            list
-                        )(PlayerGroup.objects.prefetch_related("starting_type").filter(
-                            team=team, match_data=self.match_data
-                        ))
+                        for group in await sync_to_async(list)(
+                            PlayerGroup.objects.prefetch_related(
+                                "starting_type"
+                            ).filter(team=team, match_data=self.match_data)
+                        )
                     },
                     "is_coach": await self.checkIfAccess(user_id, team),
                     "finished": True if self.match_data.status == "finished" else False,

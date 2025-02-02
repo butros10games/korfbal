@@ -24,6 +24,9 @@ class Player(models.Model):
     team_follow = models.ManyToManyField(team_model_string, blank=True)
     club_follow = models.ManyToManyField(club_model_string, blank=True)
 
+    goal_song_uri = models.CharField(max_length=255, blank=True, null=True)
+    song_start_time = models.IntegerField(blank=True, null=True)
+
     def __str__(self):
         """Return the string representation of the player."""
         return str(self.user.username)

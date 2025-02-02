@@ -276,3 +276,12 @@ STORAGES = {
         },
     },
 }
+
+# ------------------------------------------------------------------------------
+# Spotify API
+# ------------------------------------------------------------------------------
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+SPOTIFY_REDIRECT_URI = (
+    f"{os.getenv('CSRF_TRUSTED_ORIGINS', 'https://localhost')}/spotify"
+)

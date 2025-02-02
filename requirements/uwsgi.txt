@@ -14,3 +14,4 @@ django-phonenumber-field[phonenumbers]
 django-webpack-loader
 python-dotenv
 redis
+django-cryptography
