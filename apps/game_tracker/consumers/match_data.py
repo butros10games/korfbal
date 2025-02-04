@@ -214,14 +214,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             if self.match_data.status != "upcoming":
                 events = await self.get_all_events()
 
-                for event in events:
-                    if event.match_part is not None:
-                        if isinstance(event, Shot):
-                            events_dict.append(await self.event_shot(event))
-                        elif isinstance(event, PlayerChange):
-                            events_dict.append(await self.event_player_change(event))
-                        elif isinstance(event, Pause):
-                            events_dict.append(await self.event_pause(event))
+                for event_d in events:
+                    if event_d.match_part is not None:
+                        if isinstance(event_d, Shot):
+                            events_dict.append(await self.event_shot(event_d))
+                        elif isinstance(event_d, PlayerChange):
+                            events_dict.append(await self.event_player_change(event_d))
+                        elif isinstance(event_d, Pause):
+                            events_dict.append(await self.event_pause(event_d))
 
             await self.send(
                 text_data=json.dumps(
