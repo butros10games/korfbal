@@ -31,10 +31,10 @@ class PlayerGroup(models.Model):
         """
         Save the player group.
 
-        Check if the incomming player/players are in the reserve player group(if this
+        Check if the incoming player/players are in the reserve player group(if this
         player group is not the reserve) connected to the team and matchdata.
 
-        If the incomming player/players is in the reserve player group, remove the
+        If the incoming player/players is in the reserve player group, remove the
         player/players from the reserve player group.
 
         If the player/players is not in the reserve player group, raise a validation
