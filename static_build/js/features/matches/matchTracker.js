@@ -796,7 +796,6 @@ function showPlayerGroups(data, socket) {
         awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
     }
 
-    let AttackButton = false;
     const playerGroupsData = data.playerGroups;
 
     const playerGroupContainer = createDivWithClass('player-group-container');

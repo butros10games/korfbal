@@ -2,10 +2,10 @@ import { truncateMiddle } from '../../utils';
 
 export class PlayerGroupManager {
     constructor(
-        containerId = 'app-container',
-        access = false,
         matchId,
         teamId,
+        containerId = 'app-container',
+        access = false,
         groupIdToTypeId = {},
         typeIdToGroupId = {},
     ) {
