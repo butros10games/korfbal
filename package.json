@@ -58,7 +58,7 @@
         "natural-compare": "^1.4.0",
         "optionator": "^0.9.4",
         "p-limit": "^6.2.0",
-        "p-locate": "^5.0.0",
+        "p-locate": "^6.0.0",
         "parent-module": "^1.0.1",
         "path-exists": "^4.0.0",
         "path-key": "^3.1.1",
