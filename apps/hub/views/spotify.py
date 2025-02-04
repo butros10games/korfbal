@@ -1,3 +1,5 @@
+"""Spotify OAuth2.0 flow and token refresh."""
+
 import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -14,7 +16,6 @@ SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
 @login_required
 def spotify_callback(request):
     """Handle Spotify OAuth callback and save tokens."""
-
     # Get authorization code from the request
     code = request.GET.get("code")
 
