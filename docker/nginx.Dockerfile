@@ -1,4 +1,4 @@
-FROM nginx:latest
+FROM nginx:1.27
 
 # Copy Nginx configuration file
 COPY /configs/nginx/nginx.conf /etc/nginx/nginx.conf
