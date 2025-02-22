@@ -5,6 +5,11 @@ window.addEventListener('DOMContentLoaded', () => {
     let timers = {};
     let match_id = document.getElementById('match_id').innerText;
 
+    if (!match_id) {
+        console.log('No match_id found in the URL.');
+        return;
+    }
+
     const commandHandlers = {
         'timer_data':   (data) => {
             console.log("timer data")

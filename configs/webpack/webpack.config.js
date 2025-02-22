@@ -12,6 +12,7 @@ module.exports = {
         teams_detail: './static_build/js/features/teams/teamDetail.js',
         mobile_view: './static_build/js/features/mobile/mobileView.js',
         service_worker: './static_build/js/features/pwa/serviceWorker.js',
+        navbar: './static_build/js/features/navbar/navbar.js',
     },
     output: {
         path: path.resolve(__dirname, 'static_workfile/webpack_bundles'),
