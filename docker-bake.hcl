@@ -10,8 +10,8 @@ target "uwsgi" {
     dockerfile = "docker/uwsgi.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
-        "${var.DOCKER_USERNAME}/kwt-uwsgi:${var.VERSION}",
-        "${var.DOCKER_USERNAME}/kwt-uwsgi:latest"
+        "${DOCKER_USERNAME}/kwt-uwsgi:${VERSION}",
+        "${DOCKER_USERNAME}/kwt-uwsgi:latest"
     ]
     args = {
         BUILDKIT_INLINE_CACHE = "1"
@@ -25,8 +25,8 @@ target "daphne" {
     dockerfile = "docker/daphne.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
-        "${var.DOCKER_USERNAME}/kwt-daphne:${var.VERSION}",
-        "${var.DOCKER_USERNAME}/kwt-daphne:latest"
+        "${DOCKER_USERNAME}/kwt-daphne:${VERSION}",
+        "${DOCKER_USERNAME}/kwt-daphne:latest"
     ]
     args = {
         BUILDKIT_INLINE_CACHE = "1"
@@ -40,8 +40,8 @@ target "collectstatic" {
     dockerfile = "docker/collectstatic.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
-        "${var.DOCKER_USERNAME}/kwt-collectstatic:${var.VERSION}",
-        "${var.DOCKER_USERNAME}/kwt-collectstatic:latest"
+        "${DOCKER_USERNAME}/kwt-collectstatic:${VERSION}",
+        "${DOCKER_USERNAME}/kwt-collectstatic:latest"
     ]
     args = {
         BUILDKIT_INLINE_CACHE = "1"
