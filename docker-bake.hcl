@@ -6,7 +6,7 @@ group "default" {
 }
 
 target "uwsgi" {
-    context    = "apps/django_projects/korfbal"
+    context    = "./"
     dockerfile = "docker/uwsgi.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
@@ -21,7 +21,7 @@ target "uwsgi" {
 }
 
 target "daphne" {
-    context    = "apps/django_projects/korfbal"
+    context    = "./"
     dockerfile = "docker/daphne.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
@@ -36,7 +36,7 @@ target "daphne" {
 }
 
 target "collectstatic" {
-    context    = "apps/django_projects/korfbal"
+    context    = "./"
     dockerfile = "docker/collectstatic.Dockerfile"
     platforms  = ["linux/amd64", "linux/arm64"]
     tags = [
