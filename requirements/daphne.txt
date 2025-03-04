@@ -7,7 +7,7 @@ daphne
 django-storages[boto3]
 channels
 channels-redis
-django_authentication==1.0.12
+bg_auth==1.0.13
 uuidv7
 django-phonenumber-field[phonenumbers]
 python-dotenv

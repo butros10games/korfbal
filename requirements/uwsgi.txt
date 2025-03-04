@@ -7,7 +7,7 @@ django_ratelimit
 Pillow
 pyuwsgi
 django-storages[boto3]
-django_authentication==1.0.12
+bg_auth==1.0.13
 uuidv7
 django_cached_paginator
 django-phonenumber-field[phonenumbers]

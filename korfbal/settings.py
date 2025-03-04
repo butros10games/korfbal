@@ -84,7 +84,7 @@ INSTALLED_APPS = [
     "apps.hub",
     "apps.game_tracker",
     "apps.common",
-    "authentication",
+    "bg_auth.apps.BgAuthConfig",
 ]
 
 RUNNER = os.getenv("RUNNER", "")
@@ -98,7 +98,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "authentication.auth_backend.BlockAdminLoginMiddleware",
+    "bg-auth.auth_backend.BlockAdminLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "mobiledetect.middleware.DetectMiddleware",
