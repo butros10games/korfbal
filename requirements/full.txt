@@ -10,7 +10,7 @@ daphne
 channels
 channels-redis
 django-storages[boto3]
-django_authentication==1.0.11
+django_authentication==1.0.12
 uuidv7
 django_cached_paginator
 django-phonenumber-field[phonenumbers]
