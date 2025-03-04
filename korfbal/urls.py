@@ -11,7 +11,7 @@ urlpatterns = [
     path("profile/", include("apps.player.urls")),
     path("teams/", include("apps.team.urls")),
     path("", include("apps.hub.urls")),
-    path("", include("authentication.urls")),
+    path("", include("bg_auth.urls")),
 ]
 
 if settings.RUNNER == "uwsgi":

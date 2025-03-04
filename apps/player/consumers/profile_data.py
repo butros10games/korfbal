@@ -12,7 +12,7 @@ from apps.game_tracker.models import GoalType, MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
-from authentication.models import UserProfile
+from bg_auth.models import UserProfile
 
 
 class ProfileDataConsumer(AsyncWebsocketConsumer):

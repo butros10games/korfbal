@@ -28,7 +28,7 @@ exclude = '''
 [tool.isort]
 profile = "black"
 default_section = "THIRDPARTY"
-known_first_party = ["butros_groot", "simracing", "authentication", "skinscentre", "apps"]
+known_first_party = ["butros_groot", "simracing", "bg_auth", "skinscentre", "apps"]
 skip = [
     "migrations",
     ".env",

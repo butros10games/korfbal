@@ -4,7 +4,7 @@ services:
             context: .
             dockerfile: ./docker/uwsgi.Dockerfile
         container_name: kwt-migrate
-        command: python manage.py migrate authentication
+        command: python manage.py migrate
         env_file:
             - .env
         networks:

@@ -117,7 +117,7 @@ ASGI_APPLICATION = "korfbal.asgi.application"
 LOGIN_URL = "login"
 
 AUTHENTICATION_BACKENDS = [
-    "authentication.auth_backend.EmailOrUsernameModelBackend",
+    "bg_auth.auth_backend.EmailOrUsernameModelBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 
