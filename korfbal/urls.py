@@ -1,5 +1,6 @@
 """korfbal URL Configuration."""
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
@@ -12,3 +13,6 @@ urlpatterns = [
     path("", include("apps.hub.urls")),
     path("", include("authentication.urls")),
 ]
+
+if settings.RUNNER == "uwsgi":
+    urlpatterns.append(path("", include("django_prometheus.urls")))

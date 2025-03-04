@@ -32,5 +32,7 @@ USER appuser
 # Expose the uwsgi port
 EXPOSE 1664
 
+ENV RUNNER="uwsgi"
+
 # Run uwsgi server
 CMD ["uwsgi", "--ini", "/kwt_uwsgi/uwsgi.ini"]

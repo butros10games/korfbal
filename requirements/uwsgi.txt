@@ -15,3 +15,5 @@ django-webpack-loader
 python-dotenv
 redis
 django-cryptography
+django-prometheus
+django_redis

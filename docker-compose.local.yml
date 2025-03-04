@@ -4,7 +4,7 @@ services:
             context: .
             dockerfile: ./docker/uwsgi.Dockerfile
         container_name: kwt-migrate
-        command: python manage.py migrate
+        command: python manage.py migrate authentication
         env_file:
             - .env
         networks:
@@ -19,7 +19,6 @@ services:
             context: .
             dockerfile: ./docker/collectstatic.Dockerfile
         container_name: kwt-collectstatic
-        command: python manage.py collectstatic --noinput
         env_file:
             - .env
         networks:

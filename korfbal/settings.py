@@ -84,8 +84,13 @@ INSTALLED_APPS = [
     "apps.hub",
     "apps.game_tracker",
     "apps.common",
-    "authentication.apps.AuthenticationConfig",
+    "authentication",
 ]
+
+RUNNER = os.getenv("RUNNER", "")
+
+if RUNNER == "uwsgi":
+    INSTALLED_APPS.append("django_prometheus")
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -99,6 +104,13 @@ MIDDLEWARE = [
     "mobiledetect.middleware.DetectMiddleware",
     "apps.common.middleware.VisitorTrackingMiddleware",
 ]
+
+if RUNNER == "uwsgi":
+    MIDDLEWARE = (
+        ["django_prometheus.middleware.PrometheusBeforeMiddleware"]
+        + MIDDLEWARE
+        + ["django_prometheus.middleware.PrometheusAfterMiddleware"]
+    )
 
 ROOT_URLCONF = "korfbal.urls"
 ASGI_APPLICATION = "korfbal.asgi.application"
@@ -155,7 +167,11 @@ CHANNEL_LAYERS = {
 # ------------------------------------------------------------------------------
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": (
+            "django_prometheus.db.backends.postgresql"
+            if RUNNER == "uwsgi"
+            else "django.db.backends.postgresql"
+        ),
         "NAME": os.getenv("POSTGRES_DB"),
         "USER": os.getenv("POSTGRES_USER"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
@@ -169,7 +185,11 @@ DATABASES = {
 # ------------------------------------------------------------------------------
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "BACKEND": (
+            "django_prometheus.cache.backends.redis.RedisCache"
+            if RUNNER == "uwsgi"
+            else "django.core.cache.backends.redis.RedisCache"
+        ),
         "LOCATION": (
             f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:"
             f"{os.getenv('REDIS_PORT', '6379')}/1"
