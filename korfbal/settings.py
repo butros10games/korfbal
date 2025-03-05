@@ -305,3 +305,47 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 SPOTIFY_REDIRECT_URI = (
     f"{os.getenv('CSRF_TRUSTED_ORIGINS', 'https://localhost')}/spotify"
 )
+
+# ------------------------------------------------------------------------------
+# Prometheus
+# ------------------------------------------------------------------------------
+PROMETHEUS_LATENCY_BUCKETS = (
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    2.5,
+    5.0,
+    7.5,
+    10.0,
+    25.0,
+    50.0,
+    75.0,
+    float("inf"),
+)
+PROMETHEUS_LATENCY_BUCKETS = (
+    0.1,
+    0.2,
+    0.5,
+    0.6,
+    0.8,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.5,
+    9.0,
+    12.0,
+    15.0,
+    20.0,
+    30.0,
+    float("inf"),
+)
+PROMETHEUS_METRIC_NAMESPACE = "kwt"
