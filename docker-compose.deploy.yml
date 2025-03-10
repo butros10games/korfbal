@@ -37,8 +37,8 @@ services:
         environment:
             - .env
         ports:
-            - '9100:9000'
-            - '9101:9001'
+            - '9200:9000'
+            - '9201:9001'
         volumes:
             - /home/butros/kwt/:/data
         restart: unless-stopped
