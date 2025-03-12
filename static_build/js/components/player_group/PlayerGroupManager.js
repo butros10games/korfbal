@@ -185,11 +185,16 @@ export class PlayerGroupManager {
                     });
 
                     centerDiv.appendChild(addPlayerButton);
+                } else {
+                    const noPlayers = document.createElement('p');
+                    noPlayers.classList.add('dm-sans-400-normal');
+                    noPlayers.textContent = 'Geen spelers beschikbaar';
+                    centerDiv.appendChild(noPlayers);
                 }
                 this.playerField.appendChild(centerDiv);
             }
         });
-
+    
         // If some players are already selected (edge case), ensure we show the options
         if (this.selectedPlayers.length > 0) {
             this.updateOptionsBar();

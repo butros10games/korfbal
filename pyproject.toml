@@ -1,6 +1,6 @@
 [project]
 name = "KWT"
-version = "1.6.0"
+version = "1.6.1"
 
 [tool.black]
 line-length = 88

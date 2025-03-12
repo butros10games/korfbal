@@ -65,8 +65,8 @@ function onMessageReceived(event, match_id, user_id, socket) {
             const playerGroupManager = new PlayerGroupManager(
                 data.match_id,
                 data.team_id,
-                access,
                 "info-container",
+                access,
                 data.group_id_to_type_id,
                 data.type_id_to_group_id,
             );
