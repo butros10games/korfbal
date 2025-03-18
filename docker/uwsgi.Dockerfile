@@ -1,33 +1,40 @@
-# Dockerfile-uwsgi
-FROM python:3.13-slim
+## ------------------------------- Builder Stage ------------------------------ ## 
+FROM python:3.13-bookworm AS builder
 
-# Install system dependencies for PostgreSQL and psycopg2-binary
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gcc \
-    libexpat1 \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r appuser && useradd -r -g appuser appuser
+RUN apt-get update && apt-get install --no-install-recommends -y \
+        build-essential && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /kwt_uwsgi
+# Download the latest installer, install it and then remove it
+ADD https://astral.sh/uv/install.sh /install.sh
+RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
 
-# Copy requirements file and install dependencies
-COPY ../requirements/uwsgi.txt /kwt_uwsgi/
-RUN pip install --no-cache-dir -r uwsgi.txt
+# Set up the UV environment path correctly
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+COPY ./pyproject.toml .
+
+RUN uv sync --group uwsgi
+
+## ------------------------------- Production Stage ------------------------------ ## 
+FROM python:3.13-slim-bookworm AS production
+
+RUN useradd --create-home appuser
+USER appuser
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv .venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application files
-COPY ../configs/uwsgi/uwsgi.ini /kwt_uwsgi/
-COPY ../manage.py /kwt_uwsgi/
-COPY ../korfbal/ /kwt_uwsgi/korfbal/
-COPY ../apps/ /kwt_uwsgi/apps/
-COPY ../templates/ /kwt_uwsgi/templates/
-
-# Create a directory for logs and change ownership
-RUN mkdir -p /kwt_uwsgi/logs && chown -R appuser:appuser /kwt_uwsgi
-
-# Switch to the non-root user
-USER appuser
+COPY ../configs/uwsgi/uwsgi.ini /app/
+COPY ../manage.py /app/
+COPY ../korfbal/ /app/korfbal/
+COPY ../apps/ /app/apps/
+COPY ../templates/ /app/templates/
 
 # Expose the uwsgi port
 EXPOSE 1664
@@ -35,4 +42,4 @@ EXPOSE 1664
 ENV RUNNER="uwsgi"
 
 # Run uwsgi server
-CMD ["uwsgi", "--ini", "/kwt_uwsgi/uwsgi.ini"]
+CMD ["uwsgi", "--ini", "/app/uwsgi.ini"]
