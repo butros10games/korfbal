@@ -17,7 +17,7 @@ target "uwsgi" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = ["type=local,src=./.buildx-cache"]
-    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
+    cache-to   = ["type=local,dest=./.buildx-cache,mode=max"]
 }
 
 target "daphne" {
@@ -32,7 +32,7 @@ target "daphne" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = ["type=local,src=./.buildx-cache"]
-    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
+    cache-to   = ["type=local,dest=./.buildx-cache,mode=max"]
 }
 
 target "collectstatic" {
@@ -47,5 +47,5 @@ target "collectstatic" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = ["type=local,src=./.buildx-cache"]
-    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
+    cache-to   = ["type=local,dest=./.buildx-cache,mode=max"]
 }
