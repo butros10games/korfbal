@@ -16,8 +16,8 @@ target "uwsgi" {
     args = {
         BUILDKIT_INLINE_CACHE = "1"
     }
-    cache-from = ["type=gha,kwt-scope=uwsgi"]
-    cache-to   = ["type=gha,mode=max,kwt-scope=uwsgi,ttl=0"]
+    cache-from = ["type=local,src=./.buildx-cache"]
+    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
 }
 
 target "daphne" {
@@ -31,8 +31,8 @@ target "daphne" {
     args = {
         BUILDKIT_INLINE_CACHE = "1"
     }
-    cache-from = ["type=gha,scope=kwt-daphne"]
-    cache-to   = ["type=gha,mode=max,scope=kwt-daphne,ttl=0"]
+    cache-from = ["type=local,src=./.buildx-cache"]
+    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
 }
 
 target "collectstatic" {
@@ -46,6 +46,6 @@ target "collectstatic" {
     args = {
         BUILDKIT_INLINE_CACHE = "1"
     }
-    cache-from = ["type=gha,scope=kwt-collectstatic"]
-    cache-to   = ["type=gha,mode=max,scope=kwt-collectstatic,ttl=0"]
+    cache-from = ["type=local,src=./.buildx-cache"]
+    cache-to   = ["type=local,src=./.buildx-cache,mode=max"]
 }
