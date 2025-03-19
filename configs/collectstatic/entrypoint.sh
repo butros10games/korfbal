@@ -33,6 +33,6 @@ done
 
 # Run collectstatic
 echo "Running collectstatic..."
-python manage.py webpack_collectstatic
+python manage.py collectstatic --noinput
 
 echo "Collectstatic complete. Exiting."

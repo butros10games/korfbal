@@ -10,9 +10,9 @@ services:
         networks:
             - monorepo_test-net
         volumes:
-            - ./apps:/kwt_uwsgi/apps
-            - ./korfbal:/kwt_uwsgi/korfbal
-            - ./manage.py:/kwt_uwsgi/manage.py
+            - ./apps:/app/apps
+            - ./korfbal:/app/korfbal
+            - ./manage.py:/app/manage.py
 
     kwt-collectstatic:
         build:
@@ -26,7 +26,7 @@ services:
         volumes:
             - ./apps:/app/apps
             - ./korfbal:/app/korfbal
-            - ./static_build:/app/static_build
+            - ./static_workfile:/app/static_workfile
             - ./manage.py:/app/manage.py
 
     kwt-uwsgi:
@@ -38,10 +38,10 @@ services:
         env_file:
             - .env
         volumes:
-            - ./apps:/kwt_uwsgi/apps
-            - ./korfbal:/kwt_uwsgi/korfbal
-            - ./templates:/kwt_uwsgi/templates
-            - ./manage.py:/kwt_uwsgi/manage.py
+            - ./apps:/app/apps
+            - ./korfbal:/app/korfbal
+            - ./templates:/app/templates
+            - ./manage.py:/app/manage.py
         networks:
             - monorepo_test-net
         depends_on:

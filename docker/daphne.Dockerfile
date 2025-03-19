@@ -1,43 +1,43 @@
-FROM python:3.13-slim
+## ------------------------------- Builder Stage ------------------------------ ## 
+FROM python:3.13-bookworm AS builder
 
-# Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gcc \
-    libpq-dev \
-    locales \
-    && echo "nl_NL.UTF-8 UTF-8" >> /etc/locale.gen \
-    && locale-gen \
-    && /usr/sbin/update-locale LANG=nl_NL.UTF-8 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --no-install-recommends -y \
+        build-essential && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for the locale
+# Download the latest installer, install it and then remove it
+ADD https://astral.sh/uv/install.sh /install.sh
+RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
+
+# Set up the UV environment path correctly
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+COPY ./pyproject.toml .
+
+RUN uv sync --group daphne
+
+## ------------------------------- Production Stage ------------------------------ ## 
+FROM python:3.13-slim AS production
+
+RUN useradd --create-home appuser
+USER appuser
+
+# Set locale variables for runtime
 ENV LANG=nl_NL.utf8
 ENV LANGUAGE=nl_NL:en
 ENV LC_ALL=nl_NL.utf8
+WORKDIR /app
 
-# Create a non-root user and group
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-WORKDIR /kwt_daphne
-
-# Copy requirements file and install dependencies
-COPY ../requirements/daphne.txt /kwt_daphne/
-RUN pip install --no-cache-dir -r daphne.txt
+COPY --from=builder /app/.venv .venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application files
-COPY ../manage.py /kwt_daphne/
-COPY ../korfbal/ /kwt_daphne/korfbal/
-COPY ../apps/ /kwt_daphne/apps/
+COPY ../manage.py /app/
+COPY ../korfbal/ /app/korfbal/
+COPY ../apps/ /app/apps/
 
-# Change ownership of the application files
-RUN chown -R appuser:appuser /kwt_daphne
-
-# Switch to the non-root user
-USER appuser
-
-# Expose the Daphne port
 EXPOSE 8001
 
-# Run Daphne server
 CMD ["daphne", "-p", "8001", "-b", "0.0.0.0", "korfbal.asgi:application"]

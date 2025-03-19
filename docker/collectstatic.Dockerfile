@@ -1,59 +1,60 @@
-FROM python:3.13-slim
+## ------------------------------- Builder Stage ------------------------------ ##
+FROM python:3.13-bookworm AS builder
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    wget \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --no-install-recommends -y \
+        build-essential && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Download and install Node.js
-ADD https://deb.nodesource.com/setup_18.x /tmp/nodesource_setup.sh
-RUN bash /tmp/nodesource_setup.sh \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/nodesource_setup.sh
+# Download the latest installer, install it and then remove it
+ADD https://astral.sh/uv/install.sh /install.sh
+RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
 
-ENV NO_UPDATE_NOTIFIER=1
-ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+# Set up the UV environment path correctly
+ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# Install Python packages
-COPY ../requirements/uwsgi.txt /app/
-RUN pip install --no-cache-dir -r uwsgi.txt
+COPY ./pyproject.toml .
 
-# Copy project files
-COPY ../manage.py /app/
+RUN uv sync --group uwsgi
+
+## ------------------------------- Webpack Stage ------------------------------ ##
+FROM node:18-alpine AS webpack
+
+WORKDIR /app
+
 COPY ../package.json /app/
-
-# Install Node.js packages
 RUN npm install --ignore-scripts
+
+COPY ../configs/webpack/webpack.config.js /app/configs/webpack/
+COPY ../static_workfile/ /app/static_workfile/
+
+RUN npm run build \
+    && rm -rf /app/static_workfile/js
+
+## ------------------------------- Production Stage ------------------------------ ##
+FROM python:3.13-slim AS production
 
 # Install MinIO client (mc)
 ADD https://dl.min.io/client/mc/release/linux-amd64/mc /usr/local/bin/mc
-RUN chmod +x /usr/local/bin/mc
 
-# Copy entrypoint script
+# Copy entrypoint script and adjust permissions
 COPY ../configs/collectstatic/entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh \
-    && groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser \
-    && chown -R appuser:appuser /home/appuser /app
+    && chmod +x /usr/local/bin/mc \
+    && useradd --create-home appuser
 
-# Ensure HOME is set so mc knows where to store config
-ENV HOME=/home/appuser
+USER appuser
 
-COPY ../configs/webpack/webpack.config.js /app/
+WORKDIR /app
+
+COPY --from=builder /app/.venv .venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy application files
+COPY ../manage.py /app/
 COPY ../korfbal/ /app/korfbal/
 COPY ../apps/ /app/apps/
-COPY ../static_build/ /app/static_build/
-RUN mkdir /app/static_workfile/ \
-    && chown -R appuser:appuser /app/static_build/ \
-    && chown -R appuser:appuser /app/static_workfile/
-
-# Switch to the non-root user
-USER appuser
+COPY --from=webpack /app/static_workfile/ /app/static_workfile/
 
 ENTRYPOINT ["/app/entrypoint.sh"]

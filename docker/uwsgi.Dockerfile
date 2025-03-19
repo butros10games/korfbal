@@ -21,10 +21,17 @@ RUN uv sync --group uwsgi
 ## ------------------------------- Production Stage ------------------------------ ## 
 FROM python:3.13-slim-bookworm AS production
 
-RUN useradd --create-home appuser
-USER appuser
-
 WORKDIR /app
+
+# Install the Expat runtime library
+RUN apt-get update && apt-get install --no-install-recommends -y \
+        libexpat1 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    mkdir logs && touch logs/uwsgi.log && \
+    groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser && \
+    chown -R appuser:appuser /app/logs
+
+USER appuser
 
 COPY --from=builder /app/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
@@ -33,8 +40,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY ../configs/uwsgi/uwsgi.ini /app/
 COPY ../manage.py /app/
 COPY ../korfbal/ /app/korfbal/
-COPY ../apps/ /app/apps/
 COPY ../templates/ /app/templates/
+COPY ../apps/ /app/apps/
 
 # Expose the uwsgi port
 EXPOSE 1664
