@@ -19,29 +19,10 @@ target "uwsgi" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-cache,
-name=kwt-uwsgi,
-endpoint_url=https://cache.butrosgroot.com,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-cache,name=kwt-uwsgi,endpoint_url=https://cache.butrosgroot.com,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
     cache-to = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-cache,
-name=kwt-uwsgi,
-endpoint_url=https://cache.butrosgroot.com,
-mode=max,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-cache,name=kwt-uwsgi,endpoint_url=https://cache.butrosgroot.com,mode=max,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
 }
 
@@ -57,29 +38,10 @@ target "daphne" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-cache,
-name=kwt-daphne,
-endpoint_url=https://cache.butrosgroot.com,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-cache,name=kwt-daphne,endpoint_url=https://cache.butrosgroot.com,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
     cache-to = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-cache,
-name=kwt-daphne,
-endpoint_url=https://cache.butrosgroot.com,
-mode=max,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-cache,name=kwt-daphne,endpoint_url=https://cache.butrosgroot.com,mode=max,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
 }
 
@@ -95,28 +57,9 @@ target "collectstatic" {
         BUILDKIT_INLINE_CACHE = "1"
     }
     cache-from = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-collectstatic,
-name=kwt-daphne,
-endpoint_url=https://cache.butrosgroot.com,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-collectstatic,name=kwt-daphne,endpoint_url=https://cache.butrosgroot.com,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
     cache-to = [
-        <<EOT
-type=s3,
-region=nl,
-bucket=kwt-docker-cache,
-name=kwt-collectstatic,
-endpoint_url=https://cache.butrosgroot.com,
-mode=max,
-use_path_style=true,
-access_key_id=${MINIO_ACCESS_KEY},
-secret_access_key=${MINIO_SECRET_KEY}
-EOT
+        "type=s3,region=nl,bucket=kwt-docker-cache,name=kwt-collectstatic,endpoint_url=https://cache.butrosgroot.com,mode=max,use_path_style=true,access_key_id=${MINIO_ACCESS_KEY},secret_access_key=${MINIO_SECRET_KEY}"
     ]
 }
