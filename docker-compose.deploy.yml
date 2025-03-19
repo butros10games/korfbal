@@ -30,27 +30,12 @@ services:
         networks:
             - kwt-net
 
-    kwt-minio:
-        image: minio/minio:latest
-        container_name: kwt-minio
-        command: server /data --console-address ":9001"
-        environment:
-            - .env
-        ports:
-            - '9200:9000'
-            - '9201:9001'
-        volumes:
-            - /home/butros/kwt/:/data
-        restart: unless-stopped
-        networks:
-            - kwt-net
-
     kwt-collectstatic:
         image: butros10/kwt-collectstatic:latest
         container_name: kwt-collectstatic
         depends_on:
             - kwt-minio
-        environment:
+        env_file:
             - .env
         networks:
             - kwt-net
