@@ -66,10 +66,11 @@ services:
             - monorepo_test-net
 
     kwt-nginx:
-        build:
-            context: .
-            dockerfile: ./docker/nginx.Dockerfile
+        image: nginx:latest
         container_name: kwt-nginx
+        volumes:
+            - ./docker/conf/nginx/nginx.conf:/etc/nginx/nginx.conf
+            - ./docker/conf/nginx/ssl:/etc/nginx/ssl
         depends_on:
             - kwt-uwsgi
             - kwt-daphne
