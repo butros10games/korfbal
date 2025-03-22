@@ -1,5 +1,0 @@
--r base.txt
-
-daphne
-channels
-channels-redis
