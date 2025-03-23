@@ -1,11 +1,11 @@
 [project]
 name = "KWT"
-version = "1.7.0"
+version = "1.7.1"
 requires-python = ">=3.13"
 dependencies = [
 	"django",
 	"psycopg2-binary",
-	"django-mobile-detect",
+	"django_mobile_detect",
 	"django_ratelimit",
 	"django-storages[boto3]",
 	"bg_auth==1.1.0",
@@ -48,6 +48,7 @@ dev = [
 django_cached_paginator = { index = "bg_server" }
 uuidv7 = { index = "bg_server" }
 django_authentication = { index = "bg_server" }
+django_mobile_detect = { index = "bg_server" }
 
 [[tool.uv.index]]
 name = "bg_server"
