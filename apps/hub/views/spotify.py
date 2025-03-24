@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect
 from django.utils.timezone import now, timedelta
 
-from apps.player.models import Player, SpotifyToken
+from apps.player.models import SpotifyToken
 
 SPOTIFY_CLIENT_ID = settings.SPOTIFY_CLIENT_ID
 SPOTIFY_CLIENT_SECRET = settings.SPOTIFY_CLIENT_SECRET
