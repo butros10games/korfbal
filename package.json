@@ -23,6 +23,6 @@
         "build": "rspack --mode production --config configs/rspack/rspack.config.js"
     },
     "keywords": [],
-    "author": "",
+    "author": "Butros Groot",
     "license": "ISC"
 }
