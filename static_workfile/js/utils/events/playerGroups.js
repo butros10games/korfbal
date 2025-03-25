@@ -1,4 +1,4 @@
-import { truncateMiddle } from '..';
+import { truncateMiddle } from '../index.js';
 
 function createPlayerGroupTitle(playerGroup) {
     const playerGroupTitle = document.createElement('div');

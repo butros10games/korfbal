@@ -1,10 +1,10 @@
-import { truncateMiddle } from '../../utils';
+import { truncateMiddle } from '../../utils/index.js';
 import {
     createPlayerGroupContainer,
     createPlayerDiv,
     savePlayerGroups,
     onPlayerSelectChange,
-} from '../../utils/events';
+} from '../../utils/events/index.js';
 
 export const updatePlayerGroups = function (data, container, socket) {
     const playerOptions = data.players.map((dataPlayer) => {

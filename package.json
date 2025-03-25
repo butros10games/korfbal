@@ -6,25 +6,21 @@
     "directories": {
         "doc": "docs"
     },
-    "dependencies": {
-    },
+    "type": "module",
     "devDependencies": {
-        "@babel/core": "^7.26.0",
-        "@babel/preset-env": "^7.26.0",
         "@eslint/js": "^9.14.0",
-        "babel-loader": "^9.2.1",
+        "@rspack/cli": "^1.2.8",
+        "@rspack/core": "^1.2.8",
         "eslint": "^9.22.0",
         "eslint-config-prettier": "^10.1.1",
         "eslint-plugin-prettier": "^5.2.1",
         "globals": "^16.0.0",
-        "prettier": "^3.4.2",
-        "webpack": "^5.98.0"
+        "prettier": "^3.4.2"
     },
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
         "lint": "eslint static_workfile/js/**/*.js",
         "lint-fix": "eslint static_workfile/js/**/*.js --fix",
-        "build": "webpack --mode production --config configs/webpack/webpack.config.js"
+        "build": "rspack --mode production --config configs/rspack/rspack.config.js"
     },
     "keywords": [],
     "author": "",

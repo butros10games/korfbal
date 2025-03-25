@@ -5,8 +5,8 @@ import {
     updateStatistics,
 } from '../../components/carousel/index.js';
 import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets/index.js';
-import { setupFollowButton } from '../../components/setup_follow_button';
-import { readUserId } from '../../utils/dom/';
+import { setupFollowButton } from '../../components/setup_follow_button/index.js';
+import { readUserId } from '../../utils/dom/index.js';
 import { timer_data, pause, part_end } from '../../components/countdown_timer/countdownTimerActions.js';
 
 window.addEventListener('DOMContentLoaded', () => {

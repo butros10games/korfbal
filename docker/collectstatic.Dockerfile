@@ -19,14 +19,14 @@ COPY ./pyproject.toml .
 RUN uv sync --group uwsgi
 
 ## ------------------------------- Webpack Stage ------------------------------ ##
-FROM node:18-alpine AS webpack
+FROM node:22-alpine AS rspack
 
 WORKDIR /app
 
-COPY ../package.json /app/
+COPY ../package.json ../package-lock.json /app/
 RUN npm install --ignore-scripts
 
-COPY ../configs/webpack/webpack.config.js /app/configs/webpack/
+COPY ../configs/rspack/rspack.config.js /app/configs/rspack/
 COPY ../static_workfile/ /app/static_workfile/
 
 RUN npm run build \

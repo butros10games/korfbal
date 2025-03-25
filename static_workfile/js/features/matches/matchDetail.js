@@ -5,7 +5,7 @@ import {
 } from '../../components/carousel/index.js';
 import { CountdownTimer } from '../../components/countdown_timer/index.js';
 import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
-import { cleanDomCarousel, readUserId } from '../../utils/dom/';
+import { cleanDomCarousel, readUserId } from '../../utils/dom/index.js';
 import { PlayerGroupManager } from '../../components/player_group/index.js';
 
 window.addEventListener('DOMContentLoaded', () => {

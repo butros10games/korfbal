@@ -3,7 +3,7 @@ import {
     handleTouchMove,
     handleTouchEnd,
     handleButtonClick,
-} from './utils';
+} from './utils/index.js';
 
 export const setupCarousel = function (
     carouselElement,

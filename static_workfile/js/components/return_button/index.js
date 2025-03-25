@@ -1,2 +1,2 @@
-export { trackPageVisits } from './trackPageVisits';
-export { pageReturn } from './pageReturn';
+export { trackPageVisits } from './trackPageVisits.js';
+export { pageReturn } from './pageReturn.js';

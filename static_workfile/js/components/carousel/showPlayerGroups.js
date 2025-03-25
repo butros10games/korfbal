@@ -1,4 +1,4 @@
-import { createPlayerGroupContainer, createPlayerDiv } from '../../utils/events';
+import { createPlayerGroupContainer, createPlayerDiv } from '../../utils/events/index.js';
 
 export const showPlayerGroups = function (data, container) {
     const playerGroupContainer = createPlayerGroupContainer(

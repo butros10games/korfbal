@@ -1,4 +1,4 @@
-import { uploadImage } from '../../utils/network';
+import { uploadImage } from '../../utils/network/index.js';
 
 export const setupProfilePicture = function (csrfToken) {
     const imageModal = document.getElementById('imageModal');

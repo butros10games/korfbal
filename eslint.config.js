@@ -1,10 +1,10 @@
-const globals = require('globals');
-const js = require('@eslint/js');
-const pluginPrettier = require('eslint-plugin-prettier');
-const configPrettier = require('eslint-config-prettier');
+import globals from 'globals';
+import js from '@eslint/js';
+import pluginPrettier from 'eslint-plugin-prettier';
+import configPrettier from 'eslint-config-prettier';
 
 /** @type {import('eslint').Linter.Config[]} */
-module.exports = [
+export default [
     js.configs.recommended,
     {
         files: ['static_workfile/js/**/*.js'],

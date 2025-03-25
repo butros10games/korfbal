@@ -1,6 +1,6 @@
-const path = require('path');
+import path from 'path';
 
-module.exports = {
+export default {
     entry: {
         hub_catalog: './static_workfile/js/features/hub/hubCatalog.js',
         landing: './static_workfile/js/features/hub/landing.js',
@@ -15,7 +15,7 @@ module.exports = {
         navbar: './static_workfile/js/features/navbar/navbar.js',
     },
     output: {
-        path: path.resolve(__dirname, 'static_workfile/webpack_bundles'),
+        path: path.resolve('static_workfile/webpack_bundles'),
         filename: '[name].bundle.js',
         publicPath: '../../static_workfile/webpack_bundles/',
         clean: true,
@@ -25,20 +25,14 @@ module.exports = {
             {
                 test: /\.js$/,
                 exclude: /node_modules/,
-                use: {
-                    loader: 'babel-loader',
-                    options: {
-                        presets: ['@babel/preset-env'],
-                    },
-                },
             },
         ],
     },
     resolve: {
         alias: {
-            Components: path.resolve(__dirname, 'js/components/'),
-            Features: path.resolve(__dirname, 'js/features/'),
-            Utils: path.resolve(__dirname, 'js/utils/'),
+            Components: path.resolve('js/components/'),
+            Features: path.resolve('js/features/'),
+            Utils: path.resolve('js/utils/'),
         },
     },
     mode: 'production',

@@ -4,9 +4,9 @@ import {
     updateTeam,
     updateSettings,
     updateGoalStats,
-} from '../../components/carousel';
-import { setupProfilePicture } from '../../components/profile_picture';
-import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets';
+} from '../../components/carousel/index.js';
+import { setupProfilePicture } from '../../components/profile_picture/index.js';
+import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets/index.js';
 import { timer_data, pause, part_end } from '../../components/countdown_timer/countdownTimerActions.js';
 
 window.addEventListener('DOMContentLoaded', () => {

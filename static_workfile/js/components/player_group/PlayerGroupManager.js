@@ -1,4 +1,4 @@
-import { truncateMiddle } from '../../utils';
+import { truncateMiddle } from '../../utils/index.js';
 
 export class PlayerGroupManager {
     constructor(

@@ -1,5 +1,5 @@
-import { truncateMiddle } from '../../utils';
-import { cleanDomCarousel } from '../../utils/dom';
+import { truncateMiddle } from '../../utils/index.js';
+import { cleanDomCarousel } from '../../utils/dom/index.js';
 
 export const updateStatistics = function (data, infoContainer, socket, user_id) {
     const stats = data.stats;
