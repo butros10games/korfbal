@@ -1,13 +1,13 @@
-import globals from 'globals';
-import js from '@eslint/js';
-import pluginPrettier from 'eslint-plugin-prettier';
-import configPrettier from 'eslint-config-prettier';
+const globals = require('globals');
+const js = require('@eslint/js');
+const pluginPrettier = require('eslint-plugin-prettier');
+const configPrettier = require('eslint-config-prettier');
 
 /** @type {import('eslint').Linter.Config[]} */
-export default [
+module.exports = [
     js.configs.recommended,
     {
-        files: ['static_build/js/**/*.js'],
+        files: ['static_workfile/js/**/*.js'],
         rules: {
             camelcase: ['off', { properties: 'always' }],
             'comma-spacing': ['error', { before: false, after: true }],
@@ -71,7 +71,7 @@ export default [
         },
     },
     {
-        files: ['static_build/js/**/*.mjs'],
+        files: ['static_workfile/js/**/*.mjs'],
         languageOptions: {
             sourceType: 'module',
         },
@@ -88,8 +88,8 @@ export default [
     },
     {
         ignores: [
-            'static_build/js/**/*.min.js',
-            'static_build/js/vendor/**/*.js',
+            'static_workfile/js/**/*.min.js',
+            'static_workfile/js/vendor/**/*.js',
             'node_modules/**',
             'tests/**/*.js',
         ],
