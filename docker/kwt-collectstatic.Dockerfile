@@ -55,6 +55,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY ../manage.py /app/
 COPY ../korfbal/ /app/korfbal/
 COPY ../apps/ /app/apps/
-COPY --from=webpack /app/static_workfile/ /app/static_workfile/
+COPY --from=rspack /app/static_workfile/ /app/static_workfile/
 
 ENTRYPOINT ["/app/entrypoint.sh"]
