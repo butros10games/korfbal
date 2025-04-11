@@ -3,45 +3,43 @@ name = "KWT"
 dynamic = ["version"]
 requires-python = ">=3.13"
 dependencies = [
-	"django",
-	"psycopg2-binary",
-	"django_mobile_detect",
-	"django_ratelimit",
-	"django-storages[boto3]",
+	"django==5.2",
+	"psycopg2-binary==2.9.10",
+	"django_mobile_detect==1.0.2",
+	"django_ratelimit==4.1.0",
+	"django-storages[boto3]==1.14.6",
 	"bg_auth==1.1.0",
-	"uuidv7",
-	"django-phonenumber-field[phonenumbers]",
-	"python-dotenv",
+	"uuidv7==1.1.3",
+	"django-phonenumber-field[phonenumbers]==8.1.0",
+	"python-dotenv==1.1.0",
 ]
 
 [dependency-groups]
 uwsgi = [
-	"Pillow",
-	"pyuwsgi",
-	"django_cached_paginator",
-	"django-webpack-loader",
-	"redis",
-	"django-cryptography",
-	"django-prometheus",
-	"django_redis",
+	"Pillow==11.1.0",
+	"pyuwsgi==2.0.28.post1",
+	"django_cached_paginator==1.0.2",
+	"redis==5.2.1",
+	"django-cryptography==1.1",
+	"django-prometheus==2.3.1",
+	"django_redis==5.4.0",
 ]
 daphne = [
-	"daphne",
-	"channels",
-	"channels-redis",
+	"daphne==4.1.2",
+	"channels==4.2.2",
+	"channels-redis==4.2.1",
 ]
 dev = [
-	"Pillow",
-	"pyuwsgi; sys_platform == 'linux'",
-	"django_cached_paginator",
-	"django-webpack-loader",
-	"redis",
-	"django-cryptography",
-	"django-prometheus",
-	"django_redis",
-	"daphne",
-	"channels",
-	"channels-redis",
+	"Pillow==11.1.0",
+	"pyuwsgi==2.0.28.post1; sys_platform == 'linux'",
+	"django_cached_paginator==1.0.2",
+	"redis==5.2.1",
+	"django-cryptography==1.1",
+	"django-prometheus==2.3.1",
+	"django_redis==5.4.0",
+	"daphne==4.1.2",
+	"channels==4.2.2",
+	"channels-redis==4.2.1",
 ]
 
 [tool.uv.sources]
