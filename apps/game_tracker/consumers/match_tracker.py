@@ -1,4 +1,4 @@
-"""This module contains the MatchTrackerConsumer class which is a websocket consumer."""
+"""Module contains the MatchTrackerConsumer class which is a websocket consumer."""
 
 import contextlib
 from datetime import UTC, datetime

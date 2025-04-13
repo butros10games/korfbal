@@ -1,4 +1,4 @@
-"""This module contains common functions for the game_tracker app consumers."""
+"""M contains common functions for the game_tracker app consumers."""
 
 from datetime import UTC, datetime
 import json
@@ -97,14 +97,15 @@ def get_time_display(match_data):
     # look nice with the %02d
     minutes = int(time_left / 60)
     seconds = int(time_left % 60)
-    return "%02d:%02d" % (minutes, seconds)
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 async def get_time_display_pause(self, json_data):
     """Get the time display for the pause.
 
     Args:
-        time_left: The time left for the pause.
+        self: The instance of the class calling this method.
+        json_data: A dictionary containing match data, including the match_data_id.
 
     Returns:
         The time display for the pause.

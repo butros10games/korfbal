@@ -1,4 +1,4 @@
-"""This package contains the admin classes for the player app."""
+"""Package contains the admin classes for the player app."""
 
 from .player_admin import PlayerAdmin
 

@@ -1,4 +1,4 @@
-"""This module contains the view for the hub index page."""
+"""Module contains the view for the hub index page."""
 
 from django.db.models import Q
 from django.shortcuts import render

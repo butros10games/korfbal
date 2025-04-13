@@ -1,4 +1,6 @@
-"""Module contains the TeamDataConsumer class that handles the websocket connection for the team data page."""
+"""Module contains TeamDataConsumer class that handles websocket connection for team
+data page.
+"""
 
 from datetime import datetime
 import json

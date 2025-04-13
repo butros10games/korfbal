@@ -1,4 +1,4 @@
-"""This module contains the Club model."""
+"""Module contains the Club model."""
 
 from django.conf import settings
 from django.db import models

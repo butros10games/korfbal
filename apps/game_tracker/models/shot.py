@@ -1,4 +1,4 @@
-"""This module contains the Shot model for the game_tracker app."""
+"""Module contains the Shot model for the game_tracker app."""
 
 from django.db import models
 from uuidv7 import uuid7

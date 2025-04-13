@@ -1,4 +1,4 @@
-"""This module contains the view for navigating back to the previous page."""
+"""Module contains the view for navigating back to the previous page."""
 
 from django.db.models import Q
 from django.http import HttpResponseRedirect

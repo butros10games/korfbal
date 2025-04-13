@@ -1,4 +1,4 @@
-"""This module contains the view for the player profile detail page."""
+"""Module contains the view for the player profile detail page."""
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render

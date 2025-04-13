@@ -1,4 +1,4 @@
-"""This package contains the models for the game_tracker app."""
+"""Package contains the models for the game_tracker app."""
 
 from .attack import Attack
 from .goal_type import GoalType

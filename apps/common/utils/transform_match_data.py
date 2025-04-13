@@ -1,4 +1,4 @@
-"""This module contains the function to transform match data to a dictionary."""
+"""M contains the function to transform match data to a dictionary."""
 
 from datetime import datetime
 import locale
@@ -14,7 +14,8 @@ async def transform_match_data(matches_data: list) -> list:
     """Transform the match data to a dictionary.
 
     Args:
-        matches_data {list} -- A list of match data.
+        matches_data (list): A list of match data objects representing the matches
+            to be transformed into dictionaries.
 
     Returns:
         list -- A list of dictionaries containing the match data.

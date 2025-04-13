@@ -1,4 +1,4 @@
-"""This module contains the TeamData model."""
+"""Module contains the TeamData model."""
 
 from typing import TYPE_CHECKING
 

@@ -1,4 +1,4 @@
-"""This package contains the models for the schedule app."""
+"""Package contains the models for the schedule app."""
 
 from .match import Match
 from .season import Season

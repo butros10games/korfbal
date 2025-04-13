@@ -1,4 +1,4 @@
-"""This package contains all the context processors for the common app."""
+"""Package contains all the context processors for the common app."""
 
 from .standard_imports import standard_imports
 

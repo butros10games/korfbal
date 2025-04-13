@@ -1,4 +1,6 @@
-"""Module contains the MatchDataConsumer class. This class is used to handle the websocket connection for the match data."""
+"""Module contains the MatchDataConsumer class. This class is used to handle the
+websocket connection for the match data.
+"""
 
 import contextlib
 import json
@@ -25,7 +27,7 @@ from apps.team.models import TeamData
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
-    """This class is used to handle the websocket connection for the match data."""
+    """Class is used to handle the websocket connection for the match data."""
 
     def __init__(self, *args, **kwargs):
         """Initialize the MatchDataConsumer."""

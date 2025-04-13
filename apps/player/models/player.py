@@ -1,4 +1,4 @@
-"""This module contains the Player model for the player app."""
+"""Module contains the Player model for the player app."""
 
 from django.conf import settings
 from django.contrib.auth.models import User

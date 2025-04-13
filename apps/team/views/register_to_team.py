@@ -1,4 +1,4 @@
-"""This module contains the view for the team registration page."""
+"""Module contains the view for the team registration page."""
 
 from datetime import date
 

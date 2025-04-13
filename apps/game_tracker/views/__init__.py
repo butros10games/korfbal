@@ -1,4 +1,4 @@
-"""This module contains the views for the game_tracker app."""
+"""Module contains the views for the game_tracker app."""
 
 from .match_detail import match_detail
 from .match_team_selector import match_team_selector

@@ -1,4 +1,4 @@
-"""Module contains the general_stats function that returns the general statistics of a match."""
+"""Module contains general_stats function that returns general statistics of a match."""
 
 import json
 
@@ -11,7 +11,8 @@ async def general_stats(match_dataset):
     """Return the general statistics of a match.
 
     Args:
-        match_dataset {list} -- A list of multiple match data objects.
+        match_dataset (list): A list of match data objects representing the matches
+            for which statistics are calculated.
 
     Returns:
         str -- A JSON string containing the general statistics of the match.

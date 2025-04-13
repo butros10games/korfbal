@@ -1,4 +1,4 @@
-"""This module contains the consumers for the player app."""
+"""Module contains the consumers for the player app."""
 
 from .profile_data import ProfileDataConsumer
 

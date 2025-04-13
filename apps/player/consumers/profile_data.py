@@ -1,4 +1,4 @@
-"""This module contains the ProfileDataConsumer class."""
+"""Module contains the ProfileDataConsumer class."""
 
 import json
 import traceback

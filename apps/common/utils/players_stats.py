@@ -1,4 +1,4 @@
-"""Module contains the `players_stats` function that returns the stats of the players in a match."""
+"""Module contains `players_stats` function that returns player stats in a match."""
 
 import json
 
@@ -6,14 +6,14 @@ from apps.game_tracker.models import Shot
 
 
 async def players_stats(players, match_dataset):
-    """Return the statistics of the players in a match.
+    """Return statistics of players in a match.
 
     Args:
-        players {list} -- A list of players.
-        match_dataset {list} -- A list of multiple match data elements.
+        players (list): A list of player objects whose statistics are to be calculated.
+        match_dataset (list): A list of match data elements to filter statistics.
 
     Returns:
-        str -- A JSON string containing the statistics of the players in the match.
+        str: A JSON string containing statistics of players in the match.
 
     """
     players_stats = []

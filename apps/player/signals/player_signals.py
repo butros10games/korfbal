@@ -1,4 +1,4 @@
-"""This file contains signals for the Player model."""
+"""File contains signals for the Player model."""
 
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -14,7 +14,8 @@ def create_player_for_new_user(sender, instance, created, **kwargs):
     Args:
         sender (Model): The model class.
         instance (User): The user instance.
-        created (bool): Whether the user is created
+        created (bool): Whether the user is created.
+        **kwargs: Additional keyword arguments.
 
     """
     if created:

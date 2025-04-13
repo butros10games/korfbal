@@ -1,4 +1,4 @@
-"""This module contains the view for the match tracker page."""
+"""Module contains the view for the match tracker page."""
 
 from django.shortcuts import get_object_or_404, render
 

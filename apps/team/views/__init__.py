@@ -1,4 +1,4 @@
-"""This module contains all the views for the team app."""
+"""Module contains all the views for the team app."""
 
 from .register_to_team import register_to_team
 from .team_detail import team_detail

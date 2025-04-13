@@ -1,1 +1,1 @@
-"""This module contains custom template tags."""
+"""Module contains custom template tags."""

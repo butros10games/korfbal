@@ -1,4 +1,4 @@
-"""This module contains the PlayerGroup model."""
+"""Module contains the PlayerGroup model."""
 
 from django.core.exceptions import ValidationError
 from django.db import models

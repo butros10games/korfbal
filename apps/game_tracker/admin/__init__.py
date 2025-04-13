@@ -1,4 +1,4 @@
-"""This module contains the admin classes for the game_tracker app."""
+"""Module contains the admin classes for the game_tracker app."""
 
 from .goal_type_admin import GoalTypeAdmin
 from .group_type_admin import GroupTypeAdmin

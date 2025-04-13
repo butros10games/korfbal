@@ -1,4 +1,4 @@
-"""This module contains the view for the club detail page."""
+"""Module contains the view for the club detail page."""
 
 from django.shortcuts import get_object_or_404, render
 

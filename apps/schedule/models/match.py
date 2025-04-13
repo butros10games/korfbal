@@ -1,4 +1,4 @@
-"""This module contains the Match model."""
+"""Module contains the Match model."""
 
 from django.db import models
 from django.urls import reverse

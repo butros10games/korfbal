@@ -12,7 +12,7 @@ def replace(value, arg):
 
     Args:
         value: The value to replace strings in.
-        arg: The string to replace and the string to replace it with separated by a pipe.
+        arg: A string containing two parts separated by a pipe (|)
 
     Returns:
         The value with the strings replaced.

@@ -1,4 +1,4 @@
-"""This module contains the view for fetching data for the catalog page."""
+"""Module contains the view for fetching data for the catalog page."""
 
 import json
 

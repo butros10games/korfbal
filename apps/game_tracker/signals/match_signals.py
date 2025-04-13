@@ -15,6 +15,7 @@ def create_match_data_for_new_match(sender, instance, created, **kwargs):
         sender: The sender of the signal.
         instance: The instance of the Match model.
         created: A boolean indicating if the instance was created.
+        **kwargs: Additional keyword arguments.
 
     """
     if created:

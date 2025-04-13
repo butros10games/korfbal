@@ -1,4 +1,4 @@
-"""This module contains the view for the catalog page."""
+"""Module contains the view for the catalog page."""
 
 from django.db.models import Q
 from django.shortcuts import render
