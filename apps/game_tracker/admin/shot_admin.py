@@ -20,7 +20,7 @@ class ShotAdminForm(forms.ModelForm):
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team
 
-        super(ShotAdminForm, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if "instance" in kwargs and kwargs["instance"]:
             match = kwargs["instance"].match_data.match_link
             self.fields["team"].queryset = Team.objects.filter(

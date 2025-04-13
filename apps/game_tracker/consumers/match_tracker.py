@@ -1,5 +1,6 @@
 """This module contains the MatchTrackerConsumer class which is a websocket consumer."""
 
+import contextlib
 from datetime import UTC, datetime
 import json
 import traceback
@@ -48,12 +49,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         self.team = await Team.objects.aget(
             id_uuid=self.scope["url_route"]["kwargs"]["team_id"]
         )
-        try:
+        with contextlib.suppress(MatchPart.DoesNotExist):
             self.current_part = await MatchPart.objects.aget(
                 match_data=self.match_data, active=True
             )
-        except MatchPart.DoesNotExist:
-            pass
 
         # Check if an active pause exists for the given match_data
         is_pause_active = await sync_to_async(
@@ -70,9 +69,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             self.other_team = self.match.home_team
 
         self.channel_names = [
-            "detail_match_%s" % self.match.id_uuid,
-            "tracker_match_%s" % self.match.id_uuid,
-            "time_match_%s" % self.match.id_uuid,
+            f"detail_match_{self.match.id_uuid}",
+            f"tracker_match_{self.match.id_uuid}",
+            f"time_match_{self.match.id_uuid}",
         ]
         for channel_name in [self.channel_names[1], self.channel_names[2]]:
             await self.channel_layer.group_add(channel_name, self.channel_name)
@@ -215,10 +214,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        if for_team:
-            team = self.team
-        else:
-            team = self.other_team
+        team = self.team if for_team else self.other_team
 
         await Shot.objects.acreate(
             player=await Player.objects.aget(id_uuid=player_id),
@@ -287,10 +283,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        if for_team:
-            team = self.team
-        else:
-            team = self.other_team
+        team = self.team if for_team else self.other_team
 
         player = await Player.objects.prefetch_related("user").aget(id_uuid=player_id)
         goal_type = await GoalType.objects.aget(id_uuid=goal_type)
@@ -570,12 +563,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         players_json = []
         for player in reserve_group.players.all():
-            try:
+            with contextlib.suppress(Player.DoesNotExist):
                 players_json.append(
                     {"id": str(player.id_uuid), "name": player.user.username}
                 )
-            except Player.DoesNotExist:
-                pass
 
         await self.send(
             text_data=json.dumps(

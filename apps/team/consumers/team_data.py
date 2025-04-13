@@ -144,10 +144,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             json_data (dict): The JSON data containing the request.
 
         """
-        if "season_uuid" in json_data:
-            season_uuid = json_data["season_uuid"]
-        else:
-            season_uuid = None
+        season_uuid = json_data.get("season_uuid")
 
         # Initialize an empty list to store players
         players_in_team_season = []

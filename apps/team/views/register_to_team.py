@@ -60,4 +60,4 @@ def register_to_team(request, team_id):
 
         return redirect("teams")
     else:
-        return redirect("/login/?next=/register_to_team/%s/" % team_id)
+        return redirect(f"/login/?next=/register_to_team/{team_id}/")

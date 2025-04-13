@@ -1,5 +1,6 @@
 """Module contains the MatchDataConsumer class. This class is used to handle the websocket connection for the match data."""
 
+import contextlib
 import json
 import traceback
 
@@ -40,17 +41,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         ).aget(id_uuid=match_id)
         self.match_data = await MatchData.objects.aget(match_link=self.match)
 
-        try:
+        with contextlib.suppress(MatchPart.DoesNotExist):
             self.current_part = await MatchPart.objects.aget(
                 match_data=self.match_data, active=True
             )
-        except MatchPart.DoesNotExist:
-            pass
 
         self.channel_names = [
-            "detail_match_%s" % self.match.id_uuid,
-            "tracker_match_%s" % self.match.id_uuid,
-            "time_match_%s" % self.match.id_uuid,
+            f"detail_match_{self.match.id_uuid}",
+            f"tracker_match_{self.match.id_uuid}",
+            f"time_match_{self.match.id_uuid}",
         ]
         for channel_name in [self.channel_names[0], self.channel_names[2]]:
             await self.channel_layer.group_add(channel_name, self.channel_name)
@@ -143,7 +142,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         )
                     },
                     "is_coach": await self.checkIfAccess(user_id, team),
-                    "finished": True if self.match_data.status == "finished" else False,
+                    "finished": self.match_data.status == "finished",
                 }
             )
         )

@@ -52,10 +52,7 @@ def previous_page(request):
         previous_page = page
 
     # Adjust the counter to skip the most recent page
-    if len(unique_pages) > counter:
-        referer = unique_pages[counter]
-    else:
-        referer = None
+    referer = unique_pages[counter] if len(unique_pages) > counter else None
 
     # Update the session counter to allow for further back navigation
     request.session["back_counter"] = counter + 1
