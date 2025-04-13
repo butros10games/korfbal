@@ -85,7 +85,7 @@ def players_team(_, match_id, team_id):
         team_id: The id of the team.
 
     Returns:
-        The players that are not in a player group for the match and team in JSON format.  # noqa E501
+        The players that are not in a player group for the match and team in JSON format.
 
     """
     match_data = get_object_or_404(Match, id_uuid=match_id)

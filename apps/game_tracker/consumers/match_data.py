@@ -1,4 +1,4 @@
-"""This module contains the MatchDataConsumer class. This class is used to handle the websocket connection for the match data."""  # noqa E501
+"""Module contains the MatchDataConsumer class. This class is used to handle the websocket connection for the match data."""
 
 import json
 import traceback
