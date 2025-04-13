@@ -18,6 +18,7 @@ def index(request):
 
     Returns:
         HttpResponse: The response object
+
     """
     # get the players first upcoming match
     # get the player

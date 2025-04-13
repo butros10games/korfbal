@@ -15,6 +15,7 @@ def profile_detail(request, player_id=None) -> HttpResponse:
 
     Returns:
         HttpResponse: The response object.
+
     """
     player = None
     user = request.user

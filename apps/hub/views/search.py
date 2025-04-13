@@ -16,6 +16,7 @@ def get_current_season():
 
     Returns:
         Season: The current season.
+
     """
     today = date.today()
     # Attempt to find the current season
@@ -41,6 +42,7 @@ def serialize_team(team, current_season):
 
     Returns:
         dict: The serialized team.
+
     """
     team_data = TeamData.objects.filter(team=team, season=current_season).first()
     return {
@@ -60,6 +62,7 @@ def serialize_club(club):
 
     Returns:
         dict: The serialized club.
+
     """
     return {
         "id": str(club.id_uuid),
@@ -78,6 +81,7 @@ def search(request):
 
     Returns:
         JsonResponse: The JSON response object.
+
     """
     search_term = request.GET.get("q", "")
     category = request.GET.get("category", "")

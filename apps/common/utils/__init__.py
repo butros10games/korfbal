@@ -5,6 +5,7 @@ from .players_stats import players_stats
 from .time_utils import get_time, get_time_display, get_time_display_pause
 from .transform_match_data import transform_match_data
 
+
 __all__ = [
     "general_stats",
     "players_stats",

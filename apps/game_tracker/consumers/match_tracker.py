@@ -1,8 +1,8 @@
 """This module contains the MatchTrackerConsumer class which is a websocket consumer."""
 
+from datetime import UTC, datetime
 import json
 import traceback
-from datetime import datetime, timezone
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -96,8 +96,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_discard(self.channel_names[2], self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
-        """
-        Receive a message from the websocket.
+        """Receive a message from the websocket.
 
         Args:
             text_data: The text data of the message.
@@ -105,6 +104,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The response to the message
+
         """
         try:
             json_data = json.loads(text_data)
@@ -175,11 +175,11 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
 
     async def save_player_groups(self, player_groups):
-        """
-        Save the player groups to the database.
+        """Save the player groups to the database.
 
         Args:
             player_groups: The player groups to save.
+
         """
         for player_group in player_groups:
             group = await PlayerGroup.objects.aget(id_uuid=player_group["id"])
@@ -198,12 +198,12 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def shot_reg(self, player_id, for_team):
-        """
-        Register a shot for a player.
+        """Register a shot for a player.
 
         Args:
             player_id: The id of the player.
             for_team: A boolean indicating if the shot is for the team.
+
         """
         # check if the match is paused and if it is paused decline the request except
         # for the start/stop command
@@ -224,7 +224,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
             for_team=for_team,
             team=team,
             scored=False,
@@ -269,13 +269,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def goal_reg(self, player_id, goal_type, for_team):
-        """
-        Register a goal for a player.
+        """Register a goal for a player.
 
         Args:
             player_id: The id of the player.
             goal_type: The type of the goal.
             for_team: A boolean indicating if the goal is for the team.
+
         """
         # check if the match is paused and if it is paused decline the request except
         # for the start/stop command
@@ -299,7 +299,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
             shot_type=goal_type,
             for_team=for_team,
             team=team,
@@ -426,7 +426,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             part = await MatchPart.objects.acreate(
                 match_data=self.match_data,
                 active=True,
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 part_number=self.match_data.current_part,
             )
 
@@ -466,14 +466,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 pause = await Pause.objects.acreate(
                     match_data=self.match_data,
                     active=True,
-                    start_time=datetime.now(timezone.utc),
+                    start_time=datetime.now(UTC),
                     match_part=self.current_part,
                 )
 
                 self.is_paused = True
             else:
                 pause.active = False
-                pause.end_time = datetime.now(timezone.utc)
+                pause.end_time = datetime.now(UTC)
                 await pause.asave()
 
                 self.is_paused = False
@@ -502,7 +502,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
 
             pause.active = False
-            pause.end_time = datetime.now(timezone.utc)
+            pause.end_time = datetime.now(UTC)
             await pause.asave()
 
         except Pause.DoesNotExist:
@@ -517,7 +517,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     match_data=self.match_data, active=True
                 )
                 match_part.active = False
-                match_part.end_time = datetime.now(timezone.utc)
+                match_part.end_time = datetime.now(UTC)
                 await match_part.asave()
 
             except MatchPart.DoesNotExist:
@@ -544,7 +544,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 match_data=self.match_data, active=True
             )
             match_part.active = False
-            match_part.end_time = datetime.now(timezone.utc)
+            match_part.end_time = datetime.now(UTC)
             await match_part.asave()
 
             for channel_name in [self.channel_names[2]]:
@@ -584,12 +584,12 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def substitute_reg(self, new_player_id, old_player_id):
-        """
-        Register a player change.
+        """Register a player change.
 
         Args:
             new_player_id: The id of the new player.
             old_player_id: The id of the old player.
+
         """
         # check if the match is paused and if it is paused decline the request except
         # for the start/stop command
@@ -629,7 +629,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player_group=player_group,
             match_data=self.match_data,
             match_part=self.current_part,
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
 
         # get the shot count for the new player
@@ -952,14 +952,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         )
 
     async def time_calc(self, event):
-        """
-        Calculate the time of the event.
+        """Calculate the time of the event.
 
         Args:
             event: The event to calculate the time for.
 
         Returns:
             The time of the event.
+
         """
         # Determine the event time attribute, either "time" or "start_time"
         event_time = getattr(event, "time", getattr(event, "start_time", None))
@@ -1039,7 +1039,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             match_data=self.match_data,
             match_part=self.current_part,
             team=self.team,
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
 
         await self.send_last_event()
@@ -1055,11 +1055,11 @@ class PlayerGroupClass:
         self._season_request = season_request
 
     async def player_group_request(self):
-        """
-        Get the player groups.
+        """Get the player groups.
 
         Returns:
             The player groups.
+
         """
         player_groups_array = await self._make_player_group_list()
 
@@ -1073,11 +1073,11 @@ class PlayerGroupClass:
         )
 
     async def get_player_groups(self):
-        """
-        Get the player groups.
+        """Get the player groups.
 
         Returns:
             The player groups.
+
         """
         return await sync_to_async(list)(
             PlayerGroup.objects.prefetch_related(
@@ -1092,11 +1092,11 @@ class PlayerGroupClass:
         )
 
     async def swap_player_group_types(self, team):
-        """
-        Swap the player group types.
+        """Swap the player group types.
 
         Args:
             team: The team to swap the player group types for.
+
         """
         group_type_a = await GroupType.objects.aget(name="Aanval")
         group_type_v = await GroupType.objects.aget(name="Verdediging")
@@ -1115,11 +1115,11 @@ class PlayerGroupClass:
         await player_group_v.asave()
 
     async def _make_player_group_list(self):
-        """
-        Make a list of player groups.
+        """Make a list of player groups.
 
         Returns:
             A list of player groups.
+
         """
         player_groups = await self.get_player_groups()
         if not player_groups:
@@ -1139,14 +1139,14 @@ class PlayerGroupClass:
             )
 
     async def _make_player_group_json(self, player_groups):
-        """
-        Make a list of player groups in JSON format.
+        """Make a list of player groups in JSON format.
 
         Args:
             player_groups: The player groups to convert to JSON format.
 
         Returns:
             A list of player groups in JSON format.
+
         """
 
         async def _process_player(player):
@@ -1189,11 +1189,11 @@ class PlayerGroupClass:
         ]
 
     async def _make_full_player_list(self):
-        """
-        Make a list of all players in the team.
+        """Make a list of all players in the team.
 
         Returns:
             A list of all players in the team.
+
         """
         season = await self._season_request()
         players_json = []
@@ -1211,14 +1211,14 @@ class PlayerGroupClass:
         return self._remove_duplicates(players_json)
 
     async def _get_player_json(self, player):
-        """
-        Get a player in JSON format.
+        """Get a player in JSON format.
 
         Args:
             player: The player to get in JSON format.
 
         Returns:
             The player in JSON format.
+
         """
         try:
             player_obj = await Player.objects.prefetch_related("user").aget(
@@ -1234,13 +1234,13 @@ class PlayerGroupClass:
             return None
 
     def _remove_duplicates(self, players_json):
-        """
-        Remove duplicate players from the list.
+        """Remove duplicate players from the list.
 
         Args:
             players_json: The list of players to remove duplicates from.
 
         Returns:
             The list of players without duplicates.
+
         """
         return [dict(t) for t in {tuple(d.items()) for d in players_json}]

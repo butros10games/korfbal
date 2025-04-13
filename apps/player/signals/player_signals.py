@@ -9,13 +9,13 @@ from apps.player.models import Player
 
 @receiver(post_save, sender=User)
 def create_player_for_new_user(sender, instance, created, **kwargs):
-    """
-    Create a Player instance when a new user is created.
+    """Create a Player instance when a new user is created.
 
     Args:
         sender (Model): The model class.
         instance (User): The user instance.
         created (bool): Whether the user is created
+
     """
     if created:
         # If the user is just created, create a Player instance

@@ -2,13 +2,13 @@
 
 from django import template
 
+
 register = template.Library()
 
 
 @register.filter
 def truncate_middle(text, max_length):
-    """
-    Truncate the text in the middle if it is longer than the max_length.
+    """Truncate the text in the middle if it is longer than the max_length.
 
     Args:
         text: The text to truncate.
@@ -16,6 +16,7 @@ def truncate_middle(text, max_length):
 
     Returns:
         The truncated text.
+
     """
     text = str(text)
 

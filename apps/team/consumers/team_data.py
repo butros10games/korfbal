@@ -1,8 +1,8 @@
-"""This module contains the TeamDataConsumer class that handles the websocket connection for the team data page."""  # noqa: E501
+"""Module contains the TeamDataConsumer class that handles the websocket connection for the team data page."""
 
+from datetime import datetime
 import json
 import traceback
-from datetime import datetime
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -36,8 +36,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(self, text_data=None, bytes_data=None) -> None:
-        """
-        Receive the data from the websocket.
+        """Receive the data from the websocket.
 
         Args:
             text_data (str): The data received from the websocket.
@@ -45,6 +44,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         Raises:
             Exception: If an error occurs while processing the data.
+
         """
         try:
             json_data = json.loads(text_data)
@@ -79,11 +79,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def matches_request(self, command: str) -> None:
-        """
-        Handle the request for matches.
+        """Handle the request for matches.
 
         Args:
             command (str): The command to determine the type of matches to fetch.
+
         """
         matches_data = await self.get_matches_data(
             ["upcoming", "active"] if command == "matches" else ["finished"],
@@ -138,11 +138,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=player_stats)
 
     async def player_request(self, json_data: dict) -> None:
-        """
-        Handle the request for players.
+        """Handle the request for players.
 
         Args:
             json_data (dict): The JSON data containing the request.
+
         """
         if "season_uuid" in json_data:
             season_uuid = json_data["season_uuid"]
@@ -222,12 +222,12 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def follow_request(self, follow: bool, user_id: str) -> None:
-        """
-        Handle the request to follow or unfollow the team.
+        """Handle the request to follow or unfollow the team.
 
         Args:
             follow (bool): The status of the follow request.
             user_id (str): The UUID of the user.
+
         """
         player = await Player.objects.aget(user=user_id)
 
@@ -242,8 +242,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_matches_data(self, status: list, order: str) -> list:
-        """
-        Get the match data of the team.
+        """Get the match data of the team.
 
         Args:
             status (list): The status of the matches.
@@ -251,6 +250,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             list: The list of match data.
+
         """
         matches = await sync_to_async(list)(
             Match.objects.filter(
@@ -278,11 +278,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         return matches_data
 
     async def send_data(self, event):
-        """
-        Send data to the websocket.
+        """Send data to the websocket.
 
         Args:
             event: The event to send.
+
         """
         data = event["data"]
         await self.send(text_data=json.dumps(data))

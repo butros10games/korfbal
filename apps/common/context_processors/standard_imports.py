@@ -4,14 +4,14 @@ from apps.player.models import Player
 
 
 def standard_imports(request):
-    """
-    Add profile_url and profile_img_url to the context.
+    """Add profile_url and profile_img_url to the context.
 
     Args:
         request: The request object.
 
     Returns:
         A dictionary containing the profile_url and profile_img_url.
+
     """
     profile_url = None
     profile_img_url = None

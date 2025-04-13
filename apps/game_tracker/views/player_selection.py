@@ -10,6 +10,7 @@ from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
+
 invalid_request = JsonResponse({"error": "Invalid request method"}, status=405)
 json_error = JsonResponse({"error": "Invalid JSON data"}, status=400)
 no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
@@ -17,8 +18,7 @@ to_many_players = JsonResponse({"error": "Too many players selected"}, status=40
 
 
 def player_overview(request, match_id, team_id):
-    """
-    Render the player overview page.
+    """Render the player overview page.
 
     Args:
         request: The request object.
@@ -27,6 +27,7 @@ def player_overview(request, match_id, team_id):
 
     Returns:
         The rendered player overview page.
+
     """
     player_groups = _get_player_groups(match_id, team_id)
 
@@ -40,8 +41,7 @@ def player_overview(request, match_id, team_id):
 
 
 def player_overview_data(_, match_id, team_id):
-    """
-    Get the player groups for a match and team.
+    """Get the player groups for a match and team.
 
     Args:
         _: The request object.
@@ -50,6 +50,7 @@ def player_overview_data(_, match_id, team_id):
 
     Returns:
         The player groups for the match and team in JSON format.
+
     """
     player_groups = _get_player_groups(match_id, team_id)
 
@@ -76,8 +77,7 @@ def player_overview_data(_, match_id, team_id):
 
 
 def players_team(_, match_id, team_id):
-    """
-    Get the players that are not in a player group for a match and team.
+    """Get the players that are not in a player group for a match and team.
 
     Args:
         _: The request object.
@@ -86,6 +86,7 @@ def players_team(_, match_id, team_id):
 
     Returns:
         The players that are not in a player group for the match and team in JSON format.  # noqa E501
+
     """
     match_data = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
@@ -116,8 +117,7 @@ def players_team(_, match_id, team_id):
 
 
 def player_search(request, match_id, team_id):
-    """
-    Search for players by name.
+    """Search for players by name.
 
     Args:
         request: The request object.
@@ -126,6 +126,7 @@ def player_search(request, match_id, team_id):
 
     Returns:
         The players that match the search query in JSON format.
+
     """
     if request.method != "GET":
         return invalid_request
@@ -183,14 +184,14 @@ def player_search(request, match_id, team_id):
 
 
 def player_designation(request):
-    """
-    Designate players to a player group.
+    """Designate players to a player group.
 
     Args:
         request: The request object.
 
     Returns:
         The response to the request.
+
     """
     if request.method != "POST":
         return invalid_request
@@ -232,8 +233,7 @@ def player_designation(request):
 
 
 def _get_player_groups(match_id, team_id):
-    """
-    Get the player groups for a match and team.
+    """Get the player groups for a match and team.
 
     Args:
         match_id: The id of the match.
@@ -241,6 +241,7 @@ def _get_player_groups(match_id, team_id):
 
     Returns:
         The player groups for the match and team.
+
     """
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)

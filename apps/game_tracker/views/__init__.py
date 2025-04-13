@@ -11,6 +11,7 @@ from .player_selection import (
     players_team,
 )
 
+
 __all__ = [
     "match_detail",
     "match_team_selector",

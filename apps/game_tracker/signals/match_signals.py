@@ -9,13 +9,13 @@ from apps.schedule.models import Match
 
 @receiver(post_save, sender=Match)
 def create_match_data_for_new_match(sender, instance, created, **kwargs):
-    """
-    Create a MatchData instance for a new Match instance.
+    """Create a MatchData instance for a new Match instance.
 
     Args:
         sender: The sender of the signal.
         instance: The instance of the Match model.
         created: A boolean indicating if the instance was created.
+
     """
     if created:
         # If the Match is just created, create a MatchData instance

@@ -10,8 +10,7 @@ from apps.team.models import Team, TeamData
 
 
 def register_to_team(request, team_id):
-    """
-    View for the team registration page.
+    """View for the team registration page.
 
     Args:
         request (HttpRequest): The request object.
@@ -19,6 +18,7 @@ def register_to_team(request, team_id):
 
     Returns:
         HttpResponse: The response object.
+
     """
     team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user

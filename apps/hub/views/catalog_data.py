@@ -11,14 +11,14 @@ from apps.team.models import Team
 
 
 def catalog_data(request):
-    """
-    View for fetching data for the catalog page.
+    """View for fetching data for the catalog page.
 
     Args:
         request (HttpRequest): The request object.
 
     Returns:
         JsonResponse: The response object.
+
     """
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method"})
@@ -68,14 +68,14 @@ def catalog_data(request):
 
 
 def connected_clubs_query(player):
-    """
-    Get the clubs the player is connected to.
+    """Get the clubs the player is connected to.
 
     Args:
         player (Player): The player object.
 
     Returns:
         QuerySet: The queryset of the clubs the player is connected to.
+
     """
     return Club.objects.filter(
         Q(teams__team_data__players=player) | Q(teams__team_data__coach=player)
@@ -83,14 +83,14 @@ def connected_clubs_query(player):
 
 
 def club_serializer(club):
-    """
-    Serialize the club object.
+    """Serialize the club object.
 
     Args:
         club (Club): The club object.
 
     Returns:
         dict: The serialized club object.
+
     """
     return {
         "id": str(club.id_uuid),
@@ -102,14 +102,14 @@ def club_serializer(club):
 
 
 def connected_teams_query(player):
-    """
-    Get the teams the player is connected to.
+    """Get the teams the player is connected to.
 
     Args:
         player (Player): The player object.
 
     Returns:
         QuerySet: The queryset of the teams the player is connected to.
+
     """
     return Team.objects.filter(
         Q(team_data__players=player) | Q(team_data__coach=player)
@@ -117,14 +117,14 @@ def connected_teams_query(player):
 
 
 def team_serializer(team):
-    """
-    Serialize the team object.
+    """Serialize the team object.
 
     Args:
         team (Team): The team object.
 
     Returns:
         dict: The serialized team object.
+
     """
     last_team_data = team.team_data.last() if team.team_data else None
     return {
@@ -139,8 +139,7 @@ def team_serializer(team):
 def get_connected_and_following_objects(
     player, connected_query, following_relation, serializer_func
 ):
-    """
-    Get the connected and following objects for the player.
+    """Get the connected and following objects for the player.
 
     Args:
         player (Player): The player object.
@@ -150,6 +149,7 @@ def get_connected_and_following_objects(
 
     Returns:
         tuple: The connected and following objects.
+
     """
     connected_objs = connected_query(player)
     following_objs = getattr(player, following_relation).exclude(

@@ -28,8 +28,7 @@ class PlayerGroup(models.Model):
     )
 
     def save(self, *args, **kwargs):
-        """
-        Save the player group.
+        """Save the player group.
 
         Check if the incoming player/players are in the reserve player group(if this
         player group is not the reserve) connected to the team and matchdata.

@@ -6,6 +6,7 @@ from .index import index
 from .previous_page import previous_page
 from .search import search
 
+
 __all__ = [
     "index",
     "catalog",

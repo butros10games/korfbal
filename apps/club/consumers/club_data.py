@@ -1,7 +1,7 @@
 """Consumers for the club app."""
 
 import json
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -29,9 +29,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs) -> None:
         """Initialize the ClubDataConsumer."""
         super().__init__(*args, **kwargs)
-        self.player: Optional[Player] = None
-        self.club: Optional[str] = None
-        self.subscribed_channels: List[str] = []
+        self.player: Player | None = None
+        self.club: str | None = None
+        self.subscribed_channels: list[str] = []
 
     async def connect(self) -> None:
         """Connect the websocket."""
@@ -39,21 +39,21 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: Optional[str] = None, bytes_data: Optional[bytes] = None
+        self, text_data: str | None = None, bytes_data: bytes | None = None
     ) -> None:
-        """
-        Receive data from the websocket.
+        """Receive data from the websocket.
 
         Args:
             text_data: The received text data.
             bytes_data: The received bytes data.
+
         """
         if text_data is None:
             await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
         try:
-            json_data: Dict[str, Any] = json.loads(text_data)
+            json_data: dict[str, Any] = json.loads(text_data)
             command: str = json_data["command"]
         except json.JSONDecodeError:
             await self.send(text_data=json.dumps({"error": "Invalid JSON"}))
@@ -70,12 +70,12 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
     async def teams_request(self) -> None:
         """Send the teams data to the client."""
-        teams: List[Team] = await sync_to_async(list)(
+        teams: list[Team] = await sync_to_async(list)(
             Team.objects.filter(club=self.club)
         )
         teams = list(dict.fromkeys(teams))  # Remove duplicates
 
-        teams_json: List[TeamJSON] = [
+        teams_json: list[TeamJSON] = [
             {
                 "id": str(team.id_uuid),
                 "name": await sync_to_async(team.__str__)(),
@@ -88,18 +88,18 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"command": "teams", "teams": teams_json}))
 
     async def matches_request(self, command: str) -> None:
-        """
-        Send the match data to the client.
+        """Send the match data to the client.
 
         Args:
             command: The command to determine which matches to send.
+
         """
-        teams: List[Team] = await sync_to_async(list)(
+        teams: list[Team] = await sync_to_async(list)(
             Team.objects.filter(club=self.club)
         )
-        team_ids: List[str] = [str(team.id_uuid) for team in teams]
+        team_ids: list[str] = [str(team.id_uuid) for team in teams]
 
-        status: List[str]
+        status: list[str]
         order: str
         if command == "matches":
             status = ["upcoming", "active"]
@@ -108,7 +108,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             status = ["finished"]
             order = "-"
 
-        matches_data: List[MatchData] = await self.get_matches_data(
+        matches_data: list[MatchData] = await self.get_matches_data(
             team_ids, status, order
         )
         matches_dict = await transform_match_data(matches_data)
@@ -118,10 +118,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_matches_data(
-        self, team_ids: List[str], status: List[str], order: str
-    ) -> List[MatchData]:
-        """
-        Get the match data for the given teams and status.
+        self, team_ids: list[str], status: list[str], order: str
+    ) -> list[MatchData]:
+        """Get the match data for the given teams and status.
 
         Args:
             team_ids: The ids of the teams.
@@ -130,15 +129,16 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The match data for the given teams and status.
+
         """
-        matches: List[Match] = await sync_to_async(list)(
+        matches: list[Match] = await sync_to_async(list)(
             Match.objects.filter(
                 Q(home_team__in=team_ids) | Q(away_team__in=team_ids)
             ).distinct()
         )
-        matches_non_dub: List[Match] = list(dict.fromkeys(matches))
+        matches_non_dub: list[Match] = list(dict.fromkeys(matches))
 
-        matches_data: List[MatchData] = await sync_to_async(list)(
+        matches_data: list[MatchData] = await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -153,12 +153,12 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         return matches_data
 
     async def follow_request(self, follow: bool, user_id: str) -> None:
-        """
-        Handle the follow request.
+        """Handle the follow request.
 
         Args:
             follow: Whether the user wants to follow the club.
             user_id: The id of the user.
+
         """
         player: Player = await sync_to_async(Player.objects.get)(user=user_id)
 
@@ -172,11 +172,11 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def send_data(self, event):
-        """
-        Send data to the websocket.
+        """Send data to the websocket.
 
         Args:
             event: The event to send.
+
         """
         data = event["data"]
         await self.send(text_data=json.dumps(data))

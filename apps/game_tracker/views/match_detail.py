@@ -8,8 +8,7 @@ from apps.schedule.models import Match
 
 
 def match_detail(request, match_id):
-    """
-    Render the match detail page.
+    """Render the match detail page.
 
     Args:
         request: The request object.
@@ -17,6 +16,7 @@ def match_detail(request, match_id):
 
     Returns:
         The rendered match detail page.
+
     """
     match_model = get_object_or_404(Match, id_uuid=match_id)
 

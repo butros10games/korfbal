@@ -10,16 +10,14 @@ from dotenv import load_dotenv
 # Helper Functions
 # ------------------------------------------------------------------------------
 def get_bool_env(env_key: str, default: bool = False) -> bool:
-    """
-    Return True if the environment variable is set to 'true' or '1' (case-insensitive).
+    """Return True if the environment variable is set to 'true' or '1' (case-insensitive).
     Otherwise, return the default value.
     """  # noqa: D205
     return os.getenv(env_key, str(default)).lower() in ["true", "1"]
 
 
 def get_list_env(env_key: str, default=None, delimiter: str = ",") -> list[str]:
-    """
-    Split the environment variable by the given delimiter and return as a list.
+    """Split the environment variable by the given delimiter and return as a list.
     If the env variable is not set, return the default list.
     """  # noqa: D205
     if default is None:

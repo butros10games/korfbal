@@ -15,6 +15,7 @@ def catalog(request):
 
     Returns:
         HttpResponse: The response object.
+
     """
     connected_teams = None
     following_teams = None

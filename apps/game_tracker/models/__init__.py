@@ -12,6 +12,7 @@ from .player_group import PlayerGroup
 from .shot import Shot
 from .timeout import Timeout
 
+
 __all__ = [
     "Attack",
     "GoalType",

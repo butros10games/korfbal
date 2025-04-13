@@ -9,14 +9,14 @@ from apps.player.models import Player
 
 
 def previous_page(request):
-    """
-    View for navigating back to the previous page.
+    """View for navigating back to the previous page.
 
     Args:
         request (HttpRequest): The request object.
 
     Returns:
         HttpResponseRedirect: The response object.
+
     """
     player = Player.objects.get(user=request.user)
 

@@ -1,7 +1,7 @@
 """This module contains common functions for the game_tracker app consumers."""
 
+from datetime import UTC, datetime
 import json
-from datetime import datetime, timezone
 
 from asgiref.sync import sync_to_async
 
@@ -9,8 +9,7 @@ from apps.game_tracker.models import MatchData, MatchPart, Pause
 
 
 async def get_time(match_data, current_part):
-    """
-    Get the time for the match.
+    """Get the time for the match.
 
     Args:
         match_data: The match data object.
@@ -18,6 +17,7 @@ async def get_time(match_data, current_part):
 
     Returns:
         The time for the match.
+
     """
     # check if there is a active part if there is a active part send the start time of
     # the part and length of a match part
@@ -56,7 +56,7 @@ async def get_time(match_data, current_part):
                     "calc_to": active_pause.start_time.isoformat(),
                     "length": match_data.part_length,
                     "pause_length": pause_time,
-                    "server_time": datetime.now(timezone.utc).isoformat(),
+                    "server_time": datetime.now(UTC).isoformat(),
                 }
             )
         else:
@@ -68,7 +68,7 @@ async def get_time(match_data, current_part):
                     "time": part.start_time.isoformat(),
                     "length": match_data.part_length,
                     "pause_length": pause_time,
-                    "server_time": datetime.now(timezone.utc).isoformat(),
+                    "server_time": datetime.now(UTC).isoformat(),
                 }
             )
     else:
@@ -82,14 +82,14 @@ async def get_time(match_data, current_part):
 
 
 def get_time_display(match_data):
-    """
-    Get the time display for the match.
+    """Get the time display for the match.
 
     Args:
         match_data: The match data object.
 
     Returns:
         The time display for the match.
+
     """
     time_left = match_data.part_length
 
@@ -101,14 +101,14 @@ def get_time_display(match_data):
 
 
 async def get_time_display_pause(self, json_data):
-    """
-    Get the time display for the pause.
+    """Get the time display for the pause.
 
     Args:
         time_left: The time left for the pause.
 
     Returns:
         The time display for the pause.
+
     """
     match_data = await MatchData.objects.prefetch_related("match_link").aget(
         id_uuid=json_data["match_data_id"]

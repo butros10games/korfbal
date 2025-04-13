@@ -7,8 +7,7 @@ from apps.player.models import Player
 
 
 def club_detail(request, club_id):
-    """
-    Render the club detail page.
+    """Render the club detail page.
 
     Args:
         request: The request object.
@@ -16,6 +15,7 @@ def club_detail(request, club_id):
 
     Returns:
         The rendered club detail page.
+
     """
     club = get_object_or_404(Club, id_uuid=club_id)
 

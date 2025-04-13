@@ -9,8 +9,7 @@ from apps.team.models import Team
 
 
 def match_tracker(request, match_id, team_id):
-    """
-    Render the match tracker page.
+    """Render the match tracker page.
 
     Args:
         request: The request object.
@@ -19,6 +18,7 @@ def match_tracker(request, match_id, team_id):
 
     Returns:
         The rendered match tracker page.
+
     """
     match_model = get_object_or_404(Match, id_uuid=match_id)
     match_data = MatchData.objects.get(match_link=match_model)

@@ -8,8 +8,7 @@ from apps.team.models import TeamData
 
 
 def match_team_selector(request, match_id):
-    """
-    Render the match team selector page.
+    """Render the match team selector page.
 
     Args:
         request: The request object.
@@ -17,6 +16,7 @@ def match_team_selector(request, match_id):
 
     Returns:
         The rendered match team selector page.
+
     """
     # Retrieve the match or return 404
     match_data = get_object_or_404(Match, id_uuid=match_id)

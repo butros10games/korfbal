@@ -4,6 +4,7 @@ import json
 import traceback
 
 from asgiref.sync import sync_to_async
+from bg_auth.models import UserProfile
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
@@ -12,7 +13,6 @@ from apps.game_tracker.models import GoalType, MatchData, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
-from bg_auth.models import UserProfile
 
 
 class ProfileDataConsumer(AsyncWebsocketConsumer):
@@ -47,12 +47,12 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(self, text_data=None, bytes_data=None):
-        """
-        Receive the data from the websocket.
+        """Receive the data from the websocket.
 
         Args:
             text_data (str): The text data.
             bytes_data (bytes): The bytes data.
+
         """
         try:
             json_data = json.loads(text_data)
@@ -150,11 +150,11 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def settings_update_request(self, data):
-        """
-        Update the user settings.
+        """Update the user settings.
 
         Args:
             data (dict): The data to update.
+
         """
         username = data["username"]
         email = data["email"]
@@ -174,11 +174,11 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"command": "settings_updated"}))
 
     async def update_profile_picture_url_request(self, url):
-        """
-        Update the profile picture URL.
+        """Update the profile picture URL.
 
         Args:
             url (str): The URL of the profile picture.
+
         """
         if url:
             # Assuming "url" contains the relative path of the image
@@ -207,11 +207,11 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({"command": "teams", "teams": teams_dict}))
 
     async def matches_request(self, command):
-        """
-        Send the matches to the client.
+        """Send the matches to the client.
 
         Args:
             command (str): The command to get the matches.
+
         """
         matches_data = await self.get_matches_data(
             ["upcoming", "active"] if command == "upcoming_matches" else ["finished"],
@@ -225,8 +225,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_matches_data(self, status, order):
-        """
-        Get the match data.
+        """Get the match data.
 
         Args:
             status (list): The status of the match data.
@@ -234,6 +233,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             list: The list of match data.
+
         """
         matches = await sync_to_async(list)(
             Match.objects.filter(
@@ -259,11 +259,11 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         return matches_data
 
     async def send_data(self, event):
-        """
-        Send data to the websocket.
+        """Send data to the websocket.
 
         Args:
             event: The event to send.
+
         """
         data = event["data"]
         await self.send(text_data=json.dumps(data))

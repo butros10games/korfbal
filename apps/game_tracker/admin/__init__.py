@@ -10,6 +10,7 @@ from .player_change_admin import PlayerChangeAdmin
 from .player_group_admin import PlayerGroupAdmin
 from .shot_admin import ShotAdmin
 
+
 __all__ = [
     "GoalTypeAdmin",
     "GroupTypeAdmin",

@@ -1,7 +1,7 @@
 """This module contains the function to transform match data to a dictionary."""
 
-import locale
 from datetime import datetime
+import locale
 
 from asgiref.sync import sync_to_async
 
@@ -11,14 +11,14 @@ from .time_utils import get_time_display
 
 
 async def transform_match_data(matches_data: list) -> list:
-    """
-    Transform the match data to a dictionary.
+    """Transform the match data to a dictionary.
 
     Args:
         matches_data {list} -- A list of match data.
 
     Returns:
         list -- A list of dictionaries containing the match data.
+
     """
     match_dict = []
     locale.setlocale(locale.LC_TIME, "nl_NL.utf8")

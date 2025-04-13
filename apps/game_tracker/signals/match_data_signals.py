@@ -8,14 +8,14 @@ from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
 
 @receiver(post_save, sender=MatchData)
 def create_player_groups_for_new_match_data(sender, instance, created, **kwargs):
-    """
-    Create player groups for a new match data instance.
+    """Create player groups for a new match data instance.
 
     Args:
         sender: The sender of the signal.
         instance: The instance of the MatchData model.
         created: A boolean indicating if the instance was created.
         **kwargs: Additional keyword arguments.
+
     """
     if created:
         all_group_types = GroupType.objects.all()

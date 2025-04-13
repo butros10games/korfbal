@@ -63,8 +63,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
-        """
-        Receive data from the websocket.
+        """Receive data from the websocket.
 
         Args:
             text_data: The data received from the websocket.
@@ -72,6 +71,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The data received from the websocket.
+
         """
         try:
             json_data = json.loads(text_data)
@@ -108,8 +108,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def team_request(self, command, user_id):
-        """
-        Get the team data for the home or away team.
+        """Get the team data for the home or away team.
 
         Args:
             command: The command to get the home or away team.
@@ -117,6 +116,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The team data for the home or away team.
+
         """
         team = self.match.home_team if command == "home_team" else self.match.away_team
 
@@ -149,14 +149,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def save_player_groups_request(self, player_groups):
-        """
-        Save the player groups.
+        """Save the player groups.
 
         Args:
             player_groups: The player groups to save.
 
         Returns:
             The status of the save.
+
         """
         for player_group in player_groups:
             group = await PlayerGroup.objects.aget(id_uuid=player_group["id"])
@@ -197,8 +197,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=player_stats)
 
     async def get_events(self, event=None, user_id=None):
-        """
-        Get the events for the match.
+        """Get the events for the match.
 
         Args:
             event: The event to get.
@@ -206,6 +205,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The events for the match.
+
         """
         try:
             events_dict = []
@@ -284,14 +284,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return events
 
     async def event_shot(self, event):
-        """
-        Get the event for a shot.
+        """Get the event for a shot.
 
         Args:
             event: The event to get.
 
         Returns:
             The event for a shot.
+
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
@@ -340,14 +340,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_player_change(self, event):
-        """
-        Get the event for a player change.
+        """Get the event for a player change.
 
         Args:
             event: The event to get.
 
         Returns:
             The event for a player change.
+
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
@@ -392,14 +392,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         }
 
     async def event_pause(self, event):
-        """
-        Get the event for a pause.
+        """Get the event for a pause.
 
         Args:
             event: The event to get.
 
         Returns:
             The event for a pause.
+
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
@@ -597,21 +597,21 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return access
 
     async def send_data(self, event):
-        """
-        Send data to the websocket.
+        """Send data to the websocket.
 
         Args:
             event: The event to send.
+
         """
         data = event["data"]
         await self.send(text_data=json.dumps(data))
 
     async def season_request(self):
-        """
-        Get the season of the match.
+        """Get the season of the match.
 
         Returns:
             The season of the match.
+
         """
         try:
             return await Season.objects.aget(

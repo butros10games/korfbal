@@ -19,6 +19,7 @@ def team_detail(request, team_id):
 
     Returns:
         HttpResponse: The response object.
+
     """
     team = get_object_or_404(Team, id_uuid=team_id)
 
