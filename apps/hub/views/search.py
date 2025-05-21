@@ -4,14 +4,14 @@ from datetime import date
 
 from django.db.models import F, Value
 from django.db.models.functions import Concat
-from django.http import JsonResponse
+from django.http import HttpRequest, JsonResponse
 
 from apps.club.models import Club
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
 
 
-def get_current_season():
+def get_current_season() -> Season | None:
     """Get the current season.
 
     Returns:
@@ -33,7 +33,7 @@ def get_current_season():
     return season
 
 
-def serialize_team(team, current_season):
+def serialize_team(team: Team, current_season: Season) -> dict[str, str | None]:
     """Serialize a team.
 
     Args:
@@ -54,7 +54,7 @@ def serialize_team(team, current_season):
     }
 
 
-def serialize_club(club):
+def serialize_club(club: Club) -> dict[str, str | None]:
     """Serialize a club.
 
     Args:
@@ -73,7 +73,7 @@ def serialize_club(club):
     }
 
 
-def search(request):
+def search(request: HttpRequest) -> JsonResponse:
     """Search view for searching teams and clubs.
 
     Args:

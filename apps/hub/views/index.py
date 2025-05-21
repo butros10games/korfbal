@@ -1,6 +1,7 @@
 """Module contains the view for the hub index page."""
 
 from django.db.models import Q
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
 from apps.common.utils import get_time_display
@@ -10,7 +11,7 @@ from apps.schedule.models import Match
 from apps.team.models import Team
 
 
-def index(request):
+def index(request: HttpRequest) -> HttpResponse:
     """View for the hub index page.
 
     Args:

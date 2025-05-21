@@ -18,7 +18,7 @@ from apps.team.models import Team, TeamData
 class ProfileDataConsumer(AsyncWebsocketConsumer):
     """Websocket consumer for the profile data."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the ProfileDataConsumer."""
         super().__init__()
         self.user = None
@@ -27,7 +27,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         self.teams = None
         self.subscribed_channels = []
 
-    async def connect(self):
+    async def connect(self) -> None:
         """Connect to the websocket."""
         player_id = self.scope["url_route"]["kwargs"]["id"]
         self.player = await Player.objects.prefetch_related("user").aget(
@@ -46,7 +46,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )()
         await self.accept()
 
-    async def receive(self, text_data=None, bytes_data=None):
+    async def receive(
+        self, text_data: str | None = None, bytes_data: bytes | None = None
+    ) -> None:
         """Receive the data from the websocket.
 
         Args:
@@ -97,7 +99,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def player_stats_request(self):
+    async def player_stats_request(self) -> None:
         """Send the player stats to the client."""
         total_goals_for = 0
         total_goals_against = 0
@@ -149,7 +151,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def settings_update_request(self, data):
+    async def settings_update_request(self, data: dict) -> None:
         """Update the user settings.
 
         Args:
@@ -173,7 +175,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         await self.send(text_data=json.dumps({"command": "settings_updated"}))
 
-    async def update_profile_picture_url_request(self, url):
+    async def update_profile_picture_url_request(self, url: str) -> None:
         """Update the profile picture URL.
 
         Args:
@@ -192,7 +194,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def teams_request(self):
+    async def teams_request(self) -> None:
         """Send the teams to the client."""
         teams_dict = [
             {
@@ -206,7 +208,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         await self.send(text_data=json.dumps({"command": "teams", "teams": teams_dict}))
 
-    async def matches_request(self, command):
+    async def matches_request(self, command: str) -> None:
         """Send the matches to the client.
 
         Args:
@@ -224,7 +226,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "matches", "matches": matches_dict})
         )
 
-    async def get_matches_data(self, status, order):
+    async def get_matches_data(self, status: list, order: str) -> list:
         """Get the match data.
 
         Args:
@@ -258,7 +260,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         return matches_data
 
-    async def send_data(self, event):
+    async def send_data(self, event: dict) -> None:
         """Send data to the websocket.
 
         Args:

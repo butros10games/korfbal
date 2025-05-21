@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from apps.game_tracker.models import MatchData, MatchPart, Pause
 
 
-async def get_time(match_data, current_part):
+async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
     """Get the time for the match.
 
     Args:
@@ -81,7 +81,7 @@ async def get_time(match_data, current_part):
         )
 
 
-def get_time_display(match_data):
+def get_time_display(match_data: MatchData) -> str:
     """Get the time display for the match.
 
     Args:
@@ -100,15 +100,12 @@ def get_time_display(match_data):
     return f"{minutes:02d}:{seconds:02d}"
 
 
-async def get_time_display_pause(self, json_data):
+async def get_time_display_pause(self, json_data: dict) -> None:
     """Get the time display for the pause.
 
     Args:
         self: The instance of the class calling this method.
         json_data: A dictionary containing match data, including the match_data_id.
-
-    Returns:
-        The time display for the pause.
 
     """
     match_data = await MatchData.objects.prefetch_related("match_link").aget(

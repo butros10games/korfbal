@@ -25,19 +25,21 @@ from apps.team.models import Team, TeamData
 class TeamDataConsumer(AsyncWebsocketConsumer):
     """Websocket consumer for the team data page."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the TeamDataConsumer."""
         super().__init__()
         self.team = None
 
-    async def connect(self):
+    async def connect(self) -> None:
         """Connect to the websocket."""
         team_id = self.scope["url_route"]["kwargs"]["id"]
         self.team = await Team.objects.aget(id_uuid=team_id)
         self.subscribed_channels = []
         await self.accept()
 
-    async def receive(self, text_data=None, bytes_data=None) -> None:
+    async def receive(
+        self, text_data: str | None = None, bytes_data: bytes | None = None
+    ) -> None:
         """Receive the data from the websocket.
 
         Args:
@@ -276,7 +278,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         return matches_data
 
-    async def send_data(self, event):
+    async def send_data(self, event: dict) -> None:
         """Send data to the websocket.
 
         Args:

@@ -7,7 +7,7 @@ from asgiref.sync import sync_to_async
 from apps.game_tracker.models import GoalType, Shot
 
 
-async def general_stats(match_dataset):
+async def general_stats(match_dataset: list) -> str:
     """Return the general statistics of a match.
 
     Args:

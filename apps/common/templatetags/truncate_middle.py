@@ -7,7 +7,7 @@ register = template.Library()
 
 
 @register.filter
-def truncate_middle(text, max_length):
+def truncate_middle(text: str, max_length: int) -> str:
     """Truncate the text in the middle if it is longer than the max_length.
 
     Args:

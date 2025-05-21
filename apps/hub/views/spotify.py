@@ -2,6 +2,8 @@
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.http import HttpRequest
 from django.shortcuts import redirect
 from django.utils.timezone import now, timedelta
 import requests
@@ -15,7 +17,7 @@ SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
 
 
 @login_required
-def spotify_callback(request):
+def spotify_callback(request: HttpRequest) -> redirect | None:
     """Handle Spotify OAuth callback and save tokens."""
     # Get authorization code from the request
     code = request.GET.get("code")
@@ -24,7 +26,7 @@ def spotify_callback(request):
         return redirect("/")  # Handle error case (e.g., user denied access)
 
     # Exchange authorization code for access token
-    token_url = "https://accounts.spotify.com/api/token"
+    token_url = "https://accounts.spotify.com/api/token"  # noqa S106
     response = requests.post(
         token_url,
         data={
@@ -34,6 +36,7 @@ def spotify_callback(request):
             "client_id": SPOTIFY_CLIENT_ID,
             "client_secret": SPOTIFY_CLIENT_SECRET,
         },
+        timeout=10,
     )
 
     if response.status_code != 200:
@@ -49,7 +52,7 @@ def spotify_callback(request):
     # Get user info from Spotify API
     user_info_url = "https://api.spotify.com/v1/me"
     headers = {"Authorization": f"Bearer {access_token}"}
-    user_info = requests.get(user_info_url, headers=headers).json()
+    user_info = requests.get(user_info_url, headers=headers, timeout=10).json()
     spotify_user_id = user_info["id"]
 
     # Save or update user's Spotify token
@@ -66,12 +69,12 @@ def spotify_callback(request):
     return redirect("/")
 
 
-def refresh_spotify_token(user):
+def refresh_spotify_token(user: User) -> None:
     """Refresh user's Spotify access token if expired."""
     spotify_token = SpotifyToken.objects.get(user=user)
 
     if spotify_token.expires_at < now():
-        token_url = "https://accounts.spotify.com/api/token"
+        token_url = "https://accounts.spotify.com/api/token"  # noqa S106
         response = requests.post(
             token_url,
             data={
@@ -80,6 +83,7 @@ def refresh_spotify_token(user):
                 "client_id": SPOTIFY_CLIENT_ID,
                 "client_secret": SPOTIFY_CLIENT_SECRET,
             },
+            timeout=10,
         )
 
         if response.status_code == 200:

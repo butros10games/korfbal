@@ -2,7 +2,8 @@
 
 import json
 
-from django.http import JsonResponse
+from django.db.models import BaseManager
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from apps.game_tracker.models import MatchData, PlayerGroup
@@ -17,7 +18,7 @@ no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
 to_many_players = JsonResponse({"error": "Too many players selected"}, status=400)
 
 
-def player_overview(request, match_id, team_id):
+def player_overview(request: HttpRequest, match_id: str, team_id: str) -> HttpResponse:
     """Render the player overview page.
 
     Args:
@@ -40,7 +41,7 @@ def player_overview(request, match_id, team_id):
     return render(request, "matches/players_selector.html", context)
 
 
-def player_overview_data(_, match_id, team_id):
+def player_overview_data(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     """Get the player groups for a match and team.
 
     Args:
@@ -76,7 +77,7 @@ def player_overview_data(_, match_id, team_id):
     return JsonResponse({"player_groups": player_groups_data})
 
 
-def players_team(_, match_id, team_id):
+def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     """Get the players that are not in a player group for a match and team.
 
     Args:
@@ -116,7 +117,7 @@ def players_team(_, match_id, team_id):
     )
 
 
-def player_search(request, match_id, team_id):
+def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     """Search for players by name.
 
     Args:
@@ -183,7 +184,7 @@ def player_search(request, match_id, team_id):
     )
 
 
-def player_designation(request):
+def player_designation(request: HttpRequest) -> JsonResponse:
     """Designate players to a player group.
 
     Args:
@@ -232,7 +233,7 @@ def player_designation(request):
     return JsonResponse({"success": True})
 
 
-def _get_player_groups(match_id, team_id):
+def _get_player_groups(match_id: str, team_id: str) -> BaseManager[PlayerGroup]:
     """Get the player groups for a match and team.
 
     Args:

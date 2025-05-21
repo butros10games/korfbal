@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from django.http import Http404
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from apps.player.models import Player
@@ -10,7 +10,7 @@ from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
 
 
-def team_detail(request, team_id):
+def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
     """View for the team detail page.
 
     Args:
@@ -21,13 +21,13 @@ def team_detail(request, team_id):
         HttpResponse: The response object.
 
     """
-    team = get_object_or_404(Team, id_uuid=team_id)
+    team: Team = get_object_or_404(Team, id_uuid=team_id)
 
     # Get current date
     today = date.today()
 
     # Find the current season
-    current_season = Season.objects.filter(
+    current_season: Season | None = Season.objects.filter(
         start_date__lte=today, end_date__gte=today
     ).first()
 
@@ -44,13 +44,15 @@ def team_detail(request, team_id):
     if not current_season:
         raise Http404("No active season found")
 
-    team_data = TeamData.objects.filter(team=team, season=current_season).first()
+    team_data: TeamData | None = TeamData.objects.filter(
+        team=team, season=current_season
+    ).first()
 
     user_request = request.user
-    following = False
-    coach = False
+    following: bool = False
+    coach: bool = False
     if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
+        player: Player = Player.objects.get(user=user_request)
         following = player.team_follow.filter(id_uuid=team_id).exists()
 
         if team_data:

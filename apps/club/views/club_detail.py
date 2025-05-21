@@ -1,12 +1,13 @@
 """Module contains the view for the club detail page."""
 
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from apps.club.models import Club
 from apps.player.models import Player
 
 
-def club_detail(request, club_id):
+def club_detail(request: HttpRequest, club_id: str) -> HttpResponse:
     """Render the club detail page.
 
     Args:

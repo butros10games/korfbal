@@ -14,7 +14,7 @@ class PlayerGroupForm(forms.ModelForm):
         model = PlayerGroup
         fields = ["players", "team", "match_data", "starting_type", "current_type"]
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the PlayerGroupForm."""
         super().__init__()
         if self.instance and self.instance.match_data:

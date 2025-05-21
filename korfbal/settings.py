@@ -16,7 +16,9 @@ def get_bool_env(env_key: str, default: bool = False) -> bool:
     return os.getenv(env_key, str(default)).lower() in ["true", "1"]
 
 
-def get_list_env(env_key: str, default=None, delimiter: str = ",") -> list[str]:
+def get_list_env(
+    env_key: str, default: list[str] | None = None, delimiter: str = ","
+) -> list[str]:
     """Split the environment variable by the given delimiter and return as a list.
     If the env variable is not set, return the default list.
     """

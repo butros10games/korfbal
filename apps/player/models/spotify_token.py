@@ -13,7 +13,11 @@ class SpotifyToken(models.Model):
     expires_at = models.DateTimeField()
     spotify_user_id = models.CharField(max_length=100, unique=True)
 
-    def is_token_expired(self):
+    def __str__(self) -> str:
+        """Return the string representation of the SpotifyToken."""
+        return f"SpotifyToken(user={self.user.username}, spotify_user_id={self.spotify_user_id})"  # noqa: E501
+
+    def is_token_expired(self) -> bool:
         """Check if the Spotify token is expired."""
         from django.utils.timezone import now
 

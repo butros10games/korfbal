@@ -1,12 +1,12 @@
 """Module contains the view for the player profile detail page."""
 
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from apps.player.models import Player
 
 
-def profile_detail(request, player_id=None) -> HttpResponse:
+def profile_detail(request: HttpRequest, player_id: str | None = None) -> HttpResponse:
     """View for the player profile detail page.
 
     Args:
@@ -17,7 +17,7 @@ def profile_detail(request, player_id=None) -> HttpResponse:
         HttpResponse: The response object.
 
     """
-    player = None
+    player: Player | None = None
     user = request.user
 
     if player_id:
@@ -26,11 +26,11 @@ def profile_detail(request, player_id=None) -> HttpResponse:
         player = Player.objects.get(user=user)
 
     # Check if the user is viewing their own profile
-    is_own_profile = False
+    is_own_profile: bool = False
     if user.is_authenticated and user == player.user:
         is_own_profile = True
 
-    display_back = False
+    display_back: bool = False
     if is_own_profile:
         display_back = True
 

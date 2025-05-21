@@ -10,24 +10,30 @@ from .constants import player_model_string, team_model_string
 class PlayerGroup(models.Model):
     """Model for a group of players in a match."""
 
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    players = models.ManyToManyField(
+    id_uuid: models.UUIDField = models.UUIDField(
+        primary_key=True, default=uuid7, editable=False
+    )
+    players: models.ManyToManyField = models.ManyToManyField(
         player_model_string, related_name="player_groups", blank=True
     )
-    team = models.ForeignKey(
+    team: models.ForeignKey = models.ForeignKey(
         team_model_string, on_delete=models.CASCADE, related_name="player_groups"
     )
-    match_data = models.ForeignKey(
+    match_data: models.ForeignKey = models.ForeignKey(
         "MatchData", on_delete=models.CASCADE, related_name="player_groups"
     )
-    starting_type = models.ForeignKey(
+    starting_type: models.ForeignKey = models.ForeignKey(
         "GroupType", on_delete=models.CASCADE, related_name="player_groups"
     )
-    current_type = models.ForeignKey(
+    current_type: models.ForeignKey = models.ForeignKey(
         "GroupType", on_delete=models.CASCADE, related_name="current_player_groups"
     )
 
-    def save(self, *args, **kwargs):
+    def __str__(self) -> str:
+        """Return the string representation of the player group."""
+        return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"  # noqa: E501
+
+    def save(self, *args, **kwargs) -> None:  # noqa: ANN002 ANN003
         """Save the player group.
 
         Check if the incoming player/players are in the reserve player group(if this
@@ -60,7 +66,3 @@ class PlayerGroup(models.Model):
                     )
 
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        """Return the string representation of the player group."""
-        return f"Player Group {self.id_uuid}"

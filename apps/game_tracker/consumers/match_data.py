@@ -3,8 +3,10 @@ websocket connection for the match data.
 """
 
 import contextlib
+from datetime import datetime
 import json
 import traceback
+from uuid import UUID
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -23,19 +25,19 @@ from apps.game_tracker.models import (
 )
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
-from apps.team.models import TeamData
+from apps.team.models import Team, TeamData
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
     """Class is used to handle the websocket connection for the match data."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Initialize the MatchDataConsumer."""
         super().__init__(*args, **kwargs)
         self.match = None
         self.current_part = None
 
-    async def connect(self):
+    async def connect(self) -> None:
         """Connect to the websocket."""
         match_id = self.scope["url_route"]["kwargs"]["id"]
         self.match = await Match.objects.prefetch_related(
@@ -58,12 +60,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-    async def disconnect(self, close_code):
+    async def disconnect(self, close_code: int) -> None:
         """Disconnect from the websocket."""
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
-    async def receive(self, text_data=None, bytes_data=None):
+    async def receive(
+        self, text_data: str | None = None, bytes_data: bytes | None = None
+    ) -> None:
         """Receive data from the websocket.
 
         Args:
@@ -108,7 +112,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def team_request(self, command, user_id):
+    async def team_request(self, command: str, user_id: UUID | None) -> None:
         """Get the team data for the home or away team.
 
         Args:
@@ -119,6 +123,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             The team data for the home or away team.
 
         """
+        if self.match is None:
+            return
+
         team = self.match.home_team if command == "home_team" else self.match.away_team
 
         await self.send(
@@ -149,7 +156,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
         )
 
-    async def save_player_groups_request(self, player_groups):
+    async def save_player_groups_request(self, player_groups: list[dict]) -> None:
         """Save the player groups.
 
         Args:
@@ -175,15 +182,17 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "savePlayerGroups", "status": "success"})
         )
 
-    async def get_stats_general_request(self):
+    async def get_stats_general_request(self) -> None:
         """Get the general stats for the match."""
         general_stats_json = await general_stats([self.match_data])
 
         await self.send(text_data=general_stats_json)
 
-    async def get_stats_player_request(self):
+    async def get_stats_player_request(self) -> None:
         """Get the player stats for the match."""
-        # Get the player stats. shots for and against, goals for and against.
+        if self.match is None:
+            return
+
         players = await sync_to_async(list)(
             Player.objects.prefetch_related("user")
             .filter(
@@ -197,7 +206,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         await self.send(text_data=player_stats)
 
-    async def get_events(self, event=None, user_id=None):
+    async def get_events(
+        self, event: str | None = None, user_id: UUID | None = None
+    ) -> None:
         """Get the events for the match.
 
         Args:
@@ -247,7 +258,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def get_all_events(self):
+    async def get_all_events(self) -> list:
         """Get all the events for the match."""
         goals = await sync_to_async(list)(
             Shot.objects.prefetch_related(
@@ -280,11 +291,21 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         events.extend(goals)
         events.extend(player_change)
         events.extend(time_outs)
-        events.sort(key=lambda x: getattr(x, "time", getattr(x, "start_time", None)))
+
+        def event_time_key(x: object) -> datetime:
+            value = getattr(x, "time", None)
+            if value is not None:
+                return value
+            value = getattr(x, "start_time", None)
+            if value is not None:
+                return value
+            return datetime.min  # fallback to minimum datetime for sorting
+
+        events.sort(key=event_time_key)
 
         return events
 
-    async def event_shot(self, event):
+    async def event_shot(self, event: Shot) -> dict:
         """Get the event for a shot.
 
         Args:
@@ -340,7 +361,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "team_id": str(event.team.id_uuid),
         }
 
-    async def event_player_change(self, event):
+    async def event_player_change(self, event: PlayerChange) -> dict:
         """Get the event for a player change.
 
         Args:
@@ -392,7 +413,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "player_group": str(event.player_group.id_uuid),
         }
 
-    async def event_pause(self, event):
+    async def event_pause(self, event: Pause) -> dict:
         """Get the event for a pause.
 
         Args:
@@ -451,7 +472,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "end_time": event.end_time.isoformat() if event.end_time else None,
         }
 
-    async def check_access(self, user_id, match):
+    async def check_access(self, user_id: UUID | None, match: Match) -> bool:
         """Check if the user has access to the match."""
         if user_id is None:
             return False
@@ -473,7 +494,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         access = player.id_uuid in players_list
         return access
 
-    async def makePlayerGroupList(self, team):
+    async def makePlayerGroupList(self, team: Team) -> list[dict]:
         """Make a list of player groups for a team."""
         try:
             player_groups = await sync_to_async(list)(
@@ -534,7 +555,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 )
             )
 
-    async def makePlayerList(self, team):
+    async def makePlayerList(self, team: Team) -> list[dict]:
         """Make a list of players for a team."""
         # get the season of the match
         season = await self.season_request()
@@ -568,7 +589,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return players_json
 
-    async def checkIfAccess(self, user_id, team):
+    async def checkIfAccess(self, user_id: UUID | None, team: Team) -> bool:
         """Check if the user has access to the team."""
         if user_id is None:
             return False
@@ -597,7 +618,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return access
 
-    async def send_data(self, event):
+    async def send_data(self, event: dict) -> None:
         """Send data to the websocket.
 
         Args:
@@ -607,13 +628,16 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         data = event["data"]
         await self.send(text_data=json.dumps(data))
 
-    async def season_request(self):
+    async def season_request(self) -> Season | None:
         """Get the season of the match.
 
         Returns:
             The season of the match.
 
         """
+        if self.match is None:
+            return None
+
         try:
             return await Season.objects.aget(
                 start_date__lte=self.match.start_time,

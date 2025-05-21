@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 
 from apps.player.models import Player
@@ -9,7 +10,7 @@ from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
 
 
-def register_to_team(request, team_id):
+def register_to_team(request: HttpRequest, team_id: str) -> HttpResponse:
     """View for the team registration page.
 
     Args:
@@ -20,7 +21,7 @@ def register_to_team(request, team_id):
         HttpResponse: The response object.
 
     """
-    team = get_object_or_404(Team, id_uuid=team_id)
+    team: Team = get_object_or_404(Team, id_uuid=team_id)
     user = request.user
 
     try:
@@ -35,19 +36,19 @@ def register_to_team(request, team_id):
         )
 
     if user.is_authenticated:
-        player = Player.objects.get(user=user)
+        player: Player = Player.objects.get(user=user)
 
         try:
-            team_data = TeamData.objects.get(team=team, season=season)
+            team_data: TeamData = TeamData.objects.get(team=team, season=season)
         except TeamData.DoesNotExist:
             # get the coach of the previous season
             try:
-                previous_season = (
+                previous_season: Season | None = (
                     Season.objects.filter(end_date__lte=date.today())
                     .order_by("-end_date")
                     .first()
                 )
-                previous_team_data = TeamData.objects.get(
+                previous_team_data: TeamData | None = TeamData.objects.get(
                     team=team, season=previous_season
                 )
 

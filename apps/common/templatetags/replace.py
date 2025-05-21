@@ -7,7 +7,7 @@ register = template.Library()
 
 
 @register.filter
-def replace(value, arg):
+def replace(value: str, arg: str) -> str:
     """Replace all occurrences of a string in a value with another string.
 
     Args:

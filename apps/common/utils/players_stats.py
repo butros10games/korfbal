@@ -5,7 +5,7 @@ import json
 from apps.game_tracker.models import Shot
 
 
-async def players_stats(players, match_dataset):
+async def players_stats(players: list, match_dataset: list) -> str:
     """Return statistics of players in a match.
 
     Args:

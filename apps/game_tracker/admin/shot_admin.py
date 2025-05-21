@@ -16,7 +16,7 @@ class ShotAdminForm(forms.ModelForm):
         model = Shot
         fields = ["player", "match_data", "for_team", "team", "scored"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team
 

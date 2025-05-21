@@ -8,16 +8,18 @@ from uuidv7 import uuid7
 class Team(models.Model):
     """Model for Team."""
 
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
-    name = models.CharField(max_length=255)
-    club = models.ForeignKey(
+    id_uuid: models.UUIDField = models.UUIDField(
+        primary_key=True, default=uuid7, editable=False
+    )
+    name: models.CharField = models.CharField(max_length=255)
+    club: models.ForeignKey = models.ForeignKey(
         "club.Club", on_delete=models.CASCADE, related_name="teams"
     )
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return the string representation of the team."""
         return str(self.club.name) + " " + str(self.name)
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         """Return the absolute URL of the team."""
         return reverse("team_detail", kwargs={"team_id": self.id_uuid})

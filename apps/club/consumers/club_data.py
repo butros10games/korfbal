@@ -26,7 +26,7 @@ class TeamJSON(TypedDict):
 class ClubDataConsumer(AsyncWebsocketConsumer):
     """Websocket consumer for the club data."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Initialize the ClubDataConsumer."""
         super().__init__(*args, **kwargs)
         self.player: Player | None = None
@@ -171,7 +171,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "follow", "status": "success"})
         )
 
-    async def send_data(self, event):
+    async def send_data(self, event: dict[str, Any]) -> None:
         """Send data to the websocket.
 
         Args:

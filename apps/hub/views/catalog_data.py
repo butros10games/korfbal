@@ -1,16 +1,17 @@
 """Module contains the view for fetching data for the catalog page."""
 
+from collections.abc import Callable
 import json
 
-from django.db.models import Q
-from django.http import JsonResponse
+from django.db.models import BaseManager, Q
+from django.http import HttpRequest, JsonResponse
 
 from apps.club.models import Club
 from apps.player.models import Player
 from apps.team.models import Team
 
 
-def catalog_data(request):
+def catalog_data(request: HttpRequest) -> JsonResponse:
     """View for fetching data for the catalog page.
 
     Args:
@@ -67,7 +68,7 @@ def catalog_data(request):
     return JsonResponse(context)
 
 
-def connected_clubs_query(player):
+def connected_clubs_query(player: Player) -> BaseManager[Player]:
     """Get the clubs the player is connected to.
 
     Args:
@@ -82,7 +83,7 @@ def connected_clubs_query(player):
     ).distinct()
 
 
-def club_serializer(club):
+def club_serializer(club: Club) -> dict:
     """Serialize the club object.
 
     Args:
@@ -101,7 +102,7 @@ def club_serializer(club):
     }
 
 
-def connected_teams_query(player):
+def connected_teams_query(player: Player) -> BaseManager[Team]:
     """Get the teams the player is connected to.
 
     Args:
@@ -116,7 +117,7 @@ def connected_teams_query(player):
     ).distinct()
 
 
-def team_serializer(team):
+def team_serializer(team: Team) -> dict:
     """Serialize the team object.
 
     Args:
@@ -137,8 +138,11 @@ def team_serializer(team):
 
 
 def get_connected_and_following_objects(
-    player, connected_query, following_relation, serializer_func
-):
+    player: Player,
+    connected_query: Callable,
+    following_relation: str,
+    serializer_func: Callable,
+) -> tuple:
     """Get the connected and following objects for the player.
 
     Args:

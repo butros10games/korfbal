@@ -1,13 +1,14 @@
 """Module contains the view for the catalog page."""
 
 from django.db.models import Q
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
 from apps.player.models import Player
 from apps.team.models import Team
 
 
-def catalog(request):
+def catalog(request: HttpRequest) -> HttpResponse:
     """View for the catalog page.
 
     Args:
