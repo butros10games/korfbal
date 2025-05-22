@@ -100,7 +100,7 @@ def get_time_display(match_data: MatchData) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-async def get_time_display_pause(self, json_data: dict) -> None:
+async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
     """Get the time display for the pause.
 
     Args:
