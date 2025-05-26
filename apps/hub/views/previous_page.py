@@ -8,7 +8,7 @@ from apps.hub.models import PageConnectRegistration
 from apps.player.models import Player
 
 
-def previous_page(request: HttpRequest) -> HttpResponseRedirect | redirect:
+def previous_page(request: HttpRequest) -> HttpResponseRedirect:
     """View for navigating back to the previous page.
 
     Args:

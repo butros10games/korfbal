@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect
 
 from apps.player.models import Player
@@ -10,7 +10,7 @@ from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
 
 
-def register_to_team(request: HttpRequest, team_id: str) -> HttpResponse:
+def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect:
     """View for the team registration page.
 
     Args:

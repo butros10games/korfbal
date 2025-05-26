@@ -1,7 +1,7 @@
 """Module contains the view for the match team selector page."""
 
 from django.db.models import QuerySet
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.player.models import Player
@@ -9,7 +9,9 @@ from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
 
-def match_team_selector(request: HttpRequest, match_id: str) -> HttpResponse:
+def match_team_selector(
+    request: HttpRequest, match_id: str
+) -> HttpResponse | HttpResponseRedirect:
     """Render the match team selector page.
 
     Args:

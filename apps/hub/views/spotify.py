@@ -3,7 +3,7 @@
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import redirect
 from django.utils.timezone import now, timedelta
 import requests
@@ -17,7 +17,7 @@ SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
 
 
 @login_required
-def spotify_callback(request: HttpRequest) -> redirect | None:
+def spotify_callback(request: HttpRequest) -> HttpResponseRedirect | None:
     """Handle Spotify OAuth callback and save tokens."""
     # Get authorization code from the request
     code = request.GET.get("code")
