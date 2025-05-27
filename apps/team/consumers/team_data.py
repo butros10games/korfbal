@@ -50,6 +50,9 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             Exception: If an error occurs while processing the data.
 
         """
+        if text_data is None:
+            return
+
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
