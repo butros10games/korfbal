@@ -6,6 +6,7 @@ import traceback
 from asgiref.sync import sync_to_async
 from bg_auth.models import UserProfile
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.contrib.auth.models import User
 from django.db.models import Q
 
 from apps.common.utils import get_time_display_pause, transform_match_data
@@ -21,11 +22,11 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
     def __init__(self) -> None:
         """Initialize the ProfileDataConsumer."""
         super().__init__()
-        self.user = None
-        self.player = None
-        self.user_profile = None
-        self.teams = None
-        self.subscribed_channels = []
+        self.user: User = User()
+        self.player: Player = Player()
+        self.user_profile: UserProfile = UserProfile()
+        self.teams: list[Team] = []
+        self.subscribed_channels: list[str] = []
 
     async def connect(self) -> None:
         """Connect to the websocket."""
@@ -56,6 +57,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             bytes_data (bytes): The bytes data.
 
         """
+        if text_data is None:
+            return
+
         try:
             json_data = json.loads(text_data)
             command = json_data["command"]
@@ -64,6 +68,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 await self.player_stats_request()
 
             if command == "settings_request":
+                if not self.user or not self.user_profile:
+                    raise ValueError("User or UserProfile not found.")
+
                 await self.send(
                     text_data=json.dumps(
                         {
