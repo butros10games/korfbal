@@ -1,8 +1,8 @@
 """Module contains the PlayerGroup model."""
 
+from bg_uuidv7 import uuidv7
 from django.core.exceptions import ValidationError
 from django.db import models
-from uuidv7 import uuid7
 
 from .constants import player_model_string, team_model_string
 
@@ -11,7 +11,7 @@ class PlayerGroup(models.Model):
     """Model for a group of players in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     players: models.ManyToManyField = models.ManyToManyField(
         player_model_string, related_name="player_groups", blank=True

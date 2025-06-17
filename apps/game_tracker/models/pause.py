@@ -2,15 +2,15 @@
 
 from datetime import timedelta
 
+from bg_uuidv7 import uuidv7
 from django.db import models
-from uuidv7 import uuid7
 
 
 class Pause(models.Model):
     """Model for a pause in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     match_data: models.ForeignKey = models.ForeignKey(
         "MatchData", on_delete=models.CASCADE, related_name="pauses"

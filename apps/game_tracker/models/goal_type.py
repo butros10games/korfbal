@@ -1,14 +1,14 @@
 """Model for goal type."""
 
+from bg_uuidv7 import uuidv7
 from django.db import models
-from uuidv7 import uuid7
 
 
 class GoalType(models.Model):
     """Model for goal type."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     name: models.CharField = models.CharField(max_length=255, unique=True)
 

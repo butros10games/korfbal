@@ -1,7 +1,7 @@
 """Model for MatchData."""
 
+from bg_uuidv7 import uuidv7
 from django.db import models
-from uuidv7 import uuid7
 
 
 class MatchData(models.Model):
@@ -14,7 +14,7 @@ class MatchData(models.Model):
     ]
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     match_link: models.ForeignKey = models.ForeignKey(
         "schedule.Match", on_delete=models.CASCADE

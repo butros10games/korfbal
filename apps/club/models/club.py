@@ -1,15 +1,15 @@
 """Module contains the Club model."""
 
+from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
-from uuidv7 import uuid7
 
 
 class Club(models.Model):
     """Model for a club."""
 
-    id_uuid = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    id_uuid = models.UUIDField(primary_key=True, default=uuidv7, editable=False)
     name = models.CharField(max_length=255, unique=True)
     admin = models.ManyToManyField(
         "player.Player", through="ClubAdmin", related_name="clubs", blank=True

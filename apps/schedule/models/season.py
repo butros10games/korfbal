@@ -1,14 +1,14 @@
 """Model for a season."""
 
+from bg_uuidv7 import uuidv7
 from django.db import models
-from uuidv7 import uuid7
 
 
 class Season(models.Model):
     """Model for a season."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     name: models.CharField = models.CharField(max_length=255, unique=True)
     start_date: models.DateField = models.DateField()

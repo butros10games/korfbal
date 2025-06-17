@@ -1,7 +1,7 @@
 """Model for a page connect registration."""
 
+from bg_uuidv7 import uuidv7
 from django.db import models
-from uuidv7 import uuid7
 
 from .constants import player_model_string
 
@@ -10,7 +10,7 @@ class PageConnectRegistration(models.Model):
     """Model for a page connect registration for a player."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     player: models.ForeignKey = models.ForeignKey(
         player_model_string,

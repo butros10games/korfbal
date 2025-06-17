@@ -1,10 +1,10 @@
 """Module contains the Player model for the player app."""
 
+from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
 from django.urls import reverse
-from uuidv7 import uuid7
 
 from .constants import club_model_string, team_model_string
 
@@ -13,7 +13,7 @@ class Player(models.Model):
     """Model for Player."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuid7, editable=False
+        primary_key=True, default=uuidv7, editable=False
     )
     user: models.ForeignKey = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="players"

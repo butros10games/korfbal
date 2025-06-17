@@ -9,7 +9,7 @@ dependencies = [
 	"django_ratelimit",
 	"django-storages[boto3]",
 	"bg_auth",
-	"uuidv7",
+	"bg_uuidv7",
 	"django-phonenumber-field[phonenumbers]",
 	"python-dotenv",
 ]
@@ -44,7 +44,7 @@ dev = [
 
 [tool.uv.sources]
 django_cached_paginator = { index = "bg_server" }
-uuidv7 = { index = "bg_server" }
+bg_uuidv7 = { index = "bg_server" }
 django_authentication = { index = "bg_server" }
 django_mobile_detect = { index = "bg_server" }
 
