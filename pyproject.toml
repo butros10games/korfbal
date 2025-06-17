@@ -42,12 +42,17 @@ dev = [
 	"channels-redis",
 ]
 
-[tool.uv.sources]
-django_cached_paginator = { index = "bg_server" }
-bg_uuidv7 = { index = "bg_server" }
-django_authentication = { index = "bg_server" }
-django_mobile_detect = { index = "bg_server" }
-
 [[tool.uv.index]]
 name = "bg_server"
 url = "https://pypi.butrosgroot.com/simple/"
+
+[tool.setuptools.packages.find]
+where    = ["."]
+include  = ["korfbal", "korfbal.*", "apps.*"]
+exclude  = [
+  "docker",
+  "configs",
+  "templates",
+  "node_modules",
+  "static_workfile",
+]
