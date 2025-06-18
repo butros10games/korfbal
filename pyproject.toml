@@ -1,6 +1,6 @@
 [project]
 name = "KWT"
-dynamic = ["version"]
+version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
 	"django",
@@ -18,7 +18,7 @@ dependencies = [
 uwsgi = [
 	"Pillow",
 	"pyuwsgi",
-	"django_cached_paginator",
+	"bg-django-caching-paginator",
 	"redis",
 	"django-cryptography",
 	"django-prometheus",
@@ -32,7 +32,7 @@ daphne = [
 dev = [
 	"Pillow",
 	"pyuwsgi; sys_platform == 'linux'",
-	"django_cached_paginator",
+	"bg-django-caching-paginator",
 	"redis",
 	"django-cryptography",
 	"django-prometheus",
@@ -46,13 +46,13 @@ dev = [
 name = "bg_server"
 url = "https://pypi.butrosgroot.com/simple/"
 
-[tool.setuptools.packages.find]
-where    = ["."]
-include  = ["korfbal", "korfbal.*", "apps.*"]
-exclude  = [
-  "docker",
-  "configs",
-  "templates",
-  "node_modules",
-  "static_workfile",
-]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+packages = ["korfbal", "apps"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "korfbal.settings"
+python_files = ["test_*.py"]
