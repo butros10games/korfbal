@@ -1,11 +1,13 @@
 """Spotify OAuth2.0 flow and token refresh."""
 
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import redirect
-from django.utils.timezone import now, timedelta
+from django.utils.timezone import now
 import requests
 
 from apps.player.models import SpotifyToken
