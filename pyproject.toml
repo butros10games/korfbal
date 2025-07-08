@@ -5,7 +5,7 @@ requires-python = ">=3.13"
 dependencies = [
 	"django",
 	"psycopg2-binary",
-	"django_mobile_detect",
+	"bg-django-mobile-detector",
 	"django_ratelimit",
 	"django-storages[boto3]",
 	"bg_auth",

@@ -74,7 +74,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Third-party
-    "mobiledetect",
+    "bg_django_mobile_detector",
     "phonenumber_field",
     # Local apps
     "apps.club",
@@ -101,7 +101,7 @@ MIDDLEWARE = [
     "bg_auth.auth_backend.BlockAdminLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "mobiledetect.middleware.DetectMiddleware",
+    "bg_django_mobile_detector.middleware.DetectMiddleware",
     "apps.common.middleware.VisitorTrackingMiddleware",
 ]
 
