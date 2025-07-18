@@ -53,7 +53,5 @@ class Player(models.Model):
         """Return the profile picture of the player."""
         if self.profile_picture:
             return self.profile_picture.url
-        static_url: str = (
-            settings.STATIC_URL.removeprefix("/")
-        )
+        static_url: str = settings.STATIC_URL.removeprefix("/")
         return f"https://{static_url}images/player/blank-profile-picture.png"
