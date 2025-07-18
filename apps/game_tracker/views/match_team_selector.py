@@ -10,7 +10,8 @@ from apps.team.models import Team, TeamData
 
 
 def match_team_selector(
-    request: HttpRequest, match_id: str,
+    request: HttpRequest,
+    match_id: str,
 ) -> HttpResponse | HttpResponseRedirect:
     """Render the match team selector page.
 
@@ -55,7 +56,9 @@ def match_team_selector(
     # If the user is connected to only one team, redirect them to the tracker page
     if len(connected_teams) == 1:
         return redirect(
-            "match_tracker", match_id=match_id, team_id=connected_teams[0].id_uuid,
+            "match_tracker",
+            match_id=match_id,
+            team_id=connected_teams[0].id_uuid,
         )
 
     context: dict = {"match": match_data}

@@ -10,13 +10,19 @@ class Shot(models.Model):
     """Model for a shot in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     player: models.ForeignKey = models.ForeignKey(
-        player_model_string, on_delete=models.CASCADE, related_name="shots",
+        player_model_string,
+        on_delete=models.CASCADE,
+        related_name="shots",
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="shots",
+        "MatchData",
+        on_delete=models.CASCADE,
+        related_name="shots",
     )
     match_part: models.ForeignKey = models.ForeignKey(
         "MatchPart",
@@ -42,7 +48,9 @@ class Shot(models.Model):
         null=True,
     )
     time: models.DateTimeField = models.DateTimeField(
-        default=None, blank=True, null=True,
+        default=None,
+        blank=True,
+        null=True,
     )
 
     def __str__(self) -> str:

@@ -8,7 +8,9 @@ class Season(models.Model):
     """Model for a season."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     name: models.CharField = models.CharField(max_length=255, unique=True)
     start_date: models.DateField = models.DateField()

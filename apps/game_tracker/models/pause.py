@@ -10,10 +10,14 @@ class Pause(models.Model):
     """Model for a pause in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="pauses",
+        "MatchData",
+        on_delete=models.CASCADE,
+        related_name="pauses",
     )
     match_part: models.ForeignKey = models.ForeignKey(
         "MatchPart",
@@ -23,7 +27,9 @@ class Pause(models.Model):
         null=True,
     )
     start_time: models.DateTimeField = models.DateTimeField(
-        default=None, blank=True, null=True,
+        default=None,
+        blank=True,
+        null=True,
     )
     end_time: models.DateTimeField = models.DateTimeField(blank=True, null=True)
     active: models.BooleanField = models.BooleanField(default=False)

@@ -10,7 +10,9 @@ class PageConnectRegistration(models.Model):
     """Model for a page connect registration for a player."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     player: models.ForeignKey = models.ForeignKey(
         player_model_string,

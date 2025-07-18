@@ -38,7 +38,9 @@ def index(request: HttpRequest) -> HttpResponse:
         # get the match data of the matches
         match_data = (
             MatchData.objects.prefetch_related(
-                "match_link", "match_link__home_team", "match_link__away_team",
+                "match_link",
+                "match_link__home_team",
+                "match_link__away_team",
             )
             .filter(match_link__in=matches, status__in=["active", "upcoming"])
             .order_by("match_link__start_time")
@@ -63,14 +65,18 @@ def index(request: HttpRequest) -> HttpResponse:
         "time_display": get_time_display(match_data) if match_data else "",
         "home_score": (
             Shot.objects.filter(
-                match_data=match_data, team=match.home_team, scored=True,
+                match_data=match_data,
+                team=match.home_team,
+                scored=True,
             ).count()
             if match
             else 0
         ),
         "away_score": (
             Shot.objects.filter(
-                match_data=match_data, team=match.away_team, scored=True,
+                match_data=match_data,
+                team=match.away_team,
+                scored=True,
             ).count()
             if match
             else 0

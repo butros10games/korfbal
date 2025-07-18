@@ -47,12 +47,16 @@ async def transform_match_data(matches_data: list) -> list:
                 "home_team": await sync_to_async(home_team.__str__)(),
                 "home_team_logo": home_team.club.get_club_logo(),
                 "home_score": await Shot.objects.filter(
-                    match_data=match_data, team=home_team, scored=True,
+                    match_data=match_data,
+                    team=home_team,
+                    scored=True,
                 ).acount(),
                 "away_team": await sync_to_async(away_team.__str__)(),
                 "away_team_logo": away_team.club.get_club_logo(),
                 "away_score": await Shot.objects.filter(
-                    match_data=match_data, team=away_team, scored=True,
+                    match_data=match_data,
+                    team=away_team,
+                    scored=True,
                 ).acount(),
                 "start_date": formatted_date,
                 "start_time": formatted_time,

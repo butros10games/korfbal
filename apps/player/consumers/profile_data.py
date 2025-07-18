@@ -48,7 +48,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None,
+        self,
+        text_data: str | None = None,
+        bytes_data: bytes | None = None,
     ) -> None:
         """Receive the data from the websocket.
 
@@ -253,7 +255,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        matches_data = await sync_to_async(list)(
+        return await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -264,8 +266,6 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             .filter(match_link__in=matches_non_dub, status__in=status)
             .order_by(order + "match_link__start_time"),
         )
-
-        return matches_data
 
     async def send_data(self, event: dict) -> None:
         """Send data to the websocket.

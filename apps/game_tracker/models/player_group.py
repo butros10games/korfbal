@@ -11,22 +11,34 @@ class PlayerGroup(models.Model):
     """Model for a group of players in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     players: models.ManyToManyField = models.ManyToManyField(
-        player_model_string, related_name="player_groups", blank=True,
+        player_model_string,
+        related_name="player_groups",
+        blank=True,
     )
     team: models.ForeignKey = models.ForeignKey(
-        team_model_string, on_delete=models.CASCADE, related_name="player_groups",
+        team_model_string,
+        on_delete=models.CASCADE,
+        related_name="player_groups",
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="player_groups",
+        "MatchData",
+        on_delete=models.CASCADE,
+        related_name="player_groups",
     )
     starting_type: models.ForeignKey = models.ForeignKey(
-        "GroupType", on_delete=models.CASCADE, related_name="player_groups",
+        "GroupType",
+        on_delete=models.CASCADE,
+        related_name="player_groups",
     )
     current_type: models.ForeignKey = models.ForeignKey(
-        "GroupType", on_delete=models.CASCADE, related_name="current_player_groups",
+        "GroupType",
+        on_delete=models.CASCADE,
+        related_name="current_player_groups",
     )
 
     def __str__(self) -> str:
@@ -55,7 +67,8 @@ class PlayerGroup(models.Model):
 
         if self.starting_type.name != "Reserve":
             reserve_player_group = self.match_data.player_groups.get(
-                starting_type__name="Reserve", team=self.team,
+                starting_type__name="Reserve",
+                team=self.team,
             )
             for player in new_players:
                 if player in reserve_player_group.players.all():

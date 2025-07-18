@@ -39,7 +39,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None,
+        self,
+        text_data: str | None = None,
+        bytes_data: bytes | None = None,
     ) -> None:
         """Receive data from the websocket.
 
@@ -109,7 +111,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             order = "-"
 
         matches_data: list[MatchData] = await self.get_matches_data(
-            team_ids, status, order,
+            team_ids,
+            status,
+            order,
         )
         matches_dict = await transform_match_data(matches_data)
 
@@ -118,7 +122,10 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         )
 
     async def get_matches_data(
-        self, team_ids: list[str], status: list[str], order: str,
+        self,
+        team_ids: list[str],
+        status: list[str],
+        order: str,
     ) -> list[MatchData]:
         """Get the match data for the given teams and status.
 

@@ -3,7 +3,7 @@ websocket connection for the match data.
 """
 
 import contextlib
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 import traceback
 from uuid import UUID
@@ -41,13 +41,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """Connect to the websocket."""
         match_id = self.scope["url_route"]["kwargs"]["id"]
         self.match = await Match.objects.prefetch_related(
-            "home_team", "away_team",
+            "home_team",
+            "away_team",
         ).aget(id_uuid=match_id)
         self.match_data = await MatchData.objects.aget(match_link=self.match)
 
         with contextlib.suppress(MatchPart.DoesNotExist):
             self.current_part = await MatchPart.objects.aget(
-                match_data=self.match_data, active=True,
+                match_data=self.match_data,
+                active=True,
             )
 
         self.channel_names = [
@@ -66,7 +68,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None,
+        self,
+        text_data: str | None = None,
+        bytes_data: bytes | None = None,
     ) -> None:
         """Receive data from the websocket.
 
@@ -207,7 +211,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=player_stats)
 
     async def get_events(
-        self, event: str | None = None, user_id: UUID | None = None,
+        self,
+        event: str | None = None,
+        user_id: UUID | None = None,
     ) -> None:
         """Get the events for the match.
 
@@ -262,7 +268,10 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """Get all the events for the match."""
         goals = await sync_to_async(list)(
             Shot.objects.prefetch_related(
-                "player__user", "shot_type", "match_part", "team",
+                "player__user",
+                "shot_type",
+                "match_part",
+                "team",
             )
             .filter(match_data=self.match_data, scored=True)
             .order_by("time"),
@@ -299,7 +308,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             value = getattr(x, "start_time", None)
             if value is not None:
                 return value
-            return datetime.min  # fallback to minimum datetime for sorting
+            return datetime.min.replace(tzinfo=UTC)
 
         events.sort(key=event_time_key)
 
@@ -491,15 +500,17 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             item for sublist in team_data for item in sublist if item is not None
         ]
 
-        access = player.id_uuid in players_list
-        return access
+        return player.id_uuid in players_list
 
     async def makePlayerGroupList(self, team: Team) -> list[dict]:
         """Make a list of player groups for a team."""
         try:
             player_groups = await sync_to_async(list)(
                 PlayerGroup.objects.prefetch_related(
-                    "players", "players__user", "starting_type", "current_type",
+                    "players",
+                    "players__user",
+                    "starting_type",
+                    "current_type",
                 )
                 .filter(match_data=self.match_data, team=team)
                 .order_by("starting_type"),
@@ -519,14 +530,17 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
                 player_groups = await sync_to_async(list)(
                     PlayerGroup.objects.prefetch_related(
-                        "players", "players__user", "starting_type", "current_type",
+                        "players",
+                        "players__user",
+                        "starting_type",
+                        "current_type",
                     )
                     .filter(match_data=self.match_data, team=team)
                     .order_by("starting_type"),
                 )
 
             # make it a json parsable string
-            player_groups_array = [
+            return [
                 {
                     "id": str(player_group.id_uuid),
                     "players": [
@@ -542,16 +556,10 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 for player_group in player_groups
             ]
 
-            return player_groups_array
-
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {
-                        "error": str(e),
-                        "traceback": traceback.format_exc(),
-                        "player_groups": player_groups,
-                    },
+                    {"error": str(e), "traceback": traceback.format_exc()},
                 ),
             )
 
@@ -585,9 +593,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 pass
 
         # remove duplicates
-        players_json = [dict(t) for t in {tuple(d.items()) for d in players_json}]
-
-        return players_json
+        return [dict(t) for t in {tuple(d.items()) for d in players_json}]
 
     async def checkIfAccess(self, user_id: UUID | None, team: Team) -> bool:
         """Check if the user has access to the team."""

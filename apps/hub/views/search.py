@@ -1,10 +1,9 @@
 """Search view for searching teams and clubs."""
 
-from datetime import date
-
 from django.db.models import F, Value
 from django.db.models.functions import Concat
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 
 from apps.club.models import Club
 from apps.schedule.models import Season
@@ -18,7 +17,7 @@ def get_current_season() -> Season | None:
         Season: The current season.
 
     """
-    today = date.today()
+    today = timezone.now().date()
     # Attempt to find the current season
     season = Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
     # If not found, look for the next upcoming season

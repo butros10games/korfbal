@@ -1,9 +1,8 @@
 """Module contains the view for the team detail page."""
 
-from datetime import date
-
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 
 from apps.player.models import Player
 from apps.schedule.models import Season
@@ -23,12 +22,13 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
     """
     team: Team = get_object_or_404(Team, id_uuid=team_id)
 
-    # Get current date
-    today = date.today()
+    # Get current date (timezone-aware)
+    today = timezone.now().date()
 
     # Find the current season
     current_season: Season | None = Season.objects.filter(
-        start_date__lte=today, end_date__gte=today,
+        start_date__lte=today,
+        end_date__gte=today,
     ).first()
 
     # If current season is not found, then find the next season
@@ -45,7 +45,8 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
         raise Http404("No active season found")
 
     team_data: TeamData | None = TeamData.objects.filter(
-        team=team, season=current_season,
+        team=team,
+        season=current_season,
     ).first()
 
     user_request = request.user

@@ -10,10 +10,14 @@ class Timeout(models.Model):
     """Model for a timeout in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="timeouts",
+        "MatchData",
+        on_delete=models.CASCADE,
+        related_name="timeouts",
     )
     match_part: models.ForeignKey = models.ForeignKey(
         "MatchPart",

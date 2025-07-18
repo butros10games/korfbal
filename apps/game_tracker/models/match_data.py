@@ -14,10 +14,13 @@ class MatchData(models.Model):
     ]
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     match_link: models.ForeignKey = models.ForeignKey(
-        "schedule.Match", on_delete=models.CASCADE,
+        "schedule.Match",
+        on_delete=models.CASCADE,
     )
     home_score: models.IntegerField = models.IntegerField(default=0)
     away_score: models.IntegerField = models.IntegerField(default=0)
@@ -25,7 +28,9 @@ class MatchData(models.Model):
     current_part: models.IntegerField = models.IntegerField(default=1)
     part_length: models.IntegerField = models.IntegerField(default=1800)
     status: models.CharField = models.CharField(
-        max_length=10, choices=STATUS_CHOICES, default="upcoming",
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default="upcoming",
     )
 
     def __str__(self) -> str:

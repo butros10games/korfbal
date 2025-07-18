@@ -9,11 +9,15 @@ class Team(models.Model):
     """Model for Team."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     name: models.CharField = models.CharField(max_length=255)
     club: models.ForeignKey = models.ForeignKey(
-        "club.Club", on_delete=models.CASCADE, related_name="teams",
+        "club.Club",
+        on_delete=models.CASCADE,
+        related_name="teams",
     )
 
     def __str__(self) -> str:

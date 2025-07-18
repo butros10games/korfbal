@@ -21,16 +21,26 @@ async def players_stats(players: list, match_dataset: list) -> str:
         player_stats = {
             "username": player.user.username,
             "shots_for": await Shot.objects.filter(
-                match_data__in=match_dataset, player=player, for_team=True,
+                match_data__in=match_dataset,
+                player=player,
+                for_team=True,
             ).acount(),
             "shots_against": await Shot.objects.filter(
-                match_data__in=match_dataset, player=player, for_team=False,
+                match_data__in=match_dataset,
+                player=player,
+                for_team=False,
             ).acount(),
             "goals_for": await Shot.objects.filter(
-                match_data__in=match_dataset, player=player, for_team=True, scored=True,
+                match_data__in=match_dataset,
+                player=player,
+                for_team=True,
+                scored=True,
             ).acount(),
             "goals_against": await Shot.objects.filter(
-                match_data__in=match_dataset, player=player, for_team=False, scored=True,
+                match_data__in=match_dataset,
+                player=player,
+                for_team=False,
+                scored=True,
             ).acount(),
         }
 

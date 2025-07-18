@@ -2,13 +2,13 @@
 data page.
 """
 
-from datetime import datetime
 import json
 import traceback
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.common.utils import (
     general_stats,
@@ -38,7 +38,9 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None,
+        self,
+        text_data: str | None = None,
+        bytes_data: bytes | None = None,
     ) -> None:
         """Receive the data from the websocket.
 
@@ -164,7 +166,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # Get all TeamData instances for the specified team and season
             team_data_instances = await sync_to_async(list)(
                 TeamData.objects.prefetch_related("players").filter(
-                    team=self.team, season=season,
+                    team=self.team,
+                    season=season,
                 ),
             )
 
@@ -180,11 +183,12 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # last season if there is no current season
             try:
                 current_season = await Season.objects.aget(
-                    start_date__lte=datetime.now(), end_date__gte=datetime.now(),
+                    start_date__lte=timezone.now().date(),
+                    end_date__gte=timezone.now().date(),
                 )
             except Season.DoesNotExist:
                 current_season = (
-                    await Season.objects.filter(end_date__lte=datetime.now())
+                    await Season.objects.filter(end_date__lte=timezone.now().date())
                     .order_by("-end_date")
                     .afirst()
                 )
@@ -192,7 +196,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # Get the team data instances for the current season
             all_team_data_instances = await sync_to_async(list)(
                 TeamData.objects.prefetch_related("players").filter(
-                    team=self.team, season=current_season,
+                    team=self.team,
+                    season=current_season,
                 ),
             )
 
@@ -264,7 +269,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        matches_data = await sync_to_async(list)(
+        return await sync_to_async(list)(
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -278,8 +283,6 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             )
             .order_by(order + "match_link__start_time"),
         )
-
-        return matches_data
 
     async def send_data(self, event: dict) -> None:
         """Send data to the websocket.

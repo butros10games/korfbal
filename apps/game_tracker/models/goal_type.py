@@ -8,7 +8,9 @@ class GoalType(models.Model):
     """Model for goal type."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     name: models.CharField = models.CharField(max_length=255, unique=True)
 

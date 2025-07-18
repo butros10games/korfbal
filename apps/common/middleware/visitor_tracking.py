@@ -22,7 +22,8 @@ class VisitorTrackingMiddleware:
             try:
                 player = Player.objects.get(user=request.user)
                 page, created = PageConnectRegistration.objects.get_or_create(
-                    player=player, page=request.path,
+                    player=player,
+                    page=request.path,
                 )
 
                 if not created:
@@ -38,8 +39,4 @@ class VisitorTrackingMiddleware:
                 # Handle the case where the player does not exist
                 pass
 
-        # Pass the request to the next middleware or view
-        response = self.get_response(request)
-
-        # Return the response
-        return response
+        return self.get_response(request)

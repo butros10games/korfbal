@@ -31,7 +31,9 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
         # time of the pause
         try:
             active_pause = await Pause.objects.aget(
-                match_data=match_data, active=True, match_part=current_part,
+                match_data=match_data,
+                active=True,
+                match_part=current_part,
             )
         except Pause.DoesNotExist:
             active_pause = False
@@ -39,7 +41,9 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
         # calculate all the time in pauses that are not active anymore
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
-                match_data=match_data, active=False, match_part=current_part,
+                match_data=match_data,
+                active=False,
+                match_part=current_part,
             ),
         )
         pause_time = 0
@@ -115,7 +119,8 @@ async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
     # Subscribe to time data channel
     if match_data.match_link.id_uuid not in self.subscribed_channels:
         await self.channel_layer.group_add(
-            f"time_match_{match_data.match_link.id_uuid}", self.channel_name,
+            f"time_match_{match_data.match_link.id_uuid}",
+            self.channel_name,
         )
 
         self.subscribed_channels.append(match_data.match_link.id_uuid)

@@ -97,7 +97,8 @@ def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     # remove the players that are already in a player group
     players = team_data.players.all()
     player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_data), team=team_model,
+        match_data=MatchData.objects.get(match_link=match_data),
+        team=team_model,
     )
 
     for player_group in player_groups:
@@ -158,7 +159,8 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     player_name = request.GET.get("search")
 
     player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_data), team=team_model,
+        match_data=MatchData.objects.get(match_link=match_data),
+        team=team_model,
     )
 
     players = Player.objects.filter(user__username__icontains=player_name).exclude(

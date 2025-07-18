@@ -8,10 +8,14 @@ class MatchPart(models.Model):
     """Model for a part of a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False,
+        primary_key=True,
+        default=uuidv7,
+        editable=False,
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="match_parts",
+        "MatchData",
+        on_delete=models.CASCADE,
+        related_name="match_parts",
     )
     part_number: models.IntegerField = models.IntegerField()
     start_time: models.DateTimeField = models.DateTimeField()
