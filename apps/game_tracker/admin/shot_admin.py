@@ -21,7 +21,7 @@ class ShotAdminForm(forms.ModelForm):
         from apps.team.models import Team
 
         super().__init__(*args, **kwargs)
-        if "instance" in kwargs and kwargs["instance"]:
+        if kwargs.get("instance"):
             match = kwargs["instance"].match_data.match_link
             self.fields["team"].queryset = Team.objects.filter(
                 Q(home_matches=match) | Q(away_matches=match),

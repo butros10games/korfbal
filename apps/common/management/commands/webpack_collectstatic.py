@@ -22,9 +22,9 @@ class Command(BaseCommand):
         self.stdout.write("Files copied.")
 
         self.stdout.write("Running Webpack...")
-        call(["npx", "webpack", "--config", "webpack.config.js"])  # noqa: S603, S607
+        call(["npx", "webpack", "--config", "webpack.config.js"])  # noqa: S607
         self.stdout.write("Webpack build completed.")
 
         self.stdout.write("Collecting static files...")
-        call(["python", "manage.py", "collectstatic", "--noinput"])  # noqa: S603, S607
+        call(["python", "manage.py", "collectstatic", "--noinput"])  # noqa: S607
         self.stdout.write("Static files collected.")

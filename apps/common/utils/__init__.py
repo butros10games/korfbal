@@ -8,9 +8,9 @@ from .transform_match_data import transform_match_data
 
 __all__ = [
     "general_stats",
+    "get_time",
+    "get_time_display",
+    "get_time_display_pause",
     "players_stats",
     "transform_match_data",
-    "get_time_display",
-    "get_time",
-    "get_time_display_pause",
 ]

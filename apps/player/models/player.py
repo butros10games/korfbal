@@ -54,8 +54,6 @@ class Player(models.Model):
         if self.profile_picture:
             return self.profile_picture.url
         static_url: str = (
-            settings.STATIC_URL[1:]
-            if settings.STATIC_URL.startswith("/")
-            else settings.STATIC_URL
+            settings.STATIC_URL.removeprefix("/")
         )
         return f"https://{static_url}images/player/blank-profile-picture.png"

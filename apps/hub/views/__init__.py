@@ -8,9 +8,9 @@ from .search import search
 
 
 __all__ = [
-    "index",
     "catalog",
     "catalog_data",
-    "search",
+    "index",
     "previous_page",
+    "search",
 ]

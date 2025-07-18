@@ -16,9 +16,9 @@ __all__ = [
     "match_detail",
     "match_team_selector",
     "match_tracker",
-    "player_overview",
-    "player_search",
     "player_designation",
+    "player_overview",
     "player_overview_data",
+    "player_search",
     "players_team",
 ]
