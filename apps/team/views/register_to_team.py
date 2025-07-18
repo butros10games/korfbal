@@ -26,7 +26,7 @@ def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect
 
     try:
         season = Season.objects.get(
-            start_date__lte=date.today(), end_date__gte=date.today()
+            start_date__lte=date.today(), end_date__gte=date.today(),
         )
     except Season.DoesNotExist:
         season = (
@@ -49,7 +49,7 @@ def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect
                     .first()
                 )
                 previous_team_data: TeamData | None = TeamData.objects.get(
-                    team=team, season=previous_season
+                    team=team, season=previous_season,
                 )
 
                 team_data = TeamData.objects.create(team=team, season=season)
@@ -60,5 +60,4 @@ def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect
         team_data.players.add(player)
 
         return redirect("teams")
-    else:
-        return redirect(f"/login/?next=/register_to_team/{team_id}/")
+    return redirect(f"/login/?next=/register_to_team/{team_id}/")

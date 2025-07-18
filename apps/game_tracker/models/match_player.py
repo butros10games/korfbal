@@ -10,16 +10,16 @@ class MatchPlayer(models.Model):
     """Model for a player in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False
+        primary_key=True, default=uuidv7, editable=False,
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="players"
+        "MatchData", on_delete=models.CASCADE, related_name="players",
     )
     team: models.ForeignKey = models.ForeignKey(
-        team_model_string, on_delete=models.CASCADE, related_name="match_players"
+        team_model_string, on_delete=models.CASCADE, related_name="match_players",
     )
     player: models.ForeignKey = models.ForeignKey(
-        player_model_string, on_delete=models.CASCADE, related_name="match_players"
+        player_model_string, on_delete=models.CASCADE, related_name="match_players",
     )
 
     def __str__(self) -> str:

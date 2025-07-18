@@ -9,7 +9,7 @@ from apps.player.models import Player
 
 @receiver(post_save, sender=User)
 def create_player_for_new_user(
-    sender: User, instance: User, created: bool, **kwargs: dict[str, str] | None
+    sender: User, instance: User, created: bool, **kwargs: dict[str, str] | None,
 ) -> None:
     """Create a Player instance when a new user is created.
 

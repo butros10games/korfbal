@@ -26,7 +26,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
         player = Player.objects.get(user=user)
 
         connected_teams = Team.objects.filter(
-            Q(team_data__players=player) | Q(team_data__coach=player)
+            Q(team_data__players=player) | Q(team_data__coach=player),
         ).distinct()
 
         # Get all teams the user is following

@@ -79,7 +79,7 @@ def connected_clubs_query(player: Player) -> BaseManager[Player]:
 
     """
     return Club.objects.filter(
-        Q(teams__team_data__players=player) | Q(teams__team_data__coach=player)
+        Q(teams__team_data__players=player) | Q(teams__team_data__coach=player),
     ).distinct()
 
 
@@ -113,7 +113,7 @@ def connected_teams_query(player: Player) -> BaseManager[Team]:
 
     """
     return Team.objects.filter(
-        Q(team_data__players=player) | Q(team_data__coach=player)
+        Q(team_data__players=player) | Q(team_data__coach=player),
     ).distinct()
 
 
@@ -157,7 +157,7 @@ def get_connected_and_following_objects(
     """
     connected_objs = connected_query(player)
     following_objs = getattr(player, following_relation).exclude(
-        id_uuid__in=connected_objs
+        id_uuid__in=connected_objs,
     )
 
     connected_list = [serializer_func(obj) for obj in connected_objs]

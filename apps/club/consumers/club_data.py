@@ -39,7 +39,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None
+        self, text_data: str | None = None, bytes_data: bytes | None = None,
     ) -> None:
         """Receive data from the websocket.
 
@@ -71,7 +71,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
     async def teams_request(self) -> None:
         """Send the teams data to the client."""
         teams: list[Team] = await sync_to_async(list)(
-            Team.objects.filter(club=self.club)
+            Team.objects.filter(club=self.club),
         )
         teams = list(dict.fromkeys(teams))  # Remove duplicates
 
@@ -95,7 +95,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
         """
         teams: list[Team] = await sync_to_async(list)(
-            Team.objects.filter(club=self.club)
+            Team.objects.filter(club=self.club),
         )
         team_ids: list[str] = [str(team.id_uuid) for team in teams]
 
@@ -109,16 +109,16 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             order = "-"
 
         matches_data: list[MatchData] = await self.get_matches_data(
-            team_ids, status, order
+            team_ids, status, order,
         )
         matches_dict = await transform_match_data(matches_data)
 
         await self.send(
-            text_data=json.dumps({"command": "matches", "matches": matches_dict})
+            text_data=json.dumps({"command": "matches", "matches": matches_dict}),
         )
 
     async def get_matches_data(
-        self, team_ids: list[str], status: list[str], order: str
+        self, team_ids: list[str], status: list[str], order: str,
     ) -> list[MatchData]:
         """Get the match data for the given teams and status.
 
@@ -133,8 +133,8 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         """
         matches: list[Match] = await sync_to_async(list)(
             Match.objects.filter(
-                Q(home_team__in=team_ids) | Q(away_team__in=team_ids)
-            ).distinct()
+                Q(home_team__in=team_ids) | Q(away_team__in=team_ids),
+            ).distinct(),
         )
         matches_non_dub: list[Match] = list(dict.fromkeys(matches))
 
@@ -147,7 +147,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
                 "match_link__away_team__club",
             )
             .filter(match_link__in=matches_non_dub, status__in=status)
-            .order_by(order + "match_link__start_time")
+            .order_by(order + "match_link__start_time"),
         )
 
         return matches_data
@@ -168,7 +168,7 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             await sync_to_async(player.club_follow.remove)(self.club)
 
         await self.send(
-            text_data=json.dumps({"command": "follow", "status": "success"})
+            text_data=json.dumps({"command": "follow", "status": "success"}),
         )
 
     async def send_data(self, event: dict[str, Any]) -> None:

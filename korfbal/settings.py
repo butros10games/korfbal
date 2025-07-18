@@ -17,7 +17,7 @@ def get_bool_env(env_key: str, default: bool = False) -> bool:
 
 
 def get_list_env(
-    env_key: str, default: list[str] | None = None, delimiter: str = ","
+    env_key: str, default: list[str] | None = None, delimiter: str = ",",
 ) -> list[str]:
     """Split the environment variable by the given delimiter and return as a list.
     If the env variable is not set, return the default list.
@@ -44,7 +44,7 @@ DEBUG = get_bool_env("DEBUG", default=False)
 
 ALLOWED_HOSTS = get_list_env("ALLOWED_HOSTS", default=["korfbal.butrosgroot.com"])
 CSRF_TRUSTED_ORIGINS = get_list_env(
-    "CSRF_TRUSTED_ORIGINS", default=["https://korfbal.butrosgroot.com"]
+    "CSRF_TRUSTED_ORIGINS", default=["https://korfbal.butrosgroot.com"],
 )
 
 if DEBUG:
@@ -155,7 +155,7 @@ CHANNEL_LAYERS = {
                 (
                     os.getenv("REDIS_HOST", "127.0.0.1"),
                     int(os.getenv("REDIS_PORT", "6379")),
-                )
+                ),
             ],
             "capacity": 100,
             "expiry": 60,
@@ -179,7 +179,7 @@ DATABASES = {
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST"),
         "PORT": os.getenv("POSTGRES_PORT"),
-    }
+    },
 }
 
 # ------------------------------------------------------------------------------
@@ -196,7 +196,7 @@ CACHES = {
             f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:"
             f"{os.getenv('REDIS_PORT', '6379')}/1"
         ),
-    }
+    },
 }
 
 # ------------------------------------------------------------------------------

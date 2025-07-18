@@ -32,23 +32,23 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         """Connect to the websocket."""
         player_id = self.scope["url_route"]["kwargs"]["id"]
         self.player = await Player.objects.prefetch_related("user").aget(
-            id_uuid=player_id
+            id_uuid=player_id,
         )
         self.user = self.player.user
         self.user_profile = await UserProfile.objects.aget(user=self.user)
         self.teams = await sync_to_async(list)(
-            Team.objects.filter(team_data__players=self.player).distinct()
+            Team.objects.filter(team_data__players=self.player).distinct(),
         )
 
         self.team_data = await sync_to_async(
             TeamData.objects.filter(
-                Q(players=self.player) | Q(coach=self.player)
-            ).distinct
+                Q(players=self.player) | Q(coach=self.player),
+            ).distinct,
         )()
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None
+        self, text_data: str | None = None, bytes_data: bytes | None = None,
     ) -> None:
         """Receive the data from the websocket.
 
@@ -80,8 +80,8 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                             "first_name": self.user.first_name,
                             "last_name": self.user.last_name,
                             "email_2fa": self.user_profile.email_2fa,
-                        }
-                    )
+                        },
+                    ),
                 )
 
             if command == "settings_update":
@@ -102,8 +102,8 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()}
-                )
+                    {"error": str(e), "traceback": traceback.format_exc()},
+                ),
             )
 
     async def player_stats_request(self) -> None:
@@ -154,8 +154,8 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                     "played_matches": len(all_finished_match_data),
                     "total_goals_for": total_goals_for,
                     "total_goals_against": total_goals_against,
-                }
-            )
+                },
+            ),
         )
 
     async def settings_update_request(self, data: dict) -> None:
@@ -197,8 +197,8 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             # Send a response back to the client if needed
             await self.send(
                 text_data=json.dumps(
-                    {"command": "profile_picture_updated", "status": "success"}
-                )
+                    {"command": "profile_picture_updated", "status": "success"},
+                ),
             )
 
     async def teams_request(self) -> None:
@@ -230,7 +230,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         matches_dict = await transform_match_data(matches_data)
 
         await self.send(
-            text_data=json.dumps({"command": "matches", "matches": matches_dict})
+            text_data=json.dumps({"command": "matches", "matches": matches_dict}),
         )
 
     async def get_matches_data(self, status: list, order: str) -> list:
@@ -247,8 +247,8 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         matches = await sync_to_async(list)(
             Match.objects.filter(
                 Q(home_team__team_data__in=self.team_data)
-                | Q(away_team__team_data__in=self.team_data)
-            ).distinct()
+                | Q(away_team__team_data__in=self.team_data),
+            ).distinct(),
         )
 
         matches_non_dub = list(dict.fromkeys(matches))
@@ -262,7 +262,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                 "match_link__away_team__club",
             )
             .filter(match_link__in=matches_non_dub, status__in=status)
-            .order_by(order + "match_link__start_time")
+            .order_by(order + "match_link__start_time"),
         )
 
         return matches_data

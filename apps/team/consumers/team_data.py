@@ -38,7 +38,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None
+        self, text_data: str | None = None, bytes_data: bytes | None = None,
     ) -> None:
         """Receive the data from the websocket.
 
@@ -81,8 +81,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()}
-                )
+                    {"error": str(e), "traceback": traceback.format_exc()},
+                ),
             )
 
     async def matches_request(self, command: str) -> None:
@@ -100,14 +100,14 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         matches_dict = await transform_match_data(matches_data)
 
         await self.send(
-            text_data=json.dumps({"command": "matches", "matches": matches_dict})
+            text_data=json.dumps({"command": "matches", "matches": matches_dict}),
         )
 
     async def team_stats_general_request(self) -> None:
         """Handle the request for general team statistics."""
         # get a list of all the matches of the team
         matches = await sync_to_async(list)(
-            Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
+            Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)),
         )
 
         match_dataset = await sync_to_async(list)(
@@ -115,7 +115,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 "match_link",
                 "match_link__home_team",
                 "match_link__away_team",
-            ).filter(match_link__in=matches)
+            ).filter(match_link__in=matches),
         )
 
         general_stats_json = await general_stats(match_dataset)
@@ -128,15 +128,15 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         players = await sync_to_async(list)(
             Player.objects.prefetch_related("user")
             .filter(team_data_as_player__team=self.team)
-            .distinct()
+            .distinct(),
         )
 
         matches = await sync_to_async(list)(
-            Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team))
+            Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)),
         )
 
         match_dataset = await sync_to_async(list)(
-            MatchData.objects.filter(match_link__in=matches)
+            MatchData.objects.filter(match_link__in=matches),
         )
 
         player_stats = await players_stats(players, match_dataset)
@@ -164,15 +164,15 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # Get all TeamData instances for the specified team and season
             team_data_instances = await sync_to_async(list)(
                 TeamData.objects.prefetch_related("players").filter(
-                    team=self.team, season=season
-                )
+                    team=self.team, season=season,
+                ),
             )
 
             # Iterate through the TeamData instances and collect players
             for team_data_instance in team_data_instances:
                 all_players = await sync_to_async(team_data_instance.players.all)()
                 players_prefetch = await sync_to_async(all_players.prefetch_related)(
-                    "user"
+                    "user",
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
         else:
@@ -180,7 +180,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # last season if there is no current season
             try:
                 current_season = await Season.objects.aget(
-                    start_date__lte=datetime.now(), end_date__gte=datetime.now()
+                    start_date__lte=datetime.now(), end_date__gte=datetime.now(),
                 )
             except Season.DoesNotExist:
                 current_season = (
@@ -192,15 +192,15 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             # Get the team data instances for the current season
             all_team_data_instances = await sync_to_async(list)(
                 TeamData.objects.prefetch_related("players").filter(
-                    team=self.team, season=current_season
-                )
+                    team=self.team, season=current_season,
+                ),
             )
 
             # Iterate through all TeamData instances and collect players
             for team_data_instance in all_team_data_instances:
                 all_players = await sync_to_async(team_data_instance.players.all)()
                 players_prefetch = await sync_to_async(all_players.prefetch_related)(
-                    "user"
+                    "user",
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
 
@@ -221,8 +221,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 {
                     "command": "players",
                     "players": players_in_team_season_dict,
-                }
-            )
+                },
+            ),
         )
 
     async def follow_request(self, follow: bool, user_id: str) -> None:
@@ -242,7 +242,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             await player.team_follow.aremove(self.team)
 
         await self.send(
-            text_data=json.dumps({"command": "follow", "status": "success"})
+            text_data=json.dumps({"command": "follow", "status": "success"}),
         )
 
     async def get_matches_data(self, status: list, order: str) -> list:
@@ -258,8 +258,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         """
         matches = await sync_to_async(list)(
             Match.objects.filter(
-                Q(home_team=self.team) | Q(away_team=self.team)
-            ).distinct()
+                Q(home_team=self.team) | Q(away_team=self.team),
+            ).distinct(),
         )
 
         matches_non_dub = list(dict.fromkeys(matches))
@@ -276,7 +276,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 match_link__in=matches_non_dub,
                 status__in=status,
             )
-            .order_by(order + "match_link__start_time")
+            .order_by(order + "match_link__start_time"),
         )
 
         return matches_data

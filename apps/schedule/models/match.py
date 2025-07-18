@@ -11,7 +11,7 @@ class Match(models.Model):
     """Model for Match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False
+        primary_key=True, default=uuidv7, editable=False,
     )
     home_team: models.ForeignKey = models.ForeignKey(
         team_model_string,

@@ -97,7 +97,7 @@ def search(request: HttpRequest) -> JsonResponse:
         # Annotate teams with full name (club name + team name) and
         # filter by search term
         teams = Team.objects.annotate(
-            full_name=Concat(F("club__name"), Value(" "), F("name"))
+            full_name=Concat(F("club__name"), Value(" "), F("name")),
         ).filter(full_name__icontains=search_term)
 
         # Serialize each team and add to results

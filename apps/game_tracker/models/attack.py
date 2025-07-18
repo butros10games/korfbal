@@ -10,10 +10,10 @@ class Attack(models.Model):
     """Model for a timeout in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False
+        primary_key=True, default=uuidv7, editable=False,
     )
     match_data: models.ForeignKey = models.ForeignKey(
-        "MatchData", on_delete=models.CASCADE, related_name="attacks"
+        "MatchData", on_delete=models.CASCADE, related_name="attacks",
     )
     match_part: models.ForeignKey = models.ForeignKey(
         "MatchPart",
@@ -28,7 +28,7 @@ class Attack(models.Model):
         null=True,
     )
     time: models.DateTimeField = models.DateTimeField(
-        default=None, blank=True, null=True
+        default=None, blank=True, null=True,
     )
 
     def __str__(self) -> str:

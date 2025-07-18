@@ -22,7 +22,7 @@ class VisitorTrackingMiddleware:
             try:
                 player = Player.objects.get(user=request.user)
                 page, created = PageConnectRegistration.objects.get_or_create(
-                    player=player, page=request.path
+                    player=player, page=request.path,
                 )
 
                 if not created:

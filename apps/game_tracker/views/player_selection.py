@@ -64,14 +64,14 @@ def player_overview_data(_: HttpRequest, match_id: str, team_id: str) -> JsonRes
                     "id_uuid": str(player.id_uuid),
                     "user": {"username": player.user.username},
                     "get_profile_picture": player.get_profile_picture(),
-                }
+                },
             )
         player_groups_data.append(
             {
                 "id_uuid": str(player_group.id_uuid),
                 "starting_type": {"name": player_group.starting_type.name},
                 "players": players_data,
-            }
+            },
         )
 
     return JsonResponse({"player_groups": player_groups_data})
@@ -97,7 +97,7 @@ def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     # remove the players that are already in a player group
     players = team_data.players.all()
     player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_data), team=team_model
+        match_data=MatchData.objects.get(match_link=match_data), team=team_model,
     )
 
     for player_group in player_groups:
@@ -112,8 +112,8 @@ def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
                     "get_profile_picture": player.get_profile_picture(),
                 }
                 for player in players
-            ]
-        }
+            ],
+        },
     )
 
 
@@ -140,7 +140,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
             {
                 "success": False,
                 "error": "Player name should be at least 3 characters long",
-            }
+            },
         )
 
     if len(request.GET.get("search")) > 50:
@@ -148,7 +148,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
             {
                 "success": False,
                 "error": "Player name should be at most 50 characters long",
-            }
+            },
         )
 
     match_data = get_object_or_404(Match, id_uuid=match_id)
@@ -158,7 +158,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     player_name = request.GET.get("search")
 
     player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_data), team=team_model
+        match_data=MatchData.objects.get(match_link=match_data), team=team_model,
     )
 
     players = Player.objects.filter(user__username__icontains=player_name).exclude(
@@ -166,7 +166,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
             player.id_uuid
             for player_group in player_groups
             for player in player_group.players.all()
-        ]
+        ],
     )
 
     # return the players that are found in json format
@@ -179,8 +179,8 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
                     "get_profile_picture": player.get_profile_picture(),
                 }
                 for player in players
-            ]
-        }
+            ],
+        },
     )
 
 
@@ -224,7 +224,7 @@ def player_designation(request: HttpRequest) -> JsonResponse:
 
         if old_group_id:
             PlayerGroup.objects.get(id_uuid=old_group_id).players.remove(
-                Player.objects.get(id_uuid=player_id)
+                Player.objects.get(id_uuid=player_id),
             )
 
         if new_group_id:
@@ -250,5 +250,5 @@ def _get_player_groups(match_id: str, team_id: str) -> BaseManager[PlayerGroup]:
     match_data = MatchData.objects.get(match_link=match_model)
 
     return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by(
-        "starting_type__order"
+        "starting_type__order",
     )

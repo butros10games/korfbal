@@ -34,10 +34,10 @@ def match_tracker(request: HttpRequest, match_id: str, team_id: str) -> HttpResp
 
     # calculate the score for both the teams
     team_1_score: int = Shot.objects.filter(
-        match_data=match_data, team=team_data, scored=True
+        match_data=match_data, team=team_data, scored=True,
     ).count()
     team_2_score: int = Shot.objects.filter(
-        match_data=match_data, team=opponent_data, scored=True
+        match_data=match_data, team=opponent_data, scored=True,
     ).count()
 
     # Check if the "aanval" and "verdediging" playerGroups are created for the both
@@ -48,7 +48,7 @@ def match_tracker(request: HttpRequest, match_id: str, team_id: str) -> HttpResp
     for team_name in team_names:
         for group_name in player_group_names:
             PlayerGroup.objects.get_or_create(
-                team=team_name, match_data=match_data, starting_type__name=group_name
+                team=team_name, match_data=match_data, starting_type__name=group_name,
             )
 
     button_text: str = "Start"

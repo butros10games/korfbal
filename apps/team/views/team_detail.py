@@ -28,7 +28,7 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
 
     # Find the current season
     current_season: Season | None = Season.objects.filter(
-        start_date__lte=today, end_date__gte=today
+        start_date__lte=today, end_date__gte=today,
     ).first()
 
     # If current season is not found, then find the next season
@@ -45,7 +45,7 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
         raise Http404("No active season found")
 
     team_data: TeamData | None = TeamData.objects.filter(
-        team=team, season=current_season
+        team=team, season=current_season,
     ).first()
 
     user_request = request.user

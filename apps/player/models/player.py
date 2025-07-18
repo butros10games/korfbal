@@ -13,10 +13,10 @@ class Player(models.Model):
     """Model for Player."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False
+        primary_key=True, default=uuidv7, editable=False,
     )
     user: models.ForeignKey = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="players"
+        User, on_delete=models.CASCADE, related_name="players",
     )
 
     profile_picture: models.ImageField = models.ImageField(
@@ -26,10 +26,10 @@ class Player(models.Model):
     )
 
     team_follow: models.ManyToManyField = models.ManyToManyField(
-        team_model_string, blank=True
+        team_model_string, blank=True,
     )
     club_follow: models.ManyToManyField = models.ManyToManyField(
-        club_model_string, blank=True
+        club_model_string, blank=True,
     )
 
     goal_song_uri: models.CharField = models.CharField(max_length=255, blank=True)

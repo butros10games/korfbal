@@ -24,11 +24,11 @@ def match_detail(request: HttpRequest, match_id: str) -> HttpResponse:
     match_data: MatchData = MatchData.objects.get(match_link=match_model)
 
     home_score: int = Shot.objects.filter(
-        match_data=match_data, team=match_model.home_team, scored=True
+        match_data=match_data, team=match_model.home_team, scored=True,
     ).count()
 
     away_score: int = Shot.objects.filter(
-        match_data=match_data, team=match_model.away_team, scored=True
+        match_data=match_data, team=match_model.away_team, scored=True,
     ).count()
 
     context: dict = {

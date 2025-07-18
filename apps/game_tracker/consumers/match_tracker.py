@@ -45,20 +45,20 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         """Connect the websocket consumer."""
         match_id = self.scope["url_route"]["kwargs"]["id"]
         self.match = await Match.objects.prefetch_related(
-            "home_team", "away_team"
+            "home_team", "away_team",
         ).aget(id_uuid=match_id)
         self.match_data = await MatchData.objects.aget(match_link=self.match)
         self.team = await Team.objects.aget(
-            id_uuid=self.scope["url_route"]["kwargs"]["team_id"]
+            id_uuid=self.scope["url_route"]["kwargs"]["team_id"],
         )
         with contextlib.suppress(MatchPart.DoesNotExist):
             self.current_part = await MatchPart.objects.aget(
-                match_data=self.match_data, active=True
+                match_data=self.match_data, active=True,
             )
 
         # Check if an active pause exists for the given match_data
         is_pause_active = await sync_to_async(
-            Pause.objects.filter(match_data=self.match_data, active=True).exists
+            Pause.objects.filter(match_data=self.match_data, active=True).exists,
         )()
 
         # Set the pause status based on the existence of an active pause or the match
@@ -86,8 +86,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.match_data.status == "finished":
             await self.send(
                 text_data=json.dumps(
-                    {"command": "match_end", "match_id": str(self.match.id_uuid)}
-                )
+                    {"command": "match_end", "match_id": str(self.match.id_uuid)},
+                ),
             )
 
     async def disconnect(self, close_code: int) -> None:
@@ -113,7 +113,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             if command == "playerGroups":
                 await self.send(
-                    text_data=await self.player_group_class.player_group_request()
+                    text_data=await self.player_group_class.player_group_request(),
                 )
 
             elif command == "savePlayerGroups":
@@ -143,7 +143,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             elif command == "get_time":
                 await self.send(
-                    text_data=await get_time(self.match_data, self.current_part)
+                    text_data=await get_time(self.match_data, self.current_part),
                 )
 
             elif command == "last_event":
@@ -171,8 +171,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "command": "error",
                         "error": str(e),
                         "traceback": traceback.format_exc(),
-                    }
-                )
+                    },
+                ),
             )
 
     async def save_player_groups(self, player_groups: list) -> None:
@@ -195,7 +195,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             await group.asave()
 
         await self.send(
-            text_data=json.dumps({"command": "savePlayerGroups", "status": "success"})
+            text_data=json.dumps({"command": "savePlayerGroups", "status": "success"}),
         )
 
     async def shot_reg(self, player_id: UUID, for_team: bool) -> None:
@@ -211,8 +211,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.is_paused:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": self.match_is_paused_message}
-                )
+                    {"command": "error", "error": self.match_is_paused_message},
+                ),
             )
             return
 
@@ -262,8 +262,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         await self.send(
             text_data=json.dumps(
-                {"command": "goal_types", "goal_types": goal_type_list}
-            )
+                {"command": "goal_types", "goal_types": goal_type_list},
+            ),
         )
 
     async def goal_reg(self, player_id: UUID, goal_type: UUID, for_team: bool) -> None:
@@ -280,8 +280,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.is_paused:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": self.match_is_paused_message}
-                )
+                    {"command": "error", "error": self.match_is_paused_message},
+                ),
             )
             return
 
@@ -370,20 +370,20 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
 
         number_of_shots = await Shot.objects.filter(
-            match_data=self.match_data, scored=True
+            match_data=self.match_data, scored=True,
         ).acount()
         if number_of_shots % 2 == 0:
             await self.player_group_class.swap_player_group_types(self.team)
             await self.player_group_class.swap_player_group_types(self.other_team)
 
             await self.send(
-                text_data=await self.player_group_class.player_group_request()
+                text_data=await self.player_group_class.player_group_request(),
             )
 
         await self.send_last_event()
 
         await self.channel_layer.group_send(
-            self.channel_names[0], {"type": "get_events"}
+            self.channel_names[0], {"type": "get_events"},
         )
 
     async def timeout_reg(self) -> None:
@@ -391,8 +391,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.is_paused:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": self.match_is_paused_message}
-                )
+                    {"command": "error", "error": self.match_is_paused_message},
+                ),
             )
             return
 
@@ -437,7 +437,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 await self.match_data.asave()
 
                 await self.send(
-                    text_data=await self.player_group_class.player_group_request()
+                    text_data=await self.player_group_class.player_group_request(),
                 )
 
             time_message = await get_time(self.match_data, self.current_part)
@@ -478,13 +478,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             for channel_name in [self.channel_names[2]]:
                 await self.channel_layer.group_send(
-                    channel_name, {"type": "send_data", "data": pause_message}
+                    channel_name, {"type": "send_data", "data": pause_message},
                 )
 
         await self.send_last_event()
 
         await self.channel_layer.group_send(
-            self.channel_names[0], {"type": "get_events"}
+            self.channel_names[0], {"type": "get_events"},
         )
 
     async def part_end(self) -> None:
@@ -509,7 +509,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             try:
                 match_part = await MatchPart.objects.aget(
-                    match_data=self.match_data, active=True
+                    match_data=self.match_data, active=True,
                 )
                 match_part.active = False
                 match_part.end_time = datetime.now(UTC)
@@ -536,7 +536,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             await self.match_data.asave()
 
             match_part = await MatchPart.objects.aget(
-                match_data=self.match_data, active=True
+                match_data=self.match_data, active=True,
             )
             match_part.active = False
             match_part.end_time = datetime.now(UTC)
@@ -558,22 +558,22 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
     async def get_non_active_players(self) -> None:
         """Get the players that are currently in the reserve player group."""
         reserve_group = await PlayerGroup.objects.prefetch_related(
-            "players", "players__user"
+            "players", "players__user",
         ).aget(
-            match_data=self.match_data, team=self.team, starting_type__name="Reserve"
+            match_data=self.match_data, team=self.team, starting_type__name="Reserve",
         )
 
         players_json = []
         for player in reserve_group.players.all():
             with contextlib.suppress(Player.DoesNotExist):
                 players_json.append(
-                    {"id": str(player.id_uuid), "name": player.user.username}
+                    {"id": str(player.id_uuid), "name": player.user.username},
                 )
 
         await self.send(
             text_data=json.dumps(
-                {"command": "non_active_players", "players": players_json}
-            )
+                {"command": "non_active_players", "players": players_json},
+            ),
         )
 
     async def substitute_reg(self, new_player_id: UUID, old_player_id: UUID) -> None:
@@ -589,16 +589,16 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.is_paused:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": self.match_is_paused_message}
-                )
+                    {"command": "error", "error": self.match_is_paused_message},
+                ),
             )
             return
 
         player_in = await Player.objects.prefetch_related("user").aget(
-            id_uuid=new_player_id
+            id_uuid=new_player_id,
         )
         player_out = await Player.objects.prefetch_related("user").aget(
-            id_uuid=old_player_id
+            id_uuid=old_player_id,
         )
 
         player_reserve_group = await PlayerGroup.objects.aget(
@@ -607,7 +607,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             starting_type__name="Reserve",
         )
         player_group = await PlayerGroup.objects.aget(
-            team=self.team, match_data=self.match_data, players__in=[player_out]
+            team=self.team, match_data=self.match_data, players__in=[player_out],
         )
 
         await player_group.players.aremove(player_out)
@@ -627,17 +627,17 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         # get the shot count for the new player
         shots_for = await Shot.objects.filter(
-            player=player_in, match_data=self.match_data, for_team=True
+            player=player_in, match_data=self.match_data, for_team=True,
         ).acount()
         shots_against = await Shot.objects.filter(
-            player=player_in, match_data=self.match_data, for_team=False
+            player=player_in, match_data=self.match_data, for_team=False,
         ).acount()
 
         goals_for = await Shot.objects.filter(
-            player=player_in, match_data=self.match_data, for_team=True, scored=True
+            player=player_in, match_data=self.match_data, for_team=True, scored=True,
         ).acount()
         goals_against = await Shot.objects.filter(
-            player=player_in, match_data=self.match_data, for_team=False, scored=True
+            player=player_in, match_data=self.match_data, for_team=False, scored=True,
         ).acount()
 
         for channel_name in [self.channel_names[1]]:
@@ -663,7 +663,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         await self.send_last_event()
 
         await self.channel_layer.group_send(
-            self.channel_names[0], {"type": "get_events"}
+            self.channel_names[0], {"type": "get_events"},
         )
 
     async def removed_last_event(self) -> None:
@@ -724,25 +724,25 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     )
 
                 number_of_shots = await Shot.objects.filter(
-                    match_data=self.match_data, scored=True
+                    match_data=self.match_data, scored=True,
                 ).acount()
                 if (number_of_shots) % 2 == 1:
                     await self.player_group_class.swap_player_group_types(self.team)
                     await self.player_group_class.swap_player_group_types(
-                        self.other_team
+                        self.other_team,
                     )
 
                     await self.send(
-                        text_data=await self.player_group_class.player_group_request()
+                        text_data=await self.player_group_class.player_group_request(),
                     )
 
         elif isinstance(event, PlayerChange):
             # get and delete the last player change event
             player_change = await PlayerChange.objects.prefetch_related(
-                "player_group", "player_in", "player_out"
+                "player_group", "player_in", "player_out",
             ).aget(match_part=event.match_part, time=event.time)
             player_group = await PlayerGroup.objects.aget(
-                id_uuid=player_change.player_group.id_uuid
+                id_uuid=player_change.player_group.id_uuid,
             )
             player_reserve_group = await PlayerGroup.objects.aget(
                 team=self.team,
@@ -763,7 +763,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             # send player group update message
             await self.send(
-                text_data=await self.player_group_class.player_group_request()
+                text_data=await self.player_group_class.player_group_request(),
             )
 
         elif isinstance(event, Pause):
@@ -795,7 +795,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         await self.send_last_event()
 
         await self.channel_layer.group_send(
-            self.channel_names[0], {"type": "get_events"}
+            self.channel_names[0], {"type": "get_events"},
         )
 
     async def get_all_events(self) -> None | Shot | PlayerChange | Pause | Attack:
@@ -809,7 +809,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 "match_data",
             )
             .filter(match_data=self.match_data)
-            .order_by("time")
+            .order_by("time"),
         )
         player_changes = await sync_to_async(list)(
             PlayerChange.objects.prefetch_related(
@@ -822,7 +822,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 "match_data",
             )
             .filter(player_group__match_data=self.match_data)
-            .order_by("time")
+            .order_by("time"),
         )
         time_outs = await sync_to_async(list)(
             Pause.objects.prefetch_related(
@@ -831,14 +831,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 "match_data__match_link",
             )
             .filter(match_data=self.match_data)
-            .order_by("start_time")
+            .order_by("start_time"),
         )
         attacks = await sync_to_async(list)(
             Attack.objects.prefetch_related(
-                "match_part", "match_data", "team", "team__club"
+                "match_part", "match_data", "team", "team__club",
             )
             .filter(match_data=self.match_data)
-            .order_by("time")
+            .order_by("time"),
         )
 
         # Combine all events and sort them
@@ -856,8 +856,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "last_event": {
                             "type": "no_event",
                         },
-                    }
-                )
+                    },
+                ),
             )
             return None
 
@@ -877,10 +877,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             data_add = {"type": "shot", "name": "Schot"}
             if last_event.scored:
                 goals_for = await Shot.objects.filter(
-                    match_data=self.match_data, for_team=True, scored=True
+                    match_data=self.match_data, for_team=True, scored=True,
                 ).acount()
                 goals_against = await Shot.objects.filter(
-                    match_data=self.match_data, for_team=False, scored=True
+                    match_data=self.match_data, for_team=False, scored=True,
                 ).acount()
 
                 data_add = {
@@ -941,7 +941,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             }
 
         await self.send(
-            text_data=json.dumps({"command": "last_event", "last_event": events_dict})
+            text_data=json.dumps({"command": "last_event", "last_event": events_dict}),
         )
 
     async def time_calc(self, event: Shot | PlayerChange | Pause | Attack) -> str:
@@ -968,7 +968,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 active=False,
                 start_time__lt=event_time,
                 start_time__gte=event.match_part.start_time,
-            )
+            ),
         )
         pause_time = sum([pause.length().total_seconds() for pause in pauses])
 
@@ -983,7 +983,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 )
                 - pause_time
             )
-            / 60
+            / 60,
         )
 
         left_over = time_in_minutes - (
@@ -1015,7 +1015,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             return await sync_to_async(
                 Season.objects.filter(end_date__lte=self.match.start_time)
                 .order_by("-end_date")
-                .first
+                .first,
             )()
 
     async def new_attack(self) -> None:
@@ -1023,8 +1023,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if self.is_paused:
             await self.send(
                 text_data=json.dumps(
-                    {"command": "error", "error": self.match_is_paused_message}
-                )
+                    {"command": "error", "error": self.match_is_paused_message},
+                ),
             )
             return
 
@@ -1062,7 +1062,7 @@ class PlayerGroupClass:
                 "playerGroups": player_groups_array,
                 "players": await self._make_full_player_list(),
                 "match_active": self.match_data.status == "active",
-            }
+            },
         )
 
     async def get_player_groups(self) -> list:
@@ -1074,14 +1074,14 @@ class PlayerGroupClass:
         """
         return await sync_to_async(list)(
             PlayerGroup.objects.prefetch_related(
-                "players", "players__user", "starting_type", "current_type"
+                "players", "players__user", "starting_type", "current_type",
             )
             .filter(match_data=self.match_data, team=self.team)
             .exclude(starting_type__name="Reserve")
             .order_by(
                 Case(When(current_type__name="Aanval", then=0), default=1),
                 "starting_type",
-            )
+            ),
         )
 
     async def swap_player_group_types(self, team: Team) -> None:
@@ -1095,10 +1095,10 @@ class PlayerGroupClass:
         group_type_v = await GroupType.objects.aget(name="Verdediging")
 
         player_group_a = await PlayerGroup.objects.aget(
-            match_data=self.match_data, team=team, current_type=group_type_a
+            match_data=self.match_data, team=team, current_type=group_type_a,
         )
         player_group_v = await PlayerGroup.objects.aget(
-            match_data=self.match_data, team=team, current_type=group_type_v
+            match_data=self.match_data, team=team, current_type=group_type_v,
         )
 
         player_group_a.current_type = group_type_v
@@ -1147,7 +1147,7 @@ class PlayerGroupClass:
                 "id": str(player.id_uuid),
                 "name": player.user.username,
                 "shots_for": await Shot.objects.filter(
-                    player=player, match_data=self.match_data, for_team=True
+                    player=player, match_data=self.match_data, for_team=True,
                 ).acount(),
                 "goals_for": await Shot.objects.filter(
                     player=player,
@@ -1156,7 +1156,7 @@ class PlayerGroupClass:
                     scored=True,
                 ).acount(),
                 "shots_against": await Shot.objects.filter(
-                    player=player, match_data=self.match_data, for_team=False
+                    player=player, match_data=self.match_data, for_team=False,
                 ).acount(),
                 "goals_against": await Shot.objects.filter(
                     player=player,
@@ -1193,7 +1193,7 @@ class PlayerGroupClass:
         players = await sync_to_async(list)(
             TeamData.objects.prefetch_related("players")
             .filter(team=self.team, season=season)
-            .values_list("players", flat=True)
+            .values_list("players", flat=True),
         )
 
         for player in players:
@@ -1215,7 +1215,7 @@ class PlayerGroupClass:
         """
         try:
             player_obj = await Player.objects.prefetch_related("user").aget(
-                id_uuid=player
+                id_uuid=player,
             )
             return {
                 "id": str(player_obj.id_uuid),

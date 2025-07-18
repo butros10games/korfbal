@@ -38,7 +38,7 @@ def previous_page(request: HttpRequest) -> HttpResponseRedirect:
             | Q(page__icontains="login")
             | Q(page__icontains="logout")
             | Q(page__icontains="register")
-            | Q(page__icontains="favicon.ico")
+            | Q(page__icontains="favicon.ico"),
         )
         .values_list("page", flat=True)
     )
@@ -61,7 +61,6 @@ def previous_page(request: HttpRequest) -> HttpResponseRedirect:
 
     if referer:
         return HttpResponseRedirect(referer)
-    else:
-        request.session["back_counter"] = 1
-        request.session.modified = True
-        return redirect("catalog")
+    request.session["back_counter"] = 1
+    request.session.modified = True
+    return redirect("catalog")

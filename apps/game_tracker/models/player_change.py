@@ -10,16 +10,16 @@ class PlayerChange(models.Model):
     """Model for a player change in a match."""
 
     id_uuid: models.UUIDField = models.UUIDField(
-        primary_key=True, default=uuidv7, editable=False
+        primary_key=True, default=uuidv7, editable=False,
     )
     player_in: models.ForeignKey = models.ForeignKey(
-        player_model_string, on_delete=models.CASCADE, related_name="player_changes"
+        player_model_string, on_delete=models.CASCADE, related_name="player_changes",
     )
     player_out: models.ForeignKey = models.ForeignKey(
-        player_model_string, on_delete=models.CASCADE
+        player_model_string, on_delete=models.CASCADE,
     )
     player_group: models.ForeignKey = models.ForeignKey(
-        "PlayerGroup", on_delete=models.CASCADE, related_name="player_changes"
+        "PlayerGroup", on_delete=models.CASCADE, related_name="player_changes",
     )
     match_data: models.ForeignKey = models.ForeignKey(
         "MatchData",
@@ -36,7 +36,7 @@ class PlayerChange(models.Model):
         null=True,
     )
     time: models.DateTimeField = models.DateTimeField(
-        default=None, blank=True, null=True
+        default=None, blank=True, null=True,
     )
 
     def __str__(self) -> str:

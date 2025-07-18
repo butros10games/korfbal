@@ -52,20 +52,20 @@ async def general_stats(match_dataset: list) -> str:
                 "type": "general",
                 "stats": {
                     "shots_for": await Shot.objects.filter(
-                        match_data__in=match_dataset, for_team=True
+                        match_data__in=match_dataset, for_team=True,
                     ).acount(),
                     "shots_against": await Shot.objects.filter(
-                        match_data__in=match_dataset, for_team=False
+                        match_data__in=match_dataset, for_team=False,
                     ).acount(),
                     "goals_for": await Shot.objects.filter(
-                        match_data__in=match_dataset, for_team=True, scored=True
+                        match_data__in=match_dataset, for_team=True, scored=True,
                     ).acount(),
                     "goals_against": await Shot.objects.filter(
-                        match_data__in=match_dataset, for_team=False, scored=True
+                        match_data__in=match_dataset, for_team=False, scored=True,
                     ).acount(),
                     "team_goal_stats": team_goal_stats,
                     "goal_types": goal_types_json,
                 },
             },
-        }
+        },
     )

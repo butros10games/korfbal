@@ -31,7 +31,7 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
         # time of the pause
         try:
             active_pause = await Pause.objects.aget(
-                match_data=match_data, active=True, match_part=current_part
+                match_data=match_data, active=True, match_part=current_part,
             )
         except Pause.DoesNotExist:
             active_pause = False
@@ -39,8 +39,8 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
         # calculate all the time in pauses that are not active anymore
         pauses = await sync_to_async(list)(
             Pause.objects.filter(
-                match_data=match_data, active=False, match_part=current_part
-            )
+                match_data=match_data, active=False, match_part=current_part,
+            ),
         )
         pause_time = 0
         for pause in pauses:
@@ -57,28 +57,26 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
                     "length": match_data.part_length,
                     "pause_length": pause_time,
                     "server_time": datetime.now(UTC).isoformat(),
-                }
+                },
             )
-        else:
-            return json.dumps(
-                {
-                    "command": "timer_data",
-                    "type": "active",
-                    "match_data_id": str(match_data.id_uuid),
-                    "time": part.start_time.isoformat(),
-                    "length": match_data.part_length,
-                    "pause_length": pause_time,
-                    "server_time": datetime.now(UTC).isoformat(),
-                }
-            )
-    else:
         return json.dumps(
             {
                 "command": "timer_data",
-                "type": "deactivated",
+                "type": "active",
                 "match_data_id": str(match_data.id_uuid),
-            }
+                "time": part.start_time.isoformat(),
+                "length": match_data.part_length,
+                "pause_length": pause_time,
+                "server_time": datetime.now(UTC).isoformat(),
+            },
         )
+    return json.dumps(
+        {
+            "command": "timer_data",
+            "type": "deactivated",
+            "match_data_id": str(match_data.id_uuid),
+        },
+    )
 
 
 def get_time_display(match_data: MatchData) -> str:
@@ -109,7 +107,7 @@ async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
 
     """
     match_data = await MatchData.objects.prefetch_related("match_link").aget(
-        id_uuid=json_data["match_data_id"]
+        id_uuid=json_data["match_data_id"],
     )
 
     current_part = await MatchPart.objects.aget(match_data=match_data, active=True)
@@ -117,7 +115,7 @@ async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
     # Subscribe to time data channel
     if match_data.match_link.id_uuid not in self.subscribed_channels:
         await self.channel_layer.group_add(
-            f"time_match_{match_data.match_link.id_uuid}", self.channel_name
+            f"time_match_{match_data.match_link.id_uuid}", self.channel_name,
         )
 
         self.subscribed_channels.append(match_data.match_link.id_uuid)

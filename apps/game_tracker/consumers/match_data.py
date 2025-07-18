@@ -41,13 +41,13 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """Connect to the websocket."""
         match_id = self.scope["url_route"]["kwargs"]["id"]
         self.match = await Match.objects.prefetch_related(
-            "home_team", "away_team"
+            "home_team", "away_team",
         ).aget(id_uuid=match_id)
         self.match_data = await MatchData.objects.aget(match_link=self.match)
 
         with contextlib.suppress(MatchPart.DoesNotExist):
             self.current_part = await MatchPart.objects.aget(
-                match_data=self.match_data, active=True
+                match_data=self.match_data, active=True,
             )
 
         self.channel_names = [
@@ -66,7 +66,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
     async def receive(
-        self, text_data: str | None = None, bytes_data: bytes | None = None
+        self, text_data: str | None = None, bytes_data: bytes | None = None,
     ) -> None:
         """Receive data from the websocket.
 
@@ -87,7 +87,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
             elif command == "get_time":
                 await self.send(
-                    text_data=await get_time(self.match_data, self.current_part)
+                    text_data=await get_time(self.match_data, self.current_part),
                 )
 
             elif command == "home_team" or command == "away_team":
@@ -108,8 +108,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()}
-                )
+                    {"error": str(e), "traceback": traceback.format_exc()},
+                ),
             )
 
     async def team_request(self, command: str, user_id: UUID | None) -> None:
@@ -138,22 +138,22 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         str(group.id_uuid): str(group.starting_type.id_uuid)
                         for group in await sync_to_async(list)(
                             PlayerGroup.objects.prefetch_related(
-                                "starting_type"
-                            ).filter(team=team, match_data=self.match_data)
+                                "starting_type",
+                            ).filter(team=team, match_data=self.match_data),
                         )
                     },
                     "type_id_to_group_id": {
                         str(group.starting_type.id_uuid): str(group.id_uuid)
                         for group in await sync_to_async(list)(
                             PlayerGroup.objects.prefetch_related(
-                                "starting_type"
-                            ).filter(team=team, match_data=self.match_data)
+                                "starting_type",
+                            ).filter(team=team, match_data=self.match_data),
                         )
                     },
                     "is_coach": await self.checkIfAccess(user_id, team),
                     "finished": self.match_data.status == "finished",
-                }
-            )
+                },
+            ),
         )
 
     async def save_player_groups_request(self, player_groups: list[dict]) -> None:
@@ -179,7 +179,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await group.asave()
 
         await self.send(
-            text_data=json.dumps({"command": "savePlayerGroups", "status": "success"})
+            text_data=json.dumps({"command": "savePlayerGroups", "status": "success"}),
         )
 
     async def get_stats_general_request(self) -> None:
@@ -197,9 +197,9 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             Player.objects.prefetch_related("user")
             .filter(
                 Q(team_data_as_player__team=self.match.home_team)
-                | Q(team_data_as_player__team=self.match.away_team)
+                | Q(team_data_as_player__team=self.match.away_team),
             )
-            .distinct()
+            .distinct(),
         )
 
         player_stats = await players_stats(players, [self.match_data])
@@ -207,7 +207,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=player_stats)
 
     async def get_events(
-        self, event: str | None = None, user_id: UUID | None = None
+        self, event: str | None = None, user_id: UUID | None = None,
     ) -> None:
         """Get the events for the match.
 
@@ -247,25 +247,25 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                             else False
                         ),
                         "status": self.match_data.status,
-                    }
-                )
+                    },
+                ),
             )
 
         except Exception as e:
             await self.send(
                 text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()}
-                )
+                    {"error": str(e), "traceback": traceback.format_exc()},
+                ),
             )
 
     async def get_all_events(self) -> list:
         """Get all the events for the match."""
         goals = await sync_to_async(list)(
             Shot.objects.prefetch_related(
-                "player__user", "shot_type", "match_part", "team"
+                "player__user", "shot_type", "match_part", "team",
             )
             .filter(match_data=self.match_data, scored=True)
-            .order_by("time")
+            .order_by("time"),
         )
         player_change = await sync_to_async(list)(
             PlayerChange.objects.prefetch_related(
@@ -278,12 +278,12 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 "match_part",
             )
             .filter(player_group__match_data=self.match_data)
-            .order_by("time")
+            .order_by("time"),
         )
         time_outs = await sync_to_async(list)(
             Pause.objects.prefetch_related("match_part")
             .filter(match_data=self.match_data)
-            .order_by("start_time")
+            .order_by("start_time"),
         )
 
         # add all the events to a list and order them on time
@@ -323,7 +323,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 active=False,
                 start_time__lt=event.time,
                 start_time__gte=event.match_part.start_time,
-            )
+            ),
         )
         pause_time = 0
         for pause in pauses:
@@ -338,7 +338,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 )
                 - pause_time
             )
-            / 60
+            / 60,
         )
 
         left_over = time_in_minutes - (
@@ -379,7 +379,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 active=False,
                 start_time__lt=event.time,
                 start_time__gte=event.match_part.start_time,
-            )
+            ),
         )
         pause_time = 0
         for pause in pauses:
@@ -391,7 +391,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 + ((event.match_part.part_number - 1) * self.match_data.part_length)
                 - pause_time
             )
-            / 60
+            / 60,
         )
 
         left_over = time_in_minutes - (
@@ -431,7 +431,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 active=False,
                 start_time__lt=event.start_time,
                 start_time__gte=event.match_part.start_time,
-            )
+            ),
         )
         pause_time = 0
         for pause in pauses:
@@ -448,7 +448,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 )
                 - pause_time
             )
-            / 60
+            / 60,
         )
 
         left_over = time_in_minutes - (
@@ -483,7 +483,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         team_data = await sync_to_async(list)(
             TeamData.objects.prefetch_related("players", "coach")
             .filter(Q(team=match.home_team) | Q(team=match.away_team))
-            .values_list("players", "coach")
+            .values_list("players", "coach"),
         )
 
         # Flatten the list of tuples and remove None values
@@ -499,10 +499,10 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         try:
             player_groups = await sync_to_async(list)(
                 PlayerGroup.objects.prefetch_related(
-                    "players", "players__user", "starting_type", "current_type"
+                    "players", "players__user", "starting_type", "current_type",
                 )
                 .filter(match_data=self.match_data, team=team)
-                .order_by("starting_type")
+                .order_by("starting_type"),
             )
 
             # When there is no connected player group create the player groups
@@ -519,10 +519,10 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
                 player_groups = await sync_to_async(list)(
                     PlayerGroup.objects.prefetch_related(
-                        "players", "players__user", "starting_type", "current_type"
+                        "players", "players__user", "starting_type", "current_type",
                     )
                     .filter(match_data=self.match_data, team=team)
-                    .order_by("starting_type")
+                    .order_by("starting_type"),
                 )
 
             # make it a json parsable string
@@ -551,8 +551,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         "error": str(e),
                         "traceback": traceback.format_exc(),
                         "player_groups": player_groups,
-                    }
-                )
+                    },
+                ),
             )
 
     async def makePlayerList(self, team: Team) -> list[dict]:
@@ -564,13 +564,13 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         players = await sync_to_async(list)(
             TeamData.objects.prefetch_related("players")
             .filter(team=team, season=season)
-            .values_list("players", flat=True)
+            .values_list("players", flat=True),
         )
 
         for player in players:
             try:
                 player_json = await Player.objects.prefetch_related("user").aget(
-                    id_uuid=player
+                    id_uuid=player,
                 )
 
                 players_json.append(
@@ -579,7 +579,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         "name": player_json.user.username,
                         "profile_picture": player_json.get_profile_picture(),
                         "get_absolute_url": str(player_json.get_absolute_url()),
-                    }
+                    },
                 )
             except Player.DoesNotExist:
                 pass
@@ -599,12 +599,12 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         players = await sync_to_async(list)(
             TeamData.objects.prefetch_related("players")
             .filter(team=team)
-            .values_list("players", flat=True)
+            .values_list("players", flat=True),
         )
         coaches = await sync_to_async(list)(
             TeamData.objects.prefetch_related("coach")
             .filter(team=team)
-            .values_list("coach", flat=True)
+            .values_list("coach", flat=True),
         )
 
         players_list = []
