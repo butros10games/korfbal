@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import MatchPart
+from apps.game_tracker.models import MatchPart
 
 
 class MatchPartAdmin(admin.ModelAdmin):

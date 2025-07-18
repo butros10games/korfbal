@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import Pause
+from apps.game_tracker.models import Pause
 
 
 class PauseAdmin(admin.ModelAdmin):

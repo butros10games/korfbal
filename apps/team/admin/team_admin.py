@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import Team
+from apps.team.models import Team
 
 
 class TeamAdmin(admin.ModelAdmin):

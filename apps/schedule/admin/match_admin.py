@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import Match
+from apps.schedule.models import Match
 
 
 class MatchAdmin(admin.ModelAdmin):

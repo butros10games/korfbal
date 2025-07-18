@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import PlayerGroup
+from apps.game_tracker.models import PlayerGroup
 
 
 class PlayerGroupAdmin(admin.ModelAdmin):

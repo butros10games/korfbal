@@ -1,17 +1,8 @@
 """Module contains the TeamData model."""
 
-from typing import TYPE_CHECKING
-
 from django.db import models
 
 from .constants import player_model_string
-
-
-if TYPE_CHECKING:
-    from django.db.models import QuerySet  # noqa: F401
-    from schedule.models import Season  # noqa: F401
-
-    from ..models import Team  # noqa: F401
 
 
 class TeamData(models.Model):

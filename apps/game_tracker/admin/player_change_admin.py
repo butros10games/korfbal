@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import PlayerChange
+from apps.game_tracker.models import PlayerChange
 
 
 class PlayerChangeAdmin(admin.ModelAdmin):

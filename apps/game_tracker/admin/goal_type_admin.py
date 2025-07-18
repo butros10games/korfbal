@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import GoalType
+from apps.game_tracker.models import GoalType
 
 
 class GoalTypeAdmin(admin.ModelAdmin):

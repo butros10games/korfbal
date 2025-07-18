@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import PageConnectRegistration
+from apps.hub.models import PageConnectRegistration
 
 
 class PageConnectRegistrationAdmin(admin.ModelAdmin):

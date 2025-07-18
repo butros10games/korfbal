@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import Club
+from apps.club.models import Club
 
 
 class ClubAdmin(admin.ModelAdmin):

@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from ..models import Season
+from apps.schedule.models import Season
 
 
 class SeasonAdmin(admin.ModelAdmin):

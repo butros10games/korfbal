@@ -2,7 +2,7 @@
 
 from django import forms
 
-from ..models import PlayerGroup
+from apps.game_tracker.models import PlayerGroup
 
 
 class PlayerGroupForm(forms.ModelForm):

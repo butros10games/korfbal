@@ -4,7 +4,7 @@ from django import forms
 from django.contrib import admin
 from django.db.models import Q
 
-from ..models import Shot
+from apps.game_tracker.models import Shot
 
 
 class ShotAdminForm(forms.ModelForm):
