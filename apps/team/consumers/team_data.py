@@ -48,9 +48,6 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             text_data (str): The data received from the websocket.
             bytes_data (bytes): The bytes data received from the websocket.
 
-        Raises:
-            Exception: If an error occurs while processing the data.
-
         """
         if text_data is None:
             return
@@ -59,7 +56,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             json_data = json.loads(text_data)
             command = json_data["command"]
 
-            if command == "matches" or command == "ended_matches":
+            if command in {"matches", "ended_matches"}:
                 await self.matches_request(command)
 
             elif command == "get_stats":

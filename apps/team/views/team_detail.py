@@ -19,6 +19,9 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
     Returns:
         HttpResponse: The response object.
 
+    Raises:
+        Http404: If the team or season is not found.
+
     """
     team: Team = get_object_or_404(Team, id_uuid=team_id)
 

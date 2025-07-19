@@ -12,8 +12,16 @@ from dotenv import load_dotenv
 def get_bool_env(env_key: str, default: bool = False) -> bool:
     """Return True if environment variable is set to 'true' or '1' (case-insensitive).
     Otherwise, return the default value.
+
+    Args:
+        env_key (str): The environment variable key to check.
+        default (bool): The default value to return if environment variable is not set.
+
+    Returns:
+        bool: True if the environment variable is set to 'true' or '1', otherwise False.
+
     """
-    return os.getenv(env_key, str(default)).lower() in ["true", "1"]
+    return os.getenv(env_key, str(default)).lower() in {"true", "1"}
 
 
 def get_list_env(
@@ -23,6 +31,16 @@ def get_list_env(
 ) -> list[str]:
     """Split the environment variable by the given delimiter and return as a list.
     If the env variable is not set, return the default list.
+
+    Args:
+        env_key (str): The environment variable key to check.
+        default (list[str] | None): The default list to return if the environment
+            variable is not set.
+        delimiter (str): The delimiter to split the environment variable by.
+
+    Returns:
+        list[str]: The environment variable split by delimiter, or the default list.
+
     """
     if default is None:
         default = []
@@ -109,11 +127,11 @@ MIDDLEWARE = [
 ]
 
 if RUNNER == "uwsgi":
-    MIDDLEWARE = (
-        ["django_prometheus.middleware.PrometheusBeforeMiddleware"]
-        + MIDDLEWARE
-        + ["django_prometheus.middleware.PrometheusAfterMiddleware"]
-    )
+    MIDDLEWARE = [
+        "django_prometheus.middleware.PrometheusBeforeMiddleware",
+        *MIDDLEWARE,
+        "django_prometheus.middleware.PrometheusAfterMiddleware",
+    ]
 
 ROOT_URLCONF = "korfbal.urls"
 ASGI_APPLICATION = "korfbal.asgi.application"

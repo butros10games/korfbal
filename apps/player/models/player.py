@@ -42,15 +42,30 @@ class Player(models.Model):
     song_start_time: models.IntegerField = models.IntegerField(blank=True, null=True)
 
     def __str__(self) -> str:
-        """Return the string representation of the player."""
+        """Get the string representation of the player.
+
+        Returns:
+            str: The username of the player.
+
+        """
         return str(self.user.username)
 
     def get_absolute_url(self) -> str:
-        """Return the absolute URL of the player."""
+        """Get the absolute URL for the player's profile detail view.
+
+        Returns:
+            str: The URL to the player's profile detail view.
+
+        """
         return reverse("profile_detail", kwargs={"player_id": self.id_uuid})
 
     def get_profile_picture(self) -> str:
-        """Return the profile picture of the player."""
+        """Get the URL of the player's profile picture.
+
+        Returns:
+            str: The URL of the profile picture or a default image URL.
+
+        """
         if self.profile_picture:
             return self.profile_picture.url
         static_url: str = settings.STATIC_URL.removeprefix("/")

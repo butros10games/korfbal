@@ -33,9 +33,19 @@ class Match(models.Model):
     start_time: models.DateTimeField = models.DateTimeField()
 
     def __str__(self) -> str:
-        """Return the string representation of the match."""
+        """Get the string representation of the match.
+
+        Returns:
+            str: The names of the home and away teams.
+
+        """
         return str(self.home_team.name + " - " + self.away_team.name)
 
     def get_absolute_url(self) -> str:
-        """Return the absolute URL of the match."""
+        """Get the absolute URL for the match detail view.
+
+        Returns:
+            str: The URL to the match detail view.
+
+        """
         return reverse("match_detail", kwargs={"match_id": self.id_uuid})

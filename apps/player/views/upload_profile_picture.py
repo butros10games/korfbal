@@ -6,7 +6,15 @@ from apps.player.models import Player
 
 
 def upload_profile_picture(request: HttpRequest) -> JsonResponse:
-    """Upload a profile picture for a player."""
+    """Upload a profile picture for a player.
+
+    Args:
+        request (HttpRequest): The HTTP request containing the profile picture.
+
+    Returns:
+        JsonResponse: A JSON response containing URL of the uploaded profile picture.
+
+    """
     if request.method == "POST" and request.FILES["profile_picture"]:
         profile_picture = request.FILES["profile_picture"]
 

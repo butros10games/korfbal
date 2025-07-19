@@ -17,5 +17,10 @@ class Season(models.Model):
     end_date: models.DateField = models.DateField()
 
     def __str__(self) -> str:
-        """Return the string representation of the season."""
+        """Get the string representation of the season.
+
+        Returns:
+            str: The name of the season.
+
+        """
         return str(self.name)

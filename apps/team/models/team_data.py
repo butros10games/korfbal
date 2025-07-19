@@ -27,5 +27,10 @@ class TeamData(models.Model):
     competition = models.CharField(max_length=255, blank=True)
 
     def __str__(self) -> str:
-        """Return the string representation of the team data."""
+        """Get the string representation of the team data.
+
+        Returns:
+            str: The name of the team.
+
+        """
         return str(self.team.name)

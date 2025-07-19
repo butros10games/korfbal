@@ -21,9 +21,19 @@ class Team(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the team."""
+        """Get the string representation of the team.
+
+        Returns:
+            str: The name of the team with the club name.
+
+        """
         return str(self.club.name) + " " + str(self.name)
 
     def get_absolute_url(self) -> str:
-        """Return the absolute URL of the team."""
+        """Get the absolute URL for the team detail view.
+
+        Returns:
+            str: The URL to the team detail view.
+
+        """
         return reverse("team_detail", kwargs={"team_id": self.id_uuid})
