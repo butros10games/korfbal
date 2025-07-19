@@ -23,5 +23,10 @@ class PageConnectRegistration(models.Model):
     registration_date: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        """Return the string representation of the page connect registration."""
+        """Return the string representation of the page connect registration.
+
+        Returns:
+            str: String representation of the page connect registration.
+
+        """
         return f"{self.player} - {self.page}"

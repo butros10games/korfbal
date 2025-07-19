@@ -58,21 +58,26 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             text_data (str): The text data.
             bytes_data (bytes): The bytes data.
 
+        Raises:
+            ValueError: If the command is not recognized.
+
         """
         if text_data is None:
             return
 
         try:
             json_data = json.loads(text_data)
-            command = json_data["command"]
+            command = json_data.get("command")
 
-            if command == "player_stats":
-                await self.player_stats_request()
+            async def handle_settings_request() -> None:
+                """Handle the settings request command.
 
-            if command == "settings_request":
+                Raises:
+                    ValueError: If the user or user profile is not found.
+
+                """
                 if not self.user or not self.user_profile:
                     raise ValueError("User or UserProfile not found.")
-
                 await self.send(
                     text_data=json.dumps(
                         {
@@ -86,20 +91,42 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
                     ),
                 )
 
-            if command == "settings_update":
+            async def handle_settings_update() -> None:
+                """Handle the settings update command."""
                 await self.settings_update_request(json_data["data"])
 
-            if command == "update_profile_picture_url":
+            async def handle_update_profile_picture_url() -> None:
+                """Handle the update profile picture URL command."""
                 await self.settings_update_request(json_data["url"])
 
-            if command == "teams":
+            async def handle_teams() -> None:
+                """Handle the teams command."""
                 await self.teams_request()
 
-            if command == "upcoming_matches" or command == "past_matches":
+            async def handle_matches() -> None:
+                """Handle the matches command."""
                 await self.matches_request(command)
 
-            elif command == "get_time":
+            async def handle_get_time() -> None:
+                """Handle the get time command."""
                 await get_time_display_pause(self, json_data)
+
+            command_map = {
+                "player_stats": self.player_stats_request,
+                "settings_request": handle_settings_request,
+                "settings_update": handle_settings_update,
+                "update_profile_picture_url": handle_update_profile_picture_url,
+                "teams": handle_teams,
+                "upcoming_matches": handle_matches,
+                "past_matches": handle_matches,
+                "get_time": handle_get_time,
+            }
+
+            handler = command_map.get(command)
+            if handler:
+                await handler()
+            else:
+                raise ValueError(f"Unknown command: {command}")
 
         except Exception as e:
             await self.send(

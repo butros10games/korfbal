@@ -8,7 +8,7 @@ from apps.schedule.models import Season
 class SeasonAdmin(admin.ModelAdmin):
     """Admin settings for the Season model."""
 
-    list_display = ["id_uuid", "name"]
+    list_display = ["id_uuid", "name"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

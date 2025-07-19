@@ -13,6 +13,7 @@ import requests
 from apps.player.models import SpotifyToken
 
 
+HTTP_STATUS_OK = 200
 SPOTIFY_CLIENT_ID = settings.SPOTIFY_CLIENT_ID
 SPOTIFY_CLIENT_SECRET = settings.SPOTIFY_CLIENT_SECRET
 SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
@@ -20,7 +21,15 @@ SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
 
 @login_required
 def spotify_callback(request: HttpRequest) -> HttpResponseRedirect | None:
-    """Handle Spotify OAuth callback and save tokens."""
+    """Handle Spotify OAuth callback and save tokens.
+
+    Args:
+        request (HttpRequest): The HTTP request object.
+
+    Returns:
+        HttpResponseRedirect: Redirects to the home page or an error page.
+
+    """
     # Get authorization code from the request
     code = request.GET.get("code")
 
@@ -41,7 +50,7 @@ def spotify_callback(request: HttpRequest) -> HttpResponseRedirect | None:
         timeout=10,
     )
 
-    if response.status_code != 200:
+    if response.status_code != HTTP_STATUS_OK:
         return redirect("/")  # Handle failure
 
     data = response.json()
@@ -87,8 +96,7 @@ def refresh_spotify_token(user: User) -> None:
             },
             timeout=10,
         )
-
-        if response.status_code == 200:
+        if response.status_code == HTTP_STATUS_OK:
             data = response.json()
             spotify_token.access_token = data["access_token"]
             spotify_token.expires_at = now() + timedelta(seconds=data["expires_in"])

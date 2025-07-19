@@ -8,7 +8,7 @@ from apps.team.models import Team
 class TeamAdmin(admin.ModelAdmin):
     """Admin class for the Team model."""
 
-    list_display = ["id_uuid", "__str__", "club"]
+    list_display = ["id_uuid", "__str__", "club"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

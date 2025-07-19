@@ -9,6 +9,6 @@ class PlayerConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.player"
 
-    def ready(self) -> None:
+    def ready(self) -> None:  # noqa: PLR6301
         """Import signals."""
         import apps.player.signals  # noqa

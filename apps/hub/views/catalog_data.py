@@ -36,9 +36,9 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
 
     selection = data["value"]
 
-    if selection in ["clubs", "teams"] and user.is_authenticated:
+    if selection in {"clubs", "teams"} and user.is_authenticated:
         player = Player.objects.get(user=user)
-        SELECTION_MAP = {
+        selection_map = {
             "clubs": {
                 "connected_query": connected_clubs_query,
                 "following_relation": "club_follow",
@@ -50,7 +50,7 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
                 "serializer_func": team_serializer,
             },
         }
-        mapping = SELECTION_MAP.get(selection)
+        mapping = selection_map.get(selection)
         if mapping:
             connected_list, following_list = get_connected_and_following_objects(
                 player,

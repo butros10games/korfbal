@@ -8,7 +8,7 @@ from apps.team.models import TeamData
 class TeamDataAdmin(admin.ModelAdmin):
     """Admin class for the TeamData model."""
 
-    list_display = ["team", "season"]
+    list_display = ["team", "season"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

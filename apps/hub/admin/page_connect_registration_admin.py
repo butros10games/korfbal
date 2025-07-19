@@ -8,7 +8,7 @@ from apps.hub.models import PageConnectRegistration
 class PageConnectRegistrationAdmin(admin.ModelAdmin):
     """PageConnectRegistration admin configuration."""
 
-    list_display = ["id_uuid", "player", "page", "registration_date"]
+    list_display = ["id_uuid", "player", "page", "registration_date"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

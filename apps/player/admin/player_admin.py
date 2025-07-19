@@ -8,7 +8,7 @@ from apps.player.models import Player
 class PlayerAdmin(admin.ModelAdmin):
     """Player admin configuration."""
 
-    list_display = ["id_uuid", "user"]
+    list_display = ["id_uuid", "user"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:
