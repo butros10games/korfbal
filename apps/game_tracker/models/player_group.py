@@ -42,20 +42,26 @@ class PlayerGroup(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the player group."""
+        """Return the string representation of the player group.
+
+        Returns:
+            str: A string representation of the player group.
+
+        """
         return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"  # noqa: E501
 
     def save(self, *args, **kwargs) -> None:  # noqa: ANN002 ANN003
-        """Save the player group.
+        """Save the player group, ensuring that players are removed from the reserve
+            group if they are added to a starting group.
 
-        Check if the incoming player/players are in the reserve player group(if this
-        player group is not the reserve) connected to the team and matchdata.
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
 
-        If the incoming player/players is in the reserve player group, remove the
-        player/players from the reserve player group.
+        Raises:
+            ValidationError: If a player is not in the reserve group when trying to add
+                them to a starting group.
 
-        If the player/players is not in the reserve player group, raise a validation
-        error.
         """
         if self.pk:
             # Retrieve the current list of players from the database

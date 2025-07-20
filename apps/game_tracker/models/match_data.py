@@ -1,5 +1,7 @@
 """Model for MatchData."""
 
+from typing import ClassVar
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 
@@ -7,7 +9,7 @@ from django.db import models
 class MatchData(models.Model):
     """Model for MatchData."""
 
-    STATUS_CHOICES = [
+    STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [
         ("upcoming", "Upcoming"),
         ("active", "Active"),
         ("finished", "Finished"),
@@ -34,13 +36,23 @@ class MatchData(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the match."""
+        """Return the string representation of the match.
+
+        Returns:
+            str: A string representation of the match.
+
+        """
         return str(
             self.match_link.home_team.name + " - " + self.match_link.away_team.name,
         )
 
     def get_winner(self) -> str | None:
-        """Return the winner of the match."""
+        """Determine the winner of the match.
+
+        Returns:
+            str | None: The name of the winning team, or None if it's a draw.
+
+        """
         if self.home_score > self.away_score:
             return self.match_link.home_team.name
         if self.home_score < self.away_score:

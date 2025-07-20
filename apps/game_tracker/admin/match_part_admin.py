@@ -8,7 +8,7 @@ from apps.game_tracker.models import MatchPart
 class MatchPartAdmin(admin.ModelAdmin):
     """Admin for the MatchPart model."""
 
-    list_display = ["id_uuid", "start_time", "end_time", "match_data"]
+    list_display = ["id_uuid", "start_time", "end_time", "match_data"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

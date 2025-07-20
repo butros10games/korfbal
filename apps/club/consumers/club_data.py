@@ -121,8 +121,8 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "matches", "matches": matches_dict}),
         )
 
+    @staticmethod
     async def get_matches_data(
-        self,
         team_ids: list[str],
         status: list[str],
         order: str,

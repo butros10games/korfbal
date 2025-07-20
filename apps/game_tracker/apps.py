@@ -9,6 +9,6 @@ class GameTrackerConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.game_tracker"
 
-    def ready(self) -> None:
+    def ready(self) -> None:  # noqa: PLR6301
         """Import signals when the app is ready."""
         import apps.game_tracker.signals  # noqa

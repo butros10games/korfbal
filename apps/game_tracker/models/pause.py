@@ -35,11 +35,21 @@ class Pause(models.Model):
     active: models.BooleanField = models.BooleanField(default=False)
 
     def __str__(self) -> str:
-        """Return the string representation of the pause."""
+        """Return the string representation of the pause.
+
+        Returns:
+            str: A string representation of the pause.
+
+        """
         return f"Pause {self.id_uuid} - {self.match_data} - {self.start_time} - {self.end_time}"  # noqa: E501
 
     def length(self) -> timedelta:
-        """Return the length of the pause."""
+        """Return the length of the pause.
+
+        Returns:
+            timedelta: The length of the pause.
+
+        """
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
         return timedelta(0)

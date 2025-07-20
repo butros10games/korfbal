@@ -10,6 +10,7 @@ from uuid import UUID
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Case, When
+from django.utils import timezone
 
 from apps.common.utils import get_time
 from apps.game_tracker.models import (
@@ -92,24 +93,28 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 ),
             )
 
-    async def disconnect(self, close_code: int) -> None:
+    async def disconnect(self, code: int) -> None:
         """Disconnect the websocket consumer."""
         await self.channel_layer.group_discard(self.channel_names[0], self.channel_name)
         await self.channel_layer.group_discard(self.channel_names[1], self.channel_name)
         await self.channel_layer.group_discard(self.channel_names[2], self.channel_name)
 
-    async def receive(self, text_data: str = None, bytes_data: bytes = None) -> None:
+    async def receive(
+        self, text_data: str | None = None, bytes_data: bytes | None = None
+    ) -> None:
         """Receive a message from the websocket.
 
         Args:
             text_data: The text data of the message.
             bytes_data: The bytes data of the message.
 
-        Returns:
-            The response to the message
-
         """
         try:
+            if text_data is None:
+                return
+            if bytes_data:
+                text_data = bytes_data.decode("utf-8")
+
             json_data = json.loads(text_data)
             command = json_data["command"]
 
@@ -826,8 +831,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             {"type": "get_events"},
         )
 
-    async def get_all_events(self) -> None | Shot | PlayerChange | Pause | Attack:
-        """Get all events."""
+    async def get_all_events(self) -> Shot | PlayerChange | Pause | Attack | None:
+        """Get all events.
+
+        Returns:
+            The last event of the match, or None if there are no events.
+
+        """
         # Fetch each type of event separately
         shots = await sync_to_async(list)(
             Shot.objects.prefetch_related(
@@ -872,10 +882,15 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .order_by("time"),
         )
 
-        # Combine all events and sort them
         events = sorted(
             shots + player_changes + time_outs + attacks,
-            key=lambda x: getattr(x, "time", getattr(x, "start_time", None)),
+            key=lambda x: getattr(
+                x,
+                "time",
+                getattr(
+                    x, "start_time", datetime.min.replace(tzinfo=timezone.now().tzinfo)
+                ),
+            ),
         )
 
         # check if there are events
@@ -972,7 +987,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 "type": "attack",
                 "name": "Aanval",
                 "time": time_in_minutes,
-                "team": last_event.team.__str__(),
+                "team": last_event.team.__str__(),  # noqa: PLC2801
             }
 
         await self.send(
@@ -987,6 +1002,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         Returns:
             The time of the event.
+
+        Raises:
+            ValueError: If the event does not have a time or start_time attribute.
 
         """
         # Determine the event time attribute, either "time" or "start_time"
@@ -1005,7 +1023,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 start_time__gte=event.match_part.start_time,
             ),
         )
-        pause_time = sum([pause.length().total_seconds() for pause in pauses])
+        pause_time = sum(pause.length().total_seconds() for pause in pauses)
 
         # Calculate the time in minutes since the real_start_time of the match and the
         # event time
@@ -1040,7 +1058,12 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps(data))
 
     async def season_request(self) -> Season:
-        """Get the season for the match."""
+        """Get the season for the match.
+
+        Returns:
+            The season for the match.
+
+        """
         try:
             return await Season.objects.aget(
                 start_date__lte=self.match.start_time,
@@ -1249,7 +1272,8 @@ class PlayerGroupClass:
 
         return self._remove_duplicates(players_json)
 
-    async def _get_player_json(self, player: Player) -> dict | None:
+    @staticmethod
+    async def _get_player_json(player: Player) -> dict | None:
         """Get a player in JSON format.
 
         Args:
@@ -1272,7 +1296,8 @@ class PlayerGroupClass:
         except Player.DoesNotExist:
             return None
 
-    def _remove_duplicates(self, players_json: list) -> list:
+    @staticmethod
+    def _remove_duplicates(players_json: list) -> list:
         """Remove duplicate players from the list.
 
         Args:

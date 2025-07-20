@@ -31,5 +31,10 @@ class MatchPlayer(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the match player."""
+        """Return the string representation of the match player.
+
+        Returns:
+            str: A string representation of the match player.
+
+        """
         return str(self.player)

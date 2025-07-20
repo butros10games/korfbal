@@ -8,7 +8,7 @@ from apps.game_tracker.models import Pause
 class PauseAdmin(admin.ModelAdmin):
     """Admin for the Pause model."""
 
-    list_display = ["id_uuid", "match_data"]
+    list_display = ["id_uuid", "match_data"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

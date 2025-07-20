@@ -1,6 +1,7 @@
 """Module contains `players_stats` function that returns player stats in a match."""
 
 import json
+import operator
 
 from apps.game_tracker.models import Shot
 
@@ -45,9 +46,10 @@ async def players_stats(players: list, match_dataset: list) -> str:
         }
 
         players_stats.append(player_stats)
-
     # sort the `player_stats` so the player with the most goals for is on top
-    players_stats = sorted(players_stats, key=lambda x: x["goals_for"], reverse=True)
+    players_stats = sorted(
+        players_stats, key=operator.itemgetter("goals_for"), reverse=True
+    )
 
     # remove all the players with no shots for or against
     players_stats = [

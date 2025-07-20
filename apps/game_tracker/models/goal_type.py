@@ -15,5 +15,10 @@ class GoalType(models.Model):
     name: models.CharField = models.CharField(max_length=255, unique=True)
 
     def __str__(self) -> str:
-        """Return the string representation of the goal type."""
+        """Return the string representation of the goal type.
+
+        Returns:
+            str: A string representation of the goal type.
+
+        """
         return str(self.name)

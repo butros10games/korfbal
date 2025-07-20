@@ -14,7 +14,6 @@ from django.db.models import Q
 
 from apps.common.utils import general_stats, get_time, players_stats
 from apps.game_tracker.models import (
-    GroupType,
     MatchData,
     MatchPart,
     Pause,
@@ -78,9 +77,6 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             text_data: The data received from the websocket.
             bytes_data: The bytes data received from the websocket.
 
-        Returns:
-            The data received from the websocket.
-
         """
         try:
             json_data = json.loads(text_data)
@@ -94,7 +90,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     text_data=await get_time(self.match_data, self.current_part),
                 )
 
-            elif command == "home_team" or command == "away_team":
+            elif command in {"home_team", "away_team"}:
                 await self.team_request(command, json_data["user_id"])
 
             elif command == "savePlayerGroups":
@@ -122,9 +118,6 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         Args:
             command: The command to get the home or away team.
             user_id: The id of the user.
-
-        Returns:
-            The team data for the home or away team.
 
         """
         if self.match is None:
@@ -154,7 +147,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                             ).filter(team=team, match_data=self.match_data),
                         )
                     },
-                    "is_coach": await self.checkIfAccess(user_id, team),
+                    "is_coach": await self.check_if_access(user_id, team),
                     "finished": self.match_data.status == "finished",
                 },
             ),
@@ -165,9 +158,6 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         Args:
             player_groups: The player groups to save.
-
-        Returns:
-            The status of the save.
 
         """
         for player_group in player_groups:
@@ -221,9 +211,6 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             event: The event to get.
             user_id: The id of the user.
 
-        Returns:
-            The events for the match.
-
         """
         try:
             events_dict = []
@@ -265,7 +252,12 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
 
     async def get_all_events(self) -> list:
-        """Get all the events for the match."""
+        """Get all the events for the match.
+
+        Returns:
+            A list of all the events for the match.
+
+        """
         goals = await sync_to_async(list)(
             Shot.objects.prefetch_related(
                 "player__user",
@@ -481,8 +473,18 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             "end_time": event.end_time.isoformat() if event.end_time else None,
         }
 
-    async def check_access(self, user_id: UUID | None, match: Match) -> bool:
-        """Check if the user has access to the match."""
+    @staticmethod
+    async def check_access(user_id: UUID | None, match: Match) -> bool:
+        """Check if the user has access to the match.
+
+        Args:
+            user_id: The id of the user.
+            match: The match to check access for.
+
+        Returns:
+            True if the user has access, False otherwise.
+
+        """
         if user_id is None:
             return False
 
@@ -502,101 +504,18 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return player.id_uuid in players_list
 
-    async def makePlayerGroupList(self, team: Team) -> list[dict]:
-        """Make a list of player groups for a team."""
-        try:
-            player_groups = await sync_to_async(list)(
-                PlayerGroup.objects.prefetch_related(
-                    "players",
-                    "players__user",
-                    "starting_type",
-                    "current_type",
-                )
-                .filter(match_data=self.match_data, team=team)
-                .order_by("starting_type"),
-            )
+    @staticmethod
+    async def check_if_access(user_id: UUID | None, team: Team) -> bool:
+        """Check if the user has access to the team.
 
-            # When there is no connected player group create the player groups
-            if player_groups == []:
-                group_types = await sync_to_async(list)(GroupType.objects.all())
+        Args:
+            user_id: The id of the user.
+            team: The team to check access for.
 
-                for group_type in group_types:
-                    await PlayerGroup.objects.acreate(
-                        match_data=self.match_data,
-                        team=team,
-                        starting_type=group_type,
-                        current_type=group_type,
-                    )
+        Returns:
+            True if the user has access, False otherwise.
 
-                player_groups = await sync_to_async(list)(
-                    PlayerGroup.objects.prefetch_related(
-                        "players",
-                        "players__user",
-                        "starting_type",
-                        "current_type",
-                    )
-                    .filter(match_data=self.match_data, team=team)
-                    .order_by("starting_type"),
-                )
-
-            # make it a json parsable string
-            return [
-                {
-                    "id": str(player_group.id_uuid),
-                    "players": [
-                        {
-                            "id": str(player.id_uuid),
-                            "name": player.user.username,
-                        }
-                        for player in player_group.players.all()
-                    ],
-                    "starting_type": player_group.starting_type.name,
-                    "current_type": player_group.current_type.name,
-                }
-                for player_group in player_groups
-            ]
-
-        except Exception as e:
-            await self.send(
-                text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()},
-                ),
-            )
-
-    async def makePlayerList(self, team: Team) -> list[dict]:
-        """Make a list of players for a team."""
-        # get the season of the match
-        season = await self.season_request()
-
-        players_json = []
-        players = await sync_to_async(list)(
-            TeamData.objects.prefetch_related("players")
-            .filter(team=team, season=season)
-            .values_list("players", flat=True),
-        )
-
-        for player in players:
-            try:
-                player_json = await Player.objects.prefetch_related("user").aget(
-                    id_uuid=player,
-                )
-
-                players_json.append(
-                    {
-                        "id": str(player_json.id_uuid),
-                        "name": player_json.user.username,
-                        "profile_picture": player_json.get_profile_picture(),
-                        "get_absolute_url": str(player_json.get_absolute_url()),
-                    },
-                )
-            except Player.DoesNotExist:
-                pass
-
-        # remove duplicates
-        return [dict(t) for t in {tuple(d.items()) for d in players_json}]
-
-    async def checkIfAccess(self, user_id: UUID | None, team: Team) -> bool:
-        """Check if the user has access to the team."""
+        """
         if user_id is None:
             return False
 

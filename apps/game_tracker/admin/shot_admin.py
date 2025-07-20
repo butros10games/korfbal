@@ -14,11 +14,11 @@ class ShotAdminForm(forms.ModelForm):
         """Meta class for the ShotAdminForm."""
 
         model = Shot
-        fields = ["player", "match_data", "for_team", "team", "scored"]
+        fields = ["player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
 
     def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
         """Initialize the ShotAdminForm."""
-        from apps.team.models import Team
+        from apps.team.models import Team  # noqa: PLC0415
 
         super().__init__(*args, **kwargs)
         if kwargs.get("instance"):
@@ -34,7 +34,7 @@ class ShotAdmin(admin.ModelAdmin):
     """Admin for the Shot model."""
 
     form = ShotAdminForm
-    list_display = ["id_uuid", "player", "match_data", "for_team", "team", "scored"]
+    list_display = ["id_uuid", "player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

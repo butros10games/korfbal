@@ -38,5 +38,10 @@ class Attack(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the attack."""
+        """Return the string representation of the attack.
+
+        Returns:
+            str: A string representation of the attack.
+
+        """
         return f"{self.match_data} - {self.team} - {self.time}"

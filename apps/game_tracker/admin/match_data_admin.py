@@ -8,7 +8,7 @@ from apps.game_tracker.models import MatchData
 class MatchDataAdmin(admin.ModelAdmin):
     """Admin for the MatchData model."""
 
-    list_display = [
+    list_display = [  # noqa: RUF012
         "id_uuid",
         "__str__",
         "home_score",

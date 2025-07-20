@@ -33,7 +33,7 @@ def player_overview(request: HttpRequest, match_id: str, team_id: str) -> HttpRe
     player_groups = _get_player_groups(match_id, team_id)
 
     context = {
-        "team_name": player_groups[0].team.__str__(),
+        "team_name": player_groups[0].team.__str__(),  # noqa: PLC2801
         "match_url": player_groups[0].match_data.match_link.get_absolute_url(),
         "player_groups": player_groups,
     }
@@ -57,15 +57,14 @@ def player_overview_data(_: HttpRequest, match_id: str, team_id: str) -> JsonRes
 
     player_groups_data = []
     for player_group in player_groups:
-        players_data = []
-        for player in player_group.players.all():
-            players_data.append(
-                {
-                    "id_uuid": str(player.id_uuid),
-                    "user": {"username": player.user.username},
-                    "get_profile_picture": player.get_profile_picture(),
-                },
-            )
+        players_data = [
+            {
+                "id_uuid": str(player.id_uuid),
+                "user": {"username": player.user.username},
+                "get_profile_picture": player.get_profile_picture(),
+            }
+            for player in player_group.players.all()
+        ]
         player_groups_data.append(
             {
                 "id_uuid": str(player_group.id_uuid),
@@ -118,6 +117,10 @@ def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     )
 
 
+MIN_PLAYER_NAME_LENGTH = 3
+MAX_PLAYER_NAME_LENGTH = 50
+
+
 def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     """Search for players by name.
 
@@ -136,7 +139,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     if not request.GET.get("search"):
         return no_player_selected
 
-    if len(request.GET.get("search")) < 3:
+    if len(request.GET.get("search")) < MIN_PLAYER_NAME_LENGTH:
         return JsonResponse(
             {
                 "success": False,
@@ -144,7 +147,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
             },
         )
 
-    if len(request.GET.get("search")) > 50:
+    if len(request.GET.get("search")) > MAX_PLAYER_NAME_LENGTH:
         return JsonResponse(
             {
                 "success": False,
@@ -186,6 +189,10 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     )
 
 
+MAX_RESERVE_PLAYERS = 16
+MAX_STARTING_PLAYERS = 4
+
+
 def player_designation(request: HttpRequest) -> JsonResponse:
     """Designate players to a player group.
 
@@ -210,14 +217,14 @@ def player_designation(request: HttpRequest) -> JsonResponse:
     if not selected_players:
         return no_player_selected
 
+    player_group_model = None
     if new_group_id:
         player_group_model = PlayerGroup.objects.get(id_uuid=new_group_id)
 
-        # check if the player group is reserve or a other group
-        if player_group_model.starting_type.name == "Reserve":
-            if len(selected_players) > 16:
-                return to_many_players
-        elif len(selected_players) > 4:
+        if (
+            player_group_model.starting_type.name == "Reserve"
+            and len(selected_players) > MAX_RESERVE_PLAYERS
+        ) or len(selected_players) > MAX_STARTING_PLAYERS:
             return to_many_players
 
     for player_data in selected_players:
@@ -229,7 +236,7 @@ def player_designation(request: HttpRequest) -> JsonResponse:
                 Player.objects.get(id_uuid=player_id),
             )
 
-        if new_group_id:
+        if player_group_model:
             player_group_model.players.add(Player.objects.get(id_uuid=player_id))
 
     return JsonResponse({"success": True})

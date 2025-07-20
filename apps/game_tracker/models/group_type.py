@@ -16,5 +16,10 @@ class GroupType(models.Model):
     order: models.IntegerField = models.IntegerField(default=0)
 
     def __str__(self) -> str:
-        """Return the string representation of the group type."""
+        """Return the string representation of the group type.
+
+        Returns:
+            str: A string representation of the group type.
+
+        """
         return str(self.name)

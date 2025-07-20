@@ -8,7 +8,7 @@ from apps.game_tracker.models import GroupType
 class GroupTypeAdmin(admin.ModelAdmin):
     """Admin for the GroupType model."""
 
-    list_display = ["id_uuid", "name"]
+    list_display = ["id_uuid", "name"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

@@ -1,6 +1,6 @@
 """Custom Django management command to run Webpack and collect static files."""
 
-from subprocess import call
+from subprocess import call  # noqa: S404
 
 from django.core.management.base import BaseCommand
 

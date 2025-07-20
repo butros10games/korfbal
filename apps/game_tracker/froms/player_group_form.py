@@ -12,7 +12,7 @@ class PlayerGroupForm(forms.ModelForm):
         """Meta class for the PlayerGroupForm."""
 
         model = PlayerGroup
-        fields = ["players", "team", "match_data", "starting_type", "current_type"]
+        fields = ["players", "team", "match_data", "starting_type", "current_type"]  # noqa: RUF012
 
     def __init__(self) -> None:
         """Initialize the PlayerGroupForm."""

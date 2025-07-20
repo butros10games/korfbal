@@ -8,7 +8,7 @@ from apps.game_tracker.models import PlayerGroup
 class PlayerGroupAdmin(admin.ModelAdmin):
     """Admin for the PlayerGroup model."""
 
-    list_display = ["id_uuid", "team", "match_data", "starting_type", "current_type"]
+    list_display = ["id_uuid", "team", "match_data", "starting_type", "current_type"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

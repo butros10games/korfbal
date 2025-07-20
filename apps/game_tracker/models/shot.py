@@ -54,5 +54,10 @@ class Shot(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the shot."""
+        """Return the string representation of the shot.
+
+        Returns:
+            str: A string representation of the shot.
+
+        """
         return f"Shot {self.id_uuid} - {self.player} - {self.team} - {self.match_part} - {self.scored}"  # noqa: E501

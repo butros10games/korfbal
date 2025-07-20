@@ -17,7 +17,12 @@ class VisitorTrackingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        """Process the request."""
+        """Process the request.
+
+        Returns:
+            HttpResponse: The response object after processing the request.
+
+        """
         if request.user.is_authenticated:
             try:
                 player = Player.objects.get(user=request.user)

@@ -39,5 +39,10 @@ class Timeout(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the timeout."""
+        """Return the string representation of the timeout.
+
+        Returns:
+            str: A string representation of the timeout.
+
+        """
         return f"Timeout {self.id_uuid} - {self.match_data} - {self.team}"

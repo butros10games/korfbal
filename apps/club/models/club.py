@@ -24,15 +24,30 @@ class Club(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the name of the club."""
+        """Return the name of the club.
+
+        Returns:
+            str: The name of the club.
+
+        """
         return str(self.name)
 
     def get_absolute_url(self) -> str:
-        """Return the absolute url of the club."""
+        """Get the absolute URL for the club detail page.
+
+        Returns:
+            str: The absolute URL of the club detail page.
+
+        """
         return reverse("club_detail", kwargs={"club_id": self.id_uuid})
 
     def get_club_logo(self) -> str:
-        """Return the club logo."""
+        """Get the URL of the club logo.
+
+        Returns:
+            str: The URL of the club logo or a default image if not set.
+
+        """
         if self.logo:
             return self.logo.url
         static_url = settings.STATIC_URL.removeprefix("/")

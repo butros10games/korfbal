@@ -6,6 +6,9 @@ from django import template
 register = template.Library()
 
 
+PARTS_EXPECTED = 2
+
+
 @register.filter
 def replace(value: str, arg: str) -> str:
     """Replace all occurrences of a string in a value with another string.
@@ -18,7 +21,7 @@ def replace(value: str, arg: str) -> str:
         The value with the strings replaced.
 
     """
-    if len(arg.split("|")) != 2:
+    if len(arg.split("|")) != PARTS_EXPECTED:
         return value
 
     what, to = arg.split("|")

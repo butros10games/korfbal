@@ -49,5 +49,10 @@ class PlayerChange(models.Model):
     )
 
     def __str__(self) -> str:
-        """Return the string representation of the player change."""
+        """Return the string representation of the player change.
+
+        Returns:
+            str: A string representation of the player change.
+
+        """
         return f"PlayerChange {self.id_uuid} - {self.player_in} - {self.player_out} - {self.match_data} - {self.match_part}"  # noqa: E501
