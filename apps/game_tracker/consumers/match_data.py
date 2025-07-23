@@ -61,7 +61,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-    async def disconnect(self, close_code: int) -> None:
+    async def disconnect(self, code: int) -> None:
         """Disconnect from the websocket."""
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
@@ -78,39 +78,37 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             bytes_data: The bytes data received from the websocket.
 
         """
-        try:
-            json_data = json.loads(text_data)
-            command = json_data["command"]
+        if bytes_data:
+            text_data = bytes_data.decode("utf-8")
+        if text_data is None:
+            await self.send(text_data=json.dumps({"error": "No data received"}))
+            return
 
-            if command == "match_events":
-                await self.get_events(user_id=json_data["user_id"])
+        json_data = json.loads(text_data)
+        command = json_data["command"]
 
-            elif command == "get_time":
-                await self.send(
-                    text_data=await get_time(self.match_data, self.current_part),
-                )
+        if command == "match_events":
+            await self.get_events(user_id=json_data["user_id"])
 
-            elif command in {"home_team", "away_team"}:
-                await self.team_request(command, json_data["user_id"])
-
-            elif command == "savePlayerGroups":
-                await self.save_player_groups_request(json_data["playerGroups"])
-
-            elif command == "get_stats":
-                data_type = json_data["data_type"]
-
-                if data_type == "general":
-                    await self.get_stats_general_request()
-
-                elif data_type == "player_stats":
-                    await self.get_stats_player_request()
-
-        except Exception as e:
+        elif command == "get_time":
             await self.send(
-                text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()},
-                ),
+                text_data=await get_time(self.match_data, self.current_part),
             )
+
+        elif command in {"home_team", "away_team"}:
+            await self.team_request(command, json_data["user_id"])
+
+        elif command == "savePlayerGroups":
+            await self.save_player_groups_request(json_data["playerGroups"])
+
+        elif command == "get_stats":
+            data_type = json_data["data_type"]
+
+            if data_type == "general":
+                await self.get_stats_general_request()
+
+            elif data_type == "player_stats":
+                await self.get_stats_player_request()
 
     async def team_request(self, command: str, user_id: UUID | None) -> None:
         """Get the team data for the home or away team.

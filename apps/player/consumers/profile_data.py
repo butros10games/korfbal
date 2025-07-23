@@ -1,7 +1,6 @@
 """Module contains the ProfileDataConsumer class."""
 
 import json
-import traceback
 
 from asgiref.sync import sync_to_async
 from bg_auth.models import UserProfile
@@ -58,82 +57,59 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             text_data (str): The text data.
             bytes_data (bytes): The bytes data.
 
-        Raises:
-            ValueError: If the command is not recognized.
-
         """
+        if bytes_data:
+            text_data = bytes_data.decode("utf-8")
         if text_data is None:
+            await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
-        try:
-            json_data = json.loads(text_data)
-            command = json_data.get("command")
+        json_data = json.loads(text_data)
+        command = json_data.get("command")
 
-            async def handle_settings_request() -> None:
-                """Handle the settings request command.
+        match command:
+            case "player_stats":
+                await self.player_stats_request()
 
-                Raises:
-                    ValueError: If the user or user profile is not found.
+            case "settings_request":
+                await self._handle_settings_request()
 
-                """
-                if not self.user or not self.user_profile:
-                    raise ValueError("User or UserProfile not found.")
-                await self.send(
-                    text_data=json.dumps(
-                        {
-                            "command": "settings_request",
-                            "username": self.user.username,
-                            "email": self.user.email,
-                            "first_name": self.user.first_name,
-                            "last_name": self.user.last_name,
-                            "email_2fa": self.user_profile.email_2fa,
-                        },
-                    ),
-                )
-
-            async def handle_settings_update() -> None:
-                """Handle the settings update command."""
+            case "settings_update":
                 await self.settings_update_request(json_data["data"])
 
-            async def handle_update_profile_picture_url() -> None:
-                """Handle the update profile picture URL command."""
+            case "update_profile_picture_url":
                 await self.settings_update_request(json_data["url"])
 
-            async def handle_teams() -> None:
-                """Handle the teams command."""
+            case "teams":
                 await self.teams_request()
 
-            async def handle_matches() -> None:
-                """Handle the matches command."""
-                await self.matches_request(command)
+            case "upcoming_matches", "past_matches":
+                await self.matches_request(json_data.get("command"))
 
-            async def handle_get_time() -> None:
-                """Handle the get time command."""
+            case "get_time":
                 await get_time_display_pause(self, json_data)
 
-            command_map = {
-                "player_stats": self.player_stats_request,
-                "settings_request": handle_settings_request,
-                "settings_update": handle_settings_update,
-                "update_profile_picture_url": handle_update_profile_picture_url,
-                "teams": handle_teams,
-                "upcoming_matches": handle_matches,
-                "past_matches": handle_matches,
-                "get_time": handle_get_time,
-            }
+    async def _handle_settings_request(self) -> None:
+        """Handle the settings request command.
 
-            handler = command_map.get(command)
-            if handler:
-                await handler()
-            else:
-                raise ValueError(f"Unknown command: {command}")
+        Raises:
+            ValueError: If the user or user profile is not found.
 
-        except Exception as e:
-            await self.send(
-                text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()},
-                ),
-            )
+        """
+        if not self.user or not self.user_profile:
+            raise ValueError("User or UserProfile not found.")
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "command": "settings_request",
+                    "username": self.user.username,
+                    "email": self.user.email,
+                    "first_name": self.user.first_name,
+                    "last_name": self.user.last_name,
+                    "email_2fa": self.user_profile.email_2fa,
+                },
+            ),
+        )
 
     async def player_stats_request(self) -> None:
         """Send the player stats to the client."""

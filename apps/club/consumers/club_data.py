@@ -50,6 +50,8 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             bytes_data: The received bytes data.
 
         """
+        if bytes_data:
+            text_data = bytes_data.decode("utf-8")
         if text_data is None:
             await self.send(text_data=json.dumps({"error": "No data received"}))
             return

@@ -3,7 +3,6 @@ data page.
 """
 
 import json
-import traceback
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -49,17 +48,20 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             bytes_data (bytes): The bytes data received from the websocket.
 
         """
+        if bytes_data:
+            text_data = bytes_data.decode("utf-8")
         if text_data is None:
+            await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
-        try:
-            json_data = json.loads(text_data)
-            command = json_data["command"]
+        json_data = json.loads(text_data)
+        command = json_data["command"]
 
-            if command in {"matches", "ended_matches"}:
-                await self.matches_request(command)
+        match command:
+            case "matches", "ended_matches":
+                await self.matches_request(json_data["command"])
 
-            elif command == "get_stats":
+            case "get_stats":
                 data_type = json_data["data_type"]
 
                 if data_type == "general":
@@ -68,21 +70,14 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 elif data_type == "player_stats":
                     await self.team_stats_player_request()
 
-            elif command == "players":
+            case "players":
                 await self.player_request(json_data)
 
-            elif command == "follow":
+            case "follow":
                 await self.follow_request(json_data["followed"], json_data["user_id"])
 
-            elif command == "get_time":
+            case "get_time":
                 await get_time_display_pause(self, json_data)
-
-        except Exception as e:
-            await self.send(
-                text_data=json.dumps(
-                    {"error": str(e), "traceback": traceback.format_exc()},
-                ),
-            )
 
     async def matches_request(self, command: str) -> None:
         """Handle the request for matches.
