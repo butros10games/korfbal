@@ -1,58 +1,35 @@
-# Project Name
+# Korfbal (Django)
 
-This project is build to keep track of korfbal matches. in a better way then to do it on paper.
+Web app to track korfbal matches, players, and stats in real time.
 
-## Table of Contents
+## Requirements
 
-Can be found [here](docs/project-structure.md)
+- Python 3.13 and uv
+- PostgreSQL and Redis (local or remote)
 
-## Installation
+## Setup (Windows PowerShell)
 
-### Prerequisites
+- Install deps: uv sync
+- Env vars: DJANGO_SECRET_KEY, DEBUG, DATABASE_URL, REDIS_URL
+- Migrate: uv run python manage.py migrate
+- Create admin: uv run python manage.py createsuperuser
 
-- python 3.13
-- pip
+## Run
 
-### Steps
-
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/butros10games/korfbal.git
-    ```
-2. Navigate to the project directory:
-    ```bash
-    cd korfbal
-    ```
-3. Install the dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-## Usage
-
-To run the project, execute the following command:
-
-```bash
-python manage.py runserver
-```
+- Dev: uv run python manage.py runserver 0.0.0.0:8000
+- ASGI/WSGI via Docker: see app docker files and infrastructure/ host compose
 
 ## Features
 
-- korfbal wedstijden bij te houden
-- Feature 2: Description of feature 2
-- Feature 3: Description of feature 3
+- Match tracker with live updates
+- Player and team management
+- Simple dashboards and stats
 
-## Configuration
+## Tests and quality
 
-Explain any configuration options or environment variables the user may need to set up to run the project.
+- Tests: uv run pytest -q
+- Lint: uv run ruff check .; uv run ruff check --fix .
 
-## Contributing
+## Notes
 
-If you want to contribute to this project, please follow these steps:
-
-1. Fork the repository.
-2. Ensure you are on the main branch (`git checkout main`).
-3. Pull the latest changes from the main branch (`git pull origin main`).
-4. Make your changes and commit them with a descriptive message (`git commit -m 'Add some feature'`).
-5. Push your changes to your fork (`git push origin main`).
-6. Open a pull request.
+- Static assets are served via Django in dev; use collectstatic for prod.

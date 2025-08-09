@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/github/license/butros10games/MonoRepo)
 -->
 
-# club
+# club (Django app)
 
 ## Features
 - Core club management features for the korfbal project.
@@ -22,12 +22,9 @@ INSTALLED_APPS = [
 ]
 ```
 
-## Testing
-To run tests for this app:
-```bash
-python manage.py test club
-```
-Make sure you have a test database configured.
+## Local test
+Run from the project root:
+- uv run python manage.py test club
 
 ## Contributing
 Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/contributing.md) for workflow and code style.

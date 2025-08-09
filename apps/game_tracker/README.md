@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/github/license/butros10games/MonoRepo)
 -->
 
-# game_tracker
+# game_tracker (Django app)
 
 ## Features
 - Game tracking and statistics for the korfbal project.
@@ -22,12 +22,9 @@ INSTALLED_APPS = [
 ]
 ```
 
-## Testing
-To run tests for this app:
-```bash
-python manage.py test game_tracker
-```
-Make sure you have a test database configured.
+## Local test
+Run from the project root:
+- uv run python manage.py test game_tracker
 
 ## Contributing
 Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/contributing.md) for workflow and code style.
