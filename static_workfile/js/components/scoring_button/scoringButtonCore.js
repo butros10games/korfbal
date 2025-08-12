@@ -1,4 +1,9 @@
-import { shotButtonReg, removePlayerClickHandlers, addPlayerClickHandlers } from './scoringButtonHandlers.js';
+import {
+    shotButtonReg,
+    removePlayerClickHandlers,
+    addPlayerClickHandlers,
+} from './scoringButtonHandlers.js';
+import { getButtonBackground } from './scoringButtonUtils.js';
 
 export const toggleButton = function (button, team, socket, homeScoreButton) {
     if (button.classList.contains('activated')) {
@@ -7,14 +12,6 @@ export const toggleButton = function (button, team, socket, homeScoreButton) {
     } else {
         deactivateActivatedButton(homeScoreButton);
         activateButton(button, team, socket);
-    }
-};
-
-export const getButtonBackground = function (team, isActive) {
-    if (team === 'home') {
-        return isActive ? '#43ff64' : '#43ff6480';
-    } else {
-        return isActive ? 'rgba(235, 0, 0, 0.7)' : 'rgba(235, 0, 0, 0.5)';
     }
 };
 
