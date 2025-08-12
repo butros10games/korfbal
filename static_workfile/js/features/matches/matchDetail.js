@@ -35,7 +35,7 @@ window.addEventListener('DOMContentLoaded', () => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket, { user_id: user_id });
             socket.send(JSON.stringify({ command: 'get_time' }));
-        }
+        },
     );
 
     setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');
@@ -60,12 +60,12 @@ function onMessageReceived(event, match_id, user_id, socket) {
         case 'playerGroups': {
             cleanDomCarousel(infoContainer);
 
-            const access = data.is_coach && !data.finished
+            const access = data.is_coach && !data.finished;
 
             const playerGroupManager = new PlayerGroupManager(
                 data.match_id,
                 data.team_id,
-                "info-container",
+                'info-container',
                 access,
                 data.group_id_to_type_id,
                 data.type_id_to_group_id,

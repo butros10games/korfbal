@@ -1,1 +1,5 @@
-export { initializeSocket, requestInitialData, onMessageReceived } from './websocketCore.js';
+export {
+    initializeSocket,
+    requestInitialData,
+    onMessageReceived,
+} from './websocketCore.js';

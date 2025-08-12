@@ -6,8 +6,16 @@ import {
     updateGoalStats,
 } from '../../components/carousel/index.js';
 import { setupProfilePicture } from '../../components/profile_picture/index.js';
-import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets/index.js';
-import { timer_data, pause, part_end } from '../../components/countdown_timer/countdownTimerActions.js';
+import {
+    initializeSocket,
+    requestInitialData,
+    onMessageReceived,
+} from '../../utils/websockets/index.js';
+import {
+    timer_data,
+    pause,
+    part_end,
+} from '../../components/countdown_timer/countdownTimerActions.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     const timers = {};
@@ -26,36 +34,48 @@ window.addEventListener('DOMContentLoaded', () => {
     const maxLength = 14;
 
     const commandHandlers = {
-        'settings_request': (data) => {
+        settings_request: (data) => {
             cleanDom(infoContainer, profilePicture);
             updateSettings(data, infoContainer, socket);
         },
-        'player_goal_stats': (data) => {
+        player_goal_stats: (data) => {
             cleanDom(infoContainer, profilePicture);
             updateGoalStats(data, infoContainer);
         },
-        'settings_updated': () => {
+        settings_updated: () => {
             settingsSaved();
         },
-        'teams':        (data) => {
+        teams: (data) => {
             cleanDom(infoContainer, profilePicture);
             updateTeam(data, infoContainer);
         },
-        'matches':      (data) => {
+        matches: (data) => {
             cleanDom(infoContainer, profilePicture);
             updateMatches(data, maxLength, infoContainer, socket);
         },
-        'timer_data':   (data) => {
+        timer_data: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = timer_data(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = timer_data(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
-        'pause':        (data) => {
+        pause: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = pause(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = pause(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
-        'part_end':     (data) => {
+        part_end: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = part_end(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = part_end(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
     };
 
@@ -75,9 +95,9 @@ window.addEventListener('DOMContentLoaded', () => {
         (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket);
-        }
+        },
     );
-    
+
     setupCarousel(carousel, buttons, socket);
     setupProfilePicture(csrfToken);
 });

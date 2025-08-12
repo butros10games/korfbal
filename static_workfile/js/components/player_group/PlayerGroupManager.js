@@ -37,7 +37,7 @@ export class PlayerGroupManager {
         this.typeIdToGroupId = typeIdToGroupId;
         this.groupIdToStartingType = {};
 
-        // Bind your methods for event usage 
+        // Bind your methods for event usage
         this.boundSetupPlayerGroups = this.outsideSetupPlayerGroups.bind(this);
 
         // We'll keep a reference to our main content area in memory
@@ -156,7 +156,7 @@ export class PlayerGroupManager {
                 playerGroup.players.forEach((player) => {
                     const { playerDiv, divider } = this.createPlayerRow(
                         player,
-                        playerGroup.id_uuid
+                        playerGroup.id_uuid,
                     );
                     playerGroupDiv.appendChild(playerDiv);
                     playerGroupDiv.appendChild(divider);
@@ -194,7 +194,7 @@ export class PlayerGroupManager {
                 this.playerField.appendChild(centerDiv);
             }
         });
-    
+
         // If some players are already selected (edge case), ensure we show the options
         if (this.selectedPlayers.length > 0) {
             this.updateOptionsBar();
@@ -245,7 +245,9 @@ export class PlayerGroupManager {
         playerDiv.id = player.id_uuid;
 
         // If the player is in the "selectedPlayers" array, highlight
-        const isSelected = this.selectedPlayers.some((p) => p.id_uuid === player.id_uuid);
+        const isSelected = this.selectedPlayers.some(
+            (p) => p.id_uuid === player.id_uuid,
+        );
         playerDiv.style.backgroundColor = isSelected ? 'lightblue' : 'white';
 
         // Add profile picture
@@ -288,7 +290,9 @@ export class PlayerGroupManager {
 
     togglePlayerSelection(player, groupId, playerDiv) {
         const id_uuid = player.id_uuid;
-        const playerIndex = this.selectedPlayers.findIndex((p) => p.id_uuid === id_uuid);
+        const playerIndex = this.selectedPlayers.findIndex(
+            (p) => p.id_uuid === id_uuid,
+        );
 
         if (playerIndex === -1) {
             // Not selected yet, so add to selected
@@ -350,9 +354,12 @@ export class PlayerGroupManager {
         const numberPlayersGroup = playersGroupData?.players?.length || 0;
 
         // Check if we exceed maximum players for the group
-        if (option.player_max && numberPlayersGroup + this.selectedPlayers.length > option.player_max) {
+        if (
+            option.player_max &&
+            numberPlayersGroup + this.selectedPlayers.length > option.player_max
+        ) {
             alert(
-                `You have selected too many players for the group.\nGroup max: ${option.player_max}.`
+                `You have selected too many players for the group.\nGroup max: ${option.player_max}.`,
             );
             return;
         }
@@ -458,7 +465,9 @@ export class PlayerGroupManager {
             const oldGroupId = selectedPlayer.groupId;
 
             // Remove from old group
-            const oldGroup = this.playerGroupsData.find((g) => g.id_uuid === oldGroupId);
+            const oldGroup = this.playerGroupsData.find(
+                (g) => g.id_uuid === oldGroupId,
+            );
             let player = null;
             if (oldGroup) {
                 const idx = oldGroup.players.findIndex((p) => p.id_uuid === id_uuid);
@@ -469,7 +478,9 @@ export class PlayerGroupManager {
 
             // Add to new group
             if (newGroupId && player) {
-                let newGroup = this.playerGroupsData.find((g) => g.id_uuid === newGroupId);
+                let newGroup = this.playerGroupsData.find(
+                    (g) => g.id_uuid === newGroupId,
+                );
                 if (!newGroup) {
                     const startingType = this.groupIdToStartingType[newGroupId] || {
                         name: 'Unknown',
@@ -530,8 +541,8 @@ export class PlayerGroupManager {
     }
 
     /**
-     * Renders the "Add Players" screen. 
-     * This replaces the main playerField content, 
+     * Renders the "Add Players" screen.
+     * This replaces the main playerField content,
      * but we do not query .player or any elements for event handling.
      */
     renderAddPlayersView(players, searchText = null) {

@@ -5,11 +5,18 @@ import {
     createScoreDiv,
     getFormattedTime,
 } from '../../utils/events/index.js';
-import { resetSwipe, setupSwipeDelete, deleteButtonSetup } from '../../components/swipe_delete/index.js';
+import {
+    resetSwipe,
+    setupSwipeDelete,
+    deleteButtonSetup,
+} from '../../components/swipe_delete/index.js';
 import { CountdownTimer } from '../../components/countdown_timer/index.js';
 import { updatePlayerGroups } from '../../components/carousel/index.js';
 import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
-import { scoringButtonSetup, shotButtonReg } from '../../components/scoring_button/index.js';
+import {
+    scoringButtonSetup,
+    shotButtonReg,
+} from '../../components/scoring_button/index.js';
 import { sharedData } from './sharedData.js';
 
 let firstUUID;
@@ -48,19 +55,19 @@ window.addEventListener('DOMContentLoaded', () => {
     const startStopButton = document.getElementById('start-stop-button');
 
     const commandHandlers = {
-        'last_event': (data) => lastEvent(data, eventsDiv),
-        'playerGroups': (data) => playerGroups(data, socket, eventsDiv, actions),
-        'player_shot_change': (data) => updatePlayerShot(data),
-        'player_goal_change': (data) => updatePlayerGoals(data),
-        'goal_types': (data) => showGoalTypes(data, socket),
-        'timer_data': (data) => timerData(data, startStopButton),
-        'pause': (data) => pauseTimer(data, startStopButton),
-        'team_goal_change': (data) => teamGoalChangeFunction(data),
-        'non_active_players': (data) => showReservePlayer(data, socket),
-        'player_change': (data) => playerChange(data, socket),
-        'part_end': (data) => partEnd(data, startStopButton),
-        'match_end': (data) => matchEnd(data, startStopButton),
-        'error': (data) => errorProcessing(data),
+        last_event: (data) => lastEvent(data, eventsDiv),
+        playerGroups: (data) => playerGroups(data, socket, eventsDiv, actions),
+        player_shot_change: (data) => updatePlayerShot(data),
+        player_goal_change: (data) => updatePlayerGoals(data),
+        goal_types: (data) => showGoalTypes(data, socket),
+        timer_data: (data) => timerData(data, startStopButton),
+        pause: (data) => pauseTimer(data, startStopButton),
+        team_goal_change: (data) => teamGoalChangeFunction(data),
+        non_active_players: (data) => showReservePlayer(data, socket),
+        player_change: (data) => playerChange(data, socket),
+        part_end: (data) => partEnd(data, startStopButton),
+        match_end: (data) => matchEnd(data, startStopButton),
+        error: (data) => errorProcessing(data),
     };
 
     const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
@@ -597,7 +604,7 @@ function showReservePlayer(data, socket) {
             const data_send = {
                 command: 'substitute_reg',
                 new_player_id: Player.id,
-                old_player_id: playerSwitchData.player_id
+                old_player_id: playerSwitchData.player_id,
             };
 
             console.log(data_send);
@@ -701,11 +708,7 @@ function updateEvent(data) {
             break;
         }
         case 'attack': {
-            const eventTypeDiv = createEventTypeDiv(
-                event.name,
-                '64px',
-                '#43ff644d',
-            );
+            const eventTypeDiv = createEventTypeDiv(event.name, '64px', '#43ff644d');
             const midsectionDiv = createMidsectionDiv(
                 '("' + event.time + '")',
                 truncateMiddle(event.team, 20),
@@ -804,7 +807,10 @@ function showPlayerGroups(data, socket) {
         const playerGroupDiv = createDivWithClass('player-group', 'flex-column');
         playerGroupDiv.style.marginTop = '12px';
 
-        const playerGroupTitleDiv = createDivWithClass('flex-row', 'player-group-title');
+        const playerGroupTitleDiv = createDivWithClass(
+            'flex-row',
+            'player-group-title',
+        );
         playerGroupTitleDiv.style.marginBottom = '6px';
         playerGroupTitleDiv.style.margin = '0 12px 6px 12px';
         playerGroupTitleDiv.style.width = 'calc(100% - 24px)';
@@ -823,13 +829,16 @@ function showPlayerGroups(data, socket) {
             AttackButtonDiv.style.width = '128px';
 
             AttackButtonDiv.addEventListener('click', () => {
-                socket.send(JSON.stringify({ command: "new_attack" }));
+                socket.send(JSON.stringify({ command: 'new_attack' }));
             });
 
             playerGroupTitleDiv.appendChild(AttackButtonDiv);
         }
 
-        const playerGroupPlayers = createDivWithClass('player-group-players', 'flex-row');
+        const playerGroupPlayers = createDivWithClass(
+            'player-group-players',
+            'flex-row',
+        );
         playerGroupPlayers.style.flexWrap = 'wrap';
         playerGroupPlayers.style.alignItems = 'stretch';
         playerGroupPlayers.id = playerGroup.current_type;
@@ -842,19 +851,23 @@ function showPlayerGroups(data, socket) {
             playerDiv.style.padding = '0 6px';
             playerDiv.style.textAlign = 'center';
             playerDiv.style.justifyContent = 'space-between';
-            
+
             const playerName = document.createElement('p');
             playerName.style.margin = '0';
             playerName.style.fontSize = '16px';
             playerName.innerHTML = truncateMiddle(player.name, 16);
 
             const playerShots = shotDisplay(
-                player.shots_for, player.shots_against, "shots"
+                player.shots_for,
+                player.shots_against,
+                'shots',
             );
             playerShots.style.marginLeft = 'auto';
 
             const playerGoals = shotDisplay(
-                player.goals_for, player.goals_against, "goals"
+                player.goals_for,
+                player.goals_against,
+                'goals',
             );
 
             playerDiv.appendChild(playerName);
@@ -949,7 +962,7 @@ function showActionMenu(actions) {
 
 function createDivWithClass(...classNames) {
     const div = document.createElement('div');
-    classNames.forEach(className => div.classList.add(className));
+    classNames.forEach((className) => div.classList.add(className));
     return div;
 }
 
@@ -1001,7 +1014,7 @@ function playerSwitch(socket) {
             // Add new handler
             const playerClickHandler = function () {
                 playerSwitchData = {
-                    player_id: element.id
+                    player_id: element.id,
                 };
 
                 const data = {

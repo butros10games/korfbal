@@ -8,7 +8,7 @@ export const initializeSocket = function (url, onMessageReceived, onOpenCallback
             } else {
                 console.warn('Socket is not open. Could not send:', data);
             }
-        }
+        },
     };
 
     function connect() {
@@ -21,7 +21,7 @@ export const initializeSocket = function (url, onMessageReceived, onOpenCallback
         socket = new WebSocket(url);
 
         // The onopen that is called every time, including reconnect
-        socket.onopen = function() {
+        socket.onopen = function () {
             console.log('Connection established!');
             if (typeof onOpenCallback === 'function') {
                 onOpenCallback(socket);
@@ -70,7 +70,7 @@ export function onMessageReceived(commandHandlers) {
     return function (event) {
         const data = JSON.parse(event.data);
         const { command } = data;
-    
+
         if (commandHandlers[command]) {
             commandHandlers[command](data);
         } else {

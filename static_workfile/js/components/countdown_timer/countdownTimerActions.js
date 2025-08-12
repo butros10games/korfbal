@@ -6,7 +6,7 @@ import { CountdownTimer } from './countdownTimer.js';
  * @param {CountdownTimer|null} existingTimer Existing timer instance (if any).
  * @returns {CountdownTimer|null} Updated or new CountdownTimer instance.
  */
-export const timer_data = function(data, existingTimer, counterId) {
+export const timer_data = function (data, existingTimer, counterId) {
     // If a timer already exists, destroy it before creating a new one.
     if (existingTimer) {
         existingTimer.destroy();
@@ -53,7 +53,7 @@ export const timer_data = function(data, existingTimer, counterId) {
     }
 
     return existingTimer;
-}
+};
 
 /**
  * Pauses or resumes the timer.
@@ -61,7 +61,7 @@ export const timer_data = function(data, existingTimer, counterId) {
  * @param {CountdownTimer|null} existingTimer The existing timer instance.
  * @returns {CountdownTimer|null} Updated timer instance.
  */
-export const pause = function(data, existingTimer) {
+export const pause = function (data, existingTimer) {
     if (!existingTimer) {
         return existingTimer;
     }
@@ -75,7 +75,7 @@ export const pause = function(data, existingTimer) {
     }
 
     return existingTimer;
-}
+};
 
 /**
  * Ends the current part/period of the match, stops the timer, and resets display.
@@ -83,7 +83,7 @@ export const pause = function(data, existingTimer) {
  * @param {CountdownTimer|null} existingTimer The existing timer instance.
  * @returns {null} Because the old timer is ended and cleared.
  */
-export const part_end = function(data, existingTimer) {
+export const part_end = function (data, existingTimer) {
     // If you have a unique DOM element per match_data_id, build its ID here:
     const periode_p = document.getElementById(`periode_number_${data.match_data_id}`);
     if (periode_p) {
@@ -106,4 +106,4 @@ export const part_end = function(data, existingTimer) {
     }
 
     return existingTimer;
-}
+};

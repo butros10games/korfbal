@@ -1,13 +1,16 @@
 export function pageReturn() {
     const returnButton = document.getElementById('return-button');
 
-    if (window.location.pathname === '/catalog/' && localStorage.getItem('pageStack') === '["/catalog/"]') {
+    if (
+        window.location.pathname === '/catalog/' &&
+        localStorage.getItem('pageStack') === '["/catalog/"]'
+    ) {
         returnButton.style.display = 'none';
     }
 
     returnButton.addEventListener('click', () => {
         const storedStack = localStorage.getItem('pageStack');
-        let pageStack = storedStack ? JSON.parse(storedStack) : [];
+        const pageStack = storedStack ? JSON.parse(storedStack) : [];
 
         pageStack.pop();
 

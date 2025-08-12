@@ -11,7 +11,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Pass in the ID of the container where you want all the elements appended
     const playerGroupManager = new PlayerGroupManager(
-        matchId, teamId, 'main-content', true
+        matchId,
+        teamId,
+        'main-content',
+        true,
     );
     playerGroupManager.initialize();
 });

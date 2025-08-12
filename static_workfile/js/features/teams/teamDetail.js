@@ -4,14 +4,22 @@ import {
     updatePlayers,
     updateStatistics,
 } from '../../components/carousel/index.js';
-import { initializeSocket, requestInitialData, onMessageReceived } from '../../utils/websockets/index.js';
+import {
+    initializeSocket,
+    requestInitialData,
+    onMessageReceived,
+} from '../../utils/websockets/index.js';
 import { setupFollowButton } from '../../components/setup_follow_button/index.js';
 import { readUserId } from '../../utils/dom/index.js';
-import { timer_data, pause, part_end } from '../../components/countdown_timer/countdownTimerActions.js';
+import {
+    timer_data,
+    pause,
+    part_end,
+} from '../../components/countdown_timer/countdownTimerActions.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     const timers = {};
-    
+
     const carousel = document.querySelector('.carousel');
     const buttons = document.querySelectorAll('.button');
 
@@ -24,20 +32,32 @@ window.addEventListener('DOMContentLoaded', () => {
     const infoContainer = document.getElementById('info-container');
     const maxLength = 14;
     const commandHandlers = {
-        'matches': (data) => updateMatches(data, maxLength, infoContainer, socket),
-        'stats':       (data) => updateStatistics(data.data, infoContainer, socket, user_id),
-        'players':     (data) => updatePlayers(data, infoContainer),
-        'timer_data':  (data) => {
+        matches: (data) => updateMatches(data, maxLength, infoContainer, socket),
+        stats: (data) => updateStatistics(data.data, infoContainer, socket, user_id),
+        players: (data) => updatePlayers(data, infoContainer),
+        timer_data: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = timer_data(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = timer_data(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
-        'pause':       (data) => {
+        pause: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = pause(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = pause(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
-        'part_end':    (data) => {
+        part_end: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = part_end(data, currentTimer, `counter_${data.match_data_id}`);
+            timers[data.match_data_id] = part_end(
+                data,
+                currentTimer,
+                `counter_${data.match_data_id}`,
+            );
         },
     };
 
@@ -57,7 +77,7 @@ window.addEventListener('DOMContentLoaded', () => {
         (socket) => {
             console.log('WebSocket connection established, sending initial data...');
             requestInitialData('.button.active', socket, { user_id: user_id });
-        }
+        },
     );
 
     setupCarousel(carousel, buttons, socket, { user_id: user_id }, 'get_stats');

@@ -100,9 +100,10 @@ export const updateMatches = function (data, maxLength, infoContainer, socket) {
                 match_middle_container.appendChild(match_score);
 
                 socket.send(
-                    JSON.stringify(
-                        { command: 'get_time', match_data_id: element.match_data_id }
-                    )
+                    JSON.stringify({
+                        command: 'get_time',
+                        match_data_id: element.match_data_id,
+                    }),
                 );
             } else {
                 const match_hour = document.createElement('p');
