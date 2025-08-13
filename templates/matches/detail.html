@@ -1,11 +1,6 @@
-{% extends "common/base.html" %}
-{% load static %}
-{% load truncate_middle %}
-
-{% block title %}{{ title }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-
-{% block content %}
+{% extends "common/base.html" %} {% load static %} {% load truncate_middle %} {% block
+title %}{{ title }}{% endblock %} {% block meta_description %}{{ meta_description }}{%
+endblock %} {% block content %}
 <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px">
     <div class="flex-row" style="justify-content: flex-start">
         <p style="font-weight: 600; font-size: 16px; margin-bottom: 8px">
@@ -64,12 +59,8 @@
 <div class="carousel-container">
     <div class="carousel">
         <a class="button active" data="match_events">Events</a>
-        <a class="button" data="home_team"
-            >{{ match.home_team|truncate_middle:12 }}</a
-        >
-        <a class="button" data="away_team"
-            >{{ match.away_team|truncate_middle:12 }}</a
-        >
+        <a class="button" data="home_team">{{ match.home_team|truncate_middle:12 }}</a>
+        <a class="button" data="away_team">{{ match.away_team|truncate_middle:12 }}</a>
         {% if match_data.status != 'upcoming' %}
         <a class="button" data="get_stats">statastieken</a>
         {% endif %}

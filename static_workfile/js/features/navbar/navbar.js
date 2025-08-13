@@ -1,6 +1,6 @@
-import { pageReturn, trackPageVisits } from "../../components/return_button/index.js";
+import { pageReturn, trackPageVisits } from '../../components/return_button/index.js';
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener('DOMContentLoaded', () => {
     pageReturn();
     trackPageVisits();
 });

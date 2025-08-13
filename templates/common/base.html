@@ -5,11 +5,14 @@
     <head>
         <!-- Block for page title. Default to "KWT" or something generic -->
         <title>{% block title %}KWT{% endblock %}</title>
-        
+
         <meta charset="utf-8" />
-        <meta name="description" content="{% block meta_description %}Korfbal Wedstrijd Tracker{% endblock %}" />
-        
-        {% include "common/imports.html" %} 
+        <meta
+            name="description"
+            content="{% block meta_description %}Korfbal Wedstrijd Tracker{% endblock %}"
+        />
+
+        {% include "common/imports.html" %}
     </head>
 
     <body class="background-color">
@@ -26,9 +29,7 @@
                 height: calc((var(--vh, 1vh) * 100) - 112px);
                 justify-content: flex-start;
             "
-        >
-            
-        </main>
+        ></main>
 
         <!-- Footer included in every page -->
         {% include 'overlays/footer.html' %}

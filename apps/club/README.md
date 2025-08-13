@@ -8,13 +8,17 @@
 # club (Django app)
 
 ## Features
+
 - Core club management features for the korfbal project.
 
 ## Requirements
+
 - Django >= 3.2
 
 ## Usage
+
 Add to `INSTALLED_APPS` in your Django settings:
+
 ```python
 INSTALLED_APPS = [
     ...
@@ -23,10 +27,13 @@ INSTALLED_APPS = [
 ```
 
 ## Local test
+
 Run from the project root:
+
 - uv run python manage.py test club
 
 ## Contributing
+
 Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/contributing.md) for workflow and code style.
 
 <!-- Optionally add a screenshot or architecture diagram here -->

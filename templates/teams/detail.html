@@ -1,17 +1,9 @@
-{% extends "common/base.html" %}
-{% load static %}
-
-{% block title %}{{ title }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-
-{% block content %}
+{% extends "common/base.html" %} {% load static %} {% block title %}{{ title }}{%
+endblock %} {% block meta_description %}{{ meta_description }}{% endblock %} {% block
+content %}
 <div
     class="flex-column"
-    style="
-        justify-content: flex-end;
-        background-color: #1b1b1b;
-        width: 100%;
-    "
+    style="justify-content: flex-end; background-color: #1b1b1b; width: 100%"
 >
     <div
         class="flex-row"
@@ -28,9 +20,7 @@
                 src="{{ team.club.get_club_logo }}"
                 style="height: 48px; width: 48px"
         /></a>
-        <p style="font-weight: 600; color: white; margin-left: 12px">
-            {{ team }}
-        </p>
+        <p style="font-weight: 600; color: white; margin-left: 12px">{{ team }}</p>
     </div>
     <div
         class="icon-container"

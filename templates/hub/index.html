@@ -1,11 +1,6 @@
-{% extends "common/base.html" %}
-{% load static %}
-{% load truncate_middle %}
-
-{% block title %}{{ title }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-
-{% block content %}
+{% extends "common/base.html" %} {% load static %} {% load truncate_middle %} {% block
+title %}{{ title }}{% endblock %} {% block meta_description %}{{ meta_description }}{%
+endblock %} {% block content %}
 <div
     class="flex-column"
     style="
@@ -15,14 +10,7 @@
     "
 >
     {% if user.is_authenticated %}
-    <p
-        style="
-            margin: 0;
-            font-size: 16px;
-            margin-top: 6px;
-            margin-right: auto;
-        "
-    >
+    <p style="margin: 0; font-size: 16px; margin-top: 6px; margin-right: auto">
         Volgende wedstrijd
     </p>
     <p style="margin: 0; font-size: 14px; color: gray; margin-right: auto">
@@ -66,10 +54,7 @@
         {% endif %}
     </div>
 
-    <div
-        class="flex-center"
-        style="border-top: 1px solid #0000004a; width: 100%"
-    >
+    <div class="flex-center" style="border-top: 1px solid #0000004a; width: 100%">
         <p style="font-size: 14px; font-weight: 600; margin: 8px 0">
             Volledig programma
         </p>
@@ -91,11 +76,7 @@
 
 <div
     class="flex-column"
-    style="
-        margin-top: 12px;
-        padding: 0 12px 0 12px;
-        width: calc(100% - 24px);
-    "
+    style="margin-top: 12px; padding: 0 12px 0 12px; width: calc(100% - 24px)"
 >
     <p
         style="
@@ -110,7 +91,7 @@
     </p>
 </div>
 
-<div id="match_id" style="display: none;">{{ match.id_uuid }}</div>
+<div id="match_id" style="display: none">{{ match.id_uuid }}</div>
 
 <script src="{% static 'webpack_bundles/landing.bundle.js' %}"></script>
 <script src="{% static 'webpack_bundles/mobile_view.bundle.js' %}"></script>

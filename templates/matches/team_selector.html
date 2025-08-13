@@ -1,21 +1,11 @@
-{% extends "common/base.html" %}
-{% load static %}
-{% load truncate_middle %}
-
-{% block title %}{{ title }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-
-{% block content %}
+{% extends "common/base.html" %} {% load static %} {% load truncate_middle %} {% block
+title %}{{ title }}{% endblock %} {% block meta_description %}{{ meta_description }}{%
+endblock %} {% block content %}
 <div class="flex-column" style="width: calc(100% - 32px); margin: 0 16px">
     <div class="flex-row" style="justify-content: flex-start">
-        <p style="font-weight: 600; font-size: 16px">
-            Selecteer team voor bijhouden
-        </p>
+        <p style="font-weight: 600; font-size: 16px">Selecteer team voor bijhouden</p>
     </div>
-    <div
-        class="flex-color flex-column"
-        style="margin-top: 6px; gap: 12px; width: 100%"
-    >
+    <div class="flex-color flex-column" style="margin-top: 6px; gap: 12px; width: 100%">
         <a
             href="/match/tracker/{{ match.id_uuid }}/{{ match.home_team.id_uuid}}"
             class="flex-column"
@@ -34,9 +24,7 @@
                 height="64px"
                 style="border-radius: 50%; object-fit: contain"
             />
-            <h2 style="margin: 4px 0; font-size: 24px">
-                {{ match.home_team }}
-            </h2>
+            <h2 style="margin: 4px 0; font-size: 24px">{{ match.home_team }}</h2>
         </a>
 
         <a
@@ -57,9 +45,7 @@
                 height="64px"
                 style="border-radius: 50%; object-fit: contain"
             />
-            <h2 style="margin: 4px 0; font-size: 24px">
-                {{ match.away_team }}
-            </h2>
+            <h2 style="margin: 4px 0; font-size: 24px">{{ match.away_team }}</h2>
         </a>
     </div>
 </div>

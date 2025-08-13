@@ -26,7 +26,7 @@ body {
 /* FILE 1 + FILE 2 + FILE 4 + FILE 5 + FILE 6 + FILE 7 + FILE 8 (merged definitions) */
 .flex-row {
     display: flex;
-    flex-direction: row;  /* Ensures row direction */
+    flex-direction: row; /* Ensures row direction */
     flex-wrap: nowrap;
     justify-content: space-between;
     align-items: center;
@@ -155,7 +155,7 @@ a {
    We'll unify: if you prefer auto-centering, keep margin: auto. If you prefer spacing, keep margin: 8px.
    Adjust as needed. Here, we’ll keep margin: 8px from FILE 2 but note it below. */
 .player-name {
-    margin: 8px;  /* from FILE 2, if you want auto-centering use margin: auto from FILE 4 instead */
+    margin: 8px; /* from FILE 2, if you want auto-centering use margin: auto from FILE 4 instead */
     word-break: break-all; /* from FILE 2 */
 }
 
@@ -393,8 +393,8 @@ a {
     position: absolute;
     right: 46px;
     top: 64px;
-    width: auto;    /* auto fits the SVG */
-    height: 32px;   /* height of the volgen-icon */
+    width: auto; /* auto fits the SVG */
+    height: 32px; /* height of the volgen-icon */
     cursor: pointer;
     display: inline-block;
 }
@@ -969,22 +969,22 @@ option {
 }
 
 .cross-icon {
-    position: relative;     /* Needed to position pseudo-elements absolutely */
-    display: inline-block;  /* So it can size according to width & height */
-    width: 24px;            /* Icon width  */
-    height: 24px;           /* Icon height */
-    cursor: pointer;        /* Show pointer on hover */
+    position: relative; /* Needed to position pseudo-elements absolutely */
+    display: inline-block; /* So it can size according to width & height */
+    width: 24px; /* Icon width  */
+    height: 24px; /* Icon height */
+    cursor: pointer; /* Show pointer on hover */
 }
 
 .cross-icon::before,
 .cross-icon::after {
-    content: "";
+    content: '';
     position: absolute;
     top: 0;
-    left: 50%;              /* Start at the middle horizontally */
-    width: 2px;             /* Thickness of the line */
+    left: 50%; /* Start at the middle horizontally */
+    width: 2px; /* Thickness of the line */
     height: 100%;
-    background-color: white;/* Color of the lines */
+    background-color: white; /* Color of the lines */
     transform-origin: center;
 }
 
