@@ -2,7 +2,7 @@
 
 import json
 
-from django.db.models import BaseManager
+from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 
@@ -136,10 +136,12 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     if request.method != "GET":
         return invalid_request
 
-    if not request.GET.get("search"):
+    # safely retrieve the search query with a default empty string
+    search_query = request.GET.get("search", "")
+    if not search_query:
         return no_player_selected
 
-    if len(request.GET.get("search")) < MIN_PLAYER_NAME_LENGTH:
+    if len(search_query) < MIN_PLAYER_NAME_LENGTH:
         return JsonResponse(
             {
                 "success": False,
@@ -147,7 +149,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
             },
         )
 
-    if len(request.GET.get("search")) > MAX_PLAYER_NAME_LENGTH:
+    if len(search_query) > MAX_PLAYER_NAME_LENGTH:
         return JsonResponse(
             {
                 "success": False,
@@ -159,7 +161,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
     # get the name of the player that is searched for
-    player_name = request.GET.get("search")
+    player_name = search_query
 
     player_groups = PlayerGroup.objects.filter(
         match_data=MatchData.objects.get(match_link=match_data),
@@ -242,7 +244,7 @@ def player_designation(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"success": True})
 
 
-def _get_player_groups(match_id: str, team_id: str) -> BaseManager[PlayerGroup]:
+def _get_player_groups(match_id: str, team_id: str) -> QuerySet[PlayerGroup]:
     """Get the player groups for a match and team.
 
     Args:

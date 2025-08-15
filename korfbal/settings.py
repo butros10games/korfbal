@@ -104,7 +104,7 @@ INSTALLED_APPS = [
     "apps.schedule",
     "apps.hub",
     "apps.game_tracker",
-    "apps.common",
+    "apps.kwt_common",
     "bg_auth.apps.AuthenticationConfig",
 ]
 
@@ -123,7 +123,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "bg_django_mobile_detector.middleware.DetectMiddleware",
-    "apps.common.middleware.VisitorTrackingMiddleware",
+    "apps.kwt_common.middleware.VisitorTrackingMiddleware",
 ]
 
 if RUNNER == "uwsgi":
@@ -159,7 +159,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 # custom context processors
-                "apps.common.context_processors.standard_imports",
+                "apps.kwt_common.context_processors.standard_imports",
             ],
         },
     },

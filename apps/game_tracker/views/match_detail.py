@@ -3,8 +3,8 @@
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
-from apps.common.utils import get_time_display
 from apps.game_tracker.models import MatchData, Shot
+from apps.kwt_common.utils import get_time_display
 from apps.schedule.models import Match
 
 

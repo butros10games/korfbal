@@ -7,4 +7,4 @@ class TeamConfig(AppConfig):
     """App configuration for the common app."""
 
     default_auto_field = "django.db.models.BigAutoField"
-    name = "apps.common"
+    name = "apps.kwt_common"

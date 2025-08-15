@@ -4,8 +4,8 @@ from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
-from apps.common.utils import get_time_display
 from apps.game_tracker.models import MatchData, Shot
+from apps.kwt_common.utils import get_time_display
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team

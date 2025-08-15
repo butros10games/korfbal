@@ -7,8 +7,8 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 
-from apps.common.utils import get_time_display_pause, transform_match_data
 from apps.game_tracker.models import MatchData
+from apps.kwt_common.utils import get_time_display_pause, transform_match_data
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models import Team

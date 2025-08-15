@@ -11,7 +11,6 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Case, When
 from django.utils import timezone
 
-from apps.common.utils import get_time
 from apps.game_tracker.models import (
     Attack,
     GoalType,
@@ -24,6 +23,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.kwt_common.utils import get_time
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData

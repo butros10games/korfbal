@@ -9,13 +9,13 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.common.utils import (
+from apps.game_tracker.models import MatchData
+from apps.kwt_common.utils import (
     general_stats,
     get_time_display_pause,
     players_stats,
     transform_match_data,
 )
-from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
