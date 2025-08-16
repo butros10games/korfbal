@@ -3,7 +3,8 @@
 from collections.abc import Callable
 import json
 
-from django.db.models import BaseManager, Q
+from django.db.models import Q
+from django.db.models.query import QuerySet
 from django.http import HttpRequest, JsonResponse
 
 from apps.club.models import Club
@@ -68,7 +69,7 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
     return JsonResponse(context)
 
 
-def connected_clubs_query(player: Player) -> BaseManager[Player]:
+def connected_clubs_query(player: Player) -> QuerySet[Club]:
     """Get the clubs the player is connected to.
 
     Args:
@@ -102,7 +103,7 @@ def club_serializer(club: Club) -> dict:
     }
 
 
-def connected_teams_query(player: Player) -> BaseManager[Team]:
+def connected_teams_query(player: Player) -> QuerySet[Team]:
     """Get the teams the player is connected to.
 
     Args:
@@ -127,7 +128,8 @@ def team_serializer(team: Team) -> dict:
         dict: The serialized team object.
 
     """
-    last_team_data = team.team_data.last() if team.team_data else None
+    team_data = getattr(team, "team_data", None)
+    last_team_data = team_data.last() if team_data else None
     return {
         "id": str(team.id_uuid),
         "name": str(team),

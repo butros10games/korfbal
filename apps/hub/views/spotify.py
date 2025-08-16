@@ -19,8 +19,8 @@ SPOTIFY_CLIENT_SECRET = settings.SPOTIFY_CLIENT_SECRET
 SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
 
 
-@login_required
-def spotify_callback(request: HttpRequest) -> HttpResponseRedirect | None:
+@login_required  # type: ignore
+def spotify_callback(request: HttpRequest) -> HttpResponseRedirect:
     """Handle Spotify OAuth callback and save tokens.
 
     Args:

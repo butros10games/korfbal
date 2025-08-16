@@ -23,11 +23,13 @@ def profile_detail(request: HttpRequest, player_id: str | None = None) -> HttpRe
     if player_id:
         player = get_object_or_404(Player, id_uuid=player_id)
     elif user.is_authenticated:
-        player = Player.objects.get(user=user)
+        # Use filter().first() so we get None if no Player exists for the user
+        player = Player.objects.filter(user=user).first()
 
     # Check if the user is viewing their own profile
     is_own_profile: bool = False
-    if user.is_authenticated and user == player.user:
+    # Ensure player is not None before accessing player.user
+    if player is not None and user.is_authenticated and player.user == user:
         is_own_profile = True
 
     display_back: bool = False
