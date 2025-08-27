@@ -1,7 +1,10 @@
 """Custom Django management command to run Webpack and collect static files."""
 
-from subprocess import call  # noqa: S404
+import os
+import shutil
+import subprocess  # noqa: S404  # nosec B404: Required for invoking local webpack via npx (controlled arguments)
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 
@@ -11,20 +14,51 @@ class Command(BaseCommand):
     help = "Run Webpack and collect static files"
 
     def handle(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
-        """Handle the command."""
+        """Handle the command.
+
+        Raises:
+            RuntimeError: If npx or webpack.config.js is not found, or if the Web
+            pack build fails.
+
+        """
         target_directory = "static_workfile/"
         start_directory = "static_build/"
 
         self.stdout.write("Copying files from build directory to static directory...")
-        call(["cp", "-r", f"{start_directory}css/", target_directory])  # noqa: S603, S607
-        call(["cp", "-r", f"{start_directory}images/", target_directory])  # noqa: S603, S607
-        call(["cp", "-r", f"{start_directory}json/", target_directory])  # noqa: S603, S607
+        os.makedirs(target_directory, exist_ok=True)
+        for sub in ("css", "images", "json"):
+            src = os.path.join(start_directory, sub)
+            dst = os.path.join(target_directory, sub)
+            if not os.path.exists(src):
+                self.stdout.write(f"Source not found, skipping: {src}")
+                continue
+            try:
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            except TypeError:
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
         self.stdout.write("Files copied.")
 
         self.stdout.write("Running Webpack...")
-        call(["npx", "webpack", "--config", "webpack.config.js"])  # noqa: S607
+        npx = shutil.which("npx")
+        if not npx:
+            raise RuntimeError("npx executable not found in PATH; cannot run webpack")
+
+        config_path = os.path.abspath("webpack.config.js")
+        project_root = os.path.abspath(os.getcwd())
+        if not config_path.startswith(project_root):  # basic containment check
+            raise RuntimeError("Webpack config path escapes project root; aborting")
+        if not os.path.isfile(config_path):
+            raise RuntimeError("webpack.config.js not found; cannot run webpack")
+
+        cmd = [npx, "webpack", "--config", config_path]
+        try:
+            subprocess.run(cmd, check=True)  # noqa: S603  # nosec B603: command list is fully static & validated
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"Webpack build failed: {exc}") from exc
         self.stdout.write("Webpack build completed.")
 
         self.stdout.write("Collecting static files...")
-        call(["python", "manage.py", "collectstatic", "--noinput"])  # noqa: S607
+        call_command("collectstatic", interactive=False)
         self.stdout.write("Static files collected.")

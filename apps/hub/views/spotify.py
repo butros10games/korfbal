@@ -37,7 +37,9 @@ def spotify_callback(request: HttpRequest) -> HttpResponseRedirect:
         return redirect("/")  # Handle error case (e.g., user denied access)
 
     # Exchange authorization code for access token
-    token_url = "https://accounts.spotify.com/api/token"  # noqa S106  # NOSONAR
+    token_url = (
+        "https://accounts.spotify.com/api/token"  # noqa S106  # NOSONAR  # nosec S105
+    )
     response = requests.post(
         token_url,
         data={
@@ -85,7 +87,7 @@ def refresh_spotify_token(user: User) -> None:
     spotify_token = SpotifyToken.objects.get(user=user)
 
     if spotify_token.expires_at < now():
-        token_url = "https://accounts.spotify.com/api/token"  # noqa S106  # NOSONAR
+        token_url = "https://accounts.spotify.com/api/token"  # noqa S106  # NOSONAR  # nosec S105
         response = requests.post(
             token_url,
             data={
