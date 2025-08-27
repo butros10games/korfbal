@@ -4,17 +4,17 @@ import {
     updateTeam,
 } from '../../components/carousel/index.js';
 import {
-    initializeSocket,
-    requestInitialData,
-    onMessageReceived,
-} from '../../utils/websockets/index.js';
+    part_end,
+    pause,
+    timer_data,
+} from '../../components/countdown_timer/countdownTimerActions.js';
 import { setupFollowButton } from '../../components/setup_follow_button/index.js';
 import { readUserId } from '../../utils/dom/index.js';
 import {
-    timer_data,
-    pause,
-    part_end,
-} from '../../components/countdown_timer/countdownTimerActions.js';
+    initializeSocket,
+    onMessageReceived,
+    requestInitialData,
+} from '../../utils/websockets/index.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     const timers = {};
@@ -73,9 +73,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
-        (socket) => {
+        (ws) => {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData('.button.active', socket);
+            requestInitialData('.button.active', ws);
         },
     );
 

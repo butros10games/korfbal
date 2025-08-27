@@ -438,7 +438,7 @@ export class PlayerGroupManager {
 
     async changePlayerGroup(selectedPlayers, newGroupId) {
         console.log('Changing group for players:', selectedPlayers, 'to:', newGroupId);
-        if (newGroupId != null) {
+        if (newGroupId !== null) {
             newGroupId = newGroupId.trim();
         }
 

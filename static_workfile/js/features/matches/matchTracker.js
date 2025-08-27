@@ -74,9 +74,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
-        (socket) => {
+        (ws) => {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData(socket);
+            requestInitialData(ws);
         },
     );
 
@@ -822,7 +822,7 @@ function showPlayerGroups(data, socket) {
 
         playerGroupTitleDiv.appendChild(playerGroupTitle);
 
-        if (index == 0) {
+        if (index === 0) {
             const AttackButtonDiv = createDivWithClass('attack-button', 'flex-center');
             AttackButtonDiv.innerHTML = 'Nieuwe aanval';
             AttackButtonDiv.id = 'attack-button';

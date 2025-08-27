@@ -1,4 +1,4 @@
-export const initializeSocket = function (url, onMessageReceived, onOpenCallback) {
+export const initializeSocket = function (url, onMessageCallback, onOpenCallback) {
     let socket;
     const socketWrapper = {
         send(data) {
@@ -28,7 +28,8 @@ export const initializeSocket = function (url, onMessageReceived, onOpenCallback
             }
         };
 
-        socket.onmessage = onMessageReceived;
+        // use the renamed parameter here
+        socket.onmessage = onMessageCallback;
 
         socket.onclose = function (event) {
             if (!event.wasClean) {

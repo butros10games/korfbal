@@ -74,9 +74,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
-        (socket) => {
+        (ws) => {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData('.button.active', socket, { user_id: user_id });
+            requestInitialData('.button.active', ws, { user_id: user_id });
         },
     );
 

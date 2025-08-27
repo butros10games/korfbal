@@ -31,10 +31,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const socket = initializeSocket(
         WebSocketUrl,
         (event) => onMessageReceived(event, match_id, user_id, socket),
-        (socket) => {
+        (ws) => {
             console.log('WebSocket connection established, sending initial data...');
-            requestInitialData('.button.active', socket, { user_id: user_id });
-            socket.send(JSON.stringify({ command: 'get_time' }));
+            requestInitialData('.button.active', ws, { user_id: user_id });
+            ws.send(JSON.stringify({ command: 'get_time' }));
         },
     );
 
