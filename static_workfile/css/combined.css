@@ -151,7 +151,7 @@ a {
 }
 
 /* FILE 1 + FILE 2 + FILE 4 + FILE 6: they all define .player-name in some form;
-   keeping margin: auto from FILE 4 + margin: 8px from FILE 2 can conflict. 
+   keeping margin: auto from FILE 4 + margin: 8px from FILE 2 can conflict.
    We'll unify: if you prefer auto-centering, keep margin: auto. If you prefer spacing, keep margin: 8px.
    Adjust as needed. Here, we’ll keep margin: 8px from FILE 2 but note it below. */
 .player-name {
@@ -355,8 +355,8 @@ a {
    - FILE 2: .overlay is absolutely positioned inside .profile-container
    - FILE 4: .overlay is fixed, used as a “screen fade”
    They conflict in usage. We’ll rename the FILE 2 one to .profile-overlay to avoid collision OR
-   keep them separate if you truly need both. 
-   For clarity, here's the FILE 2 version renamed to .profile-image-overlay. 
+   keep them separate if you truly need both.
+   For clarity, here's the FILE 2 version renamed to .profile-image-overlay.
 */
 
 /* Renamed from .overlay in FILE 2 to avoid conflict with FILE 4 */
@@ -740,9 +740,9 @@ option {
     cursor: pointer;
 }
 
-/* FILE 4 only 
-   (Note: Renamed the FILE 2 .overlay to .profile-image-overlay above to avoid collision. 
-   This .overlay is a full-screen dim background for modals/popup.) 
+/* FILE 4 only
+   (Note: Renamed the FILE 2 .overlay to .profile-image-overlay above to avoid collision.
+   This .overlay is a full-screen dim background for modals/popup.)
 */
 .overlay {
     position: fixed;

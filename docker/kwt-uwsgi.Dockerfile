@@ -1,4 +1,4 @@
-## ------------------------------- Builder Stage ------------------------------ ## 
+## ------------------------------- Builder Stage ------------------------------ ##
 FROM python:3.13-bookworm AS builder
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
@@ -18,7 +18,7 @@ COPY ./pyproject.toml .
 
 RUN uv sync --group uwsgi
 
-## ------------------------------- Production Stage ------------------------------ ## 
+## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-bookworm AS production
 
 WORKDIR /app
