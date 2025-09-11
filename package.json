@@ -10,7 +10,7 @@
     "devDependencies": {
         "@eslint/js": "^9.35.0",
         "@rspack/cli": "^1.5.3",
-        "@rspack/core": "^1.5.2",
+        "@rspack/core": "^1.5.3",
         "eslint": "^9.35.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.4",
