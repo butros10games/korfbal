@@ -158,8 +158,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                # custom context processors
                 "apps.kwt_common.context_processors.standard_imports",
+                "bg_auth.context_processors.auth_settings",
             ],
         },
     },
@@ -371,3 +371,15 @@ PROMETHEUS_LATENCY_BUCKETS = (
     float("inf"),
 )
 PROMETHEUS_METRIC_NAMESPACE = "kwt"
+
+# ------------------------------------------------------------------------------
+# BG Auth Settings Overrides
+# ------------------------------------------------------------------------------
+LOGIN_FOTO: str = "images/logo/KWT_logo.png"
+LOGIN_TITLE: str = "Welkom terug!"
+LOGIN_DESCRIPTION: str = "login voor KWT"
+
+REGISTER_TITLE: str = "Registratie"
+REGISTER_HEADING_MOBILE: str = "Welkom!"
+REGISTER_HEADING_DESKTOP: str = "Welkom!"
+REGISTER_DESCRIPTION: str = "Maak je account aan"

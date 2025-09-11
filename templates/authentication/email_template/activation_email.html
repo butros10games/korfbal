@@ -1,9 +1,0 @@
-{% extends 'authentication/email_template/base_email.html' %} {% block email_title
-%}Activeer je account{% endblock %} {% block email_body %}
-<h2>Activeer je account</h2>
-<p>Hallo {{ user.username }},</p>
-<p>Klik op de link hieronder om je account te activeren:</p>
-<a href="{{ activation_url }}"> Activeer Account </a>
-<p>Als je dit niet hebt aangevraagd, negeer deze e-mail dan.</p>
-<p>Vriendelijke groeten,<br />Team</p>
-{% endblock %}
