@@ -1,50 +1,7 @@
-body {
-    margin: 0;
-    font-family: 'DM Sans', sans-serif;
-}
+/* Import common styles */
+@import url('../common.css');
 
-.flex-row {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-}
-
-.flex-column {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.flex-center {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    justify-content: center;
-    align-items: center;
-}
-
-.flex-start-wrap {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    align-content: flex-start;
-    align-items: center;
-}
-
-h1 {
-    margin: 0;
-}
-
-a {
-    text-decoration: none;
-    color: black;
-}
+/* Match tracker specific styles */
 
 .player-selector {
     background-color: #d9d9d9;

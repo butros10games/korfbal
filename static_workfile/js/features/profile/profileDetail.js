@@ -17,17 +17,15 @@ import {
     part_end,
 } from '../../components/countdown_timer/countdownTimerActions.js';
 
+import { initializeDetailPage } from '../../utils/common.js';
+
 window.addEventListener('DOMContentLoaded', () => {
-    const timers = {};
+    const { uuid, csrfToken, carousel, buttons, timers } = initializeDetailPage();
 
-    const carousel = document.querySelector('.carousel');
-    const buttons = document.querySelectorAll('.button');
-    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-
-    const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
-    const url = window.location.href;
-
-    const matches = regex.exec(url);
+    if (!uuid) {
+        console.error('Could not extract UUID from URL');
+        return;
+    }
 
     const infoContainer = document.getElementById('info-container');
     const profilePicture = document.getElementById('profilePic-container');
@@ -81,8 +79,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     let player_id;
 
-    if (matches) {
-        player_id = matches[1];
+    if (uuid) {
+        player_id = uuid;
         console.log(player_id);
     } else {
         console.log('No UUID found in the URL.');
