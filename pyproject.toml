@@ -3,48 +3,50 @@ name = "KWT"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-	"django",
-	"psycopg2-binary",
-	"bg-django-mobile-detector",
-	"django_ratelimit",
-	"django-storages[boto3]",
-	"bg_auth",
-	"bg_uuidv7",
-	"django-phonenumber-field[phonenumbers]",
-	"python-dotenv",
+    "django",
+    "psycopg2-binary",
+    "bg-django-mobile-detector",
+    "django-ratelimit",
+    "django-storages[boto3]",
+    "bg-auth",
+    "bg-uuidv7",
+    "django-phonenumber-field[phonenumbers]",
+    "python-dotenv",
 ]
 
 [dependency-groups]
 uwsgi = [
-	"Pillow",
-	"pyuwsgi",
-	"bg-django-caching-paginator",
-	"redis",
-	"django-cryptography",
-	"django-prometheus",
-	"django_redis",
+    "Pillow",
+    "pyuwsgi",
+    "bg-django-caching-paginator",
+    "redis",
+    "django-cryptography",
+    "django-prometheus",
+    "django-redis",
 ]
 daphne = [
-	"daphne",
-	"channels",
-	"channels-redis",
+    "daphne",
+    "channels",
+    "channels-redis",
 ]
 dev = [
-	"Pillow",
-	"pyuwsgi; sys_platform == 'linux'",
-	"bg-django-caching-paginator",
-	"redis",
-	"django-cryptography",
-	"django-prometheus",
-	"django_redis",
-	"daphne",
-	"channels",
-	"channels-redis",
+    "Pillow",
+    "pyuwsgi; sys_platform == 'linux'",
+    "bg-django-caching-paginator",
+    "redis",
+    "django-cryptography",
+    "django-prometheus",
+    "django-redis",
+    "daphne",
+    "channels",
+    "channels-redis",
 ]
 
-[[tool.uv.index]]
-name = "bg_server"
-url = "https://pypi.butrosgroot.com/simple/"
+[tool.uv.sources]
+bg-auth                     = { workspace = true }
+bg-django-caching-paginator = { workspace = true }
+bg-django-mobile-detector   = { workspace = true }
+bg-uuidv7                   = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

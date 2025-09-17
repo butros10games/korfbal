@@ -5,19 +5,22 @@ Web app to track korfbal matches, players, and stats in real time.
 ## Requirements
 
 - Python 3.13 and uv
-- PostgreSQL and Redis (local or remote)
+- PostgreSQL and Valkey/Redis (local or remote)
 
 ## Setup (Windows PowerShell)
 
 - Install deps: uv sync
-- Env vars: DJANGO_SECRET_KEY, DEBUG, DATABASE_URL, REDIS_URL
+- Create your environment file based on the provided .env template and update POSTGRES*\*, REDIS*\_, MINIO\_\_ values
 - Migrate: uv run python manage.py migrate
 - Create admin: uv run python manage.py createsuperuser
 
 ## Run
 
 - Dev: uv run python manage.py runserver 0.0.0.0:8000
-- ASGI/WSGI via Docker: see app docker files and infrastructure/ host compose
+- Docker (shared dev stack from repo root):
+    1. docker network create monorepo_test-net (one-time)
+    2. docker compose -f docker-compose.base.yaml -f docker-compose.kwt-dev.yaml --profile korfbal up --build
+- ASGI/WSGI via Docker: see the docker/ folder for production-style images
 
 ## Features
 
@@ -33,3 +36,4 @@ Web app to track korfbal matches, players, and stats in real time.
 ## Notes
 
 - Static assets are served via Django in dev; use collectstatic for prod.
+- The dev compose stack mounts the local source folders for live reload.
