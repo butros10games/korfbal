@@ -48,14 +48,7 @@ RUN set -euo pipefail \
         *) echo "Unsupported architecture: ${TARGETARCH}${TARGETVARIANT}" >&2 ; exit 1 ;; \
     esac \
     && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
-    && MC_URL="${MC_URL}" python - <<'PY'
-import os
-import urllib.request
-
-url = os.environ["MC_URL"]
-with urllib.request.urlopen(url) as response, open("/usr/local/bin/mc", "wb") as outfile:
-    outfile.write(response.read())
-PY
+    && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}"
 
 RUN chmod +x /usr/local/bin/mc
 
