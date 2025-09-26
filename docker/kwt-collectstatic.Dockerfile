@@ -56,7 +56,8 @@ url = sys.argv[1]
 with urllib.request.urlopen(url) as response, open("/usr/local/bin/mc", "wb") as outfile:
     outfile.write(response.read())
 PY
-    && chmod +x /usr/local/bin/mc
+
+RUN chmod +x /usr/local/bin/mc
 
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
