@@ -34,9 +34,34 @@ FROM python:3.13-slim-trixie AS production
 
 ARG APP_UID=1000
 ARG APP_GID=1000
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG TARGETVARIANT=""
 
-ADD https://dl.min.io/client/mc/release/linux-amd64/mc /usr/local/bin/mc
-RUN chmod +x /usr/local/bin/mc     && groupadd --gid "${APP_GID}" appuser     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser     && install -d -o appuser -g appuser /app     && install -d -o appuser -g appuser /app/logs
+RUN set -euo pipefail \
+    && case "${TARGETARCH}${TARGETVARIANT}" in \
+        amd64) MC_ARCH="amd64" ;; \
+        arm64) MC_ARCH="arm64" ;; \
+        armv7) MC_ARCH="arm" ;; \
+        armv6) MC_ARCH="arm" ;; \
+        arm) MC_ARCH="arm" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}${TARGETVARIANT}" >&2 ; exit 1 ;; \
+    esac \
+    && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
+    && python - "$MC_URL" <<'PY'
+import sys
+import urllib.request
+
+url = sys.argv[1]
+with urllib.request.urlopen(url) as response, open("/usr/local/bin/mc", "wb") as outfile:
+    outfile.write(response.read())
+PY
+    && chmod +x /usr/local/bin/mc
+
+RUN groupadd --gid "${APP_GID}" appuser \
+    && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && install -d -o appuser -g appuser /app \
+    && install -d -o appuser -g appuser /app/logs
 
 COPY --chmod=0555 apps/django_projects/korfbal/configs/collectstatic/entrypoint.sh /app/entrypoint.sh
 
