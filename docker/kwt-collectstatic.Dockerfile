@@ -38,7 +38,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ARG TARGETVARIANT=""
 
-RUN set -euo pipefail \
+RUN set -euo \
     && case "${TARGETARCH}${TARGETVARIANT}" in \
         amd64) MC_ARCH="amd64" ;; \
         arm64) MC_ARCH="arm64" ;; \
