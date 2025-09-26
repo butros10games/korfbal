@@ -35,17 +35,18 @@ FROM python:3.13-slim-trixie AS production
 ARG APP_UID=1000
 ARG APP_GID=1000
 ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 ARG TARGETVARIANT=""
 
 RUN set -euo \
-    && case "${TARGETARCH}${TARGETVARIANT}" in \
-        amd64) MC_ARCH="amd64" ;; \
-        arm64) MC_ARCH="arm64" ;; \
-        armv7) MC_ARCH="arm" ;; \
-        armv6) MC_ARCH="arm" ;; \
-        arm) MC_ARCH="arm" ;; \
-        *) echo "Unsupported architecture: ${TARGETARCH}${TARGETVARIANT}" >&2 ; exit 1 ;; \
+    && ARCH_GUESS="${TARGETARCH:-}" \
+    && if [ -z "$ARCH_GUESS" ]; then ARCH_GUESS="$(dpkg --print-architecture 2>/dev/null || uname -m)"; fi \
+    && if [ "$ARCH_GUESS" = "arm" ] && [ -n "${TARGETVARIANT:-}" ]; then ARCH_GUESS="arm${TARGETVARIANT}"; fi \
+    && case "$ARCH_GUESS" in \
+        amd64|x86_64) MC_ARCH="amd64" ;; \
+        arm64|aarch64) MC_ARCH="arm64" ;; \
+        armv7|armv7l|armhf|armv6|armv6l|armel|arm) MC_ARCH="arm" ;; \
+        *) echo "Unsupported architecture: ${ARCH_GUESS}" >&2 ; exit 1 ;; \
     esac \
     && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
     && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}"
