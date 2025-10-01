@@ -151,3 +151,5 @@ scripts/git/hooks/
 .history
 
 webpack_bundles/
+
+!.env.example
