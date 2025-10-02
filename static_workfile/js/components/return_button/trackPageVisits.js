@@ -1,5 +1,5 @@
 export function trackPageVisits() {
-    const currentPage = window.location.pathname;
+    const currentPage = globalThis.location.pathname;
 
     // Retrieve the existing stack from local storage; if it doesn't exist, start with an empty array.
     const storedStack = localStorage.getItem('pageStack');

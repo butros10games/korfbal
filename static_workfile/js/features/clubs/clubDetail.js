@@ -16,14 +16,14 @@ import {
     requestInitialData,
 } from '../../utils/websockets/index.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+globalThis.addEventListener('DOMContentLoaded', () => {
     const timers = {};
 
     const carousel = document.querySelector('.carousel');
     const buttons = document.querySelectorAll('.button');
 
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
-    const url = window.location.href;
+    const url = globalThis.location.href;
 
     const user_id = readUserId();
     const matches = regex.exec(url);
@@ -69,7 +69,7 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://${window.location.host}/ws/club/${team_id}/`;
+    const WebSocketUrl = `wss://${globalThis.location.host}/ws/club/${team_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),

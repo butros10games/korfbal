@@ -27,12 +27,12 @@ export const setupSwipeDelete = function () {
         isSwiping = false;
 
     const onTouchStart = (e) => {
-        const transform = window
+        const transform = globalThis
             .getComputedStyle(swipeContent)
             .getPropertyValue('transform');
         const transformX = transform.split(',')[4].trim();
 
-        startX = e.touches[0].clientX - parseInt(transformX);
+        startX = e.touches[0].clientX - Number.parseInt(transformX);
         isSwiping = true;
         swipeContent.classList.remove('transition-back');
     };

@@ -22,7 +22,7 @@ import { sharedData } from './sharedData.js';
 let firstUUID;
 let secondUUID;
 const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/g;
-const url = window.location.href;
+const url = globalThis.location.href;
 
 let playersDiv;
 
@@ -30,7 +30,7 @@ let timer = null;
 
 let playerSwitchData;
 
-window.addEventListener('DOMContentLoaded', () => {
+globalThis.addEventListener('DOMContentLoaded', () => {
     const eventsDiv = document.getElementById('match-event');
     playersDiv = document.getElementById('players');
 
@@ -70,7 +70,7 @@ window.addEventListener('DOMContentLoaded', () => {
         error: (data) => errorProcessing(data),
     };
 
-    const WebSocketUrl = `wss://${window.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
+    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
@@ -337,7 +337,7 @@ function matchEnd(data, startStopButton) {
         document.body.style.overflow = '';
 
         // go back to the match detail page
-        window.location.href = '/match/' + data.match_id + '/';
+        globalThis.location.href = '/match/' + data.match_id + '/';
     });
 
     popup.appendChild(popupButton);

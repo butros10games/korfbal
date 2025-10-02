@@ -8,7 +8,7 @@
  */
 export function extractUuidFromUrl() {
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
-    const url = window.location.href;
+    const url = globalThis.location.href;
     const matches = regex.exec(url);
     return matches ? matches[1] : null;
 }

@@ -5,5 +5,5 @@ export const readUserId = function () {
         return null;
     }
 
-    return parseInt(user_id);
+    return Number.parseInt(user_id);
 };

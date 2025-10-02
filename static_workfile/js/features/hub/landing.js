@@ -5,7 +5,7 @@ import {
     part_end,
 } from '../../components/countdown_timer/countdownTimerActions.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+globalThis.addEventListener('DOMContentLoaded', () => {
     const timers = {};
     const match_id = document.getElementById('match_id').innerText;
 
@@ -30,7 +30,7 @@ window.addEventListener('DOMContentLoaded', () => {
         },
     };
 
-    const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
+    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/${match_id}/`;
     initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers), (socket) => {
         console.log('WebSocket connection established, sending initial data...');
         socket.send(JSON.stringify({ command: 'get_time' }));

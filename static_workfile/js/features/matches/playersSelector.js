@@ -2,7 +2,7 @@ import { PlayerGroupManager } from '../../components/player_group/index.js';
 
 // Instantiate and initialize the class after DOM content is loaded
 document.addEventListener('DOMContentLoaded', async () => {
-    const url = window.location.href;
+    const url = globalThis.location.href;
 
     // Extract the teamId and matchId from the URL
     const urlParts = url.split('/');

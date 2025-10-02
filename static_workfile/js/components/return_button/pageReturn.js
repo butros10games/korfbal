@@ -2,7 +2,7 @@ export function pageReturn() {
     const returnButton = document.getElementById('return-button');
 
     if (
-        window.location.pathname === '/catalog/' &&
+        globalThis.location.pathname === '/catalog/' &&
         localStorage.getItem('pageStack') === '["/catalog/"]'
     ) {
         returnButton.style.display = 'none';
@@ -19,9 +19,9 @@ export function pageReturn() {
         localStorage.setItem('pageStack', JSON.stringify(pageStack));
 
         if (previousPage) {
-            window.location.href = previousPage;
+            globalThis.location.href = previousPage;
         } else {
-            window.location.href = '/catalog/';
+            globalThis.location.href = '/catalog/';
         }
     });
 }

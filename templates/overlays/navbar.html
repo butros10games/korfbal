@@ -76,10 +76,10 @@
 </div>
 
 <script>
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    if (globalThis.matchMedia('(display-mode: standalone)').matches) {
         document.querySelector('.stickyBottomNav').style.paddingBottom = '20px';
 
-        window.addEventListener('DOMContentLoaded', function () {
+        globalThis.addEventListener('DOMContentLoaded', function () {
             let infoHeightContainer =
                 document.getElementById('info-container').style.height;
 
@@ -90,7 +90,7 @@
 
             console.log(hight_data);
 
-            hight_data = parseFloat(hight_data);
+            hight_data = Number.parseFloat(hight_data);
             hight_data = hight_data + 20;
 
             console.log(hight_data);
@@ -103,7 +103,7 @@
         });
     }
 
-    window.addEventListener('DOMContentLoaded', function () {
+    globalThis.addEventListener('DOMContentLoaded', function () {
         document.body.style.overflow = 'hidden';
     });
 </script>

@@ -8,11 +8,11 @@ import { initializeSocket, requestInitialData } from '../../utils/websockets/ind
 import { cleanDomCarousel, readUserId } from '../../utils/dom/index.js';
 import { PlayerGroupManager } from '../../components/player_group/index.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+globalThis.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
     const buttons = document.querySelectorAll('.button');
     const regex = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/;
-    const url = window.location.href;
+    const url = globalThis.location.href;
     const user_id = readUserId();
     const matches = regex.exec(url);
 
@@ -27,7 +27,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     console.log('Match ID:', match_id);
 
-    const WebSocketUrl = `wss://${window.location.host}/ws/match/${match_id}/`;
+    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/${match_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         (event) => onMessageReceived(event, match_id, user_id, socket),

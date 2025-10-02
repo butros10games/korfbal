@@ -4,7 +4,9 @@ self.addEventListener('fetch', (event) => {
 
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker
-        .register(`https://static.${window.location.hostname}/js/pwa/service-worker.js`)
+        .register(
+            `https://static.${globalThis.location.hostname}/js/pwa/service-worker.js`,
+        )
         .then((registration) => {
             console.log(
                 'ServiceWorker registration successful with scope: ',
@@ -19,7 +21,7 @@ if ('serviceWorker' in navigator) {
                         if (navigator.serviceWorker.controller) {
                             // New update available, refresh the page to load the new content
                             console.log('New content is available; refreshing.');
-                            window.location.reload();
+                            globalThis.location.reload();
                         } else {
                             // Content is cached for offline use
                             console.log('Content is cached for offline use.');

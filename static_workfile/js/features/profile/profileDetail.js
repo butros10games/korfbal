@@ -19,7 +19,7 @@ import {
 
 import { initializeDetailPage } from '../../utils/common.js';
 
-window.addEventListener('DOMContentLoaded', () => {
+globalThis.addEventListener('DOMContentLoaded', () => {
     const { uuid, csrfToken, carousel, buttons, timers } = initializeDetailPage();
 
     if (!uuid) {
@@ -86,7 +86,7 @@ window.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://${window.location.host}/ws/profile/${player_id}/`;
+    const WebSocketUrl = `wss://${globalThis.location.host}/ws/profile/${player_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
