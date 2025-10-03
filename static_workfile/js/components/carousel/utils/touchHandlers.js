@@ -79,7 +79,9 @@ export const handleButtonClick = function (
         return;
     }
 
-    buttons.forEach((el) => el.classList.remove('active'));
+    for (const el of buttons) {
+        el.classList.remove('active');
+    }
     button.classList.add('active');
 
     isAutoScrolling = true;

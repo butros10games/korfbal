@@ -138,7 +138,9 @@ function makeFetchRequest(url, bodyData = null) {
 
 function addPastRequest(searchTerm) {
     const previousRequests = document.querySelectorAll('.past-request');
-    previousRequests.forEach((element) => element.remove());
+    for (const element of previousRequests) {
+        element.remove();
+    }
 
     const pastRequest = document.createElement('div');
     pastRequest.classList.add('past-request');
@@ -170,9 +172,9 @@ function displaySearchResults(results) {
         return;
     }
 
-    results.forEach((element) => {
+    for (const element of results) {
         teamsContainer.appendChild(createTeamButton(element));
-    });
+    }
 }
 
 function displayNormalIndex(data) {
@@ -200,7 +202,7 @@ function createButtonDiv(buttonArray) {
     const buttonDiv = document.createElement('div');
     buttonDiv.classList.add('flex-row');
 
-    buttonArray.forEach((button) => {
+    for (const button of buttonArray) {
         const buttonElement = document.createElement('div');
         buttonElement.classList.add('selection-button', 'flex-center');
         if (button === 'Aangesloten') {
@@ -211,7 +213,7 @@ function createButtonDiv(buttonArray) {
             handleButtonClick(buttonElement, button),
         );
         buttonDiv.appendChild(buttonElement);
-    });
+    }
 
     return buttonDiv;
 }
@@ -233,7 +235,9 @@ function createTeamListDiv(id, teams, emptyMessage) {
     div.classList.add('flex-column');
 
     if (teams.length > 0) {
-        teams.forEach((team) => div.appendChild(createTeamButton(team)));
+        for (const team of teams) {
+            div.appendChild(createTeamButton(team));
+        }
     } else {
         const emptyText = document.createElement('p');
         emptyText.innerHTML = emptyMessage;

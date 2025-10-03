@@ -2,7 +2,7 @@ export const savePlayerGroups = function (socket) {
     const playerGroups = document.querySelectorAll('.player-group');
     const playerGroupData = [];
 
-    playerGroups.forEach((playerGroup) => {
+    for (const playerGroup of playerGroups) {
         const playerGroupTitle = playerGroup.querySelector('.player-group-title');
         const playerGroupPlayers = playerGroup.querySelectorAll('.player-selector');
 
@@ -12,16 +12,16 @@ export const savePlayerGroups = function (socket) {
             players: [],
         };
 
-        playerGroupPlayers.forEach((player) => {
+        for (const player of playerGroupPlayers) {
             if (player.value) {
                 playerGroupObject.players.push(player.value);
             } else {
                 playerGroupObject.players.push(null);
             }
-        });
+        }
 
         playerGroupData.push(playerGroupObject);
-    });
+    }
 
     socket.send(
         JSON.stringify({

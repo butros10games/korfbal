@@ -24,7 +24,7 @@ export const updateStatistics = function (data, infoContainer, socket, user_id) 
                 { name: 'spelers', type: 'player_stats' },
             ];
 
-            buttonTypes.forEach((type) => {
+            for (const type of buttonTypes) {
                 const button = document.createElement('button');
                 button.classList.add('stat-selector-button');
 
@@ -52,7 +52,7 @@ export const updateStatistics = function (data, infoContainer, socket, user_id) 
                 });
 
                 statSelectorButtonField.appendChild(button);
-            });
+            }
 
             statsContainer.appendChild(statSelectorButtonField);
         }
@@ -198,7 +198,7 @@ function playerStats(stats, statsContainer) {
 
     playerSelectorField.appendChild(legend);
 
-    stats.player_stats.forEach((player) => {
+    for (const player of stats.player_stats) {
         const playerDataDiv = document.createElement('div');
         playerDataDiv.classList.add('flex-row');
         playerDataDiv.style.justifyContent = 'space-between';
@@ -232,7 +232,7 @@ function playerStats(stats, statsContainer) {
         playerDataDiv.appendChild(playerShots);
 
         playerSelectorField.appendChild(playerDataDiv);
-    });
+    }
 
     statsContainer.appendChild(playerSelectorField);
 }

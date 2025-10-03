@@ -23,9 +23,9 @@ export const createPlayerDiv = function (type, player, playerOptions = []) {
     playerDiv.style.fontWeight = '300';
 
     if (type === 'select') {
-        playerOptions.forEach((option) => {
+        for (const option of playerOptions) {
             playerDiv.appendChild(option.cloneNode(true));
-        });
+        }
 
         const notFilledOption = document.createElement('option');
         notFilledOption.value = NaN;
@@ -53,7 +53,7 @@ export const createPlayerGroupContainer = function (playerGroups, renderPlayerDi
     playerGroupContainer.classList.add('player-group-container');
 
     if (playerGroups.length > 0) {
-        playerGroups.forEach((playerGroup) => {
+        for (const playerGroup of playerGroups) {
             const playerGroupDiv = document.createElement('div');
             playerGroupDiv.classList.add('player-group', 'flex-column');
             playerGroupDiv.style.marginTop = '12px';
@@ -75,7 +75,7 @@ export const createPlayerGroupContainer = function (playerGroups, renderPlayerDi
             playerGroupDiv.appendChild(playerGroupPlayers);
 
             playerGroupContainer.appendChild(playerGroupDiv);
-        });
+        }
     } else {
         const textElement = document.createElement('p');
         textElement.classList.add('flex-center');

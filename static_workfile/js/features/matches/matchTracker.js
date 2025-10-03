@@ -1,22 +1,22 @@
-import { truncateMiddle } from '../../utils/index.js';
+import { updatePlayerGroups } from '../../components/carousel/index.js';
+import { CountdownTimer } from '../../components/countdown_timer/index.js';
+import {
+    scoringButtonSetup,
+    shotButtonReg,
+} from '../../components/scoring_button/index.js';
+import {
+    deleteButtonSetup,
+    resetSwipe,
+    setupSwipeDelete,
+} from '../../components/swipe_delete/index.js';
 import {
     createEventTypeDiv,
     createMidsectionDiv,
     createScoreDiv,
     getFormattedTime,
 } from '../../utils/events/index.js';
-import {
-    resetSwipe,
-    setupSwipeDelete,
-    deleteButtonSetup,
-} from '../../components/swipe_delete/index.js';
-import { CountdownTimer } from '../../components/countdown_timer/index.js';
-import { updatePlayerGroups } from '../../components/carousel/index.js';
+import { truncateMiddle } from '../../utils/index.js';
 import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
-import {
-    scoringButtonSetup,
-    shotButtonReg,
-} from '../../components/scoring_button/index.js';
 import { sharedData } from './sharedData.js';
 
 let firstUUID;
@@ -803,7 +803,7 @@ function showPlayerGroups(data, socket) {
 
     const playerGroupContainer = createDivWithClass('player-group-container');
 
-    playerGroupsData.forEach((playerGroup, index) => {
+    for (const [index, playerGroup] of playerGroupsData.entries()) {
         const playerGroupDiv = createDivWithClass('player-group', 'flex-column');
         playerGroupDiv.style.marginTop = '12px';
 
@@ -843,7 +843,7 @@ function showPlayerGroups(data, socket) {
         playerGroupPlayers.style.alignItems = 'stretch';
         playerGroupPlayers.id = playerGroup.current_type;
 
-        playerGroup.players.forEach((player) => {
+        for (const player of playerGroup.players) {
             const playerDiv = createDivWithClass('player-selector', 'flex-center');
             playerDiv.id = player.id;
             playerDiv.style.flexGrow = '1';
@@ -875,13 +875,13 @@ function showPlayerGroups(data, socket) {
             playerDiv.appendChild(playerGoals);
 
             playerGroupPlayers.appendChild(playerDiv);
-        });
+        }
 
         playerGroupDiv.appendChild(playerGroupTitleDiv);
         playerGroupDiv.appendChild(playerGroupPlayers);
 
         playerGroupContainer.appendChild(playerGroupDiv);
-    });
+    }
 
     playersDiv.appendChild(playerGroupContainer);
 }
@@ -934,7 +934,7 @@ function showActionMenu(actions) {
     actionGroupActions.style.flexWrap = 'wrap';
     actionGroupActions.style.alignItems = 'stretch';
 
-    actions.forEach((action) => {
+    for (const action of actions) {
         const actionDiv = createDivWithClass('action-selector', 'flex-center');
         actionDiv.style.flexGrow = '1';
         actionDiv.style.flexBasis = 'calc(50% - 44px)';
@@ -951,7 +951,7 @@ function showActionMenu(actions) {
         actionDiv.addEventListener('click', action.action);
 
         actionGroupActions.appendChild(actionDiv);
-    });
+    }
 
     actionGroupDiv.appendChild(actionGroupTitleDiv);
     actionGroupDiv.appendChild(actionGroupActions);
@@ -975,13 +975,13 @@ function playerSwitch(socket) {
 
         const playerButtons = document.getElementsByClassName('player-selector');
 
-        Array.from(playerButtons).forEach((element) => {
+        for (const element of Array.from(playerButtons)) {
             element.style.background = '';
             if (element.playerClickHandler) {
                 element.removeEventListener('click', element.playerClickHandler);
                 delete element.playerClickHandler; // Properly remove handler reference
             }
-        });
+        }
 
         shotButtonReg('home', socket);
         shotButtonReg('away', socket);
@@ -991,7 +991,7 @@ function playerSwitch(socket) {
 
         const playerButtons = document.getElementsByClassName('player-selector');
 
-        Array.from(playerButtons).forEach((element) => {
+        for (const element of Array.from(playerButtons)) {
             const homeScoreButton = document.getElementById('home-score');
             const awayScoreButton = document.getElementById('away-score');
 
@@ -1026,7 +1026,7 @@ function playerSwitch(socket) {
 
             element.playerClickHandler = playerClickHandler;
             element.addEventListener('click', playerClickHandler);
-        });
+        }
     }
 }
 

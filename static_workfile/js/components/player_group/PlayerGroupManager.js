@@ -131,7 +131,7 @@ export class PlayerGroupManager {
         let nullPlayers = true;
 
         // For each group in the data, create its DOM content
-        playerGroups.forEach((playerGroup) => {
+        for (const playerGroup of playerGroups) {
             const isReserve = playerGroup.starting_type?.name === 'Reserve';
             const hasPlayers = playerGroup.players && playerGroup.players.length > 0;
 
@@ -153,14 +153,14 @@ export class PlayerGroupManager {
                 playerGroupDiv.id = playerGroup.id_uuid;
 
                 // Create player rows
-                playerGroup.players.forEach((player) => {
+                for (const player of playerGroup.players) {
                     const { playerDiv, divider } = this.createPlayerRow(
                         player,
                         playerGroup.id_uuid,
                     );
                     playerGroupDiv.appendChild(playerDiv);
                     playerGroupDiv.appendChild(divider);
-                });
+                }
 
                 this.playerField.appendChild(playerGroupDiv);
             } else if (isReserve) {
@@ -193,7 +193,7 @@ export class PlayerGroupManager {
                 }
                 this.playerField.appendChild(centerDiv);
             }
-        });
+        }
 
         // If some players are already selected (edge case), ensure we show the options
         if (this.selectedPlayers.length > 0) {
@@ -391,32 +391,32 @@ export class PlayerGroupManager {
     mapGroupIdsToTypeIds() {
         // You might still rely on actual DOM elements for mapping,
         // or, if you have them in data, use that. For now, we can skip or adapt:
-        this.typeIds.forEach((typeId) => {
+        for (const typeId of this.typeIds) {
             // Suppose we had an object in memory that matched these IDs
             // Instead of document.getElementById(typeId), you can figure it out from data
             // This is just a placeholder or example
             const groupName = `GroupNameFor_${typeId}`;
             this.groupIdToTypeId[groupName] = typeId;
-        });
+        }
 
         console.log('groupIdToTypeId: ', this.groupIdToTypeId);
     }
 
     mapTypeIdsToGroupIds() {
-        this.typeIds.forEach((typeId) => {
+        for (const typeId of this.typeIds) {
             // Similarly handle in-memory data
             const groupName = `GroupNameFor_${typeId}`;
             this.typeIdToGroupId[typeId] = groupName;
-        });
+        }
 
         console.log('typeIdToGroupId: ', this.typeIdToGroupId);
     }
 
     getPlayersGroupsData() {
         // Just set up groupIdToStartingType from the data
-        this.playerGroupsData.forEach((group) => {
+        for (const group of this.playerGroupsData) {
             this.groupIdToStartingType[group.id_uuid] = group.starting_type;
-        });
+        }
     }
 
     // -----------------------------
@@ -430,9 +430,9 @@ export class PlayerGroupManager {
         if (data) {
             this.playerGroupsData = data.player_groups;
             // Build the mapping from group ID -> starting_type
-            this.playerGroupsData.forEach((group) => {
+            for (const group of this.playerGroupsData) {
                 this.groupIdToStartingType[group.id_uuid] = group.starting_type;
-            });
+            }
         }
     }
 
@@ -460,7 +460,7 @@ export class PlayerGroupManager {
     }
 
     updatePlayersGroupsData(selectedPlayers, newGroupId) {
-        selectedPlayers.forEach((selectedPlayer) => {
+        for (const selectedPlayer of selectedPlayers) {
             const id_uuid = selectedPlayer.id_uuid;
             const oldGroupId = selectedPlayer.groupId;
 
@@ -495,7 +495,7 @@ export class PlayerGroupManager {
                 }
                 newGroup.players.push(player);
             }
-        });
+        }
     }
 
     async fetchData(url, bodyData = null) {
@@ -611,11 +611,11 @@ export class PlayerGroupManager {
         this.playerField.appendChild(searchDiv);
 
         // Render list of players
-        players.forEach((player) => {
+        for (const player of players) {
             const { playerRow, divider } = this.createAddPlayerRow(player);
             this.playerField.appendChild(playerRow);
             this.playerField.appendChild(divider);
-        });
+        }
 
         // Show any "selected but not in the fetched list" players
         const filteredSelected = this.selectedPlayersAdd.filter(
@@ -635,11 +635,11 @@ export class PlayerGroupManager {
 
             this.playerField.appendChild(groupDivider);
 
-            filteredSelected.forEach((player) => {
+            for (const player of filteredSelected) {
                 const { playerRow, divider } = this.createAddPlayerRow(player, true);
                 this.playerField.appendChild(playerRow);
                 this.playerField.appendChild(divider);
-            });
+            }
         }
 
         // Finally, attach

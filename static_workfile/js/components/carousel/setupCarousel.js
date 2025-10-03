@@ -1,8 +1,8 @@
 import {
-    handleTouchStart,
-    handleTouchMove,
-    handleTouchEnd,
     handleButtonClick,
+    handleTouchEnd,
+    handleTouchMove,
+    handleTouchStart,
 } from './utils/index.js';
 
 export const setupCarousel = function (
@@ -54,7 +54,7 @@ export const setupCarousel = function (
     });
 
     // setup nav buttons
-    buttons.forEach((button, _) => {
+    for (const button of buttons) {
         button.addEventListener('click', () => {
             isAutoScrolling = handleButtonClick(
                 socket,
@@ -67,5 +67,5 @@ export const setupCarousel = function (
             // Reset isAutoScrolling after handling the button click
             isAutoScrolling = false;
         });
-    });
+    }
 };

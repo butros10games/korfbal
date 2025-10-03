@@ -2,7 +2,7 @@ import { sharedData } from '../../features/matches/sharedData.js';
 import { getButtonBackground } from './scoringButtonUtils.js';
 
 export const addPlayerClickHandlers = function (playerButtons, team, socket) {
-    Array.from(playerButtons).forEach((element) => {
+    for (const element of playerButtons) {
         element.style.background = getButtonBackground(team, false);
 
         // If a previous handler exists, remove it
@@ -15,7 +15,7 @@ export const addPlayerClickHandlers = function (playerButtons, team, socket) {
         const playerClickHandler = createPlayerClickHandler(element, team, socket);
         element.playerClickHandler = playerClickHandler;
         element.addEventListener('click', playerClickHandler);
-    });
+    }
 };
 
 export const createPlayerClickHandler = function (element, team, socket) {
@@ -32,13 +32,13 @@ export const createPlayerClickHandler = function (element, team, socket) {
 };
 
 export const removePlayerClickHandlers = function (playerButtons) {
-    Array.from(playerButtons).forEach((element) => {
+    for (const element of playerButtons) {
         element.style.background = '';
         if (element.playerClickHandler) {
             element.removeEventListener('click', element.playerClickHandler);
             delete element.playerClickHandler;
         }
-    });
+    }
 };
 
 export const shotButtonReg = function (team, socket) {
@@ -49,7 +49,7 @@ export const shotButtonReg = function (team, socket) {
         playerButtonsContainer.getElementsByClassName('player-selector');
 
     // Remove event listeners from the deactivated button
-    Array.from(playerButtons).forEach((element) => {
+    for (const element of playerButtons) {
         element.style.background = '';
         element.removeEventListener('click', element.playerClickHandler);
         delete element.playerClickHandler;
@@ -69,5 +69,5 @@ export const shotButtonReg = function (team, socket) {
 
         element.playerClickHandler = playerClickHandler;
         element.addEventListener('click', playerClickHandler);
-    });
+    }
 };

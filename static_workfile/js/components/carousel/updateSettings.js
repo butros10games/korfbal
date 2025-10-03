@@ -21,7 +21,7 @@ export const updateSettings = function (data, infoContainer, socket) {
         { name: 'email_2fa', label: '2FA Enabled', type: 'checkbox' },
     ];
 
-    fields.forEach((field) => {
+    for (const field of fields) {
         const inputShell = document.createElement('div');
 
         if (field.type === 'checkbox') {
@@ -57,7 +57,7 @@ export const updateSettings = function (data, infoContainer, socket) {
 
         inputShell.appendChild(input);
         settingsText.appendChild(inputShell);
-    });
+    }
 
     const saveButton = document.createElement('button');
     saveButton.type = 'submit';

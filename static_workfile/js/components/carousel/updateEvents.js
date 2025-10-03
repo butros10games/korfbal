@@ -1,11 +1,11 @@
-import { truncateMiddle } from '../../utils/index.js';
 import {
-    matchPoints,
     createEventTypeDiv,
     createMidsectionDiv,
     createScoreDiv,
     getFormattedTime,
+    matchPoints,
 } from '../../utils/events/index.js';
+import { truncateMiddle } from '../../utils/index.js';
 
 export const updateEvents = function (data, infoContainer, match_id) {
     const events = data.events;
@@ -17,7 +17,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
     eventContainer.classList.add('event-container');
 
     if (events.length > 0) {
-        events.forEach((event) => {
+        for (const event of events) {
             const eventDiv = document.createElement('div');
             eventDiv.classList.add('event', 'flex-row');
 
@@ -68,7 +68,7 @@ export const updateEvents = function (data, infoContainer, match_id) {
             }
 
             eventContainer.appendChild(eventDiv);
-        });
+        }
     } else {
         const textElement = document.createElement('p');
         textElement.classList.add('flex-center');
