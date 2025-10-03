@@ -119,7 +119,7 @@ export class PlayerGroupManager {
     renderPlayerGroupsView(playerGroups) {
         // 1) If we have an old playerField, remove it.
         if (this.playerField) {
-            this.container.removeChild(this.playerField);
+            this.playerField.remove();
         }
 
         // 2) Create a new container for the groups.
@@ -352,12 +352,12 @@ export class PlayerGroupManager {
         const groupTypeId = this.groupIdToTypeId[this.groupId];
         const options = this.groupTypes[groupTypeId] || [];
 
-        options.forEach((option) => {
+        for (const option of options) {
             const button = document.createElement('button');
             button.innerText = option.text;
             button.addEventListener('click', () => this.handleOptionClick(option));
             optionsBar.appendChild(button);
-        });
+        }
 
         // Append to the container we stored
         this.container.appendChild(optionsBar);
@@ -390,7 +390,7 @@ export class PlayerGroupManager {
     removeOptionsBar() {
         const optionsBar = document.getElementById('options-bar');
         if (optionsBar) {
-            this.container.removeChild(optionsBar);
+            optionsBar.remove();
             this.adjustScrollableHeight('');
         }
     }
@@ -566,7 +566,7 @@ export class PlayerGroupManager {
     renderAddPlayersView(players, searchText = null) {
         // Clear old content from the container if needed
         if (this.playerField) {
-            this.container.removeChild(this.playerField);
+            this.playerField.remove();
         }
 
         // Scroll the container to the top

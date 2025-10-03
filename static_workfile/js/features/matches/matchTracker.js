@@ -965,67 +965,78 @@ function createDivWithClass(...classNames) {
     return div;
 }
 
+function deactivateSwitchMode(socket) {
+    const switchButton = document.getElementById('switch-button');
+    switchButton.classList.remove('activated');
+    switchButton.style.background = '';
+
+    const playerButtons = document.getElementsByClassName('player-selector');
+    for (const element of Array.from(playerButtons)) {
+        element.style.background = '';
+        if (element.playerClickHandler) {
+            element.removeEventListener('click', element.playerClickHandler);
+            delete element.playerClickHandler;
+        }
+    }
+
+    shotButtonReg('home', socket);
+    shotButtonReg('away', socket);
+}
+
+function activateSwitchMode(socket) {
+    const switchButton = document.getElementById('switch-button');
+    switchButton.classList.add('activated');
+    switchButton.style.background = '#4169e152';
+
+    const playerButtons = document.getElementsByClassName('player-selector');
+    for (const element of Array.from(playerButtons)) {
+        deactivateScoreButtons();
+
+        element.style.background = '#4169e152';
+        if (element.playerClickHandler) {
+            element.removeEventListener('click', element.playerClickHandler);
+            delete element.playerClickHandler;
+        }
+
+        const playerClickHandler = function () {
+            playerSwitchData = {
+                player_id: element.id,
+            };
+
+            const data = {
+                command: 'get_non_active_players',
+            };
+
+            socket.send(JSON.stringify(data));
+        };
+
+        element.playerClickHandler = playerClickHandler;
+        element.addEventListener('click', playerClickHandler);
+    }
+}
+
+function deactivateScoreButtons() {
+    const homeScoreButton = document.getElementById('home-score');
+    const awayScoreButton = document.getElementById('away-score');
+
+    if (homeScoreButton.classList.contains('activated')) {
+        homeScoreButton.classList.remove('activated');
+        homeScoreButton.style.background = '#43ff6480';
+    }
+
+    if (awayScoreButton.classList.contains('activated')) {
+        awayScoreButton.classList.remove('activated');
+        awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
+    }
+}
+
 function playerSwitch(socket) {
     const switchButton = document.getElementById('switch-button');
 
     if (switchButton.classList.contains('activated')) {
-        switchButton.classList.remove('activated');
-        switchButton.style.background = '';
-
-        const playerButtons = document.getElementsByClassName('player-selector');
-
-        for (const element of Array.from(playerButtons)) {
-            element.style.background = '';
-            if (element.playerClickHandler) {
-                element.removeEventListener('click', element.playerClickHandler);
-                delete element.playerClickHandler; // Properly remove handler reference
-            }
-        }
-
-        shotButtonReg('home', socket);
-        shotButtonReg('away', socket);
+        deactivateSwitchMode(socket);
     } else {
-        switchButton.classList.add('activated');
-        switchButton.style.background = '#4169e152';
-
-        const playerButtons = document.getElementsByClassName('player-selector');
-
-        for (const element of Array.from(playerButtons)) {
-            const homeScoreButton = document.getElementById('home-score');
-            const awayScoreButton = document.getElementById('away-score');
-
-            if (homeScoreButton.classList.contains('activated')) {
-                homeScoreButton.classList.remove('activated');
-                homeScoreButton.style.background = '#43ff6480';
-            }
-
-            if (awayScoreButton.classList.contains('activated')) {
-                awayScoreButton.classList.remove('activated');
-                awayScoreButton.style.background = 'rgba(235, 0, 0, 0.5)';
-            }
-
-            element.style.background = '#4169e152';
-            if (element.playerClickHandler) {
-                element.removeEventListener('click', element.playerClickHandler);
-                delete element.playerClickHandler; // Properly remove handler reference
-            }
-
-            // Add new handler
-            const playerClickHandler = function () {
-                playerSwitchData = {
-                    player_id: element.id,
-                };
-
-                const data = {
-                    command: 'get_non_active_players',
-                };
-
-                socket.send(JSON.stringify(data));
-            };
-
-            element.playerClickHandler = playerClickHandler;
-            element.addEventListener('click', playerClickHandler);
-        }
+        activateSwitchMode(socket);
     }
 }
 
