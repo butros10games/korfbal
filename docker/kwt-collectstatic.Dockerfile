@@ -1,7 +1,9 @@
 ## ------------------------------- Builder Stage ------------------------------ ##
 FROM python:3.13-trixie AS builder
 
-RUN apt-get update && apt-get install --no-install-recommends -y         build-essential &&     apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y build-essential && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ADD https://astral.sh/uv/install.sh /install.sh
 RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
@@ -49,11 +51,9 @@ RUN set -euo \
         *) echo "Unsupported architecture: ${ARCH_GUESS}" >&2 ; exit 1 ;; \
     esac \
     && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
-    && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}"
-
-RUN chmod +x /usr/local/bin/mc
-
-RUN groupadd --gid "${APP_GID}" appuser \
+    && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}" \
+    && chmod +x /usr/local/bin/mc \
+    && groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
     && install -d -o appuser -g appuser /app \
     && install -d -o appuser -g appuser /app/logs
