@@ -28,14 +28,14 @@ export const createPlayerDiv = function (type, player, playerOptions = []) {
         }
 
         const notFilledOption = document.createElement('option');
-        notFilledOption.value = NaN;
+        notFilledOption.value = Number.NaN;
         notFilledOption.innerHTML = 'Niet ingevuld';
         playerDiv.appendChild(notFilledOption.cloneNode(true));
 
         if (player) {
             playerDiv.value = player.id;
         } else {
-            playerDiv.value = NaN;
+            playerDiv.value = Number.NaN;
         }
     } else {
         const playerName = document.createElement('p');

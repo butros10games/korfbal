@@ -220,7 +220,9 @@ function createButtonDiv(buttonArray) {
 
 function handleButtonClick(buttonElement, button) {
     const buttons = document.querySelectorAll('.selection-button');
-    buttons.forEach((buttonSelect) => buttonSelect.classList.remove('active'));
+    for (const buttonSelect of buttons) {
+        buttonSelect.classList.remove('active');
+    }
     buttonElement.classList.add('active');
 
     document.getElementById(button).style.display = 'flex';

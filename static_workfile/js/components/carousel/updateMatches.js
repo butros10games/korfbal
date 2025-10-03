@@ -29,8 +29,7 @@ export const updateMatches = function (data, maxLength, infoContainer, socket) {
             }
 
             const match_container = document.createElement('a');
-            match_container.classList.add('match-container');
-            match_container.classList.add('flex-row');
+            match_container.classList.add('match-container', 'flex-row');
             match_container.style.justifyContent = 'space-around';
             match_container.style.padding = '12px';
             match_container.style.borderBottom = '1px solid var(--gray)';

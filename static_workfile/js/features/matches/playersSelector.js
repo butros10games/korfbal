@@ -6,8 +6,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Extract the teamId and matchId from the URL
     const urlParts = url.split('/');
-    const teamId = urlParts[urlParts.length - 2];
-    const matchId = urlParts[urlParts.length - 3];
+    const teamId = urlParts.at(-2);
+    const matchId = urlParts.at(-3);
 
     // Pass in the ID of the container where you want all the elements appended
     const playerGroupManager = new PlayerGroupManager(

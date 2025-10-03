@@ -32,12 +32,12 @@ export const initializeSocket = function (url, onMessageCallback, onOpenCallback
         socket.onmessage = onMessageCallback;
 
         socket.onclose = function (event) {
-            if (!event.wasClean) {
-                console.error('Connection died, attempting to reconnect...');
-            } else {
+            if (event.wasClean) {
                 console.log(
                     `Connection closed cleanly, code=${event.code}, reason=${event.reason}`,
                 );
+            } else {
+                console.error('Connection died, attempting to reconnect...');
             }
             setTimeout(connect, 3000);
         };

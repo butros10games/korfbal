@@ -6,7 +6,7 @@ export function trackPageVisits() {
     const pageStack = storedStack ? JSON.parse(storedStack) : [];
 
     // Only add the current page if it’s not already the last page in the stack.
-    if (pageStack.length === 0 || pageStack[pageStack.length - 1] !== currentPage) {
+    if (pageStack.length === 0 || pageStack.at(-1) !== currentPage) {
         pageStack.push(currentPage);
         localStorage.setItem('pageStack', JSON.stringify(pageStack));
     }

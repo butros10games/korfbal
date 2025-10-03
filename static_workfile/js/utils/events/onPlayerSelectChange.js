@@ -8,7 +8,7 @@ export const onPlayerSelectChange = function (changedSelect) {
 
         // If another select has the same value, reset it
         if (select.value === changedSelect.value) {
-            select.value = NaN; // Set to 'Niet ingevuld' value
+            select.value = Number.NaN; // Set to 'Niet ingevuld' value
         }
     }
 

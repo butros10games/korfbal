@@ -137,61 +137,11 @@ export class PlayerGroupManager {
 
             if (hasPlayers) {
                 nullPlayers = false;
-
-                // Group divider (title row)
-                const groupDivider = this.createGroupDivider(playerGroup, isReserve);
-                this.playerField.appendChild(groupDivider);
-
-                // Divider line
-                const dividerLine1 = document.createElement('hr');
-                dividerLine1.classList.add('divider');
-                this.playerField.appendChild(dividerLine1);
-
-                // The group container
-                const playerGroupDiv = document.createElement('div');
-                playerGroupDiv.classList.add('flex-column', 'player-group');
-                playerGroupDiv.id = playerGroup.id_uuid;
-
-                // Create player rows
-                for (const player of playerGroup.players) {
-                    const { playerDiv, divider } = this.createPlayerRow(
-                        player,
-                        playerGroup.id_uuid,
-                    );
-                    playerGroupDiv.appendChild(playerDiv);
-                    playerGroupDiv.appendChild(divider);
-                }
-
-                this.playerField.appendChild(playerGroupDiv);
+                const groupElement = this.createPlayerGroupElement(playerGroup);
+                this.playerField.appendChild(groupElement);
             } else if (isReserve) {
-                // The "Add players" area for an empty reserve group
-                const centerDiv = document.createElement('div');
-                centerDiv.classList.add('flex-center');
-                if (nullPlayers) {
-                    centerDiv.style.height = '100%';
-                }
-                centerDiv.style.width = '100%';
-
-                if (this.access) {
-                    const addPlayerButton = document.createElement('p');
-                    addPlayerButton.classList.add(
-                        'dm-sans-600-normal',
-                        'flex-center',
-                        'add-players-button',
-                    );
-                    addPlayerButton.textContent = 'Voeg spelers toe';
-                    addPlayerButton.addEventListener('click', () => {
-                        this.fetchPlayersData();
-                    });
-
-                    centerDiv.appendChild(addPlayerButton);
-                } else {
-                    const noPlayers = document.createElement('p');
-                    noPlayers.classList.add('dm-sans-400-normal');
-                    noPlayers.textContent = 'Geen spelers beschikbaar';
-                    centerDiv.appendChild(noPlayers);
-                }
-                this.playerField.appendChild(centerDiv);
+                const reserveElement = this.createReserveAddArea(nullPlayers);
+                this.playerField.appendChild(reserveElement);
             }
         }
 
@@ -202,6 +152,74 @@ export class PlayerGroupManager {
 
         // 4) Attach new content to main container
         this.container.appendChild(this.playerField);
+    }
+
+    /**
+     * Creates the DOM elements for a player group that has players.
+     */
+    createPlayerGroupElement(playerGroup) {
+        const fragment = document.createDocumentFragment();
+        const isReserve = playerGroup.starting_type?.name === 'Reserve';
+
+        // Group divider (title row)
+        const groupDivider = this.createGroupDivider(playerGroup, isReserve);
+        fragment.appendChild(groupDivider);
+
+        // Divider line
+        const dividerLine1 = document.createElement('hr');
+        dividerLine1.classList.add('divider');
+        fragment.appendChild(dividerLine1);
+
+        // The group container
+        const playerGroupDiv = document.createElement('div');
+        playerGroupDiv.classList.add('flex-column', 'player-group');
+        playerGroupDiv.id = playerGroup.id_uuid;
+
+        // Create player rows
+        for (const player of playerGroup.players) {
+            const { playerDiv, divider } = this.createPlayerRow(
+                player,
+                playerGroup.id_uuid,
+            );
+            playerGroupDiv.appendChild(playerDiv);
+            playerGroupDiv.appendChild(divider);
+        }
+
+        fragment.appendChild(playerGroupDiv);
+        return fragment;
+    }
+
+    /**
+     * Creates the DOM elements for the empty reserve group add area.
+     */
+    createReserveAddArea(nullPlayers) {
+        const centerDiv = document.createElement('div');
+        centerDiv.classList.add('flex-center');
+        if (nullPlayers) {
+            centerDiv.style.height = '100%';
+        }
+        centerDiv.style.width = '100%';
+
+        if (this.access) {
+            const addPlayerButton = document.createElement('p');
+            addPlayerButton.classList.add(
+                'dm-sans-600-normal',
+                'flex-center',
+                'add-players-button',
+            );
+            addPlayerButton.textContent = 'Voeg spelers toe';
+            addPlayerButton.addEventListener('click', () => {
+                this.fetchPlayersData();
+            });
+
+            centerDiv.appendChild(addPlayerButton);
+        } else {
+            const noPlayers = document.createElement('p');
+            noPlayers.classList.add('dm-sans-400-normal');
+            noPlayers.textContent = 'Geen spelers beschikbaar';
+            centerDiv.appendChild(noPlayers);
+        }
+        return centerDiv;
     }
 
     /**

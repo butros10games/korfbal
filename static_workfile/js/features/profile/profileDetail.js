@@ -116,8 +116,7 @@ function settingsSaved() {
 
 function cleanDom(element, profilePicture) {
     element.innerHTML = '';
-    element.classList.remove('flex-center');
-    element.classList.remove('flex-start-wrap');
+    element.classList.remove('flex-center', 'flex-start-wrap');
 
     profilePicture.classList.remove('active-img');
 }

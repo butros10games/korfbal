@@ -1,7 +1,11 @@
 ## ------------------------------- Builder Stage ------------------------------ ##
 FROM python:3.13-trixie AS builder
 
-RUN apt-get update && apt-get install --no-install-recommends -y         build-essential &&     apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 ADD https://astral.sh/uv/install.sh /install.sh
 RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
@@ -24,7 +28,16 @@ ARG APP_GID=1000
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install --no-install-recommends -y         libexpat1 libpq5 libxml2 &&     apt-get clean && rm -rf /var/lib/apt/lists/* &&     groupadd --gid "${APP_GID}" appuser     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser     && install -d -o appuser -g appuser /app     && install -d -o appuser -g appuser /app/logs     && install -o appuser -g appuser -m 644 /dev/null /app/logs/uwsgi.log
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    libexpat1 libpq5 libxml2 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid "${APP_GID}" appuser && \
+    useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser && \
+    install -d -o appuser -g appuser /app && \
+    install -d -o appuser -g appuser /app/logs && \
+    install -o appuser -g appuser -m 644 /dev/null /app/logs/uwsgi.log
 
 COPY --from=builder --chmod=0555 /app/.venv .venv
 ENV PATH="/app/.venv/bin:${PATH}"

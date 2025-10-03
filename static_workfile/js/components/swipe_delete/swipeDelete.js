@@ -14,8 +14,7 @@ export const resetSwipe = function () {
     swipeContent.style.transform = 'translateX(0px)';
 
     // Reset any classes that might have been added or removed during swipe
-    swipeContent.classList.remove('transition-back');
-    swipeContent.classList.remove('swiped-left'); // If this class is added on swipe
+    swipeContent.classList.remove('transition-back', 'swiped-left');
 };
 
 export const setupSwipeDelete = function () {

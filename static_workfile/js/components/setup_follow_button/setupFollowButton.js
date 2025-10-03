@@ -1,9 +1,9 @@
 export const setupFollowButton = function (id, socket) {
     document.querySelector('.icon-container').addEventListener('click', function () {
-        const isFollowed = this.getAttribute('data-followed') === 'true';
+        const isFollowed = this.dataset.followed === 'true';
 
         // Toggle the data-followed attribute
-        this.setAttribute('data-followed', !isFollowed);
+        this.dataset.followed = (!isFollowed).toString();
 
         socket.send(
             JSON.stringify({

@@ -399,8 +399,7 @@ function load_icon_small(element) {
 
 function cleanDom(element) {
     element.innerHTML = '';
-    element.classList.remove('flex-center');
-    element.classList.remove('flex-start-wrap');
+    element.classList.remove('flex-center', 'flex-start-wrap');
 }
 
 function playerChange(data, socket) {
@@ -482,8 +481,7 @@ function showGoalTypes(data, socket) {
 
     for (const goalType of data.goal_types) {
         const goalTypeDiv = document.createElement('div');
-        goalTypeDiv.classList.add('goal-type');
-        goalTypeDiv.classList.add('flex-center');
+        goalTypeDiv.classList.add('goal-type', 'flex-center');
         goalTypeDiv.style.flexGrow = '1';
         goalTypeDiv.style.flexBasis = 'calc(50% - 32px)';
         goalTypeDiv.style.textAlign = 'center';
@@ -577,8 +575,7 @@ function showReservePlayer(data, socket) {
 
     for (const Player of data.players) {
         const PlayerDiv = document.createElement('div');
-        PlayerDiv.classList.add('goal-type');
-        PlayerDiv.classList.add('flex-center');
+        PlayerDiv.classList.add('goal-type', 'flex-center');
         PlayerDiv.style.flexGrow = '1';
         PlayerDiv.style.flexBasis = 'calc(50% - 32px)';
         PlayerDiv.style.textAlign = 'center';
@@ -962,7 +959,9 @@ function showActionMenu(actions) {
 
 function createDivWithClass(...classNames) {
     const div = document.createElement('div');
-    classNames.forEach((className) => div.classList.add(className));
+    for (const className of classNames) {
+        div.classList.add(className);
+    }
     return div;
 }
 
@@ -1031,16 +1030,16 @@ function playerSwitch(socket) {
 }
 
 function sendTimeout(socket) {
-    // Check if the class action-red is not present
+    // Check if the class action-red is present
     const timeoutButton = document.getElementById('timeout');
 
-    if (!timeoutButton.classList.contains('action-red')) {
+    if (timeoutButton.classList.contains('action-red')) {
+        errorProcessing({ error: 'match is paused' });
+    } else {
         const data = {
             command: 'timeout',
         };
 
         socket.send(JSON.stringify(data));
-    } else {
-        errorProcessing({ error: 'match is paused' });
     }
 }
