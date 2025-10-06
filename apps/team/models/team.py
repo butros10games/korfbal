@@ -8,13 +8,13 @@ from django.urls import reverse
 class Team(models.Model):
     """Model for Team."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    name: models.CharField = models.CharField(max_length=255)
-    club: models.ForeignKey = models.ForeignKey(
+    name = models.CharField(max_length=255)
+    club = models.ForeignKey(
         "club.Club",
         on_delete=models.CASCADE,
         related_name="teams",

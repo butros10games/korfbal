@@ -1,6 +1,7 @@
 """Module contains the ProfileDataConsumer class."""
 
 import json
+from typing import Any
 
 from asgiref.sync import sync_to_async
 from bg_auth.models import UserProfile
@@ -15,7 +16,7 @@ from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
 
-class ProfileDataConsumer(AsyncWebsocketConsumer):
+class ProfileDataConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
     """Websocket consumer for the profile data."""
 
     def __init__(self) -> None:
@@ -35,7 +36,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
         )
         self.user = self.player.user
         self.user_profile = await UserProfile.objects.aget(user=self.user)
-        self.teams = await sync_to_async(list)(
+        self.teams = await sync_to_async(list)(  # type: ignore[call-arg]
             Team.objects.filter(team_data__players=self.player).distinct(),
         )
 
@@ -118,7 +119,9 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         all_finished_match_data = await self.get_matches_data(["finished"], "-")
 
-        goal_types = await sync_to_async(list)(GoalType.objects.all())
+        goal_types: list[GoalType] = await sync_to_async(list)(  # type: ignore[call-arg]
+            GoalType.objects.all()
+        )
 
         player_goal_stats = {}
         scoring_types = []
@@ -163,7 +166,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             ),
         )
 
-    async def settings_update_request(self, data: dict) -> None:
+    async def settings_update_request(self, data: dict[str, Any]) -> None:
         """Update the user settings.
 
         Args:
@@ -238,18 +241,18 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "matches", "matches": matches_dict}),
         )
 
-    async def get_matches_data(self, status: list, order: str) -> list:
+    async def get_matches_data(self, status: list[str], order: str) -> list[MatchData]:
         """Get the match data.
 
         Args:
-            status (list): The status of the match data.
+            status (list[str]): The status of the match data.
             order (str): The order of the match data.
 
         Returns:
-            list: The list of match data.
+            list[MatchData]: The list of match data.
 
         """
-        matches = await sync_to_async(list)(
+        matches: list[Match] = await sync_to_async(list)(  # type: ignore[call-arg]
             Match.objects.filter(
                 Q(home_team__team_data__in=self.team_data)
                 | Q(away_team__team_data__in=self.team_data),
@@ -258,7 +261,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        return await sync_to_async(list)(
+        return await sync_to_async(list)(  # type: ignore[call-arg]
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -270,7 +273,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             .order_by(order + "match_link__start_time"),
         )
 
-    async def send_data(self, event: dict) -> None:
+    async def send_data(self, event: dict[str, Any]) -> None:
         """Send data to the websocket.
 
         Args:

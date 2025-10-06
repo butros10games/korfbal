@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.game_tracker.models import Pause
 
 
-class PauseAdmin(admin.ModelAdmin):
+class PauseAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the Pause model."""
 
     list_display = ["id_uuid", "match_data"]  # noqa: RUF012

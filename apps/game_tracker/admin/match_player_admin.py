@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.game_tracker.models import MatchPlayer
 
 
-class MatchPlayerAdmin(admin.ModelAdmin):
+class MatchPlayerAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the MatchPlayer model."""
 
     list_display = ["id_uuid", "match_data", "team", "player"]  # noqa: RUF012

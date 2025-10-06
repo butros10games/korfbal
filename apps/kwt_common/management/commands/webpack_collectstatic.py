@@ -2,7 +2,7 @@
 
 import os
 import shutil
-import subprocess  # noqa: S404  # nosec B404: Required for invoking local webpack via npx (controlled arguments)
+import subprocess  # nosec B404: Required for invoking local webpack via npx (controlled arguments)
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
@@ -54,7 +54,7 @@ class Command(BaseCommand):
 
         cmd = [npx, "webpack", "--config", config_path]
         try:
-            subprocess.run(cmd, check=True)  # noqa: S603  # nosec B603: command list is fully static & validated
+            subprocess.run(cmd, check=True)  # nosec B603: command list is fully static & validated
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"Webpack build failed: {exc}") from exc
         self.stdout.write("Webpack build completed.")

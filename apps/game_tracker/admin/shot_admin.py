@@ -1,5 +1,7 @@
 """Admin for the Shot model."""
 
+from typing import ClassVar, cast
+
 from django import forms
 from django.contrib import admin
 from django.db.models import Q
@@ -16,13 +18,14 @@ class ShotAdminForm(forms.ModelForm):
         model = Shot
         fields = ["player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
 
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+    def __init__(self, *args: object, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team  # noqa: PLC0415
 
         super().__init__(*args, **kwargs)
         if kwargs.get("instance"):
-            match = kwargs["instance"].match_data.match_link
+            instance = cast(Shot, kwargs["instance"])
+            match = instance.match_data.match_link
             self.fields["team"].queryset = Team.objects.filter(
                 Q(home_matches=match) | Q(away_matches=match),
             ).distinct()
@@ -30,11 +33,18 @@ class ShotAdminForm(forms.ModelForm):
             self.fields["team"].queryset = Team.objects.none()
 
 
-class ShotAdmin(admin.ModelAdmin):
+class ShotAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the Shot model."""
 
     form = ShotAdminForm
-    list_display = ["id_uuid", "player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
+    list_display: ClassVar[list[str]] = [
+        "id_uuid",
+        "player",
+        "match_data",
+        "for_team",
+        "team",
+        "scored",
+    ]
     show_full_result_count = False
 
     class Meta:

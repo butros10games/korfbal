@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.team.models import Team
 
 
-class TeamAdmin(admin.ModelAdmin):
+class TeamAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin class for the Team model."""
 
     list_display = ["id_uuid", "__str__", "club"]  # noqa: RUF012

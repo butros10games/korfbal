@@ -9,12 +9,12 @@ class TeamData(models.Model):
     """Model for the team data."""
 
     team = models.ForeignKey("Team", on_delete=models.CASCADE, related_name="team_data")
-    coach = models.ManyToManyField(
+    coach: models.ManyToManyField = models.ManyToManyField(  # type: ignore[type-arg]
         player_model_string,
         related_name="team_data_as_coach",
         blank=True,
     )
-    players = models.ManyToManyField(
+    players: models.ManyToManyField = models.ManyToManyField(  # type: ignore[type-arg]
         player_model_string,
         related_name="team_data_as_player",
         blank=True,

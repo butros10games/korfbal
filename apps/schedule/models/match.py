@@ -10,27 +10,27 @@ from .constants import team_model_string
 class Match(models.Model):
     """Model for Match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    home_team: models.ForeignKey = models.ForeignKey(
+    home_team = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="home_matches",
     )
-    away_team: models.ForeignKey = models.ForeignKey(
+    away_team = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="away_matches",
     )
-    season: models.ForeignKey = models.ForeignKey(
+    season = models.ForeignKey(
         "Season",
         on_delete=models.CASCADE,
         related_name="matches",
     )
-    start_time: models.DateTimeField = models.DateTimeField()
+    start_time = models.DateTimeField()
 
     def __str__(self) -> str:
         """Get the string representation of the match.

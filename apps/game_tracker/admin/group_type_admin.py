@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.game_tracker.models import GroupType
 
 
-class GroupTypeAdmin(admin.ModelAdmin):
+class GroupTypeAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the GroupType model."""
 
     list_display = ["id_uuid", "name"]  # noqa: RUF012

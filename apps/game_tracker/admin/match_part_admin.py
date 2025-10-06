@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.game_tracker.models import MatchPart
 
 
-class MatchPartAdmin(admin.ModelAdmin):
+class MatchPartAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the MatchPart model."""
 
     list_display = ["id_uuid", "start_time", "end_time", "match_data"]  # noqa: RUF012

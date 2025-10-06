@@ -1,14 +1,21 @@
 """Admin settings for the PlayerChange model."""
 
+from typing import ClassVar
+
 from django.contrib import admin
 
 from apps.game_tracker.models import PlayerChange
 
 
-class PlayerChangeAdmin(admin.ModelAdmin):
+class PlayerChangeAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the PlayerChange model."""
 
-    list_display = ["id_uuid", "player_in", "player_out", "player_group"]  # noqa: RUF012
+    list_display: ClassVar[list[str]] = [
+        "id_uuid",
+        "player_in",
+        "player_out",
+        "player_group",
+    ]
     show_full_result_count = False
 
     class Meta:

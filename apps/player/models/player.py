@@ -1,5 +1,7 @@
 """Module contains the Player model for the player app."""
 
+from typing import cast
+
 from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -12,34 +14,34 @@ from .constants import club_model_string, team_model_string
 class Player(models.Model):
     """Model for Player."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    user: models.ForeignKey = models.ForeignKey(
+    user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name="players",
     )
 
-    profile_picture: models.ImageField = models.ImageField(
+    profile_picture = models.ImageField(
         upload_to="profile_pictures/",
         blank=True,
         null=True,
     )
 
-    team_follow: models.ManyToManyField = models.ManyToManyField(
+    team_follow = models.ManyToManyField(  # type: ignore[var-annotated]
         team_model_string,
         blank=True,
     )
-    club_follow: models.ManyToManyField = models.ManyToManyField(
+    club_follow = models.ManyToManyField(  # type: ignore[var-annotated]
         club_model_string,
         blank=True,
     )
 
-    goal_song_uri: models.CharField = models.CharField(max_length=255, blank=True)
-    song_start_time: models.IntegerField = models.IntegerField(blank=True, null=True)
+    goal_song_uri = models.CharField(max_length=255, blank=True)
+    song_start_time = models.IntegerField(blank=True, null=True)
 
     def __str__(self) -> str:
         """Get the string representation of the player.
@@ -67,6 +69,6 @@ class Player(models.Model):
 
         """
         if self.profile_picture:
-            return self.profile_picture.url
-        static_url: str = settings.STATIC_URL.removeprefix("/")
+            return self.profile_picture.url  # type: ignore[no-any-return]
+        static_url = cast(str, settings.STATIC_URL).removeprefix("/")
         return f"https://{static_url}images/player/blank-profile-picture.png"

@@ -3,6 +3,7 @@ data page.
 """
 
 import json
+from typing import Any
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -21,7 +22,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-class TeamDataConsumer(AsyncWebsocketConsumer):
+class TeamDataConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
     """Websocket consumer for the team data page."""
 
     def __init__(self) -> None:
@@ -33,7 +34,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         """Connect to the websocket."""
         team_id = self.scope["url_route"]["kwargs"]["id"]
         self.team = await Team.objects.aget(id_uuid=team_id)
-        self.subscribed_channels = []
+        self.subscribed_channels: list[str] = []
         await self.accept()
 
     async def receive(
@@ -100,11 +101,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
     async def team_stats_general_request(self) -> None:
         """Handle the request for general team statistics."""
         # get a list of all the matches of the team
-        matches = await sync_to_async(list)(
+        matches: list[Match] = await sync_to_async(list)(  # type: ignore[call-arg]
             Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)),
         )
 
-        match_dataset = await sync_to_async(list)(
+        match_dataset: list[MatchData] = await sync_to_async(list)(  # type: ignore[call-arg]
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -119,17 +120,17 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
     async def team_stats_player_request(self) -> None:
         """Handle the request for player statistics."""
         # Fetch players and matches in bulk
-        players = await sync_to_async(list)(
+        players: list[Player] = await sync_to_async(list)(  # type: ignore[call-arg]
             Player.objects.prefetch_related("user")
             .filter(team_data_as_player__team=self.team)
             .distinct(),
         )
 
-        matches = await sync_to_async(list)(
+        matches: list[Match] = await sync_to_async(list)(  # type: ignore[call-arg]
             Match.objects.filter(Q(home_team=self.team) | Q(away_team=self.team)),
         )
 
-        match_dataset = await sync_to_async(list)(
+        match_dataset: list[MatchData] = await sync_to_async(list)(  # type: ignore[call-arg]
             MatchData.objects.filter(match_link__in=matches),
         )
 
@@ -138,7 +139,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         # Prepare and send data
         await self.send(text_data=player_stats)
 
-    async def player_request(self, json_data: dict) -> None:
+    async def player_request(self, json_data: dict[str, Any]) -> None:
         """Handle the request for players.
 
         Args:
@@ -148,7 +149,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         season_uuid = json_data.get("season_uuid")
 
         # Initialize an empty list to store players
-        players_in_team_season = []
+        players_in_team_season: list[Player] = []
 
         # Check if a specific season is provided
         if season_uuid:
@@ -156,7 +157,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             season = await Season.objects.aget(id_uuid=season_uuid)
 
             # Get all TeamData instances for the specified team and season
-            team_data_instances = await sync_to_async(list)(
+            team_data_instances: list[TeamData] = await sync_to_async(list)(  # type: ignore[call-arg]
                 TeamData.objects.prefetch_related("players").filter(
                     team=self.team,
                     season=season,
@@ -186,7 +187,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
 
             # Get the team data instances for the current season
-            all_team_data_instances = await sync_to_async(list)(
+            all_team_data_instances: list[TeamData] = await sync_to_async(list)(  # type: ignore[call-arg]
                 TeamData.objects.prefetch_related("players").filter(
                     team=self.team,
                     season=current_season,
@@ -201,7 +202,9 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
 
-        players_in_team_season_list = await sync_to_async(list)(players_in_team_season)
+        players_in_team_season_list: list[Player] = await sync_to_async(list)(
+            players_in_team_season
+        )  # type: ignore[call-arg]
 
         players_in_team_season_dict = [
             {
@@ -242,18 +245,18 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "follow", "status": "success"}),
         )
 
-    async def get_matches_data(self, status: list, order: str) -> list:
+    async def get_matches_data(self, status: list[str], order: str) -> list[MatchData]:
         """Get the match data of the team.
 
         Args:
-            status (list): The status of the matches.
+            status (list[str]): The status of the matches.
             order (str): The order of the matches.
 
         Returns:
-            list: The list of match data.
+            list[MatchData]: The list of match data.
 
         """
-        matches = await sync_to_async(list)(
+        matches: list[Match] = await sync_to_async(list)(  # type: ignore[call-arg]
             Match.objects.filter(
                 Q(home_team=self.team) | Q(away_team=self.team),
             ).distinct(),
@@ -261,7 +264,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
 
         matches_non_dub = list(dict.fromkeys(matches))
 
-        return await sync_to_async(list)(
+        return await sync_to_async(list)(  # type: ignore[call-arg]
             MatchData.objects.prefetch_related(
                 "match_link",
                 "match_link__home_team",
@@ -276,7 +279,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
             .order_by(order + "match_link__start_time"),
         )
 
-    async def send_data(self, event: dict) -> None:
+    async def send_data(self, event: dict[str, Any]) -> None:
         """Send data to the websocket.
 
         Args:

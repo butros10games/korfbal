@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.schedule.models import Season
 
 
-class SeasonAdmin(admin.ModelAdmin):
+class SeasonAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin settings for the Season model."""
 
     list_display = ["id_uuid", "name"]  # noqa: RUF012

@@ -2,11 +2,12 @@
 
 import json
 import operator
+from typing import Any
 
 from apps.game_tracker.models import Shot
 
 
-async def players_stats(players: list, match_dataset: list) -> str:
+async def players_stats(players: list[Any], match_dataset: list[Any]) -> str:
     """Return statistics of players in a match.
 
     Args:

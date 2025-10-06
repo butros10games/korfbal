@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.game_tracker.models import GoalType
 
 
-class GoalTypeAdmin(admin.ModelAdmin):
+class GoalTypeAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     """Admin for the GoalType model."""
 
     list_display = ["id_uuid", "name"]  # noqa: RUF012
