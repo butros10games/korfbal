@@ -29,29 +29,36 @@ def match_team_selector(
     # Get the teams in the match
     teams_in_match: list[Team] = [match_data.home_team, match_data.away_team]
 
-    player: Player = Player.objects.get(user=request.user)
+    player: Player | None = None
+    connected_teams: list[Team] = []
+    if request.user.is_authenticated:
+        try:
+            player = Player.objects.get(user=request.user)
+        except Player.DoesNotExist:
+            player = None
 
-    # Get the teams the user is connected to through TeamData as a player
-    user_team_data_as_player: QuerySet[TeamData] = TeamData.objects.filter(
-        players=player,
-    )
-    user_teams_as_player: list[Team] = [
-        team_data.team for team_data in user_team_data_as_player
-    ]
+    if player:
+        # Get the teams the user is connected to through TeamData as a player
+        user_team_data_as_player: QuerySet[TeamData] = TeamData.objects.filter(
+            players=player,
+        )
+        user_teams_as_player: list[Team] = [
+            team_data.team for team_data in user_team_data_as_player
+        ]
 
-    # Get the teams the user is connected to through TeamData as a coach
-    user_team_data_as_coach: QuerySet[TeamData] = TeamData.objects.filter(coach=player)
-    user_teams_as_coach: list[Team] = [
-        team_data.team for team_data in user_team_data_as_coach
-    ]
+        # Get the teams the user is connected to through TeamData as a coach
+        user_team_data_as_coach: QuerySet[TeamData] = TeamData.objects.filter(
+            coach=player,
+        )
+        user_teams_as_coach: list[Team] = [
+            team_data.team for team_data in user_team_data_as_coach
+        ]
 
-    # Combine the teams where the user is a player and a coach
-    user_teams: list[Team] = list(set(user_teams_as_player + user_teams_as_coach))
+        # Combine the teams where the user is a player and a coach
+        user_teams: list[Team] = list(set(user_teams_as_player + user_teams_as_coach))
 
-    # Check if the user is connected to one or both of the teams in the match
-    connected_teams: list[Team] = [
-        team for team in teams_in_match if team in user_teams
-    ]
+        # Check if the user is connected to one or both of the teams in the match
+        connected_teams = [team for team in teams_in_match if team in user_teams]
 
     # If the user is connected to only one team, redirect them to the tracker page
     if len(connected_teams) == 1:

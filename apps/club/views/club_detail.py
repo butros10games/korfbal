@@ -23,11 +23,16 @@ def club_detail(request: HttpRequest, club_id: str) -> HttpResponse:
     user_request = request.user
     admin = False
     following = False
+    player: Player | None = None
     if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        admin = club.admin.filter(id_uuid=player.id_uuid).exists()
+        try:
+            player = Player.objects.get(user=user_request)
+        except Player.DoesNotExist:
+            player = None
 
-        following = player.club_follow.filter(id_uuid=club_id).exists()
+        if player:
+            admin = club.admin.filter(id_uuid=player.id_uuid).exists()
+            following = player.club_follow.filter(id_uuid=club_id).exists()
 
     context = {"club": club, "admin": admin, "following": following}
 

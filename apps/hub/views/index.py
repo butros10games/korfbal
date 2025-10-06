@@ -25,31 +25,39 @@ def index(request: HttpRequest) -> HttpResponse:
     # get the player
     user_request = request.user
     if user_request.is_authenticated:
-        player = Player.objects.get(user=user_request)
-        # get the teams the player is connected to
-        teams = Team.objects.filter(
-            Q(team_data__players=player) | Q(team_data__coach=player),
-        ).distinct()
-        # get the matches of the teams
-        matches = Match.objects.filter(
-            Q(home_team__in=teams) | Q(away_team__in=teams),
-        ).order_by("start_time")
+        try:
+            player = Player.objects.get(user=user_request)
+        except Player.DoesNotExist:
+            player = None
 
-        # get the match data of the matches
-        match_data = (
-            MatchData.objects.prefetch_related(
-                "match_link",
-                "match_link__home_team",
-                "match_link__away_team",
+        if player:
+            # get the teams the player is connected to
+            teams = Team.objects.filter(
+                Q(team_data__players=player) | Q(team_data__coach=player),
+            ).distinct()
+            # get the matches of the teams
+            matches = Match.objects.filter(
+                Q(home_team__in=teams) | Q(away_team__in=teams),
+            ).order_by("start_time")
+
+            # get the match data of the matches
+            match_data = (
+                MatchData.objects.prefetch_related(
+                    "match_link",
+                    "match_link__home_team",
+                    "match_link__away_team",
+                )
+                .filter(match_link__in=matches, status__in=["active", "upcoming"])
+                .order_by("match_link__start_time")
+                .first()
             )
-            .filter(match_link__in=matches, status__in=["active", "upcoming"])
-            .order_by("match_link__start_time")
-            .first()
-        )
 
-        match = None
-        if match_data:
-            match = match_data.match_link
+            match = None
+            if match_data:
+                match = match_data.match_link
+        else:
+            match = None
+            match_data = None
     else:
         match = None
         match_data = None

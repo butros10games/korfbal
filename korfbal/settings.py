@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 
 from dotenv import load_dotenv
 
@@ -74,6 +75,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "bg_django_mobile_detector",
     "phonenumber_field",
+    "django_crontab",
     "apps.club",
     "apps.player",
     "apps.team",
@@ -98,7 +100,6 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "bg_django_mobile_detector.middleware.DetectMiddleware",
-    "apps.kwt_common.middleware.VisitorTrackingMiddleware",
 ]
 
 if RUNNER == "uwsgi":
@@ -143,20 +144,23 @@ TEMPLATES = [
 ]
 
 
-REDIS_HOST = _env("REDIS_HOST", "127.0.0.1")
-REDIS_PORT = _env_int("REDIS_PORT", 6379)
+VALKEY_HOST = _env("VALKEY_HOST", "127.0.0.1")
+VALKEY_PORT = _env_int("VALKEY_PORT", 6379)
 
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [(REDIS_HOST, REDIS_PORT)],
-            "capacity": 100,
-            "expiry": 60,
+            "hosts": [(VALKEY_HOST, VALKEY_PORT)],
+            "capacity": 1500,
+            "expiry": 10,
         },
     },
 }
+
+if os.getenv("PYTEST_CURRENT_TEST") or any("pytest" in arg for arg in sys.argv):
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 
 db_engine = (
@@ -188,7 +192,7 @@ cache_backend = (
 CACHES = {
     "default": {
         "BACKEND": cache_backend,
-        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
+        "LOCATION": f"redis://{VALKEY_HOST}:{VALKEY_PORT}/1",
     },
 }
 
@@ -273,6 +277,20 @@ STORAGES = {
     },
 }
 
+CELERY_BROKER_URL = (
+    f"redis://{_env('CELERY_BROKER_HOST', VALKEY_HOST)}:"
+    f"{_env('CELERY_BROKER_PORT', str(VALKEY_PORT))}/0"
+)
+CELERY_RESULT_BACKEND = (
+    f"redis://{_env('CELERY_RESULT_HOST', VALKEY_HOST)}:"
+    f"{_env('CELERY_RESULT_PORT', str(VALKEY_PORT))}/0"
+)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = _env("CELERY_TIMEZONE", "UTC")
+CELERY_TASK_TRACK_STARTED = _env_bool("CELERY_TASK_TRACK_STARTED", True)
+CELERY_TASK_ALWAYS_EAGER = _env_bool("CELERY_TASK_ALWAYS_EAGER", False)
+
 
 spotify_origin = (
     CSRF_TRUSTED_ORIGINS[0] if CSRF_TRUSTED_ORIGINS else "https://localhost"
@@ -311,8 +329,10 @@ PROMETHEUS_METRIC_NAMESPACE = "kwt"
 LOGIN_FOTO: str = "images/logo/KWT_logo.png"
 LOGIN_TITLE: str = "Welkom terug!"
 LOGIN_DESCRIPTION: str = "login voor KWT"
-
 REGISTER_TITLE: str = "Registratie"
 REGISTER_HEADING_MOBILE: str = "Welkom!"
 REGISTER_HEADING_DESKTOP: str = "Welkom!"
 REGISTER_DESCRIPTION: str = "Maak je account aan"
+BG_AUTH_SUPPORT_EMAIL: str = "butrosgroot@gmail.com"
+BG_AUTH_EMAIL_CODE_VALIDITY_SECONDS: int = 15 * 60
+BG_AUTH_RESEND_CONFIRMATION_MAX_AGE: int = 24 * 60 * 60

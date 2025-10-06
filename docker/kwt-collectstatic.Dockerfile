@@ -7,16 +7,26 @@ RUN apt-get update && \
 
 ADD https://astral.sh/uv/install.sh /install.sh
 RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
-
 ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-COPY libs/ ./libs/
-COPY apps/django_projects/korfbal/ ./apps/django_projects/korfbal/
+COPY libs/django_packages/bg_auth/ ./libs/django_packages/bg_auth/
+COPY libs/django_packages/bg_django_caching_paginator/ ./libs/django_packages/bg_django_caching_paginator/
+COPY libs/django_packages/bg_django_mobile_detector/ ./libs/django_packages/bg_django_mobile_detector/
+COPY libs/shared_python_packages/bg_uuidv7/ ./libs/shared_python_packages/bg_uuidv7/
 
-RUN uv sync --all-groups --all-packages --no-editable
+# Bring in the Django project sources that are required to build the wheel inside the workspace.
+COPY apps/django_projects/korfbal/pyproject.toml ./apps/django_projects/korfbal/pyproject.toml
+COPY apps/django_projects/korfbal/uv.lock ./apps/django_projects/korfbal/uv.lock
+COPY apps/django_projects/korfbal/korfbal/ ./apps/django_projects/korfbal/korfbal/
+COPY apps/django_projects/korfbal/apps/ ./apps/django_projects/korfbal/apps/
+
+WORKDIR /app/apps/django_projects/korfbal/
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+
+RUN uv sync --frozen --no-editable
 
 ## ------------------------------- Webpack Stage ------------------------------ ##
 FROM node:22-alpine AS rspack

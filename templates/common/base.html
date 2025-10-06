@@ -29,7 +29,9 @@
                 height: calc((var(--vh, 1vh) * 100) - 112px);
                 justify-content: flex-start;
             "
-        ></main>
+        >
+            {% block content %}{% endblock %}
+        </main>
 
         <!-- Footer included in every page -->
         {% include 'overlays/footer.html' %}

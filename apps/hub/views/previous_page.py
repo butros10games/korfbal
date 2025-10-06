@@ -18,7 +18,10 @@ def previous_page(request: HttpRequest) -> HttpResponseRedirect:
         HttpResponseRedirect: The response object.
 
     """
-    player = Player.objects.get(user=request.user)
+    try:
+        player = Player.objects.get(user=request.user)
+    except Player.DoesNotExist:
+        return redirect("catalog")
 
     # Get the counter from the URL or fallback to the session
     counter = request.GET.get("counter", request.session.get("back_counter", 1))

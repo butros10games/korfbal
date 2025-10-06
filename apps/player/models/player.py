@@ -19,10 +19,10 @@ class Player(models.Model):
         default=uuidv7,
         editable=False,
     )
-    user = models.ForeignKey(
+    user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="players",
+        related_name="player",
     )
 
     profile_picture = models.ImageField(

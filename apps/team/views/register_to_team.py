@@ -36,7 +36,10 @@ def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect
         )
 
     if user.is_authenticated:
-        player: Player = Player.objects.get(user=user)
+        try:
+            player: Player = Player.objects.get(user=user)
+        except Player.DoesNotExist:
+            return redirect("teams")
 
         try:
             team_data: TeamData = TeamData.objects.get(team=team, season=season)

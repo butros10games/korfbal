@@ -38,27 +38,31 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
     selection = data["value"]
 
     if selection in {"clubs", "teams"} and user.is_authenticated:
-        player = Player.objects.get(user=user)
-        selection_map = {
-            "clubs": {
-                "connected_query": connected_clubs_query,
-                "following_relation": "club_follow",
-                "serializer_func": club_serializer,
-            },
-            "teams": {
-                "connected_query": connected_teams_query,
-                "following_relation": "team_follow",
-                "serializer_func": team_serializer,
-            },
-        }
-        mapping = selection_map.get(selection)
-        if mapping:
-            connected_list, following_list = get_connected_and_following_objects(
-                player,
-                mapping["connected_query"],
-                mapping["following_relation"],
-                mapping["serializer_func"],
-            )
+        try:
+            player = Player.objects.get(user=user)
+        except Player.DoesNotExist:
+            player = None
+        else:
+            selection_map = {
+                "clubs": {
+                    "connected_query": connected_clubs_query,
+                    "following_relation": "club_follow",
+                    "serializer_func": club_serializer,
+                },
+                "teams": {
+                    "connected_query": connected_teams_query,
+                    "following_relation": "team_follow",
+                    "serializer_func": team_serializer,
+                },
+            }
+            mapping = selection_map.get(selection)
+            if mapping:
+                connected_list, following_list = get_connected_and_following_objects(
+                    player,
+                    mapping["connected_query"],
+                    mapping["following_relation"],
+                    mapping["serializer_func"],
+                )
 
     context = {
         "type": selection,

@@ -169,7 +169,19 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             user_id: The id of the user.
 
         """
-        player: Player = await sync_to_async(Player.objects.get)(user=user_id)
+        try:
+            player: Player = await sync_to_async(Player.objects.get)(user=user_id)
+        except Player.DoesNotExist:
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        "command": "follow",
+                        "status": "error",
+                        "error": "player_not_found",
+                    },
+                ),
+            )
+            return
 
         if follow:
             await sync_to_async(player.club_follow.add)(self.club)

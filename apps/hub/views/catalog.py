@@ -23,17 +23,21 @@ def catalog(request: HttpRequest) -> HttpResponse:
     user = request.user
     if user.is_authenticated:
         # Get the Player object associated with this user
-        player = Player.objects.get(user=user)
+        try:
+            player = Player.objects.get(user=user)
+        except Player.DoesNotExist:
+            player = None
 
-        connected_teams = Team.objects.filter(
-            Q(team_data__players=player) | Q(team_data__coach=player),
-        ).distinct()
+        if player:
+            connected_teams = Team.objects.filter(
+                Q(team_data__players=player) | Q(team_data__coach=player),
+            ).distinct()
 
-        # Get all teams the user is following
-        following_teams = player.team_follow.all()
+            # Get all teams the user is following
+            following_teams = player.team_follow.all()
 
-        # remove the teams the user is part of from the teams the user is following
-        following_teams = following_teams.exclude(id_uuid__in=connected_teams)
+            # remove the teams the user is part of from the teams the user is following
+            following_teams = following_teams.exclude(id_uuid__in=connected_teams)
 
     context = {
         "connected": connected_teams,

@@ -55,14 +55,20 @@ def team_detail(request: HttpRequest, team_id: str) -> HttpResponse:
     user_request = request.user
     following: bool = False
     coach: bool = False
+    player: Player | None = None
     if user_request.is_authenticated:
-        player: Player = Player.objects.get(user=user_request)
-        following = player.team_follow.filter(id_uuid=team_id).exists()
+        try:
+            player = Player.objects.get(user=user_request)
+        except Player.DoesNotExist:
+            player = None
 
-        if team_data:
-            coach = team_data.coach.filter(id_uuid=player.id_uuid).exists()
-        else:
-            coach = False
+        if player:
+            following = player.team_follow.filter(id_uuid=team_id).exists()
+
+            if team_data:
+                coach = team_data.coach.filter(id_uuid=player.id_uuid).exists()
+            else:
+                coach = False
 
     context = {"team": team, "coaching": coach, "following": following}
 

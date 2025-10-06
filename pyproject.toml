@@ -12,27 +12,28 @@ dependencies = [
     "bg-uuidv7",
     "django-phonenumber-field[phonenumbers]",
     "python-dotenv",
+    "django_crontab",
+    "valkey",
+    "django-valkey",
+    "celery",
 ]
 
 [dependency-groups]
+celery = ["django-celery-beat"]
 uwsgi = [
     "Pillow",
     "pyuwsgi",
     "bg-django-caching-paginator",
-    "redis",
     "django-cryptography",
     "django-prometheus",
-    "django-redis",
 ]
 daphne = ["daphne", "channels", "channels-redis"]
 dev = [
     "Pillow",
     "pyuwsgi; sys_platform == 'linux'",
     "bg-django-caching-paginator",
-    "redis",
     "django-cryptography",
     "django-prometheus",
-    "django-redis",
     "daphne",
     "channels",
     "channels-redis",
