@@ -1,7 +1,7 @@
 [project]
 name = "KWT"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "django",
     "psycopg2-binary",
@@ -24,11 +24,7 @@ uwsgi = [
     "django-prometheus",
     "django-redis",
 ]
-daphne = [
-    "daphne",
-    "channels",
-    "channels-redis",
-]
+daphne = ["daphne", "channels", "channels-redis"]
 dev = [
     "Pillow",
     "pyuwsgi; sys_platform == 'linux'",
@@ -43,10 +39,10 @@ dev = [
 ]
 
 [tool.uv.sources]
-bg-auth                     = { workspace = true }
+bg-auth = { workspace = true }
 bg-django-caching-paginator = { workspace = true }
-bg-django-mobile-detector   = { workspace = true }
-bg-uuidv7                   = { workspace = true }
+bg-django-mobile-detector = { workspace = true }
+bg-uuidv7 = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
