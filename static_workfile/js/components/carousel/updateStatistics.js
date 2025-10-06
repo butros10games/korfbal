@@ -75,9 +75,9 @@ function createStatButton(type, socket, user_id) {
         );
 
         const buttons = document.querySelectorAll('.stat-selector-button');
-        buttons.forEach((button_selector) => {
+        for (const button_selector of buttons) {
             button_selector.classList.remove('active');
-        });
+        }
         this.classList.add('active');
     });
 
