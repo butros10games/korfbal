@@ -15,5 +15,5 @@ urlpatterns = [
     path("", include("bg_auth.urls")),
 ]
 
-if settings.RUNNER == "uwsgi":
+if getattr(settings, "RUNNER", "") == "uwsgi":
     urlpatterns.append(path("", include("django_prometheus.urls")))
