@@ -21,7 +21,7 @@ def test_hub_index_allows_authenticated_spectator(client: Client) -> None:
     )
     client.force_login(user)
 
-    response = client.get(reverse("index"), follow=True)
+    response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
     assert response.context["match"] is None
@@ -41,7 +41,7 @@ def test_catalog_data_returns_empty_lists_for_spectator(client: Client) -> None:
         reverse("api_catalog_data"),
         data=json.dumps({"value": "teams"}),
         content_type="application/json",
-        follow=True,
+        secure=True,
     )
 
     assert response.status_code == HTTP_STATUS_OK

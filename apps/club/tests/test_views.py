@@ -23,7 +23,7 @@ def test_club_detail_allows_authenticated_spectator(client: Client) -> None:
 
     client.force_login(user)
 
-    response = client.get(reverse("club_detail", args=[club.id_uuid]), follow=True)
+    response = client.get(reverse("club_detail", args=[club.id_uuid]), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
     assert response.context["admin"] is False
