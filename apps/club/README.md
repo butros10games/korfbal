@@ -34,6 +34,6 @@ Run from the project root:
 
 ## Contributing
 
-Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/contributing.md) for workflow and code style.
+Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/development/contributing.md) for workflow and code style.
 
 <!-- Optionally add a screenshot or architecture diagram here -->
