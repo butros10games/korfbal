@@ -28,9 +28,9 @@ def _get_player_teams(player: Player) -> list[Team]:
     cached_teams = cache.get(cache_key)
 
     if cached_teams is not None:
-        return cached_teams
+        return cast(list[Team], cached_teams)
 
-    teams = list(
+    teams: list[Team] = list(
         Team.objects.select_related("club")
         .prefetch_related(
             "team_data__players",
@@ -46,7 +46,7 @@ def _get_player_teams(player: Player) -> list[Team]:
     # Cache for 5 minutes - teams don't change frequently
     cache.set(cache_key, teams, 300)
 
-    return cast(list[Team], teams)
+    return teams
 
 
 def _get_upcoming_match_data(teams: list[Team]) -> MatchData | None:
@@ -112,7 +112,7 @@ def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
     cached_scores = cache.get(cache_key)
 
     if cached_scores is not None:
-        return cached_scores
+        return cast(tuple[int, int], cached_scores)
 
     match = match_data.match_link
     scores: dict[str, int] = Shot.objects.filter(
@@ -122,17 +122,17 @@ def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
         away_score=Count("id_uuid", filter=Q(team=match.away_team)),
     )
 
-    result = (scores["home_score"] or 0, scores["away_score"] or 0)
+    result: tuple[int, int] = (scores["home_score"] or 0, scores["away_score"] or 0)
 
     # Cache for 30 seconds - short cache for live match updates
     cache.set(cache_key, result, 30)
 
-    return cast(tuple[int, int], result)
+    return result
 
 
 def _get_match_info(
     player: Player,
-) -> tuple[Match | None, MatchData | None, int, int]:
+) -> tuple[Match | None, MatchData | None, int | None, int | None]:
     """Get match information for the player, including scores if applicable.
 
     Args:
@@ -149,12 +149,12 @@ def _get_match_info(
         return None, None, 0, 0
 
     match = match_data.match_link
-    home_score: int
-    away_score: int
+    home_score: int | None
+    away_score: int | None
     if match_data.status == "active":
         home_score, away_score = _calculate_match_scores(match_data)
     elif match_data.status == "upcoming":
-        home_score = away_score = 0
+        home_score = away_score = None
     else:
         home_score = away_score = 0
 
@@ -173,8 +173,8 @@ def index(request: HttpRequest) -> HttpResponse:
     """
     match: Match | None = None
     match_data: MatchData | None = None
-    home_score: int = 0
-    away_score: int = 0
+    home_score: int | None = 0
+    away_score: int | None = 0
 
     if request.user.is_authenticated:
         try:

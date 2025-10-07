@@ -1,13 +1,12 @@
 """Module contains general_stats function that returns general statistics of a match."""
 
 import json
-
-from asgiref.sync import sync_to_async
+from typing import Any
 
 from apps.game_tracker.models import GoalType, Shot
 
 
-async def general_stats(match_dataset: list) -> str:
+async def general_stats(match_dataset: list[Any]) -> str:
     """Return the general statistics of a match.
 
     Args:
@@ -18,7 +17,7 @@ async def general_stats(match_dataset: list) -> str:
         str -- A JSON string containing the general statistics of the match.
 
     """
-    goal_types = await sync_to_async(list)(GoalType.objects.all())
+    goal_types: list[GoalType] = await GoalType.objects.all().alist()
 
     goal_types_json = [
         {"id": str(goal_type.id_uuid), "name": goal_type.name}

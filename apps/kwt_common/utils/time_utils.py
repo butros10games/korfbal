@@ -3,8 +3,6 @@
 from datetime import UTC, datetime
 import json
 
-from asgiref.sync import sync_to_async
-
 from apps.game_tracker.models import MatchData, MatchPart, Pause
 
 
@@ -39,13 +37,11 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
             active_pause = False
 
         # calculate all the time in pauses that are not active anymore
-        pauses = await sync_to_async(list)(
-            Pause.objects.filter(
-                match_data=match_data,
-                active=False,
-                match_part=current_part,
-            ),
-        )
+        pauses: list[Pause] = await Pause.objects.filter(
+            match_data=match_data,
+            active=False,
+            match_part=current_part,
+        ).alist()
         pause_time = 0
         for pause in pauses:
             pause_time += pause.length().total_seconds()
