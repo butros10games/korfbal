@@ -30,4 +30,4 @@ class SpotifyToken(models.Model):
             bool: True if the token is expired, False otherwise.
 
         """
-        return self.expires_at is not None and now() > self.expires_at
+        return self.expires_at and now() > self.expires_at

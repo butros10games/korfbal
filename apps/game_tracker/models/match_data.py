@@ -35,6 +35,15 @@ class MatchData(models.Model):
         default="upcoming",
     )
 
+    class Meta:
+        """Meta class for MatchData model."""
+
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["match_link"]),
+            models.Index(fields=["status", "match_link"]),
+        ]
+
     def __str__(self) -> str:
         """Return the string representation of the match.
 

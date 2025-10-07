@@ -39,7 +39,7 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
             active_pause = False
 
         # calculate all the time in pauses that are not active anymore
-        pauses: list[Pause] = await sync_to_async(list)(
+        pauses = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=match_data,
                 active=False,
@@ -102,7 +102,7 @@ def get_time_display(match_data: MatchData) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-async def get_time_display_pause(self, json_data: dict) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
+async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
     """Get the time display for the pause.
 
     Args:

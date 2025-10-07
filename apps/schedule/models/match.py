@@ -1,5 +1,7 @@
 """Module contains the Match model."""
 
+from typing import ClassVar
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 from django.urls import reverse
@@ -31,6 +33,16 @@ class Match(models.Model):
         related_name="matches",
     )
     start_time = models.DateTimeField()
+
+    class Meta:
+        """Meta class for Match model."""
+
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=["start_time"]),
+            models.Index(fields=["home_team"]),
+            models.Index(fields=["away_team"]),
+            models.Index(fields=["season", "start_time"]),
+        ]
 
     def __str__(self) -> str:
         """Get the string representation of the match.

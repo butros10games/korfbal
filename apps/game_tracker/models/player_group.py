@@ -63,7 +63,7 @@ class PlayerGroup(models.Model):
                 them to a starting group.
 
         """
-        if self.pk:
+        if not self._state.adding:
             # Retrieve the current list of players from the database
             current_players = set(self.__class__.objects.get(pk=self.pk).players.all())
         else:
@@ -71,7 +71,7 @@ class PlayerGroup(models.Model):
 
         new_players = set(self.players.all()) - current_players
 
-        if self.starting_type.name != "Reserve":
+        if self.starting_type.name != "Reserve" and new_players:
             reserve_player_group = self.match_data.player_groups.get(
                 starting_type__name="Reserve",
                 team=self.team,

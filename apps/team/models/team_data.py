@@ -1,5 +1,7 @@
 """Module contains the TeamData model."""
 
+from typing import ClassVar
+
 from django.db import models
 
 from .constants import player_model_string
@@ -25,6 +27,15 @@ class TeamData(models.Model):
         related_name="team_data",
     )
     competition = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        """Meta class for TeamData model."""
+
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=["team"]),
+            models.Index(fields=["season"]),
+            models.Index(fields=["team", "season"]),
+        ]
 
     def __str__(self) -> str:
         """Get the string representation of the team data.

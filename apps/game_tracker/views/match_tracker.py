@@ -3,7 +3,14 @@
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
-from apps.game_tracker.models import MatchData, MatchPart, Pause, PlayerGroup, Shot
+from apps.game_tracker.models import (
+    GroupType,
+    MatchData,
+    MatchPart,
+    Pause,
+    PlayerGroup,
+    Shot,
+)
 from apps.kwt_common.utils import get_time_display
 from apps.schedule.models import Match
 from apps.team.models import Team
@@ -47,14 +54,16 @@ def match_tracker(request: HttpRequest, match_id: str, team_id: str) -> HttpResp
     # Check if the "aanval" and "verdediging" playerGroups are created for the both
     # teams
     team_names: list[Team] = [match_model.home_team, match_model.away_team]
-    player_group_names: list[str] = ["Aanval", "Verdediging"]
+    player_group_names: list[str] = ["Aanval", "Verdediging", "Reserve"]
 
     for team_name in team_names:
         for group_name in player_group_names:
+            group_type = GroupType.objects.get(name=group_name)
             PlayerGroup.objects.get_or_create(
                 team=team_name,
                 match_data=match_data,
-                starting_type__name=group_name,
+                starting_type=group_type,
+                defaults={"current_type": group_type},
             )
 
     button_text: str = "Start"

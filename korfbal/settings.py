@@ -27,7 +27,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
-    return int(raw) if raw else default
+    return int(raw) if raw else default  # type: ignore[arg-type]
 
 
 def _env_list(name: str, default: str = "", sep: str = ",") -> list[str]:
