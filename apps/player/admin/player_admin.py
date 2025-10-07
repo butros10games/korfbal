@@ -5,7 +5,7 @@ from django.contrib import admin
 from apps.player.models import Player
 
 
-class PlayerAdmin(admin.ModelAdmin[Player]):
+class PlayerAdmin(admin.ModelAdmin):
     """Player admin configuration."""
 
     list_display = ["id_uuid", "user"]  # noqa: RUF012
