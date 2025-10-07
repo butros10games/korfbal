@@ -12,7 +12,7 @@ from apps.player.models import Player
 class VisitorTrackingMiddleware:
     """Middleware to track the pages visited by the player."""
 
-    def __init__(self, get_response: Callable) -> None:
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         """Initialize the middleware."""
         self.get_response = get_response
 
