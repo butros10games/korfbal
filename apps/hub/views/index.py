@@ -125,6 +125,35 @@ def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
     return result
 
 
+def _get_match_info(
+    player: Player,
+) -> tuple[MatchData | None, MatchData | None, int | None, int | None]:
+    """Get match information for the player, including scores if applicable.
+
+    Args:
+        player: The player to get match info for.
+
+    Returns:
+        Tuple of (match, match_data, home_score, away_score).
+
+    """
+    teams = _get_player_teams(player)
+    match_data = _get_upcoming_match_data(teams)
+
+    if not match_data:
+        return None, None, 0, 0
+
+    match = match_data.match_link
+    if match_data.status == "active":
+        home_score, away_score = _calculate_match_scores(match_data)
+    elif match_data.status == "upcoming":
+        home_score = away_score = None
+    else:
+        home_score = away_score = 0
+
+    return match, match_data, home_score, away_score
+
+
 def index(request: HttpRequest) -> HttpResponse:
     """View for the hub index page.
 
@@ -147,16 +176,7 @@ def index(request: HttpRequest) -> HttpResponse:
             player = None
 
         if player:
-            teams = _get_player_teams(player)
-            match_data = _get_upcoming_match_data(teams)
-
-            if match_data:
-                match = match_data.match_link
-                if match_data.status == "active":
-                    home_score, away_score = _calculate_match_scores(match_data)
-                elif match_data.status == "upcoming":
-                    home_score = None
-                    away_score = None
+            match, match_data, home_score, away_score = _get_match_info(player)
 
     context = {
         "display_back": True,
