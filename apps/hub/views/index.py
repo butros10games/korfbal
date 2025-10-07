@@ -1,5 +1,7 @@
 """Module contains the view for the hub index page."""
 
+from typing import cast
+
 from django.core.cache import cache
 from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse
@@ -8,6 +10,7 @@ from django.shortcuts import render
 from apps.game_tracker.models import MatchData, Shot
 from apps.kwt_common.utils import get_time_display
 from apps.player.models import Player
+from apps.schedule.models import Match
 from apps.team.models import Team
 
 
@@ -43,7 +46,7 @@ def _get_player_teams(player: Player) -> list[Team]:
     # Cache for 5 minutes - teams don't change frequently
     cache.set(cache_key, teams, 300)
 
-    return teams
+    return cast(list[Team], teams)
 
 
 def _get_upcoming_match_data(teams: list[Team]) -> MatchData | None:
@@ -112,7 +115,9 @@ def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
         return cached_scores
 
     match = match_data.match_link
-    scores = Shot.objects.filter(match_data=match_data, scored=True).aggregate(
+    scores: dict[str, int] = Shot.objects.filter(
+        match_data=match_data, scored=True
+    ).aggregate(
         home_score=Count("id_uuid", filter=Q(team=match.home_team)),
         away_score=Count("id_uuid", filter=Q(team=match.away_team)),
     )
@@ -122,12 +127,12 @@ def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
     # Cache for 30 seconds - short cache for live match updates
     cache.set(cache_key, result, 30)
 
-    return result
+    return cast(tuple[int, int], result)
 
 
 def _get_match_info(
     player: Player,
-) -> tuple[MatchData | None, MatchData | None, int | None, int | None]:
+) -> tuple[Match | None, MatchData | None, int, int]:
     """Get match information for the player, including scores if applicable.
 
     Args:
@@ -144,10 +149,12 @@ def _get_match_info(
         return None, None, 0, 0
 
     match = match_data.match_link
+    home_score: int
+    away_score: int
     if match_data.status == "active":
         home_score, away_score = _calculate_match_scores(match_data)
     elif match_data.status == "upcoming":
-        home_score = away_score = None
+        home_score = away_score = 0
     else:
         home_score = away_score = 0
 
@@ -164,10 +171,10 @@ def index(request: HttpRequest) -> HttpResponse:
         HttpResponse: The response object
 
     """
-    match = None
-    match_data = None
-    home_score = 0
-    away_score = 0
+    match: Match | None = None
+    match_data: MatchData | None = None
+    home_score: int = 0
+    away_score: int = 0
 
     if request.user.is_authenticated:
         try:
@@ -178,14 +185,19 @@ def index(request: HttpRequest) -> HttpResponse:
         if player:
             match, match_data, home_score, away_score = _get_match_info(player)
 
+    if match:
+        match_date = match.start_time.strftime("%a, %d %b")
+        start_time = match.start_time.strftime("%H:%M")
+    else:
+        match_date = "No upcoming matches"
+        start_time = ""
+
     context = {
         "display_back": True,
         "match": match,
         "match_data": match_data,
-        "match_date": (
-            match.start_time.strftime("%a, %d %b") if match else "No upcoming matches"
-        ),
-        "start_time": match.start_time.strftime("%H:%M") if match else "",
+        "match_date": match_date,
+        "start_time": start_time,
         "time_display": get_time_display(match_data) if match_data else "",
         "home_score": home_score,
         "away_score": away_score,
