@@ -3,14 +3,11 @@ websocket connection for the match data.
 """
 
 import contextlib
-from datetime import UTC, datetime
 import json
 import traceback
+from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
-
-from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
-from django.db.models import Q
 
 from apps.game_tracker.models import (
     MatchData,
@@ -25,16 +22,22 @@ from apps.kwt_common.utils import general_stats, get_time, players_stats
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
     """Class is used to handle the websocket connection for the match data."""
 
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+    def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize the MatchDataConsumer."""
         super().__init__(*args, **kwargs)
-        self.match = None
-        self.current_part = None
+        self.match: Match | None = None
+        self.current_part: MatchPart | None = None
+        self.match_data: MatchData | None = None
+        self.subscribed_channels: list[str] = []
+        self.channel_names: list[str] = []
 
     async def connect(self) -> None:
         """Connect to the websocket."""
@@ -84,7 +87,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
-        json_data = json.loads(text_data)
+        json_data: dict[str, Any] = json.loads(text_data)
         command = json_data["command"]
 
         if command == "match_events":
@@ -121,7 +124,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         if self.match is None:
             return
 
-        team = self.match.home_team if command == "home_team" else self.match.away_team
+        team = self.match.home_team if command == "home_team" else self.match.away_team  # type: ignore[attr-defined]
 
         await self.send(
             text_data=json.dumps(
@@ -131,7 +134,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "team_id": str(team.id_uuid),
                     "group_id_to_type_id": {
                         str(group.id_uuid): str(group.starting_type.id_uuid)
-                        for group in await sync_to_async(list)(
+                        for group in await sync_to_async(list)(  # type: ignore[var-annotated,call-arg]
                             PlayerGroup.objects.prefetch_related(
                                 "starting_type",
                             ).filter(team=team, match_data=self.match_data),
@@ -139,19 +142,21 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     },
                     "type_id_to_group_id": {
                         str(group.starting_type.id_uuid): str(group.id_uuid)
-                        for group in await sync_to_async(list)(
+                        for group in await sync_to_async(list)(  # type: ignore[var-annotated,call-arg]
                             PlayerGroup.objects.prefetch_related(
                                 "starting_type",
                             ).filter(team=team, match_data=self.match_data),
                         )
                     },
                     "is_coach": await self.check_if_access(user_id, team),
-                    "finished": self.match_data.status == "finished",
+                    "finished": self.match_data.status == "finished",  # type: ignore[union-attr]
                 },
             ),
         )
 
-    async def save_player_groups_request(self, player_groups: list[dict]) -> None:
+    async def save_player_groups_request(
+        self, player_groups: list[dict[str, Any]]
+    ) -> None:
         """Save the player groups.
 
         Args:
@@ -192,7 +197,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 | Q(team_data_as_player__team=self.match.away_team),
             )
             .distinct(),
-        )
+        )  # type: ignore[call-arg]
 
         player_stats = await players_stats(players, [self.match_data])
 
@@ -230,14 +235,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 text_data=json.dumps(
                     {
                         "command": "events",
-                        "home_team_id": str(self.match.home_team.id_uuid),
+                        "home_team_id": str(self.match.home_team.id_uuid),  # type: ignore[attr-defined]
                         "events": events_dict,
                         "access": (
                             await self.check_access(user_id, self.match)
                             if user_id
                             else False
                         ),
-                        "status": self.match_data.status,
+                        "status": self.match_data.status,  # type: ignore[union-attr]
                     },
                 ),
             )
@@ -249,14 +254,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 ),
             )
 
-    async def get_all_events(self) -> list:
+    async def get_all_events(self) -> list[Shot | PlayerChange | Pause]:
         """Get all the events for the match.
 
         Returns:
             A list of all the events for the match.
 
         """
-        goals = await sync_to_async(list)(
+        goals: list[Shot] = await sync_to_async(list)(  # type: ignore[call-arg]
             Shot.objects.prefetch_related(
                 "player__user",
                 "shot_type",
@@ -266,7 +271,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             .filter(match_data=self.match_data, scored=True)
             .order_by("time"),
         )
-        player_change = await sync_to_async(list)(
+        player_change: list[PlayerChange] = await sync_to_async(list)(  # type: ignore[call-arg]
             PlayerChange.objects.prefetch_related(
                 "player_in",
                 "player_in__user",
@@ -279,7 +284,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             .filter(player_group__match_data=self.match_data)
             .order_by("time"),
         )
-        time_outs = await sync_to_async(list)(
+        time_outs: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
             Pause.objects.prefetch_related("match_part")
             .filter(match_data=self.match_data)
             .order_by("start_time"),
@@ -294,17 +299,17 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         def event_time_key(x: object) -> datetime:
             value = getattr(x, "time", None)
             if value is not None:
-                return value
+                return cast(datetime, value)
             value = getattr(x, "start_time", None)
             if value is not None:
-                return value
+                return cast(datetime, value)
             return datetime.min.replace(tzinfo=UTC)
 
         events.sort(key=event_time_key)
 
         return events
 
-    async def event_shot(self, event: Shot) -> dict:
+    async def event_shot(self, event: Shot) -> dict[str, Any]:
         """Get the event for a shot.
 
         Args:
@@ -316,7 +321,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
-        pauses = await sync_to_async(list)(
+        pauses: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
             Pause.objects.filter(
                 match_data=self.match_data,
                 active=False,
@@ -333,7 +338,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_length)
+                    * int(self.match_data.part_length)  # type: ignore[union-attr]
                 )
                 - pause_time
             )
@@ -341,7 +346,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
         )
         if left_over > 0:
             time_in_minutes = (
@@ -353,14 +358,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return {
             "type": "goal",
             "name": "Gescoord",
-            "time": time_in_minutes,
+            "time": str(time_in_minutes),
             "player": event.player.user.username,
             "goal_type": event.shot_type.name,
             "for_team": event.for_team,
             "team_id": str(event.team.id_uuid),
         }
 
-    async def event_player_change(self, event: PlayerChange) -> dict:
+    async def event_player_change(self, event: PlayerChange) -> dict[str, Any]:
         """Get the event for a player change.
 
         Args:
@@ -372,7 +377,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
-        pauses = await sync_to_async(list)(
+        pauses: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
             Pause.objects.filter(
                 match_data=self.match_data,
                 active=False,
@@ -387,14 +392,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         time_in_minutes = round(
             (
                 (event.time - event.match_part.start_time).total_seconds()
-                + ((event.match_part.part_number - 1) * self.match_data.part_length)
+                + ((event.match_part.part_number - 1) * self.match_data.part_length)  # type: ignore[attr-defined]
                 - pause_time
             )
             / 60,
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
         )
         if left_over > 0:
             time_in_minutes = (
@@ -406,13 +411,13 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return {
             "type": "substitute",
             "name": "Wissel",
-            "time": time_in_minutes,
+            "time": str(time_in_minutes),
             "player_in": event.player_in.user.username,
             "player_out": event.player_out.user.username,
             "player_group": str(event.player_group.id_uuid),
         }
 
-    async def event_pause(self, event: Pause) -> dict:
+    async def event_pause(self, event: Pause) -> dict[str, Any]:
         """Get the event for a pause.
 
         Args:
@@ -424,7 +429,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         """
         # calculate the time of the pauses before the event happened. By requesting the
         # pauses that are before the event and summing the length of the pauses
-        pauses = await sync_to_async(list)(
+        pauses: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
             Pause.objects.filter(
                 match_data=self.match_data,
                 active=False,
@@ -443,7 +448,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.start_time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_length)
+                    * int(self.match_data.part_length)  # type: ignore[attr-defined]
                 )
                 - pause_time
             )
@@ -451,7 +456,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
         )
         if left_over > 0:
             time_in_minutes = (
@@ -465,7 +470,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         return {
             "type": "intermission",
             "name": "Time-out" if timeout else "Pauze",
-            "time": time_in_minutes,
+            "time": str(time_in_minutes),
             "length": event.length().total_seconds(),
             "start_time": event.start_time.isoformat() if event.start_time else None,
             "end_time": event.end_time.isoformat() if event.end_time else None,
@@ -489,7 +494,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         player = await Player.objects.aget(user=user_id)
 
         # Combine queries for players and coaches for both home and away teams
-        team_data = await sync_to_async(list)(
+        team_data: list[tuple[list[UUID], UUID | None]] = await sync_to_async(list)(  # type: ignore[call-arg]
             TeamData.objects.prefetch_related("players", "coach")
             .filter(Q(team=match.home_team) | Q(team=match.away_team))
             .values_list("players", "coach"),
@@ -519,12 +524,12 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         player = await Player.objects.aget(user=user_id)
 
-        players = await sync_to_async(list)(
+        players: list[UUID] = await sync_to_async(list)(  # type: ignore[call-arg]
             TeamData.objects.prefetch_related("players")
             .filter(team=team)
             .values_list("players", flat=True),
         )
-        coaches = await sync_to_async(list)(
+        coaches: list[UUID | None] = await sync_to_async(list)(  # type: ignore[call-arg]
             TeamData.objects.prefetch_related("coach")
             .filter(team=team)
             .values_list("coach", flat=True),
@@ -541,7 +546,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         return access
 
-    async def send_data(self, event: dict) -> None:
+    async def send_data(self, event: dict[str, Any]) -> None:
         """Send data to the websocket.
 
         Args:

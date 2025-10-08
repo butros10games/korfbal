@@ -2,11 +2,10 @@
 
 from typing import ClassVar, cast
 
+from apps.game_tracker.models import Shot
 from django import forms
 from django.contrib import admin
 from django.db.models import Q
-
-from apps.game_tracker.models import Shot
 
 
 class ShotAdminForm(forms.ModelForm):
@@ -18,7 +17,7 @@ class ShotAdminForm(forms.ModelForm):
         model = Shot
         fields = ["player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
 
-    def __init__(self, *args: object, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team  # noqa: PLC0415
 
@@ -26,18 +25,18 @@ class ShotAdminForm(forms.ModelForm):
         if kwargs.get("instance"):
             instance = cast(Shot, kwargs["instance"])
             match = instance.match_data.match_link
-            self.fields["team"].queryset = Team.objects.filter(
+            self.fields["team"].queryset = Team.objects.filter(  # type: ignore[attr-defined]
                 Q(home_matches=match) | Q(away_matches=match),
             ).distinct()
         else:
-            self.fields["team"].queryset = Team.objects.none()
+            self.fields["team"].queryset = Team.objects.none()  # type: ignore[attr-defined]
 
 
-class ShotAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class ShotAdmin(admin.ModelAdmin):
     """Admin for the Shot model."""
 
     form = ShotAdminForm
-    list_display: ClassVar[list[str]] = [
+    list_display: ClassVar[list[str]] = [  # type: ignore[assignment,misc]
         "id_uuid",
         "player",
         "match_data",

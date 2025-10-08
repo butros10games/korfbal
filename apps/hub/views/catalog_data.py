@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 import json
+from typing import Any, cast
 
 from django.db.models import Q
 from django.db.models.query import QuerySet
@@ -25,8 +26,8 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method"})
 
-    connected_list = []
-    following_list = []
+    connected_list: list[dict[str, Any]] = []
+    following_list: list[dict[str, Any]] = []
     selection = None
 
     user = request.user
@@ -59,9 +60,9 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
             if mapping:
                 connected_list, following_list = get_connected_and_following_objects(
                     player,
-                    mapping["connected_query"],
-                    mapping["following_relation"],
-                    mapping["serializer_func"],
+                    mapping["connected_query"],  # type: ignore
+                    mapping["following_relation"],  # type: ignore
+                    mapping["serializer_func"],  # type: ignore
                 )
 
     context = {
@@ -73,7 +74,7 @@ def catalog_data(request: HttpRequest) -> JsonResponse:
     return JsonResponse(context)
 
 
-def connected_clubs_query(player: Player) -> QuerySet[Club]:
+def connected_clubs_query(player: Player) -> QuerySet[Any, Any]:
     """Get the clubs the player is connected to.
 
     Args:
@@ -83,12 +84,15 @@ def connected_clubs_query(player: Player) -> QuerySet[Club]:
         QuerySet: The queryset of the clubs the player is connected to.
 
     """
-    return Club.objects.filter(
-        Q(teams__team_data__players=player) | Q(teams__team_data__coach=player),
-    ).distinct()
+    return cast(
+        QuerySet[Any, Any],
+        Club.objects.filter(
+            Q(teams__team_data__players=player) | Q(teams__team_data__coach=player),
+        ).distinct(),
+    )
 
 
-def club_serializer(club: Club) -> dict:
+def club_serializer(club: Club) -> dict[str, Any]:
     """Serialize the club object.
 
     Args:
@@ -107,7 +111,7 @@ def club_serializer(club: Club) -> dict:
     }
 
 
-def connected_teams_query(player: Player) -> QuerySet[Team]:
+def connected_teams_query(player: Player) -> QuerySet[Any, Any]:
     """Get the teams the player is connected to.
 
     Args:
@@ -117,12 +121,15 @@ def connected_teams_query(player: Player) -> QuerySet[Team]:
         QuerySet: The queryset of the teams the player is connected to.
 
     """
-    return Team.objects.filter(
-        Q(team_data__players=player) | Q(team_data__coach=player),
-    ).distinct()
+    return cast(
+        QuerySet[Any, Any],
+        Team.objects.filter(
+            Q(team_data__players=player) | Q(team_data__coach=player),
+        ).distinct(),
+    )
 
 
-def team_serializer(team: Team) -> dict:
+def team_serializer(team: Team) -> dict[str, Any]:
     """Serialize the team object.
 
     Args:
@@ -145,10 +152,10 @@ def team_serializer(team: Team) -> dict:
 
 def get_connected_and_following_objects(
     player: Player,
-    connected_query: Callable,
+    connected_query: Callable[[Player], QuerySet[Any, Any]],
     following_relation: str,
-    serializer_func: Callable,
-) -> tuple:
+    serializer_func: Callable[[Any], dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Get the connected and following objects for the player.
 
     Args:

@@ -13,7 +13,7 @@ class Command(BaseCommand):
 
     help = "Run Webpack and collect static files"
 
-    def handle(self, *args: tuple[object, ...], **kwargs: dict[str, object]) -> None:  # type: ignore
+    def handle(self, *args: tuple[object, ...], **kwargs: dict[str, object]) -> None:
         """Handle the command.
 
         Raises:

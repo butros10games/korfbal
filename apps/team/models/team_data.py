@@ -10,7 +10,7 @@ from .constants import player_model_string
 class TeamData(models.Model):
     """Model for the team data."""
 
-    team = models.ForeignKey[Any, Any](
+    team: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Team", on_delete=models.CASCADE, related_name="team_data"
     )
     coach: models.ManyToManyField[Any, Any] = models.ManyToManyField(
@@ -23,12 +23,14 @@ class TeamData(models.Model):
         related_name="team_data_as_player",
         blank=True,
     )
-    season = models.ForeignKey[Any, Any](
+    season: models.ForeignKey[Any, Any] = models.ForeignKey(
         "schedule.Season",
         on_delete=models.CASCADE,
         related_name="team_data",
     )
-    competition = models.CharField[str, str](max_length=255, blank=True)
+    competition: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True
+    )
 
     class Meta:
         """Meta class for TeamData model."""

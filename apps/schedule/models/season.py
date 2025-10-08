@@ -9,14 +9,14 @@ from django.db import models
 class Season(models.Model):
     """Model for a season."""
 
-    id_uuid = models.UUIDField[str, str](
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    name = models.CharField[str, str](max_length=255, unique=True)
-    start_date = models.DateField[date, date]()
-    end_date = models.DateField[date, date]()
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    start_date: models.DateField[date, date] = models.DateField()
+    end_date: models.DateField[date, date] = models.DateField()
 
     def __str__(self) -> str:
         """Get the string representation of the season.

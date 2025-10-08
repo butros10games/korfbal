@@ -1,15 +1,11 @@
 """Module contains the MatchTrackerConsumer class which is a websocket consumer."""
 
-from collections.abc import Callable
 import contextlib
-from datetime import UTC, datetime
 import json
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
-
-from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
-from django.db.models import Case, When
-from django.utils import timezone
 
 from apps.game_tracker.models import (
     Attack,
@@ -27,18 +23,23 @@ from apps.kwt_common.utils import get_time
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Case, When
+from django.utils import timezone
 
 
-class MatchTrackerConsumer(AsyncWebsocketConsumer):
+class MatchTrackerConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
     """A websocket consumer for the match tracker page."""
 
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+    def __init__(self, *args: object, **kwargs: object) -> None:
         """Initialize the MatchTrackerConsumer."""
         super().__init__(*args, **kwargs)
-        self.match = None
-        self.current_part = None
+        self.match: Match | None = None
+        self.current_part: MatchPart | None = None
         self.is_paused = False
         self.match_is_paused_message = "match is paused"
+        self.subscribed_channels: list[str] = []
         self.player_group_class = PlayerGroupClass(self._season_request)
 
     async def connect(self) -> None:
@@ -114,14 +115,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({"error": "No data received"}))
             return
 
-        json_data: dict = json.loads(text_data)
+        json_data: dict[str, Any] = json.loads(text_data)
         command: str = json_data["command"]
 
         await self.player_events(command=command, json_data=json_data)
         await self.game_events(command=command)
         await self.shot_events(command=command, json_data=json_data)
 
-    async def player_events(self, command: str, json_data: dict) -> None:
+    async def player_events(self, command: str, json_data: dict[str, Any]) -> None:
         """Handle player events.
 
         Args:
@@ -178,7 +179,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             case "new_attack":
                 await self.new_attack()
 
-    async def shot_events(self, command: str, json_data: dict) -> None:
+    async def shot_events(self, command: str, json_data: dict[str, Any]) -> None:
         """Handle shot events.
 
         Args:
@@ -200,7 +201,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     json_data["for_team"],
                 )
 
-    async def save_player_groups(self, player_groups: list) -> None:
+    async def save_player_groups(self, player_groups: list[dict[str, Any]]) -> None:
         """Save the player groups to the database.
 
         Args:
@@ -278,7 +279,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
     async def get_goal_types(self) -> None:
         """Get the goal types."""
-        goal_type_list = await sync_to_async(list)(GoalType.objects.all())
+        goal_type_list: list[GoalType] = await sync_to_async(list)(
+            GoalType.objects.all()
+        )  # type: ignore[call-arg]
 
         goal_type_list = [
             {"id": str(goal_type.id_uuid), "name": goal_type.name}
@@ -291,12 +294,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             ),
         )
 
-    async def goal_reg(self, player_id: UUID, goal_type: UUID, for_team: bool) -> None:
+    async def goal_reg(
+        self, player_id: UUID, goal_type_id: UUID, for_team: bool
+    ) -> None:
         """Register a goal for a player.
 
         Args:
             player_id: The id of the player.
-            goal_type: The type of the goal.
+            goal_type_id: The id of the goal type.
             for_team: A boolean indicating if the goal is for the team.
 
         """
@@ -313,14 +318,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         team = self.team if for_team else self.other_team
 
         player = await Player.objects.prefetch_related("user").aget(id_uuid=player_id)
-        goal_type = await GoalType.objects.aget(id_uuid=goal_type)
+        goal_type_obj = await GoalType.objects.aget(id_uuid=goal_type_id)
 
         await Shot.objects.acreate(
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
             match_part=self.current_part,
             time=datetime.now(UTC),
-            shot_type=goal_type,
+            shot_type=goal_type_obj,
             for_team=for_team,
             team=team,
             scored=True,
@@ -356,7 +361,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     "data": {
                         "command": "team_goal_change",
                         "player_name": player.user.username,
-                        "goal_type": goal_type.name,
+                        "goal_type": goal_type_obj.name,
                         "goals_for": await Shot.objects.filter(
                             match_data=self.match_data,
                             team=self.team,
@@ -580,7 +585,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                         "type": "send_data",
                         "data": {
                             "command": "match_end",
-                            "match_id": str(self.match.id_uuid),
+                            "match_id": str(self.match.id_uuid),  # type: ignore[union-attr]
                             "match_data_id": str(self.match_data.id_uuid),
                         },
                     },
@@ -857,7 +862,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         """
         # Fetch each type of event separately
-        shots = await sync_to_async(list)(
+        shots: list[Shot] = await sync_to_async(list)(  # type: ignore[call-arg]
             Shot.objects.prefetch_related(
                 "player__user",
                 "match_part",
@@ -867,7 +872,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .filter(match_data=self.match_data)
             .order_by("time"),
         )
-        player_changes = await sync_to_async(list)(
+        player_changes: list[PlayerChange] = await sync_to_async(list)(  # type: ignore[call-arg]
             PlayerChange.objects.prefetch_related(
                 "player_in",
                 "player_in__user",
@@ -880,7 +885,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .filter(player_group__match_data=self.match_data)
             .order_by("time"),
         )
-        time_outs = await sync_to_async(list)(
+        time_outs: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
             Pause.objects.prefetch_related(
                 "match_part",
                 "match_part__match_data",
@@ -889,7 +894,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .filter(match_data=self.match_data)
             .order_by("start_time"),
         )
-        attacks = await sync_to_async(list)(
+        attacks: list[Attack] = await sync_to_async(list)(  # type: ignore[call-arg]
             Attack.objects.prefetch_related(
                 "match_part",
                 "match_data",
@@ -1033,14 +1038,14 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         # Calculate the time of the pauses before the event happened by summing the
         # length of the pauses
-        pauses = await sync_to_async(list)(
+        pauses: list[Pause] = await sync_to_async(list)(
             Pause.objects.filter(
                 match_data=self.match_data,
                 active=False,
                 start_time__lt=event_time,
                 start_time__gte=event.match_part.start_time,
             ),
-        )
+        )  # type: ignore[call-arg]
         pause_time = sum(pause.length().total_seconds() for pause in pauses)
 
         # Calculate the time in minutes since the real_start_time of the match and the
@@ -1067,10 +1072,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 + str(left_over).split(".")[0]
             )
 
-        return time_in_minutes
+        return str(time_in_minutes)
 
     # is for the data that needs be send from other websocket connections
-    async def send_data(self, event: dict) -> None:
+    async def send_data(self, event: dict[str, Any]) -> None:
         """Send data to the websocket."""
         data = event["data"]
         await self.send(text_data=json.dumps(data))
@@ -1128,7 +1133,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 class PlayerGroupClass:
     """A class for the player groups."""
 
-    def __init__(self, _season_request: Callable) -> None:
+    def __init__(self, _season_request: Callable[[], Season]) -> None:
         """Initialize the PlayerGroupClass."""
         self.team = None
         self.match_data = None
@@ -1148,18 +1153,18 @@ class PlayerGroupClass:
                 "command": "playerGroups",
                 "playerGroups": player_groups_array,
                 "players": await self._make_full_player_list(),
-                "match_active": self.match_data.status == "active",
+                "match_active": self.match_data.status == "active",  # type: ignore[attr-defined]
             },
         )
 
-    async def get_player_groups(self) -> list:
+    async def get_player_groups(self) -> list[PlayerGroup]:
         """Get the player groups.
 
         Returns:
             The player groups.
 
         """
-        return await sync_to_async(list)(
+        return await sync_to_async(list)(  # type: ignore[call-arg]
             PlayerGroup.objects.prefetch_related(
                 "players",
                 "players__user",
@@ -1201,7 +1206,7 @@ class PlayerGroupClass:
         await player_group_a.asave()
         await player_group_v.asave()
 
-    async def _make_player_group_list(self) -> list:
+    async def _make_player_group_list(self) -> list[dict[str, Any]]:
         """Make a list of player groups.
 
         Returns:
@@ -1216,7 +1221,9 @@ class PlayerGroupClass:
 
     async def _create_player_groups(self) -> None:
         """Create the player groups."""
-        group_types = await sync_to_async(list)(GroupType.objects.all().order_by("id"))
+        group_types: list[GroupType] = await sync_to_async(list)(
+            GroupType.objects.all().order_by("id")
+        )  # type: ignore[call-arg]
         for group_type in group_types:
             await PlayerGroup.objects.acreate(
                 match_data=self.match_data,
@@ -1225,7 +1232,9 @@ class PlayerGroupClass:
                 current_type=group_type,
             )
 
-    async def _make_player_group_json(self, player_groups: list) -> list:
+    async def _make_player_group_json(
+        self, player_groups: list[PlayerGroup]
+    ) -> list[dict[str, Any]]:
         """Make a list of player groups in JSON format.
 
         Args:
@@ -1236,7 +1245,7 @@ class PlayerGroupClass:
 
         """
 
-        async def _process_player(player: Player) -> dict:
+        async def _process_player(player: Player) -> dict[str, Any]:
             return {
                 "id": str(player.id_uuid),
                 "name": player.user.username,
@@ -1264,7 +1273,7 @@ class PlayerGroupClass:
                 ).acount(),
             }
 
-        async def _process_player_group(player_group: PlayerGroup) -> dict:
+        async def _process_player_group(player_group: PlayerGroup) -> dict[str, Any]:
             return {
                 "id": str(player_group.id_uuid),
                 "players": [
@@ -1279,7 +1288,7 @@ class PlayerGroupClass:
             await _process_player_group(player_group) for player_group in player_groups
         ]
 
-    async def _make_full_player_list(self) -> list:
+    async def _make_full_player_list(self) -> list[dict[str, Any]]:
         """Make a list of all players in the team.
 
         Returns:
@@ -1288,7 +1297,7 @@ class PlayerGroupClass:
         """
         season = await self.__season_request()
         players_json = []
-        players = await sync_to_async(list)(
+        players: list[Player] = await sync_to_async(list)(  # type: ignore[call-arg]
             TeamData.objects.prefetch_related("players")
             .filter(team=self.team, season=season)
             .values_list("players", flat=True),
@@ -1302,7 +1311,7 @@ class PlayerGroupClass:
         return self._remove_duplicates(players_json)
 
     @staticmethod
-    async def _get_player_json(player: Player) -> dict | None:
+    async def _get_player_json(player: Player) -> dict[str, Any] | None:
         """Get a player in JSON format.
 
         Args:
@@ -1326,7 +1335,7 @@ class PlayerGroupClass:
             return None
 
     @staticmethod
-    def _remove_duplicates(players_json: list) -> list:
+    def _remove_duplicates(players_json: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Remove duplicate players from the list.
 
         Args:

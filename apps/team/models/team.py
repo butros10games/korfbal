@@ -10,13 +10,13 @@ from django.urls import reverse
 class Team(models.Model):
     """Model for Team."""
 
-    id_uuid: models.UUIDField[str, str] = models.UUIDField[str, str](
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    name: models.CharField[str, str] = models.CharField[str, str](max_length=255)
-    club: models.ForeignKey[Any, Any] = models.ForeignKey[Any, Any](  # type: ignore[misc]
+    name: models.CharField[str, str] = models.CharField(max_length=255)
+    club: models.ForeignKey[Any, Any] = models.ForeignKey(
         "club.Club",
         on_delete=models.CASCADE,
         related_name="teams",
