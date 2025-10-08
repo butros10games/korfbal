@@ -2,10 +2,11 @@
 
 from typing import ClassVar, cast
 
-from apps.game_tracker.models import Shot
 from django import forms
 from django.contrib import admin
 from django.db.models import Q
+
+from apps.game_tracker.models import Shot
 
 
 class ShotAdminForm(forms.ModelForm):

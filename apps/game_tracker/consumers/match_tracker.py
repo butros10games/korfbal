@@ -1,11 +1,16 @@
 """Module contains the MatchTrackerConsumer class which is a websocket consumer."""
 
-import contextlib
-import json
 from collections.abc import Callable
+import contextlib
 from datetime import UTC, datetime
+import json
 from typing import Any
 from uuid import UUID
+
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Case, When
+from django.utils import timezone
 
 from apps.game_tracker.models import (
     Attack,
@@ -23,10 +28,6 @@ from apps.kwt_common.utils import get_time
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
-from django.db.models import Case, When
-from django.utils import timezone
 
 
 class MatchTrackerConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]

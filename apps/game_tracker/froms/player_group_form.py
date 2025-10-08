@@ -2,8 +2,9 @@
 
 from typing import ClassVar
 
-from apps.game_tracker.models import PlayerGroup
 from django import forms
+
+from apps.game_tracker.models import PlayerGroup
 
 
 class PlayerGroupForm(forms.ModelForm[PlayerGroup]):

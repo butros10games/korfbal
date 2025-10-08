@@ -3,11 +3,15 @@ websocket connection for the match data.
 """
 
 import contextlib
+from datetime import UTC, datetime
 import json
 import traceback
-from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
+
+from asgiref.sync import sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Q
 
 from apps.game_tracker.models import (
     MatchData,
@@ -22,9 +26,6 @@ from apps.kwt_common.utils import general_stats, get_time, players_stats
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
-from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
-from django.db.models import Q
 
 
 class MatchDataConsumer(AsyncWebsocketConsumer):
