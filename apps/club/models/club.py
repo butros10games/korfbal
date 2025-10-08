@@ -1,5 +1,7 @@
 """Module contains the Club model."""
 
+from typing import Any
+
 from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.db import models
@@ -9,15 +11,17 @@ from django.urls import reverse
 class Club(models.Model):
     """Model for a club."""
 
-    id_uuid = models.UUIDField(primary_key=True, default=uuidv7, editable=False)
-    name = models.CharField(max_length=255, unique=True)
-    admin = models.ManyToManyField(
-        "player.Player",
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
+        primary_key=True, default=uuidv7, editable=False
+    )
+    name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
+    admin: models.ManyToManyField[Any, Any] = models.ManyToManyField(
+        "player.Player",  # type: ignore[misc]
         through="ClubAdmin",
         related_name="clubs",
         blank=True,
     )
-    logo = models.ImageField(
+    logo: models.ImageField = models.ImageField(
         upload_to="club_pictures/",
         blank=True,
         null=True,
@@ -49,6 +53,6 @@ class Club(models.Model):
 
         """
         if self.logo:
-            return self.logo.url
-        static_url = settings.STATIC_URL.removeprefix("/")
+            return self.logo.url  # type: ignore[no-any-return]
+        static_url = settings.STATIC_URL.removeprefix("/")  # type: ignore[union-attr]
         return f"https://{static_url}images/clubs/blank-club-picture.png"

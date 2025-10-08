@@ -2,15 +2,16 @@
 
 from datetime import datetime
 import locale
+from typing import Any
 
 from asgiref.sync import sync_to_async
 
-from apps.game_tracker.models import Shot
+from apps.game_tracker.models import MatchData, Shot
 
 from .time_utils import get_time_display
 
 
-async def transform_match_data(matches_data: list) -> list:
+async def transform_match_data(matches_data: list[MatchData]) -> list[dict[str, Any]]:
     """Transform the match data to a dictionary.
 
     Args:

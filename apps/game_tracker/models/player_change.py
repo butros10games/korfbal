@@ -1,5 +1,8 @@
 """Model for PlayerChange."""
 
+from datetime import datetime
+from typing import Any
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 
@@ -9,40 +12,40 @@ from .constants import player_model_string
 class PlayerChange(models.Model):
     """Model for a player change in a match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    player_in: models.ForeignKey = models.ForeignKey(
+    player_in: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         related_name="player_changes",
     )
-    player_out: models.ForeignKey = models.ForeignKey(
+    player_out: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
     )
-    player_group: models.ForeignKey = models.ForeignKey(
+    player_group: models.ForeignKey[Any, Any] = models.ForeignKey(
         "PlayerGroup",
         on_delete=models.CASCADE,
         related_name="player_changes",
     )
-    match_data: models.ForeignKey = models.ForeignKey(
+    match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="player_changes",
         blank=True,
         null=True,
     )
-    match_part: models.ForeignKey = models.ForeignKey(
+    match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchPart",
         on_delete=models.CASCADE,
         related_name="player_changes",
         blank=True,
         null=True,
     )
-    time: models.DateTimeField = models.DateTimeField(
+    time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
         default=None,
         blank=True,
         null=True,

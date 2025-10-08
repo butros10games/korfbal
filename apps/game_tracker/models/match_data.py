@@ -1,6 +1,6 @@
 """Model for MatchData."""
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -15,21 +15,21 @@ class MatchData(models.Model):
         ("finished", "Finished"),
     ]
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    match_link: models.ForeignKey = models.ForeignKey(
+    match_link: models.ForeignKey[Any, Any] = models.ForeignKey(
         "schedule.Match",
         on_delete=models.CASCADE,
     )
-    home_score: models.IntegerField = models.IntegerField(default=0)
-    away_score: models.IntegerField = models.IntegerField(default=0)
-    parts: models.IntegerField = models.IntegerField(default=2)
-    current_part: models.IntegerField = models.IntegerField(default=1)
-    part_length: models.IntegerField = models.IntegerField(default=1800)
-    status: models.CharField = models.CharField(
+    home_score: models.IntegerField[int, int] = models.IntegerField(default=0)
+    away_score: models.IntegerField[int, int] = models.IntegerField(default=0)
+    parts: models.IntegerField[int, int] = models.IntegerField(default=2)
+    current_part: models.IntegerField[int, int] = models.IntegerField(default=1)
+    part_length: models.IntegerField[int, int] = models.IntegerField(default=1800)
+    status: models.CharField[str, str] = models.CharField(
         max_length=10,
         choices=STATUS_CHOICES,
         default="upcoming",
@@ -63,7 +63,7 @@ class MatchData(models.Model):
 
         """
         if self.home_score > self.away_score:
-            return self.match_link.home_team.name
+            return self.match_link.home_team.name  # type: ignore[no-any-return]
         if self.home_score < self.away_score:
-            return self.match_link.away_team.name
+            return self.match_link.away_team.name  # type: ignore[no-any-return]
         return None

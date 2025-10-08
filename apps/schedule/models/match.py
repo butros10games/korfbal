@@ -1,6 +1,7 @@
 """Module contains the Match model."""
 
-from typing import ClassVar
+from datetime import datetime
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -12,32 +13,32 @@ from .constants import team_model_string
 class Match(models.Model):
     """Model for Match."""
 
-    id_uuid = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    home_team = models.ForeignKey(
+    home_team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="home_matches",
     )
-    away_team = models.ForeignKey(
+    away_team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="away_matches",
     )
-    season = models.ForeignKey(
+    season: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Season",
         on_delete=models.CASCADE,
         related_name="matches",
     )
-    start_time = models.DateTimeField()
+    start_time: models.DateTimeField[datetime, datetime] = models.DateTimeField()
 
     class Meta:
         """Meta class for Match model."""
 
-        indexes: ClassVar[list[models.Index]] = [
+        indexes: ClassVar[list[Any]] = [
             models.Index(fields=["start_time"]),
             models.Index(fields=["home_team"]),
             models.Index(fields=["away_team"]),

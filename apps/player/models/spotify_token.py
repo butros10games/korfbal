@@ -1,5 +1,8 @@
 """Model for SpotifyToken."""
 
+from datetime import datetime
+from typing import Any
+
 from django.contrib.auth.models import User
 from django.db import models
 from django.utils.timezone import now
@@ -8,11 +11,15 @@ from django.utils.timezone import now
 class SpotifyToken(models.Model):
     """Model for SpotifyToken."""
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    access_token = models.CharField(max_length=500)
-    refresh_token = models.CharField(max_length=500)
-    expires_at = models.DateTimeField()
-    spotify_user_id = models.CharField(max_length=100, unique=True)
+    user: models.OneToOneField[Any, Any] = models.OneToOneField(
+        User, on_delete=models.CASCADE
+    )
+    access_token: models.CharField[str, str] = models.CharField(max_length=500)
+    refresh_token: models.CharField[str, str] = models.CharField(max_length=500)
+    expires_at: models.DateTimeField[datetime, datetime] = models.DateTimeField()
+    spotify_user_id: models.CharField[str, str] = models.CharField(
+        max_length=100, unique=True
+    )
 
     def __str__(self) -> str:
         """Return the string representation of the SpotifyToken.

@@ -1,6 +1,6 @@
 """Module contains the Player model for the player app."""
 
-from typing import cast
+from typing import Any, cast
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -14,34 +14,38 @@ from .constants import club_model_string, team_model_string
 class Player(models.Model):
     """Model for Player."""
 
-    id_uuid = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    user = models.OneToOneField(
+    user: models.OneToOneField[Any, Any] = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
         related_name="player",
     )
 
-    profile_picture = models.ImageField(
+    profile_picture: models.ImageField = models.ImageField(
         upload_to="profile_pictures/",
         blank=True,
         null=True,
     )
 
-    team_follow = models.ManyToManyField(  # type: ignore[var-annotated]
+    team_follow: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         team_model_string,
         blank=True,
     )
-    club_follow = models.ManyToManyField(  # type: ignore[var-annotated]
+    club_follow: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         club_model_string,
         blank=True,
     )
 
-    goal_song_uri = models.CharField(max_length=255, blank=True)
-    song_start_time = models.IntegerField(blank=True, null=True)
+    goal_song_uri: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True
+    )
+    song_start_time: models.IntegerField[int, int | None] = models.IntegerField(
+        blank=True, null=True
+    )
 
     def __str__(self) -> str:
         """Get the string representation of the player.

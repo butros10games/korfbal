@@ -2,6 +2,9 @@
 
 from datetime import UTC, datetime
 import json
+from typing import Any
+
+from channels.generic.websocket import AsyncWebsocketConsumer
 
 from apps.game_tracker.models import MatchData, MatchPart, Pause
 
@@ -98,7 +101,9 @@ def get_time_display(match_data: MatchData) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
+async def get_time_display_pause(
+    self: AsyncWebsocketConsumer, json_data: dict[str, Any]
+) -> None:
     """Get the time display for the pause.
 
     Args:
@@ -113,12 +118,12 @@ async def get_time_display_pause(self, json_data: dict) -> None:  # noqa: ANN001
     current_part = await MatchPart.objects.aget(match_data=match_data, active=True)
 
     # Subscribe to time data channel
-    if match_data.match_link.id_uuid not in self.subscribed_channels:
+    if match_data.match_link.id_uuid not in self.subscribed_channels:  # type: ignore[attr-defined]
         await self.channel_layer.group_add(
             f"time_match_{match_data.match_link.id_uuid}",
             self.channel_name,
         )
 
-        self.subscribed_channels.append(match_data.match_link.id_uuid)
+        self.subscribed_channels.append(match_data.match_link.id_uuid)  # type: ignore[attr-defined]
 
     await self.send(text_data=await get_time(match_data, current_part))

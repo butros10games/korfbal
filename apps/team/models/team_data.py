@@ -1,6 +1,6 @@
 """Module contains the TeamData model."""
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from django.db import models
 
@@ -10,28 +10,30 @@ from .constants import player_model_string
 class TeamData(models.Model):
     """Model for the team data."""
 
-    team = models.ForeignKey("Team", on_delete=models.CASCADE, related_name="team_data")
-    coach: models.ManyToManyField = models.ManyToManyField(  # type: ignore[type-arg]
+    team = models.ForeignKey[Any, Any](
+        "Team", on_delete=models.CASCADE, related_name="team_data"
+    )
+    coach: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         player_model_string,
         related_name="team_data_as_coach",
         blank=True,
     )
-    players: models.ManyToManyField = models.ManyToManyField(  # type: ignore[type-arg]
+    players: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         player_model_string,
         related_name="team_data_as_player",
         blank=True,
     )
-    season = models.ForeignKey(
+    season = models.ForeignKey[Any, Any](
         "schedule.Season",
         on_delete=models.CASCADE,
         related_name="team_data",
     )
-    competition = models.CharField(max_length=255, blank=True)
+    competition = models.CharField[str, str](max_length=255, blank=True)
 
     class Meta:
         """Meta class for TeamData model."""
 
-        indexes: ClassVar[list[models.Index]] = [
+        indexes: ClassVar[list[Any]] = [
             models.Index(fields=["team"]),
             models.Index(fields=["season"]),
             models.Index(fields=["team", "season"]),

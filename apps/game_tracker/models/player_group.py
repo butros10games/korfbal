@@ -1,5 +1,7 @@
 """Module contains the PlayerGroup model."""
 
+from typing import Any
+
 from bg_uuidv7 import uuidv7
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -10,32 +12,32 @@ from .constants import player_model_string, team_model_string
 class PlayerGroup(models.Model):
     """Model for a group of players in a match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    players: models.ManyToManyField = models.ManyToManyField(
+    players: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         player_model_string,
         related_name="player_groups",
         blank=True,
     )
-    team: models.ForeignKey = models.ForeignKey(
+    team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
-    match_data: models.ForeignKey = models.ForeignKey(
+    match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
-    starting_type: models.ForeignKey = models.ForeignKey(
+    starting_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "GroupType",
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
-    current_type: models.ForeignKey = models.ForeignKey(
+    current_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "GroupType",
         on_delete=models.CASCADE,
         related_name="current_player_groups",
@@ -50,7 +52,7 @@ class PlayerGroup(models.Model):
         """
         return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"  # noqa: E501
 
-    def save(self, *args, **kwargs) -> None:  # noqa: ANN002 ANN003
+    def save(self, *args: tuple[object, ...], **kwargs: dict[str, object]) -> None:  # type: ignore[override]
         """Save the player group, ensuring that players are removed from the reserve
             group if they are added to a starting group.
 
@@ -65,7 +67,7 @@ class PlayerGroup(models.Model):
         """
         if not self._state.adding:
             # Retrieve the current list of players from the database
-            current_players = set(self.__class__.objects.get(pk=self.pk).players.all())
+            current_players = set(self.__class__.objects.get(pk=self.pk).players.all())  # type: ignore[attr-defined]
         else:
             current_players = set()
 
@@ -84,4 +86,4 @@ class PlayerGroup(models.Model):
                         f"{player} is not in the reserve player group.",
                     )
 
-        super().save(*args, **kwargs)
+        super().save(*args, **kwargs)  # type: ignore[arg-type]

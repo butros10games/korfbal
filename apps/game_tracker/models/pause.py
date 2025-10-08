@@ -1,6 +1,7 @@
 """Model for a pause in a match."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -9,30 +10,32 @@ from django.db import models
 class Pause(models.Model):
     """Model for a pause in a match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    match_data: models.ForeignKey = models.ForeignKey(
+    match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="pauses",
     )
-    match_part: models.ForeignKey = models.ForeignKey(
+    match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchPart",
         on_delete=models.CASCADE,
         related_name="pauses",
         blank=True,
         null=True,
     )
-    start_time: models.DateTimeField = models.DateTimeField(
+    start_time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
         default=None,
         blank=True,
         null=True,
     )
-    end_time: models.DateTimeField = models.DateTimeField(blank=True, null=True)
-    active: models.BooleanField = models.BooleanField(default=False)
+    end_time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
+        blank=True, null=True
+    )
+    active: models.BooleanField[bool, bool] = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         """Return the string representation of the pause.

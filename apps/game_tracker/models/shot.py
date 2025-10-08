@@ -1,5 +1,8 @@
 """Module contains the Shot model for the game_tracker app."""
 
+from datetime import datetime
+from typing import Any
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 
@@ -9,45 +12,45 @@ from .constants import player_model_string, team_model_string
 class Shot(models.Model):
     """Model for a shot in a match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    player: models.ForeignKey = models.ForeignKey(
+    player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         related_name="shots",
     )
-    match_data: models.ForeignKey = models.ForeignKey(
+    match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="shots",
     )
-    match_part: models.ForeignKey = models.ForeignKey(
+    match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchPart",
         on_delete=models.CASCADE,
         related_name="shots",
         blank=True,
         null=True,
     )
-    team: models.ForeignKey = models.ForeignKey(
+    team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="shots",
         blank=True,
         null=True,
     )
-    for_team: models.BooleanField = models.BooleanField(default=True)
-    scored: models.BooleanField = models.BooleanField(default=False)
-    shot_type: models.ForeignKey = models.ForeignKey(
+    for_team: models.BooleanField[bool, bool] = models.BooleanField(default=True)
+    scored: models.BooleanField[bool, bool] = models.BooleanField(default=False)
+    shot_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "GoalType",
         on_delete=models.CASCADE,
         related_name="shots",
         blank=True,
         null=True,
     )
-    time: models.DateTimeField = models.DateTimeField(
+    time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
         default=None,
         blank=True,
         null=True,

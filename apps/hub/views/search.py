@@ -85,7 +85,7 @@ def search(request: HttpRequest) -> JsonResponse:
     search_term = request.GET.get("q", "")
     category = request.GET.get("category", "")
 
-    results = []
+    results: list[dict[str, str | None]] = []
 
     if category == "teams":
         current_season = get_current_season()

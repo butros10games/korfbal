@@ -1,5 +1,7 @@
 """Module contains the MatchPlayer model for the game_tracker app."""
 
+from typing import Any
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 
@@ -9,22 +11,22 @@ from .constants import player_model_string, team_model_string
 class MatchPlayer(models.Model):
     """Model for a player in a match."""
 
-    id_uuid: models.UUIDField = models.UUIDField(
+    id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    match_data: models.ForeignKey = models.ForeignKey(
+    match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="players",
     )
-    team: models.ForeignKey = models.ForeignKey(
+    team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="match_players",
     )
-    player: models.ForeignKey = models.ForeignKey(
+    player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         related_name="match_players",

@@ -1,13 +1,19 @@
 """Model for ClubAdmin."""
 
+from typing import Any
+
 from django.db import models
 
 
 class ClubAdmin(models.Model):
     """Model for a club admin."""
 
-    club = models.ForeignKey("Club", on_delete=models.CASCADE)
-    player = models.ForeignKey("player.Player", on_delete=models.CASCADE)
+    club: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "Club", on_delete=models.CASCADE
+    )
+    player: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "player.Player", on_delete=models.CASCADE
+    )
 
     class Meta:
         """Meta class for the ClubAdmin model."""
