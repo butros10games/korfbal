@@ -1,5 +1,7 @@
 """Model file for Team."""
 
+from __future__ import annotations
+
 from typing import Any
 
 from bg_uuidv7 import uuidv7

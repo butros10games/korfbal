@@ -1,5 +1,7 @@
 """Model for a season."""
 
+from __future__ import annotations
+
 from datetime import date
 
 from bg_uuidv7 import uuidv7

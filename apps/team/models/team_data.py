@@ -1,5 +1,7 @@
 """Module contains the TeamData model."""
 
+from __future__ import annotations
+
 from typing import Any, ClassVar
 
 from django.db import models

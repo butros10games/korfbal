@@ -1,5 +1,7 @@
 """Model for goal type."""
 
+from __future__ import annotations
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 

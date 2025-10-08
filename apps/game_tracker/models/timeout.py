@@ -1,5 +1,7 @@
 """Module contains the Timeout model for the game_tracker app."""
 
+from __future__ import annotations
+
 from typing import Any
 
 from bg_uuidv7 import uuidv7

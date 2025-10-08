@@ -1,5 +1,7 @@
 """Module contains the Player model for the player app."""
 
+from __future__ import annotations
+
 from typing import Any, cast
 
 from bg_uuidv7 import uuidv7

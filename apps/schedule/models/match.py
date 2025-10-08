@@ -1,5 +1,7 @@
 """Module contains the Match model."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, ClassVar
 

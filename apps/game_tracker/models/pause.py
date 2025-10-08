@@ -1,5 +1,7 @@
 """Model for a pause in a match."""
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from typing import Any
 

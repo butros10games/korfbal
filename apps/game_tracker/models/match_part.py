@@ -1,5 +1,7 @@
 """Model for a part of a match."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any
 
