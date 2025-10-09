@@ -30,7 +30,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-class MatchTrackerConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
+class MatchTrackerConsumer(AsyncWebsocketConsumer):
     """A websocket consumer for the match tracker page."""
 
     def __init__(self, *args: object, **kwargs: object) -> None:

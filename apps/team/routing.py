@@ -6,5 +6,5 @@ from .consumers import TeamDataConsumer
 
 
 websocket_urlpatterns = [
-    path("ws/teams/<uuid:id>/", TeamDataConsumer.as_asgi()),
+    path("ws/teams/<uuid:id>/", TeamDataConsumer.as_asgi()),  # type: ignore[arg-type]
 ]

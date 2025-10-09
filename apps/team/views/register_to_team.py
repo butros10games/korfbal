@@ -56,6 +56,7 @@ def register_to_team(request: HttpRequest, team_id: str) -> HttpResponseRedirect
                     season=previous_season,
                 )
 
+                assert previous_team_data is not None
                 team_data = TeamData.objects.create(team=team, season=season)
                 team_data.coach.set(previous_team_data.coach.all())
             except TeamData.DoesNotExist:

@@ -18,7 +18,7 @@ else:
 class PlayerGroupAdmin(PlayerGroupAdminBase):
     """Admin for the PlayerGroup model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display: ClassVar[list[str]] = [  # type: ignore[misc,assignment]
         "id_uuid",
         "team",
         "match_data",

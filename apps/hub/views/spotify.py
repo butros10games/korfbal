@@ -1,6 +1,7 @@
 """Spotify OAuth2.0 flow and token refresh."""
 
 from datetime import timedelta
+from typing import cast
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -14,12 +15,12 @@ from apps.player.models import SpotifyToken
 
 
 HTTP_STATUS_OK = 200
-SPOTIFY_CLIENT_ID = settings.SPOTIFY_CLIENT_ID
-SPOTIFY_CLIENT_SECRET = settings.SPOTIFY_CLIENT_SECRET
-SPOTIFY_REDIRECT_URI = settings.SPOTIFY_REDIRECT_URI
+SPOTIFY_CLIENT_ID = cast(str, settings.SPOTIFY_CLIENT_ID)
+SPOTIFY_CLIENT_SECRET = cast(str, settings.SPOTIFY_CLIENT_SECRET)
+SPOTIFY_REDIRECT_URI = cast(str, settings.SPOTIFY_REDIRECT_URI)
 
 
-@login_required  # type: ignore
+@login_required
 def spotify_callback(request: HttpRequest) -> HttpResponseRedirect:
     """Handle Spotify OAuth callback and save tokens.
 

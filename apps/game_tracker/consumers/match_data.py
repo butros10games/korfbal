@@ -125,7 +125,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         if self.match is None:
             return
 
-        team = self.match.home_team if command == "home_team" else self.match.away_team  # type: ignore[attr-defined]
+        team = self.match.home_team if command == "home_team" else self.match.away_team
 
         await self.send(
             text_data=json.dumps(
@@ -135,7 +135,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "team_id": str(team.id_uuid),
                     "group_id_to_type_id": {
                         str(group.id_uuid): str(group.starting_type.id_uuid)
-                        for group in await sync_to_async(list)(  # type: ignore[var-annotated,call-arg]
+                        for group in await sync_to_async(list)(
                             PlayerGroup.objects.prefetch_related(
                                 "starting_type",
                             ).filter(team=team, match_data=self.match_data),
@@ -143,7 +143,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     },
                     "type_id_to_group_id": {
                         str(group.starting_type.id_uuid): str(group.id_uuid)
-                        for group in await sync_to_async(list)(  # type: ignore[var-annotated,call-arg]
+                        for group in await sync_to_async(list)(
                             PlayerGroup.objects.prefetch_related(
                                 "starting_type",
                             ).filter(team=team, match_data=self.match_data),
@@ -236,7 +236,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 text_data=json.dumps(
                     {
                         "command": "events",
-                        "home_team_id": str(self.match.home_team.id_uuid),  # type: ignore[attr-defined]
+                        "home_team_id": str(self.match.home_team.id_uuid),
                         "events": events_dict,
                         "access": (
                             await self.check_access(user_id, self.match)
@@ -347,7 +347,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -393,14 +393,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         time_in_minutes = round(
             (
                 (event.time - event.match_part.start_time).total_seconds()
-                + ((event.match_part.part_number - 1) * self.match_data.part_length)  # type: ignore[attr-defined]
+                + ((event.match_part.part_number - 1) * self.match_data.part_length)
                 - pause_time
             )
             / 60,
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -449,7 +449,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.start_time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_length)  # type: ignore[attr-defined]
+                    * int(self.match_data.part_length)
                 )
                 - pause_time
             )
@@ -457,7 +457,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60  # type: ignore[attr-defined]
+            (event.match_part.part_number * self.match_data.part_length) / 60
         )
         if left_over > 0:
             time_in_minutes = (

@@ -76,7 +76,7 @@ def match_tracker(request: HttpRequest, match_id: str, team_id: str) -> HttpResp
         else:
             button_text = "Pause"
 
-    context: dict = {
+    context: dict = {  # type: ignore[type-arg]
         "match": match_data,
         "time_display": get_time_display(match_data),
         "start_stop_button": button_text,

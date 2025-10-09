@@ -118,12 +118,12 @@ async def get_time_display_pause(
     current_part = await MatchPart.objects.aget(match_data=match_data, active=True)
 
     # Subscribe to time data channel
-    if match_data.match_link.id_uuid not in self.subscribed_channels:  # type: ignore[attr-defined]
+    if match_data.match_link.id_uuid not in self.subscribed_channels:  # type: ignore[unresolved-attribute]
         await self.channel_layer.group_add(
             f"time_match_{match_data.match_link.id_uuid}",
             self.channel_name,
         )
 
-        self.subscribed_channels.append(match_data.match_link.id_uuid)  # type: ignore[attr-defined]
+        self.subscribed_channels.append(match_data.match_link.id_uuid)  # type: ignore[unresolved-attribute]
 
     await self.send(text_data=await get_time(match_data, current_part))

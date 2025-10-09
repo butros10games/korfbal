@@ -22,7 +22,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-class TeamDataConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
+class TeamDataConsumer(AsyncWebsocketConsumer):
     """Websocket consumer for the team data page."""
 
     def __init__(self) -> None:

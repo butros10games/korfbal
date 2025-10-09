@@ -17,7 +17,7 @@ else:
     ShotAdminBase = admin.ModelAdmin
 
 
-class ShotAdminForm(forms.ModelForm):
+class ShotAdminForm(forms.ModelForm):  # type: ignore[type-arg]
     """Form for the ShotAdmin."""
 
     class Meta:
@@ -30,7 +30,7 @@ class ShotAdminForm(forms.ModelForm):
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team  # noqa: PLC0415
 
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         if kwargs.get("instance"):
             instance = cast(Shot, kwargs["instance"])
             match = instance.match_data.match_link

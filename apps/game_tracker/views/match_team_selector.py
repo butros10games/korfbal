@@ -68,6 +68,6 @@ def match_team_selector(
             team_id=connected_teams[0].id_uuid,
         )
 
-    context: dict = {"match": match_data}
+    context: dict = {"match": match_data}  # type: ignore[type-arg]
 
     return render(request, "matches/team_selector.html", context)

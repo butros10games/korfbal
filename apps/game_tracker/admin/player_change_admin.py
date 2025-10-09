@@ -18,7 +18,7 @@ else:
 class PlayerChangeAdmin(PlayerChangeAdminBase):
     """Admin for the PlayerChange model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display: ClassVar[list[str]] = [  # type: ignore[misc,assignment]
         "id_uuid",
         "player_in",
         "player_out",

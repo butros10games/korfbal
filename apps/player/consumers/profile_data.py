@@ -16,7 +16,7 @@ from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
 
-class ProfileDataConsumer(AsyncWebsocketConsumer):  # type: ignore[misc]
+class ProfileDataConsumer(AsyncWebsocketConsumer):
     """Websocket consumer for the profile data."""
 
     def __init__(self) -> None:

@@ -35,7 +35,7 @@ def match_detail(request: HttpRequest, match_id: str) -> HttpResponse:
         scored=True,
     ).count()
 
-    context: dict = {
+    context: dict = {  # type: ignore[type-arg]
         "match": match_model,
         "match_data": match_data,
         "time_display": get_time_display(match_data),
