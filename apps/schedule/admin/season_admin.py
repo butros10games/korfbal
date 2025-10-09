@@ -1,11 +1,21 @@
 """Admin class for the Season model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.schedule.models import Season
 
 
-class SeasonAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    SeasonAdminBase = ModelAdminBase[Season]
+else:
+    SeasonAdminBase = admin.ModelAdmin
+
+
+class SeasonAdmin(SeasonAdminBase):
     """Admin settings for the Season model."""
 
     list_display = ["id_uuid", "name"]  # noqa: RUF012

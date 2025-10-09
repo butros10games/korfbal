@@ -1,11 +1,21 @@
 """Admin class for the TeamData model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.team.models import TeamData
 
 
-class TeamDataAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    TeamDataAdminBase = ModelAdminBase[TeamData]
+else:
+    TeamDataAdminBase = admin.ModelAdmin
+
+
+class TeamDataAdmin(TeamDataAdminBase):
     """Admin class for the TeamData model."""
 
     list_display = ["team", "season"]  # noqa: RUF012

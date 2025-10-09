@@ -1,11 +1,21 @@
 """Admin class for the Team model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.team.models import Team
 
 
-class TeamAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    TeamAdminBase = ModelAdminBase[Team]
+else:
+    TeamAdminBase = admin.ModelAdmin
+
+
+class TeamAdmin(TeamAdminBase):
     """Admin class for the Team model."""
 
     list_display = ["id_uuid", "__str__", "club"]  # noqa: RUF012

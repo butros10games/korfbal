@@ -1,13 +1,21 @@
 """Admin class for the PlayerGroup model."""
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib import admin
 
 from apps.game_tracker.models import PlayerGroup
 
 
-class PlayerGroupAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    PlayerGroupAdminBase = ModelAdminBase[PlayerGroup]
+else:
+    PlayerGroupAdminBase = admin.ModelAdmin
+
+
+class PlayerGroupAdmin(PlayerGroupAdminBase):
     """Admin for the PlayerGroup model."""
 
     list_display: ClassVar[list[str]] = [

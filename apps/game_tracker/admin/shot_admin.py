@@ -1,12 +1,20 @@
 """Admin for the Shot model."""
 
-from typing import ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from django import forms
 from django.contrib import admin
 from django.db.models import Q
 
 from apps.game_tracker.models import Shot
+
+
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    ShotAdminBase = ModelAdminBase[Shot]
+else:
+    ShotAdminBase = admin.ModelAdmin
 
 
 class ShotAdminForm(forms.ModelForm):
@@ -33,7 +41,7 @@ class ShotAdminForm(forms.ModelForm):
             self.fields["team"].queryset = Team.objects.none()  # type: ignore[attr-defined]
 
 
-class ShotAdmin(admin.ModelAdmin):
+class ShotAdmin(ShotAdminBase):
     """Admin for the Shot model."""
 
     form = ShotAdminForm

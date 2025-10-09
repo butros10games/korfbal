@@ -1,11 +1,21 @@
 """Admin settings for the MatchData model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.game_tracker.models import MatchData
 
 
-class MatchDataAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    MatchDataAdminBase = ModelAdminBase[MatchData]
+else:
+    MatchDataAdminBase = admin.ModelAdmin
+
+
+class MatchDataAdmin(MatchDataAdminBase):
     """Admin for the MatchData model."""
 
     list_display = [  # noqa: RUF012

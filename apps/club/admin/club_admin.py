@@ -1,11 +1,21 @@
 """Admin class for the Club model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.club.models import Club
 
 
-class ClubAdmin(admin.ModelAdmin):
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    ClubAdminBase = ModelAdminBase[Club]
+else:
+    ClubAdminBase = admin.ModelAdmin
+
+
+class ClubAdmin(ClubAdminBase):
     """Admin class for the Club model."""
 
     list_display = ["id_uuid", "name"]  # noqa: RUF012

@@ -1,11 +1,21 @@
 """Admin settings for the Pause model."""
 
+from typing import TYPE_CHECKING
+
 from django.contrib import admin
 
 from apps.game_tracker.models import Pause
 
 
-class PauseAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+if TYPE_CHECKING:
+    from django.contrib.admin import ModelAdmin as ModelAdminBase
+
+    PauseAdminBase = ModelAdminBase[Pause]
+else:
+    PauseAdminBase = admin.ModelAdmin
+
+
+class PauseAdmin(PauseAdminBase):
     """Admin for the Pause model."""
 
     list_display = ["id_uuid", "match_data"]  # noqa: RUF012
