@@ -50,20 +50,20 @@ def _get_player_teams(player: Player) -> list[Team]:
 
 
 def _get_upcoming_match_data(teams: list[Team]) -> MatchData | None:
-    """Get the next upcoming or active match data for the given teams.
+    """Get the closest upcoming or active match data for the given teams.
 
     Args:
         teams: List of teams to find matches for.
 
     Returns:
-        The next upcoming or active match data, or None if no matches found.
+        The closest upcoming or active match data, or None if no matches found.
 
     """
     if not teams:
         return None
 
-    # First try to find matches where teams are playing at home
-    match_data = (
+    # Get the closest match (active or upcoming) for the teams, ordered by start time
+    return (
         MatchData.objects.select_related(
             "match_link__home_team__club",
             "match_link__away_team__club",
@@ -73,29 +73,13 @@ def _get_upcoming_match_data(teams: list[Team]) -> MatchData | None:
             "match_link__home_team__team_data__players",
             "match_link__away_team__team_data__players",
         )
-        .filter(match_link__home_team__in=teams, status__in=["active", "upcoming"])
+        .filter(
+            Q(match_link__home_team__in=teams) | Q(match_link__away_team__in=teams),
+            status__in=["active", "upcoming"],
+        )
         .order_by("match_link__start_time")
         .first()
     )
-
-    # If no home matches found, check away matches
-    if not match_data:
-        match_data = (
-            MatchData.objects.select_related(
-                "match_link__home_team__club",
-                "match_link__away_team__club",
-                "match_link__season",
-            )
-            .prefetch_related(
-                "match_link__home_team__team_data__players",
-                "match_link__away_team__team_data__players",
-            )
-            .filter(match_link__away_team__in=teams, status__in=["active", "upcoming"])
-            .order_by("match_link__start_time")
-            .first()
-        )
-
-    return match_data
 
 
 def _calculate_match_scores(match_data: MatchData) -> tuple[int, int]:
