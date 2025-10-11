@@ -4,8 +4,7 @@
     {% elif match_data.status == 'active' %}
     <p style="font-size: 14px; margin: 0">
         Perioide
-        <span id="periode_number">{{ match_data.current_part }}</span>/{{
-        match_data.parts }}
+        <span id="periode_number">{{ match_data.current_part }}</span>/<span id="total_periods">{{ match_data.parts }}</span>
     </p>
     <p id="counter" style="margin: 0; font-size: 22px; font-weight: 600">
         {{ time_display }}

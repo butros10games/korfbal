@@ -98,7 +98,7 @@ export const updateSettings = function (data, infoContainer, socket) {
 
     // django logout button
     const logoutButton = document.createElement('a');
-    logoutButton.href = '/logout';
+    logoutButton.href = '/api/logout';
     logoutButton.innerHTML = 'Logout';
     logoutButton.classList.add('logout-button');
 
