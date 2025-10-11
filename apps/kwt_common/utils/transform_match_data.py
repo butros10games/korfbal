@@ -1,5 +1,6 @@
 """M contains the function to transform match data to a dictionary."""
 
+from contextlib import suppress
 from datetime import datetime
 import locale
 from typing import Any
@@ -23,7 +24,10 @@ async def transform_match_data(matches_data: list[MatchData]) -> list[dict[str, 
 
     """
     match_dict = []
-    locale.setlocale(locale.LC_TIME, "nl_NL.utf8")
+    with suppress(locale.Error):
+        locale.setlocale(locale.LC_TIME, "nl_NL.UTF-8")
+    with suppress(locale.Error):
+        locale.setlocale(locale.LC_TIME, "nl_NL.utf8")
 
     for match_data in matches_data:
         start_time_dt = datetime.fromisoformat(
