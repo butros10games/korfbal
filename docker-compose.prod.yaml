@@ -1,0 +1,77 @@
+services:
+  kwt-uwsgi:
+    image: butros10/kwt-uwsgi:latest
+    container_name: kwt-uwsgi
+    ports:
+      - "1664:1664"
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - kwt-net
+
+  kwt-daphne:
+    image: butros10/kwt-daphne:latest
+    container_name: kwt-daphne
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    depends_on:
+      - kwt-valkey
+    restart: unless-stopped
+    networks:
+      - kwt-net
+
+  kwt-valkey:
+    image: valkey/valkey:latest
+    container_name: kwt-valkey
+    restart: unless-stopped
+    networks:
+      - kwt-net
+
+  kwt-collectstatic:
+    image: butros10/kwt-collectstatic:latest
+    container_name: kwt-collectstatic
+    env_file:
+      - .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    networks:
+      - kwt-net
+
+  kwt-migrate:
+    image: butros10/kwt-uwsgi:latest
+    container_name: kwt-migrate
+    command: python manage.py migrate
+    env_file:
+      - .env
+    networks:
+      - kwt-net
+
+  kwt-celery_worker:
+    image: butros10/kwt-celery:latest
+    container_name: kwt-celery_worker
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    env_file:
+      - .env
+    networks:
+      - kwt-net
+
+  kwt-celery_beat:
+    image: butros10/kwt-celery:latest
+    container_name: kwt-celery_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: celery -A butros_groot beat --loglevel=info
+    networks:
+      - kwt-net
+
+networks:
+  kwt-net:
+    driver: bridge
