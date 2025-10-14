@@ -15,7 +15,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-TEST_PASSWORD = "pass1234"  # nosonar # noqa: S105
+TEST_PASSWORD = "pass1234"  # noqa: S105  # nosec B105 - test credential constant
 HTTP_STATUS_OK = 200
 EXPECTED_HOME_SCORE = 2
 EXPECTED_AWAY_SCORE = 1

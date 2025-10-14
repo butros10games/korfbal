@@ -22,7 +22,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-TEST_PASSWORD = "testpass123"  # nosonar # noqa: S105
+TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
 HTTP_STATUS_OK = 200
 EXPECTED_PLAYER_GROUPS_COUNT = 6
 EXPECTED_GROUPS_PER_TEAM = 3
