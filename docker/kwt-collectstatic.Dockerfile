@@ -1,5 +1,5 @@
-## ------------------------------- Builder Stage ------------------------------ ##
-FROM python:3.13-trixie AS builder
+## ------------------------------- Dependency Stage ------------------------------ ##
+FROM python:3.13-trixie AS deps
 
 RUN apt-get update && \
     apt-get install --no-install-recommends -y build-essential && \
@@ -9,24 +9,37 @@ ADD https://astral.sh/uv/install.sh /install.sh
 RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
 ENV PATH="/root/.local/bin:${PATH}"
 
+WORKDIR /build/apps/django_projects/korfbal/deps
+
+COPY apps/django_projects/korfbal/deps/pyproject.toml ./pyproject.toml
+COPY apps/django_projects/korfbal/deps/uv.lock ./uv.lock
+COPY libs/django_packages/bg_auth/ /build/libs/django_packages/bg_auth/
+COPY libs/django_packages/bg_django_caching_paginator/ /build/libs/django_packages/bg_django_caching_paginator/
+COPY libs/django_packages/bg_django_mobile_detector/ /build/libs/django_packages/bg_django_mobile_detector/
+COPY libs/shared_python_packages/bg_uuidv7/ /build/libs/shared_python_packages/bg_uuidv7/
+
+ENV UV_PROJECT_ENVIRONMENT=/build/.venv
+
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-editable
+
+## ------------------------------- Builder Stage ------------------------------ ##
+FROM deps AS builder
+
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
-COPY libs/django_packages/bg_auth/ ./libs/django_packages/bg_auth/
-COPY libs/django_packages/bg_django_caching_paginator/ ./libs/django_packages/bg_django_caching_paginator/
-COPY libs/django_packages/bg_django_mobile_detector/ ./libs/django_packages/bg_django_mobile_detector/
-COPY libs/shared_python_packages/bg_uuidv7/ ./libs/shared_python_packages/bg_uuidv7/
+COPY --from=deps /build/.venv .venv
 
-# Bring in the Django project sources that are required to build the wheel inside the workspace.
-COPY apps/django_projects/korfbal/pyproject.toml ./apps/django_projects/korfbal/pyproject.toml
-COPY apps/django_projects/korfbal/uv.lock ./apps/django_projects/korfbal/uv.lock
-COPY apps/django_projects/korfbal/korfbal/ ./apps/django_projects/korfbal/korfbal/
-COPY apps/django_projects/korfbal/apps/ ./apps/django_projects/korfbal/apps/
-
-WORKDIR /app/apps/django_projects/korfbal/
-ENV UV_PROJECT_ENVIRONMENT=/app/.venv
-
-RUN uv sync --frozen --no-editable
+# Copy application sources after dependencies are cached
+COPY apps/django_projects/korfbal/pyproject.toml /app/pyproject.toml
+COPY apps/django_projects/korfbal/uv.lock /app/uv.lock
+COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
+COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
+COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    (.venv/bin/python -m ensurepip --upgrade || true) && \
+    .venv/bin/python -m pip install --upgrade pip hatchling && \
+    .venv/bin/python -m pip install --no-deps --no-build-isolation . && \
+    find .venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
 ## ------------------------------- Webpack Stage ------------------------------ ##
 FROM node:22-alpine AS rspack
@@ -55,10 +68,10 @@ RUN set -euo \
     && if [ -z "$ARCH_GUESS" ]; then ARCH_GUESS="$(dpkg --print-architecture 2>/dev/null || uname -m)"; fi \
     && if [ "$ARCH_GUESS" = "arm" ] && [ -n "${TARGETVARIANT:-}" ]; then ARCH_GUESS="arm${TARGETVARIANT}"; fi \
     && case "$ARCH_GUESS" in \
-        amd64|x86_64) MC_ARCH="amd64" ;; \
-        arm64|aarch64) MC_ARCH="arm64" ;; \
-        armv7|armv7l|armhf|armv6|armv6l|armel|arm) MC_ARCH="arm" ;; \
-        *) echo "Unsupported architecture: ${ARCH_GUESS}" >&2 ; exit 1 ;; \
+    amd64|x86_64) MC_ARCH="amd64" ;; \
+    arm64|aarch64) MC_ARCH="arm64" ;; \
+    armv7|armv7l|armhf|armv6|armv6l|armel|arm) MC_ARCH="arm" ;; \
+    *) echo "Unsupported architecture: ${ARCH_GUESS}" >&2 ; exit 1 ;; \
     esac \
     && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
     && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}" \

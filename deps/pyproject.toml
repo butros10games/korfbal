@@ -1,0 +1,47 @@
+[project]
+name = "korfbal-deps"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "django",
+    "psycopg2-binary",
+    "bg-django-mobile-detector",
+    "django-ratelimit",
+    "django-storages[boto3]",
+    "bg-auth",
+    "bg-uuidv7",
+    "django-phonenumber-field[phonenumbers]",
+    "python-dotenv",
+    "django_crontab",
+    "valkey",
+    "django-valkey",
+    "celery",
+]
+
+[dependency-groups]
+celery = ["django-celery-beat"]
+uwsgi = [
+    "Pillow",
+    "pyuwsgi",
+    "bg-django-caching-paginator",
+    "django-cryptography",
+    "django-prometheus",
+]
+daphne = ["daphne", "channels", "channels-redis"]
+
+dev = [
+    "Pillow",
+    "pyuwsgi; sys_platform == 'linux'",
+    "bg-django-caching-paginator",
+    "django-cryptography",
+    "django-prometheus",
+    "daphne",
+    "channels",
+    "channels-redis",
+]
+
+[tool.uv.sources]
+bg-auth = { path = "../../../../libs/django_packages/bg_auth", editable = true }
+bg-django-caching-paginator = { path = "../../../../libs/django_packages/bg_django_caching_paginator", editable = true }
+bg-django-mobile-detector = { path = "../../../../libs/django_packages/bg_django_mobile_detector", editable = true }
+bg-uuidv7 = { path = "../../../../libs/shared_python_packages/bg_uuidv7", editable = true }
