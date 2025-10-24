@@ -70,7 +70,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         for channel_name in self.channel_names:
             await self.channel_layer.group_discard(channel_name, self.channel_name)
 
-    async def receive(
+    async def receive(  # noqa: C901
         self,
         text_data: str | None = None,
         bytes_data: bytes | None = None,
@@ -95,9 +95,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.get_events(user_id=json_data["user_id"])
 
         elif command == "get_time":
-            await self.send(
-                text_data=await get_time(self.match_data, self.current_part),
-            )
+            if self.match_data and self.current_part:
+                await self.send(
+                    text_data=await get_time(self.match_data, self.current_part),
+                )
+            else:
+                await self.send(
+                    text_data=json.dumps({"error": "Match data not available"}),
+                )
 
         elif command in {"home_team", "away_team"}:
             await self.team_request(command, json_data["user_id"])
@@ -220,7 +225,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             events_dict = []
 
             # check if there is a part active or the match is finished
-            if self.match_data.status != "upcoming":
+            if self.match_data and self.match_data.status != "upcoming":
                 events = await self.get_all_events()
 
                 for event_d in events:
@@ -232,21 +237,24 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                         elif isinstance(event_d, Pause):
                             events_dict.append(await self.event_pause(event_d))
 
-            await self.send(
-                text_data=json.dumps(
-                    {
-                        "command": "events",
-                        "home_team_id": str(self.match.home_team.id_uuid),
-                        "events": events_dict,
-                        "access": (
-                            await self.check_access(user_id, self.match)
-                            if user_id
-                            else False
-                        ),
-                        "status": self.match_data.status,  # type: ignore[union-attr]
-                    },
-                ),
-            )
+            if self.match:
+                await self.send(
+                    text_data=json.dumps(
+                        {
+                            "command": "events",
+                            "home_team_id": str(self.match.home_team.id_uuid),
+                            "events": events_dict,
+                            "access": (
+                                await self.check_access(user_id, self.match)
+                                if user_id
+                                else False
+                            ),
+                            "status": (
+                                self.match_data.status if self.match_data else "unknown"
+                            ),
+                        },
+                    ),
+                )
 
         except Exception as e:
             await self.send(
@@ -347,7 +355,11 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (
+                event.match_part.part_number
+                * (self.match_data.part_length if self.match_data else 0)
+            )
+            / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -393,14 +405,21 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         time_in_minutes = round(
             (
                 (event.time - event.match_part.start_time).total_seconds()
-                + ((event.match_part.part_number - 1) * self.match_data.part_length)
+                + (
+                    (event.match_part.part_number - 1)
+                    * (self.match_data.part_length if self.match_data else 0)
+                )
                 - pause_time
             )
             / 60,
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (
+                event.match_part.part_number
+                * (self.match_data.part_length if self.match_data else 0)
+            )
+            / 60
         )
         if left_over > 0:
             time_in_minutes = (
@@ -449,7 +468,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                 (event.start_time - event.match_part.start_time).total_seconds()
                 + (
                     int(event.match_part.part_number - 1)
-                    * int(self.match_data.part_length)
+                    * int(self.match_data.part_length if self.match_data else 0)
                 )
                 - pause_time
             )
@@ -457,7 +476,11 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         )
 
         left_over = time_in_minutes - (
-            (event.match_part.part_number * self.match_data.part_length) / 60
+            (
+                event.match_part.part_number
+                * (self.match_data.part_length if self.match_data else 0)
+            )
+            / 60
         )
         if left_over > 0:
             time_in_minutes = (

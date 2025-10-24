@@ -41,7 +41,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         self.is_paused = False
         self.match_is_paused_message = "match is paused"
         self.subscribed_channels: list[str] = []
-        self.player_group_class = PlayerGroupClass(self._season_request)
+        self.player_group_class = PlayerGroupClass(self.__season_request)  # type: ignore[arg-type]
 
     async def connect(self) -> None:
         """Connect the websocket consumer."""
@@ -167,9 +167,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 await self.part_end()
 
             case "get_time":
-                await self.send(
-                    text_data=await get_time(self.match_data, self.current_part),
-                )
+                if self.match_data and self.current_part:
+                    await self.send(
+                        text_data=await get_time(self.match_data, self.current_part),
+                    )
 
             case "last_event":
                 await self.send_last_event()
@@ -506,8 +507,9 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
                 self.is_paused = False
 
-            pause_message = await get_time(self.match_data, self.current_part)
-            pause_message = json.loads(pause_message)
+            if self.match_data and self.current_part:
+                pause_message = await get_time(self.match_data, self.current_part)
+                pause_message = json.loads(pause_message)
 
             for channel_name in [self.channel_names[2]]:
                 await self.channel_layer.group_send(
@@ -838,7 +840,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 pause.end_time = None
                 await pause.asave()
 
-            time_data = await get_time(self.match_data, self.current_part)
+            if self.match_data and self.current_part:
+                time_data = await get_time(self.match_data, self.current_part)
 
             await self.channel_layer.group_send(
                 self.channel_names[2],
@@ -1134,11 +1137,11 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 class PlayerGroupClass:
     """A class for the player groups."""
 
-    def __init__(self, _season_request: Callable[[], Season]) -> None:
+    def __init__(self, _season_request: Callable[[], Any] | None = None) -> None:  # type: ignore[arg-type]
         """Initialize the PlayerGroupClass."""
         self.team = None
         self.match_data = None
-        self.__season_request = _season_request
+        self.__season_request: Callable[[], Any] | None = _season_request  # type: ignore[assignment]
 
     async def player_group_request(self) -> str:
         """Get the player groups.
@@ -1295,8 +1298,13 @@ class PlayerGroupClass:
         Returns:
             A list of all players in the team.
 
+        Raises:
+            RuntimeError: If season_request is not initialized.
+
         """
-        season = await self.__season_request()
+        if self.__season_request is None:
+            raise RuntimeError("season_request not initialized")
+        season = await self.__season_request()  # type: ignore[misc]
         players_json = []
         players: list[Player] = await sync_to_async(list)(  # type: ignore[call-arg]
             TeamData.objects.prefetch_related("players")

@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BASE_DIR / "korfbal"
-load_dotenv(BASE_DIR / ".env")
+env_file = BASE_DIR / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
 
 
 def _env(name: str, default: str | None = None, *, required: bool = False) -> str:

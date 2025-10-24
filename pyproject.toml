@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "django",
-    "psycopg2-binary",
+    "psycopg[binary,pool]",
     "bg-django-mobile-detector",
     "django-ratelimit",
     "django-storages[boto3]",
