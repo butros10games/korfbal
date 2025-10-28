@@ -125,7 +125,7 @@ unlighthouse/
 .cache/
 
 # Rollhelper extension
-rollhelper-extension.zip
+rollhelper-chrome-extension.zip
 
 # Custom project-specific ignores
 mc_proxy_env/
