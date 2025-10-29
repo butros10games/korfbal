@@ -18,15 +18,15 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         timer_data: (data) => {
             console.log('timer data');
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = timer_data(data, currentTimer, `counter`);
+            timers[data.match_data_id] = timer_data(data, currentTimer, 'counter');
         },
         pause: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = pause(data, currentTimer, `counter`);
+            timers[data.match_data_id] = pause(data, currentTimer, 'counter');
         },
         part_end: (data) => {
             const currentTimer = timers[data.match_data_id];
-            timers[data.match_data_id] = part_end(data, currentTimer, `counter`);
+            timers[data.match_data_id] = part_end(data, currentTimer, 'counter');
         },
     };
 
