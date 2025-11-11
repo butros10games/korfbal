@@ -1,7 +1,7 @@
 """Consumers for the club app."""
 
 import json
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -79,15 +79,18 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         )
         teams = list(dict.fromkeys(teams))  # Remove duplicates
 
-        teams_json: list[TeamJSON] = [
-            {
-                "id": str(team.id_uuid),
-                "name": await sync_to_async(team.__str__)(),
-                "logo": team.club.get_club_logo(),
-                "get_absolute_url": str(team.get_absolute_url()),
-            }
-            for team in teams
-        ]
+        teams_json: list[TeamJSON] = cast(
+            list[TeamJSON],
+            [
+                {
+                    "id": str(team.id_uuid),
+                    "name": await sync_to_async(team.__str__)(),
+                    "logo": team.club.get_club_logo(),
+                    "get_absolute_url": str(team.get_absolute_url()),
+                }
+                for team in teams
+            ],
+        )
 
         await self.send(text_data=json.dumps({"command": "teams", "teams": teams_json}))
 

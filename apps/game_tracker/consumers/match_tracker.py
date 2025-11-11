@@ -281,14 +281,12 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
     async def get_goal_types(self) -> None:
         """Get the goal types."""
-        goal_type_list: list[GoalType] = await sync_to_async(list)(
-            GoalType.objects.all()
-        )  # type: ignore[call-arg]
+        goal_type_list = await sync_to_async(list)(GoalType.objects.all())  # type: ignore[call-arg]
 
         goal_type_list = [
             {"id": str(goal_type.id_uuid), "name": goal_type.name}
             for goal_type in goal_type_list
-        ]
+        ]  # type: ignore[assignment]
 
         await self.send(
             text_data=json.dumps(
@@ -320,7 +318,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         team = self.team if for_team else self.other_team
 
         player = await Player.objects.prefetch_related("user").aget(id_uuid=player_id)
-        goal_type_obj = await GoalType.objects.aget(id_uuid=goal_type_id)
+        goal_type_obj = await GoalType.objects.aget(id_uuid=goal_type_id)  # type: ignore[call-arg]
 
         await Shot.objects.acreate(
             player=await Player.objects.aget(id_uuid=player_id),
