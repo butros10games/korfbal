@@ -111,7 +111,7 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             await self.save_player_groups_request(json_data["playerGroups"])
 
         elif command == "get_stats":
-            data_type = json_data["data_type"]
+            data_type = json_data.get("data_type")
 
             if data_type == "general":
                 await self.get_stats_general_request()

@@ -69,7 +69,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/club/${team_id}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/club/${team_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),

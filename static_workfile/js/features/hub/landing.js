@@ -1,9 +1,9 @@
-import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
 import {
-    timer_data,
-    pause,
     part_end,
+    pause,
+    timer_data,
 } from '../../components/countdown_timer/countdownTimerActions.js';
+import { initializeSocket, onMessageReceived } from '../../utils/websockets/index.js';
 
 globalThis.addEventListener('DOMContentLoaded', () => {
     const timers = {};
@@ -30,7 +30,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         },
     };
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/${match_id}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/match/${match_id}/`;
     initializeSocket(WebSocketUrl, onMessageReceived(commandHandlers), (socket) => {
         console.log('WebSocket connection established, sending initial data...');
         socket.send(JSON.stringify({ command: 'get_time' }));

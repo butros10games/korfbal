@@ -5,17 +5,17 @@ import {
     updateStatistics,
 } from '../../components/carousel/index.js';
 import {
-    initializeSocket,
-    requestInitialData,
-    onMessageReceived,
-} from '../../utils/websockets/index.js';
+    part_end,
+    pause,
+    timer_data,
+} from '../../components/countdown_timer/countdownTimerActions.js';
 import { setupFollowButton } from '../../components/setup_follow_button/index.js';
 import { readUserId } from '../../utils/dom/index.js';
 import {
-    timer_data,
-    pause,
-    part_end,
-} from '../../components/countdown_timer/countdownTimerActions.js';
+    initializeSocket,
+    onMessageReceived,
+    requestInitialData,
+} from '../../utils/websockets/index.js';
 
 globalThis.addEventListener('DOMContentLoaded', () => {
     const timers = {};
@@ -70,7 +70,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/teams/${team_id}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/teams/${team_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),

@@ -4,13 +4,21 @@ export class PlayerGroupManager {
     constructor(
         matchId,
         teamId,
-        containerId = 'app-container',
+        containerOrId = 'app-container',
         access = false,
         groupIdToTypeId = {},
         typeIdToGroupId = {},
     ) {
         // The one place we actually query the DOM: store a reference to our root container.
-        this.container = document.getElementById(containerId);
+        if (typeof containerOrId === 'string') {
+            this.container = document.getElementById(containerOrId);
+        } else {
+            this.container = containerOrId;
+        }
+
+        if (!this.container) {
+            console.error('PlayerGroupManager: container is null', containerOrId);
+        }
 
         this.access = access;
         this.matchId = matchId;

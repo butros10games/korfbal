@@ -1,12 +1,12 @@
 import {
     setupCarousel,
-    updateStatistics,
     updateEvents,
+    updateStatistics,
 } from '../../components/carousel/index.js';
 import { CountdownTimer } from '../../components/countdown_timer/index.js';
-import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
-import { cleanDomCarousel, readUserId } from '../../utils/dom/index.js';
 import { PlayerGroupManager } from '../../components/player_group/index.js';
+import { cleanDomCarousel, readUserId } from '../../utils/dom/index.js';
+import { initializeSocket, requestInitialData } from '../../utils/websockets/index.js';
 
 globalThis.addEventListener('DOMContentLoaded', () => {
     const carousel = document.querySelector('.carousel');
@@ -27,7 +27,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
 
     console.log('Match ID:', match_id);
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/${match_id}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/match/${match_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         (event) => onMessageReceived(event, match_id, user_id, socket),
@@ -65,7 +66,7 @@ function onMessageReceived(event, match_id, user_id, socket) {
             const playerGroupManager = new PlayerGroupManager(
                 data.match_id,
                 data.team_id,
-                'info-container',
+                infoContainer,
                 access,
                 data.group_id_to_type_id,
                 data.type_id_to_group_id,

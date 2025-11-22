@@ -1,21 +1,21 @@
 import {
     setupCarousel,
-    updateMatches,
-    updateTeam,
-    updateSettings,
     updateGoalStats,
+    updateMatches,
+    updateSettings,
+    updateTeam,
 } from '../../components/carousel/index.js';
+import {
+    part_end,
+    pause,
+    timer_data,
+} from '../../components/countdown_timer/countdownTimerActions.js';
 import { setupProfilePicture } from '../../components/profile_picture/index.js';
 import {
     initializeSocket,
-    requestInitialData,
     onMessageReceived,
+    requestInitialData,
 } from '../../utils/websockets/index.js';
-import {
-    timer_data,
-    pause,
-    part_end,
-} from '../../components/countdown_timer/countdownTimerActions.js';
 
 import { initializeDetailPage } from '../../utils/common.js';
 
@@ -86,7 +86,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         console.log('No UUID found in the URL.');
     }
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/profile/${player_id}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/profile/${player_id}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),

@@ -11,4 +11,5 @@ urlpatterns = [
     path("previous/", views.previous_page, name="previous_page"),
     path("api/search/", views.search, name="api_search"),
     path("api/catalog/data", views.catalog_data, name="api_catalog_data"),
+    path("service-worker.js", views.service_worker, name="service_worker"),
 ]

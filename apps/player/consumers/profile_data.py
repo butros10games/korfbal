@@ -84,7 +84,7 @@ class ProfileDataConsumer(AsyncWebsocketConsumer):
             case "teams":
                 await self.teams_request()
 
-            case "upcoming_matches", "past_matches":
+            case "upcoming_matches" | "past_matches":
                 await self.matches_request(json_data.get("command"))
 
             case "get_time":

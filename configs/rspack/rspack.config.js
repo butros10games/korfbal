@@ -12,6 +12,7 @@ export default {
         teams_detail: './static_workfile/js/features/teams/teamDetail.js',
         mobile_view: './static_workfile/js/features/mobile/mobileView.js',
         service_worker: './static_workfile/js/features/pwa/serviceWorker.js',
+        sw: './static_workfile/js/features/pwa/worker.js',
         navbar: './static_workfile/js/features/navbar/navbar.js',
     },
     output: {

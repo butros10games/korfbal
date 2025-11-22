@@ -1,12 +1,7 @@
-self.addEventListener('fetch', (event) => {
-    // This is a minimal no-op service worker.
-});
-
 if ('serviceWorker' in navigator) {
     try {
-        const registration = await navigator.serviceWorker.register(
-            `https://static.${globalThis.location.hostname}/js/pwa/service-worker.js`,
-        );
+        const registration =
+            await navigator.serviceWorker.register('/service-worker.js');
         console.log(
             'ServiceWorker registration successful with scope: ',
             registration.scope,

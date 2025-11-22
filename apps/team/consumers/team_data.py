@@ -59,11 +59,11 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         command = json_data["command"]
 
         match command:
-            case "matches", "ended_matches":
+            case "matches" | "ended_matches":
                 await self.matches_request(json_data["command"])
 
             case "get_stats":
-                data_type = json_data["data_type"]
+                data_type = json_data.get("data_type")
 
                 if data_type == "general":
                     await self.team_stats_general_request()

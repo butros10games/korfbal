@@ -4,11 +4,19 @@ import { truncateMiddle } from '../../utils/index.js';
 export const updateStatistics = function (data, infoContainer, socket, user_id) {
     const stats = data.stats;
 
-    const statsContainer = document.createElement('div');
-    statsContainer.classList.add('stats-container');
+    let statsContainer = infoContainer.querySelector('.stats-container');
+    if (!statsContainer) {
+        statsContainer = document.createElement('div');
+        statsContainer.classList.add('stats-container');
+    }
 
     if (stats) {
-        createStatSelectorButtonsIfNeeded(infoContainer, socket, user_id);
+        createStatSelectorButtonsIfNeeded(
+            infoContainer,
+            socket,
+            user_id,
+            statsContainer,
+        );
 
         removeExistingDataField();
 
@@ -27,10 +35,17 @@ export const updateStatistics = function (data, infoContainer, socket, user_id) 
         statsContainer.appendChild(textElement);
     }
 
-    infoContainer.appendChild(statsContainer);
+    if (!statsContainer.parentElement) {
+        infoContainer.appendChild(statsContainer);
+    }
 };
 
-function createStatSelectorButtonsIfNeeded(infoContainer, socket, user_id) {
+function createStatSelectorButtonsIfNeeded(
+    infoContainer,
+    socket,
+    user_id,
+    statsContainer,
+) {
     if (!document.querySelector('.stat-selector-button')) {
         cleanDomCarousel(infoContainer);
 
@@ -51,7 +66,6 @@ function createStatSelectorButtonsIfNeeded(infoContainer, socket, user_id) {
             statSelectorButtonField.appendChild(button);
         }
 
-        const statsContainer = document.querySelector('.stats-container');
         statsContainer.appendChild(statSelectorButtonField);
     }
 }

@@ -41,7 +41,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         self.is_paused = False
         self.match_is_paused_message = "match is paused"
         self.subscribed_channels: list[str] = []
-        self.player_group_class = PlayerGroupClass(self.__season_request)  # type: ignore[arg-type]
+        self.player_group_class = PlayerGroupClass(self._season_request)  # type: ignore[arg-type]
 
     async def connect(self) -> None:
         """Connect the websocket consumer."""

@@ -70,7 +70,8 @@ globalThis.addEventListener('DOMContentLoaded', () => {
         error: (data) => errorProcessing(data),
     };
 
-    const WebSocketUrl = `wss://${globalThis.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
+    const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WebSocketUrl = `${protocol}//${globalThis.location.host}/ws/match/tracker/${firstUUID}/${secondUUID}/`;
     const socket = initializeSocket(
         WebSocketUrl,
         onMessageReceived(commandHandlers),
