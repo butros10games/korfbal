@@ -1,13 +1,13 @@
 ## ------------------------------- Dependency Stage ------------------------------ ##
-FROM python:3.13-trixie AS deps
+FROM python:3.13-slim-trixie AS deps
 
-RUN apt-get update && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install --no-install-recommends -y build-essential && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*
 
-ADD https://astral.sh/uv/install.sh /install.sh
-RUN chmod -R 655 /install.sh && /install.sh && rm /install.sh
-ENV PATH="/root/.local/bin:${PATH}"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /build/apps/django_projects/korfbal/deps
 
@@ -20,25 +20,48 @@ COPY libs/shared_python_packages/bg_uuidv7/ /build/libs/shared_python_packages/b
 
 ENV UV_PROJECT_ENVIRONMENT=/build/.venv
 
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-editable
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable --compile-bytecode
 
 ## ------------------------------- Builder Stage ------------------------------ ##
 FROM deps AS builder
 
+WORKDIR /build
+
+# Copy workspace config and libs for resolution
+COPY pyproject.toml .
+COPY libs/django_packages/bg_auth/ libs/django_packages/bg_auth/
+COPY libs/django_packages/bg_django_caching_paginator/ libs/django_packages/bg_django_caching_paginator/
+COPY libs/django_packages/bg_django_mobile_detector/ libs/django_packages/bg_django_mobile_detector/
+COPY libs/shared_python_packages/bg_uuidv7/ libs/shared_python_packages/bg_uuidv7/
+
+# Copy app source
+COPY apps/django_projects/korfbal/ apps/django_projects/korfbal/
+
+# Bring in the venv from deps
+COPY --from=deps /build/.venv /build/.venv
+
+# Install the app into the venv
+WORKDIR /build/apps/django_projects/korfbal
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /build/.venv --no-deps . --compile-bytecode
+
+# Optimize venv size
+RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
+    find /build/.venv -type d -name "tests" -exec rm -rf {} + && \
+    find /build/.venv -type d -name "test" -exec rm -rf {} + && \
+    find /build/.venv -type d -name "examples" -exec rm -rf {} + && \
+    find /build/.venv -name "__pycache__" -type d -exec rm -rf {} + && \
+    find /build/.venv -name "*.pyc" -delete && \
+    rm -rf /build/.venv/lib/python3.13/site-packages/pip \
+    /build/.venv/lib/python3.13/site-packages/setuptools \
+    /build/.venv/lib/python3.13/site-packages/wheel
+
+# Prepare final app directory
 WORKDIR /app
-
-COPY --from=deps /build/.venv .venv
-
-# Copy application sources after dependencies are cached
-COPY apps/django_projects/korfbal/pyproject.toml /app/pyproject.toml
-COPY apps/django_projects/korfbal/uv.lock /app/uv.lock
-COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
-COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
-RUN --mount=type=cache,target=/root/.cache/pip \
-    (.venv/bin/python -m ensurepip --upgrade || true) && \
-    .venv/bin/python -m pip install --upgrade pip hatchling && \
-    .venv/bin/python -m pip install --no-deps --no-build-isolation . && \
+RUN cp -r /build/.venv .venv && \
+    cp /build/apps/django_projects/korfbal/manage.py . && \
+    cp -r /build/apps/django_projects/korfbal/korfbal . && \
+    cp -r /build/apps/django_projects/korfbal/apps . && \
     find .venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
 ## ------------------------------- Webpack Stage ------------------------------ ##
@@ -47,7 +70,7 @@ FROM node:22-alpine AS rspack
 WORKDIR /app
 
 COPY apps/django_projects/korfbal/package.json apps/django_projects/korfbal/package-lock.json ./
-RUN npm install --ignore-scripts
+RUN npm ci --ignore-scripts
 
 COPY apps/django_projects/korfbal/configs/rspack/rspack.config.js ./configs/rspack/
 COPY apps/django_projects/korfbal/static_workfile/ ./static_workfile/
