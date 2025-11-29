@@ -78,7 +78,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get install --no-install-recommends -y \
-    libexpat1 libpq5 libxml2 && \
+    libexpat1 libjemalloc2 libpq5 libxml2 && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --gid "${APP_GID}" appuser && \
     useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser && \
@@ -90,14 +90,17 @@ COPY --from=builder --chmod=0555 /app/.venv .venv
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 
-COPY --chmod=0444 apps/django_projects/korfbal/configs/uwsgi/uwsgi.ini /app/
+COPY --chmod=0555 apps/django_projects/korfbal/configs/uwsgi/generic_entrypoint.sh /app/entrypoint.sh
 COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
 COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
 COPY --chmod=0555 apps/django_projects/korfbal/templates/ /app/templates/
 COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
 
+ENV GRANIAN_WORKERS=4
+
 USER appuser
 
 EXPOSE 1664
 
-CMD ["uwsgi", "--ini", "/app/uwsgi.ini"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["sh", "-c", "granian --interface wsgi --host 0.0.0.0 --port 1664 --workers $GRANIAN_WORKERS korfbal.wsgi:application"]

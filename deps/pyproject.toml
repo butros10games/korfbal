@@ -22,7 +22,7 @@ dependencies = [
 celery = ["django-celery-beat"]
 uwsgi = [
     "Pillow",
-    "pyuwsgi",
+    "granian",
     "bg-django-caching-paginator",
     "django-cryptography",
     "django-prometheus",
@@ -31,7 +31,7 @@ daphne = ["daphne", "channels", "channels-redis"]
 
 dev = [
     "Pillow",
-    "pyuwsgi; sys_platform == 'linux'",
+    "granian",
     "bg-django-caching-paginator",
     "django-cryptography",
     "django-prometheus",
