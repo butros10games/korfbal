@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -687,10 +687,12 @@ name = "korfbal-deps"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "asgiref" },
     { name = "bg-auth" },
     { name = "bg-django-mobile-detector" },
     { name = "bg-uuidv7" },
     { name = "celery" },
+    { name = "channels" },
     { name = "django" },
     { name = "django-crontab" },
     { name = "django-phonenumber-field", extra = ["phonenumbers"] },
@@ -731,10 +733,12 @@ uwsgi = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asgiref", specifier = ">=3.10.0,<3.11" },
     { name = "bg-auth", editable = "../../../../libs/django_packages/bg_auth" },
     { name = "bg-django-mobile-detector", editable = "../../../../libs/django_packages/bg_django_mobile_detector" },
     { name = "bg-uuidv7", editable = "../../../../libs/shared_python_packages/bg_uuidv7" },
     { name = "celery" },
+    { name = "channels" },
     { name = "django" },
     { name = "django-crontab" },
     { name = "django-phonenumber-field", extras = ["phonenumbers"] },

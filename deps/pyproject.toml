@@ -16,6 +16,8 @@ dependencies = [
     "valkey",
     "django-valkey",
     "celery",
+    "channels",
+    "asgiref>=3.10.0,<3.11",
 ]
 
 [dependency-groups]
