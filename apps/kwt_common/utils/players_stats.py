@@ -26,8 +26,9 @@ async def build_player_stats(
         list[PlayerStatRow]: List of player stats.
 
     """
-    player_rows: list[PlayerStatRow] = [
-        {
+    player_rows: list[PlayerStatRow] = []
+    for player in players:
+        row: PlayerStatRow = {
             "username": player.user.username,
             "shots_for": await Shot.objects.filter(
                 match_data__in=match_dataset,
@@ -52,8 +53,7 @@ async def build_player_stats(
                 scored=True,
             ).acount(),
         }
-        for player in players
-    ]
+        player_rows.append(row)
 
     player_rows_sorted = sorted(
         player_rows,
