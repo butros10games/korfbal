@@ -4,6 +4,7 @@ from datetime import timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -16,6 +17,7 @@ from apps.team.models.team_data import TeamData
 
 
 @pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
 def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
     client: Client,
 ) -> None:

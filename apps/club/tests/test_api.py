@@ -3,6 +3,7 @@
 from datetime import timedelta
 from http import HTTPStatus
 
+from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -14,6 +15,7 @@ from apps.team.models import Team, TeamData
 
 
 @pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
 def test_club_overview_returns_team_and_match_payload(client: Client) -> None:
     """The overview endpoint should include teams plus upcoming and recent matches."""
     season = Season.objects.create(
@@ -68,6 +70,7 @@ def test_club_overview_returns_team_and_match_payload(client: Client) -> None:
 
 
 @pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
 def test_club_overview_can_filter_by_season(client: Client) -> None:
     """Explicit season query should scope teams and matches."""
     today = timezone.now().date()
