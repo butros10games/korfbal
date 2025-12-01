@@ -39,7 +39,7 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
 
     user = get_user_model().objects.create_user(
         username="player",
-        password="pass1234",  # noqa: S106
+        password="pass1234",  # noqa: S106  # nosec
     )
     player = user.player
 
