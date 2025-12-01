@@ -63,18 +63,15 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
         start_time=timezone.now() - timedelta(days=5),
     )
 
-    MatchData.objects.create(
-        match_link=future_match,
-        status="upcoming",
-        home_score=0,
-        away_score=0,
-    )
-    MatchData.objects.create(
-        match_link=past_match,
-        status="finished",
-        home_score=21,
-        away_score=18,
-    )
+    future_match_data = MatchData.objects.get(match_link=future_match)
+    future_match_data.status = "upcoming"
+    future_match_data.save(update_fields=["status"])
+
+    past_match_data = MatchData.objects.get(match_link=past_match)
+    past_match_data.status = "finished"
+    past_match_data.home_score = 21
+    past_match_data.away_score = 18
+    past_match_data.save(update_fields=["status", "home_score", "away_score"])
 
     legacy_match = Match.objects.create(
         home_team=team,
@@ -82,12 +79,11 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
         season=previous_season,
         start_time=timezone.now() - timedelta(days=200),
     )
-    MatchData.objects.create(
-        match_link=legacy_match,
-        status="finished",
-        home_score=18,
-        away_score=16,
-    )
+    legacy_match_data = MatchData.objects.get(match_link=legacy_match)
+    legacy_match_data.status = "finished"
+    legacy_match_data.home_score = 18
+    legacy_match_data.away_score = 16
+    legacy_match_data.save(update_fields=["status", "home_score", "away_score"])
 
     response = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
 
