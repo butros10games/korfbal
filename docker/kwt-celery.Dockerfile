@@ -48,7 +48,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Optimize venv size
 RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
     find /build/.venv -type d -name "tests" -exec rm -rf {} + && \
-    find /build/.venv -type d -name "test" -exec rm -rf {} + && \
     find /build/.venv -type d -name "examples" -exec rm -rf {} + && \
     find /build/.venv -name "__pycache__" -type d -exec rm -rf {} + && \
     find /build/.venv -name "*.pyc" -delete && \

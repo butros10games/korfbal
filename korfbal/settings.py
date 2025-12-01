@@ -47,13 +47,24 @@ SECRET_KEY = _env("SECRET_KEY", "change-me" if DEBUG else None, required=not DEB
 
 default_hosts = "korfbal.butrosgroot.com"
 ALLOWED_HOSTS = _sorted_hosts(_env_list("ALLOWED_HOSTS", default_hosts))
-if DEBUG:
-    ALLOWED_HOSTS = _sorted_hosts([*ALLOWED_HOSTS, "localhost", "127.0.0.1"])
-
 CSRF_TRUSTED_ORIGINS = _env_list(
     "CSRF_TRUSTED_ORIGINS",
     "https://korfbal.butrosgroot.com",
 )
+if DEBUG:
+    ALLOWED_HOSTS = _sorted_hosts([
+        *ALLOWED_HOSTS,
+        "localhost",
+        "127.0.0.1",
+        "kwt.localhost",
+        "web.kwt.localhost",
+        "bg.localhost",
+    ])
+    CSRF_TRUSTED_ORIGINS = sorted({
+        *CSRF_TRUSTED_ORIGINS,
+        "https://kwt.localhost",
+        "https://web.kwt.localhost",
+    })
 SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 SECURE_HSTS_SECONDS = _env_int("SECURE_HSTS_SECONDS", 31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool(
@@ -86,6 +97,9 @@ INSTALLED_APPS = [
     "apps.game_tracker",
     "apps.kwt_common",
     "bg_auth.apps.AuthenticationConfig",
+    "rest_framework",
+    "corsheaders",
+    "drf_spectacular",
 ]
 
 if RUNNER == "uwsgi":
@@ -95,6 +109,7 @@ if RUNNER == "uwsgi":
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -339,3 +354,30 @@ BG_AUTH_SUPPORT_EMAIL: str = "butrosgroot@gmail.com"
 BG_AUTH_EMAIL_CODE_VALIDITY_SECONDS: int = 15 * 60
 BG_AUTH_RESEND_CONFIRMATION_MAX_AGE: int = 24 * 60 * 60
 LOGIN_REDIRECT_URL = "index"
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Korfbal API",
+    "DESCRIPTION": "API for Korfbal application",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
+
+CORS_ALLOWED_ORIGINS = sorted({
+    "http://localhost:5173",  # React (Vite)
+    "http://localhost:8081",  # React Native
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8081",
+    "https://kwt.localhost",
+    "https://web.kwt.localhost",
+})
+CORS_ALLOW_CREDENTIALS = True

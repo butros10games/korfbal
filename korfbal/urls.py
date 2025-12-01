@@ -13,6 +13,7 @@ urlpatterns = [
     path("teams/", include("apps.team.urls")),
     path("", include("apps.hub.urls")),
     path("", include("bg_auth.urls")),
+    path("api/", include("korfbal.api_urls")),
 ]
 
 if getattr(settings, "RUNNER", "") == "uwsgi":

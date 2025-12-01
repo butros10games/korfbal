@@ -16,6 +16,9 @@ dependencies = [
     "valkey",
     "django-valkey",
     "celery",
+    "djangorestframework",
+    "django-cors-headers",
+    "drf-spectacular",
 ]
 
 pytest_plugins = ["configs.pytest_plugins.django_projects"]

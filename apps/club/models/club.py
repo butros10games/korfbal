@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
+
+
+if TYPE_CHECKING:
+    from apps.team.models.team import Team
 
 
 class Club(models.Model):
@@ -28,6 +32,9 @@ class Club(models.Model):
         blank=True,
         null=True,
     )
+
+    if TYPE_CHECKING:
+        teams: models.QuerySet[Team]
 
     def __str__(self) -> str:
         """Return the name of the club.

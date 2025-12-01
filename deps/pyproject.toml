@@ -18,6 +18,9 @@ dependencies = [
     "celery",
     "channels",
     "asgiref>=3.10.0,<3.11",
+    "djangorestframework",
+    "django-cors-headers",
+    "drf-spectacular",
 ]
 
 [dependency-groups]

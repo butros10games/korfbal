@@ -1,0 +1,1 @@
+"""Club API package."""

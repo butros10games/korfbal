@@ -2,25 +2,32 @@
 
 import json
 import operator
-from typing import Any
+from typing import Any, TypedDict
 
 from apps.game_tracker.models import Shot
 
 
-async def players_stats(players: list[Any], match_dataset: list[Any]) -> str:
-    """Return statistics of players in a match.
+class PlayerStatRow(TypedDict):
+    """Structured representation of player statistics."""
 
-    Args:
-        players (list): A list of player objects whose statistics are to be calculated.
-        match_dataset (list): A list of match data elements to filter statistics.
+    username: str
+    shots_for: int
+    shots_against: int
+    goals_for: int
+    goals_against: int
+
+
+async def build_player_stats(
+    players: list[Any], match_dataset: list[Any]
+) -> list[PlayerStatRow]:
+    """Compute the raw player statistics for a collection of matches.
 
     Returns:
-        str: A JSON string containing statistics of players in the match.
+        list[PlayerStatRow]: List of player stats.
 
     """
-    players_stats = []
-    for player in players:
-        player_stats = {
+    player_rows: list[PlayerStatRow] = [
+        {
             "username": player.user.username,
             "shots_for": await Shot.objects.filter(
                 match_data__in=match_dataset,
@@ -45,23 +52,32 @@ async def players_stats(players: list[Any], match_dataset: list[Any]) -> str:
                 scored=True,
             ).acount(),
         }
-
-        players_stats.append(player_stats)
-    # sort the `player_stats` so the player with the most goals for is on top
-    players_stats = sorted(
-        players_stats, key=operator.itemgetter("goals_for"), reverse=True
-    )
-
-    # remove all the players with no shots for or against
-    players_stats = [
-        player
-        for player in players_stats
-        if (player["shots_for"] > 0 or player["shots_against"] > 0)
+        for player in players
     ]
 
+    player_rows_sorted = sorted(
+        player_rows,
+        key=operator.itemgetter("goals_for"),
+        reverse=True,
+    )
+    return [
+        row
+        for row in player_rows_sorted
+        if row["shots_for"] > 0 or row["shots_against"] > 0
+    ]
+
+
+async def players_stats(players: list[Any], match_dataset: list[Any]) -> str:
+    """Return statistics of players in a match as websocket-friendly JSON.
+
+    Returns:
+        str: JSON string of player stats.
+
+    """
+    player_rows = await build_player_stats(players, match_dataset)
     return json.dumps(
         {
             "command": "stats",
-            "data": {"type": "player_stats", "stats": {"player_stats": players_stats}},
+            "data": {"type": "player_stats", "stats": {"player_stats": player_rows}},
         },
     )
