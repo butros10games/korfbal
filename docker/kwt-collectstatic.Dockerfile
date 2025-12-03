@@ -1,4 +1,5 @@
 ## ------------------------------- Dependency Stage ------------------------------ ##
+# This stage only installs third-party deps. Libs code changes won't invalidate this cache.
 FROM python:3.13-slim-trixie AS deps
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -11,57 +12,52 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /build/apps/django_projects/korfbal/deps
 
+# Copy ONLY lock files first (changes less frequently than code)
 COPY apps/django_projects/korfbal/deps/pyproject.toml ./pyproject.toml
 COPY apps/django_projects/korfbal/deps/uv.lock ./uv.lock
-COPY libs/django_packages/bg_auth/ /build/libs/django_packages/bg_auth/
-COPY libs/django_packages/bg_django_caching_paginator/ /build/libs/django_packages/bg_django_caching_paginator/
-COPY libs/django_packages/bg_django_mobile_detector/ /build/libs/django_packages/bg_django_mobile_detector/
-COPY libs/shared_python_packages/bg_uuidv7/ /build/libs/shared_python_packages/bg_uuidv7/
+
+# Copy ONLY build-required files from libs (pyproject.toml, src/, LICENSE, README where needed)
+COPY libs/django_packages/bg_auth/pyproject.toml libs/django_packages/bg_auth/LICENSE libs/django_packages/bg_auth/README.md /build/libs/django_packages/bg_auth/
+COPY libs/django_packages/bg_auth/src/ /build/libs/django_packages/bg_auth/src/
+COPY libs/django_packages/bg_django_caching_paginator/pyproject.toml libs/django_packages/bg_django_caching_paginator/LICENSE libs/django_packages/bg_django_caching_paginator/README.md /build/libs/django_packages/bg_django_caching_paginator/
+COPY libs/django_packages/bg_django_caching_paginator/src/ /build/libs/django_packages/bg_django_caching_paginator/src/
+COPY libs/django_packages/bg_django_mobile_detector/pyproject.toml /build/libs/django_packages/bg_django_mobile_detector/
+COPY libs/django_packages/bg_django_mobile_detector/src/ /build/libs/django_packages/bg_django_mobile_detector/src/
+COPY libs/shared_python_packages/bg_uuidv7/pyproject.toml libs/shared_python_packages/bg_uuidv7/LICENSE libs/shared_python_packages/bg_uuidv7/README.md /build/libs/shared_python_packages/bg_uuidv7/
+COPY libs/shared_python_packages/bg_uuidv7/src/ /build/libs/shared_python_packages/bg_uuidv7/src/
 
 ENV UV_PROJECT_ENVIRONMENT=/build/.venv
+ENV UV_LINK_MODE=copy
 
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable --compile-bytecode
 
-## ------------------------------- Builder Stage ------------------------------ ##
-FROM deps AS builder
+## ------------------------------- Venv Optimizer Stage ------------------------------ ##
+# Separate stage so app source changes don't re-run optimization
+FROM deps AS venv-optimizer
 
-WORKDIR /build
-
-# Copy workspace config and libs for resolution
-COPY pyproject.toml .
-COPY libs/django_packages/bg_auth/ libs/django_packages/bg_auth/
-COPY libs/django_packages/bg_django_caching_paginator/ libs/django_packages/bg_django_caching_paginator/
-COPY libs/django_packages/bg_django_mobile_detector/ libs/django_packages/bg_django_mobile_detector/
-COPY libs/shared_python_packages/bg_uuidv7/ libs/shared_python_packages/bg_uuidv7/
-
-# Copy app source
-COPY apps/django_projects/korfbal/ apps/django_projects/korfbal/
-
-# Bring in the venv from deps
-COPY --from=deps /build/.venv /build/.venv
-
-# Install the app into the venv
-WORKDIR /build/apps/django_projects/korfbal
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /build/.venv --no-deps . --compile-bytecode
-
-# Optimize venv size
 RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
-    find /build/.venv -type d -name "tests" -exec rm -rf {} + && \
-    find /build/.venv -type d -name "examples" -exec rm -rf {} + && \
-    find /build/.venv -name "__pycache__" -type d -exec rm -rf {} + && \
-    find /build/.venv -name "*.pyc" -delete && \
+    find /build/.venv -type d -name "tests" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /build/.venv -type d -name "test" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /build/.venv -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
+    find /build/.venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /build/.venv -name "*.pyc" -delete 2>/dev/null || true && \
     rm -rf /build/.venv/lib/python3.13/site-packages/pip \
     /build/.venv/lib/python3.13/site-packages/setuptools \
-    /build/.venv/lib/python3.13/site-packages/wheel
+    /build/.venv/lib/python3.13/site-packages/wheel && \
+    find /build/.venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
-# Prepare final app directory
+## ------------------------------- Builder Stage ------------------------------ ##
+FROM venv-optimizer AS builder
+
 WORKDIR /app
-RUN cp -r /build/.venv .venv && \
-    cp /build/apps/django_projects/korfbal/manage.py . && \
-    cp -r /build/apps/django_projects/korfbal/korfbal . && \
-    cp -r /build/apps/django_projects/korfbal/apps . && \
-    find .venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
+
+# Copy venv to final location
+RUN cp -r /build/.venv .venv
+
+# Copy app source (this layer changes most often - keep it late)
+COPY apps/django_projects/korfbal/manage.py /app/
+COPY apps/django_projects/korfbal/korfbal/ /app/korfbal/
+COPY apps/django_projects/korfbal/apps/ /app/apps/
 
 ## ------------------------------- Webpack Stage ------------------------------ ##
 FROM node:22-alpine AS rspack
