@@ -1,0 +1,79 @@
+{
+    "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+    "name": "korfbal-django",
+    "projectType": "application",
+    "root": "apps/django_projects/korfbal",
+    "sourceRoot": "apps/django_projects/korfbal",
+    "targets": {
+        "lint": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run ruff apps/django_projects/korfbal"
+            }
+        },
+        "typecheck": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run pyright apps/django_projects/korfbal"
+            }
+        },
+        "test": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run pytest -n auto --dist loadgroup apps/django_projects/korfbal"
+            }
+        },
+        "build": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run python -m compileall apps/django_projects/korfbal"
+            }
+        },
+        "format": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run ruff format apps/django_projects/korfbal"
+            }
+        },
+        "docker-uwsgi": {
+            "executor": "nx:run-commands",
+            "cache": false,
+            "options": {
+                "command": "docker build -t kwt-uwsgi:latest -f apps/django_projects/korfbal/docker/kwt-uwsgi.Dockerfile apps/django_projects/korfbal"
+            }
+        },
+        "docker-daphne": {
+            "executor": "nx:run-commands",
+            "cache": false,
+            "options": {
+                "command": "docker build -t kwt-daphne:latest -f apps/django_projects/korfbal/docker/kwt-daphne.Dockerfile apps/django_projects/korfbal"
+            }
+        },
+        "docker-collectstatic": {
+            "executor": "nx:run-commands",
+            "cache": false,
+            "options": {
+                "command": "docker build -t kwt-collectstatic:latest -f apps/django_projects/korfbal/docker/kwt-collectstatic.Dockerfile apps/django_projects/korfbal"
+            }
+        },
+        "docker-celery": {
+            "executor": "nx:run-commands",
+            "cache": false,
+            "options": {
+                "command": "docker build -t kwt-celery:latest -f apps/django_projects/korfbal/docker/kwt-celery.Dockerfile apps/django_projects/korfbal"
+            }
+        }
+    },
+    "tags": ["python", "django"],
+    "implicitDependencies": [
+        "bg-auth",
+        "bg-django-caching-paginator",
+        "bg-django-mobile-detector",
+        "bg-uuidv7"
+    ]
+}
