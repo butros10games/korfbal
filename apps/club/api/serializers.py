@@ -19,7 +19,7 @@ class ClubSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = ["id_uuid", "name", "logo", "logo_url"]
         read_only_fields: ClassVar[list[str]] = ["id_uuid"]
 
-    def get_logo_url(self, obj: Club) -> str | None:  # noqa: PLR6301
+    def get_logo_url(self, obj: Club) -> str | None:
         """Return the URL of the club logo.
 
         Returns:

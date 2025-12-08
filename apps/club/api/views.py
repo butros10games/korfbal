@@ -96,7 +96,7 @@ class ClubViewSet(viewsets.ModelViewSet):
         }
         return Response(payload)
 
-    def _club_teams_queryset(self, club: Club, season: Season | None) -> QuerySet[Team]:  # noqa: PLR6301
+    def _club_teams_queryset(self, club: Club, season: Season | None) -> QuerySet[Team]:
         queryset = club.teams.select_related("club").order_by("name")
         if season:
             queryset = queryset.filter(
@@ -106,7 +106,7 @@ class ClubViewSet(viewsets.ModelViewSet):
             ).distinct()
         return queryset
 
-    def _club_match_queryset(  # noqa: PLR6301
+    def _club_match_queryset(
         self, club: Club, season: Season | None
     ) -> QuerySet[MatchData]:
         queryset = MatchData.objects.select_related(
@@ -137,14 +137,14 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         return seasons[0]
 
-    def _current_season(self) -> Season | None:  # noqa: PLR6301
+    def _current_season(self) -> Season | None:
         today = timezone.now().date()
         return Season.objects.filter(
             start_date__lte=today,
             end_date__gte=today,
         ).first()
 
-    def _club_seasons_queryset(self, club: Club) -> QuerySet[Season]:  # noqa: PLR6301
+    def _club_seasons_queryset(self, club: Club) -> QuerySet[Season]:
         return (
             Season.objects.filter(
                 Q(team_data__team__club=club)

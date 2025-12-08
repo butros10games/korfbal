@@ -72,7 +72,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             else None
         )
 
-        roster_players = list(self._team_players_queryset(team, season))
+        roster_players = list(self._team_players_queryset(team, season, match_data_qs))
         roster = [
             {
                 "id_uuid": str(player.id_uuid),
@@ -124,7 +124,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         }
         return Response(payload)
 
-    def _team_match_queryset(  # noqa: PLR6301
+    def _team_match_queryset(
         self, team: Team, season: Season | None
     ) -> QuerySet[MatchData]:
         queryset = MatchData.objects.select_related(
@@ -148,28 +148,34 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         return self._current_season() or self._most_recent_season()
 
-    def _current_season(self) -> Season | None:  # noqa: PLR6301
+    def _current_season(self) -> Season | None:
         today = timezone.now().date()
         return Season.objects.filter(
             start_date__lte=today,
             end_date__gte=today,
         ).first()
 
-    def _most_recent_season(self) -> Season | None:  # noqa: PLR6301
+    def _most_recent_season(self) -> Season | None:
         today = timezone.now().date()
         return Season.objects.filter(end_date__lte=today).order_by("-end_date").first()
 
-    def _team_players_queryset(  # noqa: PLR6301
-        self, team: Team, season: Season | None
+    def _team_players_queryset(
+        self, team: Team, season: Season | None, match_data_qs: QuerySet[MatchData]
     ) -> QuerySet[Player]:
         queryset = Player.objects.select_related("user").filter(
-            team_data_as_player__team=team,
+            Q(team_data_as_player__team=team)
+            | Q(match_players__team=team, match_players__match_data__in=match_data_qs)
         )
+
         if season:
-            queryset = queryset.filter(team_data_as_player__season=season)
+            queryset = queryset.filter(
+                Q(team_data_as_player__season=season)
+                | Q(match_players__match_data__match_link__season=season)
+            )
+
         return queryset.distinct().order_by("user__username")
 
-    def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:  # noqa: PLR6301
+    def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:
         return (
             Season.objects.filter(
                 Q(team_data__team=team)

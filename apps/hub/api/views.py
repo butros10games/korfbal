@@ -23,7 +23,7 @@ class UpdateFeedView(APIView):
         permissions.AllowAny,
     ]
 
-    def get(  # noqa: PLR6301
+    def get(
         self,
         request: HttpRequest,
         *args: Any,  # noqa: ANN401

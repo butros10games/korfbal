@@ -10,7 +10,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import MatchData, Shot
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
@@ -18,7 +18,7 @@ from apps.team.models.team_data import TeamData
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
+def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     client: Client,
 ) -> None:
     """Ensure the overview endpoint returns aggregated data for the new frontend."""
@@ -99,6 +99,30 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0914
     assert payload["meta"]["season_name"] == season.name
     assert len(payload["seasons"]) == 2  # noqa: PLR2004
     assert any(option["is_current"] for option in payload["seasons"])
+
+    # Guest players who scored should appear in stats and roster
+    guest_user = get_user_model().objects.create_user(
+        username="guest_player",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    guest_player = guest_user.player
+    past_match_data.players.create(player=guest_player, team=team)
+    Shot.objects.create(
+        match_data=past_match_data,
+        player=guest_player,
+        team=team,
+        for_team=True,
+        scored=True,
+    )
+
+    response_with_guest = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
+    assert response_with_guest.status_code == HTTPStatus.OK
+    stats_payload = response_with_guest.json()["stats"]["players"]
+    assert any(line["username"] == guest_player.user.username for line in stats_payload)
+    roster_payload = response_with_guest.json()["roster"]
+    assert any(
+        line["username"] == guest_player.user.username for line in roster_payload
+    )
 
     legacy_response = client.get(
         f"/api/team/teams/{team.id_uuid}/overview/",

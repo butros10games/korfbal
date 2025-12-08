@@ -34,7 +34,7 @@ class MatchSerializer(serializers.ModelSerializer):
         ]
         read_only_fields: ClassVar[list[str]] = fields
 
-    def get_location(self, obj: Match) -> str:  # noqa: PLR6301
+    def get_location(self, obj: Match) -> str:
         """Return a friendly location for the match.
 
         Returns:
@@ -43,7 +43,7 @@ class MatchSerializer(serializers.ModelSerializer):
         """
         return obj.home_team.club.name
 
-    def get_competition(self, obj: Match) -> str:  # noqa: PLR6301
+    def get_competition(self, obj: Match) -> str:
         """Return the competition/season label.
 
         Returns:
@@ -52,7 +52,7 @@ class MatchSerializer(serializers.ModelSerializer):
         """
         return obj.season.name
 
-    def get_broadcast_url(self, obj: Match) -> str | None:  # noqa: PLR6301
+    def get_broadcast_url(self, obj: Match) -> str | None:
         """Expose a placeholder for future livestream links.
 
         Returns:

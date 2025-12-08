@@ -48,7 +48,7 @@ class PlayerSerializer(serializers.ModelSerializer):
         ]
         read_only_fields: ClassVar[list[str]] = ["id_uuid", "user"]
 
-    def get_profile_picture_url(self, obj: Player) -> str:  # noqa: PLR6301
+    def get_profile_picture_url(self, obj: Player) -> str:
         """Return the profile picture URL.
 
         Args:
