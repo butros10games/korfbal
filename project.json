@@ -30,6 +30,11 @@
             "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run pytest -n auto --dist loadgroup apps/django_projects/korfbal"
+            },
+            "configurations": {
+                "ci": {
+                    "command": "PYTHONPATH=.:${PYTHONPATH} PYTEST_ADDOPTS=\"${PYTEST_ADDOPTS} --cov-report=xml:reports/coverage/coverage-korfbal.xml\" uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -n auto --dist loadgroup apps/django_projects/korfbal"
+                }
             }
         },
         "build": {
