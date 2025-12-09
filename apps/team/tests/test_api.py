@@ -115,13 +115,33 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
         scored=True,
     )
 
+    # Players that only show up in shot data should still appear in roster/stats
+    shot_only_user = get_user_model().objects.create_user(
+        username="shot_only_player",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    shot_only_player = shot_only_user.player
+    Shot.objects.create(
+        match_data=past_match_data,
+        player=shot_only_player,
+        team=team,
+        for_team=False,
+        scored=False,
+    )
+
     response_with_guest = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
     assert response_with_guest.status_code == HTTPStatus.OK
     stats_payload = response_with_guest.json()["stats"]["players"]
     assert any(line["username"] == guest_player.user.username for line in stats_payload)
+    assert any(
+        line["username"] == shot_only_player.user.username for line in stats_payload
+    )
     roster_payload = response_with_guest.json()["roster"]
     assert any(
         line["username"] == guest_player.user.username for line in roster_payload
+    )
+    assert any(
+        line["username"] == shot_only_player.user.username for line in roster_payload
     )
 
     legacy_response = client.get(

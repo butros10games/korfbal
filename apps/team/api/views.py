@@ -164,13 +164,18 @@ class TeamViewSet(viewsets.ModelViewSet):
     ) -> QuerySet[Player]:
         queryset = Player.objects.select_related("user").filter(
             Q(team_data_as_player__team=team)
-            | Q(match_players__team=team, match_players__match_data__in=match_data_qs)
+            | Q(
+                match_players__team=team,
+                match_players__match_data__in=match_data_qs,
+            )
+            | Q(shots__team=team, shots__match_data__in=match_data_qs)
         )
 
         if season:
             queryset = queryset.filter(
                 Q(team_data_as_player__season=season)
                 | Q(match_players__match_data__match_link__season=season)
+                | Q(shots__match_data__match_link__season=season)
             )
 
         return queryset.distinct().order_by("user__username")

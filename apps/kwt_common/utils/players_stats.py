@@ -55,16 +55,11 @@ async def build_player_stats(
         }
         player_rows.append(row)
 
-    player_rows_sorted = sorted(
+    return sorted(
         player_rows,
         key=operator.itemgetter("goals_for"),
         reverse=True,
     )
-    return [
-        row
-        for row in player_rows_sorted
-        if row["shots_for"] > 0 or row["shots_against"] > 0
-    ]
 
 
 async def players_stats(players: list[Any], match_dataset: list[Any]) -> str:
