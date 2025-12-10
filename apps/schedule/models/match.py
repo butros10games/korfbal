@@ -9,6 +9,8 @@ from bg_uuidv7 import uuidv7
 from django.db import models
 from django.urls import reverse
 
+from apps.game_tracker.models import MatchData, Shot
+
 from .constants import team_model_string
 
 
@@ -64,3 +66,28 @@ class Match(models.Model):
 
         """
         return reverse("match_detail", kwargs={"match_id": self.id_uuid})
+
+    def get_final_score(self) -> tuple[int, int]:
+        """Compute the final score based on recorded shots.
+
+        Relies on `game_tracker.Shot` records tied to this match's `MatchData`
+        entries instead of any denormalized score fragments on `MatchData`.
+
+        Returns:
+            tuple[int, int]: (home_score, away_score)
+
+        """
+        match_data_ids = list(
+            MatchData.objects.filter(match_link=self).values_list("id_uuid", flat=True)
+        )
+        if not match_data_ids:
+            return (0, 0)
+
+        home_score = Shot.objects.filter(
+            match_data_id__in=match_data_ids, team=self.home_team, scored=True
+        ).count()
+        away_score = Shot.objects.filter(
+            match_data_id__in=match_data_ids, team=self.away_team, scored=True
+        ).count()
+
+        return (home_score, away_score)

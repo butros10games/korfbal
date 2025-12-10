@@ -27,6 +27,8 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
         home_team = match.home_team
         away_team = match.away_team
 
+        home_score, away_score = match.get_final_score()
+
         summaries.append({
             "id_uuid": str(match.id_uuid),
             "match_data_id": str(entry.id_uuid),
@@ -36,8 +38,8 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
             "location": home_team.club.name,
             "match_url": match.get_absolute_url(),
             "score": {
-                "home": entry.home_score,
-                "away": entry.away_score,
+                "home": home_score,
+                "away": away_score,
             },
             "home": {
                 "name": home_team.name,
