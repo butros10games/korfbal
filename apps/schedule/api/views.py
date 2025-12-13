@@ -195,6 +195,51 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["GET"], url_path="finished")  # type: ignore[arg-type]
+    def finished(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return the latest finished matches as match summaries.
+
+        This endpoint is designed for public/anonymous UIs (Home page, etc.)
+        that want to show the latest results with scores.
+
+        Query params:
+            limit: Maximum number of matches to return (default: 3).
+
+        Returns:
+            Response: List of match summary dictionaries.
+
+        """
+        limit_param = request.query_params.get("limit")
+        try:
+            limit = int(limit_param) if limit_param else 3
+        except ValueError:
+            limit = 3
+
+        limit = max(limit, 1)
+
+        # Respect the same filtering as other match list endpoints:
+        # team/club/season + optional "followed" scope.
+        matches = self.get_queryset().filter(start_time__lte=timezone.now())
+
+        match_data_queryset = (
+            MatchData.objects.select_related(
+                "match_link",
+                "match_link__home_team__club",
+                "match_link__away_team__club",
+                "match_link__season",
+            )
+            .filter(match_link__in=matches, status="finished")
+            .order_by("-match_link__start_time")[:limit]
+        )
+
+        summaries = build_match_summaries(list(match_data_queryset))
+        return Response(summaries)
+
     @action(
         detail=True,
         methods=("GET",),
