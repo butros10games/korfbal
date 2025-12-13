@@ -15,7 +15,7 @@
             "executor": "nx:run-commands",
             "inputs": ["python", "sharedGlobals"],
             "options": {
-                "command": "uv run ruff apps/django_projects/korfbal"
+                "command": "uv run ruff check apps/django_projects/korfbal"
             }
         },
         "typecheck": {

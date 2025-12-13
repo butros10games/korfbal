@@ -223,10 +223,28 @@ def player_designation(request: HttpRequest) -> JsonResponse:
     if new_group_id:
         player_group_model = PlayerGroup.objects.get(id_uuid=new_group_id)
 
-        if (
-            player_group_model.starting_type.name == "Reserve"
-            and len(selected_players) > MAX_RESERVE_PLAYERS
-        ) or len(selected_players) > MAX_STARTING_PLAYERS:
+        is_reserve_group = player_group_model.starting_type.name == "Reserve"
+        max_group_players = (
+            MAX_RESERVE_PLAYERS if is_reserve_group else MAX_STARTING_PLAYERS
+        )
+
+        selected_ids = {
+            player_data.get("id_uuid")
+            for player_data in selected_players
+            if player_data.get("id_uuid")
+        }
+
+        already_in_target_group = set(
+            player_group_model.players.filter(id_uuid__in=selected_ids).values_list(
+                "id_uuid",
+                flat=True,
+            ),
+        )
+
+        players_to_add_count = len(selected_ids - already_in_target_group)
+        final_group_size = player_group_model.players.count() + players_to_add_count
+
+        if final_group_size > max_group_players:
             return to_many_players
 
     for player_data in selected_players:

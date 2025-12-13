@@ -23,10 +23,14 @@ class PlayerChange(models.Model):
         player_model_string,
         on_delete=models.CASCADE,
         related_name="player_changes",
+        blank=True,
+        null=True,
     )
     player_out: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
+        blank=True,
+        null=True,
     )
     player_group: models.ForeignKey[Any, Any] = models.ForeignKey(
         "PlayerGroup",
@@ -60,4 +64,9 @@ class PlayerChange(models.Model):
             str: A string representation of the player change.
 
         """
-        return f"PlayerChange {self.id_uuid} - {self.player_in} - {self.player_out} - {self.match_data} - {self.match_part}"  # noqa: E501
+        player_in = str(self.player_in) if self.player_in else "—"
+        player_out = str(self.player_out) if self.player_out else "—"
+        return (
+            f"PlayerChange {self.id_uuid} - {player_in} - {player_out} - "
+            f"{self.match_data} - {self.match_part}"
+        )

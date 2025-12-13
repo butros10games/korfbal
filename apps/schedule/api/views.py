@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 
 from django.conf import settings
 from django.db.models import Count, Q, QuerySet
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
@@ -22,6 +23,12 @@ from apps.game_tracker.models import (
     PlayerChange,
     Shot,
     Timeout,
+)
+from apps.game_tracker.services.tracker_http import (
+    TrackerCommandError,
+    apply_tracker_command,
+    get_tracker_state,
+    poll_tracker_state,
 )
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
@@ -41,7 +48,7 @@ from .serializers import (
 MATCH_TRACKER_DATA_NOT_FOUND = "Match tracker data not found."
 
 
-class MatchViewSet(viewsets.ReadOnlyModelViewSet):
+class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
     """Expose match data for the mobile frontend."""
 
     serializer_class = MatchSerializer
@@ -187,6 +194,300 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):
         )
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path=r"tracker/(?P<team_id>[^/.]+)/state",
+        permission_classes=[IsCoachOrAdmin],
+    )  # type: ignore[arg-type]
+    def tracker_state(
+        self,
+        request: Request,
+        team_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return the live match tracker state for a given team perspective."""
+        match: Match = self.get_object()
+        team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
+        try:
+            return Response(
+                get_tracker_state(match, team=team),
+                status=status.HTTP_200_OK,
+            )
+        except TrackerCommandError as exc:
+            code = getattr(exc, "code", "error")
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if code == "not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc), "code": code}, status=http_status)
+
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path=r"tracker/(?P<team_id>[^/.]+)/commands",
+        permission_classes=[IsCoachOrAdmin],
+    )  # type: ignore[arg-type]
+    def tracker_command(
+        self,
+        request: Request,
+        team_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Apply a match tracker command and return updated state."""
+        match: Match = self.get_object()
+        team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
+        if not isinstance(request.data, dict):
+            return Response(
+                {"detail": "Invalid JSON body."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            return Response(
+                apply_tracker_command(match, team=team, payload=request.data),
+                status=status.HTTP_200_OK,
+            )
+        except TrackerCommandError as exc:
+            code = getattr(exc, "code", "error")
+            if code == "match_paused":
+                return Response(
+                    {"detail": str(exc), "code": code},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if code == "not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc), "code": code}, status=http_status)
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path=r"tracker/(?P<team_id>[^/.]+)/poll",
+        permission_classes=[IsCoachOrAdmin],
+    )  # type: ignore[arg-type]
+    def tracker_poll(
+        self,
+        request: Request,
+        team_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Long-poll for match tracker state updates."""
+        match: Match = self.get_object()
+        team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
+
+        since_raw = request.query_params.get("since")
+        timeout_raw = request.query_params.get("timeout")
+
+        try:
+            since = (
+                datetime.fromisoformat(since_raw)
+                if since_raw
+                else datetime.min.replace(tzinfo=UTC)
+            )
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=UTC)
+        except ValueError:
+            return Response(
+                {"detail": "Invalid 'since' timestamp."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            timeout_seconds = int(timeout_raw) if timeout_raw else 25
+        except ValueError:
+            timeout_seconds = 25
+
+        try:
+            return Response(
+                poll_tracker_state(
+                    match,
+                    team=team,
+                    since=since,
+                    timeout_seconds=timeout_seconds,
+                ),
+                status=status.HTTP_200_OK,
+            )
+        except TrackerCommandError as exc:
+            code = getattr(exc, "code", "error")
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if code == "not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc), "code": code}, status=http_status)
+
+    def _public_live_state(
+        self,
+        *,
+        match: Match,
+        match_data: MatchData,
+        home_tracker_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return a safe, match-level live payload.
+
+        Notes:
+            We intentionally only expose match-wide fields here (timer/score/etc)
+            so the Match page can live-update without requiring coach permissions
+            and without exposing the full tracker roster state.
+
+        """
+        score = home_tracker_state.get("score")
+        home = 0
+        away = 0
+        if isinstance(score, dict):
+            home = int(score.get("for") or 0)
+            away = int(score.get("against") or 0)
+
+        return {
+            "match_id": str(match.id_uuid),
+            "match_data_id": str(match_data.id_uuid),
+            "status": match_data.status,
+            "current_part": int(home_tracker_state.get("current_part") or 0),
+            "parts": int(home_tracker_state.get("parts") or 0),
+            "paused": bool(home_tracker_state.get("paused")),
+            "timer": home_tracker_state.get("timer"),
+            "score": {"home": home, "away": away},
+            "last_changed_at": home_tracker_state.get("last_changed_at"),
+        }
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="live",
+        permission_classes=[permissions.IsAuthenticated],
+    )  # type: ignore[arg-type]
+    def live_state(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return a match-level live snapshot (timer + score).
+
+        This endpoint is designed for read-only UIs like the korfbal-web Match
+        page. It intentionally does not include player groups or other
+        coach-only tracker details.
+
+        """
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data:
+            return Response(None, status=status.HTTP_200_OK)
+
+        try:
+            home_tracker_state = get_tracker_state(match, team=match.home_team)
+        except TrackerCommandError as exc:
+            code = getattr(exc, "code", "error")
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if code == "not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc), "code": code}, status=http_status)
+
+        return Response(
+            self._public_live_state(
+                match=match,
+                match_data=match_data,
+                home_tracker_state=home_tracker_state,
+            ),
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="live/poll",
+        permission_classes=[permissions.IsAuthenticated],
+    )  # type: ignore[arg-type]
+    def live_poll(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Long-poll for match-level live updates (timer + score).
+
+        Response shape mirrors tracker polling:
+        - on timeout: {changed: false, server_time, last_changed_at}
+        - on change: live_state payload
+
+        """
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data:
+            return Response(
+                {
+                    "changed": False,
+                    "server_time": timezone.now().isoformat(),
+                    "last_changed_at": timezone.now().isoformat(),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        since_raw = request.query_params.get("since")
+        timeout_raw = request.query_params.get("timeout")
+
+        try:
+            since = (
+                datetime.fromisoformat(since_raw)
+                if since_raw
+                else datetime.min.replace(tzinfo=UTC)
+            )
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=UTC)
+        except ValueError:
+            return Response(
+                {"detail": "Invalid 'since' timestamp."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            timeout_seconds = int(timeout_raw) if timeout_raw else 25
+        except ValueError:
+            timeout_seconds = 25
+
+        try:
+            payload = poll_tracker_state(
+                match,
+                team=match.home_team,
+                since=since,
+                timeout_seconds=timeout_seconds,
+            )
+        except TrackerCommandError as exc:
+            code = getattr(exc, "code", "error")
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if code == "not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc), "code": code}, status=http_status)
+
+        if isinstance(payload, dict) and payload.get("changed") is False:
+            return Response(payload, status=status.HTTP_200_OK)
+
+        # Changed: payload is a full tracker state (home team perspective)
+        if not isinstance(payload, dict):
+            return Response(
+                {"detail": "Invalid live poll payload."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(
+            self._public_live_state(
+                match=match,
+                match_data=match_data,
+                home_tracker_state=payload,
+            ),
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["GET"], url_path="summary")  # type: ignore[arg-type]
     def summary(
@@ -1026,11 +1327,14 @@ def _serialize_substitute_event(
     if not event.match_part or not event.time:
         return None
 
+    has_players = bool(event.player_in) and bool(event.player_out)
+    name = "Wissel" if has_players else "Wissel tegenstander"
+
     return {
         "event_kind": "player_change",
         "event_id": str(event.id_uuid),
         "type": "substitute",
-        "name": "Wissel",
+        "name": name,
         "match_part_id": str(event.match_part.id_uuid),
         "time_iso": event.time.isoformat(),
         "time": _time_in_minutes(
@@ -1039,10 +1343,10 @@ def _serialize_substitute_event(
             match_part_number=event.match_part.part_number,
             event_time=event.time,
         ),
-        "player_in_id": str(event.player_in.id_uuid),
-        "player_in": event.player_in.user.username,
-        "player_out_id": str(event.player_out.id_uuid),
-        "player_out": event.player_out.user.username,
+        "player_in_id": str(event.player_in.id_uuid) if event.player_in else None,
+        "player_in": event.player_in.user.username if event.player_in else None,
+        "player_out_id": str(event.player_out.id_uuid) if event.player_out else None,
+        "player_out": event.player_out.user.username if event.player_out else None,
         "player_group_id": str(event.player_group.id_uuid),
     }
 
