@@ -45,12 +45,28 @@ DJANGO_ENV = _env("DJANGO_ENV", "development").lower()
 DEBUG = _env_bool("DEBUG", DJANGO_ENV != "production")
 SECRET_KEY = _env("SECRET_KEY", "change-me" if DEBUG else None, required=not DEBUG)
 
+KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
+WEB_KORFBAL_ORIGIN = "https://web.korfbal.butrosgroot.com"
+KWT_ORIGIN = "https://kwt.localhost"
+WEB_KWT_ORIGIN = "https://web.kwt.localhost"
+
 default_hosts = "korfbal.butrosgroot.com"
 ALLOWED_HOSTS = _sorted_hosts(_env_list("ALLOWED_HOSTS", default_hosts))
 CSRF_TRUSTED_ORIGINS = _env_list(
     "CSRF_TRUSTED_ORIGINS",
-    "https://korfbal.butrosgroot.com",
+    f"{KORFBAL_ORIGIN},{WEB_KORFBAL_ORIGIN}",
 )
+
+# CORS
+# The frontend is served from https://web.korfbal.butrosgroot.com while the API
+# is served from https://korfbal.butrosgroot.com.
+# We use cookies (credentials) for session auth, so we must:
+# - allow the specific origin (not '*')
+# - allow credentials
+CORS_ALLOWED_ORIGINS = _sorted_hosts(
+    _env_list("CORS_ALLOWED_ORIGINS", WEB_KORFBAL_ORIGIN),
+)
+CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", True)
 if DEBUG:
     ALLOWED_HOSTS = _sorted_hosts([
         *ALLOWED_HOSTS,
@@ -62,9 +78,16 @@ if DEBUG:
     ])
     CSRF_TRUSTED_ORIGINS = sorted({
         *CSRF_TRUSTED_ORIGINS,
-        "https://kwt.localhost",
-        "https://web.kwt.localhost",
+        KWT_ORIGIN,
+        WEB_KWT_ORIGIN,
     })
+    CORS_ALLOWED_ORIGINS = _sorted_hosts([
+        *CORS_ALLOWED_ORIGINS,
+        WEB_KWT_ORIGIN,
+        KWT_ORIGIN,
+        "http://localhost:4173",
+        "http://localhost:5173",
+    ])
 SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 SECURE_HSTS_SECONDS = _env_int("SECURE_HSTS_SECONDS", 31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool(
