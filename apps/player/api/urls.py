@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     CurrentPlayerAPIView,
+    PlayerConnectedClubRecentResultsAPIView,
     PlayerOverviewAPIView,
     PlayerStatsAPIView,
     PlayerViewSet,
@@ -17,6 +18,11 @@ router.register(r"players", PlayerViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("me/", CurrentPlayerAPIView.as_view(), name="player-current"),
+    path(
+        "me/connected-clubs/recent-results/",
+        PlayerConnectedClubRecentResultsAPIView.as_view(),
+        name="player-connected-clubs-recent-results",
+    ),
     path(
         "me/overview/",
         PlayerOverviewAPIView.as_view(),

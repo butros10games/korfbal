@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, ClassVar
 
 from django.conf import settings
@@ -18,6 +19,9 @@ from apps.player.models.player import Player
 from apps.schedule.models import Season
 
 from .serializers import PlayerSerializer
+
+
+PLAYER_NOT_FOUND_DETAIL = {"detail": "Player not found"}
 
 
 def _get_current_player(request: Request) -> Player | None:
@@ -93,9 +97,7 @@ class CurrentPlayerAPIView(APIView):
         player = _get_current_player(request)
 
         if player is None:
-            return Response(
-                {"detail": "Player not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         serializer = PlayerSerializer(player)
         return Response(serializer.data)
@@ -122,9 +124,7 @@ class PlayerOverviewAPIView(APIView):
         """
         player = self._resolve_player(request, player_id)
         if player is None:
-            return Response(
-                {"detail": "Player not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         seasons_qs = list(self._player_seasons_queryset(player))
         season = self._resolve_season(request, seasons_qs)
@@ -250,6 +250,91 @@ class PlayerOverviewAPIView(APIView):
             start_date__lte=today,
             end_date__gte=today,
         ).first()
+
+
+class PlayerConnectedClubRecentResultsAPIView(APIView):
+    """Return recent finished matches for the current player's followed clubs.
+
+    This endpoint exists because the player overview endpoint is scoped to matches
+    where the player participated (or is on the roster). For the Home 'Updates'
+    widget we want the latest results for the player's connected clubs.
+
+    Query params:
+        - limit: int (default 3, max 10)
+        - days: int (optional; when provided, only matches within the last N days)
+        - season: UUID (optional; restrict to a season)
+        - player_id: UUID (debug-only; supported via _get_current_player)
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.AllowAny,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return match summaries for the player's followed clubs."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            limit = int(request.query_params.get("limit", "3"))
+        except (TypeError, ValueError):
+            limit = 3
+        limit = max(1, min(limit, 10))
+
+        days_param = request.query_params.get("days")
+        days: int | None
+        if not days_param:
+            days = None
+        else:
+            try:
+                days = int(days_param)
+            except (TypeError, ValueError):
+                days = None
+            if days is not None and days <= 0:
+                days = None
+
+        season_id = request.query_params.get("season")
+
+        clubs_qs = player.club_follow.all()
+        if not clubs_qs.exists():
+            return Response([])
+
+        queryset = (
+            MatchData.objects.select_related(
+                "match_link",
+                "match_link__home_team",
+                "match_link__home_team__club",
+                "match_link__away_team",
+                "match_link__away_team__club",
+                "match_link__season",
+            )
+            .filter(
+                status="finished",
+            )
+            .filter(
+                Q(match_link__home_team__club__in=clubs_qs)
+                | Q(match_link__away_team__club__in=clubs_qs)
+            )
+            .distinct()
+        )
+
+        if season_id:
+            queryset = queryset.filter(match_link__season_id=season_id)
+
+        if days is not None:
+            cutoff = timezone.now() - timedelta(days=days)
+            queryset = queryset.filter(match_link__start_time__gte=cutoff)
+
+        matches = build_match_summaries(
+            queryset.order_by("-match_link__start_time")[:limit]
+        )
+        return Response(matches)
 
 
 class PlayerStatsAPIView(APIView):
