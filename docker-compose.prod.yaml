@@ -10,6 +10,18 @@ services:
         networks:
             - kwt-net
 
+    kwt-web:
+        image: butros10/kwt-web:latest
+        container_name: kwt-web
+        ports:
+            - '4173:4173'
+        environment:
+            - CHOKIDAR_USEPOLLING=true
+            - VITE_API_BASE_URL=https://korfbal.butrosgroot.com/api
+            - VITE_USE_MOCK_API=false
+        networks:
+            - kwt-net
+
     kwt-daphne:
         image: butros10/kwt-daphne:latest
         container_name: kwt-daphne
