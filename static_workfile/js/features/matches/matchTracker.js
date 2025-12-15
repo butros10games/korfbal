@@ -507,12 +507,20 @@ function showGoalTypes(data, socket) {
         goalTypeDiv.addEventListener('click', () => {
             const last_goal_Data = sharedData.last_goal_Data;
 
+            const cmd =
+                sharedData.last_goal_Command === 'shot_reg' ? 'shot_reg' : 'goal_reg';
             const data_send = {
-                command: 'goal_reg',
-                goal_type: goalType.id,
+                command: cmd,
                 player_id: last_goal_Data.player_id,
                 for_team: last_goal_Data.for_team,
+                ...(cmd === 'goal_reg'
+                    ? { goal_type: goalType.id }
+                    : { shot_type: goalType.id }),
             };
+
+            // Close overlay immediately after a selection.
+            overlay.remove();
+            document.body.style.overflow = '';
 
             socket.send(JSON.stringify(data_send));
         });

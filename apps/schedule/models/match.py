@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -14,8 +14,18 @@ from apps.game_tracker.models import MatchData, Shot
 from .constants import team_model_string
 
 
+if TYPE_CHECKING:
+    from .mvp import MatchMvp, MatchMvpVote
+
+
 class Match(models.Model):
     """Model for Match."""
+
+    # Reverse relations (declared on other models). These are runtime attributes
+    # added by Django; we declare them for static type checking.
+    if TYPE_CHECKING:
+        mvp: MatchMvp
+        mvp_votes: models.Manager[MatchMvpVote]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

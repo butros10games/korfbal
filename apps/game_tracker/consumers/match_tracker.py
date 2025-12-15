@@ -191,7 +191,11 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         """
         match command:
             case "shot_reg":
-                await self.shot_reg(json_data["player_id"], json_data["for_team"])
+                await self.shot_reg(
+                    json_data["player_id"],
+                    json_data["for_team"],
+                    json_data.get("shot_type") or json_data.get("goal_type"),
+                )
 
             case "get_goal_types":
                 await self.get_goal_types()
@@ -226,12 +230,18 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps({"command": "savePlayerGroups", "status": "success"}),
         )
 
-    async def shot_reg(self, player_id: UUID, for_team: bool) -> None:
+    async def shot_reg(
+        self,
+        player_id: UUID,
+        for_team: bool,
+        shot_type_id: UUID | None = None,
+    ) -> None:
         """Register a shot for a player.
 
         Args:
             player_id: The id of the player.
             for_team: A boolean indicating if the shot is for the team.
+            shot_type_id: Optional id of the shot/goal type.
 
         """
         # check if the match is paused and if it is paused decline the request except
@@ -246,6 +256,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
         team = self.team if for_team else self.other_team
 
+        shot_type_obj: GoalType | None = None
+        if shot_type_id is not None:
+            shot_type_obj = await GoalType.objects.aget(id_uuid=shot_type_id)  # type: ignore[call-arg]
+
         await Shot.objects.acreate(
             player=await Player.objects.aget(id_uuid=player_id),
             match_data=self.match_data,
@@ -253,6 +267,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             time=datetime.now(UTC),
             for_team=for_team,
             team=team,
+            shot_type=shot_type_obj,
             scored=False,
         )
 

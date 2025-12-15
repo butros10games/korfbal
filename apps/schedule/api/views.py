@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 from typing import Any, ClassVar
+from uuid import uuid4
 
 from django.conf import settings
+from django.core import signing
 from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -33,7 +36,14 @@ from apps.game_tracker.services.tracker_http import (
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Match
+from apps.schedule.services.mvp import (
+    build_mvp_candidates,
+    cast_vote,
+    cast_vote_anon,
+    ensure_mvp_published,
+)
 from apps.team.models.team import Team
+from apps.team.models.team_data import TeamData
 
 from .permissions import IsCoachOrAdmin
 from .serializers import (
@@ -46,6 +56,146 @@ from .serializers import (
 
 
 MATCH_TRACKER_DATA_NOT_FOUND = "Match tracker data not found."
+
+
+MVP_VOTE_COOKIE_NAME = "korfbal_mvp_vote_tokens"
+MVP_VOTE_COOKIE_SALT = "korfbal.schedule.mvp.vote_tokens.v1"
+MVP_VOTE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+
+
+def _read_mvp_vote_tokens(request: Request) -> dict[str, str]:
+    """Return the signed cookie mapping match_id -> voter_token."""
+    try:
+        raw = request.get_signed_cookie(
+            MVP_VOTE_COOKIE_NAME,
+            default="{}",
+            salt=MVP_VOTE_COOKIE_SALT,
+        )
+    except signing.BadSignature:
+        return {}
+
+    # Some request stubs type this as `str | None`; be defensive.
+    if raw is None:
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    return {
+        key: value
+        for key, value in parsed.items()
+        if isinstance(key, str) and isinstance(value, str) and key and value
+    }
+
+
+def _write_mvp_vote_tokens(
+    *,
+    request: Request,
+    response: Response,
+    tokens: dict[str, str],
+) -> None:
+    response.set_signed_cookie(
+        MVP_VOTE_COOKIE_NAME,
+        json.dumps(tokens, separators=(",", ":")),
+        salt=MVP_VOTE_COOKIE_SALT,
+        max_age=MVP_VOTE_COOKIE_MAX_AGE_SECONDS,
+        samesite="Lax",
+        secure=request.is_secure(),
+        httponly=True,
+        path="/",
+    )
+
+
+def _authenticated_player(request: Request) -> Player | None:
+    if request.user.is_authenticated and hasattr(request.user, "player"):
+        player = getattr(request.user, "player", None)
+        if isinstance(player, Player):
+            return player
+    return None
+
+
+def _vote_for_request(
+    *,
+    match: Match,
+    request: Request,
+    anon_voter_token_override: str | None = None,
+) -> tuple[dict[str, str] | None, str | None]:
+    """Return (user_vote_payload, anon_voter_token_used)."""
+    player = _authenticated_player(request)
+    if player:
+        vote = match.mvp_votes.filter(voter=player).first()
+        if not vote:
+            return None, None
+        return {"candidate_id_uuid": str(vote.candidate_id)}, None
+
+    token = anon_voter_token_override
+    if not token:
+        tokens = _read_mvp_vote_tokens(request)
+        token = tokens.get(str(match.id_uuid))
+    if not token:
+        return None, None
+
+    vote = match.mvp_votes.filter(voter_token=token).first()
+    if not vote:
+        return None, token
+    return {"candidate_id_uuid": str(vote.candidate_id)}, token
+
+
+def _build_mvp_status_payload(
+    *,
+    match: Match,
+    match_data: MatchData,
+    request: Request,
+    anon_voter_token_override: str | None = None,
+) -> dict[str, Any]:
+    mvp = ensure_mvp_published(match, match_data)
+    candidates = build_mvp_candidates(match, match_data)
+    user_vote, _anon_token_used = _vote_for_request(
+        match=match,
+        request=request,
+        anon_voter_token_override=anon_voter_token_override,
+    )
+
+    mvp_player = mvp.mvp_player
+    mvp_payload: dict[str, str | None] | None = None
+    if mvp_player:
+        username = mvp_player.user.username
+        display_name = mvp_player.user.get_full_name() or username
+        mvp_payload = {
+            "id_uuid": str(mvp_player.id_uuid),
+            "username": username,
+            "display_name": display_name,
+            "profile_picture_url": mvp_player.get_profile_picture(),
+        }
+
+    now = timezone.now()
+    open_for_votes = bool(now < mvp.closes_at)
+
+    return {
+        "available": True,
+        "match_status": match_data.status,
+        "open": open_for_votes,
+        "finished_at": mvp.finished_at.isoformat(),
+        "closes_at": mvp.closes_at.isoformat(),
+        "candidates": [
+            {
+                "id_uuid": c.id_uuid,
+                "username": c.username,
+                "display_name": c.display_name,
+                "profile_picture_url": c.profile_picture_url,
+                "team_side": c.team_side,
+            }
+            for c in candidates
+        ],
+        "user_vote": user_vote,
+        "mvp": mvp_payload,
+        "published_at": mvp.published_at.isoformat() if mvp.published_at else None,
+    }
 
 
 class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
@@ -559,7 +709,7 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
         return Response(summary)
 
     @action(detail=True, methods=["GET"], url_path="stats")  # type: ignore[arg-type]
-    def stats(
+    def stats(  # noqa: C901
         self,
         request: Request,
         *args: Any,  # noqa: ANN401
@@ -705,25 +855,103 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
                 for player in queryset
             ]
 
-        home_player_ids = set(
+        # Prefer roster membership (MatchPlayer) to determine which side a player
+        # belongs to. This avoids mis-assigning a player to the opponent when a
+        # shot/goal was (accidentally) registered for the wrong team.
+        home_roster_ids = set(
             MatchPlayer.objects.filter(match_data=match_data, team=home_team)
             .values_list("player__id_uuid", flat=True)
             .distinct()
-        ) | set(
-            Shot.objects.filter(match_data=match_data, team=home_team)
+        )
+        away_roster_ids = set(
+            MatchPlayer.objects.filter(match_data=match_data, team=away_team)
             .values_list("player__id_uuid", flat=True)
             .distinct()
         )
 
-        away_player_ids = set(
-            MatchPlayer.objects.filter(match_data=match_data, team=away_team)
+        shot_home_ids = set(
+            Shot.objects.filter(match_data=match_data, team=home_team)
             .values_list("player__id_uuid", flat=True)
             .distinct()
-        ) | set(
+        )
+        shot_away_ids = set(
             Shot.objects.filter(match_data=match_data, team=away_team)
             .values_list("player__id_uuid", flat=True)
             .distinct()
         )
+
+        home_player_ids = set(home_roster_ids)
+        away_player_ids = set(away_roster_ids)
+
+        # Include players that appear only through registered shots (legacy /
+        # incomplete roster data). When the match roster is missing, a single
+        # mis-logged shot (registered for the opponent) can otherwise put a
+        # player on the wrong side. Use TeamData membership as a stable
+        # fallback signal to decide the side.
+        shot_only_ids = (
+            (shot_home_ids | shot_away_ids) - home_roster_ids - away_roster_ids
+        )
+        if shot_only_ids:
+            home_teamdata_ids = set(
+                TeamData.objects.filter(
+                    team=home_team,
+                    season=match.season,
+                    players__id_uuid__in=shot_only_ids,
+                )
+                .values_list("players__id_uuid", flat=True)
+                .distinct()
+            )
+            away_teamdata_ids = set(
+                TeamData.objects.filter(
+                    team=away_team,
+                    season=match.season,
+                    players__id_uuid__in=shot_only_ids,
+                )
+                .values_list("players__id_uuid", flat=True)
+                .distinct()
+            )
+
+            for player_id in shot_only_ids:
+                in_home_teamdata = player_id in home_teamdata_ids
+                in_away_teamdata = player_id in away_teamdata_ids
+
+                if in_home_teamdata and not in_away_teamdata:
+                    home_player_ids.add(player_id)
+                    continue
+
+                if in_away_teamdata and not in_home_teamdata:
+                    away_player_ids.add(player_id)
+                    continue
+
+                in_home_shots = player_id in shot_home_ids
+                in_away_shots = player_id in shot_away_ids
+
+                if in_home_shots and not in_away_shots:
+                    home_player_ids.add(player_id)
+                    continue
+
+                if in_away_shots and not in_home_shots:
+                    away_player_ids.add(player_id)
+                    continue
+
+                # If we still can't decide (e.g. shots for both teams, or
+                # conflicting TeamData), use the team with the most shots as a
+                # stable tie-breaker.
+                home_count = Shot.objects.filter(
+                    match_data=match_data,
+                    team=home_team,
+                    player__id_uuid=player_id,
+                ).count()
+                away_count = Shot.objects.filter(
+                    match_data=match_data,
+                    team=away_team,
+                    player__id_uuid=player_id,
+                ).count()
+
+                if home_count >= away_count:
+                    home_player_ids.add(player_id)
+                else:
+                    away_player_ids.add(player_id)
 
         players_payload = {
             "home": build_player_lines(
@@ -749,6 +977,147 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
             },
             status=status.HTTP_200_OK,
         )
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="mvp",
+        permission_classes=[permissions.AllowAny],
+    )  # type: ignore[arg-type]
+    def mvp_status(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return MVP voting status + candidates + published winner (if any)."""
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data:
+            return Response(
+                {
+                    "available": False,
+                    "match_status": "unknown",
+                    "open": False,
+                    "finished_at": None,
+                    "closes_at": None,
+                    "candidates": [],
+                    "user_vote": None,
+                    "mvp": None,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if match_data.status != "finished":
+            return Response(
+                {
+                    "available": False,
+                    "match_status": match_data.status,
+                    "open": False,
+                    "finished_at": None,
+                    "closes_at": None,
+                    "candidates": [],
+                    "user_vote": None,
+                    "mvp": None,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        payload = _build_mvp_status_payload(
+            match=match,
+            match_data=match_data,
+            request=request,
+        )
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path="mvp/vote",
+        permission_classes=[permissions.AllowAny],
+    )  # type: ignore[arg-type]
+    def mvp_vote(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Cast or update the current user's MVP vote."""
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data or match_data.status != "finished":
+            return Response(
+                {"detail": "Voting is only available after the match is finished."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if not isinstance(request.data, dict):
+            return Response(
+                {"detail": "Invalid JSON body."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        candidate_id = request.data.get("candidate_id_uuid")
+        if not isinstance(candidate_id, str) or not candidate_id:
+            return Response(
+                {"detail": "Missing 'candidate_id_uuid'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        candidate = Player.objects.filter(id_uuid=candidate_id).first()
+        if not candidate:
+            return Response(
+                {"detail": "Unknown candidate."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        player = _authenticated_player(request)
+        anon_voter_token: str | None = None
+        anon_tokens: dict[str, str] | None = None
+
+        try:
+            if player:
+                cast_vote(
+                    match=match,
+                    match_data=match_data,
+                    voter=player,
+                    candidate=candidate,
+                )
+            else:
+                anon_tokens = _read_mvp_vote_tokens(request)
+                match_key = str(match.id_uuid)
+                anon_voter_token = anon_tokens.get(match_key)
+                if not anon_voter_token:
+                    anon_voter_token = str(uuid4())
+                    anon_tokens[match_key] = anon_voter_token
+
+                cast_vote_anon(
+                    match=match,
+                    match_data=match_data,
+                    voter_token=anon_voter_token,
+                    candidate=candidate,
+                )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        payload = _build_mvp_status_payload(
+            match=match,
+            match_data=match_data,
+            request=request,
+            anon_voter_token_override=anon_voter_token,
+        )
+
+        response = Response(payload, status=status.HTTP_200_OK)
+        if not player:
+            _write_mvp_vote_tokens(
+                request=request,
+                response=response,
+                tokens=anon_tokens or {},
+            )
+        return response
 
     @action(detail=True, methods=["GET"], url_path="events")  # type: ignore[arg-type]
     def events(
@@ -782,6 +1151,46 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):  # noqa: PLR0904
             {
                 "home_team_id": str(match.home_team.id_uuid),
                 "events": events_payload,
+                "status": match_data.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["GET"], url_path="shots")  # type: ignore[arg-type]
+    def shots(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return shot attempts (scored + missed) for a single match.
+
+        This is a lightweight timeline endpoint used for progression graphs.
+
+        Notes:
+            - The returned `time` is match time (pauses excluded), consistent with
+              the existing match `events/` endpoint.
+
+        """
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data or match_data.status == "upcoming":
+            return Response(
+                {
+                    "home_team_id": str(match.home_team.id_uuid),
+                    "away_team_id": str(match.away_team.id_uuid),
+                    "shots": [],
+                    "status": match_data.status if match_data else "unknown",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        shots_payload = _build_match_shots(match_data)
+        return Response(
+            {
+                "home_team_id": str(match.home_team.id_uuid),
+                "away_team_id": str(match.away_team.id_uuid),
+                "shots": shots_payload,
                 "status": match_data.status,
             },
             status=status.HTTP_200_OK,
@@ -1326,6 +1735,27 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     return payload
 
 
+def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
+    shots = list(
+        Shot.objects.select_related(
+            "player__user",
+            "shot_type",
+            "match_part",
+            "team",
+        )
+        .filter(match_data=match_data)
+        .order_by("time")
+    )
+
+    payload: list[dict[str, Any]] = []
+    for shot in shots:
+        serialized = _serialize_shot_timeline_event(match_data, shot)
+        if serialized is not None:
+            payload.append(serialized)
+
+    return payload
+
+
 def _serialize_match_event(
     match_data: MatchData,
     event: object,
@@ -1361,6 +1791,32 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
         "shot_type_id": str(event.shot_type.id_uuid),
         "goal_type": event.shot_type.name,
         "for_team": event.for_team,
+        "team_id": str(event.team.id_uuid),
+    }
+
+
+def _serialize_shot_timeline_event(
+    match_data: MatchData,
+    event: Shot,
+) -> dict[str, Any] | None:
+    if not event.match_part or not event.time or not event.team:
+        return None
+
+    return {
+        "event_id": str(event.id_uuid),
+        "match_part_id": str(event.match_part.id_uuid),
+        "time_iso": event.time.isoformat(),
+        "time": _time_in_minutes(
+            match_data=match_data,
+            match_part_start=event.match_part.start_time,
+            match_part_number=event.match_part.part_number,
+            event_time=event.time,
+        ),
+        "player_id": str(event.player.id_uuid),
+        "player": event.player.user.username,
+        "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
+        "shot_type": event.shot_type.name if event.shot_type else None,
+        "scored": bool(event.scored),
         "team_id": str(event.team.id_uuid),
     }
 

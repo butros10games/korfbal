@@ -27,6 +27,7 @@ export const createPlayerClickHandler = function (element, team, socket) {
         };
 
         sharedData.last_goal_Data = last_goal_Data;
+        sharedData.last_goal_Command = 'goal_reg';
         socket.send(JSON.stringify(data));
     };
 };
@@ -56,15 +57,14 @@ export const shotButtonReg = function (team, socket) {
 
         // set a other click event to the player buttons to register shots
         const playerClickHandler = function () {
-            const data = {
-                command: 'shot_reg',
+            // Ask for shot type so we can store shot quality for missed shots.
+            // This remains optional: server accepts shot_reg without a shot_type.
+            sharedData.last_goal_Data = {
                 player_id: element.id,
                 for_team: team === 'home',
             };
-
-            console.log(data);
-
-            socket.send(JSON.stringify(data));
+            sharedData.last_goal_Command = 'shot_reg';
+            socket.send(JSON.stringify({ command: 'get_goal_types' }));
         };
 
         element.playerClickHandler = playerClickHandler;

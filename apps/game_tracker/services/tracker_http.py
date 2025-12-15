@@ -801,26 +801,43 @@ def _cmd_new_attack(match: Match, *, match_data: MatchData, team: Team) -> None:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _ShotRegParams:
+    player_id: str
+    for_team: bool
+    shot_type_id: str | None = None
+
+
 def _cmd_shot_reg(
     match: Match,
     *,
     match_data: MatchData,
     team: Team,
-    player_id: str,
-    for_team: bool,
+    params: _ShotRegParams,
 ) -> None:
     current_part, opponent = _require_not_paused(match_data, team, match)
 
-    player = Player.objects.get(id_uuid=player_id)
-    shot_team = team if for_team else opponent
+    player = Player.objects.get(id_uuid=params.player_id)
+    shot_team = team if params.for_team else opponent
+
+    shot_type: GoalType | None = None
+    if params.shot_type_id:
+        try:
+            shot_type = GoalType.objects.get(id_uuid=params.shot_type_id)
+        except GoalType.DoesNotExist as exc:
+            raise TrackerCommandError(
+                "Invalid shot type.",
+                code="bad_request",
+            ) from exc
 
     Shot.objects.create(
         player=player,
         match_data=match_data,
         match_part=current_part,
         time=datetime.now(UTC),
-        for_team=for_team,
+        for_team=params.for_team,
         team=shot_team,
+        shot_type=shot_type,
         scored=False,
     )
 
@@ -1098,14 +1115,25 @@ def _handle_cmd_shot_reg(
 ) -> None:
     player_id = payload.get("player_id")
     for_team = payload.get("for_team")
+    shot_type = payload.get("shot_type")
+    # Backwards compatibility: some clients might send `goal_type` for shots.
+    if shot_type is None:
+        shot_type = payload.get("goal_type")
+
     if not isinstance(player_id, str) or not isinstance(for_team, bool):
         raise TrackerCommandError("Invalid shot_reg payload.", code="bad_request")
+
+    if shot_type is not None and not isinstance(shot_type, str):
+        raise TrackerCommandError("Invalid shot type.", code="bad_request")
     _cmd_shot_reg(
         match,
         match_data=match_data,
         team=team,
-        player_id=player_id,
-        for_team=for_team,
+        params=_ShotRegParams(
+            player_id=player_id,
+            for_team=for_team,
+            shot_type_id=shot_type,
+        ),
     )
 
 
