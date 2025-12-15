@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
+import secrets
 from typing import Any, ClassVar
+from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.auth.base_user import AbstractBaseUser
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import UploadedFile
 from django.db.models import Count, Q, QuerySet
+from django.http import HttpResponseRedirect
 from django.utils import timezone
+import requests
 from rest_framework import permissions, status, viewsets
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,12 +25,80 @@ from rest_framework.views import APIView
 from apps.game_tracker.models import MatchData, Shot
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
+from apps.player.models.spotify_token import SpotifyToken
 from apps.schedule.models import Season
 
 from .serializers import PlayerSerializer
 
 
 PLAYER_NOT_FOUND_DETAIL = {"detail": "Player not found"}
+
+
+def _spotify_enabled() -> bool:
+    return bool(settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CLIENT_SECRET)
+
+
+def _normalise_spotify_track_uri(value: str) -> str:
+    raw = value.strip()
+    if raw.startswith("spotify:track:"):
+        return raw
+
+    if "open.spotify.com/track/" in raw:
+        track_id = raw.split("open.spotify.com/track/")[-1].split("?")[0].split("/")[0]
+        if track_id:
+            return f"spotify:track:{track_id}"
+
+    return raw
+
+
+def _get_or_create_spotify_oauth_state(request: Request) -> str:
+    state = secrets.token_urlsafe(24)
+    request.session["spotify_oauth_state"] = state
+    request.session.modified = True
+    return state
+
+
+def _get_spotify_token(user: AbstractBaseUser) -> SpotifyToken | None:
+    return SpotifyToken.objects.filter(user=user).first()
+
+
+def _refresh_spotify_access_token(token: SpotifyToken) -> SpotifyToken:
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": token.refresh_token,
+        "client_id": settings.SPOTIFY_CLIENT_ID,
+        "client_secret": settings.SPOTIFY_CLIENT_SECRET,
+    }
+    response = requests.post(
+        "https://accounts.spotify.com/api/token",
+        data=payload,
+        timeout=10,
+    )
+    response.raise_for_status()
+    data: dict[str, Any] = response.json()
+
+    access_token = str(data.get("access_token") or "")
+    expires_in = int(data.get("expires_in") or 3600)
+    if not access_token:
+        raise RuntimeError("Spotify token refresh failed")
+
+    token.access_token = access_token
+    refreshed_refresh = data.get("refresh_token")
+    if isinstance(refreshed_refresh, str) and refreshed_refresh:
+        token.refresh_token = refreshed_refresh
+
+    token.expires_at = timezone.now() + timedelta(seconds=max(0, expires_in - 60))
+    token.save(update_fields=["access_token", "refresh_token", "expires_at"])
+    return token
+
+
+def _ensure_spotify_access_token(user: AbstractBaseUser) -> str:
+    token = _get_spotify_token(user)
+    if token is None:
+        raise RuntimeError("Spotify not connected")
+    if token.is_token_expired():
+        token = _refresh_spotify_access_token(token)
+    return token.access_token
 
 
 def _get_current_player(request: Request) -> Player | None:
@@ -458,3 +535,422 @@ class PlayerStatsAPIView(APIView):
             }
             for row in breakdown
         ]
+
+
+class CurrentPlayerGoalSongAPIView(APIView):
+    """Update goal song configuration for the current player.
+
+    Payload:
+        - goal_song_uri: str | null (HTTP audio URL or Spotify track URI)
+        - song_start_time: int | null (seconds)
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    @staticmethod
+    def _parse_optional_string(
+        payload: Mapping[str, object],
+        key: str,
+    ) -> tuple[bool, str | None, str | None]:
+        if key not in payload:
+            return False, None, None
+
+        raw = payload.get(key)
+        if raw is None:
+            return True, "", None
+        if isinstance(raw, str):
+            return True, raw.strip(), None
+        return True, None, f"{key} must be a string or null"
+
+    @staticmethod
+    def _parse_optional_non_negative_int(
+        payload: Mapping[str, object],
+        key: str,
+    ) -> tuple[bool, int | None, str | None]:
+        if key not in payload:
+            return False, None, None
+
+        raw = payload.get(key)
+        if raw in {None, ""}:
+            return True, None, None
+        if isinstance(raw, bool):
+            return True, None, f"{key} must be a number or null"
+
+        try:
+            if isinstance(raw, (int, float, str)):
+                value = int(float(raw))
+            else:
+                raise TypeError
+        except (TypeError, ValueError):
+            return True, None, f"{key} must be a number or null"
+
+        return True, max(0, value), None
+
+    def patch(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Update goal-song configuration for the authenticated player."""
+        player = Player.objects.select_related("user").filter(user=request.user).first()
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        if not isinstance(request.data, Mapping):
+            return Response(
+                {"detail": "Invalid payload"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        goal_song_uri_provided, goal_song_uri, goal_song_uri_error = (
+            self._parse_optional_string(request.data, "goal_song_uri")
+        )
+        if goal_song_uri_error:
+            return Response(
+                {"detail": goal_song_uri_error},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        song_start_time_provided, song_start_time, song_start_time_error = (
+            self._parse_optional_non_negative_int(request.data, "song_start_time")
+        )
+        if song_start_time_error:
+            return Response(
+                {"detail": song_start_time_error},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        update_fields: list[str] = []
+        if goal_song_uri_provided:
+            player.goal_song_uri = goal_song_uri or ""
+            update_fields.append("goal_song_uri")
+        if song_start_time_provided:
+            player.song_start_time = song_start_time
+            update_fields.append("song_start_time")
+
+        if update_fields:
+            player.save(update_fields=update_fields)
+
+        return Response(PlayerSerializer(player).data)
+
+
+class UploadProfilePictureAPIView(APIView):
+    """Upload a profile picture (API variant used by the Vite frontend)."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+    parser_classes: ClassVar[list[type[Any]]] = [MultiPartParser, FormParser]
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Upload and persist a profile picture for the authenticated player."""
+        files = request.FILES.getlist("profile_picture")
+        if not files:
+            return Response(
+                {"error": "No profile_picture uploaded"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        uploaded = files[0]
+        if not (isinstance(uploaded, UploadedFile) or hasattr(uploaded, "name")):
+            return Response(
+                {"error": "Invalid uploaded file"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            player = Player.objects.get(user=request.user)
+        except Player.DoesNotExist:
+            return Response(
+                {"error": "Player not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        filename = getattr(uploaded, "name", "profile_picture")
+        player.profile_picture.save(filename, uploaded)
+        return Response({"url": player.get_profile_picture()})
+
+
+class UploadGoalSongAPIView(APIView):
+    """Upload an audio file to use as the goal song.
+
+    The uploaded file is stored using Django's default storage (S3/MinIO in prod,
+    filesystem in local dev). The resulting URL is stored in `Player.goal_song_uri`.
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+    parser_classes: ClassVar[list[type[Any]]] = [MultiPartParser, FormParser]
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Upload an audio file and store its URL on the authenticated player."""
+        files = request.FILES.getlist("goal_song")
+        if not files:
+            return Response(
+                {"error": "No goal_song uploaded"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        uploaded = files[0]
+        if not (isinstance(uploaded, UploadedFile) or hasattr(uploaded, "name")):
+            return Response(
+                {"error": "Invalid uploaded file"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        content_type = getattr(uploaded, "content_type", "") or ""
+        allowed_types = {
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/ogg",
+            "audio/mp4",
+            "audio/x-m4a",
+        }
+        if content_type and content_type.lower() not in allowed_types:
+            return Response(
+                {
+                    "error": "Unsupported audio type",
+                    "content_type": content_type,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            player = Player.objects.get(user=request.user)
+        except Player.DoesNotExist:
+            return Response(
+                {"error": "Player not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        filename = (getattr(uploaded, "name", "goal_song") or "goal_song").strip()
+        safe_name = "".join(
+            ch for ch in filename if ch.isalnum() or ch in {".", "-", "_"}
+        )
+        if not safe_name:
+            safe_name = "goal_song"
+
+        key = (
+            f"goal_songs/{player.id_uuid}/"
+            f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{safe_name}"
+        )
+        stored_path = default_storage.save(key, uploaded)
+        url = default_storage.url(stored_path)
+
+        # NOTE: goal_song_uri is capped at 255 chars. If you ever see this break,
+        # switch to storing a key and exposing a computed URL instead.
+        player.goal_song_uri = url
+        player.save(update_fields=["goal_song_uri"])
+
+        return Response({"url": url, "player": PlayerSerializer(player).data})
+
+
+class SpotifyConnectAPIView(APIView):
+    """Start Spotify OAuth flow by returning an authorization URL."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return a Spotify OAuth authorization URL for the authenticated user."""
+        if not _spotify_enabled():
+            return Response(
+                {"detail": "Spotify is not configured on the server"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        state = _get_or_create_spotify_oauth_state(request)
+
+        scopes = " ".join([
+            "user-read-email",
+            "user-read-private",
+            "user-read-playback-state",
+            "user-modify-playback-state",
+            "user-read-currently-playing",
+        ])
+
+        params = {
+            "response_type": "code",
+            "client_id": settings.SPOTIFY_CLIENT_ID,
+            "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
+            "scope": scopes,
+            "state": state,
+        }
+        url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
+        return Response({"url": url})
+
+
+class SpotifyCallbackView(APIView):
+    """OAuth callback handler.
+
+    This responds with a redirect so the user lands back in the UI.
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> HttpResponseRedirect:
+        """Handle the Spotify OAuth callback and persist tokens."""
+        if not _spotify_enabled():
+            return HttpResponseRedirect("/")
+
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        expected_state = request.session.get("spotify_oauth_state")
+        if not code or not state or not expected_state or state != expected_state:
+            return HttpResponseRedirect("/")
+
+        token_response = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
+                "client_id": settings.SPOTIFY_CLIENT_ID,
+                "client_secret": settings.SPOTIFY_CLIENT_SECRET,
+            },
+            timeout=10,
+        )
+        token_response.raise_for_status()
+        token_data: dict[str, Any] = token_response.json()
+
+        access_token = str(token_data.get("access_token") or "")
+        refresh_token = str(token_data.get("refresh_token") or "")
+        expires_in = int(token_data.get("expires_in") or 3600)
+        if not access_token or not refresh_token:
+            return HttpResponseRedirect("/")
+
+        profile_response = requests.get(
+            "https://api.spotify.com/v1/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        profile_response.raise_for_status()
+        profile: dict[str, Any] = profile_response.json()
+        spotify_user_id = str(profile.get("id") or "")
+        if not spotify_user_id:
+            return HttpResponseRedirect("/")
+
+        expires_at = timezone.now() + timedelta(seconds=max(0, expires_in - 60))
+
+        SpotifyToken.objects.update_or_create(
+            user=request.user,
+            defaults={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "spotify_user_id": spotify_user_id,
+            },
+        )
+
+        redirect_to = request.query_params.get("redirect")
+        if isinstance(redirect_to, str) and redirect_to.startswith("/"):
+            return HttpResponseRedirect(redirect_to)
+        return HttpResponseRedirect("/")
+
+
+class SpotifyPlayAPIView(APIView):
+    """Trigger Spotify playback for the connected user.
+
+    This controls the user's active Spotify Connect device.
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Start playback on the user's active Spotify Connect device."""
+        if not _spotify_enabled():
+            return Response(
+                {"detail": "Spotify is not configured on the server"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        track_uri_raw = request.data.get("track_uri")
+        if not isinstance(track_uri_raw, str) or not track_uri_raw.strip():
+            return Response(
+                {"detail": "track_uri is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        track_uri = _normalise_spotify_track_uri(track_uri_raw)
+
+        position_ms_raw = request.data.get("position_ms", 0)
+        try:
+            position_ms = int(float(position_ms_raw))
+        except (TypeError, ValueError):
+            position_ms = 0
+        position_ms = max(0, position_ms)
+
+        try:
+            user = request.user
+            if not isinstance(user, AbstractBaseUser):
+                return Response(
+                    {"detail": "Authentication required"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            access_token = _ensure_spotify_access_token(user)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        play_payload: dict[str, Any] = {
+            "uris": [track_uri],
+            "position_ms": position_ms,
+        }
+
+        device_id = request.data.get("device_id")
+        query = (
+            f"?{urlencode({'device_id': device_id})}"
+            if isinstance(device_id, str) and device_id
+            else ""
+        )
+
+        play_response = requests.put(
+            f"https://api.spotify.com/v1/me/player/play{query}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json=play_payload,
+            timeout=10,
+        )
+
+        if play_response.status_code not in {200, 202, 204}:
+            detail = play_response.text or "Spotify play failed"
+            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"ok": True})

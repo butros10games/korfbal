@@ -339,7 +339,7 @@ SPOTIFY_CLIENT_ID = _env("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = _env("SPOTIFY_CLIENT_SECRET", "")
 SPOTIFY_REDIRECT_URI = _env(
     "SPOTIFY_REDIRECT_URI",
-    f"{spotify_origin.rstrip('/')}/spotify",
+    f"{spotify_origin.rstrip('/')}/api/player/spotify/callback/",
 )
 
 
