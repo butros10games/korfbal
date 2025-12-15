@@ -50,6 +50,14 @@ WEB_KORFBAL_ORIGIN = "https://web.korfbal.butrosgroot.com"
 KWT_ORIGIN = "https://kwt.localhost"
 WEB_KWT_ORIGIN = "https://web.kwt.localhost"
 
+# Base URL for the SPA frontend (used for redirects back into the UI).
+# - Production: https://web.korfbal.butrosgroot.com
+# - Dev: https://web.kwt.localhost (matches this repo's local HTTPS setup)
+WEB_APP_ORIGIN = _env(
+    "WEB_APP_ORIGIN",
+    WEB_KWT_ORIGIN if DEBUG else WEB_KORFBAL_ORIGIN,
+).rstrip("/")
+
 default_hosts = "korfbal.butrosgroot.com"
 ALLOWED_HOSTS = _sorted_hosts(_env_list("ALLOWED_HOSTS", default_hosts))
 CSRF_TRUSTED_ORIGINS = _env_list(

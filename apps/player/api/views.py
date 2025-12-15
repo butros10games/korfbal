@@ -31,7 +31,33 @@ from apps.schedule.models import Season
 from .serializers import PlayerSerializer
 
 
-PLAYER_NOT_FOUND_DETAIL = {"detail": "Player not found"}
+PLAYER_NOT_FOUND_MESSAGE = "Player not found"
+PLAYER_NOT_FOUND_DETAIL = {"detail": PLAYER_NOT_FOUND_MESSAGE}
+
+SPOTIFY_NOT_CONFIGURED_MESSAGE = "Spotify is not configured on the server"
+SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
+
+SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
+    "No active Spotify device found. Open Spotify on your phone and try again."
+)
+
+
+def _redirect_to_frontend(redirect_path: str | None = None) -> HttpResponseRedirect:
+    """Redirect the user back to the SPA frontend.
+
+    Notes:
+        - Uses the configured WEB_APP_ORIGIN when available.
+        - Only allows relative redirect paths (starting with '/').
+
+    """
+    web_origin = getattr(settings, "WEB_APP_ORIGIN", "").rstrip("/")
+    if not web_origin:
+        return HttpResponseRedirect("/")
+
+    if isinstance(redirect_path, str) and redirect_path.startswith("/"):
+        return HttpResponseRedirect(f"{web_origin}{redirect_path}")
+
+    return HttpResponseRedirect(f"{web_origin}/")
 
 
 def _spotify_enabled() -> bool:
@@ -99,6 +125,37 @@ def _ensure_spotify_access_token(user: AbstractBaseUser) -> str:
     if token.is_token_expired():
         token = _refresh_spotify_access_token(token)
     return token.access_token
+
+
+def _spotify_play_error_response(play_response: requests.Response) -> Response:
+    detail = play_response.text or "Spotify play failed"
+
+    spotify_message = ""
+    try:
+        spotify_payload: dict[str, Any] = play_response.json()
+        spotify_error = spotify_payload.get("error")
+        if isinstance(spotify_error, dict):
+            spotify_message = str(spotify_error.get("message") or "")
+    except (ValueError, TypeError):
+        spotify_message = ""
+
+    # Spotify returns 404 when there is no active device.
+    if (
+        play_response.status_code == status.HTTP_404_NOT_FOUND
+        and "no active device" in spotify_message.lower()
+    ):
+        return Response(
+            {
+                "code": "no_active_device",
+                "detail": SPOTIFY_NO_ACTIVE_DEVICE_DETAIL,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(
+        {"code": "spotify_play_failed", "detail": spotify_message or detail},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _get_current_player(request: Request) -> Player | None:
@@ -431,9 +488,7 @@ class PlayerStatsAPIView(APIView):
         """Return aggregate stats for a player in a season."""
         player = self._resolve_player(request, player_id)
         if player is None:
-            return Response(
-                {"detail": "Player not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         seasons_qs = list(self._player_seasons_queryset(player))
         season = self._resolve_season(request, seasons_qs)
@@ -670,7 +725,7 @@ class UploadProfilePictureAPIView(APIView):
             player = Player.objects.get(user=request.user)
         except Player.DoesNotExist:
             return Response(
-                {"error": "Player not found"},
+                {"error": PLAYER_NOT_FOUND_MESSAGE},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -735,7 +790,7 @@ class UploadGoalSongAPIView(APIView):
             player = Player.objects.get(user=request.user)
         except Player.DoesNotExist:
             return Response(
-                {"error": "Player not found"},
+                {"error": PLAYER_NOT_FOUND_MESSAGE},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -777,9 +832,14 @@ class SpotifyConnectAPIView(APIView):
         """Return a Spotify OAuth authorization URL for the authenticated user."""
         if not _spotify_enabled():
             return Response(
-                {"detail": "Spotify is not configured on the server"},
+                SPOTIFY_NOT_CONFIGURED_DETAIL,
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        redirect_path = request.query_params.get("redirect")
+        if isinstance(redirect_path, str) and redirect_path.startswith("/"):
+            request.session["spotify_oauth_redirect"] = redirect_path
+            request.session.modified = True
 
         state = _get_or_create_spotify_oauth_state(request)
 
@@ -820,13 +880,13 @@ class SpotifyCallbackView(APIView):
     ) -> HttpResponseRedirect:
         """Handle the Spotify OAuth callback and persist tokens."""
         if not _spotify_enabled():
-            return HttpResponseRedirect("/")
+            return _redirect_to_frontend()
 
         code = request.query_params.get("code")
         state = request.query_params.get("state")
         expected_state = request.session.get("spotify_oauth_state")
         if not code or not state or not expected_state or state != expected_state:
-            return HttpResponseRedirect("/")
+            return _redirect_to_frontend()
 
         token_response = requests.post(
             "https://accounts.spotify.com/api/token",
@@ -846,7 +906,7 @@ class SpotifyCallbackView(APIView):
         refresh_token = str(token_data.get("refresh_token") or "")
         expires_in = int(token_data.get("expires_in") or 3600)
         if not access_token or not refresh_token:
-            return HttpResponseRedirect("/")
+            return _redirect_to_frontend()
 
         profile_response = requests.get(
             "https://api.spotify.com/v1/me",
@@ -857,7 +917,7 @@ class SpotifyCallbackView(APIView):
         profile: dict[str, Any] = profile_response.json()
         spotify_user_id = str(profile.get("id") or "")
         if not spotify_user_id:
-            return HttpResponseRedirect("/")
+            return _redirect_to_frontend()
 
         expires_at = timezone.now() + timedelta(seconds=max(0, expires_in - 60))
 
@@ -871,10 +931,14 @@ class SpotifyCallbackView(APIView):
             },
         )
 
-        redirect_to = request.query_params.get("redirect")
-        if isinstance(redirect_to, str) and redirect_to.startswith("/"):
-            return HttpResponseRedirect(redirect_to)
-        return HttpResponseRedirect("/")
+        redirect_path = request.query_params.get("redirect")
+        if not (isinstance(redirect_path, str) and redirect_path.startswith("/")):
+            redirect_path = request.session.pop("spotify_oauth_redirect", None)
+            request.session.modified = True
+
+        return _redirect_to_frontend(
+            redirect_path if isinstance(redirect_path, str) else None,
+        )
 
 
 class SpotifyPlayAPIView(APIView):
@@ -896,7 +960,7 @@ class SpotifyPlayAPIView(APIView):
         """Start playback on the user's active Spotify Connect device."""
         if not _spotify_enabled():
             return Response(
-                {"detail": "Spotify is not configured on the server"},
+                SPOTIFY_NOT_CONFIGURED_DETAIL,
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -950,7 +1014,65 @@ class SpotifyPlayAPIView(APIView):
         )
 
         if play_response.status_code not in {200, 202, 204}:
-            detail = play_response.text or "Spotify play failed"
-            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
+            return _spotify_play_error_response(play_response)
+
+        return Response({"ok": True})
+
+
+class SpotifyPauseAPIView(APIView):
+    """Pause Spotify playback for the connected user."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Pause playback on the user's active Spotify Connect device."""
+        if not _spotify_enabled():
+            return Response(
+                SPOTIFY_NOT_CONFIGURED_DETAIL,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = request.user
+            if not isinstance(user, AbstractBaseUser):
+                return Response(
+                    {"detail": "Authentication required"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            access_token = _ensure_spotify_access_token(user)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        device_id = request.data.get("device_id")
+        query = (
+            f"?{urlencode({'device_id': device_id})}"
+            if isinstance(device_id, str) and device_id
+            else ""
+        )
+
+        pause_response = requests.put(
+            f"https://api.spotify.com/v1/me/player/pause{query}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+
+        if pause_response.status_code not in {200, 202, 204}:
+            # Keep this permissive: this endpoint is often called as a best-effort
+            # follow-up after a snippet play.
+            detail = pause_response.text or "Spotify pause failed"
+            return Response(
+                {"code": "spotify_pause_failed", "detail": detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response({"ok": True})

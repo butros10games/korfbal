@@ -12,6 +12,7 @@ from .views import (
     PlayerViewSet,
     SpotifyCallbackView,
     SpotifyConnectAPIView,
+    SpotifyPauseAPIView,
     SpotifyPlayAPIView,
     UploadGoalSongAPIView,
     UploadProfilePictureAPIView,
@@ -53,6 +54,11 @@ urlpatterns = [
         "spotify/play/",
         SpotifyPlayAPIView.as_view(),
         name="player-spotify-play",
+    ),
+    path(
+        "spotify/pause/",
+        SpotifyPauseAPIView.as_view(),
+        name="player-spotify-pause",
     ),
     path(
         "me/connected-clubs/recent-results/",
