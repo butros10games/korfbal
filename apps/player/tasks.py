@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404 - required for invoking spotDL CLI safely (shell=False + input validation)
 import tempfile
 from typing import Any
+from urllib.parse import urlparse
 
 from celery import shared_task
 from django.conf import settings
@@ -17,6 +18,52 @@ from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_spotify_url_for_spotdl(spotify_url: str) -> None:
+    """Validate Spotify URL before passing it to a subprocess.
+
+    We intentionally run the spotDL CLI via subprocess (shell=False) but still
+    treat user-provided URLs as untrusted input.
+
+    Accepted formats:
+    - https://open.spotify.com/track/<id>
+    - https://open.spotify.com/intl-xx/track/<id>
+
+    Raises:
+        ValueError: if the URL format is not an accepted Spotify track URL.
+
+    """
+    min_printable_ascii = 32
+    min_track_parts = 2
+
+    value = (spotify_url or "").strip()
+    if not value:
+        raise ValueError("Spotify URL is required")
+
+    # Avoid control characters / whitespace that could create surprises in logs or
+    # tooling.
+    if any(ch.isspace() for ch in value) or any(
+        ord(ch) < min_printable_ascii for ch in value
+    ):
+        raise ValueError("Spotify URL contains invalid whitespace/control characters")
+
+    parsed = urlparse(value)
+    if parsed.scheme != "https":
+        raise ValueError("Spotify URL must start with https://")
+
+    netloc = (parsed.netloc or "").lower()
+    if netloc not in {"open.spotify.com", "www.open.spotify.com"}:
+        raise ValueError("Spotify URL must be an open.spotify.com track URL")
+
+    # Support optional locale prefix: /intl-xx/track/<id>
+    path = parsed.path or ""
+    parts = [p for p in path.split("/") if p]
+    if len(parts) >= min_track_parts and parts[0].startswith("intl-"):
+        parts = parts[1:]
+
+    if len(parts) < min_track_parts or parts[0] != "track" or not parts[1].strip():
+        raise ValueError("Spotify URL must point to a track")
 
 
 def _pick_downloaded_audio(output_dir: Path) -> Path:
@@ -45,6 +92,7 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
         RuntimeError: When spotDL exits non-zero.
 
     """
+    _validate_spotify_url_for_spotdl(spotify_url)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_template = str(output_dir / "{title}.{output-ext}")
@@ -77,12 +125,13 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
     last_error = ""
     for cmd in commands:
         logger.info("Running spotDL: %s", " ".join(cmd))
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 - shell=False with validated URL; command is fixed argv list
             cmd,
             check=False,
             capture_output=True,
             text=True,
             timeout=60 * 15,
+            shell=False,
         )
         attempted.append((cmd, proc.stdout[-2000:]))
         if proc.returncode == 0:
