@@ -6,6 +6,9 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CurrentPlayerAPIView,
     CurrentPlayerGoalSongAPIView,
+    CurrentPlayerSongDetailAPIView,
+    CurrentPlayerSongRetryAPIView,
+    CurrentPlayerSongsAPIView,
     PlayerConnectedClubRecentResultsAPIView,
     PlayerOverviewAPIView,
     PlayerStatsAPIView,
@@ -29,6 +32,21 @@ urlpatterns = [
         "me/goal-song/",
         CurrentPlayerGoalSongAPIView.as_view(),
         name="player-goal-song",
+    ),
+    path(
+        "me/songs/",
+        CurrentPlayerSongsAPIView.as_view(),
+        name="player-songs",
+    ),
+    path(
+        "me/songs/<uuid:song_id>/",
+        CurrentPlayerSongDetailAPIView.as_view(),
+        name="player-song-detail",
+    ),
+    path(
+        "me/songs/<uuid:song_id>/retry/",
+        CurrentPlayerSongRetryAPIView.as_view(),
+        name="player-song-retry",
     ),
     path(
         "api/upload_profile_picture/",

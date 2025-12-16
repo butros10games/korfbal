@@ -19,6 +19,7 @@ dependencies = [
     "djangorestframework",
     "django-cors-headers",
     "drf-spectacular",
+    "spotdl",
 ]
 
 pytest_plugins = ["configs.pytest_plugins.django_projects"]

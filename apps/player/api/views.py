@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import timedelta
+import logging
 import secrets
 from typing import Any, ClassVar
 from urllib.parse import urlencode
@@ -12,9 +13,11 @@ from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from django.db.models import Count, Q, QuerySet
 from django.http import HttpResponseRedirect
 from django.utils import timezone
+from kombu.exceptions import OperationalError as KombuOperationalError
 import requests
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -25,10 +28,20 @@ from rest_framework.views import APIView
 from apps.game_tracker.models import MatchData, Shot
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
+from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.spotify_token import SpotifyToken
+from apps.player.tasks import download_player_song
 from apps.schedule.models import Season
 
-from .serializers import PlayerSerializer
+from .serializers import (
+    PlayerSerializer,
+    PlayerSongCreateSerializer,
+    PlayerSongSerializer,
+    PlayerSongUpdateSerializer,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 PLAYER_NOT_FOUND_MESSAGE = "Player not found"
@@ -814,6 +827,181 @@ class UploadGoalSongAPIView(APIView):
         player.save(update_fields=["goal_song_uri"])
 
         return Response({"url": url, "player": PlayerSerializer(player).data})
+
+
+class CurrentPlayerSongsAPIView(APIView):
+    """List and create downloaded songs for the authenticated player."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return the current player's downloaded songs."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        songs = PlayerSong.objects.filter(player=player).order_by("-created_at")
+        return Response(PlayerSongSerializer(songs, many=True).data)
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Create a new song download request for the current player."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PlayerSongCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        spotify_url = str(serializer.validated_data["spotify_url"]).strip()
+        song = PlayerSong.objects.create(player=player, spotify_url=spotify_url)
+
+        try:
+            if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False) or getattr(
+                settings, "TESTING", False
+            ):
+                download_player_song.apply(args=[str(song.id_uuid)])
+            else:
+                download_player_song.delay(str(song.id_uuid))
+        except KombuOperationalError:
+            logger.warning(
+                "Celery broker unavailable; could not enqueue PlayerSong %s",
+                song.id_uuid,
+                exc_info=True,
+            )
+            song.status = PlayerSongStatus.FAILED
+            song.error_message = "Celery broker unavailable"
+            song.save(update_fields=["status", "error_message", "updated_at"])
+
+        return Response(
+            PlayerSongSerializer(song).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CurrentPlayerSongDetailAPIView(APIView):
+    """Update a specific song for the authenticated player."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def patch(
+        self,
+        request: Request,
+        song_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Update the start time for a specific downloaded song."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
+        if song is None:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = PlayerSongUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        song.start_time_seconds = int(serializer.validated_data["start_time_seconds"])
+        song.save(update_fields=["start_time_seconds", "updated_at"])
+
+        return Response(PlayerSongSerializer(song).data)
+
+    def delete(
+        self,
+        request: Request,
+        song_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Delete a specific downloaded song."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
+        if song is None:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        song.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CurrentPlayerSongRetryAPIView(APIView):
+    """Retry downloading a failed song for the authenticated player."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request: Request,
+        song_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Reset song status and re-enqueue download task."""
+        player = _get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
+        if song is None:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if song.status == PlayerSongStatus.READY:
+            return Response(
+                {"detail": "Song is already ready"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            song.status = PlayerSongStatus.QUEUED
+            song.error_message = ""
+            song.save(update_fields=["status", "error_message", "updated_at"])
+
+        try:
+            if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False) or getattr(
+                settings, "TESTING", False
+            ):
+                download_player_song.apply(args=[str(song.id_uuid)])
+            else:
+                download_player_song.delay(str(song.id_uuid))
+        except KombuOperationalError:
+            logger.warning(
+                "Celery broker unavailable; could not retry PlayerSong %s",
+                song.id_uuid,
+                exc_info=True,
+            )
+            song.status = PlayerSongStatus.FAILED
+            song.error_message = "Celery broker unavailable"
+            song.save(update_fields=["status", "error_message", "updated_at"])
+
+        return Response(PlayerSongSerializer(song).data)
 
 
 class SpotifyConnectAPIView(APIView):

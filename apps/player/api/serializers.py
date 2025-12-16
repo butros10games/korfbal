@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from apps.player.models.player import Player
+from apps.player.models.player_song import PlayerSong
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -59,3 +60,56 @@ class PlayerSerializer(serializers.ModelSerializer):
 
         """
         return obj.get_profile_picture()
+
+
+class PlayerSongSerializer(serializers.ModelSerializer):
+    """Serializer for PlayerSong model."""
+
+    audio_url = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta class for PlayerSongSerializer."""
+
+        model = PlayerSong
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "spotify_url",
+            "title",
+            "artists",
+            "duration_seconds",
+            "start_time_seconds",
+            "status",
+            "error_message",
+            "audio_url",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "title",
+            "artists",
+            "duration_seconds",
+            "status",
+            "error_message",
+            "audio_url",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_audio_url(self, obj: PlayerSong) -> str | None:
+        """Return the resolved audio URL when available."""
+        if not obj.audio_file:
+            return None
+        return obj.audio_file.url  # type: ignore[no-any-return]
+
+
+class PlayerSongCreateSerializer(serializers.Serializer):
+    """Input serializer for creating a PlayerSong."""
+
+    spotify_url = serializers.URLField(max_length=500)
+
+
+class PlayerSongUpdateSerializer(serializers.Serializer):
+    """Input serializer for updating PlayerSong settings."""
+
+    start_time_seconds = serializers.IntegerField(min_value=0)
