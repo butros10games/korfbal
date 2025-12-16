@@ -45,8 +45,15 @@ class Player(models.Model):
     goal_song_uri: models.CharField[str, str] = models.CharField(
         max_length=255, blank=True
     )
-    song_start_time: models.IntegerField[int, int | None] = models.IntegerField(
+    song_start_time: models.IntegerField[int | None, int | None] = models.IntegerField(
         blank=True, null=True
+    )
+
+    # Preferred goal-song configuration: a list of PlayerSong UUIDs in the order
+    # they should be cycled through.
+    goal_song_song_ids: models.JSONField[list[str]] = models.JSONField(
+        default=list,
+        blank=True,
     )
 
     def __str__(self) -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 import logging
 import secrets
@@ -46,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 PLAYER_NOT_FOUND_MESSAGE = "Player not found"
 PLAYER_NOT_FOUND_DETAIL = {"detail": PLAYER_NOT_FOUND_MESSAGE}
+SONG_NOT_FOUND_DETAIL = {"detail": "Song not found"}
 
 SPOTIFY_NOT_CONFIGURED_MESSAGE = "Spotify is not configured on the server"
 SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
@@ -611,11 +613,21 @@ class CurrentPlayerGoalSongAPIView(APIView):
     Payload:
         - goal_song_uri: str | null (HTTP audio URL or Spotify track URI)
         - song_start_time: int | null (seconds)
+        - goal_song_song_ids: list[str] | null (PlayerSong UUIDs; cycles through them)
     """
 
     permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
         permissions.IsAuthenticated,
     ]
+
+    @dataclass(frozen=True, slots=True)
+    class _ParsedPatchPayload:
+        goal_song_uri_provided: bool
+        goal_song_uri: str | None
+        song_start_time_provided: bool
+        song_start_time: int | None
+        goal_song_ids_provided: bool
+        goal_song_song_ids: list[str] | None
 
     @staticmethod
     def _parse_optional_string(
@@ -656,6 +668,168 @@ class CurrentPlayerGoalSongAPIView(APIView):
 
         return True, max(0, value), None
 
+    @staticmethod
+    def _parse_optional_uuid_list(
+        payload: Mapping[str, object],
+        key: str,
+    ) -> tuple[bool, list[str] | None, str | None]:
+        if key not in payload:
+            return False, None, None
+
+        raw = payload.get(key)
+        if raw is None:
+            return True, [], None
+
+        if not isinstance(raw, list):
+            return True, None, f"{key} must be a list of strings or null"
+
+        items: list[str] = []
+        for entry in raw:
+            if not isinstance(entry, str):
+                return True, None, f"{key} must be a list of strings"
+            value = entry.strip()
+            if not value:
+                continue
+            items.append(value)
+
+        # De-duplicate while preserving order.
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for item in items:
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+
+        return True, deduped, None
+
+    @staticmethod
+    def _validate_goal_song_ids(
+        player: Player,
+        ids: list[str],
+    ) -> tuple[list[PlayerSong] | None, Response | None]:
+        if not ids:
+            return [], None
+
+        songs = list(PlayerSong.objects.filter(player=player, id_uuid__in=ids))
+        by_id = {str(song.id_uuid): song for song in songs}
+
+        missing = [song_id for song_id in ids if song_id not in by_id]
+        if missing:
+            return (
+                None,
+                Response(
+                    {"detail": "Unknown song id(s)", "missing": missing},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        ordered = [by_id[song_id] for song_id in ids]
+        not_ready = [
+            str(song.id_uuid)
+            for song in ordered
+            if song.status != PlayerSongStatus.READY or not song.audio_file
+        ]
+        if not_ready:
+            return (
+                None,
+                Response(
+                    {
+                        "detail": "Song(s) not ready",
+                        "not_ready": not_ready,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        return ordered, None
+
+    @classmethod
+    def _apply_goal_song_song_ids(
+        cls,
+        *,
+        player: Player,
+        ids: list[str],
+    ) -> tuple[list[str] | None, Response | None]:
+        ordered, error = cls._validate_goal_song_ids(player, ids)
+        if error is not None:
+            return None, error
+
+        update_fields: list[str] = ["goal_song_song_ids"]
+        player.goal_song_song_ids = ids
+
+        if ordered:
+            first = ordered[0]
+            if first.audio_file:
+                player.goal_song_uri = first.audio_file.url  # type: ignore[no-any-return]
+                update_fields.append("goal_song_uri")
+            player.song_start_time = first.start_time_seconds
+            update_fields.append("song_start_time")
+            return update_fields, None
+
+        # Clearing selection
+        player.goal_song_uri = ""
+        player.song_start_time = None
+        update_fields.extend(["goal_song_uri", "song_start_time"])
+        return update_fields, None
+
+    @classmethod
+    def _parse_patch_payload(
+        cls,
+        data: Mapping[str, object],
+    ) -> tuple[_ParsedPatchPayload | None, Response | None]:
+        goal_song_uri_provided, goal_song_uri, goal_song_uri_error = (
+            cls._parse_optional_string(data, "goal_song_uri")
+        )
+        if goal_song_uri_error:
+            return (
+                None,
+                Response(
+                    {"detail": goal_song_uri_error},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        (
+            song_start_time_provided,
+            song_start_time,
+            song_start_time_error,
+        ) = cls._parse_optional_non_negative_int(data, "song_start_time")
+        if song_start_time_error:
+            return (
+                None,
+                Response(
+                    {"detail": song_start_time_error},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        (
+            goal_song_ids_provided,
+            goal_song_song_ids,
+            goal_song_ids_error,
+        ) = cls._parse_optional_uuid_list(data, "goal_song_song_ids")
+        if goal_song_ids_error:
+            return (
+                None,
+                Response(
+                    {"detail": goal_song_ids_error},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        return (
+            cls._ParsedPatchPayload(
+                goal_song_uri_provided=goal_song_uri_provided,
+                goal_song_uri=goal_song_uri,
+                song_start_time_provided=song_start_time_provided,
+                song_start_time=song_start_time,
+                goal_song_ids_provided=goal_song_ids_provided,
+                goal_song_song_ids=goal_song_song_ids,
+            ),
+            None,
+        )
+
     def patch(
         self,
         request: Request,
@@ -673,34 +847,36 @@ class CurrentPlayerGoalSongAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        goal_song_uri_provided, goal_song_uri, goal_song_uri_error = (
-            self._parse_optional_string(request.data, "goal_song_uri")
-        )
-        if goal_song_uri_error:
+        parsed, error = self._parse_patch_payload(request.data)
+        if error is not None:
+            return error
+        if parsed is None:
             return Response(
-                {"detail": goal_song_uri_error},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        song_start_time_provided, song_start_time, song_start_time_error = (
-            self._parse_optional_non_negative_int(request.data, "song_start_time")
-        )
-        if song_start_time_error:
-            return Response(
-                {"detail": song_start_time_error},
+                {"detail": "Invalid payload"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         update_fields: list[str] = []
-        if goal_song_uri_provided:
-            player.goal_song_uri = goal_song_uri or ""
+        if parsed.goal_song_uri_provided:
+            player.goal_song_uri = parsed.goal_song_uri or ""
             update_fields.append("goal_song_uri")
-        if song_start_time_provided:
-            player.song_start_time = song_start_time
+        if parsed.song_start_time_provided:
+            player.song_start_time = parsed.song_start_time
             update_fields.append("song_start_time")
 
+        if parsed.goal_song_ids_provided:
+            fields, error = self._apply_goal_song_song_ids(
+                player=player,
+                ids=parsed.goal_song_song_ids or [],
+            )
+            if error is not None:
+                return error
+            update_fields.extend(fields or [])
+
         if update_fields:
-            player.save(update_fields=update_fields)
+            # De-duplicate without reordering fields.
+            deduped_fields = list(dict.fromkeys(update_fields))
+            player.save(update_fields=deduped_fields)
 
         return Response(PlayerSerializer(player).data)
 
@@ -911,10 +1087,7 @@ class CurrentPlayerSongDetailAPIView(APIView):
 
         song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
         if song is None:
-            return Response(
-                {"detail": "Song not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         serializer = PlayerSongUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -938,10 +1111,7 @@ class CurrentPlayerSongDetailAPIView(APIView):
 
         song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
         if song is None:
-            return Response(
-                {"detail": "Song not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

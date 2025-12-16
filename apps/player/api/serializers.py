@@ -32,6 +32,7 @@ class PlayerSerializer(serializers.ModelSerializer):
 
     user = UserSerializer(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
+    goal_song_songs = serializers.SerializerMethodField()
 
     class Meta:
         """Meta class for PlayerSerializer."""
@@ -46,6 +47,8 @@ class PlayerSerializer(serializers.ModelSerializer):
             "club_follow",
             "goal_song_uri",
             "song_start_time",
+            "goal_song_song_ids",
+            "goal_song_songs",
         ]
         read_only_fields: ClassVar[list[str]] = ["id_uuid", "user"]
 
@@ -60,6 +63,32 @@ class PlayerSerializer(serializers.ModelSerializer):
 
         """
         return obj.get_profile_picture()
+
+    def get_goal_song_songs(self, obj: Player) -> list[dict[str, object]]:
+        """Return ordered goal-song info for cycling.
+
+        This is derived from `Player.goal_song_song_ids` and returns only songs
+        that exist and have an audio file.
+        """
+        ids = [song_id for song_id in (obj.goal_song_song_ids or []) if song_id]
+        if not ids:
+            return []
+
+        songs = list(PlayerSong.objects.filter(player=obj, id_uuid__in=ids))
+        by_id = {str(song.id_uuid): song for song in songs}
+
+        ordered: list[dict[str, object]] = []
+        for song_id in ids:
+            song = by_id.get(song_id)
+            if song is None or not song.audio_file:
+                continue
+            ordered.append({
+                "id_uuid": str(song.id_uuid),
+                "audio_url": song.audio_file.url,
+                "start_time_seconds": song.start_time_seconds,
+            })
+
+        return ordered
 
 
 class PlayerSongSerializer(serializers.ModelSerializer):
