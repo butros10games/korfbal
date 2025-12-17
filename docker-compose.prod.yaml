@@ -17,7 +17,7 @@ services:
             - '4173:4173'
         environment:
             - CHOKIDAR_USEPOLLING=true
-            - VITE_API_BASE_URL=https://korfbal.butrosgroot.com/api
+            - VITE_API_BASE_URL=https://api.korfbal.butrosgroot.com/api
             - VITE_USE_MOCK_API=false
         networks:
             - kwt-net

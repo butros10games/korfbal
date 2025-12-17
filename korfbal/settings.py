@@ -45,20 +45,20 @@ DJANGO_ENV = _env("DJANGO_ENV", "development").lower()
 DEBUG = _env_bool("DEBUG", DJANGO_ENV != "production")
 SECRET_KEY = _env("SECRET_KEY", "change-me" if DEBUG else None, required=not DEBUG)
 
-KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
-WEB_KORFBAL_ORIGIN = "https://web.korfbal.butrosgroot.com"
+KORFBAL_ORIGIN = "https://api.korfbal.butrosgroot.com"
+WEB_KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
 KWT_ORIGIN = "https://kwt.localhost"
 WEB_KWT_ORIGIN = "https://web.kwt.localhost"
 
 # Base URL for the SPA frontend (used for redirects back into the UI).
-# - Production: https://web.korfbal.butrosgroot.com
+# - Production: https://korfbal.butrosgroot.com
 # - Dev: https://web.kwt.localhost (matches this repo's local HTTPS setup)
 WEB_APP_ORIGIN = _env(
     "WEB_APP_ORIGIN",
     WEB_KWT_ORIGIN if DEBUG else WEB_KORFBAL_ORIGIN,
 ).rstrip("/")
 
-default_hosts = "korfbal.butrosgroot.com"
+default_hosts = "korfbal.butrosgroot.com,api.korfbal.butrosgroot.com"
 ALLOWED_HOSTS = _sorted_hosts(_env_list("ALLOWED_HOSTS", default_hosts))
 CSRF_TRUSTED_ORIGINS = _env_list(
     "CSRF_TRUSTED_ORIGINS",
@@ -66,8 +66,8 @@ CSRF_TRUSTED_ORIGINS = _env_list(
 )
 
 # CORS
-# The frontend is served from https://web.korfbal.butrosgroot.com while the API
-# is served from https://korfbal.butrosgroot.com.
+# The frontend is served from https://korfbal.butrosgroot.com while the API
+# is served from https://api.korfbal.butrosgroot.com.
 # We use cookies (credentials) for session auth, so we must:
 # - allow the specific origin (not '*')
 # - allow credentials
