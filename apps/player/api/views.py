@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import os
 import secrets
+import shutil
+import subprocess
+import tempfile
 from typing import Any, ClassVar
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
+from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -68,6 +74,90 @@ SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
 SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
     "No active Spotify device found. Open Spotify on your phone and try again."
 )
+
+
+def _store_goal_song_upload_best_effort(
+    *,
+    player: Player,
+    uploaded: UploadedFile,
+    safe_name: str,
+    clip_duration_seconds: int = 8,
+) -> tuple[str, str]:
+    """Store a goal-song upload as a short clip, falling back to full upload.
+
+    Returns:
+        (stored_path, url)
+
+    """
+
+    def _store_original() -> tuple[str, str]:
+        key_original = (
+            f"goal_songs/{player.id_uuid}/"
+            f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{safe_name}"
+        )
+        with suppress(Exception):
+            uploaded.seek(0)
+        stored = default_storage.save(key_original, uploaded)
+        return stored, default_storage.url(stored)
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return _store_original()
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="goal_song_") as tmpdir:
+            input_path = os.path.join(tmpdir, "input")
+            output_path = os.path.join(tmpdir, "clip.mp3")
+
+            with suppress(Exception):
+                uploaded.seek(0)
+            with open(input_path, "wb") as handle:
+                handle.writelines(uploaded.chunks())
+
+            subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    "0",
+                    "-i",
+                    input_path,
+                    "-t",
+                    str(clip_duration_seconds),
+                    "-vn",
+                    "-acodec",
+                    "libmp3lame",
+                    "-q:a",
+                    "4",
+                    output_path,
+                ],
+                check=True,
+            )
+
+            clip_key = (
+                f"goal_songs/{player.id_uuid}/"
+                f"{timezone.now().strftime('%Y%m%d%H%M%S')}_clip_"
+                f"{os.path.splitext(safe_name)[0] or 'goal_song'}.mp3"
+            )
+
+            with open(output_path, "rb") as clip_handle:
+                stored_path = default_storage.save(clip_key, File(clip_handle))
+            return stored_path, default_storage.url(stored_path)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        logger.info(
+            "ffmpeg unavailable or failed; storing full goal song upload",
+            exc_info=True,
+        )
+        return _store_original()
+    except Exception:
+        logger.warning(
+            "Unexpected error while clipping goal song; storing full upload",
+            exc_info=True,
+        )
+        return _store_original()
 
 
 def _redirect_to_frontend(redirect_path: str | None = None) -> HttpResponseRedirect:
@@ -1132,12 +1222,14 @@ class UploadGoalSongAPIView(APIView):
         if not safe_name:
             safe_name = "goal_song"
 
-        key = (
-            f"goal_songs/{player.id_uuid}/"
-            f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{safe_name}"
+        # We only ever play ~8 seconds in the UI, so store a clipped variant to
+        # avoid slow downloads on poor connections.
+        _, url = _store_goal_song_upload_best_effort(
+            player=player,
+            uploaded=uploaded,
+            safe_name=safe_name,
+            clip_duration_seconds=8,
         )
-        stored_path = default_storage.save(key, uploaded)
-        url = default_storage.url(stored_path)
 
         # NOTE: goal_song_uri is capped at 255 chars. If you ever see this break,
         # switch to storing a key and exposing a computed URL instead.
@@ -1148,6 +1240,148 @@ class UploadGoalSongAPIView(APIView):
             "url": url,
             "player": PlayerSerializer(player, context={"request": request}).data,
         })
+
+
+class PlayerSongClipAPIView(APIView):
+    """Return (and cache) an 8-second clip for a PlayerSong.
+
+    Why:
+        Goal songs only play briefly in the UI, but the browser used to download
+        the *entire* track before it could play reliably on slower connections.
+
+    Behavior:
+        - Generates and stores a deterministic clip in the configured storage.
+        - Responds with a redirect to that stored clip URL.
+        - If clip generation fails, redirects to the full audio URL as fallback.
+
+    Query params:
+        - start: int (seconds; default 0)
+        - duration: int (seconds; default 8, max 15)
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.AllowAny,
+    ]
+
+    @staticmethod
+    def _parse_seconds_query(request: Request, key: str, default: int) -> int:
+        raw = request.query_params.get(key)
+        if not raw:
+            return default
+        try:
+            return int(float(raw))
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _clip_or_full_location(
+        *,
+        audio_file: Any,  # noqa: ANN401
+        song: PlayerSong,
+        start_seconds: int,
+        duration_seconds: int,
+    ) -> str:
+        clip_key = (
+            f"song_clips/{song.id_uuid}/"
+            f"start_{start_seconds}_dur_{duration_seconds}.mp3"
+        )
+
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            return str(audio_file.url)
+
+        try:
+            if default_storage.exists(clip_key):
+                return default_storage.url(clip_key)
+
+            with tempfile.TemporaryDirectory(prefix="song_clip_") as tmpdir:
+                input_path = os.path.join(tmpdir, "input")
+                output_path = os.path.join(tmpdir, "clip.mp3")
+
+                with audio_file.open("rb") as source, open(input_path, "wb") as dest:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        dest.write(chunk)
+
+                subprocess.run(
+                    [
+                        ffmpeg_path,
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-ss",
+                        str(start_seconds),
+                        "-i",
+                        input_path,
+                        "-t",
+                        str(duration_seconds),
+                        "-vn",
+                        "-acodec",
+                        "libmp3lame",
+                        "-q:a",
+                        "4",
+                        output_path,
+                    ],
+                    check=True,
+                )
+
+                with open(output_path, "rb") as clip_handle:
+                    default_storage.save(clip_key, File(clip_handle))
+
+            return default_storage.url(clip_key)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            logger.info(
+                "Clip generation failed; falling back to full audio for %s",
+                song.id_uuid,
+                exc_info=True,
+            )
+            return str(audio_file.url)
+        except Exception:
+            logger.warning(
+                "Unexpected error generating clip; falling back to full audio for %s",
+                song.id_uuid,
+                exc_info=True,
+            )
+            return str(audio_file.url)
+
+    def get(
+        self,
+        request: Request,
+        song_id: str,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> HttpResponseRedirect:
+        """Redirect to an 8-second clip URL for the requested song."""
+        start_seconds = max(0, self._parse_seconds_query(request, "start", 0))
+        duration_seconds = self._parse_seconds_query(request, "duration", 8)
+        duration_seconds = max(1, min(15, duration_seconds))
+
+        song = (
+            PlayerSong.objects.select_related("cached_song")
+            .filter(id_uuid=song_id)
+            .first()
+        )
+        if song is None:
+            return HttpResponseRedirect("/")
+
+        audio_file = (
+            song.cached_song.audio_file
+            if song.cached_song is not None
+            else song.audio_file
+        )
+        if not audio_file:
+            return HttpResponseRedirect("/")
+
+        location = self._clip_or_full_location(
+            audio_file=audio_file,
+            song=song,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
+        return HttpResponseRedirect(location)
 
 
 class CurrentPlayerSongsAPIView(APIView):

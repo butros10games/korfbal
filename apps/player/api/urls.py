@@ -12,6 +12,7 @@ from .views import (
     CurrentPlayerSongsAPIView,
     PlayerConnectedClubRecentResultsAPIView,
     PlayerOverviewAPIView,
+    PlayerSongClipAPIView,
     PlayerStatsAPIView,
     PlayerViewSet,
     SpotifyCallbackView,
@@ -63,6 +64,11 @@ urlpatterns = [
         "api/upload_goal_song/",
         UploadGoalSongAPIView.as_view(),
         name="player-upload-goal-song",
+    ),
+    path(
+        "api/songs/<uuid:song_id>/clip/",
+        PlayerSongClipAPIView.as_view(),
+        name="player-song-clip",
     ),
     path(
         "spotify/connect/",

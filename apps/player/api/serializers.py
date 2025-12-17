@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from typing import Any, ClassVar, cast
+from urllib.parse import urlencode
 
 from django.contrib.auth.models import User
+from django.urls import reverse
 from rest_framework import serializers
 
 from apps.player.models.cached_song import CachedSong
@@ -194,9 +196,26 @@ class PlayerSerializer(serializers.ModelSerializer):
                 )
             if song is None or not audio_file:
                 continue
+
+            # Provide a short clip URL (8s) so clients don't download full tracks.
+            request = self.context.get("request")
+            clip_path = reverse(
+                "player-song-clip",
+                kwargs={"song_id": str(song.id_uuid)},
+            )
+            clip_query = urlencode({
+                "start": int(song.start_time_seconds or 0),
+                "duration": 8,
+            })
+            clip_url = f"{clip_path}?{clip_query}"
+            if request is not None and hasattr(request, "build_absolute_uri"):
+                clip_url = request.build_absolute_uri(clip_url)
+
             ordered.append({
                 "id_uuid": str(song.id_uuid),
-                "audio_url": audio_file.url,
+                "audio_url": clip_url,
+                # Keep start time so clients can still seek when the clip endpoint
+                # falls back to the full audio file.
                 "start_time_seconds": song.start_time_seconds,
             })
 
