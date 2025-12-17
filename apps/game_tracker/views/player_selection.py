@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, render
 
 from apps.game_tracker.models import MatchData, PlayerGroup
 from apps.player.models import Player
+from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
@@ -16,6 +17,23 @@ invalid_request = JsonResponse({"error": "Invalid request method"}, status=405)
 json_error = JsonResponse({"error": "Invalid JSON data"}, status=400)
 no_player_selected = JsonResponse({"error": "No player selected"}, status=400)
 to_many_players = JsonResponse({"error": "Too many players selected"}, status=400)
+
+
+def _viewer_player(request: HttpRequest) -> Player | None:
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    return Player.objects.filter(user=user).first()
+
+
+def _profile_picture_for(viewer: Player | None, target: Player) -> str:
+    if can_view_by_visibility(
+        visibility=target.profile_picture_visibility,
+        viewer=viewer,
+        target=target,
+    ):
+        return target.get_profile_picture()
+    return target.get_placeholder_profile_picture_url()
 
 
 def player_overview(request: HttpRequest, match_id: str, team_id: str) -> HttpResponse:
@@ -54,6 +72,7 @@ def player_overview_data(_: HttpRequest, match_id: str, team_id: str) -> JsonRes
 
     """
     player_groups = _get_player_groups(match_id, team_id)
+    viewer = _viewer_player(_)
 
     player_groups_data = []
     for player_group in player_groups:
@@ -61,7 +80,7 @@ def player_overview_data(_: HttpRequest, match_id: str, team_id: str) -> JsonRes
             {
                 "id_uuid": str(player.id_uuid),
                 "user": {"username": player.user.username},
-                "get_profile_picture": player.get_profile_picture(),
+                "get_profile_picture": _profile_picture_for(viewer, player),
             }
             for player in player_group.players.all()
         ]
@@ -103,13 +122,15 @@ def players_team(_: HttpRequest, match_id: str, team_id: str) -> JsonResponse:
     for player_group in player_groups:
         players = players.exclude(id_uuid__in=player_group.players.all())
 
+    viewer = _viewer_player(_)
+
     return JsonResponse(
         {
             "players": [
                 {
                     "id_uuid": str(player.id_uuid),
                     "user": {"username": player.user.username},
-                    "get_profile_picture": player.get_profile_picture(),
+                    "get_profile_picture": _profile_picture_for(viewer, player),
                 }
                 for player in players
             ],
@@ -176,6 +197,8 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
         ],
     )
 
+    viewer = _viewer_player(request)
+
     # return the players that are found in json format
     return JsonResponse(
         {
@@ -183,7 +206,7 @@ def player_search(request: HttpRequest, match_id: str, team_id: str) -> JsonResp
                 {
                     "id_uuid": str(player.id_uuid),
                     "user": {"username": player.user.username},
-                    "get_profile_picture": player.get_profile_picture(),
+                    "get_profile_picture": _profile_picture_for(viewer, player),
                 }
                 for player in players
             ],

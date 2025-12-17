@@ -132,6 +132,15 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         team = self.match.home_team if command == "home_team" else self.match.away_team
 
+        groups = cast(
+            list[PlayerGroup],
+            await sync_to_async(list)(
+                PlayerGroup.objects.prefetch_related(
+                    "starting_type",
+                ).filter(team=team, match_data=self.match_data),
+            ),
+        )
+
         await self.send(
             text_data=json.dumps(
                 {
@@ -140,19 +149,11 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
                     "team_id": str(team.id_uuid),
                     "group_id_to_type_id": {
                         str(group.id_uuid): str(group.starting_type.id_uuid)
-                        for group in await sync_to_async(list)(
-                            PlayerGroup.objects.prefetch_related(
-                                "starting_type",
-                            ).filter(team=team, match_data=self.match_data),
-                        )
+                        for group in groups
                     },
                     "type_id_to_group_id": {
                         str(group.starting_type.id_uuid): str(group.id_uuid)
-                        for group in await sync_to_async(list)(
-                            PlayerGroup.objects.prefetch_related(
-                                "starting_type",
-                            ).filter(team=team, match_data=self.match_data),
-                        )
+                        for group in groups
                     },
                     "is_coach": await self.check_if_access(user_id, team),
                     "finished": self.match_data.status == "finished",  # type: ignore[union-attr]

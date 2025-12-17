@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from apps.player.models.cached_song import CachedSong
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
+from apps.player.privacy import can_view_by_visibility
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -33,6 +35,23 @@ class PlayerSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
     goal_song_songs = serializers.SerializerMethodField()
+    can_view_profile_picture = serializers.SerializerMethodField()
+    can_view_stats = serializers.SerializerMethodField()
+    is_private_account = serializers.SerializerMethodField()
+
+    _viewer_player: Player | None = None
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Initialise the serializer and resolve the viewer player (if any)."""
+        # DRF's `Serializer.__init__` accepts a wide set of keyword arguments;
+        # we cast to keep strict typing (and satisfy ruff's ANN401 rules).
+        super().__init__(*args, **cast(dict[str, Any], kwargs))
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False):
+            # Cache once per serializer instance to avoid repeated queries.
+            self._viewer_player = Player.objects.filter(user=user).first()
 
     class Meta:
         """Meta class for PlayerSerializer."""
@@ -43,6 +62,11 @@ class PlayerSerializer(serializers.ModelSerializer):
             "user",
             "profile_picture",
             "profile_picture_url",
+            "profile_picture_visibility",
+            "stats_visibility",
+            "can_view_profile_picture",
+            "can_view_stats",
+            "is_private_account",
             "team_follow",
             "club_follow",
             "goal_song_uri",
@@ -50,7 +74,13 @@ class PlayerSerializer(serializers.ModelSerializer):
             "goal_song_song_ids",
             "goal_song_songs",
         ]
-        read_only_fields: ClassVar[list[str]] = ["id_uuid", "user"]
+        read_only_fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "user",
+            "can_view_profile_picture",
+            "can_view_stats",
+            "is_private_account",
+        ]
 
     def get_profile_picture_url(self, obj: Player) -> str:
         """Return the profile picture URL.
@@ -62,7 +92,77 @@ class PlayerSerializer(serializers.ModelSerializer):
             str: The URL of the profile picture.
 
         """
-        return obj.get_profile_picture()
+        if self.get_can_view_profile_picture(obj):
+            return obj.get_profile_picture()
+        return obj.get_placeholder_profile_picture_url()
+
+    def get_can_view_profile_picture(self, obj: Player) -> bool:
+        """Return True if the requesting viewer may see the profile picture."""
+        return can_view_by_visibility(
+            visibility=obj.profile_picture_visibility,
+            viewer=self._viewer_player,
+            target=obj,
+        )
+
+    def get_can_view_stats(self, obj: Player) -> bool:
+        """Return True if the requesting viewer may see the player's stats."""
+        return can_view_by_visibility(
+            visibility=obj.stats_visibility,
+            viewer=self._viewer_player,
+            target=obj,
+        )
+
+    def get_is_private_account(self, obj: Player) -> bool:
+        """Return True when both stats and profile picture are blocked."""
+        return (not self.get_can_view_profile_picture(obj)) and (
+            not self.get_can_view_stats(obj)
+        )
+
+    # NOTE: `rest_framework` serializers inherit from `Field`, and type stubs + ty
+    # can disagree about the effective override target. This implementation matches
+    # DRF's runtime contract (returns a dict for API responses) and we scope-ignore
+    # only the override check.
+    def to_representation(  # type: ignore[invalid-method-override]
+        self,
+        instance: object,
+    ) -> dict[str, Any]:
+        """Serialise a Player while minimising PII exposure for non-self views."""
+        player = instance
+        if not isinstance(player, Player):
+            # Fall back to DRF's default behavior for unexpected instance types.
+            return super().to_representation(instance)
+
+        data = super().to_representation(player)
+
+        # Do not expose the deprecated 'private' option to clients.
+        if data.get("profile_picture_visibility") == Player.Visibility.PRIVATE:
+            data["profile_picture_visibility"] = Player.Visibility.CLUB
+        if data.get("stats_visibility") == Player.Visibility.PRIVATE:
+            data["stats_visibility"] = Player.Visibility.CLUB
+
+        is_self = (
+            self._viewer_player is not None
+            and self._viewer_player.id_uuid == player.id_uuid
+        )
+
+        # Minimise exposure of personal data for other players.
+        if not is_self:
+            user = data.get("user")
+            if isinstance(user, dict):
+                user.pop("email", None)
+                user.pop("first_name", None)
+                user.pop("last_name", None)
+
+        if not self.get_can_view_profile_picture(player):
+            # Prevent leaking the raw file path/URL via the ImageField.
+            data["profile_picture"] = None
+
+        if (not is_self) and self.get_is_private_account(player):
+            # When the viewer can't see anything meaningful, avoid exposing
+            # follow relations (club/team preferences).
+            data["team_follow"] = []
+            data["club_follow"] = []
+        return data
 
     def get_goal_song_songs(self, obj: Player) -> list[dict[str, object]]:
         """Return ordered goal-song info for cycling.
@@ -74,17 +174,29 @@ class PlayerSerializer(serializers.ModelSerializer):
         if not ids:
             return []
 
-        songs = list(PlayerSong.objects.filter(player=obj, id_uuid__in=ids))
+        songs = list(
+            PlayerSong.objects.select_related("cached_song").filter(
+                player=obj,
+                id_uuid__in=ids,
+            )
+        )
         by_id = {str(song.id_uuid): song for song in songs}
 
         ordered: list[dict[str, object]] = []
         for song_id in ids:
             song = by_id.get(song_id)
-            if song is None or not song.audio_file:
+            audio_file = None
+            if song is not None:
+                audio_file = (
+                    song.cached_song.audio_file
+                    if song.cached_song is not None
+                    else song.audio_file
+                )
+            if song is None or not audio_file:
                 continue
             ordered.append({
                 "id_uuid": str(song.id_uuid),
-                "audio_url": song.audio_file.url,
+                "audio_url": audio_file.url,
                 "start_time_seconds": song.start_time_seconds,
             })
 
@@ -94,6 +206,11 @@ class PlayerSerializer(serializers.ModelSerializer):
 class PlayerSongSerializer(serializers.ModelSerializer):
     """Serializer for PlayerSong model."""
 
+    title = serializers.SerializerMethodField()
+    artists = serializers.SerializerMethodField()
+    duration_seconds = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    error_message = serializers.SerializerMethodField()
     audio_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -107,6 +224,7 @@ class PlayerSongSerializer(serializers.ModelSerializer):
             "artists",
             "duration_seconds",
             "start_time_seconds",
+            "playback_speed",
             "status",
             "error_message",
             "audio_url",
@@ -125,11 +243,43 @@ class PlayerSongSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    @staticmethod
+    def _cached(obj: PlayerSong) -> CachedSong | None:
+        """Return the linked CachedSong when present."""
+        return getattr(obj, "cached_song", None)
+
+    def get_title(self, obj: PlayerSong) -> str:
+        """Return the song title (from cache when linked)."""
+        cached = self._cached(obj)
+        return cached.title if cached is not None else obj.title
+
+    def get_artists(self, obj: PlayerSong) -> str:
+        """Return the song artists (from cache when linked)."""
+        cached = self._cached(obj)
+        return cached.artists if cached is not None else obj.artists
+
+    def get_duration_seconds(self, obj: PlayerSong) -> int | None:
+        """Return the song duration in seconds (from cache when linked)."""
+        cached = self._cached(obj)
+        return cached.duration_seconds if cached is not None else obj.duration_seconds
+
+    def get_status(self, obj: PlayerSong) -> str:
+        """Return the effective lifecycle status (from cache when linked)."""
+        cached = self._cached(obj)
+        return cached.status if cached is not None else obj.status
+
+    def get_error_message(self, obj: PlayerSong) -> str:
+        """Return the effective error message (from cache when linked)."""
+        cached = self._cached(obj)
+        return cached.error_message if cached is not None else obj.error_message
+
     def get_audio_url(self, obj: PlayerSong) -> str | None:
         """Return the resolved audio URL when available."""
-        if not obj.audio_file:
+        cached = self._cached(obj)
+        audio_file = cached.audio_file if cached is not None else obj.audio_file
+        if not audio_file:
             return None
-        return obj.audio_file.url  # type: ignore[no-any-return]
+        return audio_file.url  # type: ignore[no-any-return]
 
 
 class PlayerSongCreateSerializer(serializers.Serializer):
@@ -141,4 +291,60 @@ class PlayerSongCreateSerializer(serializers.Serializer):
 class PlayerSongUpdateSerializer(serializers.Serializer):
     """Input serializer for updating PlayerSong settings."""
 
-    start_time_seconds = serializers.IntegerField(min_value=0)
+    start_time_seconds = serializers.IntegerField(min_value=0, required=False)
+    playback_speed = serializers.FloatField(
+        min_value=0.5,
+        max_value=2.0,
+        required=False,
+    )
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require at least one updatable field.
+
+        Raises:
+            ValidationError: When neither `start_time_seconds` nor `playback_speed`
+                is provided.
+
+        """
+        if "start_time_seconds" not in attrs and "playback_speed" not in attrs:
+            raise serializers.ValidationError(
+                "Provide start_time_seconds and/or playback_speed."
+            )
+        return attrs
+
+
+class PlayerPrivacySettingsSerializer(serializers.Serializer):
+    """Input serializer for updating privacy visibility settings."""
+
+    profile_picture_visibility = serializers.ChoiceField(
+        choices=Player.Visibility.choices,
+        required=False,
+    )
+    stats_visibility = serializers.ChoiceField(
+        choices=Player.Visibility.choices,
+        required=False,
+    )
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Validate and normalise privacy settings input.
+
+        Notes:
+            The deprecated visibility option 'private' is coerced to 'club'.
+
+        Raises:
+            ValidationError: When no settings are provided.
+
+        """
+        if not attrs:
+            raise serializers.ValidationError(
+                "Provide profile_picture_visibility and/or stats_visibility."
+            )
+
+        # Backwards compatibility: if an older client sends 'private', treat it
+        # as 'club' (the stricter, still-useful option).
+        if attrs.get("profile_picture_visibility") == Player.Visibility.PRIVATE:
+            attrs["profile_picture_visibility"] = Player.Visibility.CLUB
+        if attrs.get("stats_visibility") == Player.Visibility.PRIVATE:
+            attrs["stats_visibility"] = Player.Visibility.CLUB
+
+        return attrs

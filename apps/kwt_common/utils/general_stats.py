@@ -1,7 +1,7 @@
 """Module contains general_stats function that returns general statistics of a match."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from asgiref.sync import sync_to_async
 
@@ -15,7 +15,10 @@ async def build_general_stats(match_dataset: list[Any]) -> dict[str, Any]:
         dict[str, Any]: General stats payload.
 
     """
-    goal_types: list[GoalType] = await sync_to_async(list)(GoalType.objects.all())
+    goal_types = cast(
+        list[GoalType],
+        await sync_to_async(list)(GoalType.objects.all()),
+    )
 
     goal_types_json = [
         {"id": str(goal_type.id_uuid), "name": goal_type.name}

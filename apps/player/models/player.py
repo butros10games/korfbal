@@ -16,6 +16,13 @@ from .constants import club_model_string, team_model_string
 class Player(models.Model):
     """Model for Player."""
 
+    class Visibility(models.TextChoices):
+        """Visibility options for profile data."""
+
+        PUBLIC = "public", "Public"
+        CLUB = "club", "Club"
+        PRIVATE = "private", "Private"
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
@@ -31,6 +38,18 @@ class Player(models.Model):
         upload_to="profile_pictures/",
         blank=True,
         null=True,
+    )
+
+    profile_picture_visibility: models.CharField[str, str] = models.CharField(
+        max_length=16,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
+    )
+
+    stats_visibility: models.CharField[str, str] = models.CharField(
+        max_length=16,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
     )
 
     team_follow: models.ManyToManyField[Any, Any] = models.ManyToManyField(
@@ -83,5 +102,10 @@ class Player(models.Model):
         """
         if self.profile_picture:
             return self.profile_picture.url  # type: ignore[no-any-return]
+
+        return self.get_placeholder_profile_picture_url()
+
+    def get_placeholder_profile_picture_url(self) -> str:
+        """Return the default placeholder profile picture URL."""
         static_url = cast(str, settings.STATIC_URL).removeprefix("/")
         return f"https://{static_url}images/player/blank-profile-picture.png"

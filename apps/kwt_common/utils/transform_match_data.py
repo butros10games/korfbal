@@ -71,8 +71,8 @@ async def transform_match_data(matches_data: list[MatchData]) -> list[dict[str, 
                 "time_display": get_time_display(match_data),
                 "status": match_data.status,
                 "winner": (
-                    await sync_to_async(match_data.get_winner().__str__)()
-                    if match_data.get_winner()
+                    str(winner)
+                    if (winner := match_data.get_winner()) is not None
                     else None
                 ),
                 "get_absolute_url": str(match_data.match_link.get_absolute_url()),

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from bg_uuidv7 import uuidv7
 from django.db import models
+from django.db.models import Q
 
+from .cached_song import CachedSong
 from .player import Player
 
 
@@ -37,6 +39,15 @@ class PlayerSong(models.Model):
         related_name="songs",
     )
 
+    # Shared cached download for this track.
+    cached_song: models.ForeignKey[CachedSong, CachedSong] = models.ForeignKey(
+        CachedSong,
+        on_delete=models.PROTECT,
+        related_name="player_entries",
+        blank=True,
+        null=True,
+    )
+
     spotify_url: models.URLField = models.URLField(max_length=500)
 
     title: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
@@ -46,6 +57,9 @@ class PlayerSong(models.Model):
     )
 
     start_time_seconds: models.IntegerField[int, int] = models.IntegerField(default=0)
+
+    # Playback speed used in the web UI preview (and any future local playback).
+    playback_speed: models.FloatField[float, float] = models.FloatField(default=1.0)
 
     status: models.CharField[str, str] = models.CharField(
         max_length=20,
@@ -67,6 +81,13 @@ class PlayerSong(models.Model):
         """Model metadata."""
 
         ordering = ("-created_at",)
+        constraints = (
+            models.UniqueConstraint(
+                fields=["player", "cached_song"],
+                condition=Q(cached_song__isnull=False),
+                name="unique_player_cached_song",
+            ),
+        )
 
     def __str__(self) -> str:
         """Return a readable representation for admin/debugging."""

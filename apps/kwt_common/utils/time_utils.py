@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 import json
-from typing import Any
+from typing import Any, cast
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -24,29 +24,35 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
     # check if there is a active part if there is a active part send the start time of
     # the part and length of a match part
     try:
-        part = await MatchPart.objects.aget(match_data=match_data, active=True)
+        part: MatchPart | None = await MatchPart.objects.aget(
+            match_data=match_data,
+            active=True,
+        )
     except MatchPart.DoesNotExist:
-        part = False
+        part = None
 
     if part:
         # check if there is a active pause if there is a active pause send the start
         # time of the pause
         try:
-            active_pause = await Pause.objects.aget(
+            active_pause: Pause | None = await Pause.objects.aget(
                 match_data=match_data,
                 active=True,
                 match_part=current_part,
             )
         except Pause.DoesNotExist:
-            active_pause = False
+            active_pause = None
 
         # calculate all the time in pauses that are not active anymore
-        pauses: list[Pause] = await sync_to_async(list)(
-            Pause.objects.filter(
-                match_data=match_data,
-                active=False,
-                match_part=current_part,
-            )
+        pauses = cast(
+            list[Pause],
+            await sync_to_async(list)(
+                Pause.objects.filter(
+                    match_data=match_data,
+                    active=False,
+                    match_part=current_part,
+                ),
+            ),
         )
         pause_time = 0
         for pause in pauses:

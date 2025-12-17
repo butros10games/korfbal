@@ -202,9 +202,7 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
                 await sync_to_async(players_in_team_season.extend)(players_prefetch)
 
-        players_in_team_season_list: list[Player] = await sync_to_async(list)(
-            players_in_team_season
-        )  # type: ignore[call-arg]
+        players_in_team_season_list: list[Player] = players_in_team_season
 
         players_in_team_season_dict = [
             {

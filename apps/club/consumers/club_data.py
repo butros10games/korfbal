@@ -74,8 +74,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
 
     async def teams_request(self) -> None:
         """Send the teams data to the client."""
-        teams: list[Team] = await sync_to_async(list)(
-            Team.objects.filter(club=self.club),
+        teams = cast(
+            list[Team],
+            await sync_to_async(list)(Team.objects.filter(club=self.club)),
         )
         teams = list(dict.fromkeys(teams))  # Remove duplicates
 
@@ -101,8 +102,9 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             command: The command to determine which matches to send.
 
         """
-        teams: list[Team] = await sync_to_async(list)(
-            Team.objects.filter(club=self.club),
+        teams = cast(
+            list[Team],
+            await sync_to_async(list)(Team.objects.filter(club=self.club)),
         )
         team_ids: list[str] = [str(team.id_uuid) for team in teams]
 
@@ -143,26 +145,30 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
             The match data for the given teams and status.
 
         """
-        matches: list[Match] = await sync_to_async(list)(
-            Match.objects.filter(
-                Q(home_team__in=team_ids) | Q(away_team__in=team_ids),
-            ).distinct(),
+        matches = cast(
+            list[Match],
+            await sync_to_async(list)(
+                Match.objects.filter(
+                    Q(home_team__in=team_ids) | Q(away_team__in=team_ids),
+                ).distinct(),
+            ),
         )
         matches_non_dub: list[Match] = list(dict.fromkeys(matches))
 
-        matches_data: list[MatchData] = await sync_to_async(list)(
-            MatchData.objects.prefetch_related(
-                "match_link",
-                "match_link__home_team",
-                "match_link__home_team__club",
-                "match_link__away_team",
-                "match_link__away_team__club",
-            )
-            .filter(match_link__in=matches_non_dub, status__in=status)
-            .order_by(order + "match_link__start_time"),
+        return cast(
+            list[MatchData],
+            await sync_to_async(list)(
+                MatchData.objects.prefetch_related(
+                    "match_link",
+                    "match_link__home_team",
+                    "match_link__home_team__club",
+                    "match_link__away_team",
+                    "match_link__away_team__club",
+                )
+                .filter(match_link__in=matches_non_dub, status__in=status)
+                .order_by(order + "match_link__start_time"),
+            ),
         )
-
-        return matches_data
 
     async def follow_request(self, follow: bool, user_id: str) -> None:
         """Handle the follow request.

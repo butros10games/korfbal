@@ -4,7 +4,7 @@ from collections.abc import Callable
 import contextlib
 from datetime import UTC, datetime
 import json
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from asgiref.sync import sync_to_async
@@ -296,12 +296,15 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
     async def get_goal_types(self) -> None:
         """Get the goal types."""
-        goal_type_list = await sync_to_async(list)(GoalType.objects.all())  # type: ignore[call-arg]
+        goal_type_list = cast(
+            list[GoalType],
+            await sync_to_async(list)(GoalType.objects.all()),
+        )
 
         goal_type_list = [
             {"id": str(goal_type.id_uuid), "name": goal_type.name}
             for goal_type in goal_type_list
-        ]  # type: ignore[assignment]
+        ]
 
         await self.send(
             text_data=json.dumps(

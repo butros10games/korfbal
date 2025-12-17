@@ -17,6 +17,7 @@ from apps.kwt_common.utils.general_stats import build_general_stats
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.kwt_common.utils.players_stats import build_player_stats
 from apps.player.models import Player
+from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Season
 from apps.team.models.team import Team
 
@@ -73,12 +74,28 @@ class TeamViewSet(viewsets.ModelViewSet):
         )
 
         roster_players = list(self._team_players_queryset(team, season, match_data_qs))
+
+        viewer_player = (
+            Player.objects.filter(user=request.user).first()
+            if request.user.is_authenticated
+            else None
+        )
+
         roster = [
             {
                 "id_uuid": str(player.id_uuid),
-                "display_name": player.user.get_full_name() or player.user.username,
+                # Avoid exposing full names to anonymous/outside viewers.
+                "display_name": player.user.username,
                 "username": player.user.username,
-                "profile_picture_url": player.get_profile_picture(),
+                "profile_picture_url": (
+                    player.get_profile_picture()
+                    if can_view_by_visibility(
+                        visibility=player.profile_picture_visibility,
+                        viewer=viewer_player,
+                        target=player,
+                    )
+                    else player.get_placeholder_profile_picture_url()
+                ),
                 "profile_url": player.get_absolute_url(),
             }
             for player in roster_players

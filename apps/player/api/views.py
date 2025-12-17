@@ -21,6 +21,7 @@ from django.utils import timezone
 from kombu.exceptions import OperationalError as KombuOperationalError
 import requests
 from rest_framework import permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -28,13 +29,17 @@ from rest_framework.views import APIView
 
 from apps.game_tracker.models import MatchData, Shot
 from apps.kwt_common.utils.match_summary import build_match_summaries
+from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.spotify_token import SpotifyToken
-from apps.player.tasks import download_player_song
+from apps.player.privacy import can_view_by_visibility
+from apps.player.spotify import canonicalize_spotify_track_url
+from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
 
 from .serializers import (
+    PlayerPrivacySettingsSerializer,
     PlayerSerializer,
     PlayerSongCreateSerializer,
     PlayerSongSerializer,
@@ -48,6 +53,11 @@ logger = logging.getLogger(__name__)
 PLAYER_NOT_FOUND_MESSAGE = "Player not found"
 PLAYER_NOT_FOUND_DETAIL = {"detail": PLAYER_NOT_FOUND_MESSAGE}
 SONG_NOT_FOUND_DETAIL = {"detail": "Song not found"}
+
+PRIVATE_ACCOUNT_MESSAGE = "Private account"
+PRIVATE_ACCOUNT_DETAIL = {"code": "private_account", "detail": PRIVATE_ACCOUNT_MESSAGE}
+
+CELERY_BROKER_UNAVAILABLE_MESSAGE = "Celery broker unavailable"
 
 SPOTIFY_NOT_CONFIGURED_MESSAGE = "Spotify is not configured on the server"
 SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
@@ -218,6 +228,29 @@ class PlayerViewSet(viewsets.ModelViewSet):
     ]
     lookup_field = "id_uuid"
 
+    def _ensure_can_modify(self, player: Player) -> None:
+        user = self.request.user
+        if not user or not getattr(user, "is_authenticated", False):
+            raise PermissionDenied("Authentication required")
+
+        if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+            return
+
+        user_id = getattr(user, "id", None)
+        if user_id is None or player.user.id != user_id:
+            raise PermissionDenied("You do not have permission to modify this player")
+
+    def perform_update(self, serializer: Any) -> None:  # noqa: ANN401
+        """Update a player after enforcing ownership/staff checks."""
+        player = self.get_object()
+        self._ensure_can_modify(player)
+        serializer.save()
+
+    def perform_destroy(self, instance: Player) -> None:
+        """Delete a player after enforcing ownership/staff checks."""
+        self._ensure_can_modify(instance)
+        instance.delete()
+
 
 class CurrentPlayerAPIView(APIView):
     """Return the profile for the active player (or a debug fallback)."""
@@ -248,8 +281,70 @@ class CurrentPlayerAPIView(APIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = PlayerSerializer(player)
+        serializer = PlayerSerializer(player, context={"request": request})
         return Response(serializer.data)
+
+
+class CurrentPlayerPrivacySettingsAPIView(APIView):
+    """Read/update privacy visibility settings for the authenticated player."""
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return the authenticated player's privacy visibility settings."""
+        player = Player.objects.select_related("user").filter(user=request.user).first()
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        profile_visibility = player.profile_picture_visibility
+        if profile_visibility == Player.Visibility.PRIVATE:
+            profile_visibility = Player.Visibility.CLUB
+
+        stats_visibility = player.stats_visibility
+        if stats_visibility == Player.Visibility.PRIVATE:
+            stats_visibility = Player.Visibility.CLUB
+
+        return Response({
+            "profile_picture_visibility": profile_visibility,
+            "stats_visibility": stats_visibility,
+        })
+
+    def patch(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Update the authenticated player's privacy visibility settings."""
+        player = Player.objects.select_related("user").filter(user=request.user).first()
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PlayerPrivacySettingsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        update_fields: list[str] = []
+        if "profile_picture_visibility" in serializer.validated_data:
+            player.profile_picture_visibility = str(
+                serializer.validated_data["profile_picture_visibility"]
+            )
+            update_fields.append("profile_picture_visibility")
+
+        if "stats_visibility" in serializer.validated_data:
+            player.stats_visibility = str(serializer.validated_data["stats_visibility"])
+            update_fields.append("stats_visibility")
+
+        if update_fields:
+            player.save(update_fields=update_fields)
+
+        return Response(PlayerSerializer(player, context={"request": request}).data)
 
 
 class PlayerOverviewAPIView(APIView):
@@ -274,6 +369,23 @@ class PlayerOverviewAPIView(APIView):
         player = self._resolve_player(request, player_id)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        # Restrict viewing other players' match history when configured.
+        if player_id:
+            viewer = (
+                Player.objects.filter(user=request.user).first()
+                if request.user.is_authenticated
+                else None
+            )
+            if not can_view_by_visibility(
+                visibility=player.stats_visibility,
+                viewer=viewer,
+                target=player,
+            ):
+                return Response(
+                    PRIVATE_ACCOUNT_DETAIL,
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         seasons_qs = list(self._player_seasons_queryset(player))
         season = self._resolve_season(request, seasons_qs)
@@ -505,6 +617,23 @@ class PlayerStatsAPIView(APIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
+        # Restrict viewing other players' season stats when configured.
+        if player_id:
+            viewer = (
+                Player.objects.filter(user=request.user).first()
+                if request.user.is_authenticated
+                else None
+            )
+            if not can_view_by_visibility(
+                visibility=player.stats_visibility,
+                viewer=viewer,
+                target=player,
+            ):
+                return Response(
+                    PRIVATE_ACCOUNT_DETAIL,
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         seasons_qs = list(self._player_seasons_queryset(player))
         season = self._resolve_season(request, seasons_qs)
 
@@ -711,7 +840,12 @@ class CurrentPlayerGoalSongAPIView(APIView):
         if not ids:
             return [], None
 
-        songs = list(PlayerSong.objects.filter(player=player, id_uuid__in=ids))
+        songs = list(
+            PlayerSong.objects.select_related("cached_song").filter(
+                player=player,
+                id_uuid__in=ids,
+            )
+        )
         by_id = {str(song.id_uuid): song for song in songs}
 
         missing = [song_id for song_id in ids if song_id not in by_id]
@@ -725,11 +859,13 @@ class CurrentPlayerGoalSongAPIView(APIView):
             )
 
         ordered = [by_id[song_id] for song_id in ids]
-        not_ready = [
-            str(song.id_uuid)
-            for song in ordered
-            if song.status != PlayerSongStatus.READY or not song.audio_file
-        ]
+        not_ready: list[str] = []
+        for song in ordered:
+            cached = song.cached_song
+            status_value = cached.status if cached is not None else song.status
+            audio_file = cached.audio_file if cached is not None else song.audio_file
+            if status_value != PlayerSongStatus.READY or not audio_file:
+                not_ready.append(str(song.id_uuid))
         if not_ready:
             return (
                 None,
@@ -760,8 +896,13 @@ class CurrentPlayerGoalSongAPIView(APIView):
 
         if ordered:
             first = ordered[0]
-            if first.audio_file:
-                player.goal_song_uri = first.audio_file.url  # type: ignore[no-any-return]
+            audio_file = (
+                first.cached_song.audio_file
+                if first.cached_song is not None
+                else first.audio_file
+            )
+            if audio_file:
+                player.goal_song_uri = audio_file.url  # type: ignore[no-any-return]
                 update_fields.append("goal_song_uri")
             player.song_start_time = first.start_time_seconds
             update_fields.append("song_start_time")
@@ -878,7 +1019,7 @@ class CurrentPlayerGoalSongAPIView(APIView):
             deduped_fields = list(dict.fromkeys(update_fields))
             player.save(update_fields=deduped_fields)
 
-        return Response(PlayerSerializer(player).data)
+        return Response(PlayerSerializer(player, context={"request": request}).data)
 
 
 class UploadProfilePictureAPIView(APIView):
@@ -1002,7 +1143,10 @@ class UploadGoalSongAPIView(APIView):
         player.goal_song_uri = url
         player.save(update_fields=["goal_song_uri"])
 
-        return Response({"url": url, "player": PlayerSerializer(player).data})
+        return Response({
+            "url": url,
+            "player": PlayerSerializer(player, context={"request": request}).data,
+        })
 
 
 class CurrentPlayerSongsAPIView(APIView):
@@ -1023,7 +1167,11 @@ class CurrentPlayerSongsAPIView(APIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        songs = PlayerSong.objects.filter(player=player).order_by("-created_at")
+        songs = (
+            PlayerSong.objects.select_related("cached_song")
+            .filter(player=player)
+            .order_by("-created_at")
+        )
         return Response(PlayerSongSerializer(songs, many=True).data)
 
     def post(
@@ -1040,30 +1188,91 @@ class CurrentPlayerSongsAPIView(APIView):
         serializer = PlayerSongCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        spotify_url = str(serializer.validated_data["spotify_url"]).strip()
-        song = PlayerSong.objects.create(player=player, spotify_url=spotify_url)
+        raw_url = str(serializer.validated_data["spotify_url"]).strip()
+        spotify_url = canonicalize_spotify_track_url(raw_url)
+
+        cached, _ = CachedSong.objects.get_or_create(spotify_url=spotify_url)
+        song, created = PlayerSong.objects.get_or_create(
+            player=player,
+            cached_song=cached,
+            defaults={"spotify_url": spotify_url},
+        )
 
         try:
             if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False) or getattr(
                 settings, "TESTING", False
             ):
-                download_player_song.apply(args=[str(song.id_uuid)])
+                download_cached_song.apply(args=[str(cached.id_uuid)])
             else:
-                download_player_song.delay(str(song.id_uuid))
+                download_cached_song.delay(str(cached.id_uuid))
         except KombuOperationalError:
             logger.warning(
                 "Celery broker unavailable; could not enqueue PlayerSong %s",
                 song.id_uuid,
                 exc_info=True,
             )
-            song.status = PlayerSongStatus.FAILED
-            song.error_message = "Celery broker unavailable"
-            song.save(update_fields=["status", "error_message", "updated_at"])
+            cached.status = CachedSongStatus.FAILED
+            cached.error_message = CELERY_BROKER_UNAVAILABLE_MESSAGE
+            cached.save(update_fields=["status", "error_message", "updated_at"])
 
         return Response(
             PlayerSongSerializer(song).data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+def _remove_deleted_song_from_goal_song_selection(
+    *,
+    player: Player,
+    deleted_song_id: str,
+) -> None:
+    """Remove a deleted song from a player's goal-song selection (best-effort).
+
+    This keeps `goal_song_song_ids` consistent and updates the legacy fields
+    (`goal_song_uri`, `song_start_time`) to match the first remaining selection.
+    """
+    current_ids = [sid for sid in (player.goal_song_song_ids or []) if sid]
+    next_ids = [sid for sid in current_ids if sid != deleted_song_id]
+    if next_ids == current_ids:
+        return
+
+    player.goal_song_song_ids = next_ids
+    update_fields: list[str] = [
+        "goal_song_song_ids",
+        "goal_song_uri",
+        "song_start_time",
+    ]
+
+    if not next_ids:
+        player.goal_song_uri = ""
+        player.song_start_time = None
+        player.save(update_fields=update_fields)
+        return
+
+    first = (
+        PlayerSong.objects.select_related("cached_song")
+        .filter(player=player, id_uuid=next_ids[0])
+        .only(
+            "id_uuid",
+            "start_time_seconds",
+            "audio_file",
+            "cached_song__audio_file",
+        )
+        .first()
+    )
+    audio_file = None
+    if first is not None:
+        audio_file = (
+            first.cached_song.audio_file
+            if first.cached_song is not None
+            else first.audio_file
+        )
+    if audio_file:
+        player.goal_song_uri = audio_file.url  # type: ignore[no-any-return]
+    else:
+        player.goal_song_uri = ""
+    player.song_start_time = first.start_time_seconds if first is not None else None
+    player.save(update_fields=update_fields)
 
 
 class CurrentPlayerSongDetailAPIView(APIView):
@@ -1080,7 +1289,7 @@ class CurrentPlayerSongDetailAPIView(APIView):
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
     ) -> Response:
-        """Update the start time for a specific downloaded song."""
+        """Update per-song playback settings for a specific downloaded song."""
         player = _get_current_player(request)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
@@ -1092,8 +1301,17 @@ class CurrentPlayerSongDetailAPIView(APIView):
         serializer = PlayerSongUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        song.start_time_seconds = int(serializer.validated_data["start_time_seconds"])
-        song.save(update_fields=["start_time_seconds", "updated_at"])
+        update_fields: list[str] = ["updated_at"]
+        if "start_time_seconds" in serializer.validated_data:
+            song.start_time_seconds = int(
+                serializer.validated_data["start_time_seconds"]
+            )
+            update_fields.append("start_time_seconds")
+        if "playback_speed" in serializer.validated_data:
+            song.playback_speed = float(serializer.validated_data["playback_speed"])
+            update_fields.append("playback_speed")
+
+        song.save(update_fields=update_fields)
 
         return Response(PlayerSongSerializer(song).data)
 
@@ -1113,8 +1331,35 @@ class CurrentPlayerSongDetailAPIView(APIView):
         if song is None:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        song.delete()
+        song_id_str = str(song.id_uuid)
+        with transaction.atomic():
+            _remove_deleted_song_from_goal_song_selection(
+                player=player,
+                deleted_song_id=song_id_str,
+            )
+            song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _enqueue_download_for_player_song(song: PlayerSong) -> None:
+    """Enqueue (or eagerly execute) the download for a PlayerSong.
+
+    If `song.cached_song` is set, the shared CachedSong download is queued.
+    """
+    cached = song.cached_song
+    always_eager = getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False) or getattr(
+        settings, "TESTING", False
+    )
+
+    if always_eager:
+        if cached is not None:
+            download_cached_song.apply(args=[str(cached.id_uuid)])
+        else:
+            download_player_song.apply(args=[str(song.id_uuid)])
+    elif cached is not None:
+        download_cached_song.delay(str(cached.id_uuid))
+    else:
+        download_player_song.delay(str(song.id_uuid))
 
 
 class CurrentPlayerSongRetryAPIView(APIView):
@@ -1143,33 +1388,40 @@ class CurrentPlayerSongRetryAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if song.status == PlayerSongStatus.READY:
+        cached = song.cached_song
+        effective_status = cached.status if cached is not None else song.status
+        if effective_status == PlayerSongStatus.READY:
             return Response(
                 {"detail": "Song is already ready"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         with transaction.atomic():
-            song.status = PlayerSongStatus.QUEUED
-            song.error_message = ""
-            song.save(update_fields=["status", "error_message", "updated_at"])
+            if cached is not None:
+                cached.status = CachedSongStatus.QUEUED
+                cached.error_message = ""
+                cached.save(update_fields=["status", "error_message", "updated_at"])
+            else:
+                song.status = PlayerSongStatus.QUEUED
+                song.error_message = ""
+                song.save(update_fields=["status", "error_message", "updated_at"])
 
         try:
-            if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False) or getattr(
-                settings, "TESTING", False
-            ):
-                download_player_song.apply(args=[str(song.id_uuid)])
-            else:
-                download_player_song.delay(str(song.id_uuid))
+            _enqueue_download_for_player_song(song)
         except KombuOperationalError:
             logger.warning(
                 "Celery broker unavailable; could not retry PlayerSong %s",
                 song.id_uuid,
                 exc_info=True,
             )
-            song.status = PlayerSongStatus.FAILED
-            song.error_message = "Celery broker unavailable"
-            song.save(update_fields=["status", "error_message", "updated_at"])
+            if cached is not None:
+                cached.status = CachedSongStatus.FAILED
+                cached.error_message = CELERY_BROKER_UNAVAILABLE_MESSAGE
+                cached.save(update_fields=["status", "error_message", "updated_at"])
+            else:
+                song.status = PlayerSongStatus.FAILED
+                song.error_message = CELERY_BROKER_UNAVAILABLE_MESSAGE
+                song.save(update_fields=["status", "error_message", "updated_at"])
 
         return Response(PlayerSongSerializer(song).data)
 

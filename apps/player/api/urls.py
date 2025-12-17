@@ -6,6 +6,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CurrentPlayerAPIView,
     CurrentPlayerGoalSongAPIView,
+    CurrentPlayerPrivacySettingsAPIView,
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
@@ -28,6 +29,11 @@ router.register(r"players", PlayerViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("me/", CurrentPlayerAPIView.as_view(), name="player-current"),
+    path(
+        "me/privacy-settings/",
+        CurrentPlayerPrivacySettingsAPIView.as_view(),
+        name="player-privacy-settings",
+    ),
     path(
         "me/goal-song/",
         CurrentPlayerGoalSongAPIView.as_view(),

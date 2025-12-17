@@ -290,6 +290,7 @@ AWS_SECRET_ACCESS_KEY = _env("MINIO_SECRET_KEY", "minioadmin")
 AWS_STORAGE_BUCKET_NAME = _env("STATIC_BUCKET", "static")
 AWS_MEDIA_BUCKET_NAME = _env("MEDIA_BUCKET", "media")
 AWS_QUERYSTRING_AUTH = _env_bool("AWS_QUERYSTRING_AUTH", True)
+AWS_QUERYSTRING_EXPIRE = _env_int("AWS_QUERYSTRING_EXPIRE", 3600)
 AWS_S3_CONFIG = {"retries": {"max_attempts": 5, "mode": "standard"}}
 
 
@@ -298,24 +299,26 @@ MEDIA_URL = _env("MEDIA_URL", f"{AWS_MEDIA_CUSTOM_DOMAIN}/")
 STATIC_ROOT = Path(_env("STATIC_ROOT", str(BASE_DIR / "static")))
 MEDIA_ROOT = Path(_env("MEDIA_ROOT", str(BASE_DIR / "media")))
 STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
-STATICFILES_STORAGE = _env(
-    "STATICFILES_STORAGE",
-    "storages.backends.s3boto3.S3Boto3Storage",
-)
+
+S3_STORAGE_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
+DEFAULT_STORAGE_BACKEND = _env("DEFAULT_STORAGE_BACKEND", S3_STORAGE_BACKEND)
+STATICFILES_STORAGE_BACKEND = _env("STATICFILES_STORAGE", S3_STORAGE_BACKEND)
 
 
 STORAGES = {
     "default": {
-        "BACKEND": STATICFILES_STORAGE,
+        "BACKEND": DEFAULT_STORAGE_BACKEND,
         "OPTIONS": {
             "bucket_name": AWS_MEDIA_BUCKET_NAME,
-            "default_acl": "public-read",
-            "querystring_auth": False,
+            # Personal data (profile pictures) should not be world-readable.
+            "default_acl": "private",
+            "querystring_auth": AWS_QUERYSTRING_AUTH,
+            "querystring_expire": AWS_QUERYSTRING_EXPIRE,
             "custom_domain": AWS_MEDIA_CUSTOM_DOMAIN,
         },
     },
     "staticfiles": {
-        "BACKEND": STATICFILES_STORAGE,
+        "BACKEND": STATICFILES_STORAGE_BACKEND,
         "OPTIONS": {
             "bucket_name": AWS_STORAGE_BUCKET_NAME,
             "default_acl": "public-read",
