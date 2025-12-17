@@ -502,18 +502,21 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                     },
                 )
         else:
+            # Ensure we always operate on the active part, even if
+            # `self.current_part` is stale (e.g. after a part_end).
+            self.current_part = part
             try:
                 pause = await Pause.objects.aget(
                     match_data=self.match_data,
                     active=True,
-                    match_part=self.current_part,
+                    match_part=part,
                 )
             except Pause.DoesNotExist:
                 pause = await Pause.objects.acreate(
                     match_data=self.match_data,
                     active=True,
                     start_time=datetime.now(UTC),
-                    match_part=self.current_part,
+                    match_part=part,
                 )
 
                 self.is_paused = True
@@ -543,19 +546,13 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
     async def part_end(self) -> None:
         """End the current part."""
-        try:
-            pause = await Pause.objects.aget(
-                match_data=self.match_data,
-                active=True,
-                match_part=self.current_part,
-            )
-
-            pause.active = False
-            pause.end_time = datetime.now(UTC)
-            await pause.asave()
-
-        except Pause.DoesNotExist:
-            pass
+        # Defensive cleanup: close any active pause when a part ends.
+        # Relying on `self.current_part` can miss pauses if the in-memory state is
+        # stale, so always scope by match_data.
+        await Pause.objects.filter(match_data=self.match_data, active=True).aupdate(
+            active=False,
+            end_time=datetime.now(UTC),
+        )
 
         if self.match_data.current_part < self.match_data.parts:
             self.match_data.current_part += 1
@@ -646,15 +643,45 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             old_player_id: The id of the old player.
 
         """
-        # check if the match is paused and if it is paused decline the request except
-        # for the start/stop command
-        if self.is_paused:
+        # Allow substitutions between parts (no active MatchPart). Still block
+        # substitutions during an in-part pause.
+        try:
+            active_part = await MatchPart.objects.aget(
+                match_data=self.match_data,
+                active=True,
+            )
+        except MatchPart.DoesNotExist:
+            active_part = None
+
+        if self.is_paused and active_part is not None:
             await self.send(
                 text_data=json.dumps(
                     {"command": "error", "error": self.match_is_paused_message},
                 ),
             )
             return
+
+        part_for_event = active_part
+        if part_for_event is None:
+            # Between parts: attach to the most recently completed part.
+            part_for_event = (
+                await MatchPart.objects.filter(
+                    match_data=self.match_data,
+                    part_number=self.match_data.current_part - 1,
+                )
+                .order_by("-start_time")
+                .afirst()
+            )
+
+        if part_for_event is None:
+            await self.send(
+                text_data=json.dumps(
+                    {"command": "error", "error": "No match part for wissel."},
+                ),
+            )
+            return
+
+        self.current_part = part_for_event
 
         player_in = await Player.objects.prefetch_related("user").aget(
             id_uuid=new_player_id,
@@ -685,7 +712,7 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             player_out=player_out,
             player_group=player_group,
             match_data=self.match_data,
-            match_part=self.current_part,
+            match_part=part_for_event,
             time=datetime.now(UTC),
         )
 

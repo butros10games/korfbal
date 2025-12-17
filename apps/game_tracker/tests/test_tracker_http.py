@@ -12,6 +12,7 @@ from apps.game_tracker.models import (
     GroupType,
     MatchData,
     MatchPart,
+    Pause,
     PlayerChange,
     PlayerGroup,
     Timeout,
@@ -28,6 +29,155 @@ from apps.team.models import Team
 TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
 MAX_WISSELS = 8
 MAX_TIMEOUTS = 2
+
+
+@pytest.mark.django_db
+def test_part_end_closes_active_pause_even_without_active_part() -> None:
+    """Ending a part must close any active pause, even if the part is already inactive.
+
+    This protects against edge cases where state becomes inconsistent (e.g. a pause
+    started but the part was ended without ending the pause), which can crash
+    downstream timer calculations.
+    """
+    home_club = Club.objects.create(name="PartEnd Pause Home Club")
+    away_club = Club.objects.create(name="PartEnd Pause Away Club")
+    home_team = Team.objects.create(name="PartEnd Pause Home Team", club=home_club)
+    away_team = Team.objects.create(name="PartEnd Pause Away Team", club=away_club)
+
+    season = Season.objects.create(
+        name="PartEnd Pause Season",
+        start_date=timezone.now().date() - timedelta(days=1),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=10),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.parts = 2
+    match_data.current_part = 1
+    match_data.save(update_fields=["status", "parts", "current_part"])
+
+    # Simulate inconsistent state: the part is already inactive, but a pause is
+    # still marked active for that part.
+    part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=datetime.now(UTC),
+        end_time=datetime.now(UTC),
+        active=False,
+    )
+    pause = Pause.objects.create(
+        match_data=match_data,
+        match_part=part,
+        start_time=datetime.now(UTC),
+        active=True,
+    )
+
+    apply_tracker_command(match, team=home_team, payload={"command": "part_end"})
+
+    pause.refresh_from_db()
+    assert pause.active is False
+    assert pause.end_time is not None
+
+
+@pytest.mark.django_db
+def test_substitute_reg_allowed_between_parts_and_next_part_can_start() -> None:
+    """Wissels should be allowed in the break between parts.
+
+    Regression: if a wissel is registered between parts, starting the next part
+    must still work.
+    """
+    home_club = Club.objects.create(name="BetweenParts Home Club")
+    away_club = Club.objects.create(name="BetweenParts Away Club")
+    home_team = Team.objects.create(name="BetweenParts Home Team", club=home_club)
+    away_team = Team.objects.create(name="BetweenParts Away Team", club=away_club)
+
+    season = Season.objects.create(
+        name="BetweenParts Season",
+        start_date=timezone.now().date() - timedelta(days=1),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=10),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.parts = 2
+    # Simulate that part 1 ended, and we're now in the break before part 2.
+    match_data.current_part = 2
+    match_data.save(update_fields=["status", "parts", "current_part"])
+
+    MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=datetime.now(UTC) - timedelta(minutes=30),
+        end_time=datetime.now(UTC) - timedelta(minutes=1),
+        active=False,
+    )
+
+    gt_attack = GroupType.objects.create(name="Aanval")
+    gt_reserve = GroupType.objects.create(name="Reserve")
+
+    player_out = (
+        get_user_model()
+        .objects.create_user(username="bp_player_out", password=TEST_PASSWORD)
+        .player
+    )
+    player_in = (
+        get_user_model()
+        .objects.create_user(username="bp_player_in", password=TEST_PASSWORD)
+        .player
+    )
+
+    reserve_group = PlayerGroup.objects.create(
+        team=home_team,
+        match_data=match_data,
+        starting_type=gt_reserve,
+        current_type=gt_reserve,
+    )
+    active_group = PlayerGroup.objects.create(
+        team=home_team,
+        match_data=match_data,
+        starting_type=gt_attack,
+        current_type=gt_attack,
+    )
+    active_group.players.add(player_out)
+    reserve_group.players.add(player_in)
+
+    apply_tracker_command(
+        match,
+        team=home_team,
+        payload={
+            "command": "substitute_reg",
+            "new_player_id": str(player_in.id_uuid),
+            "old_player_id": str(player_out.id_uuid),
+        },
+    )
+
+    active_group.refresh_from_db()
+    reserve_group.refresh_from_db()
+    assert active_group.players.filter(id_uuid=player_in.id_uuid).exists()
+    assert not active_group.players.filter(id_uuid=player_out.id_uuid).exists()
+    assert reserve_group.players.filter(id_uuid=player_out.id_uuid).exists()
+
+    # Starting the next part should still work.
+    apply_tracker_command(match, team=home_team, payload={"command": "start/pause"})
+    assert MatchPart.objects.filter(
+        match_data=match_data,
+        part_number=2,
+        active=True,
+    ).exists()
 
 
 @pytest.mark.django_db
