@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
+from django.db.models import Count, Q
 from django.urls import reverse
 
-from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.models import Shot
 
 from .constants import team_model_string
 
@@ -87,17 +88,14 @@ class Match(models.Model):
             tuple[int, int]: (home_score, away_score)
 
         """
-        match_data_ids = list(
-            MatchData.objects.filter(match_link=self).values_list("id_uuid", flat=True)
+        # NOTE: Historically this method performed multiple queries per call.
+        # Keep it correct but make it cheap-ish: a single aggregate query.
+        totals = Shot.objects.filter(
+            match_data__match_link=self,
+            scored=True,
+            team__isnull=False,
+        ).aggregate(
+            home=Count("id_uuid", filter=Q(team=self.home_team)),
+            away=Count("id_uuid", filter=Q(team=self.away_team)),
         )
-        if not match_data_ids:
-            return (0, 0)
-
-        home_score = Shot.objects.filter(
-            match_data_id__in=match_data_ids, team=self.home_team, scored=True
-        ).count()
-        away_score = Shot.objects.filter(
-            match_data_id__in=match_data_ids, team=self.away_team, scored=True
-        ).count()
-
-        return (home_score, away_score)
+        return (int(totals.get("home") or 0), int(totals.get("away") or 0))

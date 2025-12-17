@@ -58,6 +58,16 @@ class Shot(models.Model):
         null=True,
     )
 
+    class Meta:
+        """Meta options for Shot."""
+
+        indexes = (
+            # Speeds up score/stat aggregations for a match.
+            models.Index(fields=["match_data", "team", "scored"]),
+            # Speeds up per-player season stats.
+            models.Index(fields=["player", "scored"]),
+        )
+
     def __str__(self) -> str:
         """Return the string representation of the shot.
 

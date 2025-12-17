@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import time
 from typing import Any, cast
+from uuid import UUID
 
 from django.db import transaction
 from django.utils import timezone
@@ -33,6 +34,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models.team import Team
@@ -727,7 +729,8 @@ def _cmd_start_pause(*, match_data: MatchData) -> None:
     active_pause.save(update_fields=["active", "end_time"])
 
 
-def _cmd_part_end(*, match_data: MatchData) -> None:
+def _cmd_part_end(_match: Match, *, match_data: MatchData) -> None:
+    del _match
     current_part = _current_part(match_data)
     if current_part:
         active_pause = Pause.objects.filter(
@@ -751,8 +754,19 @@ def _cmd_part_end(*, match_data: MatchData) -> None:
         return
 
     # End match.
+    match_data_uuid = match_data.id_uuid
+    match_data_id = (
+        match_data_uuid
+        if isinstance(match_data_uuid, UUID)
+        else UUID(str(match_data_uuid))
+    )
+    scores = compute_scores_for_matchdata_ids([match_data_id]).get(
+        match_data_id, (0, 0)
+    )
+
     match_data.status = "finished"
-    match_data.save(update_fields=["status"])
+    match_data.home_score, match_data.away_score = scores
+    match_data.save(update_fields=["status", "home_score", "away_score"])
     if current_part:
         current_part.active = False
         current_part.end_time = datetime.now(UTC)
@@ -1070,14 +1084,14 @@ def _handle_cmd_start_pause(
 
 
 def _handle_cmd_part_end(
-    _match: Match,
+    match: Match,
     *,
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
 ) -> None:
     del team, payload
-    _cmd_part_end(match_data=match_data)
+    _cmd_part_end(match, match_data=match_data)
 
 
 def _handle_cmd_timeout(

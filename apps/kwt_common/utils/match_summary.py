@@ -8,6 +8,7 @@ from typing import Any
 from django.utils.timezone import localtime
 
 from apps.game_tracker.models import MatchData
+from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
 from apps.kwt_common.utils.time_utils import get_time_display
 
 
@@ -21,13 +22,31 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
         list[MatchSummary]: List of match summaries.
 
     """
+    entries = list(match_data)
+
+    # Active matches should show the current score, which is derived from shots.
+    active_match_data_ids = [
+        entry.id_uuid for entry in entries if entry.status == "active"
+    ]
+    active_scores = compute_scores_for_matchdata_ids(active_match_data_ids)
+
     summaries: list[MatchSummary] = []
-    for entry in match_data:
+    for entry in entries:
         match = entry.match_link
         home_team = match.home_team
         away_team = match.away_team
 
-        home_score, away_score = match.get_final_score()
+        if entry.status == "active":
+            computed = active_scores.get(entry.id_uuid)
+            if computed is not None:
+                home_score, away_score = computed
+            else:
+                home_score = 0
+                away_score = 0
+        else:
+            # Upcoming + finished matches use the persisted scores.
+            home_score = int(getattr(entry, "home_score", 0) or 0)
+            away_score = int(getattr(entry, "away_score", 0) or 0)
 
         summaries.append({
             "id_uuid": str(match.id_uuid),

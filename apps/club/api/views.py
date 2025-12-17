@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from apps.club.models.club import Club
 from apps.game_tracker.models import MatchData
+from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.schedule.models import Season
 from apps.team.api.serializers import TeamSerializer
@@ -26,6 +27,7 @@ class ClubViewSet(viewsets.ModelViewSet):
 
     queryset = Club.objects.all().order_by("name")
     serializer_class = ClubSerializer
+    pagination_class = StandardResultsSetPagination
     permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
         permissions.IsAuthenticatedOrReadOnly,
     ]

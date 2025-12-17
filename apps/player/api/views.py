@@ -54,6 +54,9 @@ PLAYER_NOT_FOUND_MESSAGE = "Player not found"
 PLAYER_NOT_FOUND_DETAIL = {"detail": PLAYER_NOT_FOUND_MESSAGE}
 SONG_NOT_FOUND_DETAIL = {"detail": "Song not found"}
 
+AUTHENTICATION_REQUIRED_MESSAGE = "Authentication required"
+AUTHENTICATION_REQUIRED_DETAIL = {"detail": AUTHENTICATION_REQUIRED_MESSAGE}
+
 PRIVATE_ACCOUNT_MESSAGE = "Private account"
 PRIVATE_ACCOUNT_DETAIL = {"code": "private_account", "detail": PRIVATE_ACCOUNT_MESSAGE}
 
@@ -231,7 +234,7 @@ class PlayerViewSet(viewsets.ModelViewSet):
     def _ensure_can_modify(self, player: Player) -> None:
         user = self.request.user
         if not user or not getattr(user, "is_authenticated", False):
-            raise PermissionDenied("Authentication required")
+            raise PermissionDenied(AUTHENTICATION_REQUIRED_MESSAGE)
 
         if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
             return
@@ -463,8 +466,6 @@ class PlayerOverviewAPIView(APIView):
             "match_link__away_team",
             "match_link__away_team__club",
             "match_link__season",
-        ).prefetch_related(
-            "player_groups__players",
         )
 
         queryset = queryset.filter(participation_filter | roster_filter)
@@ -1594,7 +1595,7 @@ class SpotifyPlayAPIView(APIView):
             user = request.user
             if not isinstance(user, AbstractBaseUser):
                 return Response(
-                    {"detail": "Authentication required"},
+                    AUTHENTICATION_REQUIRED_DETAIL,
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
             access_token = _ensure_spotify_access_token(user)
@@ -1653,7 +1654,7 @@ class SpotifyPauseAPIView(APIView):
             user = request.user
             if not isinstance(user, AbstractBaseUser):
                 return Response(
-                    {"detail": "Authentication required"},
+                    AUTHENTICATION_REQUIRED_DETAIL,
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
             access_token = _ensure_spotify_access_token(user)

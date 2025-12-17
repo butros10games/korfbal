@@ -24,6 +24,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.services.match_scores import persist_matchdata_scores
 from apps.kwt_common.utils import get_time
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
@@ -587,7 +588,10 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
                 )
         else:
             self.match_data.status = "finished"
-            await self.match_data.asave()
+            await self.match_data.asave(update_fields=["status"])
+
+            # Persist final scores so overview endpoints can rely on MatchData.
+            await sync_to_async(persist_matchdata_scores)(self.match_data)
 
             match_part = await MatchPart.objects.aget(
                 match_data=self.match_data,
@@ -741,129 +745,15 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         """Remove the last event."""
         event = await self._get_all_events()
 
+        if event is None:
+            return
+
         if isinstance(event, Shot):
-            player_id = str(event.player.id_uuid)
-
-            await event.adelete()
-
-            # send player shot update message
-            await self.channel_layer.group_send(
-                self.channel_names[1],
-                {
-                    "type": "send_data",
-                    "data": {
-                        "command": "player_shot_change",
-                        "player_id": player_id,
-                        "shots_for": await Shot.objects.filter(
-                            player__id_uuid=player_id,
-                            match_data=self.match_data,
-                            team=self.team,
-                        ).acount(),
-                        "shots_against": await Shot.objects.filter(
-                            player__id_uuid=player_id,
-                            match_data=self.match_data,
-                            team=self.other_team,
-                        ).acount(),
-                    },
-                },
-            )
-
-            # check if the shot was a goal and if it was a goal check if it was a switch
-            # goal and if it was a switch goal swap the player group types back
-            if event.scored:
-                for channel_name in [self.channel_names[1], self.channel_names[0]]:
-                    await self.channel_layer.group_send(
-                        channel_name,
-                        {
-                            "type": "send_data",
-                            "data": {
-                                "command": "team_goal_change",
-                                "player_name": event.player.user.username,
-                                "goal_type": event.shot_type.name,
-                                "goals_for": await Shot.objects.filter(
-                                    match_data=self.match_data,
-                                    team=self.team,
-                                    scored=True,
-                                ).acount(),
-                                "goals_against": await Shot.objects.filter(
-                                    match_data=self.match_data,
-                                    team=self.other_team,
-                                    scored=True,
-                                ).acount(),
-                            },
-                        },
-                    )
-
-                number_of_shots = await Shot.objects.filter(
-                    match_data=self.match_data,
-                    scored=True,
-                ).acount()
-                if (number_of_shots) % 2 == 1:
-                    await self.player_group_class.swap_player_group_types(self.team)
-                    await self.player_group_class.swap_player_group_types(
-                        self.other_team,
-                    )
-
-                    await self.send(
-                        text_data=await self.player_group_class.player_group_request(),
-                    )
-
+            await self._remove_last_shot_event(event)
         elif isinstance(event, PlayerChange):
-            # get and delete the last player change event
-            player_change = await PlayerChange.objects.prefetch_related(
-                "player_group",
-                "player_in",
-                "player_out",
-            ).aget(match_part=event.match_part, time=event.time)
-            player_group = await PlayerGroup.objects.aget(
-                id_uuid=player_change.player_group.id_uuid,
-            )
-            player_reserve_group = await PlayerGroup.objects.aget(
-                team=self.team,
-                match_data=self.match_data,
-                starting_type__name="Reserve",
-            )
-
-            await player_group.players.aremove(player_change.player_in)
-            await player_reserve_group.players.aadd(player_change.player_in)
-
-            await player_group.players.aadd(player_change.player_out)
-            await player_reserve_group.players.aremove(player_change.player_out)
-
-            await player_group.asave()
-            await player_reserve_group.asave()
-
-            await player_change.adelete()
-
-            # send player group update message
-            await self.send(
-                text_data=await self.player_group_class.player_group_request(),
-            )
-
+            await self._remove_last_player_change_event(event)
         elif isinstance(event, Pause):
-            # get and delete the last pause event
-            pause = await Pause.objects.aget(
-                active=event.active,
-                match_part=event.match_part,
-                start_time=event.start_time,
-            )
-
-            if event.active:
-                await Timeout.objects.filter(pause=pause).adelete()
-                await pause.adelete()
-            else:
-                pause.active = True
-                pause.end_time = None
-                await pause.asave()
-
-            if self.match_data and self.current_part:
-                time_data = await get_time(self.match_data, self.current_part)
-
-            await self.channel_layer.group_send(
-                self.channel_names[2],
-                {"type": "send_data", "data": json.loads(time_data)},
-            )
-
+            await self._remove_last_pause_event(event)
         elif isinstance(event, Attack):
             await event.adelete()
 
@@ -873,6 +763,128 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             self.channel_names[0],
             {"type": "get_events"},
         )
+
+    async def _remove_last_shot_event(self, event: Shot) -> None:
+        """Remove a shot event and publish related UI updates."""
+        player_id = str(event.player.id_uuid)
+
+        await event.adelete()
+
+        await self.channel_layer.group_send(
+            self.channel_names[1],
+            {
+                "type": "send_data",
+                "data": {
+                    "command": "player_shot_change",
+                    "player_id": player_id,
+                    "shots_for": await Shot.objects.filter(
+                        player__id_uuid=player_id,
+                        match_data=self.match_data,
+                        team=self.team,
+                    ).acount(),
+                    "shots_against": await Shot.objects.filter(
+                        player__id_uuid=player_id,
+                        match_data=self.match_data,
+                        team=self.other_team,
+                    ).acount(),
+                },
+            },
+        )
+
+        if not event.scored:
+            return
+
+        goals_for = await Shot.objects.filter(
+            match_data=self.match_data,
+            team=self.team,
+            scored=True,
+        ).acount()
+        goals_against = await Shot.objects.filter(
+            match_data=self.match_data,
+            team=self.other_team,
+            scored=True,
+        ).acount()
+
+        for channel_name in [self.channel_names[1], self.channel_names[0]]:
+            await self.channel_layer.group_send(
+                channel_name,
+                {
+                    "type": "send_data",
+                    "data": {
+                        "command": "team_goal_change",
+                        "player_name": event.player.user.username,
+                        "goal_type": event.shot_type.name,
+                        "goals_for": goals_for,
+                        "goals_against": goals_against,
+                    },
+                },
+            )
+
+        number_of_goals = await Shot.objects.filter(
+            match_data=self.match_data,
+            scored=True,
+        ).acount()
+        if number_of_goals % 2 == 1:
+            await self.player_group_class.swap_player_group_types(self.team)
+            await self.player_group_class.swap_player_group_types(self.other_team)
+            await self.send(
+                text_data=await self.player_group_class.player_group_request(),
+            )
+
+    async def _remove_last_player_change_event(self, event: PlayerChange) -> None:
+        """Remove a player change and publish updated player groups."""
+        player_change = await PlayerChange.objects.prefetch_related(
+            "player_group",
+            "player_in",
+            "player_out",
+        ).aget(match_part=event.match_part, time=event.time)
+
+        player_group = await PlayerGroup.objects.aget(
+            id_uuid=player_change.player_group.id_uuid,
+        )
+        player_reserve_group = await PlayerGroup.objects.aget(
+            team=self.team,
+            match_data=self.match_data,
+            starting_type__name="Reserve",
+        )
+
+        await player_group.players.aremove(player_change.player_in)
+        await player_reserve_group.players.aadd(player_change.player_in)
+
+        await player_group.players.aadd(player_change.player_out)
+        await player_reserve_group.players.aremove(player_change.player_out)
+
+        await player_group.asave()
+        await player_reserve_group.asave()
+
+        await player_change.adelete()
+
+        await self.send(
+            text_data=await self.player_group_class.player_group_request(),
+        )
+
+    async def _remove_last_pause_event(self, event: Pause) -> None:
+        """Remove (or undo) a pause event and publish updated timer state."""
+        pause = await Pause.objects.aget(
+            active=event.active,
+            match_part=event.match_part,
+            start_time=event.start_time,
+        )
+
+        if event.active:
+            await Timeout.objects.filter(pause=pause).adelete()
+            await pause.adelete()
+        else:
+            pause.active = True
+            pause.end_time = None
+            await pause.asave()
+
+        if self.match_data and self.current_part:
+            time_data = await get_time(self.match_data, self.current_part)
+            await self.channel_layer.group_send(
+                self.channel_names[2],
+                {"type": "send_data", "data": json.loads(time_data)},
+            )
 
     async def _get_all_events(self) -> Shot | PlayerChange | Pause | Attack | None:
         """Get all events.
