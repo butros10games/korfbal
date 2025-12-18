@@ -53,7 +53,19 @@ class PlayerSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         if user is not None and getattr(user, "is_authenticated", False):
             # Cache once per serializer instance to avoid repeated queries.
-            self._viewer_player = Player.objects.filter(user=user).first()
+            # If we're serializing the *current* player, avoid a redundant DB
+            # lookup by reusing the instance.
+            instance = getattr(self, "instance", None)
+            if isinstance(instance, Player) and getattr(
+                instance, "user_id", None
+            ) == getattr(
+                user,
+                "id",
+                None,
+            ):
+                self._viewer_player = instance
+            else:
+                self._viewer_player = Player.objects.filter(user=user).first()
 
     class Meta:
         """Meta class for PlayerSerializer."""

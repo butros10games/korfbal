@@ -43,6 +43,7 @@ from apps.player.privacy import can_view_by_visibility
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
+from apps.team.api.serializers import TeamSerializer
 
 from .serializers import (
     PlayerPrivacySettingsSerializer,
@@ -128,6 +129,12 @@ def _store_goal_song_upload_best_effort(
                     "-t",
                     str(clip_duration_seconds),
                     "-vn",
+                    # Prevent inheriting source tags like TLEN (full-track length),
+                    # which can confuse browser/OS duration reporting for short clips.
+                    "-map_metadata",
+                    "-1",
+                    "-map_chapters",
+                    "-1",
                     "-acodec",
                     "libmp3lame",
                     "-q:a",
@@ -376,6 +383,89 @@ class CurrentPlayerAPIView(APIView):
 
         serializer = PlayerSerializer(player, context={"request": request})
         return Response(serializer.data)
+
+
+class PlayerFollowedTeamsAPIView(APIView):
+    """Return teams followed by a player.
+
+    This exists to avoid fetching `/api/team/teams/` (paginated global list)
+    and filtering client-side.
+
+    URLs:
+        - /api/player/me/followed-teams/
+        - /api/player/players/<uuid>/followed-teams/
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.AllowAny,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        player_id: str | None = None,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return teams followed by the requested player."""
+        player = self._resolve_player(request, player_id)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        # Follow lists are preferences; when viewing another player enforce the
+        # same visibility gate as other profile endpoints.
+        if player_id:
+            viewer = (
+                Player.objects.filter(user=request.user).first()
+                if request.user.is_authenticated
+                else None
+            )
+            if not can_view_by_visibility(
+                visibility=player.stats_visibility,
+                viewer=viewer,
+                target=player,
+            ):
+                return Response(
+                    PRIVATE_ACCOUNT_DETAIL,
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        teams_qs = (
+            player.team_follow.all()
+            .select_related("club")
+            .order_by(
+                "club__name",
+                "name",
+            )
+        )
+
+        serializer = TeamSerializer(teams_qs, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    @staticmethod
+    def _resolve_player(request: Request, player_id: str | None) -> Player | None:
+        if player_id:
+            return (
+                Player.objects.select_related("user")
+                .prefetch_related("team_follow")
+                .filter(id_uuid=player_id)
+                .first()
+            )
+
+        return _get_current_player(request)
+
+
+class CurrentPlayerFollowedTeamsAPIView(PlayerFollowedTeamsAPIView):
+    """Return teams followed by the current player."""
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return teams followed by the current player."""
+        return super().get(request, None, *args, **kwargs)
 
 
 class CurrentPlayerPrivacySettingsAPIView(APIView):
@@ -1281,8 +1371,12 @@ class PlayerSongClipAPIView(APIView):
         start_seconds: int,
         duration_seconds: int,
     ) -> str:
+        # v2: the original clip generation could accidentally inherit source
+        # metadata like TLEN (full track length), making players report the
+        # duration as the full song even when audio data is only ~8 seconds.
+        # Bump the cache key to force regeneration of existing stored clips.
         clip_key = (
-            f"song_clips/{song.id_uuid}/"
+            f"song_clips_v2/{song.id_uuid}/"
             f"start_{start_seconds}_dur_{duration_seconds}.mp3"
         )
 
@@ -1319,6 +1413,12 @@ class PlayerSongClipAPIView(APIView):
                         "-t",
                         str(duration_seconds),
                         "-vn",
+                        # Prevent inheriting source tags like TLEN (full-track
+                        # length), which can confuse duration reporting.
+                        "-map_metadata",
+                        "-1",
+                        "-map_chapters",
+                        "-1",
                         "-acodec",
                         "libmp3lame",
                         "-q:a",

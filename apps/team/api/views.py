@@ -56,6 +56,17 @@ class TeamViewSet(viewsets.ModelViewSet):
         team = self.get_object()
         season = self._resolve_season(request)
 
+        include_stats = self._parse_bool_query_param(
+            request,
+            "include_stats",
+            default=True,
+        )
+        include_roster = self._parse_bool_query_param(
+            request,
+            "include_roster",
+            default=True,
+        )
+
         match_data_qs = self._team_match_queryset(team, season)
         upcoming_matches = build_match_summaries(
             match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
@@ -68,14 +79,15 @@ class TeamViewSet(viewsets.ModelViewSet):
             ]
         )
 
-        full_match_dataset = list(match_data_qs)
-        stats_general = (
-            async_to_sync(build_general_stats)(full_match_dataset)
-            if full_match_dataset
-            else None
-        )
+        stats_general = None
+        if include_stats and match_data_qs.exists():
+            stats_general = async_to_sync(build_general_stats)(match_data_qs)
 
-        roster_players = list(self._team_players_queryset(team, season, match_data_qs))
+        roster_players: list[Player] = []
+        if include_roster or include_stats:
+            roster_players = list(
+                self._team_players_queryset(team, season, match_data_qs)
+            )
 
         viewer_player = (
             Player.objects.filter(user=request.user).first()
@@ -83,31 +95,33 @@ class TeamViewSet(viewsets.ModelViewSet):
             else None
         )
 
-        roster = [
-            {
-                "id_uuid": str(player.id_uuid),
-                # Avoid exposing full names to anonymous/outside viewers.
-                "display_name": player.user.username,
-                "username": player.user.username,
-                "profile_picture_url": (
-                    player.get_profile_picture()
-                    if can_view_by_visibility(
-                        visibility=player.profile_picture_visibility,
-                        viewer=viewer_player,
-                        target=player,
-                    )
-                    else player.get_placeholder_profile_picture_url()
-                ),
-                "profile_url": player.get_absolute_url(),
-            }
-            for player in roster_players
-        ]
+        roster: list[dict[str, str]] = []
+        if include_roster:
+            roster = [
+                {
+                    "id_uuid": str(player.id_uuid),
+                    # Avoid exposing full names to anonymous/outside viewers.
+                    "display_name": player.user.username,
+                    "username": player.user.username,
+                    "profile_picture_url": (
+                        player.get_profile_picture()
+                        if can_view_by_visibility(
+                            visibility=player.profile_picture_visibility,
+                            viewer=viewer_player,
+                            target=player,
+                        )
+                        else player.get_placeholder_profile_picture_url()
+                    ),
+                    "profile_url": player.get_absolute_url(),
+                }
+                for player in roster_players
+            ]
 
-        stats_players = (
-            async_to_sync(build_player_stats)(roster_players, full_match_dataset)
-            if roster and full_match_dataset
-            else []
-        )
+        stats_players = []
+        if include_stats and roster_players and match_data_qs.exists():
+            stats_players = async_to_sync(build_player_stats)(
+                roster_players, match_data_qs
+            )
 
         seasons_qs = list(self._team_seasons_queryset(team))
         current_season = self._current_season()
@@ -142,6 +156,25 @@ class TeamViewSet(viewsets.ModelViewSet):
             },
         }
         return Response(payload)
+
+    @staticmethod
+    def _parse_bool_query_param(
+        request: Request,
+        name: str,
+        *,
+        default: bool,
+    ) -> bool:
+        raw = request.query_params.get(name)
+        if raw is None:
+            return default
+        if not raw:
+            return default
+        normalized = raw.strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+        return default
 
     def _team_match_queryset(
         self, team: Team, season: Season | None

@@ -490,7 +490,7 @@ option {
 .team-logo {
     width: 64px;
     height: auto;
-    object-fit: cover;
+    object-fit: contain;
     border-radius: 50%;
 }
 

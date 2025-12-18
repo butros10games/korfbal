@@ -5,12 +5,14 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     CurrentPlayerAPIView,
+    CurrentPlayerFollowedTeamsAPIView,
     CurrentPlayerGoalSongAPIView,
     CurrentPlayerPrivacySettingsAPIView,
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
     PlayerConnectedClubRecentResultsAPIView,
+    PlayerFollowedTeamsAPIView,
     PlayerOverviewAPIView,
     PlayerSongClipAPIView,
     PlayerStatsAPIView,
@@ -30,6 +32,11 @@ router.register(r"players", PlayerViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("me/", CurrentPlayerAPIView.as_view(), name="player-current"),
+    path(
+        "me/followed-teams/",
+        CurrentPlayerFollowedTeamsAPIView.as_view(),
+        name="player-followed-teams-current",
+    ),
     path(
         "me/privacy-settings/",
         CurrentPlayerPrivacySettingsAPIView.as_view(),
@@ -104,6 +111,11 @@ urlpatterns = [
         "players/<uuid:player_id>/overview/",
         PlayerOverviewAPIView.as_view(),
         name="player-overview-detail",
+    ),
+    path(
+        "players/<uuid:player_id>/followed-teams/",
+        PlayerFollowedTeamsAPIView.as_view(),
+        name="player-followed-teams-detail",
     ),
     path(
         "me/stats/",

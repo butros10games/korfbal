@@ -155,3 +155,53 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     assert legacy_payload["matches"]["upcoming"] == []
     assert legacy_payload["matches"]["recent"][0]["competition"] == previous_season.name
     assert legacy_payload["roster"][0]["username"] == player.user.username
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
+    """The overview endpoint should support a lightweight mode for faster loads."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    opponent_club = Club.objects.create(name="Opponent Club")
+    team = Team.objects.create(name="Team 1", club=club)
+    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
+
+    user = get_user_model().objects.create_user(
+        username="player",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    player = user.player
+
+    team_data = TeamData.objects.create(team=team, season=season)
+    team_data.players.add(player)
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent_team,
+        season=season,
+        start_time=timezone.now() + timedelta(days=3),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "upcoming"
+    match_data.save(update_fields=["status"])
+
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/overview/",
+        data={"include_stats": "0", "include_roster": "0"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+
+    assert payload["team"]["id_uuid"] == str(team.id_uuid)
+    assert payload["matches"]["upcoming"]
+    assert payload["stats"]["general"] is None
+    assert payload["stats"]["players"] == []
+    assert payload["roster"] == []
