@@ -316,7 +316,68 @@ class PlayerSongSerializer(serializers.ModelSerializer):
 class PlayerSongCreateSerializer(serializers.Serializer):
     """Input serializer for creating a PlayerSong."""
 
-    spotify_url = serializers.URLField(max_length=500)
+    spotify_url = serializers.URLField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+    )
+    audio_file = serializers.FileField(required=False, allow_empty_file=False)
+
+    @staticmethod
+    def _validate_audio_file(uploaded: object) -> None:
+        """Validate an uploaded MP3 file.
+
+        Raises:
+            ValidationError: When the uploaded file is not an MP3 or exceeds limits.
+
+        """
+        name = getattr(uploaded, "name", "") or ""
+        content_type = getattr(uploaded, "content_type", "") or ""
+        size = int(getattr(uploaded, "size", 0) or 0)
+
+        if not name.lower().endswith(".mp3"):
+            raise serializers.ValidationError({
+                "audio_file": "Only MP3 uploads are supported."
+            })
+
+        if content_type and content_type not in {"audio/mpeg", "audio/mp3"}:
+            # Some browsers omit/lie; only enforce when provided.
+            raise serializers.ValidationError({
+                "audio_file": "Invalid content type (expected MP3)."
+            })
+
+        # Guardrail to avoid accidental huge uploads.
+        max_bytes = 25 * 1024 * 1024
+        if size and size > max_bytes:
+            raise serializers.ValidationError({
+                "audio_file": "File is too large (max 25MB)."
+            })
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require either spotify_url or audio_file.
+
+        Also validates that uploaded files look like MP3.
+
+        Raises:
+            ValidationError: When neither spotify_url nor audio_file is provided,
+                or when the uploaded file is invalid.
+
+        """
+        spotify_url = attrs.get("spotify_url")
+        audio_file = attrs.get("audio_file")
+
+        spotify_url_str = str(spotify_url).strip() if spotify_url is not None else ""
+
+        if not spotify_url_str and audio_file is None:
+            raise serializers.ValidationError("Provide spotify_url or audio_file.")
+
+        if audio_file is not None:
+            self._validate_audio_file(audio_file)
+
+        # Normalise whitespace.
+        attrs["spotify_url"] = spotify_url_str
+
+        return attrs
 
 
 class PlayerSongUpdateSerializer(serializers.Serializer):

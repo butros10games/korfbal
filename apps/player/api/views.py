@@ -28,7 +28,7 @@ from kombu.exceptions import OperationalError as KombuOperationalError
 import requests
 from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1491,6 +1491,12 @@ class CurrentPlayerSongsAPIView(APIView):
         permissions.IsAuthenticated,
     ]
 
+    parser_classes: ClassVar[list[type[object]]] = [
+        JSONParser,
+        FormParser,
+        MultiPartParser,
+    ]
+
     def get(
         self,
         request: Request,
@@ -1523,7 +1529,32 @@ class CurrentPlayerSongsAPIView(APIView):
         serializer = PlayerSongCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        raw_url = str(serializer.validated_data["spotify_url"]).strip()
+        uploaded_audio = serializer.validated_data.get("audio_file")
+        if isinstance(uploaded_audio, UploadedFile):
+            # Uploaded MP3: store directly and mark ready.
+            filename = os.path.basename(uploaded_audio.name or "uploaded.mp3")
+            title = os.path.splitext(filename)[0][:255]
+
+            song = PlayerSong.objects.create(
+                player=player,
+                cached_song=None,
+                spotify_url="",
+                title=title,
+                artists="",
+                duration_seconds=None,
+                start_time_seconds=0,
+                playback_speed=1.0,
+                status=PlayerSongStatus.READY,
+                error_message="",
+                audio_file=uploaded_audio,
+            )
+
+            return Response(
+                PlayerSongSerializer(song).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        raw_url = str(serializer.validated_data.get("spotify_url") or "").strip()
         spotify_url = canonicalize_spotify_track_url(raw_url)
 
         cached, _ = CachedSong.objects.get_or_create(spotify_url=spotify_url)

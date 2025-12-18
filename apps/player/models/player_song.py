@@ -21,7 +21,7 @@ class PlayerSongStatus(models.TextChoices):
 
 
 class PlayerSong(models.Model):
-    """A song the player added via a Spotify link.
+    """A song the player added via Spotify or an uploaded audio file.
 
     The actual audio is downloaded (spotDL) asynchronously and stored in the
     configured Django storage backend (S3/MinIO).
@@ -48,7 +48,13 @@ class PlayerSong(models.Model):
         null=True,
     )
 
-    spotify_url: models.URLField = models.URLField(max_length=500)
+    # Spotify link when the song was added via Spotify.
+    # Uploaded songs can leave this empty.
+    spotify_url: models.URLField = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+    )
 
     title: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
     artists: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
@@ -91,5 +97,5 @@ class PlayerSong(models.Model):
 
     def __str__(self) -> str:
         """Return a readable representation for admin/debugging."""
-        label = self.title or self.spotify_url
+        label = self.title or self.spotify_url or "(uploaded song)"
         return f"{self.player.id_uuid}: {label}"
