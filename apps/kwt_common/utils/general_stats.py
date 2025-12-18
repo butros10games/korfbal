@@ -17,9 +17,9 @@ async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
         dict[str, Any]: General stats payload.
 
     """
-    goal_types = await sync_to_async(list)(
-        GoalType.objects.all().values("id_uuid", "name").order_by("name"),
-    )
+    goal_types = await sync_to_async(
+        lambda: list(GoalType.objects.all().values("id_uuid", "name").order_by("name"))
+    )()
 
     goal_types_json = [
         {"id": str(row["id_uuid"]), "name": row["name"]} for row in goal_types
@@ -41,11 +41,13 @@ async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
         for row in goal_types
     }
 
-    goal_type_rows = await sync_to_async(list)(
-        shot_qs.filter(scored=True, shot_type__isnull=False)
-        .values("shot_type__name", "for_team")
-        .annotate(count=Count("id_uuid")),
-    )
+    goal_type_rows = await sync_to_async(
+        lambda: list(
+            shot_qs.filter(scored=True, shot_type__isnull=False)
+            .values("shot_type__name", "for_team")
+            .annotate(count=Count("id_uuid"))
+        )
+    )()
 
     for row in goal_type_rows:
         name = row.get("shot_type__name")

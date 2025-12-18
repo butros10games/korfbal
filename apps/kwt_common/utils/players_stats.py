@@ -33,22 +33,24 @@ async def build_player_stats(
     if not players:
         return []
 
-    rows = await sync_to_async(list)(
-        Shot.objects.filter(
-            match_data__in=match_dataset,
-            player__in=players,
+    rows = await sync_to_async(
+        lambda: list(
+            Shot.objects.filter(
+                match_data__in=match_dataset,
+                player__in=players,
+            )
+            .values("player__user__username")
+            .annotate(
+                shots_for=Count("id_uuid", filter=Q(for_team=True)),
+                shots_against=Count("id_uuid", filter=Q(for_team=False)),
+                goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
+                goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
+            )
+            .order_by("-goals_for", "player__user__username")
         )
-        .values("player__user__username")
-        .annotate(
-            shots_for=Count("id_uuid", filter=Q(for_team=True)),
-            shots_against=Count("id_uuid", filter=Q(for_team=False)),
-            goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
-            goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
-        )
-        .order_by("-goals_for", "player__user__username"),
-    )
+    )()
 
-    player_rows: list[PlayerStatRow] = [
+    player_rows: list[PlayerStatRow] = [  # type: ignore[invalid-assignment]
         {
             "username": str(row.get("player__user__username") or ""),
             "shots_for": int(row.get("shots_for") or 0),
