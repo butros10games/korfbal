@@ -97,6 +97,20 @@ if DEBUG:
         "http://localhost:5173",
     ])
 SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", not DEBUG)
+
+# --- Reverse proxy / TLS termination ---
+# This project is typically deployed behind nginx which terminates TLS and
+# forwards requests to Django over plain HTTP.
+#
+# Without this, Django will think requests are not secure and
+# SecurityMiddleware can trigger redirect loops when SECURE_SSL_REDIRECT=True
+# (most noticeable on /admin/ and /api/ routes that hit Django).
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# If you ever switch nginx to set X-Forwarded-Host, you can enable this too.
+# (Currently nginx passes the Host header through, so this is not required.)
+# USE_X_FORWARDED_HOST = True
+
 SECURE_HSTS_SECONDS = _env_int("SECURE_HSTS_SECONDS", 31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool(
     "SECURE_HSTS_INCLUDE_SUBDOMAINS",
@@ -144,7 +158,15 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "bg_auth.auth_backend.BlockAdminLoginMiddleware",
+    # NOTE:
+    # BlockAdminLoginMiddleware redirects /admin/login/ -> /login/ for
+    # unauthenticated users. In production, /login/ is served by the SPA via
+    # nginx and does not create a Django session for the admin site.
+    #
+    # Keeping this enabled prevents the Django admin login page from working.
+    # If you later proxy /login/ to Django (or implement shared cookie domain
+    # auth for *.korfbal.butrosgroot.com), you can re-enable it.
+    # "bg_auth.auth_backend.BlockAdminLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "bg_django_mobile_detector.middleware.DetectMiddleware",
