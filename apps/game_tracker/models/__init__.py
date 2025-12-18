@@ -9,6 +9,7 @@ from .match_player import MatchPlayer
 from .pause import Pause
 from .player_change import PlayerChange
 from .player_group import PlayerGroup
+from .player_match_impact import PlayerMatchImpact
 from .shot import Shot
 from .timeout import Timeout
 
@@ -23,6 +24,7 @@ __all__ = [
     "Pause",
     "PlayerChange",
     "PlayerGroup",
+    "PlayerMatchImpact",
     "Shot",
     "Timeout",
 ]

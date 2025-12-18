@@ -124,6 +124,22 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
     return payload
 
 
+def build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
+    """Public wrapper for match event timelines.
+
+    The korfbal-web frontend depends on the exact time formatting produced by
+    these payload builders (e.g. "20+1"). Other backends may also reuse the
+    same semantics for derived statistics.
+
+    """
+    return _build_match_events(match_data)
+
+
+def build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
+    """Public wrapper for match shot timelines."""
+    return _build_match_shots(match_data)
+
+
 def _serialize_match_event(
     match_data: MatchData,
     event: object,
