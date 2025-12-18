@@ -26,7 +26,7 @@ def test_current_player_followed_teams_returns_followed_teams(client: Client) ->
 
     client.force_login(user)
 
-    response = client.get("/api/player/me/followed-teams/")
+    response = client.get("/api/player/me/followed-teams/", secure=True)
     assert response.status_code == HTTPStatus.OK
 
     payload = response.json()
@@ -54,7 +54,10 @@ def test_player_followed_teams_detail_endpoint_allows_self(client: Client) -> No
 
     client.force_login(user)
 
-    response = client.get(f"/api/player/players/{player.id_uuid}/followed-teams/")
+    response = client.get(
+        f"/api/player/players/{player.id_uuid}/followed-teams/",
+        secure=True,
+    )
     assert response.status_code == HTTPStatus.OK
 
     payload = response.json()
