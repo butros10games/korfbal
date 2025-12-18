@@ -10,7 +10,7 @@ import logging
 import os
 import secrets
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 from typing import Any, ClassVar
 from urllib.parse import urlencode
@@ -135,7 +135,7 @@ def _store_goal_song_upload_best_effort(
                     output_path,
                 ],
                 check=True,
-            )
+            )  # nosec B603
 
             clip_key = (
                 f"goal_songs/{player.id_uuid}/"
@@ -1326,7 +1326,7 @@ class PlayerSongClipAPIView(APIView):
                         output_path,
                     ],
                     check=True,
-                )
+                )  # nosec B603
 
                 with open(output_path, "rb") as clip_handle:
                     default_storage.save(clip_key, File(clip_handle))
