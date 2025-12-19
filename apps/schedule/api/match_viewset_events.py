@@ -65,16 +65,31 @@ class MatchEventsActionsMixin:
             return Response(
                 {
                     "home_team_id": str(match.home_team.id_uuid),
+                    "match_parts": [],
                     "events": [],
                     "status": match_data.status if match_data else "unknown",
                 },
                 status=status.HTTP_200_OK,
             )
 
+        match_parts_payload = [
+            {
+                "id_uuid": str(part.id_uuid),
+                "part_number": part.part_number,
+                "start_time": part.start_time.isoformat() if part.start_time else None,
+                "end_time": part.end_time.isoformat() if part.end_time else None,
+                "active": bool(part.active),
+            }
+            for part in MatchPart.objects.filter(match_data=match_data)
+            .order_by("part_number", "start_time")
+            .all()
+        ]
+
         events_payload = _build_match_events(match_data)
         return Response(
             {
                 "home_team_id": str(match.home_team.id_uuid),
+                "match_parts": match_parts_payload,
                 "events": events_payload,
                 "status": match_data.status,
             },

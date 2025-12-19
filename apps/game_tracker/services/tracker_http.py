@@ -914,10 +914,11 @@ def _cmd_substitute_reg(
     if current_part and _is_paused(match_data, current_part):
         raise TrackerCommandError(MATCH_IS_PAUSED_MESSAGE, code="match_paused")
 
-    # Allow substitutions when there is no active part (between parts). In that
-    # situation, attach the substitution to the most recently completed part.
+    # Allow substitutions when there is no active part (between parts).
+    # In that situation, persist the substitution without a match part so the
+    # event timeline can show it as an intermission (e.g. half-time) event.
     part_for_event = current_part
-    if not part_for_event:
+    if not current_part:
         if match_data.status != "active":
             raise TrackerCommandError("Match is not active.", code="match_not_active")
         if match_data.current_part <= 1:
@@ -925,28 +926,7 @@ def _cmd_substitute_reg(
                 NO_ACTIVE_MATCH_PART_MESSAGE,
                 code="no_active_part",
             )
-
-        previous_part_number = match_data.current_part - 1
-        part_for_event = (
-            MatchPart.objects.filter(
-                match_data=match_data,
-                part_number=previous_part_number,
-            )
-            .order_by("-start_time")
-            .first()
-        )
-        if not part_for_event:
-            # Fallback: take the latest part in case numbering is inconsistent.
-            part_for_event = (
-                MatchPart.objects.filter(match_data=match_data)
-                .order_by("-part_number", "-start_time")
-                .first()
-            )
-        if not part_for_event:
-            raise TrackerCommandError(
-                NO_ACTIVE_MATCH_PART_MESSAGE,
-                code="no_active_part",
-            )
+        part_for_event = None
 
     substitutions_max = 8
     substitutions_for = PlayerChange.objects.filter(
@@ -1008,7 +988,7 @@ def _cmd_substitute_against_reg(
     opponent = _other_team(match, team)
 
     part_for_event = current_part
-    if not part_for_event:
+    if not current_part:
         if match_data.status != "active":
             raise TrackerCommandError("Match is not active.", code="match_not_active")
         if match_data.current_part <= 1:
@@ -1016,27 +996,7 @@ def _cmd_substitute_against_reg(
                 NO_ACTIVE_MATCH_PART_MESSAGE,
                 code="no_active_part",
             )
-
-        previous_part_number = match_data.current_part - 1
-        part_for_event = (
-            MatchPart.objects.filter(
-                match_data=match_data,
-                part_number=previous_part_number,
-            )
-            .order_by("-start_time")
-            .first()
-        )
-        if not part_for_event:
-            part_for_event = (
-                MatchPart.objects.filter(match_data=match_data)
-                .order_by("-part_number", "-start_time")
-                .first()
-            )
-        if not part_for_event:
-            raise TrackerCommandError(
-                NO_ACTIVE_MATCH_PART_MESSAGE,
-                code="no_active_part",
-            )
+        part_for_event = None
 
     substitutions_max = 8
     substitutions_against = PlayerChange.objects.filter(

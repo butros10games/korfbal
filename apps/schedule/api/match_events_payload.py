@@ -12,7 +12,56 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from apps.game_tracker.models import MatchData, Pause, PlayerChange, Shot, Timeout
+from apps.game_tracker.models import (
+    MatchData,
+    MatchPart,
+    Pause,
+    PlayerChange,
+    Shot,
+    Timeout,
+)
+
+
+PART_ONE = 1
+PART_TWO = 2
+
+
+def _intermission_label_for_time(match_data: MatchData, event_time: datetime) -> str:
+    """Return a human label for events that happened between match parts.
+
+    We intentionally keep this as a string label (instead of forcing an artificial
+    part-relative minute) so the frontend doesn't show it as added time ("30+X")
+    for the previous part.
+
+    """
+    previous_part = (
+        MatchPart.objects.filter(
+            match_data=match_data,
+            end_time__isnull=False,
+            end_time__lte=event_time,
+        )
+        .order_by("-part_number", "-end_time")
+        .first()
+    )
+    next_part = (
+        MatchPart.objects.filter(
+            match_data=match_data,
+            start_time__gte=event_time,
+        )
+        .order_by("part_number", "start_time")
+        .first()
+    )
+
+    # If this event happened between part 1 and part 2 (or part 2 hasn't started
+    # yet, so `next_part` is unknown), treat it as half-time.
+    if (
+        previous_part
+        and previous_part.part_number == PART_ONE
+        and (next_part is None or next_part.part_number == PART_TWO)
+    ):
+        return "Rust"
+
+    return "Pauze"
 
 
 def _event_time_key(event: object) -> datetime:
@@ -209,31 +258,37 @@ def _serialize_substitute_event(
     match_data: MatchData,
     event: PlayerChange,
 ) -> dict[str, Any] | None:
-    if not event.match_part or not event.time:
+    if not event.time:
         return None
 
     has_players = bool(event.player_in) and bool(event.player_out)
     name = "Wissel" if has_players else "Wissel tegenstander"
 
-    return {
+    payload: dict[str, Any] = {
         "event_kind": "player_change",
         "event_id": str(event.id_uuid),
         "type": "substitute",
         "name": name,
-        "match_part_id": str(event.match_part.id_uuid),
         "time_iso": event.time.isoformat(),
-        "time": _time_in_minutes(
-            match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
-            event_time=event.time,
-        ),
         "player_in_id": str(event.player_in.id_uuid) if event.player_in else None,
         "player_in": event.player_in.user.username if event.player_in else None,
         "player_out_id": str(event.player_out.id_uuid) if event.player_out else None,
         "player_out": event.player_out.user.username if event.player_out else None,
         "player_group_id": str(event.player_group.id_uuid),
     }
+
+    if event.match_part:
+        payload["match_part_id"] = str(event.match_part.id_uuid)
+        payload["time"] = _time_in_minutes(
+            match_data=match_data,
+            match_part_start=event.match_part.start_time,
+            match_part_number=event.match_part.part_number,
+            event_time=event.time,
+        )
+    else:
+        payload["time"] = _intermission_label_for_time(match_data, event.time)
+
+    return payload
 
 
 def _serialize_pause_event(
