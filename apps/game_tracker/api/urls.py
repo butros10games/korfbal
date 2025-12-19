@@ -28,4 +28,10 @@ urlpatterns = [
         views.player_designation,
         name="match-player-designation",
     ),
+    # Backwards-compatible URL name (legacy server-rendered view tests).
+    path(
+        "player_designation/",
+        views.player_designation,
+        name="player_designation",
+    ),
 ]

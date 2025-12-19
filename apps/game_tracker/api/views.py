@@ -18,7 +18,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
 from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
@@ -52,6 +52,30 @@ def _get_player_groups(match_id: str, team_id: str) -> QuerySet[PlayerGroup]:
     )
 
 
+def _ensure_player_groups_exist(match_model: Match, match_data: MatchData) -> None:
+    """Create missing PlayerGroup rows for the match's teams.
+
+    The legacy server-rendered match tracker view implicitly created the
+    PlayerGroup rows (Aanval/Verdediging/Reserve, etc.) the first time it was
+    opened. The SPA expects the same behavior from the REST API.
+
+    This is intentionally idempotent.
+    """
+    group_types = list(GroupType.objects.all().order_by("order", "name"))
+    if not group_types:
+        return
+
+    teams = [match_model.home_team, match_model.away_team]
+    for team in teams:
+        for group_type in group_types:
+            PlayerGroup.objects.get_or_create(
+                match_data=match_data,
+                team=team,
+                starting_type=group_type,
+                defaults={"current_type": group_type},
+            )
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def player_overview_data(request: Request, match_id: str, team_id: str) -> Response:
@@ -64,7 +88,16 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         ]}
 
     """
-    player_groups = _get_player_groups(match_id, team_id)
+    match_model = get_object_or_404(Match, id_uuid=match_id)
+    match_data = MatchData.objects.get(match_link=match_model)
+
+    if request.user.is_authenticated:
+        _ensure_player_groups_exist(match_model, match_data)
+
+    player_groups = PlayerGroup.objects.filter(
+        match_data=match_data,
+        team_id=team_id,
+    ).order_by("starting_type__order")
     viewer = _viewer_player(request)
 
     player_groups_data: list[dict[str, Any]] = []
@@ -95,13 +128,14 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
+    match_data = MatchData.objects.get(match_link=match_model)
+    if request.user.is_authenticated:
+        _ensure_player_groups_exist(match_model, match_data)
+
     team_data = TeamData.objects.get(team=team_model, season=match_model.season)
 
     players = team_data.players.all()
-    player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_model),
-        team=team_model,
-    )
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
 
     for player_group in player_groups:
         players = players.exclude(id_uuid__in=player_group.players.all())
@@ -153,10 +187,11 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
-    player_groups = PlayerGroup.objects.filter(
-        match_data=MatchData.objects.get(match_link=match_model),
-        team=team_model,
-    )
+    match_data = MatchData.objects.get(match_link=match_model)
+    if request.user.is_authenticated:
+        _ensure_player_groups_exist(match_model, match_data)
+
+    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
 
     players = Player.objects.filter(user__username__icontains=search_query).exclude(
         id_uuid__in=[

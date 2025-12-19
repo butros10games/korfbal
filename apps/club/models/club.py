@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from bg_uuidv7 import uuidv7
+from django.conf import settings
 from django.db import models
 from django.templatetags.static import static
-from django.urls import reverse
 
 
 if TYPE_CHECKING:
@@ -52,7 +52,9 @@ class Club(models.Model):
             str: The absolute URL of the club detail page.
 
         """
-        return reverse("club_detail", kwargs={"club_id": self.id_uuid})
+        # The legacy Django-rendered `club_detail` route was removed when the
+        # project migrated to a React SPA. Club links should point into the SPA.
+        return f"{settings.WEB_APP_ORIGIN}/clubs/{self.id_uuid}"
 
     def get_club_logo(self) -> str:
         """Get the URL of the club logo.

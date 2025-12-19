@@ -2,7 +2,6 @@
 
 from django.contrib.auth import get_user_model
 from django.test.client import Client
-from django.urls import reverse
 import pytest
 
 from apps.club.models import Club
@@ -14,7 +13,13 @@ HTTP_STATUS_OK = 200
 
 @pytest.mark.django_db
 def test_club_detail_allows_authenticated_spectator(client: Client) -> None:
-    """Ensure a logged-in user without a Player profile can view club detail."""
+    """Ensure a logged-in user without a Player profile can view club data.
+
+    The legacy Django-rendered club detail view was removed when the project
+    migrated to a React SPA. This test now targets the API endpoint that powers
+    the SPA club detail page.
+
+    """
     user = get_user_model().objects.create_user(
         username="viewer",
         password=TEST_PASSWORD,
@@ -23,8 +28,9 @@ def test_club_detail_allows_authenticated_spectator(client: Client) -> None:
 
     client.force_login(user)
 
-    response = client.get(reverse("club_detail", args=[club.id_uuid]), secure=True)
+    response = client.get(f"/api/club/clubs/{club.id_uuid}/overview/", secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["admin"] is False
-    assert response.context["following"] is False
+    payload = response.json()
+    assert payload["club"]["id_uuid"] == str(club.id_uuid)
+    assert payload["club"]["name"] == club.name
