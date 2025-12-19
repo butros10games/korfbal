@@ -10,6 +10,7 @@ from .pause_admin import PauseAdmin
 from .player_change_admin import PlayerChangeAdmin
 from .player_group_admin import PlayerGroupAdmin
 from .player_match_impact_admin import PlayerMatchImpactAdmin
+from .player_match_impact_breakdown_admin import PlayerMatchImpactBreakdownAdmin
 from .shot_admin import ShotAdmin
 from .timeout_admin import TimeoutAdmin
 
@@ -25,6 +26,7 @@ __all__ = [
     "PlayerChangeAdmin",
     "PlayerGroupAdmin",
     "PlayerMatchImpactAdmin",
+    "PlayerMatchImpactBreakdownAdmin",
     "ShotAdmin",
     "TimeoutAdmin",
 ]

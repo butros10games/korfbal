@@ -7,7 +7,10 @@ from argparse import ArgumentParser
 from django.core.management.base import BaseCommand
 
 from apps.game_tracker.models import MatchData
-from apps.game_tracker.services.match_impact import persist_match_impact_rows
+from apps.game_tracker.services.match_impact import (
+    persist_match_impact_rows,
+    persist_match_impact_rows_with_breakdowns,
+)
 
 
 class Command(BaseCommand):
@@ -25,11 +28,20 @@ class Command(BaseCommand):
             action="store_true",
             help="Recompute all finished matches",
         )
+        parser.add_argument(
+            "--skip-breakdowns",
+            action="store_true",
+            help=(
+                "Only compute PlayerMatchImpact rows. If omitted, also persists "
+                "PlayerMatchImpactBreakdown rows for fast Team-page breakdowns."
+            ),
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Execute the recomputation for the requested match set."""
         match_data_id = options.get("match_data_id")
         finished = bool(options.get("finished"))
+        skip_breakdowns = bool(options.get("skip_breakdowns"))
 
         if not match_data_id and not finished:
             self.stderr.write("Provide --match-data-id or --finished")
@@ -43,7 +55,10 @@ class Command(BaseCommand):
 
         total = 0
         for md in qs.iterator():
-            rows = persist_match_impact_rows(match_data=md)
+            if skip_breakdowns:
+                rows = persist_match_impact_rows(match_data=md)
+            else:
+                rows = persist_match_impact_rows_with_breakdowns(match_data=md)
             total += rows
             self.stdout.write(f"{md.id_uuid}: {rows} rows")
 

@@ -16,16 +16,23 @@ Important:
 from __future__ import annotations
 
 from collections.abc import Callable
+import contextlib
 from dataclasses import dataclass
 from decimal import Decimal
 import logging
 import math
 from operator import itemgetter
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, cast
 
+from django.core.cache import cache
 from django.db import transaction
 
-from apps.game_tracker.models import MatchData, PlayerGroup, PlayerMatchImpact
+from apps.game_tracker.models import (
+    MatchData,
+    PlayerGroup,
+    PlayerMatchImpact,
+    PlayerMatchImpactBreakdown,
+)
 from apps.player.models.player import Player
 
 # We intentionally reuse the match payload builders because they already encode
@@ -41,6 +48,142 @@ TINY_X = 0.01
 
 GroupRole = Literal["aanval", "verdediging", "reserve", "unknown"]
 Side = Literal["home", "away"]
+
+
+# Bump this when tuning the algorithm so team/season aggregations can
+# opportunistically recompute persisted rows.
+LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v3"
+
+
+# Cache schema version for per-match breakdowns.
+# Bump this when changing breakdown output structure or when a previous bug may
+# have cached incomplete/incorrect breakdown dicts.
+MATCH_IMPACT_BREAKDOWN_CACHE_VERSION = 2
+
+
+# Only apply shooting-efficiency reweighting when a player has a meaningful
+# number of shot attempts in the match.
+MIN_SHOTS_FOR_EFFICIENCY_SCALING = 5
+
+
+# Shooting efficiency rate bands (goals / shots).
+EFFICIENCY_RATE_VERY_GOOD = 0.5
+EFFICIENCY_RATE_GOOD = 1.0 / 3.0
+EFFICIENCY_RATE_FINE = 0.2
+
+
+@dataclass(frozen=True)
+class ShotImpactWeights:
+    """Weights used for shot-related impact scoring."""
+
+    miss_for_penalty: float
+    shot_against_total: float
+    goal_against_total: float
+    miss_against_total: float
+
+
+def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
+    """Return the weights for a given algorithm version.
+
+    Notes:
+        Unknown versions fall back to the latest weights.
+
+    """
+    if version == "v1":
+        return ShotImpactWeights(
+            miss_for_penalty=0.9,
+            shot_against_total=-0.25,
+            goal_against_total=-6.2,
+            miss_against_total=0.55,
+        )
+
+    if version == "v2":
+        # Tuning: missed shots were dominating totals; reduce shooter penalty and
+        # increase defensive reward for forcing a miss.
+        return ShotImpactWeights(
+            miss_for_penalty=0.6,
+            shot_against_total=-0.25,
+            goal_against_total=-6.2,
+            miss_against_total=0.8,
+        )
+
+    if version == "v3":
+        # v3 keeps the v2 defensive tuning, but reweights shooter goal/miss
+        # contributions based on shooting efficiency bands.
+        return shot_impact_weights_for_version("v2")
+
+    logger.warning("Unknown match impact algorithm version: %s", version)
+    return shot_impact_weights_for_version(LATEST_MATCH_IMPACT_ALGORITHM_VERSION)
+
+
+@dataclass(frozen=True)
+class ShootingEfficiencyMultipliers:
+    """Per-shooter multipliers derived from match shooting efficiency."""
+
+    goal_points: float
+    miss_penalty: float
+
+
+def _efficiency_multipliers_for_rate(
+    *, goals: int, shots: int
+) -> ShootingEfficiencyMultipliers:
+    """Map goals/shots into multipliers.
+
+    Interpretation (user-facing intent):
+        - 1/2 (>= 50%) is very good
+        - 1/3 (>= 33.3%) is good
+        - 1/4..1/5 (>= 20%) is fine
+        - below 1/5 (< 20%) becomes a real problem
+
+    Notes:
+        The match must have enough shot attempts for the player before we
+        apply any efficiency-based scaling.
+
+    """
+    if shots < MIN_SHOTS_FOR_EFFICIENCY_SCALING:
+        return ShootingEfficiencyMultipliers(goal_points=1.0, miss_penalty=1.0)
+
+    rate = (goals / shots) if shots else 0.0
+
+    if rate >= EFFICIENCY_RATE_VERY_GOOD:
+        return ShootingEfficiencyMultipliers(goal_points=1.2, miss_penalty=0.7)
+    if rate >= EFFICIENCY_RATE_GOOD:
+        return ShootingEfficiencyMultipliers(goal_points=1.1, miss_penalty=0.85)
+    if rate >= EFFICIENCY_RATE_FINE:
+        return ShootingEfficiencyMultipliers(goal_points=1.0, miss_penalty=1.0)
+
+    return ShootingEfficiencyMultipliers(goal_points=0.9, miss_penalty=1.15)
+
+
+def _compute_shooting_efficiency_multipliers(
+    *, shots: list[dict[str, Any]], algorithm_version: str
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Compute per-player multipliers for goal points and miss penalties."""
+    if algorithm_version != "v3":
+        return {}, {}
+
+    attempts_by_player: dict[str, int] = {}
+    goals_by_player: dict[str, int] = {}
+
+    for shot in shots:
+        shooter_id = str(shot.get("player_id") or "").strip()
+        if not shooter_id:
+            continue
+
+        attempts_by_player[shooter_id] = attempts_by_player.get(shooter_id, 0) + 1
+        if bool(shot.get("scored")):
+            goals_by_player[shooter_id] = goals_by_player.get(shooter_id, 0) + 1
+
+    goal_mult_by_player: dict[str, float] = {}
+    miss_mult_by_player: dict[str, float] = {}
+
+    for pid, shots_taken in attempts_by_player.items():
+        goals = goals_by_player.get(pid, 0)
+        multipliers = _efficiency_multipliers_for_rate(goals=goals, shots=shots_taken)
+        goal_mult_by_player[pid] = multipliers.goal_points
+        miss_mult_by_player[pid] = multipliers.miss_penalty
+
+    return goal_mult_by_player, miss_mult_by_player
 
 
 @dataclass(frozen=True)
@@ -598,6 +741,43 @@ def round_js_1dp(value: float) -> Decimal:
     return _round_js_1dp(value)
 
 
+class ImpactBreakdownItem(TypedDict):
+    """Aggregated contribution for a single impact category."""
+
+    points: float
+    count: int
+
+
+PlayerImpactBreakdown = dict[str, dict[str, ImpactBreakdownItem]]
+
+
+def _add_breakdown(
+    breakdown_by_player: PlayerImpactBreakdown,
+    *,
+    pid: str,
+    category: str,
+    delta: float,
+) -> None:
+    if not pid:
+        return
+
+    per_player = breakdown_by_player.setdefault(
+        pid, cast(dict[str, ImpactBreakdownItem], {})
+    )
+    if category not in per_player:
+        per_player[category] = cast(
+            ImpactBreakdownItem,
+            {
+                "points": delta,
+                "count": 1,
+            },
+        )
+        return
+
+    per_player[category]["points"] += delta
+    per_player[category]["count"] += 1
+
+
 def _add_players_from_groups(
     *, groups: list[PlayerGroup], player_team_id: dict[str, str]
 ) -> None:
@@ -716,49 +896,166 @@ def _iter_shot_events(
     return shot_events
 
 
-def _add_impact(impact_by_player: dict[str, float], pid: str, delta: float) -> None:
+def _add_impact(
+    impact_by_player: dict[str, float],
+    pid: str,
+    delta: float,
+    *,
+    breakdown_by_player: PlayerImpactBreakdown | None = None,
+    category: str | None = None,
+) -> None:
     if not pid:
         return
     impact_by_player[pid] = (impact_by_player.get(pid) or 0.0) + delta
+
+    if breakdown_by_player is not None and category:
+        _add_breakdown(
+            breakdown_by_player,
+            pid=pid,
+            category=category,
+            delta=delta,
+        )
+
+
+def _apply_shooter_miss_penalty(
+    *,
+    shooter_id: str,
+    scored: bool,
+    miss_for_penalty: float,
+    impact_by_player: dict[str, float],
+    breakdown_by_player: PlayerImpactBreakdown | None,
+) -> None:
+    if shooter_id and not scored:
+        _add_impact(
+            impact_by_player,
+            shooter_id,
+            -miss_for_penalty,
+            breakdown_by_player=breakdown_by_player,
+            category="shot_miss_for",
+        )
+
+
+@dataclass(frozen=True)
+class _DefensiveShotTotals:
+    shot_against_total: float
+    goal_against_total: float
+    miss_against_total: float
+
+
+@dataclass(frozen=True)
+class _ShotImpactContext:
+    home_team_id: str
+    away_team_id: str
+    defenders_at_x: Callable[[Side, float], list[str]]
+    impact_by_player: dict[str, float]
+    breakdown_by_player: PlayerImpactBreakdown | None
+    weights: ShotImpactWeights
+
+
+@dataclass(frozen=True)
+class _ShotImpactEvent:
+    x: float
+    shot_team_id: str | None
+    scored: bool
+
+
+def _apply_defender_shot_shares(
+    *,
+    ctx: _ShotImpactContext,
+    defenders: list[str],
+    scored: bool,
+    totals: _DefensiveShotTotals,
+) -> None:
+    defender_count = float(len(defenders))
+    shot_share = totals.shot_against_total / defender_count
+    result_share = (
+        totals.goal_against_total if scored else totals.miss_against_total
+    ) / defender_count
+
+    result_category = "def_goal_against" if scored else "def_miss_against"
+
+    for did in defenders:
+        _add_impact(
+            ctx.impact_by_player,
+            did,
+            shot_share,
+            breakdown_by_player=ctx.breakdown_by_player,
+            category="def_shot_against",
+        )
+        _add_impact(
+            ctx.impact_by_player,
+            did,
+            result_share,
+            breakdown_by_player=ctx.breakdown_by_player,
+            category=result_category,
+        )
+
+
+def _apply_defensive_shot_impacts_for_event(
+    *,
+    ctx: _ShotImpactContext,
+    ev: _ShotImpactEvent,
+    totals: _DefensiveShotTotals,
+) -> None:
+    defending_side = _defending_side_for_shot(
+        shot_team_id=ev.shot_team_id,
+        home_team_id=ctx.home_team_id,
+        away_team_id=ctx.away_team_id,
+    )
+    if not defending_side:
+        return
+
+    defenders = ctx.defenders_at_x(defending_side, ev.x)
+    if not defenders:
+        return
+
+    _apply_defender_shot_shares(
+        ctx=ctx,
+        defenders=defenders,
+        scored=ev.scored,
+        totals=totals,
+    )
 
 
 def _apply_shot_impacts(
     *,
     shots: list[dict[str, Any]],
-    home_team_id: str,
-    away_team_id: str,
-    defenders_at_x: Callable[[Side, float], list[str]],
-    impact_by_player: dict[str, float],
+    ctx: _ShotImpactContext,
+    miss_multiplier_by_shooter: dict[str, float] | None = None,
 ) -> None:
-    miss_for_penalty = 0.9
-    shot_against_total = -0.25
-    goal_against_total = -6.2
-    miss_against_total = 0.55
+    miss_for_penalty = ctx.weights.miss_for_penalty
+    totals = _DefensiveShotTotals(
+        shot_against_total=ctx.weights.shot_against_total,
+        goal_against_total=ctx.weights.goal_against_total,
+        miss_against_total=ctx.weights.miss_against_total,
+    )
 
     for x, shot in _iter_shot_events(shots):
         shooter_id = str(shot.get("player_id") or "").strip()
         scored = bool(shot.get("scored"))
-        if shooter_id and not scored:
-            _add_impact(impact_by_player, shooter_id, -miss_for_penalty)
 
-        defending_side = _defending_side_for_shot(
-            shot_team_id=str(shot.get("team_id") or "").strip() or None,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
+        miss_multiplier = (
+            (miss_multiplier_by_shooter or {}).get(shooter_id, 1.0)
+            if shooter_id
+            else 1.0
         )
-        if not defending_side:
-            continue
-
-        defenders = defenders_at_x(defending_side, x)
-        if not defenders:
-            continue
-
-        total = shot_against_total + (
-            goal_against_total if scored else miss_against_total
+        _apply_shooter_miss_penalty(
+            shooter_id=shooter_id,
+            scored=scored,
+            miss_for_penalty=miss_for_penalty * miss_multiplier,
+            impact_by_player=ctx.impact_by_player,
+            breakdown_by_player=ctx.breakdown_by_player,
         )
-        share = total / float(len(defenders))
-        for did in defenders:
-            _add_impact(impact_by_player, did, share)
+
+        _apply_defensive_shot_impacts_for_event(
+            ctx=ctx,
+            ev=_ShotImpactEvent(
+                x=x,
+                shot_team_id=str(shot.get("team_id") or "").strip() or None,
+                scored=scored,
+            ),
+            totals=totals,
+        )
 
 
 def _iter_goal_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -781,6 +1078,7 @@ class _GoalImpactContext:
     away_team_id: str
     defenders_at_x: Callable[[Side, float], list[str]]
     impact_by_player: dict[str, float]
+    breakdown_by_player: PlayerImpactBreakdown | None
 
 
 @dataclass(frozen=True)
@@ -794,7 +1092,13 @@ class _GoalImpactEvent:
 def _apply_scorer_goal_points(*, ctx: _GoalImpactContext, ev: _GoalImpactEvent) -> None:
     scorer_id = str(ev.goal.get("player_id") or "").strip()
     if scorer_id:
-        _add_impact(ctx.impact_by_player, scorer_id, ev.goal_points)
+        _add_impact(
+            ctx.impact_by_player,
+            scorer_id,
+            ev.goal_points,
+            breakdown_by_player=ctx.breakdown_by_player,
+            category="goal_scored",
+        )
 
 
 def _apply_doorloop_concede_penalty(
@@ -816,24 +1120,21 @@ def _apply_doorloop_concede_penalty(
 
     defenders = ctx.defenders_at_x(conceding_side, ev.x)
     for did in defenders:
-        _add_impact(ctx.impact_by_player, did, -ev.goal_points * 0.06)
+        _add_impact(
+            ctx.impact_by_player,
+            did,
+            -ev.goal_points * 0.06,
+            breakdown_by_player=ctx.breakdown_by_player,
+            category="doorloop_concede_penalty",
+        )
 
 
 def _apply_goal_impacts(
     *,
     events: list[dict[str, Any]],
-    home_team_id: str,
-    away_team_id: str,
-    defenders_at_x: Callable[[Side, float], list[str]],
-    impact_by_player: dict[str, float],
+    ctx: _GoalImpactContext,
+    goal_multiplier_by_scorer: dict[str, float] | None = None,
 ) -> None:
-    ctx = _GoalImpactContext(
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-        defenders_at_x=defenders_at_x,
-        impact_by_player=impact_by_player,
-    )
-
     goal_events = _iter_goal_events(events)
 
     home_score = 0
@@ -861,6 +1162,12 @@ def _apply_goal_impacts(
             streak=streak,
         )
 
+        scorer_id = str(goal.get("player_id") or "").strip()
+        goal_multiplier = (
+            (goal_multiplier_by_scorer or {}).get(scorer_id, 1.0) if scorer_id else 1.0
+        )
+        goal_points *= goal_multiplier
+
         ev_ctx = _GoalImpactEvent(
             goal=goal,
             goal_points=goal_points,
@@ -874,12 +1181,16 @@ def _apply_goal_impacts(
             home_score=home_score,
             away_score=away_score,
             scoring_team_id=scoring_team_id,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
+            home_team_id=ctx.home_team_id,
+            away_team_id=ctx.away_team_id,
         )
 
 
-def compute_match_impact_rows(*, match_data: MatchData) -> list[MatchImpactRow]:
+def compute_match_impact_rows(
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+) -> list[MatchImpactRow]:
     """Compute match impact rows for storage/aggregation."""
     match = match_data.match_link
     if not match:
@@ -925,19 +1236,38 @@ def compute_match_impact_rows(*, match_data: MatchData) -> list[MatchImpactRow]:
 
     impact_by_player: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
 
-    _apply_shot_impacts(
+    weights = shot_impact_weights_for_version(algorithm_version)
+
+    goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
         shots=shots,
+        algorithm_version=algorithm_version,
+    )
+
+    shot_ctx = _ShotImpactContext(
         home_team_id=home_team_id,
         away_team_id=away_team_id,
         defenders_at_x=defenders_at_x,
         impact_by_player=impact_by_player,
+        breakdown_by_player=None,
+        weights=weights,
+    )
+    _apply_shot_impacts(
+        shots=shots,
+        ctx=shot_ctx,
+        miss_multiplier_by_shooter=miss_mult_by_player,
+    )
+
+    goal_ctx = _GoalImpactContext(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        defenders_at_x=defenders_at_x,
+        impact_by_player=impact_by_player,
+        breakdown_by_player=None,
     )
     _apply_goal_impacts(
         events=events,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-        defenders_at_x=defenders_at_x,
-        impact_by_player=impact_by_player,
+        ctx=goal_ctx,
+        goal_multiplier_by_scorer=goal_mult_by_player,
     )
 
     rows: list[MatchImpactRow] = []
@@ -954,8 +1284,150 @@ def compute_match_impact_rows(*, match_data: MatchData) -> list[MatchImpactRow]:
     return rows
 
 
+def compute_match_impact_breakdown(
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown]:
+    """Compute match impact rows and a per-player category breakdown.
+
+    This is intended for diagnostics/transparency UIs (e.g. Team page breakdown)
+    and does not persist anything.
+    """
+    match = match_data.match_link
+    if not match:
+        return [], {}
+
+    home_team_id = str(match.home_team_id)
+    away_team_id = str(match.away_team_id)
+
+    events = build_match_events(match_data)
+    shots = build_match_shots(match_data)
+
+    match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
+    goal_switch_times = _build_goal_switch_times(events)
+
+    groups = list(
+        PlayerGroup.objects.select_related("starting_type", "team")
+        .prefetch_related("players")
+        .filter(match_data=match_data)
+    )
+
+    player_team_id = _build_player_team_map(groups=groups, shots=shots, events=events)
+    known_player_ids = sorted(player_team_id.keys())
+
+    role_intervals_by_id = build_match_player_role_timeline(
+        known_player_ids=known_player_ids,
+        groups=groups,
+        events=events,
+        match_end_minutes=match_end_minutes,
+    )
+
+    side_player_ids = _build_side_player_ids(
+        known_player_ids=known_player_ids,
+        player_team_id=player_team_id,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+    )
+    defenders_at_x = _make_defenders_at_x(
+        side_player_ids=side_player_ids,
+        role_intervals_by_id=role_intervals_by_id,
+        goal_switch_times=goal_switch_times,
+    )
+
+    impact_by_player: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
+    breakdown_by_player: PlayerImpactBreakdown = {}
+
+    weights = shot_impact_weights_for_version(algorithm_version)
+
+    goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
+        shots=shots,
+        algorithm_version=algorithm_version,
+    )
+
+    shot_ctx = _ShotImpactContext(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        defenders_at_x=defenders_at_x,
+        impact_by_player=impact_by_player,
+        breakdown_by_player=breakdown_by_player,
+        weights=weights,
+    )
+    _apply_shot_impacts(
+        shots=shots,
+        ctx=shot_ctx,
+        miss_multiplier_by_shooter=miss_mult_by_player,
+    )
+
+    goal_ctx = _GoalImpactContext(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        defenders_at_x=defenders_at_x,
+        impact_by_player=impact_by_player,
+        breakdown_by_player=breakdown_by_player,
+    )
+    _apply_goal_impacts(
+        events=events,
+        ctx=goal_ctx,
+        goal_multiplier_by_scorer=goal_mult_by_player,
+    )
+
+    rows: list[MatchImpactRow] = []
+    for pid, score in impact_by_player.items():
+        team_id = player_team_id.get(pid)
+        rows.append(
+            MatchImpactRow(
+                player_id=pid,
+                team_id=team_id,
+                impact_score=_round_js_1dp(score),
+            )
+        )
+
+    return rows, breakdown_by_player
+
+
+def compute_match_impact_breakdown_cached(
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    timeout_seconds: int = 60 * 60 * 24,
+) -> PlayerImpactBreakdown:
+    """Return cached per-match breakdown (diagnostics).
+
+    The Team-page breakdown endpoint aggregates per-match breakdowns across many
+    matches. Computing a full match breakdown can be relatively expensive, so
+    we cache the result per match + algorithm version.
+    """
+    cache_key = (
+        "match-impact-breakdown:"
+        f"v{MATCH_IMPACT_BREAKDOWN_CACHE_VERSION}:"
+        f"{algorithm_version}:{match_data.id_uuid}"
+    )
+
+    try:
+        cached = cache.get(cache_key)
+    except Exception:
+        cached = None
+
+    if isinstance(cached, dict):
+        return cached  # type: ignore[return-value]
+
+    _rows, breakdown = compute_match_impact_breakdown(
+        match_data=match_data,
+        algorithm_version=algorithm_version,
+    )
+
+    # If cache is unavailable (e.g. Redis/Valkey down), still return the
+    # computed breakdown.
+    with contextlib.suppress(Exception):
+        cache.set(cache_key, breakdown, timeout=timeout_seconds)
+    return breakdown
+
+
 def persist_match_impact_rows(
-    *, match_data: MatchData, algorithm_version: str = "v1"
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 ) -> int:
     """Compute + upsert rows for a match.
 
@@ -963,7 +1435,10 @@ def persist_match_impact_rows(
         int: number of rows upserted.
 
     """
-    rows = compute_match_impact_rows(match_data=match_data)
+    rows = compute_match_impact_rows(
+        match_data=match_data,
+        algorithm_version=algorithm_version,
+    )
     if not rows:
         return 0
 
@@ -996,6 +1471,73 @@ def persist_match_impact_rows(
                     "team": team,
                     "impact_score": row.impact_score,
                     "algorithm_version": algorithm_version,
+                },
+            )
+            upserted += 1
+
+    return upserted
+
+
+def persist_match_impact_rows_with_breakdowns(
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+) -> int:
+    """Compute + upsert impact rows AND per-player breakdown rows for a match.
+
+    This is heavier than `persist_match_impact_rows` because it computes the full
+    breakdown dict. Use it for background recompute jobs and one-time backfills.
+
+    Returns:
+        int: number of PlayerMatchImpact rows upserted.
+
+    """
+    rows, breakdown_by_player = compute_match_impact_breakdown(
+        match_data=match_data,
+        algorithm_version=algorithm_version,
+    )
+    if not rows:
+        return 0
+
+    players_by_id: dict[str, Player] = {
+        str(p.id_uuid): p
+        for p in Player.objects.filter(id_uuid__in=[r.player_id for r in rows]).only(
+            "id_uuid"
+        )
+    }
+
+    team_ids = [r.team_id for r in rows if r.team_id]
+    teams_by_id: dict[str, Team] = {
+        str(t.id_uuid): t
+        for t in Team.objects.filter(id_uuid__in=team_ids).only("id_uuid")
+    }
+
+    upserted = 0
+    with transaction.atomic():
+        for row in rows:
+            player = players_by_id.get(row.player_id)
+            if not player:
+                continue
+
+            team = teams_by_id.get(row.team_id) if row.team_id else None
+
+            impact_obj, _created = PlayerMatchImpact.objects.update_or_create(
+                match_data=match_data,
+                player=player,
+                defaults={
+                    "team": team,
+                    "impact_score": row.impact_score,
+                    "algorithm_version": algorithm_version,
+                },
+            )
+
+            per_player_breakdown = breakdown_by_player.get(row.player_id) or {}
+
+            PlayerMatchImpactBreakdown.objects.update_or_create(
+                impact=impact_obj,
+                defaults={
+                    "algorithm_version": algorithm_version,
+                    "breakdown": per_player_breakdown,
                 },
             )
             upserted += 1

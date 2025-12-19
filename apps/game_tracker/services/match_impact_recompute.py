@@ -20,15 +20,30 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 
-def schedule_match_impact_recompute(*, match_data_id: str) -> None:
-    """Best-effort enqueue of the recompute task."""
+def schedule_match_impact_recompute(
+    *,
+    match_data_id: str,
+    countdown_seconds: int = 0,
+) -> None:
+    """Best-effort enqueue of the recompute task.
+
+    Args:
+        match_data_id: MatchData UUID (string form).
+        countdown_seconds: Optional delay before Celery executes the task.
+            Use this to wait for final match edits to settle (e.g. after a
+            match transitions to "finished").
+
+    """
 
     def _enqueue() -> None:
         try:
             # Avoid importing Celery tasks at module import time.
             tasks: Any = import_module("apps.game_tracker.tasks")
             task: Any = tasks.recompute_match_impacts
-            task.delay(match_data_id)
+            if countdown_seconds > 0:
+                task.apply_async(args=(match_data_id,), countdown=countdown_seconds)
+            else:
+                task.delay(match_data_id)
         except Exception:
             logger.exception(
                 "Failed to enqueue recompute_match_impacts(%s). "

@@ -12,7 +12,16 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import (
+    MatchData,
+    PlayerMatchImpact,
+    PlayerMatchImpactBreakdown,
+)
+from apps.game_tracker.services.match_impact import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    persist_match_impact_rows_with_breakdowns,
+    round_js_1dp,
+)
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.utils.general_stats import build_general_stats
 from apps.kwt_common.utils.match_summary import build_match_summaries
@@ -21,6 +30,7 @@ from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Season
 from apps.team.models.team import Team
+from apps.team.models.team_data import TeamData
 
 from .serializers import TeamSerializer
 
@@ -89,6 +99,14 @@ class TeamViewSet(viewsets.ModelViewSet):
                 self._team_players_queryset(team, season, match_data_qs)
             )
 
+        # Mark which players are part of the team's main season roster (TeamData)
+        # vs. reserve/guest players who only show up in matches/stats.
+        main_roster_ids = self._main_roster_ids(team=team, season=season)
+        ordered_roster_players = self._order_roster_players(
+            roster_players=roster_players,
+            main_roster_ids=main_roster_ids,
+        )
+
         viewer_player = (
             Player.objects.filter(user=request.user).first()
             if request.user.is_authenticated
@@ -103,6 +121,9 @@ class TeamViewSet(viewsets.ModelViewSet):
                     # Avoid exposing full names to anonymous/outside viewers.
                     "display_name": player.user.username,
                     "username": player.user.username,
+                    "roster_role": (
+                        "main" if str(player.id_uuid) in main_roster_ids else "reserve"
+                    ),
                     "profile_picture_url": (
                         player.get_profile_picture()
                         if can_view_by_visibility(
@@ -114,7 +135,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                     ),
                     "profile_url": player.get_absolute_url(),
                 }
-                for player in roster_players
+                for player in ordered_roster_players
             ]
 
         stats_players = []
@@ -156,6 +177,222 @@ class TeamViewSet(viewsets.ModelViewSet):
             },
         }
         return Response(payload)
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="impact-breakdown",
+    )
+    def impact_breakdown(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return match-impact category breakdown for a single player.
+
+        Query params:
+            - season: optional season id_uuid (same as /overview)
+            - player: required player id_uuid
+
+        Notes:
+            This endpoint primarily reads breakdowns from the database
+            (`PlayerMatchImpactBreakdown`). If a breakdown row is missing for a
+            match, it may compute + persist it as a best-effort self-heal.
+
+        """
+        team = self.get_object()
+        season = self._resolve_season(request)
+
+        player_param = (request.query_params.get("player") or "").strip()
+        if not player_param:
+            return Response(
+                {"detail": "Missing required query param: player"},
+                status=400,
+            )
+
+        player = (
+            Player.objects.select_related("user")
+            .only("id_uuid", "user__username")
+            .filter(id_uuid=player_param)
+            .first()
+        )
+        if not player:
+            return Response({"detail": "Player not found"}, status=404)
+
+        match_data_qs = self._impact_breakdown_match_queryset(
+            team=team,
+            season=season,
+            player=player,
+        )
+
+        matches_considered, impact_total_raw, aggregated = (
+            self._aggregate_player_impact_breakdowns(
+                team=team,
+                player=player,
+                match_data_qs=match_data_qs,
+            )
+        )
+
+        categories_payload = [
+            {
+                "key": key,
+                "points": float(round_js_1dp(float(data["points"]))),
+                "count": int(data["count"]),
+            }
+            for key, data in aggregated.items()
+        ]
+        categories_payload.sort(key=lambda c: abs(float(c["points"])), reverse=True)
+
+        payload = {
+            "team_id": str(team.id_uuid),
+            "season_id": str(season.id_uuid) if season else None,
+            "player_id": str(player.id_uuid),
+            "player_username": player.user.username,
+            "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            "matches_considered": matches_considered,
+            "impact_total": float(round_js_1dp(impact_total_raw)),
+            "categories": categories_payload,
+        }
+        return Response(payload)
+
+    def _impact_breakdown_match_queryset(
+        self,
+        *,
+        team: Team,
+        season: Season | None,
+        player: Player,
+    ) -> QuerySet[MatchData]:
+        match_data_qs = self._team_match_queryset(team, season).filter(
+            status="finished"
+        )
+
+        # When available, prefer stored match-impact rows for the given player.
+        # This keeps the match set tight (only games where the player actually
+        # has stored impact rows) and avoids scanning all team matches.
+        persisted_match_data_qs = match_data_qs.filter(
+            player_impacts__player=player,
+            player_impacts__algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+        ).distinct()
+        if persisted_match_data_qs.exists():
+            return persisted_match_data_qs
+
+        # Important: do NOT rely solely on designated MatchPlayer rows. In real
+        # data, those rows may be missing while shots/events and/or persisted
+        # PlayerMatchImpact rows still exist.
+        return match_data_qs.filter(
+            Q(
+                player_impacts__player=player,
+                player_impacts__algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            )
+            | Q(players__player=player)
+            | Q(shots__player=player)
+        ).distinct()
+
+    @staticmethod
+    def _impact_breakdown_for_impact(*, impact: PlayerMatchImpact) -> dict[str, Any]:
+        breakdown_obj = getattr(impact, "breakdown", None)
+        if (
+            breakdown_obj is not None
+            and breakdown_obj.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
+            and isinstance(breakdown_obj.breakdown, dict)
+        ):
+            return breakdown_obj.breakdown
+
+        # Best-effort: compute+persist breakdowns so next request is fast.
+        try:
+            persist_match_impact_rows_with_breakdowns(
+                match_data=impact.match_data,
+                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            )
+        except Exception:
+            return {}
+
+        refreshed = (
+            PlayerMatchImpactBreakdown.objects.filter(
+                impact=impact,
+                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            )
+            .only("breakdown")
+            .first()
+        )
+        if refreshed is None or not isinstance(refreshed.breakdown, dict):
+            return {}
+        return refreshed.breakdown
+
+    def _aggregate_player_impact_breakdowns(
+        self,
+        *,
+        team: Team,
+        player: Player,
+        match_data_qs: QuerySet[MatchData],
+    ) -> tuple[int, float, dict[str, dict[str, float | int]]]:
+        aggregated: dict[str, dict[str, float | int]] = {}
+        matches_considered = 0
+        impact_total_raw = 0.0
+
+        impacts_qs = (
+            PlayerMatchImpact.objects.filter(
+                match_data__in=match_data_qs,
+                player=player,
+                team=team,
+                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            )
+            .select_related("match_data")
+            .select_related("breakdown")
+        )
+
+        for impact in impacts_qs.iterator():
+            matches_considered += 1
+            impact_total_raw += float(impact.impact_score)
+
+            per_player = self._impact_breakdown_for_impact(impact=impact)
+            for key, item in per_player.items():
+                if key not in aggregated:
+                    aggregated[key] = {"points": 0.0, "count": 0}
+                aggregated[key]["points"] = float(aggregated[key]["points"]) + float(
+                    item["points"]
+                )
+                aggregated[key]["count"] = int(aggregated[key]["count"]) + int(
+                    item["count"]
+                )
+
+        return matches_considered, impact_total_raw, aggregated
+
+    @staticmethod
+    def _main_roster_ids(*, team: Team, season: Season | None) -> set[str]:
+        team_data_qs = TeamData.objects.filter(team=team)
+        if season is not None:
+            team_data_qs = team_data_qs.filter(season=season)
+
+        return {
+            str(player_id)
+            for player_id in team_data_qs.values_list("players__id_uuid", flat=True)
+            .distinct()
+            .exclude(players__id_uuid__isnull=True)
+        }
+
+    @staticmethod
+    def _order_roster_players(
+        *,
+        roster_players: list[Player],
+        main_roster_ids: set[str],
+    ) -> list[Player]:
+        main_roster_players = [
+            player
+            for player in roster_players
+            if str(player.id_uuid) in main_roster_ids
+        ]
+        reserve_roster_players = [
+            player
+            for player in roster_players
+            if str(player.id_uuid) not in main_roster_ids
+        ]
+
+        # Keep username ordering within each section.
+        main_roster_players.sort(key=lambda p: p.user.username.lower())
+        reserve_roster_players.sort(key=lambda p: p.user.username.lower())
+        return [*main_roster_players, *reserve_roster_players]
 
     @staticmethod
     def _parse_bool_query_param(

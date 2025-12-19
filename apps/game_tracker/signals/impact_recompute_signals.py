@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from django.db.models.signals import m2m_changed, post_delete, post_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from apps.game_tracker.models import Pause, PlayerChange, PlayerGroup, Shot
+from apps.game_tracker.models import MatchData, Pause, PlayerChange, PlayerGroup, Shot
 from apps.game_tracker.services.match_impact_recompute import (
     schedule_match_impact_recompute,
 )
+
+
+FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS = 30
 
 
 def _match_data_id_from_instance(
@@ -30,6 +33,43 @@ def _match_data_id_from_instance(
             return str(group.match_data_id)
 
     return None
+
+
+@receiver(pre_save, sender=MatchData)
+def _match_data_pre_save(
+    sender: type[MatchData], instance: MatchData, **kwargs: object
+) -> None:
+    """Track status transitions so post_save can react to "finished"."""
+    if not instance.pk:
+        # New row.
+        instance._previous_status_for_impact_recompute = None  # type: ignore[attr-defined]
+        return
+
+    previous_status = (
+        MatchData.objects.filter(pk=instance.pk)
+        .values_list("status", flat=True)
+        .first()
+    )
+    instance._previous_status_for_impact_recompute = previous_status  # type: ignore[attr-defined]
+
+
+@receiver(post_save, sender=MatchData)
+def _match_data_post_save(
+    sender: type[MatchData],
+    instance: MatchData,
+    created: bool,
+    **kwargs: object,
+) -> None:
+    """Ensure we recompute impacts shortly after a match finishes."""
+    if instance.status != "finished":
+        return
+
+    previous_status = getattr(instance, "_previous_status_for_impact_recompute", None)
+    if created or previous_status != "finished":
+        schedule_match_impact_recompute(
+            match_data_id=str(instance.id_uuid),
+            countdown_seconds=FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS,
+        )
 
 
 @receiver(post_save, sender=Shot)

@@ -10,6 +10,7 @@ from .pause import Pause
 from .player_change import PlayerChange
 from .player_group import PlayerGroup
 from .player_match_impact import PlayerMatchImpact
+from .player_match_impact_breakdown import PlayerMatchImpactBreakdown
 from .shot import Shot
 from .timeout import Timeout
 
@@ -25,6 +26,7 @@ __all__ = [
     "PlayerChange",
     "PlayerGroup",
     "PlayerMatchImpact",
+    "PlayerMatchImpactBreakdown",
     "Shot",
     "Timeout",
 ]

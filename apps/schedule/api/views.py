@@ -17,7 +17,10 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import MatchData, PlayerMatchImpact
+from apps.game_tracker.services.match_impact import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+)
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     apply_tracker_command,
@@ -726,6 +729,78 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             )
 
         payload = _build_match_stats_payload(match=match, match_data=match_data)
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["GET"], url_path="impacts")  # type: ignore[arg-type]
+    def impacts(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return stored per-player impact scores for a match.
+
+        Notes:
+            - This endpoint intentionally does not recompute impacts on-demand.
+              Computation is done asynchronously via Celery.
+            - When rows are missing (e.g. immediately after match finish), the
+              frontend can fall back to client-side computation until the task has
+              populated the DB.
+
+        """
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if not match_data:
+            return Response(
+                {
+                    "match_data_id": None,
+                    "status": "unknown",
+                    "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+                    "computed_at": None,
+                    "impacts": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        impacts = list(
+            PlayerMatchImpact.objects.filter(
+                match_data=match_data,
+                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            )
+            .select_related("player", "team")
+            .order_by("-impact_score", "player__user__username")
+        )
+
+        computed_at = None
+        if impacts:
+            computed_at = max(impact.computed_at for impact in impacts).isoformat()
+
+        def _side_for_team_id(team_id: str | None) -> str | None:
+            if not team_id:
+                return None
+            if team_id == str(match.home_team_id):
+                return "home"
+            if team_id == str(match.away_team_id):
+                return "away"
+            return None
+
+        payload = {
+            "match_data_id": str(match_data.id_uuid),
+            "status": match_data.status,
+            "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            "computed_at": computed_at,
+            "impacts": [
+                {
+                    "player_id_uuid": str(impact.player_id),
+                    "team_id_uuid": str(impact.team_id) if impact.team_id else None,
+                    "team_side": _side_for_team_id(
+                        str(impact.team_id) if impact.team_id else None
+                    ),
+                    "impact_score": float(impact.impact_score),
+                }
+                for impact in impacts
+            ],
+        }
         return Response(payload, status=status.HTTP_200_OK)
 
     @action(

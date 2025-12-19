@@ -10,7 +10,11 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.models import MatchData, MatchPart, Shot
+from apps.game_tracker.services.match_impact import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    persist_match_impact_rows_with_breakdowns,
+)
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
@@ -95,6 +99,7 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     assert payload["matches"]["recent"]
     assert payload["stats"]["general"] is not None
     assert payload["roster"][0]["username"] == player.user.username
+    assert payload["roster"][0]["roster_role"] == "main"
     assert payload["meta"]["season_id"] == str(season.id_uuid)
     assert payload["meta"]["season_name"] == season.name
     assert len(payload["seasons"]) == 2  # noqa: PLR2004
@@ -143,6 +148,17 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     assert any(
         line["username"] == shot_only_player.user.username for line in roster_payload
     )
+
+    # Main roster players should be listed before reserves/guests.
+    usernames_in_order = [line["username"] for line in roster_payload]
+    assert usernames_in_order[0] == player.user.username
+
+    roles_by_username = {
+        line["username"]: line.get("roster_role") for line in roster_payload
+    }
+    assert roles_by_username[player.user.username] == "main"
+    assert roles_by_username[guest_player.user.username] == "reserve"
+    assert roles_by_username[shot_only_player.user.username] == "reserve"
 
     legacy_response = client.get(
         f"/api/team/teams/{team.id_uuid}/overview/",
@@ -205,3 +221,75 @@ def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
     assert payload["stats"]["general"] is None
     assert payload["stats"]["players"] == []
     assert payload["roster"] == []
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> None:
+    """The impact-breakdown endpoint should return categories from DB storage."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025 - impact breakdown api",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    opponent_club = Club.objects.create(name="Opponent Club")
+    team = Team.objects.create(name="Team 1", club=club)
+    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
+
+    user = get_user_model().objects.create_user(
+        username="impact_bd_api_player",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    player = user.player
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent_team,
+        season=season,
+        start_time=timezone.now() - timedelta(days=1),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    part_start = timezone.now() - timedelta(minutes=10)
+    part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=part_start,
+        active=True,
+    )
+
+    Shot.objects.create(
+        match_data=match_data,
+        player=player,
+        team=team,
+        match_part=part,
+        scored=False,
+        time=part_start + timedelta(minutes=1),
+    )
+
+    # Persist both impacts and breakdowns once. Endpoint should then read them.
+    persist_match_impact_rows_with_breakdowns(
+        match_data=match_data,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    )
+
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
+        data={"season": season.id_uuid, "player": player.id_uuid},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+
+    assert payload["team_id"] == str(team.id_uuid)
+    assert payload["season_id"] == str(season.id_uuid)
+    assert payload["player_id"] == str(player.id_uuid)
+    assert payload["algorithm_version"] == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
+    assert payload["matches_considered"] == 1
+    assert payload["categories"]
+    assert any(cat["key"] == "shot_miss_for" for cat in payload["categories"])
