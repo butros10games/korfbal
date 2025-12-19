@@ -59,7 +59,6 @@ RUN cp -r /build/.venv .venv
 COPY apps/django_projects/korfbal/manage.py /app/
 COPY apps/django_projects/korfbal/korfbal/ /app/korfbal/
 COPY apps/django_projects/korfbal/apps/ /app/apps/
-COPY apps/django_projects/korfbal/templates/ /app/templates/
 
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-trixie AS production
@@ -88,7 +87,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 COPY --chmod=0555 apps/django_projects/korfbal/configs/uwsgi/generic_entrypoint.sh /app/entrypoint.sh
 COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
 COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY --chmod=0555 apps/django_projects/korfbal/templates/ /app/templates/
 COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
 
 ENV GRANIAN_WORKERS=4

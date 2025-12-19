@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from bg_uuidv7 import uuidv7
-from django.conf import settings
 from django.db import models
+from django.templatetags.static import static
 from django.urls import reverse
 
 
@@ -63,5 +63,10 @@ class Club(models.Model):
         """
         if self.logo:
             return self.logo.url  # type: ignore[no-any-return]
-        static_url = settings.STATIC_URL.removeprefix("/")  # type: ignore[union-attr]
-        return f"https://{static_url}images/clubs/blank-club-picture.png"
+
+        # Optional: if the KWT club doesn't have an uploaded logo in the DB,
+        # serve a known static brand asset.
+        if (self.name or "").strip().lower() == "kwt":
+            return static("images/logo/KWT_logo.png")
+
+        return static("images/clubs/blank-club-picture.png")

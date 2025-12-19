@@ -8,7 +8,6 @@ from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
-from django.urls import reverse
 
 from .constants import club_model_string, team_model_string
 
@@ -91,7 +90,9 @@ class Player(models.Model):
             str: The URL to the player's profile detail view.
 
         """
-        return reverse("profile_detail", kwargs={"player_id": self.id_uuid})
+        # The legacy Django-rendered `profile_detail` route was removed when the
+        # project migrated to a React SPA. Profile links should point into the SPA.
+        return f"{settings.WEB_APP_ORIGIN}/players/{self.id_uuid}"
 
     def get_profile_picture(self) -> str:
         """Get the URL of the player's profile picture.

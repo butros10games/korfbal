@@ -183,7 +183,9 @@ if RUNNER == "uwsgi":
 ROOT_URLCONF = "korfbal.urls"
 WSGI_APPLICATION = "korfbal.wsgi.application"
 ASGI_APPLICATION = "korfbal.asgi.application"
-LOGIN_URL = "login"
+# Keep Django's auth redirects working even though the SPA owns /login.
+# (Admin uses /admin/login/; APIs should not rely on LOGIN_URL redirects.)
+LOGIN_URL = "/admin/login/"
 
 
 AUTHENTICATION_BACKENDS = [
@@ -198,7 +200,8 @@ SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        # No project-level templates: the React SPA owns the UI.
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -320,7 +323,8 @@ STATIC_URL = _env("STATIC_URL", f"{AWS_STATIC_CUSTOM_DOMAIN}/")
 MEDIA_URL = _env("MEDIA_URL", f"{AWS_MEDIA_CUSTOM_DOMAIN}/")
 STATIC_ROOT = Path(_env("STATIC_ROOT", str(BASE_DIR / "static")))
 MEDIA_ROOT = Path(_env("MEDIA_ROOT", str(BASE_DIR / "media")))
-STATICFILES_DIRS = [BASE_DIR / "static_workfile"]
+# No extra static dirs: old Django frontend assets lived in static_workfile/.
+STATICFILES_DIRS: list[Path] = []
 
 S3_STORAGE_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
 DEFAULT_STORAGE_BACKEND = _env("DEFAULT_STORAGE_BACKEND", S3_STORAGE_BACKEND)

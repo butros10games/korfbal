@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from bg_uuidv7 import uuidv7
+from django.conf import settings
 from django.db import models
 from django.db.models import Count, Q
-from django.urls import reverse
 
 from apps.game_tracker.models import Shot
 
@@ -76,7 +76,9 @@ class Match(models.Model):
             str: The URL to the match detail view.
 
         """
-        return reverse("match_detail", kwargs={"match_id": self.id_uuid})
+        # The legacy Django-rendered `match_detail` route was removed when the
+        # project migrated to a React SPA. Match links should point into the SPA.
+        return f"{settings.WEB_APP_ORIGIN}/matches/{self.id_uuid}"
 
     def get_final_score(self) -> tuple[int, int]:
         """Compute the final score based on recorded shots.

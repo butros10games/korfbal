@@ -24,5 +24,8 @@ urlpatterns = [
     path("player/", include("apps.player.api.urls")),
     path("team/", include("apps.team.api.urls")),
     path("matches/", include("apps.schedule.api.urls")),
+    path("match/", include("apps.game_tracker.api.urls")),
     path("hub/", include("apps.hub.api.urls")),
+    # Authentication endpoints for the SPA (API-only; no HTML pages)
+    path("", include("korfbal.auth_api_urls")),
 ]

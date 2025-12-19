@@ -59,19 +59,6 @@ COPY apps/django_projects/korfbal/manage.py /app/
 COPY apps/django_projects/korfbal/korfbal/ /app/korfbal/
 COPY apps/django_projects/korfbal/apps/ /app/apps/
 
-## ------------------------------- Webpack Stage ------------------------------ ##
-FROM node:22-alpine AS rspack
-
-WORKDIR /app
-
-COPY apps/django_projects/korfbal/package.json apps/django_projects/korfbal/package-lock.json ./
-RUN npm ci --ignore-scripts
-
-COPY apps/django_projects/korfbal/configs/rspack/rspack.config.js ./configs/rspack/
-COPY apps/django_projects/korfbal/static_workfile/ ./static_workfile/
-
-RUN npm run build     && rm -rf /app/static_workfile/js
-
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-trixie AS production
 
@@ -110,7 +97,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
 COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
 COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
-COPY --from=rspack /app/static_workfile/ /app/static_workfile/
 
 USER appuser
 
