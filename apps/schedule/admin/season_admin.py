@@ -1,6 +1,6 @@
 """Admin class for the Season model."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib import admin
 
@@ -18,7 +18,8 @@ else:
 class SeasonAdmin(SeasonAdminBase):
     """Admin settings for the Season model."""
 
-    list_display = ["id_uuid", "name"]  # noqa: RUF012
+    list_display: ClassVar[list[str]] = ["id_uuid", "name"]
+    search_fields: ClassVar[list[str]] = ["id_uuid", "name"]
     show_full_result_count = False
 
     class Meta:
