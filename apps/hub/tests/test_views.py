@@ -33,8 +33,11 @@ def test_hub_index_allows_authenticated_spectator(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["match"] is None
-    assert response.context["match_data"] is None
+    payload = response.json()
+    assert payload["match"] is None
+    assert payload["match_data"] is None
+    assert payload["home_score"] == 0
+    assert payload["away_score"] == 0
 
 
 @pytest.mark.django_db
@@ -50,10 +53,11 @@ def test_hub_index_player_without_teams(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["match"] is None
-    assert response.context["match_data"] is None
-    assert response.context["home_score"] == 0
-    assert response.context["away_score"] == 0
+    payload = response.json()
+    assert payload["match"] is None
+    assert payload["match_data"] is None
+    assert payload["home_score"] == 0
+    assert payload["away_score"] == 0
 
 
 @pytest.mark.django_db
@@ -84,10 +88,11 @@ def test_hub_index_player_with_teams_no_matches(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["match"] is None
-    assert response.context["match_data"] is None
-    assert response.context["home_score"] == 0
-    assert response.context["away_score"] == 0
+    payload = response.json()
+    assert payload["match"] is None
+    assert payload["match_data"] is None
+    assert payload["home_score"] == 0
+    assert payload["away_score"] == 0
 
 
 @pytest.mark.django_db
@@ -129,11 +134,11 @@ def test_hub_index_player_with_upcoming_home_match(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["match"] == match
-    assert "match_data" in response.context
-    assert response.context["match_data"].match_link == match
-    assert response.context["home_score"] is None
-    assert response.context["away_score"] is None
+    payload = response.json()
+    assert payload["match"]["id_uuid"] == str(match.id_uuid)
+    assert payload["match_data"] is not None
+    assert payload["home_score"] is None
+    assert payload["away_score"] is None
 
 
 @pytest.mark.django_db
@@ -189,10 +194,11 @@ def test_hub_index_player_with_active_match_and_scores(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["match"] == match
-    assert response.context["match_data"] == match_data
-    assert response.context["home_score"] == EXPECTED_HOME_SCORE  # 2 scored shots
-    assert response.context["away_score"] == EXPECTED_AWAY_SCORE  # 1 scored shot
+    payload = response.json()
+    assert payload["match"]["id_uuid"] == str(match.id_uuid)
+    assert payload["match_data"]["id_uuid"] == str(match_data.id_uuid)
+    assert payload["home_score"] == EXPECTED_HOME_SCORE  # 2 scored shots
+    assert payload["away_score"] == EXPECTED_AWAY_SCORE  # 1 scored shot
 
 
 @pytest.mark.django_db
@@ -265,5 +271,6 @@ def test_hub_index_caching_match_scores(client: Client) -> None:
     response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.context["home_score"] == EXPECTED_HOME_SCORE
-    assert response.context["away_score"] == 0
+    payload = response.json()
+    assert payload["home_score"] == EXPECTED_HOME_SCORE
+    assert payload["away_score"] == 0
