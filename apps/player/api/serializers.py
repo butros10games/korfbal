@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework import serializers
 
+from apps.club.api.serializers import ClubSerializer
 from apps.player.models.cached_song import CachedSong
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
@@ -37,6 +38,7 @@ class PlayerSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
     goal_song_songs = serializers.SerializerMethodField()
+    active_member_clubs = serializers.SerializerMethodField()
     can_view_profile_picture = serializers.SerializerMethodField()
     can_view_stats = serializers.SerializerMethodField()
     is_private_account = serializers.SerializerMethodField()
@@ -83,6 +85,8 @@ class PlayerSerializer(serializers.ModelSerializer):
             "is_private_account",
             "team_follow",
             "club_follow",
+            "member_clubs",
+            "active_member_clubs",
             "goal_song_uri",
             "song_start_time",
             "goal_song_song_ids",
@@ -176,7 +180,15 @@ class PlayerSerializer(serializers.ModelSerializer):
             # follow relations (club/team preferences).
             data["team_follow"] = []
             data["club_follow"] = []
+            data["member_clubs"] = []
+            data["active_member_clubs"] = []
         return data
+
+    def get_active_member_clubs(self, obj: Player) -> list[dict[str, object]]:
+        """Return active club memberships as embedded Club objects."""
+        clubs = obj.active_member_clubs()
+        data = ClubSerializer(clubs, many=True, context=self.context).data
+        return cast(list[dict[str, object]], data)
 
     def get_goal_song_songs(self, obj: Player) -> list[dict[str, object]]:
         """Return ordered goal-song info for cycling.

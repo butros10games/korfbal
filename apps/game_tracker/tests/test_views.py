@@ -15,7 +15,8 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
+from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
+from apps.player.models import PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -293,3 +294,168 @@ def test_player_designation_rejects_more_than_4_for_non_reserve_group(
     assert response.json() == {"error": "Too many players selected"}
     attack_group.refresh_from_db()
     assert attack_group.players.count() == 0
+
+
+@pytest.mark.django_db
+def test_player_designation_syncs_matchplayer_roster(
+    client: Client,
+) -> None:
+    """Designating players into groups must create MatchPlayer rows.
+
+    This is required so match stats can reliably place players on the correct
+    side even when TeamData is missing or incomplete.
+    """
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+
+    home_club = Club.objects.create(name="Home Club")
+    away_club = Club.objects.create(name="Away Club")
+    home_team = Team.objects.create(name="Home Team", club=home_club)
+    away_team = Team.objects.create(name="Away Team", club=away_club)
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=5),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+
+    reserve_type = GroupType.objects.create(name="Reserve")
+    reserve_group = PlayerGroup.objects.create(
+        match_data=match_data,
+        team=home_team,
+        starting_type=reserve_type,
+        current_type=reserve_type,
+    )
+
+    user = get_user_model().objects.create_user(
+        username="coach",
+        password=TEST_PASSWORD,
+    )
+    client.force_login(user)
+
+    players = [
+        get_user_model()
+        .objects.create_user(
+            username=f"sync_p{i}",
+            password=TEST_PASSWORD,
+        )
+        .player
+        for i in range(2)
+    ]
+
+    response = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps(
+            {
+                "new_group_id": str(reserve_group.id_uuid),
+                "players": [{"id_uuid": str(p.id_uuid)} for p in players],
+            },
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+    assert response.status_code == HTTP_STATUS_OK
+
+    match_players_qs = MatchPlayer.objects.filter(match_data=match_data, team=home_team)
+    assert match_players_qs.count() == len(players)
+    assert {
+        str(pid)
+        for pid in match_players_qs.values_list("player_id", flat=True).distinct()
+    } == {str(players[0].id_uuid), str(players[1].id_uuid)}
+
+    # Removing a player from any group should remove them from the roster too.
+    response_remove = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps(
+            {
+                "new_group_id": None,
+                "players": [
+                    {
+                        "id_uuid": str(players[0].id_uuid),
+                        "groupId": str(reserve_group.id_uuid),
+                    }
+                ],
+            },
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+    assert response_remove.status_code == HTTP_STATUS_OK
+    assert (
+        MatchPlayer.objects.filter(
+            match_data=match_data,
+            team=home_team,
+            player_id=players[0].id_uuid,
+        ).exists()
+        is False
+    )
+
+
+@pytest.mark.django_db
+def test_players_team_returns_empty_when_teamdata_missing(client: Client) -> None:
+    """The available-players endpoint must not 500 when TeamData is absent."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    response = client.get(
+        f"/api/match/players_team/{match.id_uuid}/{team.id_uuid}/",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_OK
+    assert response.json() == {"players": []}
+
+
+@pytest.mark.django_db
+def test_player_search_includes_club_membership_players(client: Client) -> None:
+    """Search should include players that are club members (even without TeamData)."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    member_user = get_user_model().objects.create_user(
+        username="member_player",
+        password=TEST_PASSWORD,
+    )
+    PlayerClubMembership.objects.create(player=member_user.player, club=club)
+
+    response = client.get(
+        f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=member",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_OK
+    payload = response.json()
+    assert payload["players"]
+    assert {p["user"]["username"] for p in payload["players"]} == {"member_player"}

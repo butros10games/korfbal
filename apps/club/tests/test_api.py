@@ -3,6 +3,7 @@
 from datetime import timedelta
 from http import HTTPStatus
 
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
@@ -10,6 +11,7 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData
+from apps.player.models import PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
@@ -132,3 +134,79 @@ def test_club_overview_can_filter_by_season(client: Client) -> None:
     assert payload["matches"]["upcoming"] == []
     assert payload["matches"]["recent"][0]["status"] == "finished"
     assert payload["matches"]["recent"][0]["competition"] == previous_season.name
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_club_settings_visible_only_for_club_admin(client: Client) -> None:
+    """Club settings endpoints must be accessible only for club admins."""
+    club = Club.objects.create(name="Admin Club")
+
+    viewer = get_user_model().objects.create_user(
+        username="viewer",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    admin_user = get_user_model().objects.create_user(
+        username="club_admin",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    admin_player = admin_user.player
+    club.admin.add(admin_player)
+
+    client.force_login(viewer)
+    response_forbidden = client.get(f"/api/club/clubs/{club.id_uuid}/settings/")
+    assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
+
+    client.force_login(admin_user)
+    response_ok = client.get(f"/api/club/clubs/{club.id_uuid}/settings/")
+    assert response_ok.status_code == HTTPStatus.OK
+    payload = response_ok.json()
+    assert payload["club"]["id_uuid"] == str(club.id_uuid)
+    assert payload["admins"][0]["username"] == "club_admin"
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_club_admin_can_add_and_remove_memberships(client: Client) -> None:
+    """Club admins can add users to a club and remove them (close membership)."""
+    club = Club.objects.create(name="Membership Club")
+
+    admin_user = get_user_model().objects.create_user(
+        username="club_admin",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    club.admin.add(admin_user.player)
+
+    member_user = get_user_model().objects.create_user(
+        username="member",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+
+    client.force_login(admin_user)
+
+    response_add = client.post(
+        f"/api/club/clubs/{club.id_uuid}/memberships/",
+        data={"username": "member"},
+        content_type="application/json",
+    )
+    assert response_add.status_code == HTTPStatus.CREATED
+
+    membership = PlayerClubMembership.objects.get(
+        club_id=club.id_uuid,
+        player__user__username="member",
+        end_date__isnull=True,
+    )
+    assert membership.start_date <= timezone.localdate()
+
+    response_settings = client.get(f"/api/club/clubs/{club.id_uuid}/settings/")
+    assert response_settings.status_code == HTTPStatus.OK
+    settings_payload = response_settings.json()
+    assert [m["player"]["username"] for m in settings_payload["members"]] == ["member"]
+
+    response_remove = client.delete(
+        f"/api/club/clubs/{club.id_uuid}/memberships/{member_user.player.id_uuid}/"
+    )
+    assert response_remove.status_code == HTTPStatus.NO_CONTENT
+
+    membership.refresh_from_db()
+    assert membership.end_date == timezone.localdate()

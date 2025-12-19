@@ -1,8 +1,9 @@
 """Package contains the admin classes for the club app."""
 
-from .club_admin import ClubAdmin
+from .club_admin import ClubAdminLinkAdmin, ClubModelAdmin
 
 
 __all__ = [
-    "ClubAdmin",
+    "ClubAdminLinkAdmin",
+    "ClubModelAdmin",
 ]

@@ -1,30 +1,52 @@
-"""Admin class for the Club model."""
+"""Admin configuration for club-related models."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib import admin
 
-from apps.club.models import Club
+from apps.club.models import Club, ClubAdmin
 
 
 if TYPE_CHECKING:
     from django.contrib.admin import ModelAdmin as ModelAdminBase
 
-    ClubAdminBase = ModelAdminBase[Club]
+    ClubModelAdminBase = ModelAdminBase[Club]
+    ClubAdminLinkAdminBase = ModelAdminBase[ClubAdmin]
 else:
-    ClubAdminBase = admin.ModelAdmin
+    ClubModelAdminBase = admin.ModelAdmin
+    ClubAdminLinkAdminBase = admin.ModelAdmin
 
 
-class ClubAdmin(ClubAdminBase):
-    """Admin class for the Club model."""
+class ClubModelAdmin(ClubModelAdminBase):
+    """Admin configuration for the Club model."""
 
-    list_display = ["id_uuid", "name"]  # noqa: RUF012
+    list_display: ClassVar[list[str]] = ["id_uuid", "name"]
+    search_fields: ClassVar[list[str]] = ["name", "id_uuid"]
     show_full_result_count = False
 
     class Meta:
-        """Meta class for the ClubAdmin."""
+        """Meta class for the ClubModelAdmin."""
 
         model = Club
 
 
-admin.site.register(Club, ClubAdmin)
+class ClubAdminLinkAdmin(ClubAdminLinkAdminBase):
+    """Admin configuration for the ClubAdmin through model."""
+
+    list_display: ClassVar[list[str]] = ["club", "player"]
+    search_fields: ClassVar[list[str]] = [
+        "club__name",
+        "player__user__username",
+        "player__user__email",
+    ]
+    autocomplete_fields: ClassVar[list[str]] = ["club", "player"]
+    show_full_result_count = False
+
+    class Meta:
+        """Meta class for the ClubAdminLinkAdmin."""
+
+        model = ClubAdmin
+
+
+admin.site.register(Club, ClubModelAdmin)
+admin.site.register(ClubAdmin, ClubAdminLinkAdmin)

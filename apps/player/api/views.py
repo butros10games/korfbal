@@ -296,6 +296,9 @@ def _get_current_player(request: Request) -> Player | None:
     queryset = Player.objects.select_related("user").prefetch_related(
         "team_follow",
         "club_follow",
+        "member_clubs",
+        "club_membership_links",
+        "club_membership_links__club",
     )
 
     if request.user.is_authenticated:
@@ -321,6 +324,9 @@ class PlayerViewSet(viewsets.ModelViewSet):
     queryset = Player.objects.select_related("user").prefetch_related(
         "team_follow",
         "club_follow",
+        "member_clubs",
+        "club_membership_links",
+        "club_membership_links__club",
     )
     serializer_class = PlayerSerializer
     permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
@@ -617,7 +623,13 @@ class PlayerOverviewAPIView(APIView):
         if player_id:
             return (
                 Player.objects.select_related("user")
-                .prefetch_related("team_follow", "club_follow")
+                .prefetch_related(
+                    "team_follow",
+                    "club_follow",
+                    "member_clubs",
+                    "club_membership_links",
+                    "club_membership_links__club",
+                )
                 .filter(id_uuid=player_id)
                 .first()
             )

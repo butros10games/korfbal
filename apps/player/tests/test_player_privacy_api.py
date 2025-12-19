@@ -13,7 +13,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.player.models import Player
+from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Season
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
@@ -109,6 +109,35 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
     )
     assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
     assert response_forbidden.json() == PRIVATE_ACCOUNT_DETAIL
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_other_player_stats_club_allows_connected_via_membership(
+    client: Client,
+) -> None:
+    """Club-connected viewers can access club-only stats via membership history."""
+    club = Club.objects.create(name="Membership Club")
+
+    viewer_user = get_user_model().objects.create_user(
+        username="member_viewer",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    target_user = get_user_model().objects.create_user(
+        username="member_target",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+
+    target_player = target_user.player
+    target_player.stats_visibility = Player.Visibility.CLUB
+    target_player.save(update_fields=["stats_visibility"])
+
+    PlayerClubMembership.objects.create(player=viewer_user.player, club=club)
+    PlayerClubMembership.objects.create(player=target_player, club=club)
+
+    client.force_login(viewer_user)
+    response_ok = client.get(f"/api/player/players/{target_player.id_uuid}/stats/")
+    assert response_ok.status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db

@@ -1,6 +1,6 @@
 """Admin settings for the Match model."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib import admin
 
@@ -18,7 +18,21 @@ else:
 class MatchAdmin(MatchAdminBase):
     """Admin settings for the Match model."""
 
-    list_display = ["id_uuid", "home_team", "away_team", "start_time"]  # noqa: RUF012
+    list_display: ClassVar[list[str]] = [
+        "id_uuid",
+        "season",
+        "home_team",
+        "away_team",
+        "start_time",
+    ]
+    list_filter: ClassVar[list[str]] = ["season", "start_time"]
+    search_fields: ClassVar[list[str]] = [
+        "id_uuid",
+        "home_team__name",
+        "away_team__name",
+    ]
+    autocomplete_fields: ClassVar[list[str]] = ["season", "home_team", "away_team"]
+    date_hierarchy = "start_time"
     show_full_result_count = False
 
     class Meta:

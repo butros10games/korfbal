@@ -2,6 +2,7 @@
 
 from .cached_song import CachedSong, CachedSongStatus
 from .player import Player
+from .player_club_membership import PlayerClubMembership
 from .player_song import PlayerSong, PlayerSongStatus
 from .spotify_token import SpotifyToken
 
@@ -10,6 +11,7 @@ __all__ = [
     "CachedSong",
     "CachedSongStatus",
     "Player",
+    "PlayerClubMembership",
     "PlayerSong",
     "PlayerSongStatus",
     "SpotifyToken",

@@ -3,19 +3,46 @@
 from __future__ import annotations
 
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.team.models.team_data import TeamData
 
 from .models.player import Player
+from .models.player_club_membership import PlayerClubMembership
+
+
+def _active_membership_club_ids(player: Player) -> set[str]:
+    """Return active club IDs for the player based on PlayerClubMembership."""
+    today = timezone.localdate()
+    return {
+        str(club_id)
+        for club_id in (
+            PlayerClubMembership.objects.filter(
+                player=player,
+                start_date__lte=today,
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .values_list("club_id", flat=True)
+            .distinct()
+        )
+    }
 
 
 def viewer_connected_to_player_club(*, viewer: Player, target: Player) -> bool:
     """Return True if viewer is connected to at least one club of the target.
 
     Connection definition (practical, minimal):
-    - both players appear as roster players or coaches in any TeamData
-      rows that belong to the same club.
+    - Prefer explicit active club memberships (PlayerClubMembership).
+    - Fall back to legacy inference: both players appear as roster players or
+      coaches in any TeamData rows that belong to the same club.
     """
+    viewer_membership_ids = _active_membership_club_ids(viewer)
+    target_membership_ids = _active_membership_club_ids(target)
+
+    # If either player has explicit memberships configured, use them.
+    if viewer_membership_ids or target_membership_ids:
+        return bool(viewer_membership_ids & target_membership_ids)
+
     viewer_clubs = TeamData.objects.filter(
         Q(players=viewer) | Q(coach=viewer)
     ).values_list("team__club_id", flat=True)
