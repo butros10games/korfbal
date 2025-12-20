@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 from django.db.models import Count, Q
 
-from apps.game_tracker.models import GoalType, MatchData, MatchPlayer, Shot
+from apps.game_tracker.models import GoalType, MatchData, MatchPlayer, PlayerGroup, Shot
 from apps.player.models.player import Player
 from apps.schedule.models import Match
 from apps.team.models.team import Team
@@ -172,6 +172,53 @@ def _match_shot_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
     }
 
 
+class _ShotOnlySideInputs(TypedDict):
+    home_group_ids: set[str]
+    away_group_ids: set[str]
+    home_teamdata_ids: set[str]
+    away_teamdata_ids: set[str]
+    shot_home_ids: set[str]
+    shot_away_ids: set[str]
+
+
+def _resolve_shot_only_player_side(
+    *,
+    ctx: _MatchStatsContext,
+    player_id: str,
+    inputs: _ShotOnlySideInputs,
+) -> str:
+    in_home_groups = player_id in inputs["home_group_ids"]
+    in_away_groups = player_id in inputs["away_group_ids"]
+    if in_home_groups != in_away_groups:
+        side = "home" if in_home_groups else "away"
+
+    else:
+        in_home_teamdata = player_id in inputs["home_teamdata_ids"]
+        in_away_teamdata = player_id in inputs["away_teamdata_ids"]
+        if in_home_teamdata != in_away_teamdata:
+            side = "home" if in_home_teamdata else "away"
+
+        else:
+            in_home_shots = player_id in inputs["shot_home_ids"]
+            in_away_shots = player_id in inputs["shot_away_ids"]
+            if in_home_shots != in_away_shots:
+                side = "home" if in_home_shots else "away"
+            else:
+                home_count = Shot.objects.filter(
+                    match_data=ctx.match_data,
+                    team=ctx.home_team,
+                    player__id_uuid=player_id,
+                ).count()
+                away_count = Shot.objects.filter(
+                    match_data=ctx.match_data,
+                    team=ctx.away_team,
+                    player__id_uuid=player_id,
+                ).count()
+
+                side = "home" if home_count >= away_count else "away"
+    return side
+
+
 def _assign_shot_only_players(
     *,
     ctx: _MatchStatsContext,
@@ -183,6 +230,31 @@ def _assign_shot_only_players(
     shot_only_ids = (shot_home_ids | shot_away_ids) - home_player_ids - away_player_ids
     if not shot_only_ids:
         return
+
+    # Prefer per-match team assignment when available.
+    # PlayerGroup membership is created/edited during match tracking and preserves
+    # the historical “this player belonged to this team in this match” intent.
+    home_group_ids = set(
+        PlayerGroup.objects.filter(
+            match_data=ctx.match_data,
+            team=ctx.home_team,
+            players__id_uuid__in=shot_only_ids,
+        )
+        .values_list("players__id_uuid", flat=True)
+        .distinct()
+    )
+    away_group_ids = set(
+        PlayerGroup.objects.filter(
+            match_data=ctx.match_data,
+            team=ctx.away_team,
+            players__id_uuid__in=shot_only_ids,
+        )
+        .values_list("players__id_uuid", flat=True)
+        .distinct()
+    )
+
+    home_group_ids_str = {str(player_id) for player_id in home_group_ids}
+    away_group_ids_str = {str(player_id) for player_id in away_group_ids}
 
     home_teamdata_ids = set(
         TeamData.objects.filter(
@@ -206,41 +278,22 @@ def _assign_shot_only_players(
     home_teamdata_ids_str = {str(player_id) for player_id in home_teamdata_ids}
     away_teamdata_ids_str = {str(player_id) for player_id in away_teamdata_ids}
 
+    side_inputs: _ShotOnlySideInputs = {
+        "home_group_ids": home_group_ids_str,
+        "away_group_ids": away_group_ids_str,
+        "home_teamdata_ids": home_teamdata_ids_str,
+        "away_teamdata_ids": away_teamdata_ids_str,
+        "shot_home_ids": shot_home_ids,
+        "shot_away_ids": shot_away_ids,
+    }
+
     for player_id in shot_only_ids:
-        in_home_teamdata = player_id in home_teamdata_ids_str
-        in_away_teamdata = player_id in away_teamdata_ids_str
-
-        if in_home_teamdata and not in_away_teamdata:
-            home_player_ids.add(player_id)
-            continue
-
-        if in_away_teamdata and not in_home_teamdata:
-            away_player_ids.add(player_id)
-            continue
-
-        in_home_shots = player_id in shot_home_ids
-        in_away_shots = player_id in shot_away_ids
-
-        if in_home_shots and not in_away_shots:
-            home_player_ids.add(player_id)
-            continue
-
-        if in_away_shots and not in_home_shots:
-            away_player_ids.add(player_id)
-            continue
-
-        home_count = Shot.objects.filter(
-            match_data=ctx.match_data,
-            team=ctx.home_team,
-            player__id_uuid=player_id,
-        ).count()
-        away_count = Shot.objects.filter(
-            match_data=ctx.match_data,
-            team=ctx.away_team,
-            player__id_uuid=player_id,
-        ).count()
-
-        if home_count >= away_count:
+        side = _resolve_shot_only_player_side(
+            ctx=ctx,
+            player_id=player_id,
+            inputs=side_inputs,
+        )
+        if side == "home":
             home_player_ids.add(player_id)
         else:
             away_player_ids.add(player_id)

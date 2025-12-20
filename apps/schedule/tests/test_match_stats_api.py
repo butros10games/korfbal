@@ -9,7 +9,14 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPlayer, Shot
+from apps.game_tracker.models import (
+    GoalType,
+    GroupType,
+    MatchData,
+    MatchPlayer,
+    PlayerGroup,
+    Shot,
+)
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
@@ -305,3 +312,91 @@ def test_match_stats_prefers_teamdata_for_player_side_when_roster_missing(
 
     assert any(line["username"] == "home_player" for line in players_home)
     assert not any(line["username"] == "home_player" for line in players_away)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_stats_prefers_playergroup_for_player_side_when_roster_missing(
+    client: Client,
+) -> None:
+    """Stats should keep players on their PlayerGroup side when roster/TeamData are
+    missing.
+
+    This covers the real-world scenario where a guest player is assigned to a team
+    via match tracking (PlayerGroup), but some of their shots were accidentally
+    logged under the opponent team.
+    """
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025",
+        start_date=today,
+        end_date=today,
+    )
+
+    home_club = Club.objects.create(name="Home Club")
+    away_club = Club.objects.create(name="Away Club")
+    home_team = Team.objects.create(name="Home Team", club=home_club)
+    away_team = Team.objects.create(name="Away Team", club=away_club)
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    # Player is not in TeamData and there are no MatchPlayer rows.
+    guest_user = get_user_model().objects.create_user(
+        username="guest_player",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    guest_player = guest_user.player
+
+    reserve_type = GroupType.objects.create(name="Reserve", order=0)
+    group = PlayerGroup.objects.create(
+        match_data=match_data,
+        team=home_team,
+        starting_type=reserve_type,
+        current_type=reserve_type,
+    )
+    group.players.add(guest_player)
+
+    doorloop = GoalType.objects.create(name="Doorloop")
+
+    # Shots are skewed to the away team due to mis-logging.
+    Shot.objects.create(
+        match_data=match_data,
+        team=home_team,
+        player=guest_player,
+        scored=False,
+        shot_type=doorloop,
+    )
+    Shot.objects.create(
+        match_data=match_data,
+        team=home_team,
+        player=guest_player,
+        scored=True,
+        shot_type=doorloop,
+    )
+    for _ in range(4):
+        Shot.objects.create(
+            match_data=match_data,
+            team=away_team,
+            player=guest_player,
+            scored=False,
+            shot_type=doorloop,
+        )
+
+    response = client.get(f"/api/matches/{match.id_uuid}/stats/")
+    assert response.status_code == HTTPStatus.OK
+
+    payload = response.json()
+    players_home = payload["players"]["home"]
+    players_away = payload["players"]["away"]
+
+    assert any(line["username"] == "guest_player" for line in players_home)
+    assert not any(line["username"] == "guest_player" for line in players_away)

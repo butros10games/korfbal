@@ -93,7 +93,7 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v3"
+    assert updated.algorithm_version == "v4"
     assert float(updated.impact_score) == EXPECTED_SINGLE_MISS_IMPACT
 
 
@@ -165,5 +165,5 @@ def test_build_player_stats_applies_v3_efficiency_scaling_to_misses() -> None:
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v3"
+    assert updated.algorithm_version == "v4"
     assert float(updated.impact_score) == EXPECTED_EFFICIENCY_V3_MISSES_IMPACT

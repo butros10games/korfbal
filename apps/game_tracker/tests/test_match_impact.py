@@ -18,6 +18,7 @@ from apps.game_tracker.models import (
     Shot,
 )
 from apps.game_tracker.services.match_impact import (
+    compute_match_end_minutes,
     compute_match_impact_breakdown,
     compute_match_impact_rows,
     persist_match_impact_rows_with_breakdowns,
@@ -40,6 +41,24 @@ from apps.team.models import Team
 def test_round_js_1dp_matches_js_math_round(value: float, expected: Decimal) -> None:
     """The Python port should match JS `Math.round(x * 10) / 10` semantics."""
     assert round_js_1dp(value) == expected
+
+
+def test_compute_match_end_minutes_handles_empty_payload() -> None:
+    """Empty match payloads should still yield a sane end minute.
+
+    This protects against calling `max()` with a single float argument, which
+    would be interpreted as an iterable in Python.
+    """
+    assert compute_match_end_minutes(events=[], shots=[]) == 1.0
+
+
+def test_compute_match_end_minutes_returns_latest_time() -> None:
+    """The match end minute should be the latest timestamp across events and shots."""
+    events = [{"type": "goal", "time": "5"}]
+    shots = [{"scored": False, "time": "7"}]
+
+    expected_end_minutes = 7.0
+    assert compute_match_end_minutes(events=events, shots=shots) == expected_end_minutes
 
 
 @pytest.mark.django_db

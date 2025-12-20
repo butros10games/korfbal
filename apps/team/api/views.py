@@ -64,7 +64,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        season = self._resolve_season(request)
+        seasons_qs = list(self._team_seasons_queryset(team))
+        season = self._resolve_season(request, seasons_qs)
 
         include_stats = self._parse_bool_query_param(
             request,
@@ -144,7 +145,6 @@ class TeamViewSet(viewsets.ModelViewSet):
                 roster_players, match_data_qs
             )
 
-        seasons_qs = list(self._team_seasons_queryset(team))
         current_season = self._current_season()
         seasons_payload = [
             {
@@ -202,7 +202,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        season = self._resolve_season(request)
+        seasons_qs = list(self._team_seasons_queryset(team))
+        season = self._resolve_season(request, seasons_qs)
 
         player_param = (request.query_params.get("player") or "").strip()
         if not player_param:
@@ -430,12 +431,33 @@ class TeamViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(match_link__season=season)
         return queryset
 
-    def _resolve_season(self, request: Request) -> Season | None:
+    def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
+        """Resolve the requested season in a safe, team-scoped way.
+
+        Important:
+            If a `season` query param is supplied but cannot be resolved, we do
+            **not** return `None` (which would broaden queries to all seasons).
+            Instead, we fall back to a sensible default within the provided
+            season list.
+
+        """
         season_param = request.query_params.get("season")
         if season_param:
-            return Season.objects.filter(id_uuid=season_param).first()
+            selected = next(
+                (option for option in seasons if str(option.id_uuid) == season_param),
+                None,
+            )
+            if selected is not None:
+                return selected
 
-        return self._current_season() or self._most_recent_season()
+        if not seasons:
+            return self._current_season() or self._most_recent_season()
+
+        current = self._current_season()
+        if current and any(option.id_uuid == current.id_uuid for option in seasons):
+            return current
+
+        return seasons[0]
 
     def _current_season(self) -> Season | None:
         today = timezone.now().date()
