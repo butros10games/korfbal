@@ -37,6 +37,8 @@ def test_mvp_status_unavailable_before_finished(client: Client) -> None:
     payload = response.json()
     assert payload["available"] is False
     assert payload["open"] is False
+    assert payload["published_at"] is None
+    assert payload["vote_breakdown"] == []
 
 
 @pytest.mark.django_db
@@ -112,11 +114,16 @@ def test_mvp_vote_flow_and_publish_after_close(client: Client) -> None:
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
     assert payload["user_vote"]["candidate_id_uuid"] == str(candidate_a.id_uuid)
+    assert any(
+        (line.get("candidate") or {}).get("id_uuid") == str(candidate_a.id_uuid)
+        and line.get("votes") == 1
+        for line in payload.get("vote_breakdown") or []
+    )
 
     # Force-close by setting MVP window to the past.
     mvp = MatchMvp.objects.get(match=match)
     mvp.finished_at = timezone.now() - timezone.timedelta(hours=9)
-    mvp.closes_at = mvp.finished_at + timezone.timedelta(hours=8)
+    mvp.closes_at = mvp.finished_at + timezone.timedelta(hours=3)
     mvp.save(update_fields=["finished_at", "closes_at", "updated_at"])
 
     # Next status call should publish.
@@ -213,7 +220,7 @@ def test_mvp_anonymous_vote_persists_via_cookie(client: Client) -> None:
     # anonymous vote.
     mvp = MatchMvp.objects.get(match=match)
     mvp.finished_at = timezone.now() - timezone.timedelta(hours=9)
-    mvp.closes_at = mvp.finished_at + timezone.timedelta(hours=8)
+    mvp.closes_at = mvp.finished_at + timezone.timedelta(hours=3)
     mvp.save(update_fields=["finished_at", "closes_at", "updated_at"])
 
     response = client.get(f"/api/matches/{match.id_uuid}/mvp/")

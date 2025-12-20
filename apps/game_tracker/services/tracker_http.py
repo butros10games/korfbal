@@ -45,6 +45,59 @@ MATCH_IS_PAUSED_MESSAGE = "match is paused"
 NO_ACTIVE_MATCH_PART_MESSAGE = "No active match part."
 
 
+_CLIENT_TIME_MAX_SKEW_SECONDS = 5 * 60
+
+
+def _parse_client_time_iso(value: str) -> datetime | None:
+    """Parse a client-supplied ISO timestamp.
+
+    Notes:
+        - Accepts both offset timestamps and `Z` suffix.
+        - If timezone is omitted, assume UTC.
+
+    """
+    try:
+        normalized = value.strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _command_time_from_payload(payload: dict[str, Any]) -> datetime:
+    """Best-effort event time for a command.
+
+    We prefer a client timestamp (so UI actions are ordered consistently), but
+    fall back to server time if missing/invalid or wildly skewed.
+    """
+    server_now = datetime.now(UTC)
+
+    client_time: datetime | None = None
+
+    client_time_ms = payload.get("client_time_ms")
+    if isinstance(client_time_ms, int):
+        try:
+            client_time = datetime.fromtimestamp(client_time_ms / 1000, tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            client_time = None
+
+    client_time_iso = payload.get("client_time_iso")
+    if client_time is None and isinstance(client_time_iso, str):
+        client_time = _parse_client_time_iso(client_time_iso)
+
+    if client_time is None:
+        return server_now
+
+    skew_seconds = abs((client_time - server_now).total_seconds())
+    if skew_seconds > _CLIENT_TIME_MAX_SKEW_SECONDS:
+        return server_now
+
+    return client_time
+
+
 class TrackerCommandError(RuntimeError):
     """Raised when a tracker command cannot be applied."""
 
@@ -649,7 +702,14 @@ def apply_tracker_command(
             id_uuid=match_data.id_uuid,
         )
 
-        _dispatch_command(match, match_data=match_data, team=team, payload=payload)
+        event_time = _command_time_from_payload(payload)
+        _dispatch_command(
+            match,
+            match_data=match_data,
+            team=team,
+            payload=payload,
+            event_time=event_time,
+        )
 
     return get_tracker_state(match, team=team)
 
@@ -697,13 +757,13 @@ def poll_tracker_state(
             raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
 
 
-def _cmd_start_pause(*, match_data: MatchData) -> None:
+def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
     current_part = _current_part(match_data)
     if not current_part:
         MatchPart.objects.create(
             match_data=match_data,
             active=True,
-            start_time=datetime.now(UTC),
+            start_time=event_time,
             part_number=match_data.current_part,
         )
 
@@ -724,22 +784,34 @@ def _cmd_start_pause(*, match_data: MatchData) -> None:
         Pause.objects.create(
             match_data=match_data,
             active=True,
-            start_time=datetime.now(UTC),
+            start_time=event_time,
             match_part=current_part,
         )
         return
 
     active_pause.active = False
-    active_pause.end_time = datetime.now(UTC)
+
+    end_time = event_time
+    if (
+        isinstance(active_pause.start_time, datetime)
+        and end_time < active_pause.start_time
+    ):
+        end_time = active_pause.start_time
+    active_pause.end_time = end_time
     active_pause.save(update_fields=["active", "end_time"])
 
 
-def _cmd_part_end(_match: Match, *, match_data: MatchData) -> None:
+def _cmd_part_end(
+    _match: Match,
+    *,
+    match_data: MatchData,
+    event_time: datetime,
+) -> None:
     del _match
     # Defensive cleanup: if a pause is active while a part ends, always close it.
     # In some edge cases the active MatchPart may already be deactivated or
     # temporarily missing, but an active Pause would still break timer logic.
-    now = datetime.now(UTC)
+    now = event_time
     active_pauses = Pause.objects.filter(match_data=match_data, active=True)
     if active_pauses.exists():
         active_pauses.update(active=False, end_time=now)
@@ -754,7 +826,13 @@ def _cmd_part_end(_match: Match, *, match_data: MatchData) -> None:
 
         if current_part:
             current_part.active = False
-            current_part.end_time = datetime.now(UTC)
+            end_time = event_time
+            if (
+                isinstance(current_part.start_time, datetime)
+                and end_time < current_part.start_time
+            ):
+                end_time = current_part.start_time
+            current_part.end_time = end_time
             current_part.save(update_fields=["active", "end_time"])
         return
 
@@ -774,34 +852,32 @@ def _cmd_part_end(_match: Match, *, match_data: MatchData) -> None:
     match_data.save(update_fields=["status", "home_score", "away_score"])
     if current_part:
         current_part.active = False
-        current_part.end_time = datetime.now(UTC)
+        end_time = event_time
+        if (
+            isinstance(current_part.start_time, datetime)
+            and end_time < current_part.start_time
+        ):
+            end_time = current_part.start_time
+        current_part.end_time = end_time
         current_part.save(update_fields=["active", "end_time"])
 
 
-def _cmd_timeout(match: Match, *, match_data: MatchData, team: Team) -> None:
+def _cmd_timeout(
+    match: Match,
+    *,
+    match_data: MatchData,
+    team: Team,
+    event_time: datetime,
+) -> None:
     current_part, _ = _require_not_paused(match_data, team, match)
 
     # A timeout is essentially: pause + timeout record.
-    Pause.objects.create(
+    pause = Pause.objects.create(
         match_data=match_data,
         active=True,
-        start_time=datetime.now(UTC),
+        start_time=event_time,
         match_part=current_part,
     )
-    pause = (
-        Pause.objects.filter(
-            match_data=match_data,
-            match_part=current_part,
-            active=True,
-        )
-        .order_by("-start_time")
-        .first()
-    )
-    if not pause:
-        raise TrackerCommandError(
-            "Failed to create pause for timeout.",
-            code="server_error",
-        )
     Timeout.objects.create(
         match_data=match_data,
         match_part=current_part,
@@ -810,13 +886,19 @@ def _cmd_timeout(match: Match, *, match_data: MatchData, team: Team) -> None:
     )
 
 
-def _cmd_new_attack(match: Match, *, match_data: MatchData, team: Team) -> None:
+def _cmd_new_attack(
+    match: Match,
+    *,
+    match_data: MatchData,
+    team: Team,
+    event_time: datetime,
+) -> None:
     current_part, _ = _require_not_paused(match_data, team, match)
     Attack.objects.create(
         match_data=match_data,
         match_part=current_part,
         team=team,
-        time=datetime.now(UTC),
+        time=event_time,
     )
 
 
@@ -833,6 +915,7 @@ def _cmd_shot_reg(
     match_data: MatchData,
     team: Team,
     params: _ShotRegParams,
+    event_time: datetime,
 ) -> None:
     current_part, opponent = _require_not_paused(match_data, team, match)
 
@@ -853,7 +936,7 @@ def _cmd_shot_reg(
         player=player,
         match_data=match_data,
         match_part=current_part,
-        time=datetime.now(UTC),
+        time=event_time,
         for_team=params.for_team,
         team=shot_team,
         shot_type=shot_type,
@@ -874,6 +957,7 @@ def _cmd_goal_reg(
     match_data: MatchData,
     team: Team,
     params: _GoalRegParams,
+    event_time: datetime,
 ) -> None:
     current_part, opponent = _require_not_paused(match_data, team, match)
 
@@ -885,7 +969,7 @@ def _cmd_goal_reg(
         player=player,
         match_data=match_data,
         match_part=current_part,
-        time=datetime.now(UTC),
+        time=event_time,
         for_team=params.for_team,
         team=shot_team,
         shot_type=goal_type,
@@ -906,8 +990,7 @@ def _cmd_substitute_reg(
     *,
     match_data: MatchData,
     team: Team,
-    new_player_id: str,
-    old_player_id: str,
+    params: _SubstituteRegParams,
 ) -> None:
     del match
     current_part = _current_part(match_data)
@@ -939,8 +1022,8 @@ def _cmd_substitute_reg(
             code="max_substitutions",
         )
 
-    player_in = Player.objects.select_related("user").get(id_uuid=new_player_id)
-    player_out = Player.objects.select_related("user").get(id_uuid=old_player_id)
+    player_in = Player.objects.select_related("user").get(id_uuid=params.new_player_id)
+    player_out = Player.objects.select_related("user").get(id_uuid=params.old_player_id)
 
     reserve_group = PlayerGroup.objects.get(
         team=team,
@@ -964,8 +1047,15 @@ def _cmd_substitute_reg(
         player_group=active_group,
         match_data=match_data,
         match_part=part_for_event,
-        time=datetime.now(UTC),
+        time=params.event_time,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _SubstituteRegParams:
+    new_player_id: str
+    old_player_id: str
+    event_time: datetime
 
 
 def _cmd_substitute_against_reg(
@@ -973,6 +1063,7 @@ def _cmd_substitute_against_reg(
     *,
     match_data: MatchData,
     team: Team,
+    event_time: datetime,
 ) -> None:
     """Register an opponent substitution without specifying players.
 
@@ -1021,7 +1112,7 @@ def _cmd_substitute_against_reg(
         player_group=opponent_reserve_group,
         match_data=match_data,
         match_part=part_for_event,
-        time=datetime.now(UTC),
+        time=event_time,
     )
 
 
@@ -1115,9 +1206,10 @@ def _handle_cmd_start_pause(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     del team, payload
-    _cmd_start_pause(match_data=match_data)
+    _cmd_start_pause(match_data=match_data, event_time=event_time)
 
 
 def _handle_cmd_part_end(
@@ -1126,9 +1218,10 @@ def _handle_cmd_part_end(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     del team, payload
-    _cmd_part_end(match, match_data=match_data)
+    _cmd_part_end(match, match_data=match_data, event_time=event_time)
 
 
 def _handle_cmd_timeout(
@@ -1137,13 +1230,19 @@ def _handle_cmd_timeout(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     for_team = payload.get("for_team")
     if not isinstance(for_team, bool):
         raise TrackerCommandError("Invalid timeout payload.", code="bad_request")
 
     timeout_team = team if for_team else _other_team(match, team)
-    _cmd_timeout(match, match_data=match_data, team=timeout_team)
+    _cmd_timeout(
+        match,
+        match_data=match_data,
+        team=timeout_team,
+        event_time=event_time,
+    )
 
 
 def _handle_cmd_new_attack(
@@ -1152,9 +1251,10 @@ def _handle_cmd_new_attack(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     del payload
-    _cmd_new_attack(match, match_data=match_data, team=team)
+    _cmd_new_attack(match, match_data=match_data, team=team, event_time=event_time)
 
 
 def _handle_cmd_shot_reg(
@@ -1163,6 +1263,7 @@ def _handle_cmd_shot_reg(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     player_id = payload.get("player_id")
     for_team = payload.get("for_team")
@@ -1185,6 +1286,7 @@ def _handle_cmd_shot_reg(
             for_team=for_team,
             shot_type_id=shot_type,
         ),
+        event_time=event_time,
     )
 
 
@@ -1194,6 +1296,7 @@ def _handle_cmd_goal_reg(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     player_id = payload.get("player_id")
     goal_type = payload.get("goal_type")
@@ -1213,6 +1316,7 @@ def _handle_cmd_goal_reg(
             goal_type_id=goal_type,
             for_team=for_team,
         ),
+        event_time=event_time,
     )
 
 
@@ -1222,8 +1326,9 @@ def _handle_cmd_get_non_active_players(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
-    del match_data, team, payload
+    del match_data, team, payload, event_time
     # No-op for HTTP; reserve players are included in the state snapshot.
 
 
@@ -1233,6 +1338,7 @@ def _handle_cmd_substitute_reg(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     new_player_id = payload.get("new_player_id")
     old_player_id = payload.get("old_player_id")
@@ -1242,8 +1348,11 @@ def _handle_cmd_substitute_reg(
         match,
         match_data=match_data,
         team=team,
-        new_player_id=new_player_id,
-        old_player_id=old_player_id,
+        params=_SubstituteRegParams(
+            new_player_id=new_player_id,
+            old_player_id=old_player_id,
+            event_time=event_time,
+        ),
     )
 
 
@@ -1253,9 +1362,15 @@ def _handle_cmd_substitute_against_reg(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     del payload
-    _cmd_substitute_against_reg(match, match_data=match_data, team=team)
+    _cmd_substitute_against_reg(
+        match,
+        match_data=match_data,
+        team=team,
+        event_time=event_time,
+    )
 
 
 def _handle_cmd_remove_last_event(
@@ -1264,8 +1379,9 @@ def _handle_cmd_remove_last_event(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
-    del payload
+    del payload, event_time
     _cmd_remove_last_event(match, match_data=match_data, team=team)
 
 
@@ -1292,6 +1408,7 @@ def _dispatch_command(
     match_data: MatchData,
     team: Team,
     payload: dict[str, Any],
+    event_time: datetime,
 ) -> None:
     command = payload.get("command")
     if not isinstance(command, str):
@@ -1301,4 +1418,10 @@ def _dispatch_command(
     if not handler:
         raise TrackerCommandError(f"Unknown command: {command}", code="bad_request")
 
-    handler(match, match_data=match_data, team=team, payload=payload)
+    handler(
+        match,
+        match_data=match_data,
+        team=team,
+        payload=payload,
+        event_time=event_time,
+    )

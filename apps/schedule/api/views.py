@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core import signing
-from django.db.models import Q, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -162,6 +162,51 @@ def _build_mvp_status_payload(
     now = timezone.now()
     open_for_votes = bool(now < mvp.closes_at)
 
+    # Vote breakdown: only players that received at least 1 vote.
+    vote_rows = list(
+        match.mvp_votes.values("candidate")
+        .annotate(votes=Count("id_uuid"))
+        .order_by(
+            "-votes",
+            "candidate",
+        )
+    )
+
+    side_by_id = {c.id_uuid: c.team_side for c in candidates}
+
+    voted_candidate_ids = [
+        str(row.get("candidate"))
+        for row in vote_rows
+        if row.get("candidate") is not None
+    ]
+    voted_players = Player.objects.select_related("user").filter(
+        id_uuid__in=voted_candidate_ids
+    )
+    voted_players_by_id = {str(p.id_uuid): p for p in voted_players}
+
+    vote_breakdown: list[dict[str, Any]] = []
+    for row in vote_rows:
+        cid = row.get("candidate")
+        if cid is None:
+            continue
+        cid_str = str(cid)
+        player = voted_players_by_id.get(cid_str)
+        if not player:
+            continue
+        username = player.user.username
+        display_name = player.user.get_full_name() or username
+        votes = row.get("votes")
+        vote_breakdown.append({
+            "candidate": {
+                "id_uuid": cid_str,
+                "username": username,
+                "display_name": display_name,
+                "profile_picture_url": player.get_profile_picture(),
+                "team_side": side_by_id.get(cid_str),
+            },
+            "votes": int(votes) if isinstance(votes, int) else 0,
+        })
+
     return {
         "available": True,
         "match_status": match_data.status,
@@ -181,6 +226,7 @@ def _build_mvp_status_payload(
         "user_vote": user_vote,
         "mvp": mvp_payload,
         "published_at": mvp.published_at.isoformat() if mvp.published_at else None,
+        "vote_breakdown": vote_breakdown,
     }
 
 
@@ -826,9 +872,11 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                     "open": False,
                     "finished_at": None,
                     "closes_at": None,
+                    "published_at": None,
                     "candidates": [],
                     "user_vote": None,
                     "mvp": None,
+                    "vote_breakdown": [],
                 },
                 status=status.HTTP_200_OK,
             )
@@ -841,9 +889,11 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                     "open": False,
                     "finished_at": None,
                     "closes_at": None,
+                    "published_at": None,
                     "candidates": [],
                     "user_vote": None,
                     "mvp": None,
+                    "vote_breakdown": [],
                 },
                 status=status.HTTP_200_OK,
             )

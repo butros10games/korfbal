@@ -827,3 +827,70 @@ def test_substitute_against_reg_enforces_max_wissels_for_opponent() -> None:
                 "command": "substitute_against_reg",
             },
         )
+
+
+@pytest.mark.django_db
+def test_client_time_keeps_last_event_order_stable() -> None:
+    """Client timestamps should drive event ordering.
+
+    Regression: when multiple commands are sent quickly, server-side `now()` can
+    cause later-arriving requests to appear as the last event even if the user
+    action happened earlier.
+    """
+    home_club = Club.objects.create(name="ClientTime Home Club")
+    away_club = Club.objects.create(name="ClientTime Away Club")
+    home_team = Team.objects.create(name="ClientTime Home Team", club=home_club)
+    away_team = Team.objects.create(name="ClientTime Away Team", club=away_club)
+
+    season = Season.objects.create(
+        name="ClientTime Season",
+        start_date=timezone.now().date() - timedelta(days=1),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=10),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.current_part = 1
+    match_data.save(update_fields=["status", "current_part"])
+
+    MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=datetime.now(UTC),
+        active=True,
+    )
+
+    base = datetime.now(UTC).replace(microsecond=0)
+    late = base + timedelta(seconds=2)
+    early = base - timedelta(seconds=2)
+
+    apply_tracker_command(
+        match,
+        team=home_team,
+        payload={
+            "command": "new_attack",
+            "client_time_ms": int(late.timestamp() * 1000),
+        },
+    )
+
+    # Intentionally send an earlier client time *after* the later one.
+    apply_tracker_command(
+        match,
+        team=home_team,
+        payload={
+            "command": "timeout",
+            "for_team": True,
+            "client_time_ms": int(early.timestamp() * 1000),
+        },
+    )
+
+    state = get_tracker_state(match, team=home_team)
+    assert state["last_event"]["type"] == "attack"
+    assert state["last_event"]["time_iso"] == late.isoformat()

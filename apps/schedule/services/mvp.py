@@ -22,7 +22,8 @@ from apps.schedule.models.match import Match
 from apps.schedule.models.mvp import MatchMvp, MatchMvpVote
 
 
-VOTING_WINDOW = timedelta(hours=8)
+# Keep the MVP voting window short so the result is available quickly.
+VOTING_WINDOW = timedelta(hours=3)
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,15 @@ def get_or_create_match_mvp(match: Match, match_data: MatchData) -> MatchMvp:
         if not obj.closes_at:
             obj.closes_at = closes_at
             needs_update = True
+
+        # If the voting window duration changed, shorten any *still-open*
+        # windows that haven't been published yet.
+        if obj.finished_at and obj.closes_at and obj.published_at is None:
+            desired_closes_at = obj.finished_at + VOTING_WINDOW
+            if obj.closes_at > desired_closes_at and timezone.now() < obj.closes_at:
+                obj.closes_at = desired_closes_at
+                needs_update = True
+
         if needs_update:
             obj.save(update_fields=["finished_at", "closes_at", "updated_at"])
 
