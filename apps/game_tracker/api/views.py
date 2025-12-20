@@ -246,18 +246,26 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         _ensure_player_groups_exist(match_model, match_data)
 
     player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
-    excluded_ids = player_groups.values_list("players__id_uuid", flat=True).distinct()
+    # Important: `values_list('players__id_uuid')` can yield NULL rows for empty
+    # groups (left join). Using that in a `NOT IN (NULL)` exclusion would filter
+    # out *all* players. Filter out NULLs up-front.
+    excluded_ids = (
+        player_groups.filter(players__id_uuid__isnull=False)
+        .values_list("players__id_uuid", flat=True)
+        .distinct()
+    )
 
     match_date = match_model.start_time.date()
 
-    # Only show players who belong to this team/club context.
-    # - TeamData is season-scoped (legacy)
-    # - club membership is date-scoped (new)
-    roster_filter = Q(
-        team_data_as_player__team=team_model,
+    # Only show players who belong to this club context.
+    # - TeamData is season-scoped (legacy) and historically incomplete.
+    #   We therefore consider *any* team of the club in the match season.
+    # - club membership is date-scoped (new) and preferred when available.
+    club_roster_filter = Q(
+        team_data_as_player__team__club=team_model.club,
         team_data_as_player__season=match_model.season,
     ) | Q(
-        team_data_as_coach__team=team_model,
+        team_data_as_coach__team__club=team_model.club,
         team_data_as_coach__season=match_model.season,
     )
 
@@ -269,10 +277,17 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         | Q(club_membership_links__end_date__gte=match_date)
     )
 
-    allowed_filter = roster_filter | membership_filter
+    allowed_filter = club_roster_filter | membership_filter
+
+    search_filter = (
+        Q(user__username__icontains=search_query)
+        | Q(user__first_name__icontains=search_query)
+        | Q(user__last_name__icontains=search_query)
+        | Q(user__email__icontains=search_query)
+    )
 
     players = (
-        Player.objects.filter(user__username__icontains=search_query)
+        Player.objects.filter(search_filter)
         .filter(allowed_filter)
         .exclude(id_uuid__in=excluded_ids)
         .distinct()

@@ -18,7 +18,7 @@ from apps.club.models import Club
 from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
 from apps.player.models import PlayerClubMembership
 from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.team.models import Team, TeamData
 
 
 TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
@@ -459,3 +459,109 @@ def test_player_search_includes_club_membership_players(client: Client) -> None:
     payload = response.json()
     assert payload["players"]
     assert {p["user"]["username"] for p in payload["players"]} == {"member_player"}
+
+
+@pytest.mark.django_db
+def test_player_search_includes_other_team_players_same_club(client: Client) -> None:
+    """Search should include players from other teams within the same club.
+
+    This is important for match rosters, where substitutes may come from
+    different teams but still belong to the same club.
+    """
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+
+    team_a = Team.objects.create(name="Team A", club=club)
+    team_b = Team.objects.create(name="Team B", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+
+    TeamData.objects.create(team=team_b, season=season)
+
+    match = Match.objects.create(
+        home_team=team_a,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    other_user = get_user_model().objects.create_user(
+        username="clubmate_player",
+        password=TEST_PASSWORD,
+    )
+
+    team_b_data = TeamData.objects.get(team=team_b, season=season)
+    team_b_data.players.add(other_user.player)
+
+    response = client.get(
+        f"/api/match/player_search/{match.id_uuid}/{team_a.id_uuid}/?search=clubmate",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_OK
+    payload = response.json()
+    assert payload["players"]
+    assert {p["user"]["username"] for p in payload["players"]} == {"clubmate_player"}
+
+
+@pytest.mark.django_db
+def test_player_search_does_not_exclude_everything_when_groups_empty(
+    client: Client,
+) -> None:
+    """Regression: empty PlayerGroups must not make search return zero players.
+
+    When player groups exist but have no players, the exclusion subquery can
+    accidentally contain NULLs and cause `NOT IN (NULL)` to filter out all rows.
+    """
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    # Ensure player groups exist (authenticated flow).
+    GroupType.objects.create(name="Aanval")
+    GroupType.objects.create(name="Verdediging")
+    GroupType.objects.create(name="Reserve")
+
+    viewer = get_user_model().objects.create_user(
+        username="viewer",
+        password=TEST_PASSWORD,
+    )
+    client.force_login(viewer)
+
+    resp_groups = client.get(
+        f"/api/match/player_overview_data/{match.id_uuid}/{team.id_uuid}/",
+        secure=True,
+    )
+    assert resp_groups.status_code == HTTP_STATUS_OK
+
+    member_user = get_user_model().objects.create_user(
+        username="daan_candidate",
+        password=TEST_PASSWORD,
+    )
+    PlayerClubMembership.objects.create(player=member_user.player, club=club)
+
+    response = client.get(
+        f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=daan",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_OK
+    payload = response.json()
+    assert {p["user"]["username"] for p in payload["players"]} == {"daan_candidate"}
