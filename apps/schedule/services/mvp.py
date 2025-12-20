@@ -39,7 +39,8 @@ class MvpCandidate:
 
 def _finished_at_from_match_data(match_data: MatchData) -> datetime:
     end = (
-        MatchPart.objects.filter(match_data=match_data)
+        MatchPart.objects
+        .filter(match_data=match_data)
         .aggregate(max_end=Max("end_time"))
         .get("max_end")
     )
@@ -48,7 +49,8 @@ def _finished_at_from_match_data(match_data: MatchData) -> datetime:
 
     # Fallback: best-effort from last known tracker events.
     last_shot = (
-        Shot.objects.filter(match_data=match_data)
+        Shot.objects
+        .filter(match_data=match_data)
         .aggregate(max_time=Max("time"))
         .get("max_time")
     )
@@ -56,7 +58,8 @@ def _finished_at_from_match_data(match_data: MatchData) -> datetime:
         return last_shot
 
     last_change = (
-        PlayerChange.objects.filter(match_data=match_data)
+        PlayerChange.objects
+        .filter(match_data=match_data)
         .aggregate(max_time=Max("time"))
         .get("max_time")
     )
@@ -248,7 +251,8 @@ def ensure_mvp_published(match: Match, match_data: MatchData) -> MatchMvp:
 
     # Select winner by vote count. Tie-breaker: lowest UUID string (stable).
     winner_row = (
-        MatchMvpVote.objects.filter(match=match)
+        MatchMvpVote.objects
+        .filter(match=match)
         .values("candidate")
         .annotate(votes=Count("id_uuid"))
         .order_by("-votes", "candidate")

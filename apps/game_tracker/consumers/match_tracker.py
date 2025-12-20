@@ -665,7 +665,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         if part_for_event is None:
             # Between parts: attach to the most recently completed part.
             part_for_event = (
-                await MatchPart.objects.filter(
+                await MatchPart.objects
+                .filter(
                     match_data=self.match_data,
                     part_number=self.match_data.current_part - 1,
                 )
@@ -922,7 +923,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
         """
         # Fetch each type of event separately
         shots: list[Shot] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Shot.objects.prefetch_related(
+            Shot.objects
+            .prefetch_related(
                 "player__user",
                 "match_part",
                 "shot_type",
@@ -932,7 +934,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .order_by("time"),
         )
         player_changes: list[PlayerChange] = await sync_to_async(list)(  # type: ignore[call-arg]
-            PlayerChange.objects.prefetch_related(
+            PlayerChange.objects
+            .prefetch_related(
                 "player_in",
                 "player_in__user",
                 "player_out",
@@ -945,7 +948,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .order_by("time"),
         )
         time_outs: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Pause.objects.prefetch_related(
+            Pause.objects
+            .prefetch_related(
                 "match_part",
                 "match_part__match_data",
                 "match_data__match_link",
@@ -954,7 +958,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             .order_by("start_time"),
         )
         attacks: list[Attack] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Attack.objects.prefetch_related(
+            Attack.objects
+            .prefetch_related(
                 "match_part",
                 "match_data",
                 "team",
@@ -1159,7 +1164,8 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
             )
         except Season.DoesNotExist:
             season_data = await sync_to_async(
-                Season.objects.filter(end_date__lte=self.match.start_time)
+                Season.objects
+                .filter(end_date__lte=self.match.start_time)
                 .order_by("-end_date")
                 .first,
             )()
@@ -1224,7 +1230,8 @@ class PlayerGroupClass:
 
         """
         return await sync_to_async(list)(  # type: ignore[call-arg]
-            PlayerGroup.objects.prefetch_related(
+            PlayerGroup.objects
+            .prefetch_related(
                 "players",
                 "players__user",
                 "starting_type",
@@ -1362,7 +1369,8 @@ class PlayerGroupClass:
         season = await self.__season_request()  # type: ignore[misc]
         players_json = []
         players: list[Player] = await sync_to_async(list)(  # type: ignore[call-arg]
-            TeamData.objects.prefetch_related("players")
+            TeamData.objects
+            .prefetch_related("players")
             .filter(team=self.team, season=season)
             .values_list("players", flat=True),
         )

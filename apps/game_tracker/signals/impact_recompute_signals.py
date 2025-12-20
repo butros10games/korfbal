@@ -25,7 +25,8 @@ def _match_data_id_from_instance(
     player_group_id = getattr(instance, "player_group_id", None)
     if player_group_id:
         group = (
-            PlayerGroup.objects.filter(id_uuid=player_group_id)
+            PlayerGroup.objects
+            .filter(id_uuid=player_group_id)
             .only("match_data_id")
             .first()
         )
@@ -46,7 +47,8 @@ def _match_data_pre_save(
         return
 
     previous_status = (
-        MatchData.objects.filter(pk=instance.pk)
+        MatchData.objects
+        .filter(pk=instance.pk)
         .values_list("status", flat=True)
         .first()
     )

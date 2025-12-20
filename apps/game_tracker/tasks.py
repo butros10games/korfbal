@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 def recompute_match_impacts(self, match_data_id: str) -> dict[str, int | str]:  # noqa: ANN001
     """Recompute persisted impact rows (+ breakdowns) for a match."""
     match_data = (
-        MatchData.objects.filter(id_uuid=match_data_id)
+        MatchData.objects
+        .filter(id_uuid=match_data_id)
         .select_related("match_link")
         .first()
     )

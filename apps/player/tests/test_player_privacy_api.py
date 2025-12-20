@@ -96,6 +96,8 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
         "shots_against": 0,
         "goals_for": 0,
         "goals_against": 0,
+        "mvps": 0,
+        "mvp_matches": [],
         "goal_types": {"for": [], "against": []},
     }
 

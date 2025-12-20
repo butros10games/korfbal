@@ -198,7 +198,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             return
 
         players = await sync_to_async(list)(
-            Player.objects.prefetch_related("user")
+            Player.objects
+            .prefetch_related("user")
             .filter(
                 Q(team_data_as_player__team=self.match.home_team)
                 | Q(team_data_as_player__team=self.match.away_team),
@@ -272,7 +273,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         """
         goals: list[Shot] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Shot.objects.prefetch_related(
+            Shot.objects
+            .prefetch_related(
                 "player__user",
                 "shot_type",
                 "match_part",
@@ -282,7 +284,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             .order_by("time"),
         )
         player_change: list[PlayerChange] = await sync_to_async(list)(  # type: ignore[call-arg]
-            PlayerChange.objects.prefetch_related(
+            PlayerChange.objects
+            .prefetch_related(
                 "player_in",
                 "player_in__user",
                 "player_out",
@@ -295,7 +298,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             .order_by("time"),
         )
         time_outs: list[Pause] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Pause.objects.prefetch_related("match_part")
+            Pause.objects
+            .prefetch_related("match_part")
             .filter(match_data=self.match_data)
             .order_by("start_time"),
         )
@@ -520,7 +524,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
 
         # Combine queries for players and coaches for both home and away teams
         team_data: list[tuple[list[UUID], UUID | None]] = await sync_to_async(list)(  # type: ignore[call-arg]
-            TeamData.objects.prefetch_related("players", "coach")
+            TeamData.objects
+            .prefetch_related("players", "coach")
             .filter(Q(team=match.home_team) | Q(team=match.away_team))
             .values_list("players", "coach"),
         )
@@ -550,12 +555,14 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
         player = await Player.objects.aget(user=user_id)
 
         players: list[UUID] = await sync_to_async(list)(  # type: ignore[call-arg]
-            TeamData.objects.prefetch_related("players")
+            TeamData.objects
+            .prefetch_related("players")
             .filter(team=team)
             .values_list("players", flat=True),
         )
         coaches: list[UUID | None] = await sync_to_async(list)(  # type: ignore[call-arg]
-            TeamData.objects.prefetch_related("coach")
+            TeamData.objects
+            .prefetch_related("coach")
             .filter(team=team)
             .values_list("coach", flat=True),
         )
@@ -598,7 +605,8 @@ class MatchDataConsumer(AsyncWebsocketConsumer):
             )
         except Season.DoesNotExist:
             return (
-                await Season.objects.filter(end_date__lte=self.match.start_time)
+                await Season.objects
+                .filter(end_date__lte=self.match.start_time)
                 .order_by("-end_date")
                 .afirst()
             )

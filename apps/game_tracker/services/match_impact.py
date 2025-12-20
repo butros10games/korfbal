@@ -1329,7 +1329,8 @@ def compute_match_impact_rows(
     goal_switch_times = _build_goal_switch_times(events)
 
     groups = list(
-        PlayerGroup.objects.select_related("starting_type", "team")
+        PlayerGroup.objects
+        .select_related("starting_type", "team")
         .prefetch_related("players")
         .filter(match_data=match_data)
     )
@@ -1431,7 +1432,8 @@ def compute_match_impact_breakdown(
     goal_switch_times = _build_goal_switch_times(events)
 
     groups = list(
-        PlayerGroup.objects.select_related("starting_type", "team")
+        PlayerGroup.objects
+        .select_related("starting_type", "team")
         .prefetch_related("players")
         .filter(match_data=match_data)
     )

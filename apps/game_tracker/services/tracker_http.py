@@ -216,7 +216,8 @@ def _player_groups_payload(
     opponent: Team,
 ) -> list[dict[str, Any]]:
     player_groups = (
-        PlayerGroup.objects.select_related("starting_type", "current_type")
+        PlayerGroup.objects
+        .select_related("starting_type", "current_type")
         .prefetch_related("players__user")
         .filter(match_data=match_data, team=team)
         .exclude(starting_type__name="Reserve")
@@ -287,7 +288,8 @@ def _reserve_players_payload(
     team: Team,
 ) -> list[dict[str, Any]]:
     reserve_group = (
-        PlayerGroup.objects.prefetch_related("players__user")
+        PlayerGroup.objects
+        .prefetch_related("players__user")
         .filter(
             match_data=match_data,
             team=team,
@@ -317,7 +319,8 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
     candidates: list[object] = []
 
     shot = (
-        Shot.objects.select_related("player__user", "shot_type", "match_part", "team")
+        Shot.objects
+        .select_related("player__user", "shot_type", "match_part", "team")
         .filter(match_data=match_data)
         .order_by("-time")
         .first()
@@ -326,7 +329,8 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         candidates.append(shot)
 
     change = (
-        PlayerChange.objects.select_related(
+        PlayerChange.objects
+        .select_related(
             "player_in__user",
             "player_out__user",
             "player_group",
@@ -340,7 +344,8 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         candidates.append(change)
 
     pause = (
-        Pause.objects.select_related("match_part")
+        Pause.objects
+        .select_related("match_part")
         .filter(match_data=match_data)
         .order_by("-start_time")
         .first()
@@ -349,7 +354,8 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         candidates.append(pause)
 
     attack = (
-        Attack.objects.select_related("team")
+        Attack.objects
+        .select_related("team")
         .filter(match_data=match_data)
         .order_by("-time")
         .first()
@@ -502,7 +508,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
     candidates: list[datetime] = []
 
     shot_time = (
-        Shot.objects.filter(match_data=match_data)
+        Shot.objects
+        .filter(match_data=match_data)
         .order_by("-time")
         .values_list("time", flat=True)
         .first()
@@ -511,7 +518,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(shot_time)
 
     change_time = (
-        PlayerChange.objects.filter(match_data=match_data)
+        PlayerChange.objects
+        .filter(match_data=match_data)
         .order_by("-time")
         .values_list("time", flat=True)
         .first()
@@ -520,7 +528,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(change_time)
 
     pause_change = (
-        Pause.objects.filter(match_data=match_data)
+        Pause.objects
+        .filter(match_data=match_data)
         .order_by("-start_time")
         .values_list("start_time", flat=True)
         .first()
@@ -529,7 +538,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(pause_change)
 
     pause_end = (
-        Pause.objects.filter(match_data=match_data, end_time__isnull=False)
+        Pause.objects
+        .filter(match_data=match_data, end_time__isnull=False)
         .order_by("-end_time")
         .values_list("end_time", flat=True)
         .first()
@@ -538,7 +548,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(pause_end)
 
     part_start = (
-        MatchPart.objects.filter(match_data=match_data)
+        MatchPart.objects
+        .filter(match_data=match_data)
         .order_by("-start_time")
         .values_list("start_time", flat=True)
         .first()
@@ -547,7 +558,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(part_start)
 
     part_end = (
-        MatchPart.objects.filter(match_data=match_data, end_time__isnull=False)
+        MatchPart.objects
+        .filter(match_data=match_data, end_time__isnull=False)
         .order_by("-end_time")
         .values_list("end_time", flat=True)
         .first()
@@ -556,7 +568,8 @@ def _last_changed_at(match_data: MatchData) -> datetime:
         candidates.append(part_end)
 
     attack_time = (
-        Attack.objects.filter(match_data=match_data)
+        Attack.objects
+        .filter(match_data=match_data)
         .order_by("-time")
         .values_list("time", flat=True)
         .first()

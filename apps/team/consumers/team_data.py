@@ -121,7 +121,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         """Handle the request for player statistics."""
         # Fetch players and matches in bulk
         players: list[Player] = await sync_to_async(list)(  # type: ignore[call-arg]
-            Player.objects.prefetch_related("user")
+            Player.objects
+            .prefetch_related("user")
             .filter(team_data_as_player__team=self.team)
             .distinct(),
         )
@@ -181,7 +182,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
                 )
             except Season.DoesNotExist:
                 current_season = (
-                    await Season.objects.filter(end_date__lte=timezone.now().date())
+                    await Season.objects
+                    .filter(end_date__lte=timezone.now().date())
                     .order_by("-end_date")
                     .afirst()
                 )
@@ -263,7 +265,8 @@ class TeamDataConsumer(AsyncWebsocketConsumer):
         matches_non_dub = list(dict.fromkeys(matches))
 
         return await sync_to_async(list)(  # type: ignore[call-arg]
-            MatchData.objects.prefetch_related(
+            MatchData.objects
+            .prefetch_related(
                 "match_link",
                 "match_link__home_team",
                 "match_link__home_team__club",

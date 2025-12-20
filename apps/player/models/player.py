@@ -119,7 +119,8 @@ class Player(models.Model):
             on = timezone.localdate()
 
         return (
-            self.member_clubs.filter(
+            self.member_clubs
+            .filter(
                 player_membership_links__player=self,
                 player_membership_links__start_date__lte=on,
             )

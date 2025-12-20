@@ -101,7 +101,8 @@ def _build_player_lines(
         return []
 
     queryset = (
-        Player.objects.select_related("user")
+        Player.objects
+        .select_related("user")
         .filter(id_uuid__in=player_ids)
         .annotate(
             shots_for=Count(
@@ -157,7 +158,8 @@ def _build_player_lines(
 def _match_roster_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
     return {
         str(player_id)
-        for player_id in MatchPlayer.objects.filter(match_data=match_data, team=team)
+        for player_id in MatchPlayer.objects
+        .filter(match_data=match_data, team=team)
         .values_list("player__id_uuid", flat=True)
         .distinct()
     }
@@ -166,7 +168,8 @@ def _match_roster_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
 def _match_shot_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
     return {
         str(player_id)
-        for player_id in Shot.objects.filter(match_data=match_data, team=team)
+        for player_id in Shot.objects
+        .filter(match_data=match_data, team=team)
         .values_list("player__id_uuid", flat=True)
         .distinct()
     }
@@ -235,7 +238,8 @@ def _assign_shot_only_players(
     # PlayerGroup membership is created/edited during match tracking and preserves
     # the historical “this player belonged to this team in this match” intent.
     home_group_ids = set(
-        PlayerGroup.objects.filter(
+        PlayerGroup.objects
+        .filter(
             match_data=ctx.match_data,
             team=ctx.home_team,
             players__id_uuid__in=shot_only_ids,
@@ -244,7 +248,8 @@ def _assign_shot_only_players(
         .distinct()
     )
     away_group_ids = set(
-        PlayerGroup.objects.filter(
+        PlayerGroup.objects
+        .filter(
             match_data=ctx.match_data,
             team=ctx.away_team,
             players__id_uuid__in=shot_only_ids,
@@ -257,7 +262,8 @@ def _assign_shot_only_players(
     away_group_ids_str = {str(player_id) for player_id in away_group_ids}
 
     home_teamdata_ids = set(
-        TeamData.objects.filter(
+        TeamData.objects
+        .filter(
             team=ctx.home_team,
             season=ctx.match.season,
             players__id_uuid__in=shot_only_ids,
@@ -266,7 +272,8 @@ def _assign_shot_only_players(
         .distinct()
     )
     away_teamdata_ids = set(
-        TeamData.objects.filter(
+        TeamData.objects
+        .filter(
             team=ctx.away_team,
             season=ctx.match.season,
             players__id_uuid__in=shot_only_ids,

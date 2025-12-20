@@ -146,7 +146,8 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:  # noqa: ANN40
     try:
         with transaction.atomic():
             locked = (
-                CachedSong.objects.select_for_update()
+                CachedSong.objects
+                .select_for_update()
                 .filter(id_uuid=cached_song_id)
                 .first()
             )

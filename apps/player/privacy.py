@@ -17,7 +17,8 @@ def _active_membership_club_ids(player: Player) -> set[str]:
     return {
         str(club_id)
         for club_id in (
-            PlayerClubMembership.objects.filter(
+            PlayerClubMembership.objects
+            .filter(
                 player=player,
                 start_date__lte=today,
             )

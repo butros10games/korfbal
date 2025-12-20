@@ -112,7 +112,8 @@ def _ensure_latest_match_impacts(*, match_dataset: Iterable[Any]) -> None:
             match_qs = MatchData.objects.filter(id_uuid__in=match_ids)
 
         needs_recompute = (
-            match_qs.filter(status="finished")
+            match_qs
+            .filter(status="finished")
             # Recompute if there are no impacts at the latest version.
             .exclude(
                 player_impacts__algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION
@@ -256,7 +257,8 @@ def _minutes_played_by_player_id_for_match(match_data: MatchData) -> dict[str, f
     match_end_minutes = compute_match_end_minutes(events=events, shots=shots)
 
     groups = list(
-        PlayerGroup.objects.select_related("starting_type", "team")
+        PlayerGroup.objects
+        .select_related("starting_type", "team")
         .prefetch_related("players")
         .filter(match_data=match_data)
     )
@@ -335,7 +337,8 @@ async def build_player_stats(
         )
 
         shot_rows = list(
-            Shot.objects.filter(
+            Shot.objects
+            .filter(
                 match_data__in=match_dataset,
                 player__in=players,
             )
@@ -350,7 +353,8 @@ async def build_player_stats(
         )
 
         impact_rows = (
-            PlayerMatchImpact.objects.filter(
+            PlayerMatchImpact.objects
+            .filter(
                 match_data__in=match_dataset,
                 player__in=players,
                 algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,

@@ -33,7 +33,8 @@ def _sync_match_players_for_team(*, match_data: MatchData, team: Team) -> None:
         - PlayerGroup assignments are per-match and therefore preserve history.
     """
     desired_ids = set(
-        Player.objects.filter(
+        Player.objects
+        .filter(
             player_groups__match_data=match_data,
             player_groups__team=team,
         )
@@ -42,7 +43,8 @@ def _sync_match_players_for_team(*, match_data: MatchData, team: Team) -> None:
     )
 
     existing_ids = set(
-        MatchPlayer.objects.filter(match_data=match_data, team=team)
+        MatchPlayer.objects
+        .filter(match_data=match_data, team=team)
         .values_list("player_id", flat=True)
         .distinct()
     )
@@ -181,7 +183,8 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
         _ensure_player_groups_exist(match_model, match_data)
 
     team_data = (
-        TeamData.objects.filter(team=team_model, season=match_model.season)
+        TeamData.objects
+        .filter(team=team_model, season=match_model.season)
         .prefetch_related("players")
         .first()
     )
@@ -250,7 +253,8 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     # groups (left join). Using that in a `NOT IN (NULL)` exclusion would filter
     # out *all* players. Filter out NULLs up-front.
     excluded_ids = (
-        player_groups.filter(players__id_uuid__isnull=False)
+        player_groups
+        .filter(players__id_uuid__isnull=False)
         .values_list("players__id_uuid", flat=True)
         .distinct()
     )
@@ -287,7 +291,8 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     )
 
     players = (
-        Player.objects.filter(search_filter)
+        Player.objects
+        .filter(search_filter)
         .filter(allowed_filter)
         .exclude(id_uuid__in=excluded_ids)
         .distinct()

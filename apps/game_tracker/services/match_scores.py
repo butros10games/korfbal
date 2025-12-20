@@ -37,7 +37,8 @@ def compute_scores_for_matchdata_ids(
         return {}
 
     rows = (
-        Shot.objects.filter(
+        Shot.objects
+        .filter(
             match_data_id__in=ids,
             scored=True,
             team__isnull=False,

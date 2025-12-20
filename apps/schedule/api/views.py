@@ -164,7 +164,8 @@ def _build_mvp_status_payload(
 
     # Vote breakdown: only players that received at least 1 vote.
     vote_rows = list(
-        match.mvp_votes.values("candidate")
+        match.mvp_votes
+        .values("candidate")
         .annotate(votes=Count("id_uuid"))
         .order_by(
             "-votes",
@@ -295,7 +296,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             player_id = self.request.query_params.get("player_id")
             if player_id:
                 return (
-                    Player.objects.prefetch_related("team_follow")
+                    Player.objects
+                    .prefetch_related("team_follow")
                     .filter(
                         id_uuid=player_id,
                     )
@@ -370,7 +372,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         """
         window = timezone.now() - timedelta(days=7)
         queryset = (
-            self.get_queryset()
+            self
+            .get_queryset()
             .filter(start_time__gte=window)
             .order_by("-start_time")[:5]
         )
@@ -409,7 +412,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         matches = self.get_queryset().filter(start_time__lte=timezone.now())
 
         match_data_queryset = (
-            MatchData.objects.select_related(
+            MatchData.objects
+            .select_related(
                 "match_link",
                 "match_link__home_team__club",
                 "match_link__away_team__club",
@@ -809,7 +813,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             )
 
         impacts = list(
-            PlayerMatchImpact.objects.filter(
+            PlayerMatchImpact.objects
+            .filter(
                 match_data=match_data,
                 algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
             )

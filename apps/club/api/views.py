@@ -125,7 +125,8 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         today = timezone.localdate()
         memberships = list(
-            PlayerClubMembership.objects.select_related("player", "player__user")
+            PlayerClubMembership.objects
+            .select_related("player", "player__user")
             .filter(
                 club=club,
                 start_date__lte=today,
@@ -160,7 +161,8 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         user_model = get_user_model()
         users = (
-            user_model.objects.filter(username__icontains=term)
+            user_model.objects
+            .filter(username__icontains=term)
             .order_by("username")
             .only("id", "username")[:20]
         )
@@ -238,7 +240,8 @@ class ClubViewSet(viewsets.ModelViewSet):
         club = self.get_object()
         today = timezone.localdate()
         membership = (
-            PlayerClubMembership.objects.filter(
+            PlayerClubMembership.objects
+            .filter(
                 club=club,
                 player_id=player_id,
                 end_date__isnull=True,
@@ -344,7 +347,8 @@ class ClubViewSet(viewsets.ModelViewSet):
 
     def _club_seasons_queryset(self, club: Club) -> QuerySet[Season]:
         return (
-            Season.objects.filter(
+            Season.objects
+            .filter(
                 Q(team_data__team__club=club)
                 | Q(matches__home_team__club=club)
                 | Q(matches__away_team__club=club)

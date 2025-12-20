@@ -758,7 +758,8 @@ def test_substitute_against_reg_registers_opponent_wissel_without_players() -> N
     assert next_state["substitutions"]["against"] == 1
 
     change = (
-        PlayerChange.objects.filter(match_data=match_data, player_group__team=away_team)
+        PlayerChange.objects
+        .filter(match_data=match_data, player_group__team=away_team)
         .order_by("-time")
         .first()
     )

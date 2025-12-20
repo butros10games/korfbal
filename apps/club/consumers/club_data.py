@@ -158,7 +158,8 @@ class ClubDataConsumer(AsyncWebsocketConsumer):
         return cast(
             list[MatchData],
             await sync_to_async(list)(
-                MatchData.objects.prefetch_related(
+                MatchData.objects
+                .prefetch_related(
                     "match_link",
                     "match_link__home_team",
                     "match_link__home_team__club",

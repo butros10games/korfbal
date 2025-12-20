@@ -35,7 +35,8 @@ def _intermission_label_for_time(match_data: MatchData, event_time: datetime) ->
 
     """
     previous_part = (
-        MatchPart.objects.filter(
+        MatchPart.objects
+        .filter(
             match_data=match_data,
             end_time__isnull=False,
             end_time__lte=event_time,
@@ -44,7 +45,8 @@ def _intermission_label_for_time(match_data: MatchData, event_time: datetime) ->
         .first()
     )
     next_part = (
-        MatchPart.objects.filter(
+        MatchPart.objects
+        .filter(
             match_data=match_data,
             start_time__gte=event_time,
         )
@@ -112,7 +114,8 @@ def _time_in_minutes(
 
 def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     goals = list(
-        Shot.objects.select_related(
+        Shot.objects
+        .select_related(
             "player__user",
             "shot_type",
             "match_part",
@@ -123,7 +126,8 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     )
 
     player_changes = list(
-        PlayerChange.objects.select_related(
+        PlayerChange.objects
+        .select_related(
             "player_in__user",
             "player_out__user",
             "player_group",
@@ -134,7 +138,8 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     )
 
     pauses = list(
-        Pause.objects.select_related("match_part")
+        Pause.objects
+        .select_related("match_part")
         .filter(match_data=match_data)
         .order_by("start_time")
     )
@@ -154,7 +159,8 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
 
 def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
     shots = list(
-        Shot.objects.select_related(
+        Shot.objects
+        .select_related(
             "player__user",
             "shot_type",
             "match_part",

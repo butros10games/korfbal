@@ -43,6 +43,7 @@ from apps.player.privacy import can_view_by_visibility
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
+from apps.schedule.models.mvp import MatchMvp
 from apps.team.api.serializers import TeamSerializer
 
 from .serializers import (
@@ -437,7 +438,8 @@ class PlayerFollowedTeamsAPIView(APIView):
                 )
 
         teams_qs = (
-            player.team_follow.all()
+            player.team_follow
+            .all()
             .select_related("club")
             .order_by(
                 "club__name",
@@ -452,7 +454,8 @@ class PlayerFollowedTeamsAPIView(APIView):
     def _resolve_player(request: Request, player_id: str | None) -> Player | None:
         if player_id:
             return (
-                Player.objects.select_related("user")
+                Player.objects
+                .select_related("user")
                 .prefetch_related("team_follow")
                 .filter(id_uuid=player_id)
                 .first()
@@ -580,13 +583,15 @@ class PlayerOverviewAPIView(APIView):
         season = self._resolve_season(request, seasons_qs)
 
         upcoming_matches = build_match_summaries(
-            self._match_queryset_for_player(player, season, include_roster=True)
+            self
+            ._match_queryset_for_player(player, season, include_roster=True)
             .filter(status__in=["upcoming", "active"])
             .order_by("match_link__start_time")[:10]
         )
 
         recent_matches = build_match_summaries(
-            self._match_queryset_for_player(player, season, include_roster=False)
+            self
+            ._match_queryset_for_player(player, season, include_roster=False)
             .filter(status="finished")
             .order_by("-match_link__start_time")[:10]
         )
@@ -622,7 +627,8 @@ class PlayerOverviewAPIView(APIView):
     def _resolve_player(request: Request, player_id: str | None) -> Player | None:
         if player_id:
             return (
-                Player.objects.select_related("user")
+                Player.objects
+                .select_related("user")
                 .prefetch_related(
                     "team_follow",
                     "club_follow",
@@ -670,7 +676,8 @@ class PlayerOverviewAPIView(APIView):
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
         return (
-            Season.objects.filter(
+            Season.objects
+            .filter(
                 Q(team_data__players=player)
                 | Q(matches__matchdata__player_groups__players=player)
                 | Q(matches__matchdata__shots__player=player)
@@ -760,7 +767,8 @@ class PlayerConnectedClubRecentResultsAPIView(APIView):
             return Response([])
 
         queryset = (
-            MatchData.objects.select_related(
+            MatchData.objects
+            .select_related(
                 "match_link",
                 "match_link__home_team",
                 "match_link__home_team__club",
@@ -830,6 +838,36 @@ class PlayerStatsAPIView(APIView):
         seasons_qs = list(self._player_seasons_queryset(player))
         season = self._resolve_season(request, seasons_qs)
 
+        mvp_queryset = MatchMvp.objects.filter(
+            mvp_player=player,
+            published_at__isnull=False,
+        )
+        if season:
+            mvp_queryset = mvp_queryset.filter(match__season=season)
+
+        mvp_match_ids = list(mvp_queryset.values_list("match_id", flat=True))
+        mvp_matches: list[dict[str, Any]] = []
+        if mvp_match_ids:
+            mvp_matchdata_queryset = (
+                MatchData.objects
+                .select_related(
+                    "match_link",
+                    "match_link__home_team",
+                    "match_link__home_team__club",
+                    "match_link__away_team",
+                    "match_link__away_team__club",
+                    "match_link__season",
+                )
+                .filter(
+                    status="finished",
+                    match_link_id__in=mvp_match_ids,
+                )
+                .distinct()
+            )
+            mvp_matches = build_match_summaries(
+                mvp_matchdata_queryset.order_by("-match_link__start_time")
+            )
+
         shot_queryset = Shot.objects.select_related("match_data", "shot_type").filter(
             player=player
         )
@@ -851,6 +889,8 @@ class PlayerStatsAPIView(APIView):
             "shots_against": int(aggregated.get("shots_against", 0)),
             "goals_for": int(aggregated.get("goals_for", 0)),
             "goals_against": int(aggregated.get("goals_against", 0)),
+            "mvps": int(mvp_queryset.count()),
+            "mvp_matches": mvp_matches,
             "goal_types": {
                 "for": goal_types_for,
                 "against": goal_types_against,
@@ -888,7 +928,8 @@ class PlayerStatsAPIView(APIView):
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
         return (
-            Season.objects.filter(
+            Season.objects
+            .filter(
                 Q(team_data__players=player)
                 | Q(matches__matchdata__player_groups__players=player)
                 | Q(matches__matchdata__shots__player=player)
@@ -911,7 +952,8 @@ class PlayerStatsAPIView(APIView):
         queryset: QuerySet[Shot], *, for_team: bool
     ) -> list[dict[str, str | int | None]]:
         breakdown = (
-            queryset.filter(for_team=for_team, scored=True)
+            queryset
+            .filter(for_team=for_team, scored=True)
             .values("shot_type__id_uuid", "shot_type__name")
             .annotate(count=Count("id_uuid"))
             .order_by("shot_type__name")
@@ -1472,7 +1514,8 @@ class PlayerSongClipAPIView(APIView):
         duration_seconds = max(1, min(15, duration_seconds))
 
         song = (
-            PlayerSong.objects.select_related("cached_song")
+            PlayerSong.objects
+            .select_related("cached_song")
             .filter(id_uuid=song_id)
             .first()
         )
@@ -1521,7 +1564,8 @@ class CurrentPlayerSongsAPIView(APIView):
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         songs = (
-            PlayerSong.objects.select_related("cached_song")
+            PlayerSong.objects
+            .select_related("cached_song")
             .filter(player=player)
             .order_by("-created_at")
         )
@@ -1628,7 +1672,8 @@ def _remove_deleted_song_from_goal_song_selection(
         return
 
     first = (
-        PlayerSong.objects.select_related("cached_song")
+        PlayerSong.objects
+        .select_related("cached_song")
         .filter(player=player, id_uuid=next_ids[0])
         .only(
             "id_uuid",

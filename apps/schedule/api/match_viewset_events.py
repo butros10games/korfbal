@@ -80,7 +80,8 @@ class MatchEventsActionsMixin:
                 "end_time": part.end_time.isoformat() if part.end_time else None,
                 "active": bool(part.active),
             }
-            for part in MatchPart.objects.filter(match_data=match_data)
+            for part in MatchPart.objects
+            .filter(match_data=match_data)
             .order_by("part_number", "start_time")
             .all()
         ]
@@ -535,7 +536,8 @@ class MatchEventsActionsMixin:
             )
 
         timeout = (
-            Timeout.objects.select_related("pause")
+            Timeout.objects
+            .select_related("pause")
             .filter(
                 id_uuid=timeout_id,
                 match_data=match_data,

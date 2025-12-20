@@ -43,7 +43,8 @@ async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
 
     goal_type_rows = await sync_to_async(
         lambda: list(
-            shot_qs.filter(scored=True, shot_type__isnull=False)
+            shot_qs
+            .filter(scored=True, shot_type__isnull=False)
             .values("shot_type__name", "for_team")
             .annotate(count=Count("id_uuid"))
         )

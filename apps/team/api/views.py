@@ -213,7 +213,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             )
 
         player = (
-            Player.objects.select_related("user")
+            Player.objects
+            .select_related("user")
             .only("id_uuid", "user__username")
             .filter(id_uuid=player_param)
             .first()
@@ -310,7 +311,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             return {}
 
         refreshed = (
-            PlayerMatchImpactBreakdown.objects.filter(
+            PlayerMatchImpactBreakdown.objects
+            .filter(
                 impact=impact,
                 algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
             )
@@ -333,7 +335,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         impact_total_raw = 0.0
 
         impacts_qs = (
-            PlayerMatchImpact.objects.filter(
+            PlayerMatchImpact.objects
+            .filter(
                 match_data__in=match_data_qs,
                 player=player,
                 team=team,
@@ -368,7 +371,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         return {
             str(player_id)
-            for player_id in team_data_qs.values_list("players__id_uuid", flat=True)
+            for player_id in team_data_qs
+            .values_list("players__id_uuid", flat=True)
             .distinct()
             .exclude(players__id_uuid__isnull=True)
         }
@@ -493,7 +497,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
     def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:
         return (
-            Season.objects.filter(
+            Season.objects
+            .filter(
                 Q(team_data__team=team)
                 | Q(matches__home_team=team)
                 | Q(matches__away_team=team)

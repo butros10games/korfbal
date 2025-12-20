@@ -44,7 +44,8 @@ class UpdateFeedView(APIView):
         match_window_start = now - timedelta(days=7)
 
         queryset = (
-            Match.objects.select_related(
+            Match.objects
+            .select_related(
                 "home_team__club",
                 "away_team__club",
                 "season",
@@ -155,7 +156,8 @@ class HubIndexView(APIView):
 
         # Prefer an active match for the user's teams.
         active_match_data = (
-            MatchData.objects.select_related(
+            MatchData.objects
+            .select_related(
                 "match_link__home_team",
                 "match_link__away_team",
             )
@@ -191,7 +193,8 @@ class HubIndexView(APIView):
 
         now = timezone.now()
         upcoming_match = (
-            Match.objects.select_related(
+            Match.objects
+            .select_related(
                 "home_team",
                 "away_team",
             )
