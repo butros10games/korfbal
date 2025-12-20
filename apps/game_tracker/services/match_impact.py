@@ -52,7 +52,7 @@ Side = Literal["home", "away"]
 
 # Bump this when tuning the algorithm so team/season aggregations can
 # opportunistically recompute persisted rows.
-LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v4"
+LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v5"
 
 
 # Cache schema version for per-match breakdowns.
@@ -118,6 +118,11 @@ def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
         # "goals scored" for the defending player.
         return shot_impact_weights_for_version("v3")
 
+    if version == "v5":
+        # v5 keeps v4 semantics and weights, but caps the goal streak bonus so
+        # long scoring runs don't explode goal impact totals.
+        return shot_impact_weights_for_version("v4")
+
     logger.warning("Unknown match impact algorithm version: %s", version)
     return shot_impact_weights_for_version(LATEST_MATCH_IMPACT_ALGORITHM_VERSION)
 
@@ -165,7 +170,7 @@ def _compute_shooting_efficiency_multipliers(
     *, shots: list[dict[str, Any]], algorithm_version: str
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Compute per-player multipliers for goal points and miss penalties."""
-    if algorithm_version not in {"v3", "v4"}:
+    if algorithm_version not in {"v3", "v4", "v5"}:
         return {}, {}
 
     attempts_by_player: dict[str, int] = {}
@@ -279,8 +284,13 @@ def _goal_type_impact_weight(goal_type: str) -> float:  # noqa: PLR0911
 
 
 def _compute_streak_factor(streak: int) -> float:
+    # This boost is *team* streak based (consecutive goals by the same team).
+    # Without a cap, long streaks can inflate goal impact to extreme values.
+    # Capping keeps the UI more intuitive while still rewarding momentum.
     streak_boost = 0.12
-    return 1 + (streak - 1) * streak_boost
+    max_streak_for_bonus = 4
+    effective_streak = min(max(1, int(streak)), max_streak_for_bonus)
+    return 1 + (effective_streak - 1) * streak_boost
 
 
 def _compute_goal_points(*, goal_type: str, streak: int) -> float:
