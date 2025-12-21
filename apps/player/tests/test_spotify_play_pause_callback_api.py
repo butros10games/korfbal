@@ -24,6 +24,8 @@ SPOTIFY_CLIENT_SECRET = "client_secret"  # noqa: S105  # nosec
 SPOTIFY_REDIRECT_URI = "https://example.invalid/oauth/callback"
 WEB_APP_ORIGIN = "https://app.example.invalid"
 
+NOT_CONFIGURED_VALUE = ""
+
 
 class _FakeResponse:
     def __init__(
@@ -60,8 +62,8 @@ def test_spotify_play_requires_auth(client: Client) -> None:
 @pytest.mark.django_db
 @override_settings(
     SECURE_SSL_REDIRECT=False,
-    SPOTIFY_CLIENT_ID="",
-    SPOTIFY_CLIENT_SECRET="",
+    SPOTIFY_CLIENT_ID=NOT_CONFIGURED_VALUE,
+    SPOTIFY_CLIENT_SECRET=NOT_CONFIGURED_VALUE,
 )
 def test_spotify_play_returns_400_when_not_configured(client: Client) -> None:
     """Not-configured servers should return a clean 400."""

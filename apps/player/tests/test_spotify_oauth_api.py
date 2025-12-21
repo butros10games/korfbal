@@ -13,6 +13,9 @@ from django.test import Client, override_settings
 import pytest
 
 
+NOT_CONFIGURED_VALUE = ""
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_spotify_connect_requires_authentication(client: Client) -> None:
@@ -24,8 +27,8 @@ def test_spotify_connect_requires_authentication(client: Client) -> None:
 @pytest.mark.django_db
 @override_settings(
     SECURE_SSL_REDIRECT=False,
-    SPOTIFY_CLIENT_ID="",
-    SPOTIFY_CLIENT_SECRET="",
+    SPOTIFY_CLIENT_ID=NOT_CONFIGURED_VALUE,
+    SPOTIFY_CLIENT_SECRET=NOT_CONFIGURED_VALUE,
 )
 def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None:
     """When Spotify is not configured, the endpoint should return a 400."""
