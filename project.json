@@ -22,7 +22,7 @@
             "executor": "nx:run-commands",
             "inputs": ["python", "sharedGlobals"],
             "options": {
-                "command": "uv run pyright apps/django_projects/korfbal"
+                "command": "uv run ty check apps/django_projects/korfbal"
             }
         },
         "test": {
