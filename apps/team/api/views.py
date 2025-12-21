@@ -14,8 +14,10 @@ from rest_framework.response import Response
 
 from apps.game_tracker.models import (
     MatchData,
+    MatchPlayer,
     PlayerMatchImpact,
     PlayerMatchImpactBreakdown,
+    Shot,
 )
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
@@ -23,6 +25,7 @@ from apps.game_tracker.services.match_impact import (
     round_js_1dp,
 )
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
+from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.general_stats import build_general_stats
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.kwt_common.utils.players_stats import build_player_stats
@@ -42,7 +45,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     serializer_class = TeamSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticatedOrReadOnly,
+        IsStaffOrReadOnly,
     ]
     lookup_field = "id_uuid"
     filter_backends: ClassVar[list[type[filters.BaseFilterBackend]]] = [
@@ -477,23 +480,56 @@ class TeamViewSet(viewsets.ModelViewSet):
     def _team_players_queryset(
         self, team: Team, season: Season | None, match_data_qs: QuerySet[MatchData]
     ) -> QuerySet[Player]:
-        queryset = Player.objects.select_related("user").filter(
-            Q(team_data_as_player__team=team)
-            | Q(
-                match_players__team=team,
-                match_players__match_data__in=match_data_qs,
+        # IMPORTANT:
+        # Avoid OR-of-joins filtering here.
+        # The old approach produced large LEFT JOIN chains + DISTINCT and can
+        # easily degrade into multi-second queries on real datasets.
+        #
+        # Instead, build candidate player ids from each source table and UNION
+        # them. Postgres can satisfy these subqueries using indexes, and the
+        # final Player query becomes a simple IN (subquery).
+        teamdata_qs = TeamData.objects.filter(team=team)
+        if season is not None:
+            teamdata_qs = teamdata_qs.filter(season=season)
+
+        # Pull roster ids from the M2M join table directly to avoid LEFT JOIN +
+        # DISTINCT patterns.
+        teamdata_player_ids = TeamData.players.through.objects.filter(
+            teamdata_id__in=teamdata_qs.values_list("id", flat=True)
+        ).values_list("player_id", flat=True)
+
+        # Materialize match ids once so we don't embed the same match subquery
+        # multiple times (once for MatchPlayer, once for Shot).
+        match_ids = list(match_data_qs.values_list("id_uuid", flat=True))
+
+        all_player_ids = teamdata_player_ids
+        if match_ids:
+            match_player_ids = MatchPlayer.objects.filter(
+                team=team,
+                match_data_id__in=match_ids,
+            ).values_list("player_id", flat=True)
+            shot_player_ids = Shot.objects.filter(
+                team=team,
+                match_data_id__in=match_ids,
+            ).values_list("player_id", flat=True)
+            all_player_ids = all_player_ids.union(match_player_ids, shot_player_ids)
+
+        return (
+            Player.objects
+            .select_related("user")
+            .only(
+                "id_uuid",
+                "profile_picture",
+                "profile_picture_visibility",
+                "stats_visibility",
+                "goal_song_uri",
+                "song_start_time",
+                "goal_song_song_ids",
+                "user__username",
             )
-            | Q(shots__team=team, shots__match_data__in=match_data_qs)
+            .filter(id_uuid__in=all_player_ids)
+            .order_by("user__username")
         )
-
-        if season:
-            queryset = queryset.filter(
-                Q(team_data_as_player__season=season)
-                | Q(match_players__match_data__match_link__season=season)
-                | Q(shots__match_data__match_link__season=season)
-            )
-
-        return queryset.distinct().order_by("user__username")
 
     def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:
         return (

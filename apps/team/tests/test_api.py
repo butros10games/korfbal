@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from http import HTTPStatus
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -10,7 +11,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, MatchPart, Shot
+from apps.game_tracker.models import MatchData, MatchPart, PlayerMatchImpact, Shot
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows_with_breakdowns,
@@ -293,3 +294,189 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
     assert payload["matches_considered"] == 1
     assert payload["categories"]
     assert any(cat["key"] == "shot_miss_for" for cat in payload["categories"])
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_impact_breakdown_missing_player_param_returns_400(
+    client: Client,
+) -> None:
+    """The impact-breakdown endpoint requires the `player` query param."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025 - impact breakdown missing player",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    team = Team.objects.create(name="Team 1", club=club)
+
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
+        data={"season": season.id_uuid},
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["detail"] == "Missing required query param: player"
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_impact_breakdown_unknown_player_returns_404(client: Client) -> None:
+    """Unknown player ids should produce a 404 with a clear message."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025 - impact breakdown unknown player",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    opponent_club = Club.objects.create(name="Opponent Club")
+    team = Team.objects.create(name="Team 1", club=club)
+    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent_team,
+        season=season,
+        start_time=timezone.now() - timedelta(days=1),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    unknown_player_id = str(uuid.uuid4())
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
+        data={"season": season.id_uuid, "player": unknown_player_id},
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json()["detail"] == "Player not found"
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_impact_breakdown_self_heal_failure_returns_empty_categories(
+    client: Client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If breakdown self-heal fails, the endpoint should still respond (best-effort)."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025 - impact breakdown self heal",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    opponent_club = Club.objects.create(name="Opponent Club")
+    team = Team.objects.create(name="Team 1", club=club)
+    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
+
+    user = get_user_model().objects.create_user(
+        username="impact_bd_missing_breakdown",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    player = user.player
+
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent_team,
+        season=season,
+        start_time=timezone.now() - timedelta(days=1),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    # Persist an impact row WITHOUT a breakdown row.
+    PlayerMatchImpact.objects.create(
+        match_data=match_data,
+        player=player,
+        team=team,
+        impact_score="3.2",
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    )
+
+    def _fail_persist(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "apps.team.api.views.persist_match_impact_rows_with_breakdowns",
+        _fail_persist,
+    )
+
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
+        data={"season": season.id_uuid, "player": player.id_uuid},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+
+    assert payload["matches_considered"] == 1
+    assert payload["impact_total"] == pytest.approx(3.2)
+    assert payload["categories"] == []
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
+    """Invalid seasons should fall back to a team season, not broaden to all."""
+    today = timezone.now().date()
+    current_season = Season.objects.create(
+        name="2025",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+    previous_season = Season.objects.create(
+        name="2024",
+        start_date=today - timedelta(days=400),
+        end_date=today - timedelta(days=35),
+    )
+
+    club = Club.objects.create(name="Team Club")
+    opponent_club = Club.objects.create(name="Opponent Club")
+    team = Team.objects.create(name="Team 1", club=club)
+    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
+
+    TeamData.objects.create(team=team, season=current_season)
+    TeamData.objects.create(team=team, season=previous_season)
+
+    current_match = Match.objects.create(
+        home_team=team,
+        away_team=opponent_team,
+        season=current_season,
+        start_time=timezone.now() + timedelta(days=2),
+    )
+    previous_match = Match.objects.create(
+        home_team=opponent_team,
+        away_team=team,
+        season=previous_season,
+        start_time=timezone.now() - timedelta(days=10),
+    )
+
+    current_data = MatchData.objects.get(match_link=current_match)
+    current_data.status = "upcoming"
+    current_data.save(update_fields=["status"])
+
+    previous_data = MatchData.objects.get(match_link=previous_match)
+    previous_data.status = "finished"
+    previous_data.save(update_fields=["status"])
+
+    invalid_season_id = str(uuid.uuid4())
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/overview/",
+        data={"season": invalid_season_id},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+
+    assert payload["meta"]["season_id"] == str(current_season.id_uuid)
+    assert payload["meta"]["season_name"] == current_season.name
+    assert payload["matches"]["upcoming"]
+    assert payload["matches"]["recent"] == []

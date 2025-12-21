@@ -80,6 +80,12 @@ class PlayerMatchImpact(models.Model):
             models.Index(fields=["match_data"], name="impact_match_idx"),
             models.Index(fields=["team"], name="impact_team_idx"),
             models.Index(fields=["player"], name="impact_player_idx"),
+            # Common read path: aggregate impacts for player(s) within a match
+            # dataset, scoped to the current algorithm version.
+            models.Index(
+                fields=["player", "algorithm_version", "match_data"],
+                name="impact_pl_ver_md_idx",
+            ),
         )
 
     def __str__(self) -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -39,6 +40,149 @@ def test_mvp_status_unavailable_before_finished(client: Client) -> None:
     assert payload["open"] is False
     assert payload["published_at"] is None
     assert payload["vote_breakdown"] == []
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_mvp_vote_returns_conflict_when_match_not_finished(client: Client) -> None:
+    """Voting should only be available for finished matches."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
+    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/mvp/vote/",
+        data={"candidate_id_uuid": "does-not-matter"},
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json() == {
+        "detail": "Voting is only available after the match is finished.",
+    }
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_mvp_vote_rejects_invalid_json_body(client: Client) -> None:
+    """Vote endpoint should reject JSON bodies that are not objects."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
+    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/mvp/vote/",
+        data="[]",
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {"detail": "Invalid JSON body."}
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_mvp_vote_requires_candidate_id_uuid(client: Client) -> None:
+    """Vote endpoint should validate required candidate input."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
+    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/mvp/vote/",
+        data={},
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {"detail": "Missing 'candidate_id_uuid'."}
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_mvp_vote_rejects_unknown_candidate(client: Client) -> None:
+    """Vote endpoint should reject candidate IDs that do not exist."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
+    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/mvp/vote/",
+        data={"candidate_id_uuid": str(uuid4())},
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {"detail": "Unknown candidate."}
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_mvp_vote_rejects_candidate_not_in_match(client: Client) -> None:
+    """Vote endpoint should reject players that are not valid candidates."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
+    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    # Candidate exists but is not part of the match roster/events.
+    outsider_user = get_user_model().objects.create_user(
+        username="outsider",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/mvp/vote/",
+        data={"candidate_id_uuid": str(outsider_user.player.id_uuid)},
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json() == {"detail": "Invalid MVP candidate."}
 
 
 @pytest.mark.django_db

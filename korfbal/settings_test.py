@@ -31,6 +31,16 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 # ---------------------------------------------------------------------------
+# Performance knobs (tests)
+# ---------------------------------------------------------------------------
+# The Team page stats tests assert that we recompute and persist match impact
+# rows when outdated. Local developer .env files may disable recompute for
+# production-like behavior; tests must force it on.
+KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE = True
+KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT = 25
+
+
+# ---------------------------------------------------------------------------
 # Database fallback for tests
 # ---------------------------------------------------------------------------
 if os.getenv("DJANGO_TEST_USE_POSTGRES", "").lower() not in {"1", "true", "yes", "on"}:

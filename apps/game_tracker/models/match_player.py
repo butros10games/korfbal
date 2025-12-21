@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -33,6 +33,14 @@ class MatchPlayer(models.Model):
         on_delete=models.CASCADE,
         related_name="match_players",
     )
+
+    class Meta:
+        """Meta options for MatchPlayer."""
+
+        indexes: ClassVar[tuple[models.Index, ...]] = (
+            models.Index(fields=["team", "match_data"], name="mp_team_match_idx"),
+            models.Index(fields=["match_data", "player"], name="mp_match_player_idx"),
+        )
 
     def __str__(self) -> str:
         """Return the string representation of the match player.

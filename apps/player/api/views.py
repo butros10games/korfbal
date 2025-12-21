@@ -21,7 +21,16 @@ from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
-from django.db.models import Count, Q, QuerySet
+from django.db.models import (
+    BooleanField,
+    Count,
+    Exists,
+    OuterRef,
+    Q,
+    QuerySet,
+    Subquery,
+    Value,
+)
 from django.http import HttpResponseRedirect
 from django.utils import timezone
 from kombu.exceptions import OperationalError as KombuOperationalError
@@ -33,7 +42,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup, Shot
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
@@ -45,6 +54,7 @@ from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
 from apps.schedule.models.mvp import MatchMvp
 from apps.team.api.serializers import TeamSerializer
+from apps.team.models import TeamData
 
 from .serializers import (
     PlayerPrivacySettingsSerializer,
@@ -649,14 +659,13 @@ class PlayerOverviewAPIView(APIView):
         *,
         include_roster: bool,
     ) -> QuerySet[MatchData]:
-        participation_filter = Q(player_groups__players=player)
-        roster_filter = Q()
-        if include_roster:
-            roster_filter = Q(
-                Q(match_link__home_team__team_data__players=player)
-                | Q(match_link__away_team__team_data__players=player)
-            )
-
+        # IMPORTANT:
+        # Avoid OR-of-joins filters here. They can create huge join explosions and
+        # force DISTINCT, which is exactly how we ended up with multi-second
+        # queries on PlayerOverview.
+        #
+        # Use EXISTS subqueries instead. This keeps the main query small and
+        # lets Postgres use indexes on the referenced tables.
         queryset = MatchData.objects.select_related(
             "match_link",
             "match_link__home_team",
@@ -666,26 +675,99 @@ class PlayerOverviewAPIView(APIView):
             "match_link__season",
         )
 
-        queryset = queryset.filter(participation_filter | roster_filter)
+        # A player is considered a participant if they appear in a PlayerGroup
+        # (tracking) or have any Shot rows for the match.
+        queryset = queryset.annotate(
+            has_player_group=Exists(
+                PlayerGroup.objects.filter(
+                    match_data=OuterRef("pk"),
+                    players=player,
+                )
+            ),
+            has_shot=Exists(
+                Shot.objects.filter(
+                    match_data=OuterRef("pk"),
+                    player=player,
+                )
+            ),
+        )
+
+        filter_q = Q(has_player_group=True) | Q(has_shot=True)
+
+        if include_roster:
+            # Prefer the per-match roster table when present.
+            queryset = queryset.annotate(
+                is_match_roster=Exists(
+                    MatchPlayer.objects.filter(
+                        match_data=OuterRef("pk"),
+                        player=player,
+                    )
+                ),
+                is_home_teamdata_roster=Exists(
+                    TeamData.objects.filter(
+                        team_id=OuterRef("match_link__home_team_id"),
+                        season_id=OuterRef("match_link__season_id"),
+                        players=player,
+                    )
+                ),
+                is_away_teamdata_roster=Exists(
+                    TeamData.objects.filter(
+                        team_id=OuterRef("match_link__away_team_id"),
+                        season_id=OuterRef("match_link__season_id"),
+                        players=player,
+                    )
+                ),
+            )
+            filter_q |= (
+                Q(is_match_roster=True)
+                | Q(is_home_teamdata_roster=True)
+                | Q(is_away_teamdata_roster=True)
+            )
+        else:
+            # Keep annotations stable for callers / debug tooling.
+            queryset = queryset.annotate(
+                is_match_roster=Value(False, output_field=BooleanField()),
+                is_home_teamdata_roster=Value(False, output_field=BooleanField()),
+                is_away_teamdata_roster=Value(False, output_field=BooleanField()),
+            )
+
+        queryset = queryset.filter(filter_q)
 
         if season:
             queryset = queryset.filter(match_link__season=season)
 
-        return queryset.distinct()
+        return queryset
 
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
-        return (
-            Season.objects
-            .filter(
-                Q(team_data__players=player)
-                | Q(matches__matchdata__player_groups__players=player)
-                | Q(matches__matchdata__shots__player=player)
-                | Q(matches__home_team__team_data__players=player)
-                | Q(matches__away_team__team_data__players=player)
-            )
-            .distinct()
-            .order_by("-start_date")
+        # IMPORTANT:
+        # Avoid a single big OR-of-joins query here.
+        # That pattern creates join explosions (and forces DISTINCT) which can
+        # become extremely slow on real datasets.
+        #
+        # Instead, collect candidate season IDs from each relevant source and
+        # UNION them. Postgres can execute these subqueries using indexes.
+        season_ids = TeamData.objects.filter(players=player).values_list(
+            "season_id",
+            flat=True,
+        )
+        season_ids = season_ids.union(
+            MatchPlayer.objects.filter(player=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+            PlayerGroup.objects.filter(players=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+            Shot.objects.filter(player=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+        )
+
+        return Season.objects.filter(id_uuid__in=Subquery(season_ids)).order_by(
+            "-start_date"
         )
 
     def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
@@ -927,17 +1009,28 @@ class PlayerStatsAPIView(APIView):
 
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
-        return (
-            Season.objects
-            .filter(
-                Q(team_data__players=player)
-                | Q(matches__matchdata__player_groups__players=player)
-                | Q(matches__matchdata__shots__player=player)
-                | Q(matches__home_team__team_data__players=player)
-                | Q(matches__away_team__team_data__players=player)
-            )
-            .distinct()
-            .order_by("-start_date")
+        # Keep this in sync with PlayerOverviewAPIView._player_seasons_queryset.
+        season_ids = TeamData.objects.filter(players=player).values_list(
+            "season_id",
+            flat=True,
+        )
+        season_ids = season_ids.union(
+            MatchPlayer.objects.filter(player=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+            PlayerGroup.objects.filter(players=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+            Shot.objects.filter(player=player).values_list(
+                "match_data__match_link__season_id",
+                flat=True,
+            ),
+        )
+
+        return Season.objects.filter(id_uuid__in=Subquery(season_ids)).order_by(
+            "-start_date"
         )
 
     def _current_season(self) -> Season | None:

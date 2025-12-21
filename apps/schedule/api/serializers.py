@@ -157,6 +157,104 @@ class _MatchBoundWriteSerializer(serializers.Serializer):
         return match_data
 
 
+def _validate_shot_team_id(*, match: Match, team_id: object) -> None:
+    team_id_str = str(team_id)
+    allowed = {str(match.home_team.id_uuid), str(match.away_team.id_uuid)}
+    if team_id_str not in allowed:
+        raise serializers.ValidationError({
+            "team_id": "Team is not part of this match."
+        })
+
+
+def _validate_shot_create(
+    *,
+    attrs: dict[str, object],
+    match: Match,
+    match_data: MatchData,
+) -> dict[str, object]:
+    required_fields = {
+        "player_id",
+        "team_id",
+        "shot_type_id",
+        "match_part_id",
+    }
+    missing = required_fields - set(attrs)
+    if missing:
+        raise serializers.ValidationError({
+            "detail": "Missing required fields.",
+            "missing": sorted(missing),
+        })
+
+    match_part = MatchPart.objects.filter(
+        id_uuid=attrs["match_part_id"],
+        match_data=match_data,
+    ).first()
+    if not match_part:
+        raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
+
+    _validate_shot_team_id(match=match, team_id=attrs["team_id"])
+
+    player = Player.objects.filter(id_uuid=attrs["player_id"]).first()
+    if not player:
+        raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
+
+    shot_type = GoalType.objects.filter(id_uuid=attrs["shot_type_id"]).first()
+    if not shot_type:
+        raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
+
+    event_time = _resolve_event_time(
+        match_part=match_part,
+        time=_optional_str(attrs.get("time")),
+        minute=_optional_int(attrs.get("minute")),
+    )
+
+    attrs["_match_part"] = match_part
+    attrs["_player"] = player
+    attrs["_shot_type"] = shot_type
+    attrs["_event_time"] = event_time
+    return attrs
+
+
+def _validate_shot_update(
+    *,
+    attrs: dict[str, object],
+    match: Match,
+    match_data: MatchData,
+    instance: Shot,
+) -> None:
+    if {"match_part_id", "time", "minute"} & attrs.keys():
+        match_part_id = attrs.get("match_part_id")
+        if match_part_id is None:
+            match_part_id = getattr(instance, "match_part_id", None)
+
+        match_part = MatchPart.objects.filter(
+            id_uuid=match_part_id,
+            match_data=match_data,
+        ).first()
+        if not match_part:
+            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
+
+        # Validate timestamp inputs.
+        _resolve_event_time(
+            match_part=match_part,
+            time=_optional_str(attrs.get("time")),
+            minute=_optional_int(attrs.get("minute")),
+        )
+
+    if "team_id" in attrs:
+        _validate_shot_team_id(match=match, team_id=attrs.get("team_id"))
+
+    if "player_id" in attrs:
+        player = Player.objects.filter(id_uuid=attrs.get("player_id")).first()
+        if not player:
+            raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
+
+    if "shot_type_id" in attrs:
+        shot_type = GoalType.objects.filter(id_uuid=attrs.get("shot_type_id")).first()
+        if not shot_type:
+            raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
+
+
 class ShotWriteSerializer(_MatchBoundWriteSerializer):
     """Write serializer for creating/updating shots."""
 
@@ -170,47 +268,21 @@ class ShotWriteSerializer(_MatchBoundWriteSerializer):
     minute = serializers.IntegerField(required=False)
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Validate incoming shot payload and resolve related objects.
-
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
+        """Validate incoming shot payload and resolve related objects."""
         match = self._get_match()
         match_data = self._get_match_data()
 
-        match_part = MatchPart.objects.filter(
-            id_uuid=attrs["match_part_id"],
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
+        instance = getattr(self, "instance", None)
+        if isinstance(instance, Shot):
+            _validate_shot_update(
+                attrs=attrs,
+                match=match,
+                match_data=match_data,
+                instance=instance,
+            )
+            return attrs
 
-        team_id = str(attrs["team_id"])  # UUIDField -> uuid.UUID
-        if team_id not in {str(match.home_team.id_uuid), str(match.away_team.id_uuid)}:
-            raise serializers.ValidationError({
-                "team_id": "Team is not part of this match."
-            })
-
-        player = Player.objects.filter(id_uuid=attrs["player_id"]).first()
-        if not player:
-            raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
-
-        shot_type = GoalType.objects.filter(id_uuid=attrs["shot_type_id"]).first()
-        if not shot_type:
-            raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
-
-        event_time = _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(attrs.get("time")),
-            minute=_optional_int(attrs.get("minute")),
-        )
-
-        attrs["_match_part"] = match_part
-        attrs["_player"] = player
-        attrs["_shot_type"] = shot_type
-        attrs["_event_time"] = event_time
-        return attrs
+        return _validate_shot_create(attrs=attrs, match=match, match_data=match_data)
 
     def create(self, validated_data: dict[str, object]) -> Shot:
         """Create a new shot instance from validated data.

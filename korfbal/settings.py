@@ -124,6 +124,46 @@ X_FRAME_OPTIONS = _env("X_FRAME_OPTIONS", "SAMEORIGIN")
 RUNNER = _env("RUNNER", "")
 
 
+RUNNING_TESTS = bool(os.getenv("PYTEST_CURRENT_TEST")) or any(
+    "pytest" in arg for arg in sys.argv
+)
+
+
+# --- Performance tuning (Korfbal) ---
+# Keep API responses predictable by default. Expensive self-healing recomputes
+# can be enabled temporarily when needed.
+KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE = _env_bool(
+    "KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE",
+    DEBUG or RUNNING_TESTS,
+)
+
+_default_impact_recompute_limit = 0
+if RUNNING_TESTS:
+    _default_impact_recompute_limit = 3
+elif DEBUG:
+    _default_impact_recompute_limit = 1
+
+KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT = _env_int(
+    "KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT",
+    _default_impact_recompute_limit,
+)
+
+# Slow SQL logging (opt-in). Useful to spot missing indexes / N+1 patterns.
+KORFBAL_LOG_SLOW_DB_QUERIES = _env_bool("KORFBAL_LOG_SLOW_DB_QUERIES", False)
+KORFBAL_SLOW_DB_QUERY_MS = _env_int("KORFBAL_SLOW_DB_QUERY_MS", 200)
+KORFBAL_SLOW_DB_INCLUDE_SQL = _env_bool("KORFBAL_SLOW_DB_INCLUDE_SQL", False)
+
+# Slow request surfacing (opt-in). Adds timing headers and keeps a rolling
+# buffer (in cache) of the slowest requests so you don't have to tail logs.
+KORFBAL_LOG_SLOW_REQUESTS = _env_bool("KORFBAL_LOG_SLOW_REQUESTS", False)
+KORFBAL_SLOW_REQUEST_MS = _env_int("KORFBAL_SLOW_REQUEST_MS", 500)
+KORFBAL_SLOW_REQUEST_BUFFER_SIZE = _env_int("KORFBAL_SLOW_REQUEST_BUFFER_SIZE", 200)
+KORFBAL_SLOW_REQUEST_BUFFER_TTL_S = _env_int(
+    "KORFBAL_SLOW_REQUEST_BUFFER_TTL_S",
+    60 * 60 * 24,
+)
+
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -154,6 +194,8 @@ if RUNNER == "uwsgi":
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.kwt_common.middleware.request_timing.RequestTimingMiddleware",
+    "apps.kwt_common.middleware.slow_queries.SlowQueryLoggingMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

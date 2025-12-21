@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from apps.club.models.club import Club
 from apps.game_tracker.models import MatchData
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
+from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
@@ -41,7 +42,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     serializer_class = ClubSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticatedOrReadOnly,
+        IsStaffOrReadOnly,
     ]
     lookup_field = "id_uuid"
     filter_backends: ClassVar[list[type[filters.BaseFilterBackend]]] = [
@@ -325,9 +326,23 @@ class ClubViewSet(viewsets.ModelViewSet):
         return queryset
 
     def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
+        """Resolve the requested season in a safe, club-scoped way.
+
+        Important:
+            If a `season` query param is supplied but cannot be resolved within
+            the club's known seasons, we do **not** return `None` (which would
+            broaden queries to all seasons). Instead, we fall back to a sensible
+            default within the provided season list.
+
+        """
         season_param = request.query_params.get("season")
         if season_param:
-            return Season.objects.filter(id_uuid=season_param).first()
+            selected = next(
+                (option for option in seasons if str(option.id_uuid) == season_param),
+                None,
+            )
+            if selected is not None:
+                return selected
 
         if not seasons:
             return None
