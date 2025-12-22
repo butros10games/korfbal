@@ -50,7 +50,12 @@ from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.models.spotify_token import SpotifyToken
 from apps.player.privacy import can_view_by_visibility
-from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
+from apps.player.services.web_push import (
+    WebPushException,
+    WebPushPayload,
+    send_to_model_subscription,
+    webpush_library_available,
+)
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
@@ -71,6 +76,8 @@ from .serializers import (
 
 
 logger = logging.getLogger(__name__)
+
+TEST_PUSH_ERROR_LIMIT = 10
 
 
 PLAYER_NOT_FOUND_MESSAGE = "Player not found"
@@ -694,22 +701,14 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
         permissions.IsAuthenticated,
     ]
 
-    def post(
-        self,
-        request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
-    ) -> Response:
-        """Send a test push notification to the current user's subscriptions."""
-        user = request.user
-        if not (
+    @staticmethod
+    def _is_staff_user(user: Any) -> bool:  # noqa: ANN401
+        return bool(
             getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
-        ):
-            return Response(
-                {"detail": "Staff only"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        )
 
+    @staticmethod
+    def _missing_webpush_settings() -> list[str]:
         vapid_public = str(
             getattr(settings, "WEBPUSH_VAPID_PUBLIC_KEY", "") or ""
         ).strip()
@@ -719,61 +718,131 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
         vapid_subject = str(
             getattr(settings, "WEBPUSH_VAPID_SUBJECT", "") or ""
         ).strip()
-        if not (vapid_public and vapid_private and vapid_subject):
-            return Response(
-                {
-                    "detail": "Web push not configured",
-                    "missing": [
-                        name
-                        for name, value in [
-                            ("WEBPUSH_VAPID_PUBLIC_KEY", vapid_public),
-                            ("WEBPUSH_VAPID_PRIVATE_KEY", vapid_private),
-                            ("WEBPUSH_VAPID_SUBJECT", vapid_subject),
-                        ]
-                        if not value
-                    ],
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
 
-        subs = PlayerPushSubscription.objects.filter(
-            user=user, is_active=True
-        ).order_by("-updated_at")
-        if not subs.exists():
-            return Response(
-                {"detail": "No active push subscriptions"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return [
+            name
+            for name, value in [
+                ("WEBPUSH_VAPID_PUBLIC_KEY", vapid_public),
+                ("WEBPUSH_VAPID_PRIVATE_KEY", vapid_private),
+                ("WEBPUSH_VAPID_SUBJECT", vapid_subject),
+            ]
+            if not value
+        ]
 
+    @staticmethod
+    def _build_target_url() -> str:
         base_url = str(getattr(settings, "WEB_APP_ORIGIN", "") or "").rstrip("/")
-        target_url = f"{base_url}/profile" if base_url else "/profile"
+        return f"{base_url}/profile" if base_url else "/profile"
 
-        payload = WebPushPayload(
-            title="Test pushmelding",
-            body="Als je dit ziet werkt push via de PWA.",
-            url=target_url,
-            tag="debug-test",
-        )
-
-        total = subs.count()
+    @staticmethod
+    def _send_test_payload(
+        *,
+        subs: list[PlayerPushSubscription],
+        payload: WebPushPayload,
+    ) -> tuple[int, int, list[dict[str, Any]]]:
         sent = 0
         failed = 0
+        errors: list[dict[str, Any]] = []
 
         for sub in subs:
             try:
                 send_to_model_subscription(sub=sub, payload=payload)
                 sent += 1
-            except Exception:  # pragma: no cover - best-effort debug endpoint
+            except WebPushException as exc:  # pragma: no cover - debug endpoint
                 failed += 1
+                status_code = getattr(
+                    getattr(exc, "response", None),
+                    "status_code",
+                    None,
+                )
+                # Avoid leaking subscription keys; the endpoint + id is enough.
+                errors.append({
+                    "subscription_id": str(sub.id_uuid),
+                    "endpoint": str(sub.endpoint),
+                    "status_code": status_code,
+                    "detail": str(exc),
+                })
+            except Exception as exc:  # pragma: no cover - best-effort debug endpoint
+                failed += 1
+                logger.warning(
+                    "Unexpected error while sending test web push to %s",
+                    sub.id_uuid,
+                    exc_info=True,
+                )
+                errors.append({
+                    "subscription_id": str(sub.id_uuid),
+                    "endpoint": str(sub.endpoint),
+                    "detail": str(exc) or "Unexpected error",
+                })
 
-        return Response(
-            {
-                "total": total,
-                "sent": sent,
-                "failed": failed,
-            },
-            status=status.HTTP_200_OK,
+        return sent, failed, errors
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Send a test push notification to the current user's subscriptions."""
+        user = request.user
+        if not self._is_staff_user(user):
+            return Response(
+                {"detail": "Staff only"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        missing = self._missing_webpush_settings()
+        if missing:
+            return Response(
+                {
+                    "detail": "Web push not configured",
+                    "missing": missing,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if not webpush_library_available():
+            return Response(
+                {
+                    "detail": "Web push runtime is missing pywebpush",
+                    "missing": ["pywebpush"],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        subs_qs = PlayerPushSubscription.objects.filter(
+            user=user, is_active=True
+        ).order_by("-updated_at")
+        if not subs_qs.exists():
+            return Response(
+                {"detail": "No active push subscriptions"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subs = list(subs_qs)
+
+        payload = WebPushPayload(
+            title="Test pushmelding",
+            body="Als je dit ziet werkt push via de PWA.",
+            url=self._build_target_url(),
+            tag="debug-test",
         )
+
+        total = len(subs)
+        sent, failed, errors = self._send_test_payload(subs=subs, payload=payload)
+
+        response_payload: dict[str, Any] = {
+            "total": total,
+            "sent": sent,
+            "failed": failed,
+        }
+        if errors:
+            # Keep this endpoint actionable even if a user has many devices.
+            response_payload["errors"] = errors[:TEST_PUSH_ERROR_LIMIT]
+            if len(errors) > TEST_PUSH_ERROR_LIMIT:
+                response_payload["errors_truncated"] = True
+
+        return Response(response_payload, status=status.HTTP_200_OK)
 
 
 class PlayerOverviewAPIView(APIView):

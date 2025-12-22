@@ -73,6 +73,11 @@ def _vapid_claims() -> dict[str, str | int]:
     return {"sub": str(getattr(settings, "WEBPUSH_VAPID_SUBJECT", ""))}
 
 
+def webpush_library_available() -> bool:
+    """Return whether the runtime has the web-push library installed."""
+    return webpush is not None
+
+
 def send_to_subscription(
     *,
     subscription: dict[str, Any],
@@ -82,11 +87,21 @@ def send_to_subscription(
     """Send a single web push message.
 
     Notes:
-        This function is defensive: if web push isn't configured, it will log and
+        This function is defensive: if VAPID settings are missing, it will log and
         return without sending.
 
+    Raises:
+        RuntimeError: When the `pywebpush` library is not available in the runtime.
+
     """
-    if webpush is None or not _webpush_configured():
+    if webpush is None:
+        # This is a deploy/runtime bug: without pywebpush, we cannot send
+        # anything, and silently returning makes debugging nearly impossible.
+        raise RuntimeError(
+            "pywebpush is not available in this runtime; cannot send web push"
+        )
+
+    if not _webpush_configured():
         logger.info("Web push not configured; skipping send")
         return
 
