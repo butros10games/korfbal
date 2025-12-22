@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core import signing
+from django.core.cache import cache
 from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -315,6 +316,20 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         now = timezone.now()
         return self.get_queryset().filter(start_time__gte=now).order_by("start_time")
 
+    def _is_cacheable_public_request(self) -> bool:
+        """Return True when it is safe to cache a response for this request.
+
+        We deliberately skip caching for authenticated callers and for requests
+        that use the user-specific `followed` filter.
+        """
+        if self.request.user.is_authenticated:
+            return False
+        return not self.request.query_params.get("followed")
+
+    def _public_cache_key(self) -> str:
+        """Cache key that varies by full path (including query string)."""
+        return f"korfbal:schedule:{self.request.get_full_path()}"
+
     @action(detail=False, methods=["GET"], url_path="next")  # type: ignore[arg-type]
     def next_match(
         self,
@@ -328,11 +343,24 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             Response: Serialized next match.
 
         """
+        if self._is_cacheable_public_request():
+            cache_key = self._public_cache_key()
+            cache_miss = object()
+            cached_payload = cache.get(cache_key, cache_miss)
+            if cached_payload is not cache_miss:
+                return Response(cached_payload)
+
         match = self._upcoming_queryset().first()
         if not match:
-            return Response(None, status=status.HTTP_200_OK)
+            payload: Any = None
+            if self._is_cacheable_public_request():
+                cache.set(self._public_cache_key(), payload, timeout=30)
+            return Response(payload, status=status.HTTP_200_OK)
         serializer = self.get_serializer(match)
-        return Response(serializer.data)
+        payload = serializer.data
+        if self._is_cacheable_public_request():
+            cache.set(self._public_cache_key(), payload, timeout=30)
+        return Response(payload)
 
     @action(detail=False, methods=["GET"], url_path="upcoming")  # type: ignore[arg-type]
     def upcoming(
@@ -407,9 +435,40 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
 
         limit = max(limit, 1)
 
-        # Respect the same filtering as other match list endpoints:
-        # team/club/season + optional "followed" scope.
-        matches = self.get_queryset().filter(start_time__lte=timezone.now())
+        if self._is_cacheable_public_request():
+            cache_key = self._public_cache_key()
+            cache_miss = object()
+            cached_payload = cache.get(cache_key, cache_miss)
+            if cached_payload is not cache_miss:
+                return Response(cached_payload)
+
+        # Respect the same filtering as other match list endpoints.
+        # Instead of building an IN(subquery) over matches, apply the filter
+        # directly to the MatchData join to keep the query planner happy.
+        now = timezone.now()
+        match_filter = Q(match_link__start_time__lte=now)
+
+        team_ids = request.query_params.getlist("team")
+        club_ids = request.query_params.getlist("club")
+        season_id = request.query_params.get("season")
+
+        if not team_ids and request.query_params.get("followed"):
+            player = self._get_player()
+            if player:
+                team_ids = list(player.team_follow.values_list("id_uuid", flat=True))
+
+        if team_ids:
+            match_filter &= Q(match_link__home_team__id_uuid__in=team_ids) | Q(
+                match_link__away_team__id_uuid__in=team_ids
+            )
+
+        if club_ids:
+            match_filter &= Q(match_link__home_team__club__id_uuid__in=club_ids) | Q(
+                match_link__away_team__club__id_uuid__in=club_ids
+            )
+
+        if season_id:
+            match_filter &= Q(match_link__season__id_uuid=season_id)
 
         match_data_queryset = (
             MatchData.objects
@@ -419,11 +478,13 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                 "match_link__away_team__club",
                 "match_link__season",
             )
-            .filter(match_link__in=matches, status="finished")
+            .filter(match_filter, status="finished")
             .order_by("-match_link__start_time")[:limit]
         )
 
         summaries = build_match_summaries(list(match_data_queryset))
+        if self._is_cacheable_public_request():
+            cache.set(self._public_cache_key(), summaries, timeout=30)
         return Response(summaries)
 
     @action(
