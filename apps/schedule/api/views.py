@@ -17,6 +17,12 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.awards.services.mvp import (
+    build_mvp_candidates,
+    cast_vote,
+    cast_vote_anon,
+    ensure_mvp_published,
+)
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
@@ -30,12 +36,6 @@ from apps.game_tracker.services.tracker_http import (
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Match
-from apps.schedule.services.mvp import (
-    build_mvp_candidates,
-    cast_vote,
-    cast_vote_anon,
-    ensure_mvp_published,
-)
 from apps.team.models.team import Team
 
 from .constants import (

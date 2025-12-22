@@ -178,6 +178,7 @@ INSTALLED_APPS = [
     "apps.player",
     "apps.team",
     "apps.schedule",
+    "apps.awards",
     "apps.hub",
     "apps.game_tracker",
     "apps.kwt_common",
@@ -420,6 +421,16 @@ SPOTIFY_REDIRECT_URI = _env(
     "SPOTIFY_REDIRECT_URI",
     f"{spotify_origin.rstrip('/')}/api/player/spotify/callback/",
 )
+
+
+# --- Web push notifications (PWA) ---
+# The frontend subscribes using the *public* VAPID key.
+# The backend sends notifications using `pywebpush` with the private key.
+WEBPUSH_VAPID_PUBLIC_KEY = _env("WEBPUSH_VAPID_PUBLIC_KEY", "")
+WEBPUSH_VAPID_PRIVATE_KEY = _env("WEBPUSH_VAPID_PRIVATE_KEY", "")
+# Subject must be a contact URI (commonly a mailto: address).
+WEBPUSH_VAPID_SUBJECT = _env("WEBPUSH_VAPID_SUBJECT", "mailto:butrosgroot@gmail.com")
+WEBPUSH_TTL_SECONDS = _env_int("WEBPUSH_TTL_SECONDS", 60 * 60)
 
 
 PROMETHEUS_LATENCY_BUCKETS = (

@@ -19,6 +19,7 @@ dependencies = [
     "djangorestframework",
     "django-cors-headers",
     "drf-spectacular",
+    "pywebpush",
     "spotdl",
 ]
 

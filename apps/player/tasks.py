@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 from pathlib import Path
 import subprocess  # nosec B404 - required for invoking spotDL CLI safely (shell=False + input validation)
@@ -10,15 +11,240 @@ from typing import Any
 
 from celery import shared_task
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files import File
 from django.db import transaction
+from django.utils import timezone
 
+from apps.awards.models.mvp import MatchMvpVote
+from apps.awards.services import mvp as mvp_service
+from apps.game_tracker.models import MatchData
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
+from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.models.push_subscription import PlayerPushSubscription
+from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
 from apps.player.spotify import canonicalize_spotify_track_url
+from apps.schedule.models.match import Match
 
 
 logger = logging.getLogger(__name__)
+
+
+def _participant_players_for_match_data(match_data: MatchData) -> list[Player]:
+    return list(
+        Player.objects
+        .select_related("user")
+        .filter(matchplayer__match_data=match_data)
+        .distinct()
+    )
+
+
+def _match_title(match: Match) -> str:
+    home = getattr(match.home_team, "name", "") or "Thuis"
+    away = getattr(match.away_team, "name", "") or "Uit"
+    return f"{home} - {away}".strip(" -")
+
+
+def _push_url_for_match(match: Match) -> str:
+    return f"/matches/{match.id_uuid}"
+
+
+def _send_payload_to_users(*, user_ids: list[int], payload: WebPushPayload) -> None:
+    if not user_ids:
+        return
+
+    subs = PlayerPushSubscription.objects.filter(
+        user_id__in=user_ids,
+        is_active=True,
+    )
+
+    for sub in subs:
+        send_to_model_subscription(sub=sub, payload=payload)
+
+
+@shared_task(bind=True)
+def handle_match_finished(
+    self: Any,  # noqa: ANN401
+    *,
+    match_id: str,
+    match_data_id: str,
+) -> None:
+    """Entry-point task: send match finished push + schedule MVP tasks."""
+    # Best-effort idempotency guard.
+    cache_key = f"push:match_finished:{match_data_id}"
+    if not cache.add(cache_key, "1", timeout=60 * 60 * 24):
+        return
+
+    match = (
+        Match.objects
+        .select_related(
+            "home_team",
+            "away_team",
+            "home_team__club",
+            "away_team__club",
+        )
+        .filter(id_uuid=match_id)
+        .first()
+    )
+    match_data = (
+        MatchData.objects
+        .select_related(
+            "match_link",
+            "match_link__home_team",
+            "match_link__away_team",
+        )
+        .filter(id_uuid=match_data_id)
+        .first()
+    )
+    if match is None or match_data is None:
+        return
+
+    if match_data.status != "finished":
+        return
+
+    # 1) Notify participants that match finished.
+    participants = _participant_players_for_match_data(match_data)
+    user_ids: list[int] = []
+    for player in participants:
+        pk = getattr(getattr(player, "user", None), "pk", None)
+        if isinstance(pk, int):
+            user_ids.append(pk)
+
+    home = getattr(match.home_team, "name", "") or "Thuis"
+    away = getattr(match.away_team, "name", "") or "Uit"
+    body = f"{home} {match_data.home_score} - {match_data.away_score} {away}"
+
+    match_payload = WebPushPayload(
+        title="Wedstrijd afgelopen",
+        body=body,
+        url=_push_url_for_match(match),
+        tag=f"match-finished:{match_data.id_uuid}",
+    )
+    _send_payload_to_users(user_ids=user_ids, payload=match_payload)
+
+    # 2) Ensure MVP window exists and schedule reminder + publish.
+    try:
+        mvp = mvp_service.get_or_create_match_mvp(match, match_data)
+    except Exception:
+        logger.warning("Failed to ensure MatchMvp for %s", match_id, exc_info=True)
+        return
+
+    # Reminder 1 hour before closing.
+    reminder_at = mvp.closes_at - timedelta(hours=1)
+    if reminder_at > timezone.now():
+        send_mvp_vote_reminder.apply_async(
+            kwargs={"match_id": match_id}, eta=reminder_at
+        )
+
+    # Publish shortly after closing.
+    publish_at = mvp.closes_at + timedelta(minutes=1)
+    if publish_at > timezone.now():
+        publish_mvp_and_notify.apply_async(
+            kwargs={"match_id": match_id}, eta=publish_at
+        )
+
+
+@shared_task(bind=True)
+def send_mvp_vote_reminder(self: Any, *, match_id: str) -> None:  # noqa: ANN401
+    """Send a reminder to participants who haven't voted yet."""
+    match = (
+        Match.objects
+        .select_related("home_team", "away_team")
+        .filter(id_uuid=match_id)
+        .first()
+    )
+    match_data = MatchData.objects.filter(match_link_id=match_id).first()
+    if match is None or match_data is None:
+        return
+
+    try:
+        mvp = mvp_service.get_or_create_match_mvp(match, match_data)
+    except Exception:
+        return
+
+    now = timezone.now()
+    if now < (mvp.closes_at - timedelta(hours=1)):
+        # Too early (can happen in eager test mode).
+        return
+    if now >= mvp.closes_at:
+        return
+
+    participants = _participant_players_for_match_data(match_data)
+    if not participants:
+        return
+
+    participant_ids = [p.id_uuid for p in participants]
+    voted_ids = set(
+        MatchMvpVote.objects.filter(
+            match_id=match_id, voter_id__in=participant_ids
+        ).values_list("voter_id", flat=True)
+    )
+
+    missing_vote_user_ids = [
+        int(p.user.pk)
+        for p in participants
+        if isinstance(getattr(p.user, "pk", None), int) and p.id_uuid not in voted_ids
+    ]
+
+    payload = WebPushPayload(
+        title="MVP stemmen",
+        body=f"Nog 1 uur om te stemmen voor {_match_title(match)}",
+        url=_push_url_for_match(match),
+        tag=f"mvp-reminder:{match_id}",
+    )
+    _send_payload_to_users(user_ids=missing_vote_user_ids, payload=payload)
+
+
+@shared_task(bind=True)
+def publish_mvp_and_notify(self: Any, *, match_id: str) -> None:  # noqa: ANN401
+    """Publish MVP if possible and notify participants."""
+    match = (
+        Match.objects
+        .select_related("home_team", "away_team")
+        .filter(id_uuid=match_id)
+        .first()
+    )
+    match_data = MatchData.objects.filter(match_link_id=match_id).first()
+    if match is None or match_data is None:
+        return
+
+    before = mvp_service.get_or_create_match_mvp(match, match_data)
+    was_published = bool(before.published_at)
+
+    after = mvp_service.ensure_mvp_published(match, match_data)
+    if not after.published_at:
+        return
+
+    if was_published:
+        return
+
+    participants = _participant_players_for_match_data(match_data)
+    user_ids: list[int] = []
+    for player in participants:
+        pk = getattr(getattr(player, "user", None), "pk", None)
+        if isinstance(pk, int):
+            user_ids.append(pk)
+
+    winner_name = None
+    if after.mvp_player is not None:
+        winner_name = (
+            after.mvp_player.user.get_full_name() or after.mvp_player.user.username
+        )
+
+    body = (
+        f"MVP voor {_match_title(match)}: {winner_name}"
+        if winner_name
+        else f"MVP voor {_match_title(match)} is bekend."
+    )
+
+    payload = WebPushPayload(
+        title="MVP bekend",
+        body=body,
+        url=_push_url_for_match(match),
+        tag=f"mvp-published:{match_id}",
+    )
+    _send_payload_to_users(user_ids=user_ids, payload=payload)
 
 
 def _validate_spotify_url_for_spotdl(spotify_url: str) -> None:

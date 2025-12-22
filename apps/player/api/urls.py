@@ -8,9 +8,11 @@ from .views import (
     CurrentPlayerFollowedTeamsAPIView,
     CurrentPlayerGoalSongAPIView,
     CurrentPlayerPrivacySettingsAPIView,
+    CurrentPlayerPushSubscriptionsAPIView,
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
+    CurrentPlayerTestPushNotificationAPIView,
     PlayerConnectedClubRecentResultsAPIView,
     PlayerFollowedTeamsAPIView,
     PlayerOverviewAPIView,
@@ -41,6 +43,16 @@ urlpatterns = [
         "me/privacy-settings/",
         CurrentPlayerPrivacySettingsAPIView.as_view(),
         name="player-privacy-settings",
+    ),
+    path(
+        "me/push-subscriptions/",
+        CurrentPlayerPushSubscriptionsAPIView.as_view(),
+        name="player-push-subscriptions",
+    ),
+    path(
+        "me/push-subscriptions/test/",
+        CurrentPlayerTestPushNotificationAPIView.as_view(),
+        name="player-push-subscriptions-test",
     ),
     path(
         "me/goal-song/",

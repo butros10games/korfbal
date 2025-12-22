@@ -13,6 +13,7 @@ from apps.club.api.serializers import ClubSerializer
 from apps.player.models.cached_song import CachedSong
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
+from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.privacy import can_view_by_visibility
 
 
@@ -451,4 +452,80 @@ class PlayerPrivacySettingsSerializer(serializers.Serializer):
         if attrs.get("stats_visibility") == Player.Visibility.PRIVATE:
             attrs["stats_visibility"] = Player.Visibility.CLUB
 
+        return attrs
+
+
+class PlayerPushSubscriptionSerializer(serializers.ModelSerializer):
+    """Output serializer for stored push subscriptions."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = PlayerPushSubscription
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "endpoint",
+            "is_active",
+            "user_agent",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
+    """Input serializer for registering a web push subscription."""
+
+    subscription = serializers.JSONField()
+    user_agent = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=512,
+    )
+
+    def validate_subscription(self, value: object) -> dict[str, Any]:
+        """Validate that a PushSubscription JSON object looks sane.
+
+        Raises:
+            ValidationError: If the object is missing required fields.
+
+        """
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("subscription must be an object")
+
+        # JSONField yields an untyped dict; cast for strict type checking.
+        payload = cast(dict[str, Any], value)
+
+        endpoint = payload.get("endpoint")
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise serializers.ValidationError("subscription.endpoint is required")
+
+        keys = payload.get("keys")
+        if not isinstance(keys, dict):
+            raise serializers.ValidationError("subscription.keys is required")
+
+        p256dh = keys.get("p256dh")
+        auth = keys.get("auth")
+        if not isinstance(p256dh, str) or not p256dh.strip():
+            raise serializers.ValidationError("subscription.keys.p256dh is required")
+        if not isinstance(auth, str) or not auth.strip():
+            raise serializers.ValidationError("subscription.keys.auth is required")
+
+        return payload
+
+
+class PlayerPushSubscriptionDeactivateSerializer(serializers.Serializer):
+    """Input serializer for deactivating a stored subscription."""
+
+    endpoint = serializers.URLField(max_length=1024, required=False)
+    id_uuid = serializers.UUIDField(required=False)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require either endpoint or id_uuid.
+
+        Raises:
+            ValidationError: If neither endpoint nor id_uuid is provided.
+
+        """
+        if not attrs.get("endpoint") and not attrs.get("id_uuid"):
+            raise serializers.ValidationError("Provide endpoint or id_uuid.")
         return attrs

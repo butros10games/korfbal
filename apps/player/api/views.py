@@ -47,8 +47,10 @@ from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.models.spotify_token import SpotifyToken
 from apps.player.privacy import can_view_by_visibility
+from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.player.tasks import download_cached_song, download_player_song
 from apps.schedule.models import Season
@@ -58,6 +60,9 @@ from apps.team.models import TeamData
 
 from .serializers import (
     PlayerPrivacySettingsSerializer,
+    PlayerPushSubscriptionCreateSerializer,
+    PlayerPushSubscriptionDeactivateSerializer,
+    PlayerPushSubscriptionSerializer,
     PlayerSerializer,
     PlayerSongCreateSerializer,
     PlayerSongSerializer,
@@ -547,6 +552,228 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
             player.save(update_fields=update_fields)
 
         return Response(PlayerSerializer(player, context={"request": request}).data)
+
+
+class CurrentPlayerPushSubscriptionsAPIView(APIView):
+    """Register/list/deactivate web push subscriptions for the current user.
+
+    Endpoints:
+        - GET    /api/player/me/push-subscriptions/
+        - POST   /api/player/me/push-subscriptions/
+        - DELETE /api/player/me/push-subscriptions/
+
+    Notes:
+        - Uses SessionAuthentication, so POST/DELETE require a valid CSRF token.
+        - Subscriptions are stored per-user but `endpoint` is globally unique.
+
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+    parser_classes: ClassVar[list[type[Any]]] = [JSONParser]
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """List active push subscriptions for the current user."""
+        subs = PlayerPushSubscription.objects.filter(
+            user=request.user, is_active=True
+        ).order_by("-updated_at")
+        return Response(PlayerPushSubscriptionSerializer(subs, many=True).data)
+
+    @transaction.atomic
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Register (or upsert) a push subscription for the current user."""
+        serializer = PlayerPushSubscriptionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        subscription = serializer.validated_data["subscription"]
+        if not isinstance(subscription, dict):
+            return Response(
+                {"detail": "Invalid subscription payload"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        endpoint = str(subscription.get("endpoint") or "").strip()
+        user_agent = str(serializer.validated_data.get("user_agent") or "").strip()
+        if not endpoint:
+            return Response(
+                {"detail": "subscription.endpoint is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        obj = PlayerPushSubscription.objects.filter(endpoint=endpoint).first()
+        created = False
+
+        if obj is None:
+            obj = PlayerPushSubscription.objects.create(
+                user=request.user,
+                endpoint=endpoint,
+                subscription=subscription,
+                is_active=True,
+                user_agent=user_agent,
+            )
+            created = True
+        else:
+            obj.user = request.user
+            obj.subscription = subscription
+            obj.is_active = True
+            obj.user_agent = user_agent
+            obj.save(
+                update_fields=[
+                    "user",
+                    "subscription",
+                    "is_active",
+                    "user_agent",
+                    "updated_at",
+                ]
+            )
+
+        payload = PlayerPushSubscriptionSerializer(obj).data
+        return Response(
+            {"created": created, "subscription": payload},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @transaction.atomic
+    def delete(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Deactivate a stored push subscription for the current user."""
+        serializer = PlayerPushSubscriptionDeactivateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        endpoint = serializer.validated_data.get("endpoint")
+        sub_id = serializer.validated_data.get("id_uuid")
+
+        queryset = PlayerPushSubscription.objects.filter(user=request.user)
+        if endpoint:
+            queryset = queryset.filter(endpoint=endpoint)
+        if sub_id:
+            queryset = queryset.filter(id_uuid=sub_id)
+
+        obj = queryset.first()
+        if obj is None:
+            return Response(
+                {"detail": "Subscription not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if obj.is_active:
+            obj.is_active = False
+            obj.save(update_fields=["is_active", "updated_at"])
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CurrentPlayerTestPushNotificationAPIView(APIView):
+    """Send a test push notification to the current user's active subscriptions.
+
+    Endpoint:
+        - POST /api/player/me/push-subscriptions/test/
+
+    Notes:
+        - Staff/superusers only (intended for debug tooling).
+        - Uses SessionAuthentication, so POST requires a valid CSRF token.
+
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Send a test push notification to the current user's subscriptions."""
+        user = request.user
+        if not (
+            getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+        ):
+            return Response(
+                {"detail": "Staff only"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        vapid_public = str(
+            getattr(settings, "WEBPUSH_VAPID_PUBLIC_KEY", "") or ""
+        ).strip()
+        vapid_private = str(
+            getattr(settings, "WEBPUSH_VAPID_PRIVATE_KEY", "") or ""
+        ).strip()
+        vapid_subject = str(
+            getattr(settings, "WEBPUSH_VAPID_SUBJECT", "") or ""
+        ).strip()
+        if not (vapid_public and vapid_private and vapid_subject):
+            return Response(
+                {
+                    "detail": "Web push not configured",
+                    "missing": [
+                        name
+                        for name, value in [
+                            ("WEBPUSH_VAPID_PUBLIC_KEY", vapid_public),
+                            ("WEBPUSH_VAPID_PRIVATE_KEY", vapid_private),
+                            ("WEBPUSH_VAPID_SUBJECT", vapid_subject),
+                        ]
+                        if not value
+                    ],
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        subs = PlayerPushSubscription.objects.filter(
+            user=user, is_active=True
+        ).order_by("-updated_at")
+        if not subs.exists():
+            return Response(
+                {"detail": "No active push subscriptions"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        base_url = str(getattr(settings, "WEB_APP_ORIGIN", "") or "").rstrip("/")
+        target_url = f"{base_url}/profile" if base_url else "/profile"
+
+        payload = WebPushPayload(
+            title="Test pushmelding",
+            body="Als je dit ziet werkt push via de PWA.",
+            url=target_url,
+            tag="debug-test",
+        )
+
+        total = subs.count()
+        sent = 0
+        failed = 0
+
+        for sub in subs:
+            try:
+                send_to_model_subscription(sub=sub, payload=payload)
+                sent += 1
+            except Exception:  # pragma: no cover - best-effort debug endpoint
+                failed += 1
+
+        return Response(
+            {
+                "total": total,
+                "sent": sent,
+                "failed": failed,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class PlayerOverviewAPIView(APIView):

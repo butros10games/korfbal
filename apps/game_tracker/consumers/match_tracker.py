@@ -4,6 +4,7 @@ from collections.abc import Callable
 import contextlib
 from datetime import UTC, datetime
 import json
+import logging
 from typing import Any, cast
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.db.models import Case, When
 from django.utils import timezone
+from django.utils.module_loading import import_string
 
 from apps.game_tracker.models import (
     Attack,
@@ -29,6 +31,9 @@ from apps.kwt_common.utils import get_time
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
+
+
+logger = logging.getLogger(__name__)
 
 
 class MatchTrackerConsumer(AsyncWebsocketConsumer):
@@ -589,6 +594,21 @@ class MatchTrackerConsumer(AsyncWebsocketConsumer):
 
             # Persist final scores so overview endpoints can rely on MatchData.
             await sync_to_async(persist_matchdata_scores)(self.match_data)
+
+            # Best-effort trigger: schedule push notifications.
+            try:
+                handle_match_finished = import_string(
+                    "apps.player.tasks.handle_match_finished"
+                )
+                handle_match_finished.delay(
+                    match_id=str(self.match.id_uuid),  # type: ignore[union-attr]
+                    match_data_id=str(self.match_data.id_uuid),
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue match finished push task (ws)",
+                    exc_info=True,
+                )
 
             match_part = await MatchPart.objects.aget(
                 match_data=self.match_data,

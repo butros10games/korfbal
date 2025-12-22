@@ -15,12 +15,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 import time
 from typing import Any, cast
 from uuid import UUID
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.module_loading import import_string
 
 from apps.game_tracker.models import (
     Attack,
@@ -38,6 +40,9 @@ from apps.game_tracker.services.match_scores import compute_scores_for_matchdata
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models.team import Team
+
+
+logger = logging.getLogger(__name__)
 
 
 MATCH_TRACKER_DATA_NOT_FOUND = "Match tracker data not found."
@@ -815,12 +820,11 @@ def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
 
 
 def _cmd_part_end(
-    _match: Match,
+    match: Match,
     *,
     match_data: MatchData,
     event_time: datetime,
 ) -> None:
-    del _match
     # Defensive cleanup: if a pause is active while a part ends, always close it.
     # In some edge cases the active MatchPart may already be deactivated or
     # temporarily missing, but an active Pause would still break timer logic.
@@ -873,6 +877,21 @@ def _cmd_part_end(
             end_time = current_part.start_time
         current_part.end_time = end_time
         current_part.save(update_fields=["active", "end_time"])
+
+    # Best-effort trigger: schedule push notifications for participants.
+    # This must never block tracker commands.
+    try:
+        handle_match_finished = import_string("apps.player.tasks.handle_match_finished")
+        handle_match_finished.delay(
+            match_id=str(match.id_uuid),
+            match_data_id=str(match_data.id_uuid),
+        )
+    except Exception:
+        # Intentionally swallow: no push should never break match tracking.
+        logger.warning(
+            "Failed to enqueue match finished push task (http)",
+            exc_info=True,
+        )
 
 
 def _cmd_timeout(
