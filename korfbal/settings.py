@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -50,6 +51,44 @@ WEB_KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
 KWT_ORIGIN = "https://kwt.localhost"
 WEB_KWT_ORIGIN = "https://web.kwt.localhost"
 
+
+def _origin_variants(origin: str) -> list[str]:
+    """Return common host variants for a given origin.
+
+    This project has historically been served from multiple hostnames, e.g.
+    `korfbal.<domain>` and `web.<domain>`. If the SPA is reached via an
+    alternate hostname (www/web), the browser will enforce CORS and block API
+    calls unless that origin is explicitly allowed.
+
+    We keep this conservative and only add predictable, same-domain variants.
+    """
+    origin = (origin or "").strip().rstrip("/")
+    if not origin:
+        return []
+
+    parsed = urlparse(origin)
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc or parsed.path
+    if not netloc:
+        return [origin]
+
+    base = netloc
+    for prefix in ("www.", "web."):
+        if base.startswith(prefix):
+            base = base[len(prefix) :]
+            break
+
+    variants = {
+        f"{scheme}://{base}",
+        f"{scheme}://www.{base}",
+        f"{scheme}://web.{base}",
+        origin,
+    }
+
+    # Keep deterministic ordering for config readability/debuggability.
+    return sorted(v for v in variants if v)
+
+
 # Base URL for the SPA frontend (used for redirects back into the UI).
 # - Production: https://korfbal.butrosgroot.com
 # - Dev: https://web.kwt.localhost (matches this repo's local HTTPS setup)
@@ -60,10 +99,12 @@ WEB_APP_ORIGIN = _env(
 
 default_hosts = "korfbal.butrosgroot.com,api.korfbal.butrosgroot.com"
 ALLOWED_HOSTS = _sorted_hosts(_env_list("ALLOWED_HOSTS", default_hosts))
-CSRF_TRUSTED_ORIGINS = _env_list(
-    "CSRF_TRUSTED_ORIGINS",
-    f"{KORFBAL_ORIGIN},{WEB_KORFBAL_ORIGIN}",
-)
+
+_default_csrf_trusted = ",".join([
+    KORFBAL_ORIGIN,
+    *_origin_variants(WEB_KORFBAL_ORIGIN),
+])
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS", _default_csrf_trusted)
 
 # CORS
 # The frontend is served from https://korfbal.butrosgroot.com while the API
@@ -71,8 +112,10 @@ CSRF_TRUSTED_ORIGINS = _env_list(
 # We use cookies (credentials) for session auth, so we must:
 # - allow the specific origin (not '*')
 # - allow credentials
+
+_default_cors_allowed = ",".join(_origin_variants(WEB_KORFBAL_ORIGIN))
 CORS_ALLOWED_ORIGINS = _sorted_hosts(
-    _env_list("CORS_ALLOWED_ORIGINS", WEB_KORFBAL_ORIGIN),
+    _env_list("CORS_ALLOWED_ORIGINS", _default_cors_allowed),
 )
 CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", True)
 if DEBUG:
