@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
 
 from django.utils.timezone import localtime
 
@@ -25,8 +26,8 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
     entries = list(match_data)
 
     # Active matches should show the current score, which is derived from shots.
-    active_match_data_ids = [
-        entry.id_uuid for entry in entries if entry.status == "active"
+    active_match_data_ids: list[UUID] = [
+        cast(UUID, entry.id_uuid) for entry in entries if entry.status == "active"
     ]
     active_scores = compute_scores_for_matchdata_ids(active_match_data_ids)
 
@@ -36,8 +37,10 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
         home_team = match.home_team
         away_team = match.away_team
 
+        entry_uuid = cast(UUID, entry.id_uuid)
+
         if entry.status == "active":
-            computed = active_scores.get(entry.id_uuid)
+            computed = active_scores.get(entry_uuid)
             if computed is not None:
                 home_score, away_score = computed
             else:
@@ -50,7 +53,7 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
 
         summaries.append({
             "id_uuid": str(match.id_uuid),
-            "match_data_id": str(entry.id_uuid),
+            "match_data_id": str(entry_uuid),
             "start_time": localtime(match.start_time).isoformat(),
             "status": entry.status,
             "competition": match.season.name,

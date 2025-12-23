@@ -131,6 +131,7 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
             "player_in__user",
             "player_out__user",
             "player_group",
+            "player_group__team",
             "match_part",
         )
         .filter(player_group__match_data=match_data)
@@ -281,6 +282,7 @@ def _serialize_substitute_event(
         "player_out_id": str(event.player_out.id_uuid) if event.player_out else None,
         "player_out": event.player_out.user.username if event.player_out else None,
         "player_group_id": str(event.player_group.id_uuid),
+        "team_id": str(event.player_group.team.id_uuid),
     }
 
     if event.match_part:
