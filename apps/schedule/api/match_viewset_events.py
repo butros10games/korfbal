@@ -44,7 +44,7 @@ class _MatchViewSetLike(Protocol):
 class MatchEventsActionsMixin:
     """Adds match event timeline + event editor actions to `MatchViewSet`."""
 
-    @action(detail=True, methods=["GET"], url_path="events")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="events")
     def events(
         self: _MatchViewSetLike,
         request: Request,
@@ -97,7 +97,7 @@ class MatchEventsActionsMixin:
             status=status.HTTP_200_OK,
         )
 
-    @action(detail=True, methods=["GET"], url_path="shots")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="shots")
     def shots(
         self: _MatchViewSetLike,
         request: Request,
@@ -134,7 +134,7 @@ class MatchEventsActionsMixin:
         methods=("GET",),
         url_path="events/can-edit",
         permission_classes=[permissions.AllowAny],
-    )  # type: ignore[arg-type]
+    )
     def can_edit_events(
         self: _MatchViewSetLike,
         request: Request,
@@ -149,7 +149,7 @@ class MatchEventsActionsMixin:
         methods=("POST",),
         url_path="events/goals",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def create_goal(
         self: _MatchViewSetLike,
         request: Request,
@@ -181,7 +181,7 @@ class MatchEventsActionsMixin:
         methods=("PATCH", "DELETE"),
         url_path=r"events/goals/(?P<shot_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def goal_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -227,7 +227,7 @@ class MatchEventsActionsMixin:
         methods=("POST",),
         url_path="events/substitutes",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def create_substitute(
         self: _MatchViewSetLike,
         request: Request,
@@ -259,7 +259,7 @@ class MatchEventsActionsMixin:
         methods=("PATCH", "DELETE"),
         url_path=r"events/substitutes/(?P<change_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def substitute_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -308,7 +308,7 @@ class MatchEventsActionsMixin:
         methods=("POST",),
         url_path="events/pauses",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def create_pause(
         self: _MatchViewSetLike,
         request: Request,
@@ -340,7 +340,7 @@ class MatchEventsActionsMixin:
         methods=("PATCH", "DELETE"),
         url_path=r"events/pauses/(?P<pause_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def pause_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -387,7 +387,7 @@ class MatchEventsActionsMixin:
         methods=("POST",),
         url_path="events/timeouts",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def create_timeout(
         self: _MatchViewSetLike,
         request: Request,
@@ -424,7 +424,7 @@ class MatchEventsActionsMixin:
         methods=("GET",),
         url_path="events/options",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def event_options(
         self: _MatchViewSetLike,
         request: Request,
@@ -518,7 +518,7 @@ class MatchEventsActionsMixin:
         methods=("PATCH", "DELETE"),
         url_path=r"events/timeouts/(?P<timeout_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def timeout_detail(
         self: _MatchViewSetLike,
         request: Request,

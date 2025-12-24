@@ -1,10 +1,15 @@
 """Admin for the Shot model."""
 
-from typing import TYPE_CHECKING, ClassVar, cast
+from collections.abc import Mapping, MutableMapping
+from typing import TYPE_CHECKING, Any
 
 from django import forms
 from django.contrib import admin
+from django.core.files.uploadedfile import UploadedFile
 from django.db.models import Q
+from django.forms.renderers import BaseRenderer
+from django.forms.utils import ErrorList
+from django.utils.datastructures import MultiValueDict
 
 from apps.game_tracker.models import Shot
 
@@ -26,33 +31,62 @@ class ShotAdminForm(forms.ModelForm):  # type: ignore[type-arg]
         model = Shot
         fields = ["player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(  # noqa: PLR0913, PLR0917
+        self,
+        data: Mapping[str, Any] | None = None,
+        files: MultiValueDict[str, UploadedFile] | None = None,
+        auto_id: bool | str = "id_%s",
+        prefix: str | None = None,
+        initial: MutableMapping[str, Any] | None = None,
+        error_class: type[ErrorList] = ErrorList,
+        label_suffix: str | None = None,
+        empty_permitted: bool = False,
+        instance: Shot | None = None,
+        use_required_attribute: bool | None = None,
+        renderer: BaseRenderer | None = None,
+    ) -> None:
         """Initialize the ShotAdminForm."""
         from apps.team.models import Team  # noqa: PLC0415
 
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
-        if kwargs.get("instance"):
-            instance = cast(Shot, kwargs["instance"])
+        super().__init__(
+            data=data,
+            files=files,
+            auto_id=auto_id,
+            prefix=prefix,
+            initial=initial,
+            error_class=error_class,
+            label_suffix=label_suffix,
+            empty_permitted=empty_permitted,
+            instance=instance,
+            use_required_attribute=use_required_attribute,
+            renderer=renderer,
+        )
+
+        team_field = self.fields["team"]
+        if not isinstance(team_field, forms.ModelChoiceField):
+            return
+
+        if instance is not None:
             match = instance.match_data.match_link
-            self.fields["team"].queryset = Team.objects.filter(  # type: ignore[attr-defined]
+            team_field.queryset = Team.objects.filter(
                 Q(home_matches=match) | Q(away_matches=match),
             ).distinct()
         else:
-            self.fields["team"].queryset = Team.objects.none()  # type: ignore[attr-defined]
+            team_field.queryset = Team.objects.none()
 
 
 class ShotAdmin(ShotAdminBase):
     """Admin for the Shot model."""
 
     form = ShotAdminForm
-    list_display: ClassVar[list[str]] = [  # type: ignore[assignment,misc]
+    list_display = (
         "id_uuid",
         "player",
         "match_data",
         "for_team",
         "team",
         "scored",
-    ]
+    )
     show_full_result_count = False
 
     class Meta:

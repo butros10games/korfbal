@@ -330,7 +330,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         """Cache key that varies by full path (including query string)."""
         return f"korfbal:schedule:{self.request.get_full_path()}"
 
-    @action(detail=False, methods=["GET"], url_path="next")  # type: ignore[arg-type]
+    @action(detail=False, methods=("GET",), url_path="next")
     def next_match(
         self,
         request: Request,
@@ -362,7 +362,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             cache.set(self._public_cache_key(), payload, timeout=30)
         return Response(payload)
 
-    @action(detail=False, methods=["GET"], url_path="upcoming")  # type: ignore[arg-type]
+    @action(detail=False, methods=("GET",), url_path="upcoming")
     def upcoming(
         self,
         request: Request,
@@ -385,7 +385,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=["GET"], url_path="recent")  # type: ignore[arg-type]
+    @action(detail=False, methods=("GET",), url_path="recent")
     def recent(
         self,
         request: Request,
@@ -408,7 +408,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=["GET"], url_path="finished")  # type: ignore[arg-type]
+    @action(detail=False, methods=("GET",), url_path="finished")
     def finished(
         self,
         request: Request,
@@ -492,7 +492,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         methods=("GET",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/state",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def tracker_state(
         self,
         request: Request,
@@ -522,7 +522,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         methods=("POST",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/commands",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def tracker_command(
         self,
         request: Request,
@@ -562,7 +562,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         methods=("GET",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/poll",
         permission_classes=[IsCoachOrAdmin],
-    )  # type: ignore[arg-type]
+    )
     def tracker_poll(
         self,
         request: Request,
@@ -653,8 +653,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         detail=True,
         methods=("GET",),
         url_path="live",
-        permission_classes=[permissions.IsAuthenticated],
-    )  # type: ignore[arg-type]
+        permission_classes=[permissions.AllowAny],
+    )
     def live_state(
         self,
         request: Request,
@@ -697,8 +697,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         detail=True,
         methods=("GET",),
         url_path="live/poll",
-        permission_classes=[permissions.IsAuthenticated],
-    )  # type: ignore[arg-type]
+        permission_classes=[permissions.AllowAny],
+    )
     def live_poll(
         self,
         request: Request,
@@ -781,7 +781,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    @action(detail=True, methods=["GET"], url_path="summary")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="summary")
     def summary(
         self,
         request: Request,
@@ -805,7 +805,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         summary = build_match_summaries([match_data])[0]
         return Response(summary)
 
-    @action(detail=True, methods=["GET"], url_path="stats")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="stats")
     def stats(
         self,
         request: Request,
@@ -842,7 +842,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         payload = _build_match_stats_payload(match=match, match_data=match_data)
         return Response(payload, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["GET"], url_path="impacts")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="impacts")
     def impacts(
         self,
         request: Request,
@@ -920,7 +920,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         methods=("GET",),
         url_path="mvp",
         permission_classes=[permissions.AllowAny],
-    )  # type: ignore[arg-type]
+    )
     def mvp_status(
         self,
         request: Request,
@@ -976,7 +976,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         methods=("POST",),
         url_path="mvp/vote",
         permission_classes=[permissions.AllowAny],
-    )  # type: ignore[arg-type]
+    )
     def mvp_vote(
         self,
         request: Request,

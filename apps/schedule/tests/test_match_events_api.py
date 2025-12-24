@@ -16,6 +16,7 @@ from apps.game_tracker.models import (
     MatchPart,
     PlayerChange,
     PlayerGroup,
+    Shot,
 )
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
@@ -127,3 +128,72 @@ def test_match_events_halftime_substitution_is_serialized_as_rust(
     assert halftime_sub["time"] == "Rust"
     assert "match_part_id" not in halftime_sub
     assert "time_iso" in halftime_sub
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_shots_includes_missed_shots_without_time_or_part(
+    client: Client,
+) -> None:
+    """Shots endpoint should include missed shots even when time/part is missing.
+
+    Real-world tracker data can temporarily (or historically) contain `Shot` rows
+    without `match_part`/`time`. The advanced Match page should still show them.
+
+    """
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025",
+        start_date=today,
+        end_date=today,
+    )
+
+    home_club = Club.objects.create(name="Home Club")
+    away_club = Club.objects.create(name="Away Club")
+    home_team = Team.objects.create(name="Home Team", club=home_club)
+    away_team = Team.objects.create(name="Away Team", club=away_club)
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    user_model = get_user_model()
+    shooter_user = user_model.objects.create_user(
+        username="shooter",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+
+    missed = Shot.objects.create(
+        player=shooter_user.player,
+        match_data=match_data,
+        match_part=None,
+        time=None,
+        team=home_team,
+        scored=False,
+    )
+
+    response = client.get(f"/api/matches/{match.id_uuid}/shots/")
+    assert response.status_code == HTTPStatus.OK
+
+    payload = response.json()
+    assert payload["home_team_id"] == str(home_team.id_uuid)
+    assert payload["away_team_id"] == str(away_team.id_uuid)
+    assert payload["status"] == "finished"
+
+    shots = payload["shots"]
+    assert shots, "Expected at least one shot"
+
+    item = next(s for s in shots if s["event_id"] == str(missed.id_uuid))
+    assert item["scored"] is False
+    assert item["team_id"] == str(home_team.id_uuid)
+    assert item["player"] == "shooter"
+    assert item["time"] == "?"
+    assert "match_part_id" not in item
+    assert "time_iso" not in item

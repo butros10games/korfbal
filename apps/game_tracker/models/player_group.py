@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from bg_uuidv7 import uuidv7
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.base import ModelBase
 
 from .constants import player_model_string, team_model_string
 
@@ -54,13 +56,18 @@ class PlayerGroup(models.Model):
         """
         return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"  # noqa: E501
 
-    def save(self, *args: tuple[object, ...], **kwargs: dict[str, object]) -> None:  # type: ignore[override]
-        """Save the player group, ensuring that players are removed from the reserve
-            group if they are added to a starting group.
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
+        """Save the player group.
 
-        Args:
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
+        Ensures that players are removed from the reserve group if they are added to a
+        starting group.
 
         Raises:
             ValidationError: If a player is not in the reserve group when trying to add
@@ -69,7 +76,7 @@ class PlayerGroup(models.Model):
         """
         if not self._state.adding:
             # Retrieve the current list of players from the database
-            current_players = set(self.__class__.objects.get(pk=self.pk).players.all())  # type: ignore[attr-defined]
+            current_players = set(PlayerGroup.objects.get(pk=self.pk).players.all())
         else:
             current_players = set()
 
@@ -88,4 +95,9 @@ class PlayerGroup(models.Model):
                         f"{player} is not in the reserve player group.",
                     )
 
-        super().save(*args, **kwargs)  # type: ignore[arg-type]
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )

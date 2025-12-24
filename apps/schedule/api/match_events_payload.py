@@ -239,19 +239,15 @@ def _serialize_shot_timeline_event(
     match_data: MatchData,
     event: Shot,
 ) -> dict[str, Any] | None:
-    if not event.match_part or not event.time or not event.team:
+    # Shots can be recorded while the tracker is still syncing match parts/timers.
+    # We still want to return them for the advanced timeline, even when part/time
+    # metadata is missing.
+    if not event.team:
         return None
 
-    return {
+    payload: dict[str, Any] = {
         "event_id": str(event.id_uuid),
-        "match_part_id": str(event.match_part.id_uuid),
-        "time_iso": event.time.isoformat(),
-        "time": _time_in_minutes(
-            match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
-            event_time=event.time,
-        ),
+        "time": "?",
         "player_id": str(event.player.id_uuid),
         "player": event.player.user.username,
         "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
@@ -259,6 +255,22 @@ def _serialize_shot_timeline_event(
         "scored": bool(event.scored),
         "team_id": str(event.team.id_uuid),
     }
+
+    if event.time is not None:
+        payload["time_iso"] = event.time.isoformat()
+
+    if event.match_part is not None:
+        payload["match_part_id"] = str(event.match_part.id_uuid)
+
+    if event.match_part is not None and event.time is not None:
+        payload["time"] = _time_in_minutes(
+            match_data=match_data,
+            match_part_start=event.match_part.start_time,
+            match_part_number=event.match_part.part_number,
+            event_time=event.time,
+        )
+
+    return payload
 
 
 def _serialize_substitute_event(

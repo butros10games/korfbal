@@ -16,8 +16,8 @@ from apps.team.models import Team
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_match_live_state_requires_auth(client: Client) -> None:
-    """Live state should require authentication."""
+def test_match_live_state_is_public(client: Client) -> None:
+    """Live state should be available without authentication."""
     today = timezone.now().date()
     season = Season.objects.create(name="2025", start_date=today, end_date=today)
     home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
@@ -30,7 +30,7 @@ def test_match_live_state_requires_auth(client: Client) -> None:
     )
 
     response = client.get(f"/api/matches/{match.id_uuid}/live/")
-    assert response.status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}
+    assert response.status_code == HTTPStatus.OK
 
 
 @pytest.mark.django_db
@@ -58,7 +58,6 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
         username="viewer",
         password="pass1234",  # noqa: S106  # nosec
     )
-    client.force_login(user)
 
     response = client.get(f"/api/matches/{match.id_uuid}/live/")
     assert response.status_code == HTTPStatus.OK

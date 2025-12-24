@@ -53,7 +53,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     ]
     search_fields: ClassVar[list[str]] = ["name", "club__name"]
 
-    @action(detail=True, methods=["GET"], url_path="overview")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="overview")
     def overview(
         self,
         request: Request,

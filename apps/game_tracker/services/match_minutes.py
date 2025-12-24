@@ -44,7 +44,13 @@ def _collect_known_player_ids(
     # Substitution payloads may reference IDs not present in groups.
     for event in events:
         for key in ("player_in_id", "player_out_id", "player_id"):
-            pid = str(event.get(key) or "").strip()  # type: ignore[arg-type]
+            raw = event.get(key)
+            if isinstance(raw, str):
+                pid = raw.strip()
+            elif raw is None:
+                pid = ""
+            else:
+                pid = str(raw).strip()
             if pid:
                 known_player_ids.add(pid)
 

@@ -50,7 +50,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     ]
     search_fields: ClassVar[list[str]] = ["name"]
 
-    @action(detail=True, methods=["GET"], url_path="overview")  # type: ignore[arg-type]
+    @action(detail=True, methods=("GET",), url_path="overview")
     def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
         """Return teams and match summaries for a club detail page.
 
