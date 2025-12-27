@@ -312,8 +312,8 @@ class Command(BaseCommand):
         kfold = cast(int, options.get("kfold", 5))
         output_json = str(options.get("output_json", "") or "").strip()
 
-        # Deterministic random search (not for crypto).
-        rng = random.Random(seed)  # noqa: S311
+        # Deterministic random search for weight tuning (not for crypto).
+        rng = random.Random(seed)  # noqa: S311  # nosec B311
 
         self.stdout.write("Loading finished matches and building features...")
         match_rows = _load_match_rows(max_matches=max_matches)
