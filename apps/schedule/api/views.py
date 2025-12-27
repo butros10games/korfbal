@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import json
+import logging
 from typing import Any, ClassVar
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from apps.awards.services.mvp import (
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    persist_match_impact_rows,
 )
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
@@ -48,6 +50,42 @@ from .match_stats_payload import _build_match_stats_payload
 from .match_viewset_events import MatchEventsActionsMixin
 from .permissions import IsCoachOrAdmin
 from .serializers import MatchSerializer
+
+
+logger = logging.getLogger(__name__)
+
+
+def _self_heal_latest_impacts_for_finished_match(*, match_data: MatchData) -> None:
+    """Best-effort: persist latest impacts for finished matches when missing."""
+    if match_data.status != "finished":
+        return
+
+    has_latest = PlayerMatchImpact.objects.filter(
+        match_data=match_data,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    ).exists()
+    if has_latest:
+        return
+
+    lock_key = (
+        f"korfbal:match-impacts-selfheal:{match_data.id_uuid}:"
+        f"{LATEST_MATCH_IMPACT_ALGORITHM_VERSION}"
+    )
+    if not cache.add(lock_key, "1", timeout=60 * 10):
+        return
+
+    try:
+        persist_match_impact_rows(
+            match_data=match_data,
+            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+        )
+    except Exception:
+        # Never fail the endpoint; the frontend may still fall back (or retry)
+        # if impacts are unavailable.
+        logger.exception(
+            "Failed to self-heal match impacts for %s",
+            match_data.id_uuid,
+        )
 
 
 def _read_mvp_vote_tokens(request: Request) -> dict[str, str]:
@@ -849,14 +887,16 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         *args: Any,  # noqa: ANN401
         **kwargs: Any,  # noqa: ANN401
     ) -> Response:
-        """Return stored per-player impact scores for a match.
+        """Return per-player impact scores for a match (latest algorithm).
 
         Notes:
-            - This endpoint intentionally does not recompute impacts on-demand.
-              Computation is done asynchronously via Celery.
-            - When rows are missing (e.g. immediately after match finish), the
-              frontend can fall back to client-side computation until the task has
-              populated the DB.
+            Historically we relied on an async Celery task to persist impacts shortly
+            after timeline changes.
+
+            To keep the UI consistent (and avoid heuristic fallbacks), we now
+            opportunistically self-heal: for finished matches, if latest-version rows
+            are missing we recompute + persist them in-request (best effort, guarded
+            by cache locks).
 
         """
         match: Match = self.get_object()
@@ -872,6 +912,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                 },
                 status=status.HTTP_200_OK,
             )
+
+        _self_heal_latest_impacts_for_finished_match(match_data=match_data)
 
         impacts = list(
             PlayerMatchImpact.objects

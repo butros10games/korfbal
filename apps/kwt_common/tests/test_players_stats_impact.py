@@ -22,8 +22,8 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-EXPECTED_SINGLE_MISS_IMPACT = -0.6
-EXPECTED_EFFICIENCY_V3_MISSES_IMPACT = -3.4
+EXPECTED_SINGLE_MISS_IMPACT = -0.2
+EXPECTED_FIVE_MISSES_IMPACT = -1.0
 
 
 @pytest.mark.django_db
@@ -60,7 +60,7 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     user = get_user_model().objects.create_user(username="impact_recompute")
     player = getattr(user, "player", None) or Player.objects.create(user=user)
 
-    # A missed shot should yield -0.6 impact in the match-page algorithm.
+    # A missed shot should yield -0.2 impact in the latest match-page algorithm.
     Shot.objects.create(
         player=player,
         match_data=match_data,
@@ -93,13 +93,13 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v5"
+    assert updated.algorithm_version == "v6"
     assert float(updated.impact_score) == EXPECTED_SINGLE_MISS_IMPACT
 
 
 @pytest.mark.django_db
-def test_build_player_stats_applies_v3_efficiency_scaling_to_misses() -> None:
-    """With >=5 shots, v3 scales miss penalty based on shooting efficiency."""
+def test_build_player_stats_five_misses_uses_latest_weights() -> None:
+    """With 5 misses, the latest weights should be applied consistently."""
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
     home_team = Team.objects.create(name="Home Team", club=home_club)
@@ -131,8 +131,7 @@ def test_build_player_stats_applies_v3_efficiency_scaling_to_misses() -> None:
     user = get_user_model().objects.create_user(username="impact_eff_v3")
     player = getattr(user, "player", None) or Player.objects.create(user=user)
 
-    # 5 misses => 0/5 = 0% efficiency, so v3 applies a harsher miss multiplier (1.15).
-    # Each miss: -0.6 * 1.15 = -0.69, total -3.45 which JS-rounds to -3.4.
+    # v6: 5 misses at -0.2 each => -1.0.
     for i in range(5):
         Shot.objects.create(
             player=player,
@@ -161,9 +160,9 @@ def test_build_player_stats_applies_v3_efficiency_scaling_to_misses() -> None:
 
     assert len(rows) == 1
     assert rows[0]["username"] == "impact_eff_v3"
-    assert rows[0]["impact_score"] == EXPECTED_EFFICIENCY_V3_MISSES_IMPACT
+    assert rows[0]["impact_score"] == EXPECTED_FIVE_MISSES_IMPACT
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v5"
-    assert float(updated.impact_score) == EXPECTED_EFFICIENCY_V3_MISSES_IMPACT
+    assert updated.algorithm_version == "v6"
+    assert float(updated.impact_score) == EXPECTED_FIVE_MISSES_IMPACT

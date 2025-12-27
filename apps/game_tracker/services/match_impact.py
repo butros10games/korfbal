@@ -52,7 +52,244 @@ Side = Literal["home", "away"]
 
 # Bump this when tuning the algorithm so team/season aggregations can
 # opportunistically recompute persisted rows.
-LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v5"
+LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v6"
+
+
+@dataclass(frozen=True)
+class MatchTeamImpactFeatures:
+    """Per-team sufficient statistics for fast tuning.
+
+    These features allow computing team impact totals as a simple linear
+    combination of weights, without rerunning the full per-player scoring for
+    each candidate.
+    """
+
+    team_id: str
+    goals_scored_points: float
+    shooter_misses_weighted: float
+    defended_shots: int
+    defended_goals: int
+    defended_misses: int
+    doorloop_concede_points_times_defenders: float
+
+
+def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
+    *,
+    match_data: MatchData,
+    algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+) -> dict[str, MatchTeamImpactFeatures]:
+    """Return per-team features used to compute impact totals.
+
+    Notes:
+        - Uses the same time parsing, role timeline, `for_team` semantics, and
+          streak logic as the impact algorithm.
+        - Intended for analytics/tuning tools; not used in the normal request
+          path.
+
+    """
+    match = match_data.match_link
+    if not match:
+        return {}
+
+    home_team_id = str(match.home_team_id)
+    away_team_id = str(match.away_team_id)
+
+    events = build_match_events(match_data)
+    shots = build_match_shots(match_data)
+
+    match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
+    goal_switch_times = _build_goal_switch_times(events)
+
+    groups = list(
+        PlayerGroup.objects
+        .select_related("starting_type", "team")
+        .prefetch_related("players")
+        .filter(match_data=match_data)
+    )
+
+    player_team_id = _build_player_team_map(groups=groups, shots=shots, events=events)
+    known_player_ids = sorted(player_team_id.keys())
+
+    role_intervals_by_id = build_match_player_role_timeline(
+        known_player_ids=known_player_ids,
+        groups=groups,
+        events=events,
+        match_end_minutes=match_end_minutes,
+    )
+
+    side_player_ids = _build_side_player_ids(
+        known_player_ids=known_player_ids,
+        player_team_id=player_team_id,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+    )
+    defenders_at_x = _make_defenders_at_x(
+        side_player_ids=side_player_ids,
+        role_intervals_by_id=role_intervals_by_id,
+        goal_switch_times=goal_switch_times,
+    )
+
+    # Start with explicit empty rows for both teams so downstream code can
+    # rely on presence.
+    base: dict[str, dict[str, float | int]] = {
+        home_team_id: {
+            "goals_scored_points": 0.0,
+            "shooter_misses_weighted": 0.0,
+            "defended_shots": 0,
+            "defended_goals": 0,
+            "defended_misses": 0,
+            "doorloop_concede_points_times_defenders": 0.0,
+        },
+        away_team_id: {
+            "goals_scored_points": 0.0,
+            "shooter_misses_weighted": 0.0,
+            "defended_shots": 0,
+            "defended_goals": 0,
+            "defended_misses": 0,
+            "doorloop_concede_points_times_defenders": 0.0,
+        },
+    }
+
+    goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
+        shots=shots,
+        algorithm_version=algorithm_version,
+    )
+
+    # Shot-derived features.
+    for x, shot in _iter_shot_events(shots):
+        for_team = bool(shot.get("for_team", True))
+        scored = bool(shot.get("scored"))
+
+        shooting_team_id = _shooting_team_id_from_shot(
+            shot_team_id=str(shot.get("team_id") or "").strip() or None,
+            for_team=for_team,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+
+        # Shooter miss coefficient is weighted by the per-shooter efficiency
+        # miss multiplier (v3+).
+        if not scored:
+            shooter_id = str(shot.get("player_id") or "").strip()
+            if shooter_id:
+                shooter_team_id = player_team_id.get(shooter_id)
+                if shooter_team_id in base:
+                    base[shooter_team_id]["shooter_misses_weighted"] = float(
+                        base[shooter_team_id]["shooter_misses_weighted"]
+                    ) + float(miss_mult_by_player.get(shooter_id, 1.0))
+
+        # Defensive shares: count the defended shot outcome for the *defending*
+        # side at the event minute.
+        defending_side = _defending_side_for_shot(
+            shot_team_id=shooting_team_id,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+        if not defending_side:
+            continue
+
+        defending_team_id = home_team_id if defending_side == "home" else away_team_id
+        defenders = defenders_at_x(defending_side, x)
+        if not defenders:
+            continue
+
+        base[defending_team_id]["defended_shots"] = (
+            cast(int, base[defending_team_id]["defended_shots"]) + 1
+        )
+        if scored:
+            base[defending_team_id]["defended_goals"] = (
+                cast(int, base[defending_team_id]["defended_goals"]) + 1
+            )
+        else:
+            base[defending_team_id]["defended_misses"] = (
+                cast(int, base[defending_team_id]["defended_misses"]) + 1
+            )
+
+    # Goal-derived features.
+    goal_events = _iter_goal_events(events)
+    last_team_id: str | None = None
+    streak = 0
+    last_goal_x = 0.0
+
+    for index, goal in enumerate(goal_events):
+        for_team = bool(goal.get("for_team", True))
+        scoring_team_id = _scoring_team_id_from_goal(
+            goal_team_id=str(goal.get("team_id") or "").strip() or None,
+            for_team=for_team,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+        last_team_id, streak = _next_streak_state(
+            scoring_team_id=scoring_team_id,
+            last_team_id=last_team_id,
+            streak=streak,
+        )
+
+        x, last_goal_x = _goal_x_for_event(
+            goal=goal,
+            index=index,
+            last_goal_x=last_goal_x,
+        )
+
+        goal_points = _compute_goal_points(
+            goal_type=str(goal.get("goal_type") or ""),
+            streak=streak,
+        )
+
+        # Apply the scorer efficiency multiplier (v3+). This multiplier is
+        # derived from goals/shots and does not depend on the weights we tune.
+        scorer_id = str(goal.get("player_id") or "").strip() if for_team else ""
+        if scorer_id:
+            goal_points *= float(goal_mult_by_player.get(scorer_id, 1.0))
+
+        # Team totals are computed by summing per-player rows, so attribute goal
+        # points to the scorer's team (not the goal event team_id).
+        if scorer_id:
+            scorer_team_id = player_team_id.get(scorer_id)
+            if scorer_team_id in base:
+                base[scorer_team_id]["goals_scored_points"] = float(
+                    base[scorer_team_id]["goals_scored_points"]
+                ) + float(goal_points)
+
+        # Doorloop concede penalty coefficient: sum(goal_points * defenders_at_x)
+        # for the conceding side.
+        is_doorloop = "doorloop" in _normalise_goal_type(
+            str(goal.get("goal_type") or "")
+        )
+        if not is_doorloop:
+            continue
+
+        conceding_side = _conceding_side_for_goal(
+            scoring_team_id=scoring_team_id,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+        )
+        if not conceding_side:
+            continue
+        conceding_team_id = home_team_id if conceding_side == "home" else away_team_id
+
+        defenders = defenders_at_x(conceding_side, x)
+        if not defenders:
+            continue
+
+        base[conceding_team_id]["doorloop_concede_points_times_defenders"] = float(
+            base[conceding_team_id]["doorloop_concede_points_times_defenders"]
+        ) + float(goal_points) * float(len(defenders))
+
+    return {
+        team_id: MatchTeamImpactFeatures(
+            team_id=team_id,
+            goals_scored_points=float(values["goals_scored_points"]),
+            shooter_misses_weighted=float(values["shooter_misses_weighted"]),
+            defended_shots=int(values["defended_shots"]),
+            defended_goals=int(values["defended_goals"]),
+            defended_misses=int(values["defended_misses"]),
+            doorloop_concede_points_times_defenders=float(
+                values["doorloop_concede_points_times_defenders"]
+            ),
+        )
+        for team_id, values in base.items()
+    }
 
 
 # Cache schema version for per-match breakdowns.
@@ -82,7 +319,7 @@ class ShotImpactWeights:
     miss_against_total: float
 
 
-def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
+def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:  # noqa: PLR0911
     """Return the weights for a given algorithm version.
 
     Notes:
@@ -122,6 +359,20 @@ def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
         # v5 keeps v4 semantics and weights, but caps the goal streak bonus so
         # long scoring runs don't explode goal impact totals.
         return shot_impact_weights_for_version("v4")
+
+    if version == "v6":
+        # v6 fixes interpretation of `Shot.for_team` for this codebase's stored
+        # tracker data: `team_id` already represents the actual shooting/scoring
+        # team, and `for_team` should not be used to flip team attribution.
+        #
+        # These weights were tuned on historical finished matches in this DB
+        # using the `fit_match_impact_v6` management command.
+        return ShotImpactWeights(
+            miss_for_penalty=0.2,
+            shot_against_total=-0.17,
+            goal_against_total=-2.94,
+            miss_against_total=0.31,
+        )
 
     logger.warning("Unknown match impact algorithm version: %s", version)
     return shot_impact_weights_for_version(LATEST_MATCH_IMPACT_ALGORITHM_VERSION)
@@ -173,15 +424,15 @@ def _compute_shooting_efficiency_multipliers(
     if algorithm_version not in {"v3", "v4", "v5"}:
         return {}, {}
 
+    ignore_defensive_rows = algorithm_version in {"v4", "v5"}
+
     attempts_by_player: dict[str, int] = {}
     goals_by_player: dict[str, int] = {}
 
     for shot in shots:
-        # `Shot.for_team=False` rows represent defensive tracking events (shots
-        # and goals conceded by the tracked player/team). Those are not shooter
-        # attempts, so exclude them from shooter efficiency computation.
-        if not bool(shot.get("for_team", True)):
+        if ignore_defensive_rows and shot.get("for_team") is False:
             continue
+
         shooter_id = str(shot.get("player_id") or "").strip()
         if not shooter_id:
             continue
@@ -375,22 +626,14 @@ def _shooting_team_id_from_shot(
 ) -> str | None:
     """Resolve the shooting team id from a shot payload.
 
-    The match tracker stores both offensive and defensive events in `Shot`:
-    - for_team=True: `player` is the shooter, `team` is the shooting team.
-    - for_team=False: `player` is the defending player, `team` is the defending team.
-
-    Our impact algorithm needs the *shooting* team id to decide which side is
-    defending for defensive impact shares.
+    In this codebase's stored tracker data, `team_id` already represents the
+    actual shooting team. The `for_team` flag is treated as a UI hint (home/away)
+    and should not be used to flip team attribution.
     """
     if not shot_team_id:
         return None
-    if for_team:
-        return shot_team_id
-    return _opponent_team_id(
-        team_id=shot_team_id,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-    )
+    _ = (for_team, home_team_id, away_team_id)
+    return shot_team_id
 
 
 def _scoring_team_id_from_goal(
@@ -398,19 +641,14 @@ def _scoring_team_id_from_goal(
 ) -> str | None:
     """Resolve the scoring team id from a goal event payload.
 
-    `build_match_events` serializes goals from `Shot` rows. When `for_team=False`
-    the `team_id` in the payload refers to the *defending* team, so the scoring
-    team is the opponent.
+    In this codebase's tracker data, `team_id` already represents the scoring
+    team for goal events. The `for_team` flag should not be used to flip team
+    attribution.
     """
     if not goal_team_id:
         return None
-    if for_team:
-        return goal_team_id
-    return _opponent_team_id(
-        team_id=goal_team_id,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-    )
+    _ = (for_team, home_team_id, away_team_id)
+    return goal_team_id
 
 
 def _group_role_priority(role: GroupRole) -> int:
@@ -1135,9 +1373,7 @@ def _apply_shot_impacts(
 
     for x, shot in _iter_shot_events(shots):
         for_team = bool(shot.get("for_team", True))
-        # Only offensive shots have a known shooter. Defensive shots are still
-        # used for defender impact shares, but should not penalize a "shooter".
-        shooter_id = str(shot.get("player_id") or "").strip() if for_team else ""
+        shooter_id = str(shot.get("player_id") or "").strip()
         scored = bool(shot.get("scored"))
 
         shooting_team_id = _shooting_team_id_from_shot(
@@ -1192,6 +1428,7 @@ class _GoalImpactContext:
     defenders_at_x: Callable[[Side, float], list[str]]
     impact_by_player: dict[str, float]
     breakdown_by_player: PlayerImpactBreakdown | None
+    doorloop_concede_factor: float
 
 
 @dataclass(frozen=True)
@@ -1203,10 +1440,6 @@ class _GoalImpactEvent:
 
 
 def _apply_scorer_goal_points(*, ctx: _GoalImpactContext, ev: _GoalImpactEvent) -> None:
-    # When `for_team=False` the goal event represents a conceded goal tracked
-    # against a defending player; do not count it as a goal scored.
-    if not bool(ev.goal.get("for_team", True)):
-        return
     scorer_id = str(ev.goal.get("player_id") or "").strip()
     if scorer_id:
         _add_impact(
@@ -1240,10 +1473,17 @@ def _apply_doorloop_concede_penalty(
         _add_impact(
             ctx.impact_by_player,
             did,
-            -ev.goal_points * 0.06,
+            -ev.goal_points * ctx.doorloop_concede_factor,
             breakdown_by_player=ctx.breakdown_by_player,
             category="doorloop_concede_penalty",
         )
+
+
+def doorloop_concede_factor_for_version(version: str) -> float:
+    """Return the per-defender doorloop concede penalty factor."""
+    if version == "v6":
+        return 0.0
+    return 0.06
 
 
 def _apply_goal_impacts(
@@ -1387,6 +1627,7 @@ def compute_match_impact_rows(
         defenders_at_x=defenders_at_x,
         impact_by_player=impact_by_player,
         breakdown_by_player=None,
+        doorloop_concede_factor=doorloop_concede_factor_for_version(algorithm_version),
     )
     _apply_goal_impacts(
         events=events,
@@ -1490,6 +1731,7 @@ def compute_match_impact_breakdown(
         defenders_at_x=defenders_at_x,
         impact_by_player=impact_by_player,
         breakdown_by_player=breakdown_by_player,
+        doorloop_concede_factor=doorloop_concede_factor_for_version(algorithm_version),
     )
     _apply_goal_impacts(
         events=events,

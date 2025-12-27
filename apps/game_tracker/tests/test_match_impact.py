@@ -107,7 +107,7 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
     by_player = {r.player_id: r for r in rows}
 
     assert str(player.id_uuid) in by_player
-    assert by_player[str(player.id_uuid)].impact_score == Decimal("-0.6")
+    assert by_player[str(player.id_uuid)].impact_score == Decimal("-0.2")
 
 
 @pytest.mark.django_db
@@ -156,15 +156,15 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category() -> None:
 
     pid = str(player.id_uuid)
     assert pid in by_player
-    assert by_player[pid].impact_score == Decimal("-0.6")
+    assert by_player[pid].impact_score == Decimal("-0.2")
 
     player_breakdown = breakdown.get(pid)
     assert player_breakdown is not None
     assert player_breakdown["shot_miss_for"]["count"] == 1
-    assert round_js_1dp(player_breakdown["shot_miss_for"]["points"]) == Decimal("-0.6")
+    assert round_js_1dp(player_breakdown["shot_miss_for"]["points"]) == Decimal("-0.2")
 
     total_raw = sum(item["points"] for item in player_breakdown.values())
-    assert round_js_1dp(total_raw) == Decimal("-0.6")
+    assert round_js_1dp(total_raw) == Decimal("-0.2")
 
 
 @pytest.mark.django_db

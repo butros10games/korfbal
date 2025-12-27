@@ -67,7 +67,6 @@ def test_goal_points_streak_bonus_is_capped() -> None:
         scorer = Player.objects.create(user=user)
 
     # Create consecutive goals by the same team and player.
-    # With >=5 shots and 100% conversion, goal multiplier is 1.2.
     for i in range(GOAL_COUNT):
         Shot.objects.create(
             player=scorer,
@@ -90,8 +89,7 @@ def test_goal_points_streak_bonus_is_capped() -> None:
 
     # Expected with capped streak (max streak=4):
     # base = 3.2 * 1.25 = 4.0
-    # efficiency multiplier = 1.2 => 4.8
     # streak factors: 1.00, 1.12, 1.24, 1.36, 1.36, 1.36
-    expected_total = 4.8 * (1.00 + 1.12 + 1.24 + 1.36 + 1.36 + 1.36)
+    expected_total = 4.0 * (1.00 + 1.12 + 1.24 + 1.36 + 1.36 + 1.36)
 
     assert per_player["goal_scored"]["points"] == pytest.approx(expected_total)

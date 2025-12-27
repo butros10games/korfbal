@@ -17,6 +17,7 @@ from apps.game_tracker.models import (
     MatchPart,
     Pause,
     PlayerChange,
+    PlayerGroup,
     Shot,
     Timeout,
 )
@@ -159,6 +160,18 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
 
 
 def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
+    player_team_id: dict[str, str] = {}
+    groups = list(
+        PlayerGroup.objects
+        .select_related("team")
+        .prefetch_related("players")
+        .filter(match_data=match_data)
+    )
+    for g in groups:
+        tid = str(g.team_id)
+        for p in g.players.all():
+            player_team_id[str(p.id_uuid)] = tid
+
     shots = list(
         Shot.objects
         .select_related(
@@ -173,7 +186,11 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
 
     payload: list[dict[str, Any]] = []
     for shot in shots:
-        serialized = _serialize_shot_timeline_event(match_data, shot)
+        serialized = _serialize_shot_timeline_event(
+            match_data,
+            shot,
+            player_team_id=player_team_id,
+        )
         if serialized is not None:
             payload.append(serialized)
 
@@ -210,7 +227,26 @@ def _serialize_match_event(
 
 
 def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] | None:
-    if not event.match_part or not event.time or not event.team or not event.shot_type:
+    if not event.match_part or not event.time or not event.shot_type:
+        return None
+
+    if not event.player:
+        return None
+
+    # Some trackers fail to set Shot.team for missed shots; in rare cases this
+    # also occurs for scored shots. Fall back to group membership.
+    team_id = str(event.team.id_uuid) if event.team else None
+    if team_id is None:
+        group = (
+            PlayerGroup.objects
+            .select_related("team")
+            .prefetch_related("players")
+            .filter(match_data=match_data, players=event.player)
+            .first()
+        )
+        if group is not None:
+            team_id = str(group.team.id_uuid)
+    if team_id is None:
         return None
 
     return {
@@ -231,18 +267,26 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
         "shot_type_id": str(event.shot_type.id_uuid),
         "goal_type": event.shot_type.name,
         "for_team": event.for_team,
-        "team_id": str(event.team.id_uuid),
+        "team_id": team_id,
     }
 
 
 def _serialize_shot_timeline_event(
     match_data: MatchData,
     event: Shot,
+    *,
+    player_team_id: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
+    if not event.player:
+        return None
+
     # Shots can be recorded while the tracker is still syncing match parts/timers.
     # We still want to return them for the advanced timeline, even when part/time
     # metadata is missing.
-    if not event.team:
+    team_id = str(event.team.id_uuid) if event.team else None
+    if team_id is None and player_team_id is not None:
+        team_id = player_team_id.get(str(event.player.id_uuid))
+    if team_id is None:
         return None
 
     payload: dict[str, Any] = {
@@ -253,7 +297,8 @@ def _serialize_shot_timeline_event(
         "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
         "shot_type": event.shot_type.name if event.shot_type else None,
         "scored": bool(event.scored),
-        "team_id": str(event.team.id_uuid),
+        "for_team": bool(event.for_team),
+        "team_id": team_id,
     }
 
     if event.time is not None:

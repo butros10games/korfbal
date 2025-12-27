@@ -53,13 +53,19 @@ class PlayerStatRow(TypedDict):
 
 
 def _impact_autorecompute_enabled() -> bool:
-    return bool(getattr(settings, "KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE", False))
+    # Default-on so Team/season pages match the canonical Match-page algorithm.
+    # Can be disabled in settings for emergency performance mitigation.
+    return bool(getattr(settings, "KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE", True))
 
 
 def _impact_autorecompute_limit() -> int:
     # Hard cap safety: recomputing impacts is expensive.
-    configured = int(getattr(settings, "KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT", 0))
-    return max(0, min(configured, 3))
+    # Default higher than the historical value so season pages converge without
+    # requiring manual backfills, while still keeping a hard ceiling.
+    configured = getattr(settings, "KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT", None)
+    if configured is None:
+        return 50
+    return max(0, min(int(configured), 200))
 
 
 def _persisted_minutes_by_username(
@@ -147,7 +153,7 @@ def _recompute_impacts_for_matches(*, matches: QuerySet[MatchData], limit: int) 
         return
 
     recomputed = 0
-    for match_data in matches[: limit * 2]:
+    for match_data in matches.iterator():
         if recomputed >= limit:
             break
 
@@ -194,12 +200,9 @@ def _ensure_latest_match_impacts(*, match_dataset: Iterable[Any]) -> None:
     It must be safe to call during request handling.
     """
     # IMPORTANT PERFORMANCE NOTE:
-    # Historically this function would recompute missing/outdated impact rows
-    # during request handling (team/season pages). That can turn a simple GET
-    # into seconds of CPU + DB work.
-    #
-    # We now keep this opt-in behind a feature flag, with a small per-request cap
-    # and cache locks to avoid stampedes.
+    # Recomputing missing/outdated impact rows during request handling can be
+    # expensive. We keep cache locks to avoid stampedes and a configurable hard
+    # cap on the number of matches recomputed per request.
     if not _impact_autorecompute_enabled():
         return
 
@@ -216,6 +219,34 @@ def _ensure_latest_match_impacts(*, match_dataset: Iterable[Any]) -> None:
         return
 
     _recompute_impacts_for_matches(matches=needs_recompute, limit=limit)
+
+
+def _dataset_has_complete_latest_impacts(*, match_dataset: Iterable[Any]) -> bool:
+    """Return True when all finished matches have latest-version impact rows.
+
+    This is used to avoid reporting partial persisted totals as if they were
+    canonical.
+    """
+    match_qs = _resolve_match_queryset(match_dataset)
+    if match_qs is None:
+        return False
+
+    finished_qs = match_qs.filter(status="finished")
+    finished_count = finished_qs.count()
+    if finished_count <= 0:
+        return True
+
+    impacted_match_count = (
+        PlayerMatchImpact.objects
+        .filter(
+            match_data__in=finished_qs,
+            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+        )
+        .values("match_data_id")
+        .distinct()
+        .count()
+    )
+    return impacted_match_count == finished_count
 
 
 def _resolve_match_queryset(match_dataset: Iterable[Any]) -> QuerySet[MatchData] | None:
@@ -264,8 +295,17 @@ async def build_player_stats(
     if not players:
         return []
 
-    def _fetch() -> tuple[list[dict[str, object]], dict[str, float], dict[str, float]]:
+    def _fetch() -> tuple[
+        list[dict[str, object]],
+        dict[str, float],
+        dict[str, float],
+        bool,
+    ]:
         _ensure_latest_match_impacts(match_dataset=match_dataset)
+
+        dataset_has_full_impacts = _dataset_has_complete_latest_impacts(
+            match_dataset=match_dataset,
+        )
 
         minutes_by_username = _minutes_played_by_username(
             players=players,
@@ -307,9 +347,19 @@ async def build_player_stats(
                 continue
             impact_by_username[username] = round(float(total), 1)
 
-        return shot_rows, impact_by_username, minutes_by_username
+        return (
+            shot_rows,
+            impact_by_username,
+            minutes_by_username,
+            dataset_has_full_impacts,
+        )
 
-    rows, impact_by_username, minutes_by_username = await sync_to_async(_fetch)()
+    (
+        rows,
+        impact_by_username,
+        minutes_by_username,
+        dataset_has_full_impacts,
+    ) = await sync_to_async(_fetch)()
 
     player_rows: list[PlayerStatRow] = [  # type: ignore[invalid-assignment]
         {
@@ -318,11 +368,12 @@ async def build_player_stats(
             "shots_against": (sa := int(cast(int, row.get("shots_against") or 0))),
             "goals_for": (gf := int(cast(int, row.get("goals_for") or 0))),
             "goals_against": (ga := int(cast(int, row.get("goals_against") or 0))),
-            "impact_score": impact_by_username.get(
-                username,
-                _compute_impact_score(gf=gf, ga=ga, sf=sf, sa=sa),
+            "impact_score": (
+                round(float(impact_by_username.get(username, 0.0)), 1)
+                if dataset_has_full_impacts
+                else _compute_impact_score(gf=gf, ga=ga, sf=sf, sa=sa)
             ),
-            "impact_is_stored": username in impact_by_username,
+            "impact_is_stored": bool(dataset_has_full_impacts),
             # When minutes are disabled (default), return null so the frontend
             # does not treat this payload as "minutes-aware".
             "minutes_played": (

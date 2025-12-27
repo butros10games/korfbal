@@ -1,13 +1,11 @@
 """Tests for match impact semantics around `Shot.for_team`.
 
-The match tracker stores both offensive and defensive events in the `Shot` model:
+In this codebase's stored tracker data, `team_id` already represents the actual
+shooting/scoring team. The `for_team` flag is *not* treated as a defensive
+duplicate indicator for impact calculations.
 
-- for_team=True: the player is the shooter, and (scored=True) represents a goal.
-- for_team=False: the player is the defender, and (scored=True) represents a goal
-  conceded against that defender/team.
-
-The match impact breakdown category `goal_scored` must only count *actual* goals
-scored by the player (for_team=True), not conceded goals.
+Therefore, a scored shot should count as `goal_scored` for the linked player
+regardless of the `for_team` value.
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ from apps.team.models import Team
 
 @pytest.mark.django_db
 def test_goal_scored_breakdown_ignores_for_team_false_goal() -> None:
-    """A conceded goal (for_team=False) must not increment goal_scored."""
+    """A scored shot counts as goal_scored regardless of `for_team`."""
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
     home_team = Team.objects.create(name="Home Team", club=home_club)
@@ -105,7 +103,4 @@ def test_goal_scored_breakdown_ignores_for_team_false_goal() -> None:
     defender_key = str(defender.id_uuid)
 
     assert breakdown[scorer_key]["goal_scored"]["count"] == 1
-    assert (
-        breakdown.get(defender_key) is None
-        or "goal_scored" not in breakdown[defender_key]
-    )
+    assert breakdown[defender_key]["goal_scored"]["count"] == 1
