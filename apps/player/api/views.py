@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import logging
 import os
+from pathlib import Path
 import secrets
 import shutil
 import subprocess  # nosec B404
@@ -17,7 +18,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
-from django.core.files import File
+from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -173,8 +174,11 @@ def _store_goal_song_upload_best_effort(
                 f"{os.path.splitext(safe_name)[0] or 'goal_song'}.mp3"
             )
 
-            with open(output_path, "rb") as clip_handle:
-                stored_path = default_storage.save(clip_key, File(clip_handle))
+            clip_bytes = Path(output_path).read_bytes()
+            stored_path = default_storage.save(
+                clip_key,
+                ContentFile(clip_bytes),
+            )
             return stored_path, default_storage.url(stored_path)
     except (FileNotFoundError, subprocess.CalledProcessError):
         logger.info(
@@ -1871,9 +1875,11 @@ class PlayerSongClipAPIView(APIView):
                     check=True,
                 )  # nosec B603
 
-                with open(output_path, "rb") as clip_handle:
-                    default_storage.save(clip_key, File(clip_handle))
-
+                clip_bytes = Path(output_path).read_bytes()
+                default_storage.save(
+                    clip_key,
+                    ContentFile(clip_bytes),
+                )
             return default_storage.url(clip_key)
         except (FileNotFoundError, subprocess.CalledProcessError):
             logger.info(
