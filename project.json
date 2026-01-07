@@ -58,13 +58,6 @@
                 "command": "docker build -t kwt-uwsgi:latest -f apps/django_projects/korfbal/docker/kwt-uwsgi.Dockerfile apps/django_projects/korfbal"
             }
         },
-        "docker-daphne": {
-            "executor": "nx:run-commands",
-            "cache": false,
-            "options": {
-                "command": "docker build -t kwt-daphne:latest -f apps/django_projects/korfbal/docker/kwt-daphne.Dockerfile apps/django_projects/korfbal"
-            }
-        },
         "docker-collectstatic": {
             "executor": "nx:run-commands",
             "cache": false,

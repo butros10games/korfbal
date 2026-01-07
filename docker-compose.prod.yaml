@@ -22,19 +22,6 @@ services:
         networks:
             - kwt-net
 
-    kwt-daphne:
-        image: butros10/kwt-daphne:latest
-        container_name: kwt-daphne
-        ports:
-            - '8001:8001'
-        env_file:
-            - .env
-        depends_on:
-            - kwt-valkey
-        restart: unless-stopped
-        networks:
-            - kwt-net
-
     kwt-valkey:
         image: valkey/valkey:latest
         container_name: kwt-valkey
