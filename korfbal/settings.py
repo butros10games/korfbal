@@ -212,6 +212,25 @@ KORFBAL_SLOW_REQUEST_BUFFER_TTL_S = _env_int(
 )
 
 
+# --- spotDL (goal song downloads) ---
+# Some downloads can take longer due to upstream rate limiting / search issues.
+# Keep this configurable per environment.
+SPOTDL_DOWNLOAD_TIMEOUT_SECONDS = _env_int(
+    "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS",
+    60 * 15,
+)
+
+# If a download gets stuck (worker restart/crash), the CachedSong can remain in
+# DOWNLOADING/UPLOADING forever. The Celery task will reclaim the work once the
+# record hasn't been updated for this long.
+#
+# Default: timeout + 60 seconds.
+SPOTDL_STALE_IN_PROGRESS_SECONDS = _env_int(
+    "SPOTDL_STALE_IN_PROGRESS_SECONDS",
+    SPOTDL_DOWNLOAD_TIMEOUT_SECONDS + 60,
+)
+
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

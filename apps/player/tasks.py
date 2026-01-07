@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import subprocess  # nosec B404 - required for invoking spotDL CLI safely (shell=False + input validation)
@@ -29,6 +29,74 @@ from apps.schedule.models.match import Match
 
 
 logger = logging.getLogger(__name__)
+
+
+def _cached_song_is_ready(cached: CachedSong) -> bool:
+    """Return True when the cached song has a usable audio file."""
+    return cached.status == CachedSongStatus.READY and bool(cached.audio_file)
+
+
+def _cached_song_in_progress_is_not_stale(
+    *,
+    cached: CachedSong,
+    now: datetime,
+    stale_in_progress_seconds: int,
+) -> bool:
+    """Return True if another worker is likely still processing this CachedSong."""
+    if cached.status not in {CachedSongStatus.DOWNLOADING, CachedSongStatus.UPLOADING}:
+        return False
+
+    age_seconds = (now - cached.updated_at).total_seconds()
+    if age_seconds < stale_in_progress_seconds:
+        return True
+
+    logger.warning(
+        "CachedSong %s appears stuck in %s for %.0fs; reclaiming",
+        cached.id_uuid,
+        cached.status,
+        age_seconds,
+    )
+    return False
+
+
+def _lock_cached_song_for_download(
+    *,
+    cached_song_id: str,
+    now: datetime,
+    stale_in_progress_seconds: int,
+) -> CachedSong | None:
+    """Lock and transition a CachedSong into DOWNLOADING, if appropriate.
+
+    Returns the locked CachedSong instance if the caller should proceed with the
+    download, else None.
+    """
+    locked = (
+        CachedSong.objects.select_for_update().filter(id_uuid=cached_song_id).first()
+    )
+    if locked is None:
+        return None
+
+    if _cached_song_is_ready(locked):
+        return None
+
+    # Reconcile inconsistent states: file exists but status isn't READY.
+    if locked.audio_file and locked.status != CachedSongStatus.READY:
+        locked.status = CachedSongStatus.READY
+        locked.error_message = ""
+        locked.save(update_fields=["status", "error_message", "updated_at"])
+        return None
+
+    if _cached_song_in_progress_is_not_stale(
+        cached=locked,
+        now=now,
+        stale_in_progress_seconds=stale_in_progress_seconds,
+    ):
+        return None
+
+    locked.status = CachedSongStatus.DOWNLOADING
+    locked.error_message = ""
+    locked.save(update_fields=["status", "error_message", "updated_at"])
+    return locked
 
 
 def _participant_players_for_match_data(match_data: MatchData) -> list[Player]:
@@ -297,6 +365,51 @@ def _pick_downloaded_audio(output_dir: Path) -> Path:
     return candidates[0]
 
 
+def _redact_spotdl_command(cmd: list[str]) -> str:
+    """Return a log-safe command string.
+
+    We invoke spotDL with Spotify client credentials in some environments.
+    Never log secrets.
+    """
+    redacted: list[str] = []
+    redact_next = False
+    redact_flags = {
+        "--client-id",
+        "--client-secret",
+        "--auth-token",
+    }
+    for part in cmd:
+        if redact_next:
+            redacted.append("***")
+            redact_next = False
+            continue
+
+        redacted.append(part)
+        if part in redact_flags:
+            redact_next = True
+
+    return " ".join(redacted)
+
+
+def _spotdl_base_args() -> list[str]:
+    """Build base spotDL argv list (without the action/query arguments)."""
+    args = ["spotdl"]
+
+    client_id = str(getattr(settings, "SPOTIFY_CLIENT_ID", "") or "").strip()
+    client_secret = str(getattr(settings, "SPOTIFY_CLIENT_SECRET", "") or "").strip()
+
+    if client_id and client_secret:
+        args.extend(["--client-id", client_id, "--client-secret", client_secret])
+    elif client_id or client_secret:
+        # Misconfiguration is common and yields confusing failures.
+        logger.warning(
+            "SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET are partially configured; "
+            "spotDL may fail. Configure both to use custom Spotify credentials."
+        )
+
+    return args
+
+
 def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
     """Download a Spotify link using spotDL into the given directory.
 
@@ -309,10 +422,14 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
 
     output_template = str(output_dir / "{title}.{output-ext}")
 
+    timeout_seconds = int(getattr(settings, "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS", 60 * 15))
+
     attempted: list[tuple[list[str], str]] = []
+
+    base = _spotdl_base_args()
     commands: list[list[str]] = [
         [
-            "spotdl",
+            *base,
             "download",
             spotify_url,
             "--output",
@@ -323,7 +440,7 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
             "1",
         ],
         [
-            "spotdl",
+            *base,
             spotify_url,
             "--output",
             output_template,
@@ -336,22 +453,54 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
 
     last_error = ""
     for cmd in commands:
-        logger.info("Running spotDL: %s", " ".join(cmd))
-        proc = subprocess.run(  # nosec B603 - shell=False with validated URL; command is fixed argv list
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60 * 15,
-            shell=False,
-        )
-        attempted.append((cmd, proc.stdout[-2000:]))
+        logger.info("Running spotDL: %s", _redact_spotdl_command(cmd))
+        try:
+            proc = subprocess.run(  # nosec B603 - shell=False with validated URL; command is fixed argv list
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # spotDL can occasionally finish the file but hang on cleanup/metadata.
+            # If a plausible audio file exists, accept it.
+            try:
+                downloaded = _pick_downloaded_audio(output_dir)
+                logger.warning(
+                    "spotDL timed out after %s seconds but produced %s; accepting file",
+                    timeout_seconds,
+                    downloaded,
+                )
+                return downloaded
+            except FileNotFoundError:
+                attempted.append((cmd, "TIMEOUT"))
+                last_error = (
+                    f"Download timed out after {timeout_seconds} seconds. Please retry."
+                )
+                logger.warning(
+                    "spotDL timed out after %s seconds (no output file found)",
+                    timeout_seconds,
+                    exc_info=exc,
+                )
+                continue
+
+        attempted.append((cmd, (proc.stdout or "")[-2000:]))
         if proc.returncode == 0:
             return _pick_downloaded_audio(output_dir)
         last_error = (proc.stderr or proc.stdout or "").strip()[-4000:]
 
-    details = "\n".join(" ".join(cmd) for cmd, _ in attempted)
-    raise RuntimeError(f"spotDL failed. Tried: {details}\n{last_error}")
+    # Log full details for debugging, but keep the raised message user-friendly.
+    redacted_details = "\n".join(_redact_spotdl_command(cmd) for cmd, _ in attempted)
+    logger.warning(
+        "spotDL failed. Tried:\n%s\nLast error:\n%s",
+        redacted_details,
+        last_error,
+    )
+    if "timed out" in last_error.lower():
+        raise RuntimeError(last_error)
+    raise RuntimeError("Download failed. Please retry.")
 
 
 @shared_task(bind=True)
@@ -362,33 +511,40 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:  # noqa: ANN40
         logger.warning("CachedSong %s not found", cached_song_id)
         return
 
-    if cached.status == CachedSongStatus.READY and cached.audio_file:
+    timeout_seconds = int(getattr(settings, "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS", 60 * 15))
+    stale_in_progress_seconds = int(
+        getattr(
+            settings,
+            "SPOTDL_STALE_IN_PROGRESS_SECONDS",
+            timeout_seconds + 60,
+        )
+    )
+
+    now = timezone.now()
+
+    if _cached_song_is_ready(cached):
         return
 
     # Avoid duplicate work if another worker is already processing it.
-    if cached.status in {CachedSongStatus.DOWNLOADING, CachedSongStatus.UPLOADING}:
+    if _cached_song_in_progress_is_not_stale(
+        cached=cached,
+        now=now,
+        stale_in_progress_seconds=stale_in_progress_seconds,
+    ):
         return
 
     try:
         with transaction.atomic():
-            locked = (
-                CachedSong.objects
-                .select_for_update()
-                .filter(id_uuid=cached_song_id)
-                .first()
+            locked = _lock_cached_song_for_download(
+                cached_song_id=cached_song_id,
+                now=now,
+                stale_in_progress_seconds=stale_in_progress_seconds,
             )
             if locked is None:
                 return
-            if locked.status == CachedSongStatus.READY and locked.audio_file:
-                return
-            if locked.status in {
-                CachedSongStatus.DOWNLOADING,
-                CachedSongStatus.UPLOADING,
-            }:
-                return
-            locked.status = CachedSongStatus.DOWNLOADING
-            locked.error_message = ""
-            locked.save(update_fields=["status", "error_message", "updated_at"])
+
+            # Use the locked instance for the remainder of the task.
+            cached = locked
 
         with tempfile.TemporaryDirectory(prefix="spotdl_") as tmp:
             output_dir = Path(tmp)
