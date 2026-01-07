@@ -48,8 +48,8 @@ SECRET_KEY = _env("SECRET_KEY", "change-me" if DEBUG else None, required=not DEB
 
 KORFBAL_ORIGIN = "https://api.korfbal.butrosgroot.com"
 WEB_KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
-KWT_ORIGIN = "https://kwt.localhost"
-WEB_KWT_ORIGIN = "https://web.kwt.localhost"
+KWT_ORIGIN = "https://api.korfbal.localhost"
+WEB_KWT_ORIGIN = "https://korfbal.localhost"
 
 
 def _origin_variants(origin: str) -> list[str]:
@@ -91,7 +91,7 @@ def _origin_variants(origin: str) -> list[str]:
 
 # Base URL for the SPA frontend (used for redirects back into the UI).
 # - Production: https://korfbal.butrosgroot.com
-# - Dev: https://web.kwt.localhost (matches this repo's local HTTPS setup)
+# - Dev: https://kwt.localhost (matches this repo's local HTTPS setup)
 WEB_APP_ORIGIN = _env(
     "WEB_APP_ORIGIN",
     WEB_KWT_ORIGIN if DEBUG else WEB_KORFBAL_ORIGIN,
@@ -123,7 +123,12 @@ if DEBUG:
         *ALLOWED_HOSTS,
         "localhost",
         "127.0.0.1",
+        "korfbal.localhost",
+        "api.korfbal.localhost",
+        "web.korfbal.localhost",
+        # Backwards compatibility (legacy dev hostname)
         "kwt.localhost",
+        "api.kwt.localhost",
         "web.kwt.localhost",
         "bg.localhost",
     ])
