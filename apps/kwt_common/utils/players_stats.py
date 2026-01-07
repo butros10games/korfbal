@@ -374,11 +374,12 @@ async def build_player_stats(
                 else _compute_impact_score(gf=gf, ga=ga, sf=sf, sa=sa)
             ),
             "impact_is_stored": bool(dataset_has_full_impacts),
-            # When minutes are disabled (default), return null so the frontend
-            # does not treat this payload as "minutes-aware".
+            # Minutes-played are persisted asynchronously (Celery) into
+            # PlayerMatchMinutes. When minutes are unavailable or missing for a
+            # specific player, return null to avoid implying "0 minutes".
             "minutes_played": (
-                float(minutes_by_username.get(username, 0.0))
-                if minutes_by_username
+                float(minutes_by_username[username])
+                if minutes_by_username and username in minutes_by_username
                 else None
             ),
         }

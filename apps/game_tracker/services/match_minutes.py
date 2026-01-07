@@ -17,7 +17,13 @@ import logging
 
 from django.db import transaction
 
-from apps.game_tracker.models import MatchData, PlayerGroup, PlayerMatchMinutes
+from apps.game_tracker.models import (
+    MatchData,
+    MatchPart,
+    Pause,
+    PlayerGroup,
+    PlayerMatchMinutes,
+)
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.game_tracker.services.match_impact import (
     build_match_player_role_timeline,
@@ -90,6 +96,58 @@ def _sum_on_field_minutes(*, intervals: object, match_end_minutes: float) -> flo
     )
 
 
+def _expected_match_end_minutes(match_data: MatchData) -> float:
+    """Return the expected match length from MatchData settings.
+
+    This ignores pauses and intermissions, but provides a much better fallback
+    than the timeline-derived default of 1 minute when no event timestamps are
+    available.
+    """
+    parts = float(getattr(match_data, "parts", 0) or 0)
+    part_length_seconds = float(getattr(match_data, "part_length", 0) or 0)
+    expected = (parts * part_length_seconds) / 60.0
+    return max(1.0, expected)
+
+
+def _match_end_minutes_from_match_parts(match_data: MatchData) -> float | None:
+    """Compute match end minutes from recorded MatchPart times.
+
+    We subtract completed pause durations to align with the minute formatting
+    used in the match payload builders.
+    """
+    parts = list(
+        MatchPart.objects
+        .filter(match_data=match_data, end_time__isnull=False)
+        .only("start_time", "end_time")
+        .order_by("part_number", "start_time")
+    )
+    if not parts:
+        return None
+
+    part_seconds = 0.0
+    for part in parts:
+        if not part.start_time or not part.end_time:
+            continue
+        delta = (part.end_time - part.start_time).total_seconds()
+        if delta > 0:
+            part_seconds += delta
+
+    if part_seconds <= 0:
+        return None
+
+    pause_seconds = 0.0
+    for pause in Pause.objects.filter(
+        match_data=match_data,
+        active=False,
+        start_time__isnull=False,
+        end_time__isnull=False,
+        match_part__in=parts,
+    ).only("start_time", "end_time"):
+        pause_seconds += pause.length().total_seconds()
+
+    return max(1.0, (max(0.0, part_seconds - pause_seconds) / 60.0))
+
+
 def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
     """Compute minutes played for each player in a match.
 
@@ -97,7 +155,17 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
     """
     events = build_match_events(match_data)
     shots = build_match_shots(match_data)
+
     match_end_minutes = compute_match_end_minutes(events=events, shots=shots)
+
+    # The timeline payload builders can return "?" for shots without part/time.
+    # When all events/shots are missing timestamps, the JS-parity end-minute
+    # falls back to 1.0, which makes all players appear to have ~0-1 minutes.
+    # For minutes-played we prefer a match-length fallback.
+    match_end_minutes = max(match_end_minutes, _expected_match_end_minutes(match_data))
+    from_parts = _match_end_minutes_from_match_parts(match_data)
+    if from_parts is not None:
+        match_end_minutes = max(match_end_minutes, from_parts)
 
     groups = list(
         PlayerGroup.objects
