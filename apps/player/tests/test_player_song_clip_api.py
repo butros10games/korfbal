@@ -34,8 +34,8 @@ def test_player_song_clip_falls_back_when_ffmpeg_missing(client: Client) -> None
     # Store any file so `audio_file.url` exists.
     song.audio_file.save("test.mp3", ContentFile(b"not really audio"), save=True)
 
-    # Force the ffmpeg path to fail deterministically.
-    with patch("apps.player.api.views.subprocess.run", side_effect=FileNotFoundError):
+    # Force the ffmpeg path to be missing deterministically.
+    with patch("apps.player.api.views.find_ffmpeg", return_value=None):
         response = client.get(
             f"/api/player/api/songs/{song.id_uuid}/clip/?start=12&duration=8"
         )
@@ -74,7 +74,7 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
 
     # Make storage deterministic for the assertion.
     with (
-        patch("apps.player.api.views.shutil.which", return_value="ffmpeg"),
+        patch("apps.player.api.views.find_ffmpeg", return_value="ffmpeg"),
         patch("apps.player.api.views.default_storage.exists", return_value=False),
         patch(
             "apps.player.api.views.default_storage.save",
@@ -84,7 +84,9 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
             "apps.player.api.views.default_storage.url",
             side_effect=lambda key: f"/media/{key}",
         ),
-        patch("apps.player.api.views.subprocess.run", side_effect=fake_run),
+        patch(
+            "apps.player.services.audio_clipper.subprocess.run", side_effect=fake_run
+        ),
     ):
         response = client.get(
             f"/api/player/api/songs/{song.id_uuid}/clip/?start=12&duration=8"

@@ -4,7 +4,7 @@ Web app to track korfbal matches, players, and stats in real time.
 
 ## Requirements
 
-- Python 3.13 and uv
+- Python 3.12+ and uv
 - PostgreSQL and Valkey/Redis (local or remote)
 
 ## Setup (Windows PowerShell)

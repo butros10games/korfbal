@@ -23,8 +23,6 @@ dependencies = [
     "spotdl",
 ]
 
-pytest_plugins = ["configs.pytest_plugins.django_projects"]
-
 [dependency-groups]
 celery = ["django-celery-beat"]
 uwsgi = [
@@ -62,5 +60,4 @@ packages = ["korfbal", "apps"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "korfbal.settings_test"
 python_files = ["test_*.py"]
-pythonpath = ["/Users/butrosgroot/Documents/MonoRepo"]
-pytest_plugins = ["configs.pytest_plugins.django_projects"]
+pythonpath = ["."]

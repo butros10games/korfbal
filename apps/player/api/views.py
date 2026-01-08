@@ -10,7 +10,6 @@ import logging
 import os
 from pathlib import Path
 import secrets
-import shutil
 import subprocess  # nosec B404
 import tempfile
 from typing import Any, ClassVar
@@ -51,6 +50,11 @@ from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.models.spotify_token import SpotifyToken
 from apps.player.privacy import can_view_by_visibility
+from apps.player.services.audio_clipper import (
+    Mp3ClipSpec,
+    find_ffmpeg,
+    transcode_to_mp3_clip_file,
+)
 from apps.player.services.web_push import (
     WebPushException,
     WebPushPayload,
@@ -101,6 +105,66 @@ SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
 )
 
 
+def _current_season() -> Season | None:
+    today = timezone.now().date()
+    return Season.objects.filter(
+        start_date__lte=today,
+        end_date__gte=today,
+    ).first()
+
+
+def _resolve_season_from_request(
+    request: Request,
+    seasons: list[Season],
+) -> Season | None:
+    season_param = request.query_params.get("season")
+    if season_param:
+        return next(
+            (option for option in seasons if str(option.id_uuid) == season_param),
+            None,
+        )
+
+    if not seasons:
+        return None
+
+    current = _current_season()
+    if current and any(option.id_uuid == current.id_uuid for option in seasons):
+        return current
+
+    return seasons[0]
+
+
+def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
+    """Return seasons relevant to a player.
+
+    Keep the underlying SQL strategy (UNION of indexed subqueries) centralized
+    so endpoints don't drift and accidentally reintroduce OR-of-joins patterns
+    that cause join explosions.
+    """
+    season_ids = TeamData.objects.filter(players=player).values_list(
+        "season_id",
+        flat=True,
+    )
+    season_ids = season_ids.union(
+        MatchPlayer.objects.filter(player=player).values_list(
+            "match_data__match_link__season_id",
+            flat=True,
+        ),
+        PlayerGroup.objects.filter(players=player).values_list(
+            "match_data__match_link__season_id",
+            flat=True,
+        ),
+        Shot.objects.filter(player=player).values_list(
+            "match_data__match_link__season_id",
+            flat=True,
+        ),
+    )
+
+    return Season.objects.filter(id_uuid__in=Subquery(season_ids)).order_by(
+        "-start_date"
+    )
+
+
 def _store_goal_song_upload_best_effort(
     *,
     player: Player,
@@ -125,7 +189,7 @@ def _store_goal_song_upload_best_effort(
         stored = default_storage.save(key_original, uploaded)
         return stored, default_storage.url(stored)
 
-    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_path = find_ffmpeg()
     if not ffmpeg_path:
         return _store_original()
 
@@ -139,34 +203,14 @@ def _store_goal_song_upload_best_effort(
             with open(input_path, "wb") as handle:
                 handle.writelines(uploaded.chunks())
 
-            subprocess.run(
-                [
-                    ffmpeg_path,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-ss",
-                    "0",
-                    "-i",
-                    input_path,
-                    "-t",
-                    str(clip_duration_seconds),
-                    "-vn",
-                    # Prevent inheriting source tags like TLEN (full-track length),
-                    # which can confuse browser/OS duration reporting for short clips.
-                    "-map_metadata",
-                    "-1",
-                    "-map_chapters",
-                    "-1",
-                    "-acodec",
-                    "libmp3lame",
-                    "-q:a",
-                    "4",
-                    output_path,
-                ],
-                check=True,
-            )  # nosec B603
+            transcode_to_mp3_clip_file(
+                input_path=input_path,
+                output_path=output_path,
+                spec=Mp3ClipSpec(
+                    start_seconds=0, duration_seconds=clip_duration_seconds
+                ),
+                ffmpeg_path=ffmpeg_path,
+            )
 
             clip_key = (
                 f"goal_songs/{player.id_uuid}/"
@@ -889,8 +933,8 @@ class PlayerOverviewAPIView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        seasons_qs = list(self._player_seasons_queryset(player))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(_player_seasons_queryset(player))
+        season = _resolve_season_from_request(request, seasons_qs)
 
         upcoming_matches = build_match_summaries(
             self
@@ -906,7 +950,7 @@ class PlayerOverviewAPIView(APIView):
             .order_by("-match_link__start_time")[:10]
         )
 
-        current_season = self._current_season()
+        current_season = _current_season()
         seasons_payload = [
             {
                 "id_uuid": str(option.id_uuid),
@@ -1040,59 +1084,13 @@ class PlayerOverviewAPIView(APIView):
 
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
-        # IMPORTANT:
-        # Avoid a single big OR-of-joins query here.
-        # That pattern creates join explosions (and forces DISTINCT) which can
-        # become extremely slow on real datasets.
-        #
-        # Instead, collect candidate season IDs from each relevant source and
-        # UNION them. Postgres can execute these subqueries using indexes.
-        season_ids = TeamData.objects.filter(players=player).values_list(
-            "season_id",
-            flat=True,
-        )
-        season_ids = season_ids.union(
-            MatchPlayer.objects.filter(player=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-            PlayerGroup.objects.filter(players=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-            Shot.objects.filter(player=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-        )
-
-        return Season.objects.filter(id_uuid__in=Subquery(season_ids)).order_by(
-            "-start_date"
-        )
+        return _player_seasons_queryset(player)
 
     def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
-        season_param = request.query_params.get("season")
-        if season_param:
-            return next(
-                (option for option in seasons if str(option.id_uuid) == season_param),
-                None,
-            )
-
-        if not seasons:
-            return None
-
-        current = self._current_season()
-        if current and any(option.id_uuid == current.id_uuid for option in seasons):
-            return current
-
-        return seasons[0]
+        return _resolve_season_from_request(request, seasons)
 
     def _current_season(self) -> Season | None:
-        today = timezone.now().date()
-        return Season.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today,
-        ).first()
+        return _current_season()
 
 
 class PlayerConnectedClubRecentResultsAPIView(APIView):
@@ -1217,8 +1215,8 @@ class PlayerStatsAPIView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        seasons_qs = list(self._player_seasons_queryset(player))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(_player_seasons_queryset(player))
+        season = _resolve_season_from_request(request, seasons_qs)
 
         mvp_queryset = MatchMvp.objects.filter(
             mvp_player=player,
@@ -1291,54 +1289,14 @@ class PlayerStatsAPIView(APIView):
         return _get_current_player(request)
 
     def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
-        season_param = request.query_params.get("season")
-        if season_param:
-            return next(
-                (option for option in seasons if str(option.id_uuid) == season_param),
-                None,
-            )
-
-        if not seasons:
-            return None
-
-        current = self._current_season()
-        if current and any(option.id_uuid == current.id_uuid for option in seasons):
-            return current
-
-        return seasons[0]
+        return _resolve_season_from_request(request, seasons)
 
     @staticmethod
     def _player_seasons_queryset(player: Player) -> QuerySet[Season]:
-        # Keep this in sync with PlayerOverviewAPIView._player_seasons_queryset.
-        season_ids = TeamData.objects.filter(players=player).values_list(
-            "season_id",
-            flat=True,
-        )
-        season_ids = season_ids.union(
-            MatchPlayer.objects.filter(player=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-            PlayerGroup.objects.filter(players=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-            Shot.objects.filter(player=player).values_list(
-                "match_data__match_link__season_id",
-                flat=True,
-            ),
-        )
-
-        return Season.objects.filter(id_uuid__in=Subquery(season_ids)).order_by(
-            "-start_date"
-        )
+        return _player_seasons_queryset(player)
 
     def _current_season(self) -> Season | None:
-        today = timezone.now().date()
-        return Season.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today,
-        ).first()
+        return _current_season()
 
     @staticmethod
     def _goal_type_breakdown(
@@ -1827,7 +1785,7 @@ class PlayerSongClipAPIView(APIView):
             f"start_{start_seconds}_dur_{duration_seconds}.mp3"
         )
 
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
             return str(audio_file.url)
 
@@ -1846,34 +1804,15 @@ class PlayerSongClipAPIView(APIView):
                             break
                         dest.write(chunk)
 
-                subprocess.run(
-                    [
-                        ffmpeg_path,
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-y",
-                        "-ss",
-                        str(start_seconds),
-                        "-i",
-                        input_path,
-                        "-t",
-                        str(duration_seconds),
-                        "-vn",
-                        # Prevent inheriting source tags like TLEN (full-track
-                        # length), which can confuse duration reporting.
-                        "-map_metadata",
-                        "-1",
-                        "-map_chapters",
-                        "-1",
-                        "-acodec",
-                        "libmp3lame",
-                        "-q:a",
-                        "4",
-                        output_path,
-                    ],
-                    check=True,
-                )  # nosec B603
+                transcode_to_mp3_clip_file(
+                    input_path=input_path,
+                    output_path=output_path,
+                    spec=Mp3ClipSpec(
+                        start_seconds=start_seconds,
+                        duration_seconds=duration_seconds,
+                    ),
+                    ffmpeg_path=ffmpeg_path,
+                )
 
                 clip_bytes = Path(output_path).read_bytes()
                 default_storage.save(

@@ -15,7 +15,14 @@
             "executor": "nx:run-commands",
             "inputs": ["python", "sharedGlobals"],
             "options": {
-                "command": "uv run ruff check apps/django_projects/korfbal"
+                "command": "uv run ruff format --check apps/django_projects/korfbal && uv run ruff check apps/django_projects/korfbal"
+            }
+        },
+        "lint-fix": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run ruff check --fix apps/django_projects/korfbal"
             }
         },
         "typecheck": {
@@ -49,6 +56,13 @@
             "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run ruff format apps/django_projects/korfbal"
+            }
+        },
+        "format-check": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run ruff format --check apps/django_projects/korfbal"
             }
         },
         "docker-uwsgi": {

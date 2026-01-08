@@ -342,7 +342,7 @@ CHANNEL_LAYERS = {
     },
 }
 
-if os.getenv("PYTEST_CURRENT_TEST") or any("pytest" in arg for arg in sys.argv):
+if RUNNING_TESTS:
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 
