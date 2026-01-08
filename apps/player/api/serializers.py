@@ -37,6 +37,7 @@ class PlayerSerializer(serializers.ModelSerializer):
     """Serializer for Player model."""
 
     user = UserSerializer(read_only=True)
+    viewer_is_superuser = serializers.SerializerMethodField()
     profile_picture_url = serializers.SerializerMethodField()
     goal_song_songs = serializers.SerializerMethodField()
     active_member_clubs = serializers.SerializerMethodField()
@@ -77,6 +78,7 @@ class PlayerSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "user",
+            "viewer_is_superuser",
             "profile_picture",
             "profile_picture_url",
             "profile_picture_visibility",
@@ -96,10 +98,23 @@ class PlayerSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = [
             "id_uuid",
             "user",
+            "viewer_is_superuser",
             "can_view_profile_picture",
             "can_view_stats",
             "is_private_account",
         ]
+
+    def get_viewer_is_superuser(self, obj: Player) -> bool:
+        """Return whether the requesting user is a Django superuser.
+
+        Notes:
+            This is intentionally a *viewer* flag (not a property of `obj.user`),
+            so we don't leak privilege information about the profiled user.
+
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(getattr(user, "is_superuser", False))
 
     def get_profile_picture_url(self, obj: Player) -> str:
         """Return the profile picture URL.
