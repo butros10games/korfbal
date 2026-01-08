@@ -61,6 +61,12 @@ class Player(models.Model):
         default=Visibility.PUBLIC,
     )
 
+    teams_visibility: models.CharField[str, str] = models.CharField(
+        max_length=16,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
+    )
+
     team_follow: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         team_model_string,
         blank=True,

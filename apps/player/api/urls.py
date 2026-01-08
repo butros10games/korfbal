@@ -12,12 +12,14 @@ from .views import (
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
+    CurrentPlayerTeamsAPIView,
     CurrentPlayerTestPushNotificationAPIView,
     PlayerConnectedClubRecentResultsAPIView,
     PlayerFollowedTeamsAPIView,
     PlayerOverviewAPIView,
     PlayerSongClipAPIView,
     PlayerStatsAPIView,
+    PlayerTeamsAPIView,
     PlayerViewSet,
     SpotifyCallbackView,
     SpotifyConnectAPIView,
@@ -38,6 +40,11 @@ urlpatterns = [
         "me/followed-teams/",
         CurrentPlayerFollowedTeamsAPIView.as_view(),
         name="player-followed-teams-current",
+    ),
+    path(
+        "me/teams/",
+        CurrentPlayerTeamsAPIView.as_view(),
+        name="player-teams-current",
     ),
     path(
         "me/privacy-settings/",
@@ -128,6 +135,11 @@ urlpatterns = [
         "players/<uuid:player_id>/followed-teams/",
         PlayerFollowedTeamsAPIView.as_view(),
         name="player-followed-teams-detail",
+    ),
+    path(
+        "players/<uuid:player_id>/teams/",
+        PlayerTeamsAPIView.as_view(),
+        name="player-teams-detail",
     ),
     path(
         "me/stats/",

@@ -67,6 +67,7 @@ from apps.schedule.models import Season
 from apps.schedule.models.mvp import MatchMvp
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models import TeamData
+from apps.team.models.team import Team
 
 from .serializers import (
     PlayerPrivacySettingsSerializer,
@@ -498,7 +499,7 @@ class PlayerFollowedTeamsAPIView(APIView):
                 else None
             )
             if not can_view_by_visibility(
-                visibility=player.stats_visibility,
+                visibility=player.teams_visibility,
                 viewer=viewer,
                 target=player,
             ):
@@ -532,6 +533,138 @@ class PlayerFollowedTeamsAPIView(APIView):
             )
 
         return _get_current_player(request)
+
+
+class PlayerTeamsAPIView(APIView):
+    """Return teams for a player grouped into 'playing' and 'following'.
+
+    URLs:
+        - /api/player/me/teams/
+        - /api/player/players/<uuid>/teams/
+
+    Notes:
+        - 'following' is the set of teams the player follows.
+        - 'playing' is derived from TeamData for the current season.
+        - When viewing another player, visibility is gated via
+          `Player.teams_visibility`.
+
+    """
+
+    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
+        permissions.AllowAny,
+    ]
+
+    def get(
+        self,
+        request: Request,
+        player_id: str | None = None,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return teams grouped as playing/coaching/following for a player."""
+        player = self._resolve_player(request, player_id)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        if player_id:
+            viewer = (
+                Player.objects.filter(user=request.user).first()
+                if request.user.is_authenticated
+                else None
+            )
+            if not can_view_by_visibility(
+                visibility=player.teams_visibility,
+                viewer=viewer,
+                target=player,
+            ):
+                return Response(
+                    PRIVATE_ACCOUNT_DETAIL,
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        season = _current_season()
+
+        playing_qs = Team.objects.none()
+        coaching_qs = Team.objects.none()
+        if season is not None:
+            playing_ids = (
+                TeamData.objects
+                .filter(season=season)
+                .filter(players=player)
+                .values_list("team_id", flat=True)
+                .distinct()
+            )
+            coaching_ids = (
+                TeamData.objects
+                .filter(season=season)
+                .filter(coach=player)
+                .values_list("team_id", flat=True)
+                .distinct()
+            )
+
+            playing_qs = (
+                Team.objects
+                .filter(id_uuid__in=playing_ids)
+                .select_related("club")
+                .order_by("club__name", "name")
+            )
+            coaching_qs = (
+                Team.objects
+                .filter(id_uuid__in=coaching_ids)
+                .select_related("club")
+                .order_by("club__name", "name")
+            )
+
+        following_qs = (
+            player.team_follow
+            .all()
+            .select_related("club")
+            .order_by("club__name", "name")
+        )
+
+        return Response({
+            "playing": TeamSerializer(
+                playing_qs,
+                many=True,
+                context={"request": request},
+            ).data,
+            "coaching": TeamSerializer(
+                coaching_qs,
+                many=True,
+                context={"request": request},
+            ).data,
+            "following": TeamSerializer(
+                following_qs,
+                many=True,
+                context={"request": request},
+            ).data,
+        })
+
+    @staticmethod
+    def _resolve_player(request: Request, player_id: str | None) -> Player | None:
+        if player_id:
+            return (
+                Player.objects
+                .select_related("user")
+                .prefetch_related("team_follow")
+                .filter(id_uuid=player_id)
+                .first()
+            )
+
+        return _get_current_player(request)
+
+
+class CurrentPlayerTeamsAPIView(PlayerTeamsAPIView):
+    """Return teams grouped for the current player."""
+
+    def get(
+        self,
+        request: Request,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> Response:
+        """Return teams grouped as playing/coaching/following for the current player."""
+        return super().get(request, None, *args, **kwargs)
 
 
 class CurrentPlayerFollowedTeamsAPIView(PlayerFollowedTeamsAPIView):
@@ -573,9 +706,14 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
         if stats_visibility == Player.Visibility.PRIVATE:
             stats_visibility = Player.Visibility.CLUB
 
+        teams_visibility = player.teams_visibility
+        if teams_visibility == Player.Visibility.PRIVATE:
+            teams_visibility = Player.Visibility.CLUB
+
         return Response({
             "profile_picture_visibility": profile_visibility,
             "stats_visibility": stats_visibility,
+            "teams_visibility": teams_visibility,
         })
 
     def patch(
@@ -602,6 +740,10 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
         if "stats_visibility" in serializer.validated_data:
             player.stats_visibility = str(serializer.validated_data["stats_visibility"])
             update_fields.append("stats_visibility")
+
+        if "teams_visibility" in serializer.validated_data:
+            player.teams_visibility = str(serializer.validated_data["teams_visibility"])
+            update_fields.append("teams_visibility")
 
         if update_fields:
             player.save(update_fields=update_fields)

@@ -43,6 +43,7 @@ class PlayerSerializer(serializers.ModelSerializer):
     active_member_clubs = serializers.SerializerMethodField()
     can_view_profile_picture = serializers.SerializerMethodField()
     can_view_stats = serializers.SerializerMethodField()
+    can_view_teams = serializers.SerializerMethodField()
     is_private_account = serializers.SerializerMethodField()
 
     _viewer_player: Player | None = None
@@ -83,8 +84,10 @@ class PlayerSerializer(serializers.ModelSerializer):
             "profile_picture_url",
             "profile_picture_visibility",
             "stats_visibility",
+            "teams_visibility",
             "can_view_profile_picture",
             "can_view_stats",
+            "can_view_teams",
             "is_private_account",
             "team_follow",
             "club_follow",
@@ -101,6 +104,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             "viewer_is_superuser",
             "can_view_profile_picture",
             "can_view_stats",
+            "can_view_teams",
             "is_private_account",
         ]
 
@@ -146,6 +150,14 @@ class PlayerSerializer(serializers.ModelSerializer):
             target=obj,
         )
 
+    def get_can_view_teams(self, obj: Player) -> bool:
+        """Return True if the requesting viewer may see the player's teams."""
+        return can_view_by_visibility(
+            visibility=obj.teams_visibility,
+            viewer=self._viewer_player,
+            target=obj,
+        )
+
     def get_is_private_account(self, obj: Player) -> bool:
         """Return True when both stats and profile picture are blocked."""
         return (not self.get_can_view_profile_picture(obj)) and (
@@ -173,6 +185,8 @@ class PlayerSerializer(serializers.ModelSerializer):
             data["profile_picture_visibility"] = Player.Visibility.CLUB
         if data.get("stats_visibility") == Player.Visibility.PRIVATE:
             data["stats_visibility"] = Player.Visibility.CLUB
+        if data.get("teams_visibility") == Player.Visibility.PRIVATE:
+            data["teams_visibility"] = Player.Visibility.CLUB
 
         is_self = (
             self._viewer_player is not None
@@ -190,6 +204,10 @@ class PlayerSerializer(serializers.ModelSerializer):
         if not self.get_can_view_profile_picture(player):
             # Prevent leaking the raw file path/URL via the ImageField.
             data["profile_picture"] = None
+
+        if (not is_self) and (not self.get_can_view_teams(player)):
+            # Do not leak follow preferences when teams are hidden.
+            data["team_follow"] = []
 
         if (not is_self) and self.get_is_private_account(player):
             # When the viewer can't see anything meaningful, avoid exposing
@@ -444,6 +462,10 @@ class PlayerPrivacySettingsSerializer(serializers.Serializer):
         choices=Player.Visibility.choices,
         required=False,
     )
+    teams_visibility = serializers.ChoiceField(
+        choices=Player.Visibility.choices,
+        required=False,
+    )
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         """Validate and normalise privacy settings input.
@@ -456,9 +478,7 @@ class PlayerPrivacySettingsSerializer(serializers.Serializer):
 
         """
         if not attrs:
-            raise serializers.ValidationError(
-                "Provide profile_picture_visibility and/or stats_visibility."
-            )
+            raise serializers.ValidationError("Provide at least one privacy setting.")
 
         # Backwards compatibility: if an older client sends 'private', treat it
         # as 'club' (the stricter, still-useful option).
@@ -466,6 +486,8 @@ class PlayerPrivacySettingsSerializer(serializers.Serializer):
             attrs["profile_picture_visibility"] = Player.Visibility.CLUB
         if attrs.get("stats_visibility") == Player.Visibility.PRIVATE:
             attrs["stats_visibility"] = Player.Visibility.CLUB
+        if attrs.get("teams_visibility") == Player.Visibility.PRIVATE:
+            attrs["teams_visibility"] = Player.Visibility.CLUB
 
         return attrs
 
