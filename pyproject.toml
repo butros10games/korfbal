@@ -32,16 +32,12 @@ uwsgi = [
     "django-cryptography",
     "django-prometheus",
 ]
-daphne = ["daphne", "channels", "channels-redis"]
 dev = [
     "Pillow",
     "pyuwsgi; sys_platform == 'linux'",
     "bg-django-caching-paginator",
     "django-cryptography",
     "django-prometheus",
-    "daphne",
-    "channels",
-    "channels-redis",
 ]
 
 [tool.uv.sources]

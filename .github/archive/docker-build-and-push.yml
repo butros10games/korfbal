@@ -39,15 +39,3 @@ jobs:
                       ${{ secrets.DOCKER_USERNAME }}/kwt-uwsgi:latest
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
-
-            - name: Build and Push Daphne Image
-              uses: docker/build-push-action@v4
-              with:
-                  context: .
-                  file: daphne.Dockerfile
-                  push: true
-                  tags: |
-                      ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:${{ github.ref_name }}
-                      ${{ secrets.DOCKER_USERNAME }}/kwt-daphne:latest
-                  cache-from: type=gha
-                  cache-to: type=gha,mode=max

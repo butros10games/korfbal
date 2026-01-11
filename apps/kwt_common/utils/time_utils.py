@@ -2,10 +2,9 @@
 
 from datetime import UTC, datetime
 import json
-from typing import Any, cast
+from typing import cast
 
 from asgiref.sync import sync_to_async
-from channels.generic.websocket import AsyncWebsocketConsumer
 
 from apps.game_tracker.models import MatchData, MatchPart, Pause
 
@@ -108,31 +107,3 @@ def get_time_display(match_data: MatchData) -> str:
     minutes = int(time_left / 60)
     seconds = int(time_left % 60)
     return f"{minutes:02d}:{seconds:02d}"
-
-
-async def get_time_display_pause(
-    self: AsyncWebsocketConsumer, json_data: dict[str, Any]
-) -> None:
-    """Get the time display for the pause.
-
-    Args:
-        self: The instance of the class calling this method.
-        json_data: A dictionary containing match data, including the match_data_id.
-
-    """
-    match_data = await MatchData.objects.prefetch_related("match_link").aget(
-        id_uuid=json_data["match_data_id"],
-    )
-
-    current_part = await MatchPart.objects.aget(match_data=match_data, active=True)
-
-    # Subscribe to time data channel
-    if match_data.match_link.id_uuid not in self.subscribed_channels:  # type: ignore[unresolved-attribute]
-        await self.channel_layer.group_add(
-            f"time_match_{match_data.match_link.id_uuid}",
-            self.channel_name,
-        )
-
-        self.subscribed_channels.append(match_data.match_link.id_uuid)  # type: ignore[unresolved-attribute]
-
-    await self.send(text_data=await get_time(match_data, current_part))

@@ -116,7 +116,7 @@ When ready:
 
 - Add award events in `apps.awards.services` (e.g. `award.mvp_published`).
 - Add a notification pipeline:
-    - Create notification records (DB) + optional push via Channels/websocket.
+    - Create notification records (DB) + optional delivery via Web Push.
     - Prefer asynchronous delivery via Celery tasks.
 
 ## When to split further

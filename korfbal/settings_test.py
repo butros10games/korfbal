@@ -66,12 +66,6 @@ STORAGES = {
 
 
 # ---------------------------------------------------------------------------
-# Channels: force in-memory layer for tests (avoid Redis/Valkey dependency)
-# ---------------------------------------------------------------------------
-CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
-
-
-# ---------------------------------------------------------------------------
 # Celery: use in-memory broker/backend for tests
 # ---------------------------------------------------------------------------
 CELERY_BROKER_URL = "memory://"

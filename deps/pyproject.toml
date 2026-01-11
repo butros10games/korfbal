@@ -16,8 +16,6 @@ dependencies = [
     "valkey",
     "django-valkey",
     "celery",
-    "channels",
-    "asgiref>=3.10.0,<3.11",
     "djangorestframework",
     "django-cors-headers",
     "drf-spectacular",
@@ -35,7 +33,6 @@ uwsgi = [
     "django-cryptography",
     "django-prometheus",
 ]
-daphne = ["daphne", "channels", "channels-redis"]
 
 dev = [
     "Pillow",
@@ -43,9 +40,6 @@ dev = [
     "bg-django-caching-paginator",
     "django-cryptography",
     "django-prometheus",
-    "daphne",
-    "channels",
-    "channels-redis",
 ]
 
 [tool.uv.sources]

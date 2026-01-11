@@ -331,21 +331,6 @@ VALKEY_HOST = _env("VALKEY_HOST", "127.0.0.1")
 VALKEY_PORT = _env_int("VALKEY_PORT", 6379)
 
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [(VALKEY_HOST, VALKEY_PORT)],
-            "capacity": 1500,
-            "expiry": 10,
-        },
-    },
-}
-
-if RUNNING_TESTS:
-    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
-
-
 db_engine = (
     "django_prometheus.db.backends.postgresql"
     if RUNNER == "uwsgi"
