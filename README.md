@@ -1,39 +1,88 @@
-# Korfbal (Django)
+# Korfbal (Django API)
 
-Web app to track korfbal matches, players, and stats in real time.
+Django backend for the Korfbal Web Tool.
+
+- Serves the **REST API** (DRF) consumed by the React SPA (`apps/node_projects/frontend/korfbal-web`).
+- Hosts the **Django admin**.
+- Runs background jobs via **Celery** (and real-time features via **Channels**).
+
+The public UI is owned by the SPA; this Django project does not host app templates.
 
 ## Requirements
 
-- Python 3.12+ and uv
-- PostgreSQL and Valkey/Redis (local or remote)
+- Python 3.12+
+- `uv`
 
-## Setup (Windows PowerShell)
+## Local setup (minimal)
 
-- Install deps: uv sync
-- Create your environment file based on the provided .env template and update POSTGRES*\*, REDIS*\_, MINIO\_\_ values
-- Migrate: uv run python manage.py migrate
-- Create admin: uv run python manage.py createsuperuser
+This is the quickest “I want tests + API running” setup.
 
-## Run
+1. Create env file:
 
-- Dev: uv run python manage.py runserver 0.0.0.0:8000
-- Docker (shared dev stack from repo root):
-    1. docker network create monorepo_test-net (one-time)
-    2. docker compose -f docker-compose.base.yaml -f docker-compose.kwt-dev.yaml --profile korfbal up --build
-- ASGI/WSGI via Docker: see the docker/ folder for production-style images
+- Copy `apps/django_projects/korfbal/.env.example` to `apps/django_projects/korfbal/.env`
+- At minimum configure: `POSTGRES_*`, `VALKEY_*`, and (optionally) `MINIO_*`
 
-## Features
+2. Install deps:
 
-- Match tracker with live updates
-- Player and team management
-- Simple dashboards and stats
+- `uv sync`
 
-## Tests and quality
+3. Run migrations:
 
-- Tests: uv run pytest -q
-- Lint: uv run ruff check .; uv run ruff check --fix .
+- `uv run python apps/django_projects/korfbal/manage.py migrate`
 
-## Notes
+4. Create admin user:
 
-- Static assets are served via Django in dev; use collectstatic for prod.
-- The dev compose stack mounts the local source folders for live reload.
+- `uv run python apps/django_projects/korfbal/manage.py createsuperuser`
+
+5. Run server:
+
+- `uv run python apps/django_projects/korfbal/manage.py runserver 0.0.0.0:8000`
+
+The API will typically be served behind nginx at `https://api.korfbal.<domain>/api/`.
+
+## Docker dev stack (recommended)
+
+From repo root (uses the shared compose files):
+
+1. One-time:
+
+- `docker network create monorepo_test-net`
+
+2. Start services:
+
+- `docker compose -f docker-compose.base.yaml -f docker-compose.kwt-dev.yaml --profile korfbal up --build`
+
+This brings up Postgres/Valkey/MinIO plus the korfbal services.
+
+## Project quality (Nx)
+
+Prefer Nx targets (faster/more consistent in this monorepo):
+
+- Tests: `npm run nx -- run korfbal-django:test`
+- Lint: `npm run nx -- run korfbal-django:lint`
+- Typecheck: `npm run nx -- run korfbal-django:typecheck`
+
+Fallback (from `apps/django_projects/korfbal/`):
+
+- `uv run pytest -q`
+- `uv run ruff format --check . && uv run ruff check .`
+
+## Operational notes
+
+**External services** (production-like):
+
+- Postgres (required)
+- Valkey/Redis (required: cache, sessions, Channels, Celery broker/backend)
+- S3-compatible storage (MinIO in dev) for media/static (required in production)
+
+**Integrations** (optional, but used by features):
+
+- Spotify OAuth (`SPOTIFY_*`) for player goal songs
+- Web Push (`WEBPUSH_*`) for PWA notifications
+
+**Performance/observability knobs** (all env-driven, off by default):
+
+- Slow SQL logging: `KORFBAL_LOG_SLOW_DB_QUERIES=true`
+- Slow requests buffer: `KORFBAL_LOG_SLOW_REQUESTS=true` (see `/api/debug/slow-requests/`, staff-only)
+
+See `apps/django_projects/korfbal/korfbal/settings.py` for the full list of configuration flags.

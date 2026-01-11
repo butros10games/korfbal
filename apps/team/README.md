@@ -1,43 +1,16 @@
-<!-- Badges: Uncomment and update as needed -->
-<!--
-![Build Status](https://img.shields.io/github/workflow/status/butros10games/MonoRepo/CI)
-![Coverage](https://img.shields.io/codecov/c/github/butros10games/MonoRepo)
-![License](https://img.shields.io/github/license/butros10games/MonoRepo)
--->
+# team (Korfbal)
 
-# team
+Team domain for the Korfbal backend.
 
-## Features
+Includes:
 
-- Team management and roster features for the korfbal project.
+- Team metadata + roster
+- Team stats and computed “impact”/performance metrics
 
-## Requirements
+## Notes
 
-- Django >= 3.2
+- API endpoints live under `apps/django_projects/korfbal/apps/team/api/`.
+- This app contains some of the heaviest stats queries; use the slow-query/slow-request
+  toggles in `apps/django_projects/korfbal/korfbal/settings.py` when profiling.
 
-## Usage
-
-Add to `INSTALLED_APPS` in your Django settings:
-
-```python
-INSTALLED_APPS = [
-    ...
-    'team',
-]
-```
-
-## Testing
-
-To run tests for this app:
-
-```bash
-python manage.py test team
-```
-
-Make sure you have a test database configured.
-
-## Contributing
-
-Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/development/contributing.md) for workflow and code style.
-
-<!-- Optionally add a screenshot or architecture diagram here -->
+Run tests via: `npm run nx -- run korfbal-django:test`.

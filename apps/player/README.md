@@ -1,39 +1,16 @@
-<!-- Badges: Uncomment and update as needed -->
-<!--
-![Build Status](https://img.shields.io/github/workflow/status/butros10games/MonoRepo/CI)
-![Coverage](https://img.shields.io/codecov/c/github/butros10games/MonoRepo)
-![License](https://img.shields.io/github/license/butros10games/MonoRepo)
--->
+# player (Korfbal)
 
-# player (Django app)
+Player domain for the Korfbal backend.
 
-## Features
+Includes:
 
-- Player management and profiles for the korfbal project.
+- Player profiles + privacy settings
+- Player-song/goal-song features (Spotify + spotDL)
+- Push notification subscriptions (PWA / Web Push)
 
-## Requirements
+## Notes
 
-- Django >= 3.2
+- API endpoints live under `apps/django_projects/korfbal/apps/player/api/`.
+- Background tasks live in `apps/django_projects/korfbal/apps/player/tasks.py`.
 
-## Usage
-
-Add to `INSTALLED_APPS` in your Django settings:
-
-```python
-INSTALLED_APPS = [
-    ...
-    'player',
-]
-```
-
-## Local test
-
-Run from the project root:
-
-- uv run python manage.py test player
-
-## Contributing
-
-Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/development/contributing.md) for workflow and code style.
-
-<!-- Optionally add a screenshot or architecture diagram here -->
+Run tests via: `npm run nx -- run korfbal-django:test`.

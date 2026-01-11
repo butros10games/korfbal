@@ -1,15 +1,23 @@
 """Test settings for the korfbal project.
 
-Mirrors the production configuration but replaces external service
-dependencies (Postgres, Redis/Valkey, S3, Celery) with in-memory or local
-backends so the test suite can run without additional infrastructure.
+Mirrors the production configuration but replaces external service dependencies
+(Postgres, Redis/Valkey, S3, Celery) with in-memory or local backends so the test
+suite can run without additional infrastructure.
 """
 
 from __future__ import annotations
 
 import os
 
-from .settings import *  # noqa: F403  # NOSONAR
+from .settings import *  # noqa: F403
+from .settings.env import BASE_DIR
+from .settings.services import DATABASES
+
+
+# Keep ruff happy with explicit bindings for star-imported settings.
+# (We intentionally override these below.)
+STORAGES = globals().get("STORAGES", {})
+STATICFILES_STORAGE = globals().get("STATICFILES_STORAGE", "")
 
 
 # In-memory cache (avoid Valkey/Redis during tests)
@@ -44,9 +52,9 @@ KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT = 25
 # Database fallback for tests
 # ---------------------------------------------------------------------------
 if os.getenv("DJANGO_TEST_USE_POSTGRES", "").lower() not in {"1", "true", "yes", "on"}:
-    DATABASES["default"] = {  # noqa: F405
+    DATABASES["default"] = {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / "test.sqlite3"),  # noqa: F405
+        "NAME": str(BASE_DIR / "test.sqlite3"),
     }
 
 
@@ -57,7 +65,7 @@ STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
-        "OPTIONS": {"location": BASE_DIR / "media_test"},  # noqa: F405
+        "OPTIONS": {"location": BASE_DIR / "media_test"},
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",

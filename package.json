@@ -18,8 +18,8 @@
         "prettier": "^3.7.4"
     },
     "scripts": {
-        "lint": "eslint static_workfile/js/**/*.js",
-        "lint-fix": "eslint static_workfile/js/**/*.js --fix",
+        "lint": "eslint configs/rspack/**/*.js",
+        "lint-fix": "eslint configs/rspack/**/*.js --fix",
         "build": "rspack --mode production --config configs/rspack/rspack.config.js"
     },
     "keywords": [],

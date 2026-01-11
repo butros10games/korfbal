@@ -1,43 +1,14 @@
-<!-- Badges: Uncomment and update as needed -->
-<!--
-![Build Status](https://img.shields.io/github/workflow/status/butros10games/MonoRepo/CI)
-![Coverage](https://img.shields.io/codecov/c/github/butros10games/MonoRepo)
-![License](https://img.shields.io/github/license/butros10games/MonoRepo)
--->
+# kwt_common (Korfbal)
 
-# common
+Shared utilities for the Korfbal Django backend.
 
-## Features
+This app holds cross-cutting concerns that are used by multiple apps in
+`apps/django_projects/korfbal/apps/`, such as:
 
-- Shared utilities and helpers for the korfbal project.
+- Middleware (request timing, slow query logging)
+- Context processors and shared helpers
 
-## Requirements
+## Notes
 
-- Django >= 3.2
-
-## Usage
-
-Add to `INSTALLED_APPS` in your Django settings:
-
-```python
-INSTALLED_APPS = [
-    ...
-    'common',
-]
-```
-
-## Testing
-
-To run tests for this app:
-
-```bash
-python manage.py test common
-```
-
-Make sure you have a test database configured.
-
-## Contributing
-
-Contributions are welcome! Please see the main [Contributing Guide](../../../../../../docs/development/contributing.md) for workflow and code style.
-
-<!-- Optionally add a screenshot or architecture diagram here -->
+- This repository uses `uv` + `pytest` + `ruff`.
+- Run tests via the project target: `npm run nx -- run korfbal-django:test`.
