@@ -1,0 +1,35 @@
+# Python
+__pycache__
+**/__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+# Virtualenvs
+.venv
+**/.venv
+.uv
+**/.uv
+
+# Django/static/media
+staticfiles
+media
+
+# Local env
+.env
+.env.*
+
+# VCS/editor
+.git
+.DS_Store
+.vscode
+.idea
+
+# Node (if present)
+node_modules
+**/node_modules
