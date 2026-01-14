@@ -7,4 +7,4 @@ Includes:
 - Match program/schedule data
 - Match results and related queries
 
-Run tests via: `npm run nx -- run korfbal-django:test`.
+Run tests via: `corepack pnpm nx run korfbal-django:test`.

@@ -13,4 +13,4 @@ Includes:
 - API endpoints live under `apps/django_projects/korfbal/apps/player/api/`.
 - Background tasks live in `apps/django_projects/korfbal/apps/player/tasks.py`.
 
-Run tests via: `npm run nx -- run korfbal-django:test`.
+Run tests via: `corepack pnpm nx run korfbal-django:test`.

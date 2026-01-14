@@ -13,4 +13,4 @@ Includes:
 - This app contains some of the heaviest stats queries; use the slow-query/slow-request
   toggles in `apps/django_projects/korfbal/korfbal/settings.py` when profiling.
 
-Run tests via: `npm run nx -- run korfbal-django:test`.
+Run tests via: `corepack pnpm nx run korfbal-django:test`.

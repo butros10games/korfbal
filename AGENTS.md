@@ -10,9 +10,9 @@ Korfbal is a Django app for match tracking (incl. live match tracker), players, 
 
 Prefer Nx targets (recommended):
 
-- List projects: `npm run nx -- show projects --verbose`
-- Run tests: `npm run nx -- run korfbal-django:test`
-- Run lint: `npm run nx -- run korfbal-django:lint`
+- List projects: `corepack pnpm nx show projects --verbose`
+- Run tests: `corepack pnpm nx run korfbal-django:test`
+- Run lint: `corepack pnpm nx run korfbal-django:lint`
 
 Fallback (from this directory):
 

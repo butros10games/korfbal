@@ -58,9 +58,9 @@ This brings up Postgres/Valkey/MinIO plus the korfbal services.
 
 Prefer Nx targets (faster/more consistent in this monorepo):
 
-- Tests: `npm run nx -- run korfbal-django:test`
-- Lint: `npm run nx -- run korfbal-django:lint`
-- Typecheck: `npm run nx -- run korfbal-django:typecheck`
+- Tests: `corepack pnpm nx run korfbal-django:test`
+- Lint: `corepack pnpm nx run korfbal-django:lint`
+- Typecheck: `corepack pnpm nx run korfbal-django:typecheck`
 
 Fallback (from `apps/django_projects/korfbal/`):
 

@@ -11,4 +11,4 @@ This app holds cross-cutting concerns that are used by multiple apps in
 ## Notes
 
 - This repository uses `uv` + `pytest` + `ruff`.
-- Run tests via the project target: `npm run nx -- run korfbal-django:test`.
+- Run tests via the project target: `corepack pnpm nx run korfbal-django:test`.
