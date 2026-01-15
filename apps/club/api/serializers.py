@@ -39,7 +39,7 @@ class ClubAdminPlayerSerializer(serializers.Serializer):
     id_uuid = serializers.UUIDField()
     username = serializers.CharField()
 
-    def to_representation(self, instance: Player) -> dict[str, object]:  # type: ignore[override]
+    def to_representation(self, instance: Player) -> dict[str, object]:
         """Return a minimal player payload for club admin tooling."""
         return {
             "id_uuid": str(instance.id_uuid),
@@ -55,7 +55,7 @@ class ClubMembershipSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField(allow_null=True)
 
-    def to_representation(self, instance: PlayerClubMembership) -> dict[str, object]:  # type: ignore[override]
+    def to_representation(self, instance: PlayerClubMembership) -> dict[str, object]:
         """Serialize a membership and nested player summary."""
         return {
             "id_uuid": str(instance.id_uuid),

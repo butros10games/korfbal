@@ -65,7 +65,7 @@ class MatchData(models.Model):
 
         """
         if self.home_score > self.away_score:
-            return self.match_link.home_team.name  # type: ignore[no-any-return]
+            return self.match_link.home_team.name
         if self.home_score < self.away_score:
-            return self.match_link.away_team.name  # type: ignore[no-any-return]
+            return self.match_link.away_team.name
         return None

@@ -1630,7 +1630,7 @@ class CurrentPlayerGoalSongAPIView(APIView):
                 else first.audio_file
             )
             if audio_file:
-                player.goal_song_uri = audio_file.url  # type: ignore[no-any-return]
+                player.goal_song_uri = audio_file.url
                 update_fields.append("goal_song_uri")
             player.song_start_time = first.start_time_seconds
             update_fields.append("song_start_time")
@@ -2167,7 +2167,7 @@ def _remove_deleted_song_from_goal_song_selection(
             else first.audio_file
         )
     if audio_file:
-        player.goal_song_uri = audio_file.url  # type: ignore[no-any-return]
+        player.goal_song_uri = audio_file.url
     else:
         player.goal_song_uri = ""
     player.song_start_time = first.start_time_seconds if first is not None else None

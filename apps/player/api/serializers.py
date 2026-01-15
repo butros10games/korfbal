@@ -168,7 +168,7 @@ class PlayerSerializer(serializers.ModelSerializer):
     # can disagree about the effective override target. This implementation matches
     # DRF's runtime contract (returns a dict for API responses) and we scope-ignore
     # only the override check.
-    def to_representation(  # type: ignore[invalid-method-override]
+    def to_representation(
         self,
         instance: object,
     ) -> dict[str, Any]:
@@ -356,7 +356,7 @@ class PlayerSongSerializer(serializers.ModelSerializer):
         audio_file = cached.audio_file if cached is not None else obj.audio_file
         if not audio_file:
             return None
-        return audio_file.url  # type: ignore[no-any-return]
+        return audio_file.url
 
 
 class PlayerSongCreateSerializer(serializers.Serializer):

@@ -22,7 +22,7 @@ class Club(models.Model):
     )
     name: models.CharField[str, str] = models.CharField(max_length=255, unique=True)
     admin: models.ManyToManyField[Any, Any] = models.ManyToManyField(
-        "player.Player",  # type: ignore[misc]
+        "player.Player",
         through="ClubAdmin",
         related_name="clubs",
         blank=True,
@@ -64,7 +64,7 @@ class Club(models.Model):
 
         """
         if self.logo:
-            return self.logo.url  # type: ignore[no-any-return]
+            return self.logo.url
 
         # Optional: if the KWT club doesn't have an uploaded logo in the DB,
         # serve a known static brand asset.

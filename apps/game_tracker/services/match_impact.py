@@ -1777,7 +1777,7 @@ def compute_match_impact_breakdown_cached(
         cached = None
 
     if isinstance(cached, dict):
-        return cached  # type: ignore[return-value]
+        return cached
 
     _rows, breakdown = compute_match_impact_breakdown(
         match_data=match_data,

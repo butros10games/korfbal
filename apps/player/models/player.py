@@ -145,7 +145,7 @@ class Player(models.Model):
 
         """
         if self.profile_picture:
-            return self.profile_picture.url  # type: ignore[no-any-return]
+            return self.profile_picture.url
 
         return self.get_placeholder_profile_picture_url()
 

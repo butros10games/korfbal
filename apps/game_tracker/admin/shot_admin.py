@@ -22,7 +22,7 @@ else:
     ShotAdminBase = admin.ModelAdmin
 
 
-class ShotAdminForm(forms.ModelForm):  # type: ignore[type-arg]
+class ShotAdminForm(forms.ModelForm):
     """Form for the ShotAdmin."""
 
     class Meta:
