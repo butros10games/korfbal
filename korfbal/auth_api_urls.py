@@ -43,6 +43,24 @@ urlpatterns = [
         cast(ViewType, views.api.resend_two_factor_code),
         name="auth-login-2fa-resend",
     ),
+    # JWT auth (mobile-friendly)
+    # These map to `bg_auth.views.api.jwt_*` and are exposed without an extra
+    # /api prefix because this project serves the API on a dedicated domain.
+    path(
+        "auth/jwt/login/",
+        cast(ViewType, views.api.jwt_login),
+        name="auth-jwt-login",
+    ),
+    path(
+        "auth/jwt/login/2fa/verify/",
+        cast(ViewType, views.api.jwt_verify_two_factor),
+        name="auth-jwt-login-2fa-verify",
+    ),
+    path(
+        "auth/jwt/refresh/",
+        cast(ViewType, views.api.jwt_refresh),
+        name="auth-jwt-refresh",
+    ),
     # Password reset (API-driven; SPA renders the UI)
     path(
         "auth/password-reset/request/",

@@ -86,6 +86,11 @@ if DEBUG:
         KWT_ORIGIN,
         "http://localhost:4173",
         "http://localhost:5173",
+        # Expo web dev server (React Native for Web)
+        "http://localhost:19006",
+        # Metro bundler/dev server ports that might host the web UI
+        "http://localhost:8081",
+        "http://localhost:3000",
     ])
 
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
