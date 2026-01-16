@@ -102,6 +102,10 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", not 
 SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", not DEBUG)
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_NAME = env(
+    "CSRF_COOKIE_NAME",
+    "csrftoken" if DEBUG else "korfbal_csrftoken",
+)
 _cookie_domain_default = ".korfbal.butrosgroot.com" if not DEBUG else ""
 _csrf_cookie_domain = env("CSRF_COOKIE_DOMAIN", _cookie_domain_default).strip()
 _session_cookie_domain = env("SESSION_COOKIE_DOMAIN", _cookie_domain_default).strip()
