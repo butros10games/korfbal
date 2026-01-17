@@ -66,6 +66,10 @@ class Shot(models.Model):
             models.Index(fields=["match_data", "team", "scored"]),
             # Speeds up per-player season stats.
             models.Index(fields=["player", "scored"]),
+            # Speeds up per-match shot timelines.
+            models.Index(fields=["match_data", "time"]),
+            # Speeds up scored-event timelines.
+            models.Index(fields=["match_data", "scored", "time"]),
         )
 
     def __str__(self) -> str:

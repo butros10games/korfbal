@@ -9,8 +9,11 @@ improves testability.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from django.db.models import DurationField, ExpressionWrapper, F, Sum
+from django.db.models.functions import Coalesce
 
 from apps.game_tracker.models import (
     MatchData,
@@ -84,19 +87,26 @@ def _time_in_minutes(
     match_part_number: int,
     event_time: datetime,
 ) -> str:
-    pauses = Pause.objects.filter(
+    pause_time = Pause.objects.filter(
         match_data=match_data,
         active=False,
         start_time__lt=event_time,
         start_time__gte=match_part_start,
-    )
-    pause_time = sum(pause.length().total_seconds() for pause in pauses)
+    ).filter(start_time__isnull=False).aggregate(
+        total_pause=Sum(
+            ExpressionWrapper(
+                Coalesce(F("end_time"), F("start_time")) - F("start_time"),
+                output_field=DurationField(),
+            )
+        )
+    ).get("total_pause") or timedelta(0)
+    pause_time_seconds = pause_time.total_seconds()
 
     time_in_minutes_value = round(
         (
             (event_time - match_part_start).total_seconds()
             + ((match_part_number - 1) * int(match_data.part_length))
-            - pause_time
+            - pause_time_seconds
         )
         / 60,
     )
@@ -117,10 +127,24 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     goals = list(
         Shot.objects
         .select_related(
+            "player",
             "player__user",
             "shot_type",
             "match_part",
             "team",
+        )
+        .only(
+            "id_uuid",
+            "time",
+            "for_team",
+            "player__id_uuid",
+            "player__user__username",
+            "shot_type__id_uuid",
+            "shot_type__name",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+            "team__id_uuid",
         )
         .filter(match_data=match_data, scored=True)
         .order_by("time")
@@ -129,11 +153,26 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     player_changes = list(
         PlayerChange.objects
         .select_related(
+            "player_in",
             "player_in__user",
+            "player_out",
             "player_out__user",
             "player_group",
             "player_group__team",
             "match_part",
+        )
+        .only(
+            "id_uuid",
+            "time",
+            "player_in__id_uuid",
+            "player_in__user__username",
+            "player_out__id_uuid",
+            "player_out__user__username",
+            "player_group__id_uuid",
+            "player_group__team__id_uuid",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
         )
         .filter(player_group__match_data=match_data)
         .order_by("time")
@@ -142,6 +181,15 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     pauses = list(
         Pause.objects
         .select_related("match_part")
+        .only(
+            "id_uuid",
+            "start_time",
+            "end_time",
+            "active",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+        )
         .filter(match_data=match_data)
         .order_by("start_time")
     )
@@ -175,10 +223,25 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
     shots = list(
         Shot.objects
         .select_related(
+            "player",
             "player__user",
             "shot_type",
             "match_part",
             "team",
+        )
+        .only(
+            "id_uuid",
+            "time",
+            "scored",
+            "for_team",
+            "player__id_uuid",
+            "player__user__username",
+            "shot_type__id_uuid",
+            "shot_type__name",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+            "team__id_uuid",
         )
         .filter(match_data=match_data)
         .order_by("time")

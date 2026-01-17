@@ -12,6 +12,14 @@ from django.db import models
 class Pause(models.Model):
     """Model for a pause in a match."""
 
+    class Meta:
+        """Meta options for Pause."""
+
+        indexes = (
+            models.Index(fields=["match_data", "active", "start_time"]),
+            models.Index(fields=["match_data", "start_time"]),
+        )
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,

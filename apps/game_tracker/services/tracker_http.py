@@ -20,7 +20,7 @@ import time
 from typing import Any, cast
 from uuid import UUID
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
@@ -180,17 +180,14 @@ def _timer_data(
 
 
 def _score(match_data: MatchData, *, team: Team, opponent: Team) -> tuple[int, int]:
-    goals_for = Shot.objects.filter(
-        match_data=match_data,
-        team=team,
-        scored=True,
-    ).count()
-    goals_against = Shot.objects.filter(
-        match_data=match_data,
-        team=opponent,
-        scored=True,
-    ).count()
-    return goals_for, goals_against
+    totals = (
+        Shot.objects
+        .filter(match_data=match_data, scored=True, team__in=[team, opponent])
+        .values("team")
+        .annotate(count=models.Count("id_uuid"))
+    )
+    goals_by_team = {row["team"]: row["count"] for row in totals}
+    return goals_by_team.get(team.id_uuid, 0), goals_by_team.get(opponent.id_uuid, 0)
 
 
 def _swap_player_group_types(match_data: MatchData, team: Team) -> None:
@@ -224,6 +221,13 @@ def _player_groups_payload(
         PlayerGroup.objects
         .select_related("starting_type", "current_type")
         .prefetch_related("players__user")
+        .only(
+            "id_uuid",
+            "starting_type__name",
+            "current_type__name",
+            "players__id_uuid",
+            "players__user__username",
+        )
         .filter(match_data=match_data, team=team)
         .exclude(starting_type__name="Reserve")
         .order_by(
@@ -295,6 +299,7 @@ def _reserve_players_payload(
     reserve_group = (
         PlayerGroup.objects
         .prefetch_related("players__user")
+        .only("id_uuid", "players__id_uuid", "players__user__username")
         .filter(
             match_data=match_data,
             team=team,
@@ -325,7 +330,21 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
 
     shot = (
         Shot.objects
-        .select_related("player__user", "shot_type", "match_part", "team")
+        .select_related("player", "player__user", "shot_type", "match_part", "team")
+        .only(
+            "id_uuid",
+            "time",
+            "scored",
+            "for_team",
+            "player__id_uuid",
+            "player__user__username",
+            "shot_type__id_uuid",
+            "shot_type__name",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+            "team__id_uuid",
+        )
         .filter(match_data=match_data)
         .order_by("-time")
         .first()
@@ -336,10 +355,24 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
     change = (
         PlayerChange.objects
         .select_related(
+            "player_in",
             "player_in__user",
+            "player_out",
             "player_out__user",
             "player_group",
             "match_part",
+        )
+        .only(
+            "id_uuid",
+            "time",
+            "player_in__id_uuid",
+            "player_in__user__username",
+            "player_out__id_uuid",
+            "player_out__user__username",
+            "player_group__id_uuid",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
         )
         .filter(match_data=match_data)
         .order_by("-time")
@@ -351,6 +384,15 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
     pause = (
         Pause.objects
         .select_related("match_part")
+        .only(
+            "id_uuid",
+            "start_time",
+            "end_time",
+            "active",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+        )
         .filter(match_data=match_data)
         .order_by("-start_time")
         .first()
@@ -361,6 +403,7 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
     attack = (
         Attack.objects
         .select_related("team")
+        .only("id_uuid", "time", "team__id_uuid", "team__name")
         .filter(match_data=match_data)
         .order_by("-time")
         .first()
@@ -611,22 +654,29 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
     goal_types = list(GoalType.objects.order_by("name"))
 
     substitutions_max = 8
-    substitutions_for = PlayerChange.objects.filter(
-        match_data=match_data,
-        player_group__team=team,
-    ).count()
-    substitutions_against = PlayerChange.objects.filter(
-        match_data=match_data,
-        player_group__team=opponent,
-    ).count()
+    substitutions_counts = (
+        PlayerChange.objects
+        .filter(match_data=match_data, player_group__team__in=[team, opponent])
+        .values("player_group__team")
+        .annotate(count=models.Count("id_uuid"))
+    )
+    substitutions_by_team = {
+        row["player_group__team"]: row["count"] for row in substitutions_counts
+    }
+    substitutions_for = substitutions_by_team.get(team.id_uuid, 0)
+    substitutions_against = substitutions_by_team.get(opponent.id_uuid, 0)
     substitutions_total = substitutions_for + substitutions_against
 
     timeouts_max = 2
-    timeouts_for = Timeout.objects.filter(match_data=match_data, team=team).count()
-    timeouts_against = Timeout.objects.filter(
-        match_data=match_data,
-        team=opponent,
-    ).count()
+    timeouts_counts = (
+        Timeout.objects
+        .filter(match_data=match_data, team__in=[team, opponent])
+        .values("team")
+        .annotate(count=models.Count("id_uuid"))
+    )
+    timeouts_by_team = {row["team"]: row["count"] for row in timeouts_counts}
+    timeouts_for = timeouts_by_team.get(team.id_uuid, 0)
+    timeouts_against = timeouts_by_team.get(opponent.id_uuid, 0)
 
     state: dict[str, Any] = {
         "match_id": str(match.id_uuid),

@@ -14,6 +14,14 @@ from .constants import player_model_string
 class PlayerChange(models.Model):
     """Model for a player change in a match."""
 
+    class Meta:
+        """Meta options for PlayerChange."""
+
+        indexes = (
+            models.Index(fields=["match_data", "time"]),
+            models.Index(fields=["match_data", "player_group", "time"]),
+        )
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
