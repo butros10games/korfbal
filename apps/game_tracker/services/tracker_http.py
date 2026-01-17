@@ -1026,16 +1026,16 @@ def _cmd_substitute_reg(
 ) -> None:
     del match
     current_part = _current_part(match_data)
-    if current_part and _is_paused(match_data, current_part):
-        raise TrackerCommandError(MATCH_IS_PAUSED_MESSAGE, code="match_paused")
+
+    # Allow substitutions during pauses; only block when the match is not active.
+    if match_data.status != "active":
+        raise TrackerCommandError("Match is not active.", code="match_not_active")
 
     # Allow substitutions when there is no active part (between parts).
     # In that situation, persist the substitution without a match part so the
     # event timeline can show it as an intermission (e.g. half-time) event.
     part_for_event = current_part
     if not current_part:
-        if match_data.status != "active":
-            raise TrackerCommandError("Match is not active.", code="match_not_active")
         if match_data.current_part <= 1:
             raise TrackerCommandError(
                 NO_ACTIVE_MATCH_PART_MESSAGE,
@@ -1100,20 +1100,20 @@ def _cmd_substitute_against_reg(
     """Register an opponent substitution without specifying players.
 
     Raises:
-        TrackerCommandError: If the match is paused or the opponent has reached
+        TrackerCommandError: If the match is not active or the opponent has reached
             the maximum number of substitutions.
 
     """
     current_part = _current_part(match_data)
-    if current_part and _is_paused(match_data, current_part):
-        raise TrackerCommandError(MATCH_IS_PAUSED_MESSAGE, code="match_paused")
+
+    # Allow substitutions during pauses; only block when the match is not active.
+    if match_data.status != "active":
+        raise TrackerCommandError("Match is not active.", code="match_not_active")
 
     opponent = _other_team(match, team)
 
     part_for_event = current_part
     if not current_part:
-        if match_data.status != "active":
-            raise TrackerCommandError("Match is not active.", code="match_not_active")
         if match_data.current_part <= 1:
             raise TrackerCommandError(
                 NO_ACTIVE_MATCH_PART_MESSAGE,

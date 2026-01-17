@@ -181,6 +181,92 @@ def test_substitute_reg_allowed_between_parts_and_next_part_can_start() -> None:
 
 
 @pytest.mark.django_db
+def test_substitute_reg_allows_paused_match() -> None:
+    """Substitutions should be allowed during a pause."""
+    home_club = Club.objects.create(name="Paused Sub Home Club")
+    away_club = Club.objects.create(name="Paused Sub Away Club")
+    home_team = Team.objects.create(name="Paused Sub Home Team", club=home_club)
+    away_team = Team.objects.create(name="Paused Sub Away Team", club=away_club)
+
+    season = Season.objects.create(
+        name="Paused Sub Season",
+        start_date=timezone.now().date() - timedelta(days=1),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=10),
+    )
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.parts = 2
+    match_data.current_part = 1
+    match_data.save(update_fields=["status", "parts", "current_part"])
+
+    current_part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=datetime.now(UTC) - timedelta(minutes=5),
+        active=True,
+    )
+
+    Pause.objects.create(
+        match_data=match_data,
+        match_part=current_part,
+        start_time=datetime.now(UTC) - timedelta(minutes=1),
+        active=True,
+    )
+
+    gt_attack = GroupType.objects.create(name="Aanval")
+    gt_reserve = GroupType.objects.create(name="Reserve")
+
+    player_out = (
+        get_user_model()
+        .objects.create_user(username="paused_player_out", password=TEST_PASSWORD)
+        .player
+    )
+    player_in = (
+        get_user_model()
+        .objects.create_user(username="paused_player_in", password=TEST_PASSWORD)
+        .player
+    )
+
+    reserve_group = PlayerGroup.objects.create(
+        team=home_team,
+        match_data=match_data,
+        starting_type=gt_reserve,
+        current_type=gt_reserve,
+    )
+    active_group = PlayerGroup.objects.create(
+        team=home_team,
+        match_data=match_data,
+        starting_type=gt_attack,
+        current_type=gt_attack,
+    )
+    active_group.players.add(player_out)
+    reserve_group.players.add(player_in)
+
+    apply_tracker_command(
+        match,
+        team=home_team,
+        payload={
+            "command": "substitute_reg",
+            "new_player_id": str(player_in.id_uuid),
+            "old_player_id": str(player_out.id_uuid),
+        },
+    )
+
+    active_group.refresh_from_db()
+    reserve_group.refresh_from_db()
+    assert active_group.players.filter(id_uuid=player_in.id_uuid).exists()
+    assert reserve_group.players.filter(id_uuid=player_out.id_uuid).exists()
+
+
+@pytest.mark.django_db
 def test_timeout_command_requires_for_team_flag() -> None:
     """Timeout requires explicit `for_team` flag in the payload."""
     home_club = Club.objects.create(name="Timeout Req Home Club")
