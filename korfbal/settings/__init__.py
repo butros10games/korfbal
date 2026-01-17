@@ -60,6 +60,7 @@ from .runtime import *  # noqa: F403
 # Security (hosts/CORS/CSRF + web app origin)
 from .security import (  # noqa: F401
     ALLOWED_HOSTS,
+    CORS_ALLOW_ALL_ORIGINS,
     CORS_ALLOW_CREDENTIALS,
     CORS_ALLOWED_ORIGINS,
     CSRF_COOKIE_SECURE,

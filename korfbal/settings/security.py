@@ -64,6 +64,7 @@ _default_cors_allowed = ",".join(origin_variants(WEB_KORFBAL_ORIGIN))
 CORS_ALLOWED_ORIGINS = sorted_hosts(
     env_list("CORS_ALLOWED_ORIGINS", _default_cors_allowed),
 )
+CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", False)
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", True)
 
 if DEBUG:
