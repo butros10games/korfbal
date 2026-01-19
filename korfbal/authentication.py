@@ -19,21 +19,12 @@ class JwtBearerAuthentication(BaseAuthentication):
 
     keyword = "bearer"
 
-    def authenticate(self, request: Any) -> tuple[AbstractBaseUser, str] | None:  # noqa: ANN401 - DRF interface
-        """Authenticate the request using a JWT bearer token.
+    def _extract_bearer_token(self, auth_header: str) -> str | None:
+        """Extract a bare token string from an Authorization header.
 
-        Args:
-            request (Any): The incoming HTTP request.
-
-        Returns:
-            tuple[AbstractBaseUser, str] | None: The authenticated user and token,
-            or None if authentication fails.
-
-        Raises:
-            AuthenticationFailed: If authentication fails due to invalid token
-
+        Returns the token string or None if the header is malformed / not a
+        bearer token.
         """
-        auth_header = get_authorization_header(request).decode("utf-8")
         if not auth_header:
             return None
 
@@ -45,7 +36,25 @@ class JwtBearerAuthentication(BaseAuthentication):
         if scheme.lower() != self.keyword:
             return None
 
-        token = token.strip()
+        token = token.strip().strip('"').strip("'")
+        if token.lower().startswith("bearer "):
+            token = token.split(" ", 1)[1].strip()
+
+        return token or None
+
+    def authenticate(self, request: Any) -> tuple[AbstractBaseUser, str] | None:  # noqa: ANN401 - DRF interface
+        """Authenticate the request using a JWT bearer token.
+
+        This method delegates header parsing to `_extract_bearer_token` to keep
+        complexity low.
+
+        Raises:
+            AuthenticationFailed: If the provided token is invalid, the user is
+                not found, inactive, or otherwise invalid.
+
+        """
+        auth_header = get_authorization_header(request).decode("utf-8")
+        token = self._extract_bearer_token(auth_header)
         if not token:
             return None
 
