@@ -752,7 +752,7 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
 
 
 class CurrentPlayerPushSubscriptionsAPIView(APIView):
-    """Register/list/deactivate web push subscriptions for the current user.
+    """Register/list/deactivate push subscriptions for the current user.
 
     Endpoints:
         - GET    /api/player/me/push-subscriptions/
@@ -762,6 +762,7 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
     Notes:
         - Uses SessionAuthentication, so POST/DELETE require a valid CSRF token.
         - Subscriptions are stored per-user but `endpoint` is globally unique.
+        - `platform` can be `web` (VAPID) or `expo` (Expo push token).
 
     """
 
@@ -802,6 +803,7 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
 
         endpoint = str(subscription.get("endpoint") or "").strip()
         user_agent = str(serializer.validated_data.get("user_agent") or "").strip()
+        platform = str(serializer.validated_data.get("platform") or "web").strip()
         if not endpoint:
             return Response(
                 {"detail": "subscription.endpoint is required"},
@@ -816,6 +818,7 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
                 user=request.user,
                 endpoint=endpoint,
                 subscription=subscription,
+                platform=platform,
                 is_active=True,
                 user_agent=user_agent,
             )
@@ -823,12 +826,14 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
         else:
             obj.user = request.user
             obj.subscription = subscription
+            obj.platform = platform
             obj.is_active = True
             obj.user_agent = user_agent
             obj.save(
                 update_fields=[
                     "user",
                     "subscription",
+                    "platform",
                     "is_active",
                     "user_agent",
                     "updated_at",

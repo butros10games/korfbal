@@ -502,6 +502,7 @@ class PlayerPushSubscriptionSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "endpoint",
+            "platform",
             "is_active",
             "user_agent",
             "created_at",
@@ -510,7 +511,7 @@ class PlayerPushSubscriptionSerializer(serializers.ModelSerializer):
 
 
 class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
-    """Input serializer for registering a web push subscription."""
+    """Input serializer for registering a push subscription."""
 
     subscription = serializers.JSONField()
     user_agent = serializers.CharField(
@@ -518,9 +519,16 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=512,
     )
+    platform = serializers.ChoiceField(
+        choices=("web", "expo"),
+        required=False,
+        default="web",
+    )
 
     def validate_subscription(self, value: object) -> dict[str, Any]:
         """Validate that a PushSubscription JSON object looks sane.
+
+        Supports both web push payloads (endpoint + keys) and Expo push tokens.
 
         Raises:
             ValidationError: If the object is missing required fields.
@@ -535,6 +543,10 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
         endpoint = payload.get("endpoint")
         if not isinstance(endpoint, str) or not endpoint.strip():
             raise serializers.ValidationError("subscription.endpoint is required")
+
+        # Expo push tokens only provide an endpoint.
+        if endpoint.startswith("ExponentPushToken["):
+            return payload
 
         keys = payload.get("keys")
         if not isinstance(keys, dict):

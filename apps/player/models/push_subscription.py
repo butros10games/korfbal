@@ -37,6 +37,11 @@ class PlayerPushSubscription(models.Model):
 
     subscription: models.JSONField[dict[str, Any], dict[str, Any]] = models.JSONField()
 
+    platform: models.CharField[str, str] = models.CharField(
+        max_length=16,
+        default="web",
+    )
+
     is_active: models.BooleanField[bool, bool] = models.BooleanField(default=True)
 
     # Best-effort metadata for debugging/cleanup.

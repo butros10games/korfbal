@@ -23,6 +23,7 @@ from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
+from apps.player.services.expo_push import ExpoPushPayload, send_expo_push_tokens
 from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.schedule.models.match import Match
@@ -127,8 +128,23 @@ def _send_payload_to_users(*, user_ids: list[int], payload: WebPushPayload) -> N
         is_active=True,
     )
 
+    expo_tokens: list[str] = []
+
     for sub in subs:
-        send_to_model_subscription(sub=sub, payload=payload)
+        if sub.platform == "expo":
+            expo_tokens.append(sub.endpoint)
+        else:
+            send_to_model_subscription(sub=sub, payload=payload)
+
+    if expo_tokens:
+        send_expo_push_tokens(
+            tokens=expo_tokens,
+            payload=ExpoPushPayload(
+                title=payload.title,
+                body=payload.body,
+                url=payload.url,
+            ),
+        )
 
 
 @shared_task(bind=True)
