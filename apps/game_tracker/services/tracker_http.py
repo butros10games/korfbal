@@ -333,6 +333,7 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         .select_related("player", "player__user", "shot_type", "match_part", "team")
         .only(
             "id_uuid",
+            "match_data_id",
             "time",
             "scored",
             "for_team",
@@ -364,6 +365,7 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         )
         .only(
             "id_uuid",
+            "match_data_id",
             "time",
             "player_in__id_uuid",
             "player_in__user__username",
@@ -386,6 +388,7 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
         .select_related("match_part")
         .only(
             "id_uuid",
+            "match_data_id",
             "start_time",
             "end_time",
             "active",
@@ -403,7 +406,7 @@ def _get_last_event_model(match_data: MatchData) -> object | None:
     attack = (
         Attack.objects
         .select_related("team")
-        .only("id_uuid", "time", "team__id_uuid", "team__name")
+        .only("id_uuid", "match_data_id", "time", "team__id_uuid", "team__name")
         .filter(match_data=match_data)
         .order_by("-time")
         .first()
@@ -800,6 +803,7 @@ def poll_tracker_state(
 
     """
     timeout_seconds = max(1, min(timeout_seconds, 30))
+    poll_sleep_seconds = 0.8
     deadline = time.monotonic() + timeout_seconds
 
     match_data = MatchData.objects.filter(match_link=match).first()
@@ -819,7 +823,7 @@ def poll_tracker_state(
                 "last_changed_at": changed_at.isoformat(),
             }
 
-        time.sleep(0.8)
+        time.sleep(poll_sleep_seconds)
         match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
@@ -1206,6 +1210,7 @@ def _remove_last_shot(
     opponent: Team,
 ) -> None:
     scored = event.scored
+    event.__dict__.setdefault("match_data_id", match_data.pk)
     event.delete()
 
     if not scored:

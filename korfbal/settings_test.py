@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 from .settings import *  # noqa: F403
-from .settings.env import BASE_DIR
+from .settings.env import BASE_DIR as SETTINGS_BASE_DIR
 from .settings.services import DATABASES
 
 
@@ -36,6 +36,7 @@ SESSION_CACHE_ALIAS = "default"
 TESTING = True
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,7 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # production-like behavior; tests must force it on.
 KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE = True
 KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT = 25
+KORFBAL_TEST_FAST_POLL = True
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT = 25
 if os.getenv("DJANGO_TEST_USE_POSTGRES", "").lower() not in {"1", "true", "yes", "on"}:
     DATABASES["default"] = {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / "test.sqlite3"),
+        "NAME": str(SETTINGS_BASE_DIR / "test.sqlite3"),
     }
 
 
@@ -65,7 +67,7 @@ STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
-        "OPTIONS": {"location": BASE_DIR / "media_test"},
+        "OPTIONS": {"location": SETTINGS_BASE_DIR / "media_test"},
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",

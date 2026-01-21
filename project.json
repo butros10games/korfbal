@@ -44,6 +44,13 @@
                 }
             }
         },
+        "test:profile": {
+            "executor": "nx:run-commands",
+            "inputs": ["python", "sharedGlobals"],
+            "options": {
+                "command": "uv run pytest -n auto --dist loadgroup --durations=25 --durations-min=0.2 apps/django_projects/korfbal"
+            }
+        },
         "build": {
             "executor": "nx:run-commands",
             "inputs": ["python", "sharedGlobals"],

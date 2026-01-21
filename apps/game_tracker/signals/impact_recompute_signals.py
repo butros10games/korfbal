@@ -17,7 +17,14 @@ FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS = 30
 def _match_data_id_from_instance(
     instance: Shot | PlayerChange | Pause | PlayerGroup,
 ) -> str | None:
-    match_data_id = getattr(instance, "match_data_id", None)
+    match_data_id = instance.__dict__.get("match_data_id")
+    if match_data_id:
+        return str(match_data_id)
+
+    try:
+        match_data_id = getattr(instance, "match_data_id", None)
+    except instance.__class__.DoesNotExist:
+        match_data_id = None
     if match_data_id:
         return str(match_data_id)
 
