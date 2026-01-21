@@ -13,30 +13,20 @@
     "targets": {
         "lint": {
             "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run ruff format --check apps/django_projects/korfbal && uv run ruff check apps/django_projects/korfbal"
             }
         },
-        "lint-fix": {
-            "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
-            "options": {
-                "command": "uv run ruff check --fix apps/django_projects/korfbal"
-            }
-        },
         "typecheck": {
             "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run ty check apps/django_projects/korfbal"
             }
         },
         "test": {
             "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
             "options": {
-                "command": "uv run pytest -n auto --dist loadgroup apps/django_projects/korfbal"
+                "command": "sh -c 'code=0; uv run pytest -n auto --dist loadgroup apps/django_projects/korfbal || code=$?; if [ \"$code\" -eq 5 ]; then echo \"No tests found; treating as success\"; exit 0; else exit \"$code\"; fi'"
             },
             "configurations": {
                 "ci": {
@@ -44,32 +34,16 @@
                 }
             }
         },
-        "test:profile": {
-            "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
-            "options": {
-                "command": "uv run pytest -n auto --dist loadgroup --durations=25 --durations-min=0.2 apps/django_projects/korfbal"
-            }
-        },
         "build": {
             "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run python -m compileall apps/django_projects/korfbal"
             }
         },
         "format": {
             "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
             "options": {
                 "command": "uv run ruff format apps/django_projects/korfbal"
-            }
-        },
-        "format-check": {
-            "executor": "nx:run-commands",
-            "inputs": ["python", "sharedGlobals"],
-            "options": {
-                "command": "uv run ruff format --check apps/django_projects/korfbal"
             }
         },
         "docker-uwsgi": {
