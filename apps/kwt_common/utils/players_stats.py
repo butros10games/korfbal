@@ -361,7 +361,7 @@ async def build_player_stats(
         dataset_has_full_impacts,
     ) = await sync_to_async(_fetch)()
 
-    player_rows: list[PlayerStatRow] = [  # type: ignore[invalid-assignment]
+    player_rows: list[PlayerStatRow] = [
         {
             "username": (username := str(row.get("player__user__username") or "")),
             "shots_for": (sf := int(cast(int, row.get("shots_for") or 0))),
