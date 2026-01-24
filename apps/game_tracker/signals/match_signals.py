@@ -24,5 +24,5 @@ def create_match_data_for_new_match(
 
     """
     if created:
-        # If the Match is just created, create a MatchData instance
-        MatchData.objects.create(match_link=instance)
+        # If the Match is just created, ensure a MatchData instance exists.
+        MatchData.objects.get_or_create(match_link=instance)

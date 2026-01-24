@@ -22,20 +22,22 @@ def create_player_groups_for_new_match_data(
         **kwargs: Additional keyword arguments.
 
     """
-    if created:
-        all_group_types = GroupType.objects.all()
-        for group_type in all_group_types:
-            PlayerGroup.objects.create(
-                match_data=instance,
-                starting_type=group_type,
-                current_type=group_type,
-                team=instance.match_link.home_team,
-            )
+    if not created:
+        return
 
-        for group_type in all_group_types:
-            PlayerGroup.objects.create(
-                match_data=instance,
-                starting_type=group_type,
-                current_type=group_type,
-                team=instance.match_link.away_team,
-            )
+    all_group_types = GroupType.objects.all()
+    for group_type in all_group_types:
+        PlayerGroup.objects.get_or_create(
+            match_data=instance,
+            starting_type=group_type,
+            current_type=group_type,
+            team=instance.match_link.home_team,
+        )
+
+    for group_type in all_group_types:
+        PlayerGroup.objects.get_or_create(
+            match_data=instance,
+            starting_type=group_type,
+            current_type=group_type,
+            team=instance.match_link.away_team,
+        )
