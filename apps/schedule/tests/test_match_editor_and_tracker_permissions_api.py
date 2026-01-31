@@ -7,6 +7,7 @@ match tracker endpoints.
 from __future__ import annotations
 
 from http import HTTPStatus
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -18,7 +19,8 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
-from apps.schedule.api.permissions import IsCoachOrAdmin
+from apps.player.models.player_club_membership import PlayerClubMembership
+from apps.schedule.api.permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -75,6 +77,42 @@ def test_is_coach_or_admin_permission_rules() -> None:
     request.user = staff_user
     assert perm.has_permission(request, object()) is True
 
+
+@pytest.mark.django_db
+def test_is_club_member_or_coach_or_admin_permission_rules() -> None:
+    """Club members should be allowed to access tracker endpoints."""
+    rf = RequestFactory()
+    perm = IsClubMemberOrCoachOrAdmin()
+    match = _create_match()
+
+    request = rf.get(
+        f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/state/"
+    )
+    request.user = AnonymousUser()
+    view = SimpleNamespace(
+        kwargs={"pk": str(match.id_uuid), "team_id": str(match.home_team.id_uuid)}
+    )
+    assert perm.has_permission(request, view) is False
+
+    member_user = get_user_model().objects.create_user(
+        username="member",
+        password=TEST_PASSWORD,
+    )
+    PlayerClubMembership.objects.create(
+        player=member_user.player,
+        club=match.home_team.club,
+        start_date=timezone.localdate(),
+    )
+    request.user = member_user
+    assert perm.has_permission(request, view) is True
+
+    non_member_user = get_user_model().objects.create_user(
+        username="outsider",
+        password=TEST_PASSWORD,
+    )
+    request.user = non_member_user
+    assert perm.has_permission(request, view) is False
+
     coach_user = get_user_model().objects.create_user(
         username="coach",
         password=TEST_PASSWORD,
@@ -82,7 +120,7 @@ def test_is_coach_or_admin_permission_rules() -> None:
     coach_group, _created = Group.objects.get_or_create(name="Coach")
     coach_user.groups.add(coach_group)
     request.user = coach_user
-    assert perm.has_permission(request, object()) is True
+    assert perm.has_permission(request, view) is True
 
 
 @pytest.mark.django_db
@@ -216,8 +254,8 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_match_tracker_endpoints_are_coach_only(client: Client) -> None:
-    """Tracker state/commands/poll endpoints should require coach/admin."""
+def test_match_tracker_endpoints_allow_club_members(client: Client) -> None:
+    """Tracker state/poll endpoints should allow club members or coach/admin."""
     match = _create_match()
 
     normal_user = get_user_model().objects.create_user(
@@ -229,6 +267,17 @@ def test_match_tracker_endpoints_are_coach_only(client: Client) -> None:
     state_url = f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/state/"
     response = client.get(state_url)
     assert response.status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}
+
+    member_user = get_user_model().objects.create_user(
+        username="member",
+        password=TEST_PASSWORD,
+    )
+    PlayerClubMembership.objects.create(
+        player=member_user.player,
+        club=match.home_team.club,
+        start_date=timezone.localdate(),
+    )
+    client.force_login(member_user)
 
     coach_user = get_user_model().objects.create_user(
         username="coach",

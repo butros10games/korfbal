@@ -48,7 +48,7 @@ from .constants import (
 )
 from .match_stats_payload import _build_match_stats_payload
 from .match_viewset_events import MatchEventsActionsMixin
-from .permissions import IsCoachOrAdmin
+from .permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
 from .serializers import MatchSerializer
 
 
@@ -529,7 +529,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         detail=True,
         methods=("GET",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/state",
-        permission_classes=[IsCoachOrAdmin],
+        permission_classes=[IsClubMemberOrCoachOrAdmin],
     )
     def tracker_state(
         self,
@@ -599,7 +599,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         detail=True,
         methods=("GET",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/poll",
-        permission_classes=[IsCoachOrAdmin],
+        permission_classes=[IsClubMemberOrCoachOrAdmin],
     )
     def tracker_poll(
         self,
