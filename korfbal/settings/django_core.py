@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .runtime import RUNNER
+from .runtime import KORFBAL_ENABLE_PROMETHEUS
 
 
 INSTALLED_APPS = [
@@ -29,7 +29,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
 ]
 
-if RUNNER == "uwsgi":
+if KORFBAL_ENABLE_PROMETHEUS:
     INSTALLED_APPS.append("django_prometheus")
 
 MIDDLEWARE = [
@@ -46,7 +46,7 @@ MIDDLEWARE = [
     "bg_django_mobile_detector.middleware.DetectMiddleware",
 ]
 
-if RUNNER == "uwsgi":
+if KORFBAL_ENABLE_PROMETHEUS:
     MIDDLEWARE = [
         "django_prometheus.middleware.PrometheusBeforeMiddleware",
         *MIDDLEWARE,

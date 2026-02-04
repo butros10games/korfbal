@@ -16,5 +16,5 @@ urlpatterns = [
     path("match/api/", include("apps.game_tracker.api.urls")),
 ]
 
-if getattr(settings, "RUNNER", "") == "uwsgi":
+if getattr(settings, "KORFBAL_ENABLE_PROMETHEUS", False):
     urlpatterns.append(path("", include("django_prometheus.urls")))

@@ -26,6 +26,7 @@ from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
 
+from apps.kwt_common.metrics import RequestMetrics, record_request_metrics
 from apps.kwt_common.utils.slow_requests import slow_request_buffer_ttl_s
 
 
@@ -66,7 +67,11 @@ class RequestTimingMiddleware:
             f"app;dur={elapsed_ms}",
         )
 
+        resolver_match = getattr(request, "resolver_match", None)
+        view_name = getattr(resolver_match, "view_name", None)
+
         slow_queries = getattr(request, "_korfbal_slow_queries", None)
+        slow_db_total_ms = None
         if slow_queries:
             slow_db_total_ms = sum(int(q.get("ms", 0)) for q in slow_queries)
             response["Server-Timing"] = _append_server_timing(
@@ -75,11 +80,24 @@ class RequestTimingMiddleware:
             )
             response["X-Korfbal-Slow-Db-Query-Count"] = str(len(slow_queries))
 
+        threshold_ms = int(getattr(settings, "KORFBAL_SLOW_REQUEST_MS", 500))
+        is_slow_request = elapsed_ms >= threshold_ms
+        record_request_metrics(
+            RequestMetrics(
+                method=request.method,
+                view_name=view_name,
+                status_code=getattr(response, "status_code", None),
+                elapsed_ms=elapsed_ms,
+                slow_db_count=len(slow_queries) if slow_queries else None,
+                slow_db_total_ms=slow_db_total_ms if slow_queries else None,
+                is_slow_request=is_slow_request,
+            )
+        )
+
         if not bool(getattr(settings, "KORFBAL_LOG_SLOW_REQUESTS", False)):
             return response
 
-        threshold_ms = int(getattr(settings, "KORFBAL_SLOW_REQUEST_MS", 500))
-        if elapsed_ms < threshold_ms:
+        if not is_slow_request:
             return response
 
         response["X-Korfbal-Slow-Request"] = "1"
@@ -91,9 +109,6 @@ class RequestTimingMiddleware:
 
         user = getattr(request, "user", None)
         user_id = getattr(user, "id", None)
-
-        resolver_match = getattr(request, "resolver_match", None)
-        view_name = getattr(resolver_match, "view_name", None)
 
         entry: dict[str, object] = {
             "ts": timezone.now().isoformat(),
@@ -108,7 +123,7 @@ class RequestTimingMiddleware:
         if slow_queries:
             entry["slow_db_query_count"] = len(slow_queries)
             entry["slow_db_max_ms"] = max(int(q.get("ms", 0)) for q in slow_queries)
-            entry["slow_db_total_ms"] = sum(int(q.get("ms", 0)) for q in slow_queries)
+            entry["slow_db_total_ms"] = slow_db_total_ms
 
             include_sql = bool(getattr(settings, "KORFBAL_SLOW_DB_INCLUDE_SQL", False))
             if include_sql:

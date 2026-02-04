@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .env import env, env_bool, env_int
-from .runtime import RUNNER, RUNNING_TESTS
+from .runtime import KORFBAL_ENABLE_PROMETHEUS, RUNNING_TESTS
 
 
 VALKEY_HOST = env("VALKEY_HOST", "127.0.0.1")
@@ -25,7 +25,7 @@ if RUNNING_TESTS:
 
 db_engine = (
     "django_prometheus.db.backends.postgresql"
-    if RUNNER == "uwsgi"
+    if KORFBAL_ENABLE_PROMETHEUS
     else "django.db.backends.postgresql"
 )
 
@@ -42,7 +42,7 @@ DATABASES = {
 
 cache_backend = (
     "django_prometheus.cache.backends.redis.RedisCache"
-    if RUNNER == "uwsgi"
+    if KORFBAL_ENABLE_PROMETHEUS
     else "django.core.cache.backends.redis.RedisCache"
 )
 

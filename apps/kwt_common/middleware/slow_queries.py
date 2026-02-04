@@ -24,6 +24,8 @@ from django.conf import settings
 from django.db import connections
 from django.http import HttpRequest, HttpResponse
 
+from apps.kwt_common.metrics import record_slow_db_query
+
 
 logger = logging.getLogger("apps.kwt_common.slow_queries")
 
@@ -67,6 +69,8 @@ class SlowQueryLoggingMiddleware:
                 finally:
                     elapsed = time.perf_counter() - start
                     if elapsed >= threshold_s:
+                        elapsed_ms = int(elapsed * 1000)
+                        record_slow_db_query(alias=alias, elapsed_ms=elapsed_ms)
                         slowest.append((elapsed, alias, sql, params))
                         slowest.sort(key=operator.itemgetter(0), reverse=True)
                         del slowest[10:]
