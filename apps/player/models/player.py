@@ -42,6 +42,10 @@ class Player(models.Model):
         on_delete=models.CASCADE,
         related_name="player",
     )
+    date_of_birth: models.DateField[date, date | None] = models.DateField(
+        blank=True,
+        null=True,
+    )
 
     profile_picture: models.ImageField = models.ImageField(
         upload_to="profile_pictures/",

@@ -33,6 +33,12 @@ class TeamData(models.Model):
     competition: models.CharField[str, str] = models.CharField(
         max_length=255, blank=True
     )
+    wedstrijd_sport: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    team_rank: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
+        default=1
+    )
 
     class Meta:
         """Meta class for TeamData model."""

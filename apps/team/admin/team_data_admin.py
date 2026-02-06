@@ -18,7 +18,7 @@ else:
 class TeamDataAdmin(TeamDataAdminBase):
     """Admin class for the TeamData model."""
 
-    list_display = ["team", "season"]  # noqa: RUF012
+    list_display = ["team", "season", "wedstrijd_sport", "team_rank"]  # noqa: RUF012
     show_full_result_count = False
 
     class Meta:

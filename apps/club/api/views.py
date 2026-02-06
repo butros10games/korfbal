@@ -13,6 +13,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.club.models.club import Club
+from apps.club.services.eligibility_dashboard import build_club_eligibility_dashboard
 from apps.game_tracker.models import MatchData
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
@@ -183,6 +184,28 @@ class ClubViewSet(viewsets.ModelViewSet):
             })
 
         return Response({"results": results})
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="eligibility-dashboard",
+        permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
+    )
+    def eligibility_dashboard(
+        self,
+        request: Request,
+        **kwargs: object,
+    ) -> Response:
+        """Return club-level player eligibility/vastspelen dashboard data."""
+        club = self.get_object()
+        seasons_qs = list(self._club_seasons_queryset(club))
+        season = self._resolve_season(request, seasons_qs)
+        return Response(
+            build_club_eligibility_dashboard(
+                club=club,
+                season=season,
+            )
+        )
 
     @action(
         detail=True,
