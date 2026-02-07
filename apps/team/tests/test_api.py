@@ -5,6 +5,7 @@ from http import HTTPStatus
 import uuid
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
@@ -16,6 +17,7 @@ from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows_with_breakdowns,
 )
+from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
@@ -480,3 +482,170 @@ def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
     assert payload["meta"]["season_name"] == current_season.name
     assert payload["matches"]["upcoming"]
     assert payload["matches"]["recent"] == []
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_overview_meta_includes_goal_song_permissions_and_fallback(
+    client: Client,
+) -> None:
+    """Overview exposes goal-song moderation permission and fallback URLs."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+    club = Club.objects.create(name="Team Club")
+    team = Team.objects.create(name="Team 1", club=club)
+
+    coach_user = get_user_model().objects.create_user(
+        username="coach_user",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    coach_player = coach_user.player
+
+    team_data = TeamData.objects.create(team=team, season=season)
+    team_data.coach.add(coach_player)
+    team_data.players.add(coach_player)
+
+    song = PlayerSong.objects.create(
+        player=coach_player,
+        title="Coach Song",
+        artists="Coach",
+        status=PlayerSongStatus.READY,
+        audio_file=SimpleUploadedFile(
+            "coach-song.mp3",
+            b"ID3\x00\x00\x00\x00",
+            content_type="audio/mpeg",
+        ),
+    )
+    team_data.fallback_goal_song_song_ids = [str(song.id_uuid)]
+    team_data.save(update_fields=["fallback_goal_song_song_ids"])
+
+    response_anon = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
+    assert response_anon.status_code == HTTPStatus.OK
+    assert response_anon.json()["meta"]["viewer_can_manage_goal_songs"] is False
+
+    client.force_login(coach_user)
+    response_coach = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
+    assert response_coach.status_code == HTTPStatus.OK
+    payload = response_coach.json()
+    assert payload["meta"]["viewer_can_manage_goal_songs"] is True
+    assert payload["meta"]["fallback_goal_song_audio_urls"]
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_goal_song_admin_manage_player_and_fallback(client: Client) -> None:
+    """Coach can manage player selections, fallback playlist and song settings."""
+    initial_start_seconds = 3
+    updated_start_seconds = 12
+
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="2025",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=300),
+    )
+    club = Club.objects.create(name="Team Club")
+    team = Team.objects.create(name="Team 1", club=club)
+
+    coach_user = get_user_model().objects.create_user(
+        username="coach_user_2",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    coach_player = coach_user.player
+
+    player_user = get_user_model().objects.create_user(
+        username="player_user_2",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    team_player = player_user.player
+
+    team_data = TeamData.objects.create(team=team, season=season)
+    team_data.coach.add(coach_player)
+    team_data.players.add(coach_player, team_player)
+
+    song_a = PlayerSong.objects.create(
+        player=team_player,
+        title="Song A",
+        artists="Artist A",
+        status=PlayerSongStatus.READY,
+        start_time_seconds=initial_start_seconds,
+        audio_file=SimpleUploadedFile(
+            "song-a.mp3",
+            b"ID3\x00\x00\x00\x00",
+            content_type="audio/mpeg",
+        ),
+    )
+    song_b = PlayerSong.objects.create(
+        player=team_player,
+        title="Song B",
+        artists="Artist B",
+        status=PlayerSongStatus.READY,
+        start_time_seconds=5,
+        audio_file=SimpleUploadedFile(
+            "song-b.mp3",
+            b"ID3\x00\x00\x00\x00",
+            content_type="audio/mpeg",
+        ),
+    )
+
+    # Not authenticated -> forbidden for moderation endpoint.
+    response_forbidden = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
+    assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
+
+    client.force_login(coach_user)
+
+    response_payload = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
+    assert response_payload.status_code == HTTPStatus.OK
+    assert response_payload.json()["players"]
+
+    response_update_player = client.patch(
+        f"/api/team/teams/{team.id_uuid}/goal-song-admin/player/{team_player.id_uuid}/",
+        data={"goal_song_song_ids": [str(song_a.id_uuid), str(song_b.id_uuid)]},
+        content_type="application/json",
+    )
+    assert response_update_player.status_code == HTTPStatus.OK
+
+    team_player.refresh_from_db()
+    assert team_player.goal_song_song_ids == [str(song_a.id_uuid), str(song_b.id_uuid)]
+    assert team_player.song_start_time == initial_start_seconds
+
+    response_update_fallback = client.patch(
+        f"/api/team/teams/{team.id_uuid}/goal-song-admin/fallback/",
+        data={"fallback_goal_song_song_ids": [str(song_b.id_uuid)]},
+        content_type="application/json",
+    )
+    assert response_update_fallback.status_code == HTTPStatus.OK
+
+    response_update_song_settings = client.patch(
+        (
+            f"/api/team/teams/{team.id_uuid}/goal-song-admin/"
+            f"player/{team_player.id_uuid}/songs/{song_a.id_uuid}/settings/"
+        ),
+        data={"start_time_seconds": updated_start_seconds, "playback_speed": 1.1},
+        content_type="application/json",
+    )
+    assert response_update_song_settings.status_code == HTTPStatus.OK
+
+    song_a.refresh_from_db()
+    assert song_a.start_time_seconds == updated_start_seconds
+    assert float(song_a.playback_speed) == pytest.approx(1.1)
+
+    team_data.refresh_from_db()
+    assert team_data.fallback_goal_song_song_ids == [str(song_b.id_uuid)]
+
+    response_delete = client.delete(
+        (
+            f"/api/team/teams/{team.id_uuid}/goal-song-admin/"
+            f"player/{team_player.id_uuid}/songs/{song_b.id_uuid}/"
+        ),
+    )
+    assert response_delete.status_code == HTTPStatus.NO_CONTENT
+
+    team_player.refresh_from_db()
+    team_data.refresh_from_db()
+    assert str(song_b.id_uuid) not in (team_player.goal_song_song_ids or [])
+    assert str(song_b.id_uuid) not in (team_data.fallback_goal_song_song_ids or [])

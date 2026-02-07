@@ -39,6 +39,10 @@ class TeamData(models.Model):
     team_rank: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
         default=1
     )
+    fallback_goal_song_song_ids: models.JSONField[list[str]] = models.JSONField(
+        default=list,
+        blank=True,
+    )
 
     class Meta:
         """Meta class for TeamData model."""
