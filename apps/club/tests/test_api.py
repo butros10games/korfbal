@@ -641,25 +641,46 @@ def test_club_eligibility_dashboard_enforces_lower_team_limit_until_three_quarte
         players.append(user.player)
         team_2_data.players.add(user.player)
 
-    base_days = [25, 18, 11]
+    week_anchor = timezone.localdate() - timedelta(
+        days=(timezone.localdate().isoweekday() - 2) % 7
+    )
+    base_weeks = [5, 4, 3]
     for idx, player in enumerate(players):
+        team_3_dt = timezone.make_aware(
+            datetime.combine(
+                week_anchor - timedelta(weeks=base_weeks[idx]), time(20, 0)
+            ),
+        )
+        team_2_a_dt = timezone.make_aware(
+            datetime.combine(
+                week_anchor - timedelta(weeks=base_weeks[idx] - 1),
+                time(20, 0),
+            ),
+        )
+        team_2_b_dt = timezone.make_aware(
+            datetime.combine(
+                week_anchor - timedelta(weeks=base_weeks[idx] - 2),
+                time(20, 0),
+            ),
+        )
+
         match_team_3 = Match.objects.create(
             home_team=team_3,
             away_team=opponent_team,
             season=season,
-            start_time=timezone.now() - timedelta(days=base_days[idx]),
+            start_time=team_3_dt,
         )
         match_team_2_a = Match.objects.create(
             home_team=team_2,
             away_team=opponent_team,
             season=season,
-            start_time=timezone.now() - timedelta(days=base_days[idx] - 3),
+            start_time=team_2_a_dt,
         )
         match_team_2_b = Match.objects.create(
             home_team=team_2,
             away_team=opponent_team,
             season=season,
-            start_time=timezone.now() - timedelta(days=base_days[idx] - 6),
+            start_time=team_2_b_dt,
         )
 
         for match in (match_team_3, match_team_2_a, match_team_2_b):

@@ -5,6 +5,7 @@ FROM python:3.13-slim-trixie AS deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
+    apt-get upgrade -y && \
     apt-get install --no-install-recommends -y \
     build-essential && \
     rm -rf /var/lib/apt/lists/*
@@ -71,6 +72,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
+    apt-get upgrade -y && \
     apt-get install --no-install-recommends -y \
     libexpat1 libjemalloc2 libpq5 libxml2 && \
     rm -rf /var/lib/apt/lists/* && \

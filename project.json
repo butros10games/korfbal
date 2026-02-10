@@ -26,7 +26,7 @@
         "test": {
             "executor": "nx:run-commands",
             "options": {
-                "command": "sh -c 'code=0; uv run pytest -n auto --dist loadgroup apps/django_projects/korfbal || code=$?; if [ \"$code\" -eq 5 ]; then echo \"No tests found; treating as success\"; exit 0; else exit \"$code\"; fi'"
+                "command": "uv run python scripts/python/run_pytest_target.py --allow-no-tests -- -n auto --dist loadgroup apps/django_projects/korfbal"
             },
             "configurations": {
                 "ci": {
