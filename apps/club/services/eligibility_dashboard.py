@@ -441,7 +441,7 @@ def _build_player_states(
     return player_states
 
 
-def _build_lower_team_slots(  # noqa: C901
+def _build_lower_team_slots(
     *,
     player_states: dict[str, PlayerState],
     team_context_by_id: dict[str, TeamContext],
@@ -505,7 +505,7 @@ def _build_lowest_a_rank_by_family(
     return lowest_a_rank_by_family
 
 
-def _build_player_payloads(  # noqa: C901, PLR0912
+def _build_player_payloads(  # noqa: PLR0912
     *,
     player_states: dict[str, PlayerState],
     team_context_by_id: dict[str, TeamContext],

@@ -38,11 +38,13 @@ class Match(models.Model):
         on_delete=models.CASCADE,
         related_name="home_matches",
     )
+    home_team_id: str
     away_team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="away_matches",
     )
+    away_team_id: str
     season: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Season",
         on_delete=models.CASCADE,

@@ -19,7 +19,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
-from apps.player.models import Player
+from apps.player.models import Player, PlayerClubMembership
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
@@ -344,6 +344,86 @@ def _get_player_group(group_id: object) -> PlayerGroup | None:
     return PlayerGroup.objects.filter(id_uuid=group_id).first()
 
 
+def _resolve_designation_context(
+    *,
+    selected_players: list[dict[str, Any]],
+    target_group: PlayerGroup | None,
+) -> tuple[Match | None, Team | None]:
+    """Resolve the match/team context referenced by designation payload."""
+    group_ids: set[str] = set()
+    if target_group is not None:
+        group_ids.add(str(target_group.id_uuid))
+
+    for player_data in selected_players:
+        group_id = player_data.get("groupId")
+        if isinstance(group_id, str) and group_id:
+            group_ids.add(group_id)
+
+    if not group_ids:
+        return None, None
+
+    groups = list(
+        PlayerGroup.objects.filter(id_uuid__in=group_ids).select_related(
+            "match_data__match_link", "team__club"
+        ),
+    )
+    if not groups or len(groups) != len(group_ids):
+        return None, None
+
+    if len({group.match_data_id for group in groups}) != 1:
+        return None, None
+    if len({group.team_id for group in groups}) != 1:
+        return None, None
+
+    base_group = groups[0]
+    return base_group.match_data.match_link, base_group.team
+
+
+def _is_coach_or_admin_user(user: object) -> bool:
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+
+    groups = getattr(user, "groups", None)
+    if groups is None:
+        return False
+    try:
+        return bool(groups.filter(name__iexact="coach").exists())
+    except Exception:
+        return False
+
+
+def _can_edit_player_groups(*, request: Request, match: Match, team: Team) -> bool:
+    user = request.user
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    if _is_coach_or_admin_user(user):
+        return True
+
+    player = Player.objects.filter(user=user).first()
+    if player is None:
+        return False
+
+    match_date = match.start_time.date()
+    membership_allowed = (
+        PlayerClubMembership.objects
+        .filter(player=player, club=team.club, start_date__lte=match_date)
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=match_date))
+        .exists()
+    )
+    if membership_allowed:
+        return True
+
+    return (
+        TeamData.objects
+        .filter(team__club=team.club, season=match.season)
+        .filter(Q(players=player) | Q(coach=player))
+        .exists()
+    )
+
+
 def _apply_designation(
     *,
     selected_players: list[dict[str, Any]],
@@ -398,6 +478,32 @@ def _validate_target_group_capacity(
     return final_group_size <= max_group_players
 
 
+def _prepare_player_designation(
+    request: Request,
+) -> tuple[list[dict[str, Any]], PlayerGroup | None, Response | None]:
+    """Validate payload and return selected players and target group."""
+    data = _parse_designation_payload(request)
+    if data is None:
+        return [], None, Response({"error": "Invalid JSON data"}, status=400)
+
+    selected_players = _extract_designation_players(data)
+    if not selected_players:
+        return [], None, Response({"error": "No player selected"}, status=400)
+
+    new_group_id = data.get("new_group_id")
+    target_group = _get_player_group(new_group_id)
+    if new_group_id and target_group is None:
+        return [], None, Response({"error": "Unknown player group"}, status=400)
+
+    if target_group is not None and not _validate_target_group_capacity(
+        player_group_model=target_group,
+        selected_players=selected_players,
+    ):
+        return [], None, Response({"error": "Too many players selected"}, status=400)
+
+    return selected_players, target_group, None
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def player_designation(request: Request) -> Response:
@@ -410,25 +516,28 @@ def player_designation(request: Request) -> Response:
         }
 
     """
-    data = _parse_designation_payload(request)
-    if data is None:
-        return Response({"error": "Invalid JSON data"}, status=400)
+    selected_players, target_group, error_response = _prepare_player_designation(
+        request
+    )
+    if error_response is not None:
+        return error_response
 
-    selected_players = _extract_designation_players(data)
-    if not selected_players:
-        return Response({"error": "No player selected"}, status=400)
-
-    new_group_id = data.get("new_group_id")
-    target_group = _get_player_group(new_group_id)
-
-    if new_group_id and target_group is None:
-        return Response({"error": "Unknown player group"}, status=400)
-
-    if target_group is not None and not _validate_target_group_capacity(
-        player_group_model=target_group,
+    match_context, team_context = _resolve_designation_context(
         selected_players=selected_players,
+        target_group=target_group,
+    )
+    if match_context is None or team_context is None:
+        return Response({"error": "Invalid player group context"}, status=400)
+
+    if not _can_edit_player_groups(
+        request=request,
+        match=match_context,
+        team=team_context,
     ):
-        return Response({"error": "Too many players selected"}, status=400)
+        return Response(
+            {"error": "You do not have permission to edit player groups."},
+            status=403,
+        )
 
     resolved_group = _apply_designation(
         selected_players=selected_players,

@@ -8,15 +8,17 @@ player selection and group designation.
 
 from datetime import timedelta
 import json
+from typing import Any, cast
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.test.client import Client
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
-from apps.player.models import PlayerClubMembership
+from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
@@ -26,6 +28,27 @@ HTTP_STATUS_OK = 200
 HTTP_STATUS_BAD_REQUEST = 400
 EXPECTED_GROUPS_PER_TEAM = 3
 EXPECTED_PLAYER_GROUPS_TOTAL = 6
+HTTP_STATUS_FORBIDDEN = 403
+
+
+def _create_test_user(*, username: str) -> AbstractBaseUser:
+    user_model = cast(Any, get_user_model())
+    return cast(
+        AbstractBaseUser,
+        user_model.objects.create_user(
+            username=username,
+            password=TEST_PASSWORD,
+        ),
+    )
+
+
+def _create_test_player(*, username: str) -> Player:
+    return cast(Player, cast(Any, _create_test_user(username=username)).player)
+
+
+def _connect_user_to_club(user: object, club: Club) -> None:
+    player = cast(Any, user).player
+    PlayerClubMembership.objects.create(player=player, club=club)
 
 
 @pytest.mark.django_db
@@ -63,10 +86,8 @@ def test_player_overview_data_creates_player_groups_automatically(
     GroupType.objects.create(name="Verdediging")
     GroupType.objects.create(name="Reserve")
 
-    user = get_user_model().objects.create_user(
-        username="testuser",
-        password=TEST_PASSWORD,
-    )
+    user = _create_test_user(username="testuser")
+    _connect_user_to_club(user, home_club)
     client.force_login(user)
 
     assert PlayerGroup.objects.count() == 0
@@ -122,21 +143,11 @@ def test_player_designation_allows_many_players_for_reserve_group(
         current_type=reserve_type,
     )
 
-    user = get_user_model().objects.create_user(
-        username="testuser",
-        password=TEST_PASSWORD,
-    )
+    user = _create_test_user(username="testuser")
+    _connect_user_to_club(user, home_club)
     client.force_login(user)
 
-    players = [
-        get_user_model()
-        .objects.create_user(
-            username=f"p{i}",
-            password=TEST_PASSWORD,
-        )
-        .player
-        for i in range(8)
-    ]
+    players = [_create_test_player(username=f"p{i}") for i in range(8)]
 
     response = client.post(
         "/api/match/player_designation/",
@@ -185,34 +196,18 @@ def test_player_designation_rejects_more_than_16_total_in_reserve_group(
         current_type=reserve_type,
     )
 
-    user = get_user_model().objects.create_user(
-        username="testuser",
-        password=TEST_PASSWORD,
-    )
+    user = _create_test_user(username="testuser")
+    _connect_user_to_club(user, home_club)
     client.force_login(user)
 
     initial_players = [
-        get_user_model()
-        .objects.create_user(
-            username=f"p_initial_{i}",
-            password=TEST_PASSWORD,
-        )
-        .player
-        for i in range(10)
+        _create_test_player(username=f"p_initial_{i}") for i in range(10)
     ]
     reserve_group.players.add(*initial_players)
     reserve_group.refresh_from_db()
     assert reserve_group.players.count() == len(initial_players)
 
-    new_players = [
-        get_user_model()
-        .objects.create_user(
-            username=f"p_new_{i}",
-            password=TEST_PASSWORD,
-        )
-        .player
-        for i in range(7)
-    ]
+    new_players = [_create_test_player(username=f"p_new_{i}") for i in range(7)]
 
     response = client.post(
         "/api/match/player_designation/",
@@ -262,21 +257,11 @@ def test_player_designation_rejects_more_than_4_for_non_reserve_group(
         current_type=attack_type,
     )
 
-    user = get_user_model().objects.create_user(
-        username="testuser",
-        password=TEST_PASSWORD,
-    )
+    user = _create_test_user(username="testuser")
+    _connect_user_to_club(user, home_club)
     client.force_login(user)
 
-    players = [
-        get_user_model()
-        .objects.create_user(
-            username=f"p_attack_{i}",
-            password=TEST_PASSWORD,
-        )
-        .player
-        for i in range(5)
-    ]
+    players = [_create_test_player(username=f"p_attack_{i}") for i in range(5)]
 
     response = client.post(
         "/api/match/player_designation/",
@@ -332,21 +317,11 @@ def test_player_designation_syncs_matchplayer_roster(
         current_type=reserve_type,
     )
 
-    user = get_user_model().objects.create_user(
-        username="coach",
-        password=TEST_PASSWORD,
-    )
+    user = _create_test_user(username="coach")
+    _connect_user_to_club(user, home_club)
     client.force_login(user)
 
-    players = [
-        get_user_model()
-        .objects.create_user(
-            username=f"sync_p{i}",
-            password=TEST_PASSWORD,
-        )
-        .player
-        for i in range(2)
-    ]
+    players = [_create_test_player(username=f"sync_p{i}") for i in range(2)]
 
     response = client.post(
         "/api/match/player_designation/",
@@ -397,6 +372,61 @@ def test_player_designation_syncs_matchplayer_roster(
 
 
 @pytest.mark.django_db
+def test_player_designation_forbidden_for_authenticated_user_without_club_access(
+    client: Client,
+) -> None:
+    """Designation must reject authenticated users not connected to the club."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    home_club = Club.objects.create(name="Home Club")
+    away_club = Club.objects.create(name="Away Club")
+    home_team = Team.objects.create(name="Home Team", club=home_club)
+    away_team = Team.objects.create(name="Away Team", club=away_club)
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=30),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+
+    reserve_type = GroupType.objects.create(name="Reserve")
+    reserve_group = PlayerGroup.objects.create(
+        match_data=match_data,
+        team=home_team,
+        starting_type=reserve_type,
+        current_type=reserve_type,
+    )
+
+    unconnected_user = _create_test_user(username="outsider")
+    client.force_login(unconnected_user)
+
+    player_to_add = _create_test_player(username="candidate")
+
+    response = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps(
+            {
+                "new_group_id": str(reserve_group.id_uuid),
+                "players": [{"id_uuid": str(player_to_add.id_uuid)}],
+            },
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_FORBIDDEN
+    assert response.json() == {
+        "error": "You do not have permission to edit player groups.",
+    }
+    reserve_group.refresh_from_db()
+    assert reserve_group.players.count() == 0
+
+
+@pytest.mark.django_db
 def test_players_team_returns_empty_when_teamdata_missing(client: Client) -> None:
     """The available-players endpoint must not 500 when TeamData is absent."""
     season = Season.objects.create(
@@ -444,11 +474,8 @@ def test_player_search_includes_club_membership_players(client: Client) -> None:
         start_time=timezone.now(),
     )
 
-    member_user = get_user_model().objects.create_user(
-        username="member_player",
-        password=TEST_PASSWORD,
-    )
-    PlayerClubMembership.objects.create(player=member_user.player, club=club)
+    member_player = _create_test_player(username="member_player")
+    PlayerClubMembership.objects.create(player=member_player, club=club)
 
     response = client.get(
         f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=member",
@@ -489,13 +516,10 @@ def test_player_search_includes_other_team_players_same_club(client: Client) -> 
         start_time=timezone.now(),
     )
 
-    other_user = get_user_model().objects.create_user(
-        username="clubmate_player",
-        password=TEST_PASSWORD,
-    )
+    other_player = _create_test_player(username="clubmate_player")
 
     team_b_data = TeamData.objects.get(team=team_b, season=season)
-    team_b_data.players.add(other_user.player)
+    team_b_data.players.add(other_player)
 
     response = client.get(
         f"/api/match/player_search/{match.id_uuid}/{team_a.id_uuid}/?search=clubmate",
@@ -539,10 +563,7 @@ def test_player_search_does_not_exclude_everything_when_groups_empty(
     GroupType.objects.create(name="Verdediging")
     GroupType.objects.create(name="Reserve")
 
-    viewer = get_user_model().objects.create_user(
-        username="viewer",
-        password=TEST_PASSWORD,
-    )
+    viewer = _create_test_user(username="viewer")
     client.force_login(viewer)
 
     resp_groups = client.get(
@@ -551,11 +572,8 @@ def test_player_search_does_not_exclude_everything_when_groups_empty(
     )
     assert resp_groups.status_code == HTTP_STATUS_OK
 
-    member_user = get_user_model().objects.create_user(
-        username="daan_candidate",
-        password=TEST_PASSWORD,
-    )
-    PlayerClubMembership.objects.create(player=member_user.player, club=club)
+    member_player = _create_test_player(username="daan_candidate")
+    PlayerClubMembership.objects.create(player=member_player, club=club)
 
     response = client.get(
         f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=daan",

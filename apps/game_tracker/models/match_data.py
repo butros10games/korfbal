@@ -11,6 +11,8 @@ from django.db import models
 class MatchData(models.Model):
     """Model for MatchData."""
 
+    player_groups: models.Manager[Any]
+
     STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [
         ("upcoming", "Upcoming"),
         ("active", "Active"),

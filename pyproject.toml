@@ -6,6 +6,7 @@ dependencies = [
     "django",
     "psycopg[binary,pool]",
     "bg-django-mobile-detector",
+    "bg-audit-events",
     "django-ratelimit",
     "django-storages[boto3]",
     "bg-auth",
@@ -42,6 +43,7 @@ dev = [
 
 [tool.uv.sources]
 bg-auth = { workspace = true }
+bg-audit-events = { workspace = true }
 bg-django-caching-paginator = { workspace = true }
 bg-django-mobile-detector = { workspace = true }
 bg-uuidv7 = { workspace = true }

@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 import json
-from typing import cast
 
 from asgiref.sync import sync_to_async
 
@@ -43,14 +42,11 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
             active_pause = None
 
         # calculate all the time in pauses that are not active anymore
-        pauses = cast(
-            list[Pause],
-            await sync_to_async(list)(
-                Pause.objects.filter(
-                    match_data=match_data,
-                    active=False,
-                    match_part=current_part,
-                ),
+        pauses = await sync_to_async(list)(
+            Pause.objects.filter(
+                match_data=match_data,
+                active=False,
+                match_part=current_part,
             ),
         )
         pause_time = 0
@@ -58,6 +54,18 @@ async def get_time(match_data: MatchData, current_part: MatchPart) -> str:
             pause_time += pause.length().total_seconds()
 
         if active_pause:
+            if active_pause.start_time is None:
+                return json.dumps(
+                    {
+                        "command": "timer_data",
+                        "type": "active",
+                        "match_data_id": str(match_data.id_uuid),
+                        "time": part.start_time.isoformat(),
+                        "length": match_data.part_length,
+                        "pause_length": pause_time,
+                        "server_time": datetime.now(UTC).isoformat(),
+                    },
+                )
             return json.dumps(
                 {
                     "command": "timer_data",

@@ -38,12 +38,14 @@ class PlayerMatchImpact(models.Model):
         on_delete=models.CASCADE,
         related_name="player_impacts",
     )
+    match_data_id: str
 
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         related_name="match_impacts",
     )
+    player_id: str
 
     # Cached for fast team/season aggregations.
     team: models.ForeignKey[Any, Any] = models.ForeignKey(
@@ -53,6 +55,7 @@ class PlayerMatchImpact(models.Model):
         blank=True,
         related_name="player_match_impacts",
     )
+    team_id: str | None
 
     impact_score: models.DecimalField = models.DecimalField(
         max_digits=7,

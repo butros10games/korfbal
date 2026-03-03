@@ -31,11 +31,13 @@ class PlayerGroup(models.Model):
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
+    team_id: str
     match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
+    match_data_id: str
     starting_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "GroupType",
         on_delete=models.CASCADE,

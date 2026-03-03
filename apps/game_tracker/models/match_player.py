@@ -23,16 +23,19 @@ class MatchPlayer(models.Model):
         on_delete=models.CASCADE,
         related_name="players",
     )
+    match_data_id: str
     team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.CASCADE,
         related_name="match_players",
     )
+    team_id: str
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         related_name="match_players",
     )
+    player_id: str
 
     class Meta:
         """Meta options for MatchPlayer."""

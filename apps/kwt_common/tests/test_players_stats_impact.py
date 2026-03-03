@@ -94,7 +94,7 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
     assert updated.algorithm_version == "v6"
-    assert float(updated.impact_score) == EXPECTED_SINGLE_MISS_IMPACT
+    assert float(updated.impact_score) == pytest.approx(EXPECTED_SINGLE_MISS_IMPACT)
 
 
 @pytest.mark.django_db
@@ -165,4 +165,4 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
     assert updated.algorithm_version == "v6"
-    assert float(updated.impact_score) == EXPECTED_FIVE_MISSES_IMPACT
+    assert float(updated.impact_score) == pytest.approx(EXPECTED_FIVE_MISSES_IMPACT)

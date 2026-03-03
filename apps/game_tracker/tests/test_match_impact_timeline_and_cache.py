@@ -97,15 +97,15 @@ def test_build_match_player_role_timeline_substitution_swaps_roles_at_minute() -
     assert in_intervals.aanval
     assert in_intervals.reserve
 
-    assert out_intervals.aanval[0].start == 0.0
-    assert out_intervals.aanval[0].end == float(sub_minute)
-    assert out_intervals.reserve[0].start == float(sub_minute)
-    assert out_intervals.reserve[0].end == match_end
+    assert out_intervals.aanval[0].start == pytest.approx(0.0)
+    assert out_intervals.aanval[0].end == pytest.approx(float(sub_minute))
+    assert out_intervals.reserve[0].start == pytest.approx(float(sub_minute))
+    assert out_intervals.reserve[0].end == pytest.approx(match_end)
 
-    assert in_intervals.reserve[0].start == 0.0
-    assert in_intervals.reserve[0].end == float(sub_minute)
-    assert in_intervals.aanval[0].start == float(sub_minute)
-    assert in_intervals.aanval[0].end == match_end
+    assert in_intervals.reserve[0].start == pytest.approx(0.0)
+    assert in_intervals.reserve[0].end == pytest.approx(float(sub_minute))
+    assert in_intervals.aanval[0].start == pytest.approx(float(sub_minute))
+    assert in_intervals.aanval[0].end == pytest.approx(match_end)
 
 
 def test_compute_shooting_efficiency_multipliers_ignores_defensive_shots() -> None:

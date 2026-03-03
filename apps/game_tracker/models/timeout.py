@@ -35,6 +35,7 @@ class Timeout(models.Model):
         blank=True,
         null=True,
     )
+    team_id: str | None
     pause: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Pause",
         on_delete=models.CASCADE,

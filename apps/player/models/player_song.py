@@ -38,6 +38,7 @@ class PlayerSong(models.Model):
         on_delete=models.CASCADE,
         related_name="songs",
     )
+    player_id: str
 
     # Shared cached download for this track.
     cached_song: models.ForeignKey[CachedSong, CachedSong] = models.ForeignKey(

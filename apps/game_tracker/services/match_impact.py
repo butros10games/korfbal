@@ -73,7 +73,7 @@ class MatchTeamImpactFeatures:
     doorloop_concede_points_times_defenders: float
 
 
-def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
+def compute_match_team_impact_features(  # noqa: PLR0912, PLR0915
     *,
     match_data: MatchData,
     algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
@@ -319,7 +319,7 @@ class ShotImpactWeights:
     miss_against_total: float
 
 
-def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:  # noqa: PLR0911
+def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
     """Return the weights for a given algorithm version.
 
     Notes:
@@ -504,7 +504,7 @@ def _normalise_goal_type(value: str) -> str:
     return " ".join((value or "").lower().split()).strip()
 
 
-def _goal_type_impact_weight(goal_type: str) -> float:  # noqa: PLR0911
+def _goal_type_impact_weight(goal_type: str) -> float:
     normalised = _normalise_goal_type(goal_type)
 
     # Lower impact set pieces

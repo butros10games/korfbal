@@ -49,7 +49,7 @@ def test_compute_match_end_minutes_handles_empty_payload() -> None:
     This protects against calling `max()` with a single float argument, which
     would be interpreted as an iterable in Python.
     """
-    assert compute_match_end_minutes(events=[], shots=[]) == 1.0
+    assert compute_match_end_minutes(events=[], shots=[]) == pytest.approx(1.0)
 
 
 def test_compute_match_end_minutes_returns_latest_time() -> None:
@@ -58,7 +58,9 @@ def test_compute_match_end_minutes_returns_latest_time() -> None:
     shots = [{"scored": False, "time": "7"}]
 
     expected_end_minutes = 7.0
-    assert compute_match_end_minutes(events=events, shots=shots) == expected_end_minutes
+    assert compute_match_end_minutes(events=events, shots=shots) == pytest.approx(
+        expected_end_minutes
+    )
 
 
 @pytest.mark.django_db

@@ -3,8 +3,16 @@
     "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
     "projectType": "application",
     "sourceRoot": "apps/django_projects/korfbal",
-    "tags": ["python", "django", "type:app"],
+    "tags": [
+        "type:app",
+        "stack:python",
+        "scope:apps",
+        "lifecycle:active",
+        "domain:sports",
+        "framework:django"
+    ],
     "implicitDependencies": [
+        "bg-audit-events",
         "bg-auth",
         "bg-django-caching-paginator",
         "bg-django-mobile-detector",

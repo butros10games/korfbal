@@ -176,10 +176,12 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         results: list[dict[str, object]] = []
         for user in users:
-            player = players_by_user_id.get(user.id)
+            user_id = getattr(user, "id", None)
+            username = str(getattr(user, "username", ""))
+            player = players_by_user_id.get(user_id) if user_id is not None else None
             results.append({
-                "user_id": user.id,
-                "username": user.username,
+                "user_id": user_id,
+                "username": username,
                 "player_id": str(player.id_uuid) if player else None,
             })
 
@@ -279,8 +281,7 @@ class ClubViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        membership.end_date = today
-        membership.save(update_fields=["end_date"])
+        PlayerClubMembership.objects.filter(pk=membership.pk).update(end_date=today)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
