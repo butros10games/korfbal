@@ -3,18 +3,18 @@
 from datetime import UTC, datetime, timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import (
     GoalType,
-    GroupType,
     MatchData,
     MatchPart,
     Pause,
     PlayerChange,
-    PlayerGroup,
     Timeout,
 )
 from apps.game_tracker.services.tracker_http import (
@@ -22,11 +22,18 @@ from apps.game_tracker.services.tracker_http import (
     apply_tracker_command,
     get_tracker_state,
 )
+from apps.game_tracker.tests.tracker_test_helpers import (
+    TEST_PASSWORD,
+    create_group_types,
+    create_match_part,
+    create_player_group,
+    create_tracker_match,
+    create_tracker_player,
+)
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
 MAX_WISSELS = 8
 MAX_TIMEOUTS = 2
 
@@ -39,25 +46,8 @@ def test_part_end_closes_active_pause_even_without_active_part() -> None:
     started but the part was ended without ending the pause), which can crash
     downstream timer calculations.
     """
-    home_club = Club.objects.create(name="PartEnd Pause Home Club")
-    away_club = Club.objects.create(name="PartEnd Pause Away Club")
-    home_team = Team.objects.create(name="PartEnd Pause Home Team", club=home_club)
-    away_team = Team.objects.create(name="PartEnd Pause Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="PartEnd Pause Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="PartEnd Pause")
+    match_data = tracker.match_data
     match_data.status = "active"
     match_data.parts = 2
     match_data.current_part = 1
@@ -65,12 +55,12 @@ def test_part_end_closes_active_pause_even_without_active_part() -> None:
 
     # Simulate inconsistent state: the part is already inactive, but a pause is
     # still marked active for that part.
-    part = MatchPart.objects.create(
+    part = create_match_part(
         match_data=match_data,
         part_number=1,
-        start_time=datetime.now(UTC),
-        end_time=datetime.now(UTC),
         active=False,
+        start_offset=timedelta(),
+        end_offset=timedelta(),
     )
     pause = Pause.objects.create(
         match_data=match_data,
@@ -79,7 +69,11 @@ def test_part_end_closes_active_pause_even_without_active_part() -> None:
         active=True,
     )
 
-    apply_tracker_command(match, team=home_team, payload={"command": "part_end"})
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "part_end"},
+    )
 
     pause.refresh_from_db()
     assert pause.active is False
@@ -93,71 +87,43 @@ def test_substitute_reg_allowed_between_parts_and_next_part_can_start() -> None:
     Regression: if a wissel is registered between parts, starting the next part
     must still work.
     """
-    home_club = Club.objects.create(name="BetweenParts Home Club")
-    away_club = Club.objects.create(name="BetweenParts Away Club")
-    home_team = Team.objects.create(name="BetweenParts Home Team", club=home_club)
-    away_team = Team.objects.create(name="BetweenParts Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="BetweenParts Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="BetweenParts")
+    match_data = tracker.match_data
     match_data.status = "active"
     match_data.parts = 2
     # Simulate that part 1 ended, and we're now in the break before part 2.
     match_data.current_part = 2
     match_data.save(update_fields=["status", "parts", "current_part"])
 
-    MatchPart.objects.create(
+    create_match_part(
         match_data=match_data,
         part_number=1,
-        start_time=datetime.now(UTC) - timedelta(minutes=30),
-        end_time=datetime.now(UTC) - timedelta(minutes=1),
         active=False,
+        start_offset=-timedelta(minutes=30),
+        end_offset=-timedelta(minutes=1),
     )
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_reserve = GroupType.objects.create(name="Reserve")
+    group_types = create_group_types("Aanval", "Reserve")
 
-    player_out = (
-        get_user_model()
-        .objects.create_user(username="bp_player_out", password=TEST_PASSWORD)
-        .player
-    )
-    player_in = (
-        get_user_model()
-        .objects.create_user(username="bp_player_in", password=TEST_PASSWORD)
-        .player
-    )
+    player_out = create_tracker_player(username="bp_player_out")
+    player_in = create_tracker_player(username="bp_player_in")
 
-    reserve_group = PlayerGroup.objects.create(
-        team=home_team,
+    reserve_group = create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=tracker.home_team,
+        group_type=group_types["Reserve"],
     )
-    active_group = PlayerGroup.objects.create(
-        team=home_team,
+    active_group = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=tracker.home_team,
+        group_type=group_types["Aanval"],
     )
     active_group.players.add(player_out)
     reserve_group.players.add(player_in)
 
     apply_tracker_command(
-        match,
-        team=home_team,
+        tracker.match,
+        team=tracker.home_team,
         payload={
             "command": "substitute_reg",
             "new_player_id": str(player_in.id_uuid),
@@ -172,7 +138,11 @@ def test_substitute_reg_allowed_between_parts_and_next_part_can_start() -> None:
     assert reserve_group.players.filter(id_uuid=player_out.id_uuid).exists()
 
     # Starting the next part should still work.
-    apply_tracker_command(match, team=home_team, payload={"command": "start/pause"})
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "start/pause"},
+    )
     assert MatchPart.objects.filter(
         match_data=match_data,
         part_number=2,
@@ -221,8 +191,7 @@ def test_substitute_reg_allows_paused_match() -> None:
         active=True,
     )
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_reserve = GroupType.objects.create(name="Reserve")
+    group_types = create_group_types("Aanval", "Reserve")
 
     player_out = (
         get_user_model()
@@ -235,17 +204,15 @@ def test_substitute_reg_allows_paused_match() -> None:
         .player
     )
 
-    reserve_group = PlayerGroup.objects.create(
-        team=home_team,
+    reserve_group = create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=home_team,
+        group_type=group_types["Reserve"],
     )
-    active_group = PlayerGroup.objects.create(
-        team=home_team,
+    active_group = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=home_team,
+        group_type=group_types["Aanval"],
     )
     active_group.players.add(player_out)
     reserve_group.players.add(player_in)
@@ -387,8 +354,7 @@ def test_goal_reg_swaps_attack_defense_every_two_goals() -> None:
 
     goal_type = GoalType.objects.create(name="Doorloop")
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_defense = GroupType.objects.create(name="Verdediging")
+    group_types = create_group_types("Aanval", "Verdediging")
 
     home_scorer = (
         get_user_model()
@@ -407,31 +373,27 @@ def test_goal_reg_swaps_attack_defense_every_two_goals() -> None:
         .player
     )
 
-    home_pg_attack = PlayerGroup.objects.create(
-        team=home_team,
+    home_pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=home_team,
+        group_type=group_types["Aanval"],
     )
-    home_pg_defense = PlayerGroup.objects.create(
-        team=home_team,
+    home_pg_defense = create_player_group(
         match_data=match_data,
-        starting_type=gt_defense,
-        current_type=gt_defense,
+        team=home_team,
+        group_type=group_types["Verdediging"],
     )
     home_pg_attack.players.add(home_scorer)
 
-    away_pg_attack = PlayerGroup.objects.create(
-        team=away_team,
+    away_pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=away_team,
+        group_type=group_types["Aanval"],
     )
-    away_pg_defense = PlayerGroup.objects.create(
-        team=away_team,
+    away_pg_defense = create_player_group(
         match_data=match_data,
-        starting_type=gt_defense,
-        current_type=gt_defense,
+        team=away_team,
+        group_type=group_types["Verdediging"],
     )
     away_pg_attack.players.add(away_scorer)
 
@@ -514,8 +476,7 @@ def test_remove_last_event_reverts_swap_when_goal_removed() -> None:
 
     goal_type = GoalType.objects.create(name="Vrijebal")
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_defense = GroupType.objects.create(name="Verdediging")
+    group_types = create_group_types("Aanval", "Verdediging")
 
     home_scorer = (
         get_user_model()
@@ -534,31 +495,27 @@ def test_remove_last_event_reverts_swap_when_goal_removed() -> None:
         .player
     )
 
-    home_pg_attack = PlayerGroup.objects.create(
-        team=home_team,
+    home_pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=home_team,
+        group_type=group_types["Aanval"],
     )
-    home_pg_defense = PlayerGroup.objects.create(
-        team=home_team,
+    home_pg_defense = create_player_group(
         match_data=match_data,
-        starting_type=gt_defense,
-        current_type=gt_defense,
+        team=home_team,
+        group_type=group_types["Verdediging"],
     )
     home_pg_attack.players.add(home_scorer)
 
-    away_pg_attack = PlayerGroup.objects.create(
-        team=away_team,
+    away_pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=away_team,
+        group_type=group_types["Aanval"],
     )
-    PlayerGroup.objects.create(
-        team=away_team,
+    create_player_group(
         match_data=match_data,
-        starting_type=gt_defense,
-        current_type=gt_defense,
+        team=away_team,
+        group_type=group_types["Verdediging"],
     )
     away_pg_attack.players.add(away_scorer)
 
@@ -626,9 +583,7 @@ def test_tracker_state_includes_substitutions_total() -> None:
         active=True,
     )
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_defense = GroupType.objects.create(name="Verdediging")
-    gt_reserve = GroupType.objects.create(name="Reserve")
+    group_types = create_group_types("Aanval", "Verdediging", "Reserve")
 
     player_out = (
         get_user_model()
@@ -647,23 +602,20 @@ def test_tracker_state_includes_substitutions_total() -> None:
         .player
     )
 
-    pg_attack = PlayerGroup.objects.create(
-        team=home_team,
+    pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=home_team,
+        group_type=group_types["Aanval"],
     )
-    PlayerGroup.objects.create(
-        team=home_team,
+    create_player_group(
         match_data=match_data,
-        starting_type=gt_defense,
-        current_type=gt_defense,
+        team=home_team,
+        group_type=group_types["Verdediging"],
     )
-    pg_reserve = PlayerGroup.objects.create(
-        team=home_team,
+    pg_reserve = create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=home_team,
+        group_type=group_types["Reserve"],
     )
 
     pg_attack.players.add(player_out)
@@ -723,8 +675,7 @@ def test_substitute_reg_enforces_max_wissels_per_team() -> None:
         active=True,
     )
 
-    gt_attack = GroupType.objects.create(name="Aanval")
-    gt_reserve = GroupType.objects.create(name="Reserve")
+    group_types = create_group_types("Aanval", "Reserve")
 
     player_a = (
         get_user_model()
@@ -743,17 +694,15 @@ def test_substitute_reg_enforces_max_wissels_per_team() -> None:
         .player
     )
 
-    pg_attack = PlayerGroup.objects.create(
-        team=home_team,
+    pg_attack = create_player_group(
         match_data=match_data,
-        starting_type=gt_attack,
-        current_type=gt_attack,
+        team=home_team,
+        group_type=group_types["Aanval"],
     )
-    pg_reserve = PlayerGroup.objects.create(
-        team=home_team,
+    pg_reserve = create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=home_team,
+        group_type=group_types["Reserve"],
     )
 
     pg_attack.players.add(player_a)
@@ -820,14 +769,13 @@ def test_substitute_against_reg_registers_opponent_wissel_without_players() -> N
         active=True,
     )
 
-    gt_reserve = GroupType.objects.create(name="Reserve")
+    group_types = create_group_types("Reserve")
 
     # The marker is attached to the opponent reserve group.
-    PlayerGroup.objects.create(
-        team=away_team,
+    create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=away_team,
+        group_type=group_types["Reserve"],
     )
 
     initial_state = get_tracker_state(match, team=home_team)
@@ -886,12 +834,11 @@ def test_substitute_against_reg_enforces_max_wissels_for_opponent() -> None:
         active=True,
     )
 
-    gt_reserve = GroupType.objects.create(name="Reserve")
-    PlayerGroup.objects.create(
-        team=away_team,
+    group_types = create_group_types("Reserve")
+    create_player_group(
         match_data=match_data,
-        starting_type=gt_reserve,
-        current_type=gt_reserve,
+        team=away_team,
+        group_type=group_types["Reserve"],
     )
 
     for _ in range(MAX_WISSELS):
@@ -981,3 +928,52 @@ def test_client_time_keeps_last_event_order_stable() -> None:
     state = get_tracker_state(match, team=home_team)
     assert state["last_event"]["type"] == "attack"
     assert state["last_event"]["time_iso"] == late.isoformat()
+
+
+@pytest.mark.django_db
+def test_get_tracker_state_query_count_does_not_scale_with_players() -> None:
+    """Tracker state should not issue extra per-player queries."""
+    tracker = create_tracker_match(prefix="State Queries")
+    tracker.match_data.status = "active"
+    tracker.match_data.save(update_fields=["status"])
+    create_match_part(match_data=tracker.match_data, part_number=1)
+
+    group_types = create_group_types("Aanval", "Verdediging", "Reserve")
+    attack_group = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=group_types["Aanval"],
+    )
+    defense_group = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=group_types["Verdediging"],
+    )
+    reserve_group = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=group_types["Reserve"],
+    )
+
+    attack_group.players.add(create_tracker_player(username="state_attack_1"))
+    defense_group.players.add(create_tracker_player(username="state_defense_1"))
+    reserve_group.players.add(create_tracker_player(username="state_reserve_1"))
+
+    with CaptureQueriesContext(connection) as baseline_queries:
+        get_tracker_state(tracker.match, team=tracker.home_team)
+
+    for suffix in range(2, 5):
+        attack_group.players.add(
+            create_tracker_player(username=f"state_attack_{suffix}"),
+        )
+        defense_group.players.add(
+            create_tracker_player(username=f"state_defense_{suffix}"),
+        )
+        reserve_group.players.add(
+            create_tracker_player(username=f"state_reserve_{suffix}"),
+        )
+
+    with CaptureQueriesContext(connection) as expanded_queries:
+        get_tracker_state(tracker.match, team=tracker.home_team)
+
+    assert len(expanded_queries) == len(baseline_queries)

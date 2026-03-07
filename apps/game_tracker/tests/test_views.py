@@ -12,22 +12,28 @@ from typing import Any, cast
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
+from django.db import connection
 from django.test.client import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
+from apps.game_tracker.tests.tracker_test_helpers import (
+    TEST_PASSWORD,
+    create_tracker_match,
+)
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
 HTTP_STATUS_OK = 200
 HTTP_STATUS_BAD_REQUEST = 400
 EXPECTED_GROUPS_PER_TEAM = 3
 EXPECTED_PLAYER_GROUPS_TOTAL = 6
+EXPECTED_TEAMS_PER_MATCH = 2
 HTTP_STATUS_FORBIDDEN = 403
 
 
@@ -55,45 +61,22 @@ def _connect_user_to_club(user: object, club: Club) -> None:
 def test_player_overview_data_creates_player_groups_automatically(
     client: Client,
 ) -> None:
-    """Player selection API should create PlayerGroups automatically.
-
-    Historically this happened in the server-rendered match tracker view.
-    The SPA now relies on `/api/match/player_overview_data/<match>/<team>/`.
-    """
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    """New GroupTypes should backfill PlayerGroups before any read request."""
+    tracker = create_tracker_match(prefix="Overview Bootstrap")
+    match_data = tracker.match_data
     match_data.status = "active"
-    match_data.save()
-
-    GroupType.objects.create(name="Aanval")
-    GroupType.objects.create(name="Verdediging")
-    GroupType.objects.create(name="Reserve")
-
-    user = _create_test_user(username="testuser")
-    _connect_user_to_club(user, home_club)
-    client.force_login(user)
+    match_data.save(update_fields=["status"])
 
     assert PlayerGroup.objects.count() == 0
 
+    GroupType.objects.create(name="Aanval")
+    assert PlayerGroup.objects.count() == EXPECTED_TEAMS_PER_MATCH
+    GroupType.objects.create(name="Verdediging")
+    GroupType.objects.create(name="Reserve")
+    assert PlayerGroup.objects.count() == EXPECTED_PLAYER_GROUPS_TOTAL
+
     response = client.get(
-        f"/api/match/player_overview_data/{match.id_uuid}/{home_team.id_uuid}/",
+        f"/api/match/player_overview_data/{tracker.match.id_uuid}/{tracker.home_team.id_uuid}/",
         secure=True,
     )
 
@@ -104,13 +87,77 @@ def test_player_overview_data_creates_player_groups_automatically(
     # 3 groups (Aanval/Verdediging/Reserve) x 2 teams
     assert PlayerGroup.objects.count() == EXPECTED_PLAYER_GROUPS_TOTAL
     assert (
-        PlayerGroup.objects.filter(team=home_team, match_data=match_data).count()
+        PlayerGroup.objects.filter(
+            team=tracker.home_team,
+            match_data=match_data,
+        ).count()
         == EXPECTED_GROUPS_PER_TEAM
     )
     assert (
-        PlayerGroup.objects.filter(team=away_team, match_data=match_data).count()
+        PlayerGroup.objects.filter(
+            team=tracker.away_team,
+            match_data=match_data,
+        ).count()
         == EXPECTED_GROUPS_PER_TEAM
     )
+
+
+@pytest.mark.django_db
+def test_player_overview_data_query_count_does_not_scale_with_players(
+    client: Client,
+) -> None:
+    """Player overview should prefetch groups/players instead of querying per row."""
+    tracker = create_tracker_match(prefix="Overview Queries")
+    GroupType.objects.create(name="Aanval")
+    GroupType.objects.create(name="Verdediging")
+    GroupType.objects.create(name="Reserve")
+
+    attack_group = PlayerGroup.objects.get(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        starting_type__name="Aanval",
+    )
+    defense_group = PlayerGroup.objects.get(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        starting_type__name="Verdediging",
+    )
+    reserve_group = PlayerGroup.objects.get(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        starting_type__name="Reserve",
+    )
+
+    attack_group.players.add(_create_test_player(username="overview_attack_1"))
+    defense_group.players.add(_create_test_player(username="overview_defense_1"))
+    reserve_group.players.add(_create_test_player(username="overview_reserve_1"))
+
+    url = (
+        f"/api/match/player_overview_data/"
+        f"{tracker.match.id_uuid}/{tracker.home_team.id_uuid}/"
+    )
+
+    with CaptureQueriesContext(connection) as baseline_queries:
+        baseline_response = client.get(url, secure=True)
+
+    assert baseline_response.status_code == HTTP_STATUS_OK
+
+    for suffix in range(2, 5):
+        attack_group.players.add(
+            _create_test_player(username=f"overview_attack_{suffix}")
+        )
+        defense_group.players.add(
+            _create_test_player(username=f"overview_defense_{suffix}"),
+        )
+        reserve_group.players.add(
+            _create_test_player(username=f"overview_reserve_{suffix}"),
+        )
+
+    with CaptureQueriesContext(connection) as expanded_queries:
+        expanded_response = client.get(url, secure=True)
+
+    assert expanded_response.status_code == HTTP_STATUS_OK
+    assert len(expanded_queries) == len(baseline_queries)
 
 
 @pytest.mark.django_db
@@ -279,6 +326,99 @@ def test_player_designation_rejects_more_than_4_for_non_reserve_group(
     assert response.json() == {"error": "Too many players selected"}
     attack_group.refresh_from_db()
     assert attack_group.players.count() == 0
+
+
+@pytest.mark.django_db
+def test_player_designation_requires_reserve_source_for_non_reserve_moves(
+    client: Client,
+) -> None:
+    """Players must come from reserve before joining a non-reserve group."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    home_club = Club.objects.create(name="Home Club")
+    away_club = Club.objects.create(name="Away Club")
+    home_team = Team.objects.create(name="Home Team", club=home_club)
+    away_team = Team.objects.create(name="Away Team", club=away_club)
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(minutes=30),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+
+    attack_type = GroupType.objects.create(name="Aanval")
+    defense_type = GroupType.objects.create(name="Verdediging")
+    reserve_type = GroupType.objects.create(name="Reserve")
+    reserve_group = PlayerGroup.objects.get(
+        match_data=match_data,
+        team=home_team,
+        starting_type=reserve_type,
+    )
+    attack_group = PlayerGroup.objects.get(
+        match_data=match_data,
+        team=home_team,
+        starting_type=attack_type,
+    )
+    defense_group = PlayerGroup.objects.get(
+        match_data=match_data,
+        team=home_team,
+        starting_type=defense_type,
+    )
+
+    player = _create_test_player(username="lineup_player")
+    reserve_group.players.add(player)
+
+    user = _create_test_user(username="coach")
+    _connect_user_to_club(user, home_club)
+    client.force_login(user)
+
+    first_move = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps(
+            {
+                "new_group_id": str(attack_group.id_uuid),
+                "players": [
+                    {
+                        "id_uuid": str(player.id_uuid),
+                        "groupId": str(reserve_group.id_uuid),
+                    },
+                ],
+            },
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+    assert first_move.status_code == HTTP_STATUS_OK
+
+    response = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps(
+            {
+                "new_group_id": str(defense_group.id_uuid),
+                "players": [
+                    {
+                        "id_uuid": str(player.id_uuid),
+                        "groupId": str(attack_group.id_uuid),
+                    },
+                ],
+            },
+        ),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_BAD_REQUEST
+    assert response.json() == {
+        "error": f"{player} is not in the reserve player group.",
+    }
+    attack_group.refresh_from_db()
+    defense_group.refresh_from_db()
+    assert attack_group.players.filter(id_uuid=player.id_uuid).exists()
+    assert defense_group.players.filter(id_uuid=player.id_uuid).exists() is False
 
 
 @pytest.mark.django_db

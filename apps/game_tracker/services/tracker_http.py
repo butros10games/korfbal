@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import logging
 import time
-from typing import Any, cast
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from django.db import models, transaction
@@ -37,6 +37,10 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
+from apps.game_tracker.services.player_groups import (
+    RESERVE_GROUP_NAME,
+    get_reserve_group,
+)
 from apps.player.models import Player
 from apps.schedule.models import Match
 from apps.team.models.team import Team
@@ -211,25 +215,59 @@ def _swap_player_group_types(match_data: MatchData, team: Team) -> None:
     pg_defense.save(update_fields=["current_type"])
 
 
+def _player_stats_by_team(
+    match_data: MatchData,
+    *,
+    team: Team,
+    opponent: Team,
+) -> dict[str, dict[str, int]]:
+    player_stats: dict[str, dict[str, int]] = {}
+    shot_totals = (
+        Shot.objects
+        .filter(match_data=match_data, team__in=[team, opponent])
+        .values("player_id", "team_id")
+        .annotate(
+            shots=models.Count("id_uuid"),
+            goals=models.Count("id_uuid", filter=models.Q(scored=True)),
+        )
+    )
+
+    for row in shot_totals:
+        player_id = str(row["player_id"])
+        team_id = row["team_id"]
+        stats = player_stats.setdefault(
+            player_id,
+            {
+                "shots_for": 0,
+                "shots_against": 0,
+                "goals_for": 0,
+                "goals_against": 0,
+            },
+        )
+        if team_id == team.id_uuid:
+            stats["shots_for"] = row["shots"]
+            stats["goals_for"] = row["goals"]
+            continue
+
+        stats["shots_against"] = row["shots"]
+        stats["goals_against"] = row["goals"]
+
+    return player_stats
+
+
 def _player_groups_payload(
     match_data: MatchData,
     *,
     team: Team,
     opponent: Team,
 ) -> list[dict[str, Any]]:
+    player_stats = _player_stats_by_team(match_data, team=team, opponent=opponent)
     player_groups = (
         PlayerGroup.objects
         .select_related("starting_type", "current_type")
         .prefetch_related("players__user")
-        .only(
-            "id_uuid",
-            "starting_type__name",
-            "current_type__name",
-            "players__id_uuid",
-            "players__user__username",
-        )
         .filter(match_data=match_data, team=team)
-        .exclude(starting_type__name="Reserve")
+        .exclude(starting_type__name=RESERVE_GROUP_NAME)
         .order_by(
             # Put the currently attacking group first.
             # (Same idea as the WS consumer ordering.)
@@ -250,36 +288,20 @@ def _player_groups_payload(
     for pg in ordered:
         players_payload: list[dict[str, Any]] = []
         for p in pg.players.all():
-            shots_for = Shot.objects.filter(
-                match_data=match_data,
-                player=p,
-                team=team,
-            ).count()
-            shots_against = Shot.objects.filter(
-                match_data=match_data,
-                player=p,
-                team=opponent,
-            ).count()
-            goals_for = Shot.objects.filter(
-                match_data=match_data,
-                player=p,
-                team=team,
-                scored=True,
-            ).count()
-            goals_against = Shot.objects.filter(
-                match_data=match_data,
-                player=p,
-                team=opponent,
-                scored=True,
-            ).count()
+            stats = player_stats.get(
+                str(p.id_uuid),
+                {
+                    "shots_for": 0,
+                    "shots_against": 0,
+                    "goals_for": 0,
+                    "goals_against": 0,
+                },
+            )
 
             players_payload.append({
                 "id": str(p.id_uuid),
                 "name": p.user.username,
-                "shots_for": shots_for,
-                "shots_against": shots_against,
-                "goals_for": goals_for,
-                "goals_against": goals_against,
+                **stats,
             })
 
         result.append({
@@ -299,11 +321,10 @@ def _reserve_players_payload(
     reserve_group = (
         PlayerGroup.objects
         .prefetch_related("players__user")
-        .only("id_uuid", "players__id_uuid", "players__user__username")
         .filter(
             match_data=match_data,
             team=team,
-            starting_type__name="Reserve",
+            starting_type__name=RESERVE_GROUP_NAME,
         )
         .first()
     )
@@ -747,6 +768,19 @@ def _require_not_paused(
     return current_part, opponent
 
 
+@dataclass(frozen=True, slots=True)
+class _TrackerCommandContext:
+    match: Match
+    match_data: MatchData
+    team: Team
+    event_time: datetime
+
+
+class _TrackerCommand(Protocol):
+    def apply(self, context: _TrackerCommandContext) -> None:
+        """Apply the command against the locked tracker state."""
+
+
 def apply_tracker_command(
     match: Match,
     *,
@@ -762,6 +796,8 @@ def apply_tracker_command(
     command = payload.get("command")
     if not isinstance(command, str):
         raise TrackerCommandError("Missing command.", code="bad_request")
+    event_time = _command_time_from_payload(payload)
+    parsed_command = _parse_command(payload)
 
     match_data = MatchData.objects.filter(match_link=match).first()
     if not match_data:
@@ -772,14 +808,13 @@ def apply_tracker_command(
         match_data = MatchData.objects.select_for_update().get(
             id_uuid=match_data.id_uuid,
         )
-
-        event_time = _command_time_from_payload(payload)
-        _dispatch_command(
-            match,
-            match_data=match_data,
-            team=team,
-            payload=payload,
-            event_time=event_time,
+        parsed_command.apply(
+            _TrackerCommandContext(
+                match=match,
+                match_data=match_data,
+                team=team,
+                event_time=event_time,
+            ),
         )
 
     return get_tracker_state(match, team=team)
@@ -1077,6 +1112,7 @@ def _cmd_substitute_reg(
     match_data: MatchData,
     team: Team,
     params: _SubstituteRegParams,
+    event_time: datetime,
 ) -> None:
     del match
     current_part = _current_part(match_data)
@@ -1111,12 +1147,10 @@ def _cmd_substitute_reg(
     player_in = Player.objects.select_related("user").get(id_uuid=params.new_player_id)
     player_out = Player.objects.select_related("user").get(id_uuid=params.old_player_id)
 
-    reserve_group = PlayerGroup.objects.get(
-        team=team,
-        match_data=match_data,
-        starting_type__name="Reserve",
-    )
-    active_group = PlayerGroup.objects.get(
+    reserve_group = get_reserve_group(match_data=match_data, team=team)
+    active_group = PlayerGroup.objects.exclude(
+        starting_type__name=RESERVE_GROUP_NAME,
+    ).get(
         team=team,
         match_data=match_data,
         players__in=[player_out],
@@ -1133,7 +1167,7 @@ def _cmd_substitute_reg(
         player_group=active_group,
         match_data=match_data,
         match_part=part_for_event,
-        time=params.event_time,
+        time=event_time,
     )
 
 
@@ -1141,7 +1175,6 @@ def _cmd_substitute_reg(
 class _SubstituteRegParams:
     new_player_id: str
     old_player_id: str
-    event_time: datetime
 
 
 def _cmd_substitute_against_reg(
@@ -1186,11 +1219,7 @@ def _cmd_substitute_against_reg(
             code="max_substitutions",
         )
 
-    opponent_reserve_group = PlayerGroup.objects.get(
-        team=opponent,
-        match_data=match_data,
-        starting_type__name="Reserve",
-    )
+    opponent_reserve_group = get_reserve_group(match_data=match_data, team=opponent)
 
     PlayerChange.objects.create(
         player_in=None,
@@ -1232,11 +1261,7 @@ def _remove_last_player_change(event: PlayerChange, *, match_data: MatchData) ->
         return
 
     change_team = event.player_group.team
-    reserve_group = PlayerGroup.objects.get(
-        team=change_team,
-        match_data=match_data,
-        starting_type__name="Reserve",
-    )
+    reserve_group = get_reserve_group(match_data=match_data, team=change_team)
     player_group = PlayerGroup.objects.get(id_uuid=event.player_group.id_uuid)
 
     player_group.players.remove(event.player_in)
@@ -1287,104 +1312,151 @@ def _cmd_remove_last_event(match: Match, *, match_data: MatchData, team: Team) -
         _remove_last_attack(event)
 
 
-def _handle_cmd_start_pause(
-    _match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del team, payload
-    _cmd_start_pause(match_data=match_data, event_time=event_time)
+@dataclass(frozen=True, slots=True)
+class _StartPauseCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_start_pause(
+            match_data=context.match_data,
+            event_time=context.event_time,
+        )
 
 
-def _handle_cmd_part_end(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del team, payload
-    _cmd_part_end(match, match_data=match_data, event_time=event_time)
+@dataclass(frozen=True, slots=True)
+class _PartEndCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_part_end(
+            context.match,
+            match_data=context.match_data,
+            event_time=context.event_time,
+        )
 
 
-def _handle_cmd_timeout(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
+@dataclass(frozen=True, slots=True)
+class _TimeoutCommand:
+    for_team: bool
+
+    def apply(self, context: _TrackerCommandContext) -> None:
+        timeout_team = (
+            context.team if self.for_team else _other_team(context.match, context.team)
+        )
+        _cmd_timeout(
+            context.match,
+            match_data=context.match_data,
+            team=timeout_team,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _NewAttackCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_new_attack(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _ShotRegCommand:
+    params: _ShotRegParams
+
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_shot_reg(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+            params=self.params,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _GoalRegCommand:
+    params: _GoalRegParams
+
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_goal_reg(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+            params=self.params,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _GetNonActivePlayersCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        del context
+        # No-op for HTTP; reserve players are included in the state snapshot.
+
+
+@dataclass(frozen=True, slots=True)
+class _SubstituteRegCommand:
+    params: _SubstituteRegParams
+
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_substitute_reg(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+            params=self.params,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _SubstituteAgainstRegCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_substitute_against_reg(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+            event_time=context.event_time,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _RemoveLastEventCommand:
+    def apply(self, context: _TrackerCommandContext) -> None:
+        _cmd_remove_last_event(
+            context.match,
+            match_data=context.match_data,
+            team=context.team,
+        )
+
+
+def _parse_timeout_command(payload: dict[str, Any]) -> _TrackerCommand:
     for_team = payload.get("for_team")
     if not isinstance(for_team, bool):
         raise TrackerCommandError("Invalid timeout payload.", code="bad_request")
-
-    timeout_team = team if for_team else _other_team(match, team)
-    _cmd_timeout(
-        match,
-        match_data=match_data,
-        team=timeout_team,
-        event_time=event_time,
-    )
+    return _TimeoutCommand(for_team=for_team)
 
 
-def _handle_cmd_new_attack(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del payload
-    _cmd_new_attack(match, match_data=match_data, team=team, event_time=event_time)
-
-
-def _handle_cmd_shot_reg(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
+def _parse_shot_reg_command(payload: dict[str, Any]) -> _TrackerCommand:
     player_id = payload.get("player_id")
     for_team = payload.get("for_team")
     shot_type = payload.get("shot_type")
-    # Backwards compatibility: some clients might send `goal_type` for shots.
     if shot_type is None:
         shot_type = payload.get("goal_type")
 
     if not isinstance(player_id, str) or not isinstance(for_team, bool):
         raise TrackerCommandError("Invalid shot_reg payload.", code="bad_request")
-
     if shot_type is not None and not isinstance(shot_type, str):
         raise TrackerCommandError("Invalid shot type.", code="bad_request")
-    _cmd_shot_reg(
-        match,
-        match_data=match_data,
-        team=team,
+
+    return _ShotRegCommand(
         params=_ShotRegParams(
             player_id=player_id,
             for_team=for_team,
             shot_type_id=shot_type,
         ),
-        event_time=event_time,
     )
 
 
-def _handle_cmd_goal_reg(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
+def _parse_goal_reg_command(payload: dict[str, Any]) -> _TrackerCommand:
     player_id = payload.get("player_id")
     goal_type = payload.get("goal_type")
     for_team = payload.get("for_team")
@@ -1394,121 +1466,54 @@ def _handle_cmd_goal_reg(
         or not isinstance(for_team, bool)
     ):
         raise TrackerCommandError("Invalid goal_reg payload.", code="bad_request")
-    _cmd_goal_reg(
-        match,
-        match_data=match_data,
-        team=team,
+
+    return _GoalRegCommand(
         params=_GoalRegParams(
             player_id=player_id,
             goal_type_id=goal_type,
             for_team=for_team,
         ),
-        event_time=event_time,
     )
 
 
-def _handle_cmd_get_non_active_players(
-    _match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del match_data, team, payload, event_time
-    # No-op for HTTP; reserve players are included in the state snapshot.
-
-
-def _handle_cmd_substitute_reg(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
+def _parse_substitute_reg_command(payload: dict[str, Any]) -> _TrackerCommand:
     new_player_id = payload.get("new_player_id")
     old_player_id = payload.get("old_player_id")
     if not isinstance(new_player_id, str) or not isinstance(old_player_id, str):
         raise TrackerCommandError("Invalid substitute_reg payload.", code="bad_request")
-    _cmd_substitute_reg(
-        match,
-        match_data=match_data,
-        team=team,
+
+    return _SubstituteRegCommand(
         params=_SubstituteRegParams(
             new_player_id=new_player_id,
             old_player_id=old_player_id,
-            event_time=event_time,
         ),
     )
 
 
-def _handle_cmd_substitute_against_reg(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del payload
-    _cmd_substitute_against_reg(
-        match,
-        match_data=match_data,
-        team=team,
-        event_time=event_time,
-    )
+_CommandParser = Callable[[dict[str, Any]], _TrackerCommand]
 
 
-def _handle_cmd_remove_last_event(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
-    del payload, event_time
-    _cmd_remove_last_event(match, match_data=match_data, team=team)
-
-
-_CommandHandler = Callable[[Match], None]
-
-
-_COMMAND_HANDLERS: dict[str, Callable[..., None]] = {
-    "start/pause": _handle_cmd_start_pause,
-    "part_end": _handle_cmd_part_end,
-    "timeout": _handle_cmd_timeout,
-    "new_attack": _handle_cmd_new_attack,
-    "shot_reg": _handle_cmd_shot_reg,
-    "goal_reg": _handle_cmd_goal_reg,
-    "get_non_active_players": _handle_cmd_get_non_active_players,
-    "substitute_reg": _handle_cmd_substitute_reg,
-    "substitute_against_reg": _handle_cmd_substitute_against_reg,
-    "remove_last_event": _handle_cmd_remove_last_event,
+_COMMAND_PARSERS: dict[str, _CommandParser] = {
+    "start/pause": lambda _payload: _StartPauseCommand(),
+    "part_end": lambda _payload: _PartEndCommand(),
+    "timeout": _parse_timeout_command,
+    "new_attack": lambda _payload: _NewAttackCommand(),
+    "shot_reg": _parse_shot_reg_command,
+    "goal_reg": _parse_goal_reg_command,
+    "get_non_active_players": lambda _payload: _GetNonActivePlayersCommand(),
+    "substitute_reg": _parse_substitute_reg_command,
+    "substitute_against_reg": lambda _payload: _SubstituteAgainstRegCommand(),
+    "remove_last_event": lambda _payload: _RemoveLastEventCommand(),
 }
 
 
-def _dispatch_command(
-    match: Match,
-    *,
-    match_data: MatchData,
-    team: Team,
-    payload: dict[str, Any],
-    event_time: datetime,
-) -> None:
+def _parse_command(payload: dict[str, Any]) -> _TrackerCommand:
     command = payload.get("command")
     if not isinstance(command, str):
         raise TrackerCommandError("Missing command.", code="bad_request")
 
-    handler = _COMMAND_HANDLERS.get(command)
-    if not handler:
+    parser = _COMMAND_PARSERS.get(command)
+    if not parser:
         raise TrackerCommandError(f"Unknown command: {command}", code="bad_request")
 
-    handler(
-        match,
-        match_data=match_data,
-        team=team,
-        payload=payload,
-        event_time=event_time,
-    )
+    return parser(payload)

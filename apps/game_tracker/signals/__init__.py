@@ -7,7 +7,10 @@ from .impact_recompute_signals import (  # noqa: F401
     _player_group_players_changed,
     _shot_changed,
 )
-from .match_data_signals import create_player_groups_for_new_match_data
+from .match_data_signals import (
+    create_player_groups_for_new_group_type,
+    create_player_groups_for_new_match_data,
+)
 from .match_signals import create_match_data_for_new_match
 from .minutes_recompute_signals import (  # noqa: F401
     _match_data_post_save as _minutes_match_data_post_save,
@@ -22,5 +25,6 @@ from .minutes_recompute_signals import (  # noqa: F401
 
 __all__ = [
     "create_match_data_for_new_match",
+    "create_player_groups_for_new_group_type",
     "create_player_groups_for_new_match_data",
 ]

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 from http import HTTPStatus
+import json
+from pathlib import Path
+from uuid import UUID
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -16,26 +19,55 @@ from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 )
+from apps.player.models.player import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
+
+
+FIXTURES_DIR = (
+    Path(__file__).resolve().parents[6] / "fixtures" / "korfbal" / "match-impact"
+)
+
+
+def _read_fixture(name: str) -> dict[str, object]:
+    return json.loads((FIXTURES_DIR / name).read_text())
+
+
+def _set_player_uuid(player: Player, player_id: str) -> Player:
+    Player.objects.filter(pk=player.pk).update(id_uuid=UUID(player_id))
+    return Player.objects.get(pk=player_id)
 
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_impacts_returns_persisted_rows(client: Client) -> None:
-    """The endpoint should return only the latest-version stored rows."""
-    expected_home_impact = 1.2
-    expected_away_impact = -0.6
+    """The endpoint should match the shared stored-impact contract fixture."""
+    fixture = _read_fixture("stored-impact-contract.json")
+    impacts = fixture["impacts"]
+    assert isinstance(impacts, list)
+    home_fixture = impacts[0]
+    away_fixture = impacts[1]
+    assert isinstance(home_fixture, dict)
+    assert isinstance(away_fixture, dict)
 
     today = timezone.now().date()
     season = Season.objects.create(name="2025", start_date=today, end_date=today)
 
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
+    home_team = Team.objects.create(
+        id_uuid=UUID(str(home_fixture["team_id_uuid"])),
+        name="Home Team",
+        club=home_club,
+    )
+    away_team = Team.objects.create(
+        id_uuid=UUID(str(away_fixture["team_id_uuid"])),
+        name="Away Team",
+        club=away_club,
+    )
 
     match = Match.objects.create(
+        id_uuid=UUID("40000000-0000-0000-0000-000000000001"),
         home_team=home_team,
         away_team=away_team,
         season=season,
@@ -43,8 +75,11 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
     )
 
     match_data = MatchData.objects.get(match_link=match)
-    match_data.status = "finished"
-    match_data.save(update_fields=["status"])
+    MatchData.objects.filter(pk=match_data.pk).update(
+        id_uuid=UUID(str(fixture["match_data_id"])),
+        status=str(fixture["status"]),
+    )
+    match_data = MatchData.objects.get(pk=fixture["match_data_id"])
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
@@ -54,19 +89,27 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
         username="away_player",
         password="pass1234",  # noqa: S106  # nosec
     )
+    home_player = _set_player_uuid(
+        home_user.player,
+        str(home_fixture["player_id_uuid"]),
+    )
+    away_player = _set_player_uuid(
+        away_user.player,
+        str(away_fixture["player_id_uuid"]),
+    )
 
     PlayerMatchImpact.objects.create(
         match_data=match_data,
-        player=home_user.player,
+        player=home_player,
         team=home_team,
-        impact_score=Decimal("1.2"),
+        impact_score=Decimal(str(home_fixture["impact_score"])),
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
     PlayerMatchImpact.objects.create(
         match_data=match_data,
-        player=away_user.player,
+        player=away_player,
         team=away_team,
-        impact_score=Decimal("-0.6"),
+        impact_score=Decimal(str(away_fixture["impact_score"])),
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
     # Noise row at older version should not be returned.
@@ -81,26 +124,14 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
         impact_score=Decimal("9.9"),
         algorithm_version="v0",
     )
+    PlayerMatchImpact.objects.filter(
+        match_data=match_data,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    ).update(computed_at=fixture["computed_at"])
 
     response = client.get(f"/api/matches/{match.id_uuid}/impacts/")
     assert response.status_code == HTTPStatus.OK
-
-    payload = response.json()
-    assert payload["match_data_id"] == str(match_data.id_uuid)
-    assert payload["status"] == "finished"
-    assert payload["algorithm_version"] == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
-    assert isinstance(payload["impacts"], list)
-
-    impacts = {row["player_id_uuid"]: row for row in payload["impacts"]}
-
-    home_row = impacts[str(home_user.player.id_uuid)]
-    away_row = impacts[str(away_user.player.id_uuid)]
-    assert home_row["impact_score"] == expected_home_impact
-    assert home_row["team_side"] == "home"
-    assert away_row["impact_score"] == expected_away_impact
-    assert away_row["team_side"] == "away"
-
-    assert str(legacy_user.player.id_uuid) not in impacts
+    assert response.json() == fixture
 
 
 @pytest.mark.django_db

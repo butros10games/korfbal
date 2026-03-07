@@ -11,14 +11,19 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.db import transaction
+from django.db.models import Prefetch, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.models import GroupType, MatchData, MatchPlayer, PlayerGroup
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
+from apps.game_tracker.services.player_groups import (
+    PlayerGroupAssignmentError,
+    add_player_to_group,
+)
 from apps.player.models import Player, PlayerClubMembership
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
@@ -102,30 +107,6 @@ def _get_player_groups(match_id: str, team_id: str) -> QuerySet[PlayerGroup]:
     )
 
 
-def _ensure_player_groups_exist(match_model: Match, match_data: MatchData) -> None:
-    """Create missing PlayerGroup rows for the match's teams.
-
-    The legacy server-rendered match tracker view implicitly created the
-    PlayerGroup rows (Aanval/Verdediging/Reserve, etc.) the first time it was
-    opened. The SPA expects the same behavior from the REST API.
-
-    This is intentionally idempotent.
-    """
-    group_types = list(GroupType.objects.all().order_by("order", "name"))
-    if not group_types:
-        return
-
-    teams = [match_model.home_team, match_model.away_team]
-    for team in teams:
-        for group_type in group_types:
-            PlayerGroup.objects.get_or_create(
-                match_data=match_data,
-                team=team,
-                starting_type=group_type,
-                defaults={"current_type": group_type},
-            )
-
-
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def player_overview_data(request: Request, match_id: str, team_id: str) -> Response:
@@ -141,13 +122,23 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
     match_model = get_object_or_404(Match, id_uuid=match_id)
     match_data = MatchData.objects.get(match_link=match_model)
 
-    if request.user.is_authenticated:
-        _ensure_player_groups_exist(match_model, match_data)
-
-    player_groups = PlayerGroup.objects.filter(
-        match_data=match_data,
-        team_id=team_id,
-    ).order_by("starting_type__order")
+    player_groups = (
+        PlayerGroup.objects
+        .filter(
+            match_data=match_data,
+            team_id=team_id,
+        )
+        .select_related(
+            "starting_type",
+        )
+        .prefetch_related(
+            Prefetch(
+                "players",
+                queryset=Player.objects.select_related("user"),
+            ),
+        )
+        .order_by("starting_type__order")
+    )
     viewer = _viewer_player(request)
 
     player_groups_data: list[dict[str, Any]] = []
@@ -179,9 +170,6 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
     match_data = MatchData.objects.get(match_link=match_model)
-    if request.user.is_authenticated:
-        _ensure_player_groups_exist(match_model, match_data)
-
     team_data = (
         TeamData.objects
         .filter(team=team_model, season=match_model.season)
@@ -189,13 +177,17 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
         .first()
     )
 
-    players = (
-        team_data.players.all() if team_data is not None else Player.objects.none()
+    excluded_ids = (
+        PlayerGroup.objects
+        .filter(match_data=match_data, team=team_model, players__id_uuid__isnull=False)
+        .values_list("players__id_uuid", flat=True)
+        .distinct()
     )
-    player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
-
-    for player_group in player_groups:
-        players = players.exclude(id_uuid__in=player_group.players.all())
+    players = (
+        team_data.players.exclude(id_uuid__in=excluded_ids).select_related("user")
+        if team_data is not None
+        else Player.objects.none()
+    )
 
     viewer = _viewer_player(request)
 
@@ -245,9 +237,6 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     team_model = get_object_or_404(Team, id_uuid=team_id)
 
     match_data = MatchData.objects.get(match_link=match_model)
-    if request.user.is_authenticated:
-        _ensure_player_groups_exist(match_model, match_data)
-
     player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
     # Important: `values_list('players__id_uuid')` can yield NULL rows for empty
     # groups (left join). Using that in a `NOT IN (NULL)` exclusion would filter
@@ -296,6 +285,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         .filter(allowed_filter)
         .exclude(id_uuid__in=excluded_ids)
         .distinct()
+        .select_related("user")
     )
 
     viewer = _viewer_player(request)
@@ -325,7 +315,7 @@ def _parse_designation_payload(request: Request) -> dict[str, Any] | None:
 
     try:
         parsed = json.loads(request.body)
-    except Exception:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return None
 
     return parsed if isinstance(parsed, dict) else None
@@ -390,7 +380,7 @@ def _is_coach_or_admin_user(user: object) -> bool:
         return False
     try:
         return bool(groups.filter(name__iexact="coach").exists())
-    except Exception:
+    except AttributeError:
         return False
 
 
@@ -428,7 +418,7 @@ def _apply_designation(
     *,
     selected_players: list[dict[str, Any]],
     target_group: PlayerGroup | None,
-) -> PlayerGroup | None:
+) -> tuple[PlayerGroup | None, str | None]:
     """Apply the designation changes and return a group usable for syncing."""
     resolved_group = target_group
 
@@ -437,16 +427,24 @@ def _apply_designation(
         if not player_id:
             continue
 
+        player = Player.objects.get(id_uuid=player_id)
         old_group = _get_player_group(player_data.get("groupId"))
-        if old_group is not None:
-            old_group.players.remove(Player.objects.get(id_uuid=player_id))
-            if resolved_group is None:
-                resolved_group = old_group
-
         if target_group is not None:
-            target_group.players.add(Player.objects.get(id_uuid=player_id))
+            try:
+                add_player_to_group(
+                    player=player,
+                    target_group=target_group,
+                    source_group=old_group,
+                )
+            except PlayerGroupAssignmentError as exc:
+                return resolved_group, str(exc)
+        elif old_group is not None:
+            old_group.players.remove(player)
 
-    return resolved_group
+        if old_group is not None and resolved_group is None:
+            resolved_group = old_group
+
+    return resolved_group, None
 
 
 def _validate_target_group_capacity(
@@ -539,14 +537,18 @@ def player_designation(request: Request) -> Response:
             status=403,
         )
 
-    resolved_group = _apply_designation(
-        selected_players=selected_players,
-        target_group=target_group,
-    )
+    with transaction.atomic():
+        resolved_group, assignment_error = _apply_designation(
+            selected_players=selected_players,
+            target_group=target_group,
+        )
+        if assignment_error is not None:
+            transaction.set_rollback(True)
+            return Response({"error": assignment_error}, status=400)
 
-    # Keep MatchPlayer roster in sync with PlayerGroup assignments.
-    # This ensures match stats can reliably place players on the correct side.
-    if resolved_group is not None:
-        _sync_match_players(match_data=resolved_group.match_data)
+        # Keep MatchPlayer roster in sync with PlayerGroup assignments.
+        # This ensures match stats can reliably place players on the correct side.
+        if resolved_group is not None:
+            _sync_match_players(match_data=resolved_group.match_data)
 
     return Response({"success": True})

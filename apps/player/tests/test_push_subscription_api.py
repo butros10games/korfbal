@@ -14,6 +14,10 @@ import pytest
 from apps.player.models.push_subscription import PlayerPushSubscription
 
 
+TRUNCATED_ERROR_COUNT = 11
+ERROR_PAYLOAD_LIMIT = 10
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_push_subscriptions_requires_authentication(client: Client) -> None:
@@ -206,10 +210,57 @@ def test_push_test_endpoint_sends_to_all_active_subscriptions(client: Client) ->
         user_agent="pytest",
     )
 
-    with patch("apps.player.api.views.send_to_model_subscription") as mocked_send:
+    with patch(
+        "apps.player.services.push_notifications.send_to_model_subscription"
+    ) as mocked_send:
         response = client.post("/api/player/me/push-subscriptions/test/")
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
     assert payload == {"total": 1, "sent": 1, "failed": 0}
     assert mocked_send.call_count == 1
+
+
+@pytest.mark.django_db
+@override_settings(
+    SECURE_SSL_REDIRECT=False,
+    WEBPUSH_VAPID_PUBLIC_KEY="dummy",
+    WEBPUSH_VAPID_PRIVATE_KEY="dummy",
+    WEBPUSH_VAPID_SUBJECT="mailto:test@example.com",
+)
+def test_push_test_endpoint_truncates_error_payloads(client: Client) -> None:
+    """Push test errors should be capped to a stable actionable payload size."""
+    user = get_user_model().objects.create_user(
+        username="push_user_staff_many_errors",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    client.force_login(user)
+
+    for index in range(TRUNCATED_ERROR_COUNT):
+        endpoint = f"https://example.com/push/error-{index}"
+        PlayerPushSubscription.objects.create(
+            user=user,
+            endpoint=endpoint,
+            subscription={
+                "endpoint": endpoint,
+                "keys": {"p256dh": f"abc-{index}", "auth": f"def-{index}"},
+            },
+            is_active=True,
+            user_agent="pytest",
+        )
+
+    with patch(
+        "apps.player.services.push_notifications.send_to_model_subscription",
+        side_effect=RuntimeError("boom"),
+    ):
+        response = client.post("/api/player/me/push-subscriptions/test/")
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["total"] == TRUNCATED_ERROR_COUNT
+    assert payload["sent"] == 0
+    assert payload["failed"] == TRUNCATED_ERROR_COUNT
+    assert payload["errors_truncated"] is True
+    assert len(payload["errors"]) == ERROR_PAYLOAD_LIMIT

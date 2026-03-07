@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+import json
+from pathlib import Path
+from uuid import UUID
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -27,6 +30,15 @@ from apps.game_tracker.services.match_impact import (
 from apps.player.models.player import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
+
+
+FIXTURES_DIR = (
+    Path(__file__).resolve().parents[6] / "fixtures" / "korfbal" / "match-impact"
+)
+
+
+def _read_fixture(name: str) -> dict[str, object]:
+    return json.loads((FIXTURES_DIR / name).read_text())
 
 
 @pytest.mark.parametrize(
@@ -65,7 +77,13 @@ def test_compute_match_end_minutes_returns_latest_time() -> None:
 
 @pytest.mark.django_db
 def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
-    """A missed shot should penalize the shooter according to the JS logic."""
+    """A missed shot should stay aligned with the shared golden fixture."""
+    fixture = _read_fixture("missed-shot-golden.json")
+    impacts = fixture["impacts"]
+    assert isinstance(impacts, list)
+    expected = impacts[0]
+    assert isinstance(expected, dict)
+
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
     home_team = Team.objects.create(name="Home Team", club=home_club)
@@ -95,6 +113,10 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
     user = get_user_model().objects.create_user(username="impact_shooter")
     # Project auto-creates Player via signals for new users; fall back if needed.
     player = getattr(user, "player", None) or Player.objects.create(user=user)
+    Player.objects.filter(pk=player.pk).update(
+        id_uuid=UUID(str(expected["player_id_uuid"]))
+    )
+    player = Player.objects.get(pk=expected["player_id_uuid"])
 
     Shot.objects.create(
         player=player,
@@ -109,7 +131,9 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
     by_player = {r.player_id: r for r in rows}
 
     assert str(player.id_uuid) in by_player
-    assert by_player[str(player.id_uuid)].impact_score == Decimal("-0.2")
+    assert by_player[str(player.id_uuid)].impact_score == Decimal(
+        str(expected["impact_score"]),
+    )
 
 
 @pytest.mark.django_db

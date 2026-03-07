@@ -163,7 +163,7 @@ def test_spotify_play_normalises_open_spotify_track_url(
         captured["json"] = kwargs.get("json")
         return _FakeResponse(status_code=204)
 
-    monkeypatch.setattr("apps.player.api.views.requests.put", _fake_put)
+    monkeypatch.setattr("apps.player.services.spotify.requests.put", _fake_put)
 
     position_ms = 123
     response = client.post(
@@ -216,7 +216,7 @@ def test_spotify_play_no_active_device_returns_409(
             json_data={"error": {"message": "No active device found"}},
         )
 
-    monkeypatch.setattr("apps.player.api.views.requests.put", _fake_put)
+    monkeypatch.setattr("apps.player.services.spotify.requests.put", _fake_put)
 
     response = client.post(
         "/api/player/spotify/play/",
@@ -262,7 +262,7 @@ def test_spotify_play_other_error_returns_400(
             json_data={"error": {"message": "Bad request"}},
         )
 
-    monkeypatch.setattr("apps.player.api.views.requests.put", _fake_put)
+    monkeypatch.setattr("apps.player.services.spotify.requests.put", _fake_put)
 
     response = client.post(
         "/api/player/spotify/play/",
@@ -316,7 +316,7 @@ def test_spotify_pause_failure_is_best_effort_400(
     def _fake_put(url: str, **kwargs: object) -> _FakeResponse:
         return _FakeResponse(status_code=500, text="server error")
 
-    monkeypatch.setattr("apps.player.api.views.requests.put", _fake_put)
+    monkeypatch.setattr("apps.player.services.spotify.requests.put", _fake_put)
 
     response = client.post(
         "/api/player/spotify/pause/",
@@ -403,8 +403,8 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
         assert "api.spotify.com/v1/me" in url
         return _FakeResponse(status_code=200, json_data={"id": "spotify_user"})
 
-    monkeypatch.setattr("apps.player.api.views.requests.post", _fake_post)
-    monkeypatch.setattr("apps.player.api.views.requests.get", _fake_get)
+    monkeypatch.setattr("apps.player.services.spotify.requests.post", _fake_post)
+    monkeypatch.setattr("apps.player.services.spotify.requests.get", _fake_get)
 
     response = client.get(
         "/api/player/spotify/callback/?code=abc&state=expected",

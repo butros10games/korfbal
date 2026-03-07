@@ -35,7 +35,7 @@ def test_player_song_clip_falls_back_when_ffmpeg_missing(client: Client) -> None
     song.audio_file.save("test.mp3", ContentFile(b"not really audio"), save=True)
 
     # Force the ffmpeg path to be missing deterministically.
-    with patch("apps.player.api.views.find_ffmpeg", return_value=None):
+    with patch("apps.player.services.player_audio.find_ffmpeg", return_value=None):
         response = client.get(
             f"/api/player/api/songs/{song.id_uuid}/clip/?start=12&duration=8"
         )
@@ -74,14 +74,17 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
 
     # Make storage deterministic for the assertion.
     with (
-        patch("apps.player.api.views.find_ffmpeg", return_value="ffmpeg"),
-        patch("apps.player.api.views.default_storage.exists", return_value=False),
+        patch("apps.player.services.player_audio.find_ffmpeg", return_value="ffmpeg"),
         patch(
-            "apps.player.api.views.default_storage.save",
+            "apps.player.services.player_audio.default_storage.exists",
+            return_value=False,
+        ),
+        patch(
+            "apps.player.services.player_audio.default_storage.save",
             side_effect=lambda key, _f: key,
         ),
         patch(
-            "apps.player.api.views.default_storage.url",
+            "apps.player.services.player_audio.default_storage.url",
             side_effect=lambda key: f"/media/{key}",
         ),
         patch(
@@ -101,3 +104,43 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
     assert isinstance(ffmpeg_args, list)
     assert "-map_metadata" in ffmpeg_args
     assert "-map_chapters" in ffmpeg_args
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_player_song_clip_reuses_existing_cached_clip(client: Client) -> None:
+    """Existing clip files should be reused without regenerating them."""
+    user = get_user_model().objects.create_user(
+        username="clip_user_cached",
+        password="pass1234",  # noqa: S106  # nosec
+    )
+
+    song = PlayerSong.objects.create(
+        player=user.player,
+        spotify_url="https://open.spotify.com/track/example",
+        status=PlayerSongStatus.READY,
+        start_time_seconds=12,
+    )
+    song.audio_file.save("test.mp3", ContentFile(b"not really audio"), save=True)
+
+    with (
+        patch("apps.player.services.player_audio.find_ffmpeg", return_value="ffmpeg"),
+        patch(
+            "apps.player.services.player_audio.default_storage.exists",
+            return_value=True,
+        ),
+        patch(
+            "apps.player.services.player_audio.default_storage.url",
+            return_value="/media/existing-clip.mp3",
+        ),
+        patch(
+            "apps.player.services.player_audio.transcode_to_mp3_clip_file"
+        ) as mocked_transcode,
+    ):
+        response = client.get(
+            f"/api/player/api/songs/{song.id_uuid}/clip/?start=12&duration=8"
+        )
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response["Location"] == "/media/existing-clip.mp3"
+    mocked_transcode.assert_not_called()
