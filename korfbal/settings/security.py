@@ -46,6 +46,14 @@ def origin_variants(origin: str) -> list[str]:
     return sorted(v for v in variants if v)
 
 
+def merge_origins(*origins: str) -> list[str]:
+    """Return a stable list with every hostname variant for the given origins."""
+    merged: set[str] = set()
+    for origin in origins:
+        merged.update(origin_variants(origin))
+    return sorted_hosts(list(merged))
+
+
 WEB_APP_ORIGIN = env(
     "WEB_APP_ORIGIN",
     WEB_KWT_ORIGIN if DEBUG else WEB_KORFBAL_ORIGIN,
@@ -81,6 +89,7 @@ if DEBUG:
         "bg.localhost",
     ])
     CSRF_TRUSTED_ORIGINS = sorted({*CSRF_TRUSTED_ORIGINS, KWT_ORIGIN, WEB_KWT_ORIGIN})
+    CORS_ALLOWED_ORIGINS = merge_origins(*CORS_ALLOWED_ORIGINS, WEB_KORFBAL_ORIGIN)
     CORS_ALLOWED_ORIGINS = sorted_hosts([
         *CORS_ALLOWED_ORIGINS,
         WEB_KWT_ORIGIN,
