@@ -505,7 +505,7 @@ def _build_lowest_a_rank_by_family(
     return lowest_a_rank_by_family
 
 
-def _build_player_payloads(  # noqa: PLR0912
+def _build_player_payloads(
     *,
     player_states: dict[str, PlayerState],
     team_context_by_id: dict[str, TeamContext],

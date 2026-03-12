@@ -1,6 +1,6 @@
 """Module contains signals for the game_tracker app."""
 
-from .impact_recompute_signals import (  # noqa: F401
+from .impact_recompute_signals import (
     _pause_changed,
     _player_change_changed,
     _player_group_changed,
@@ -12,7 +12,7 @@ from .match_data_signals import (
     create_player_groups_for_new_match_data,
 )
 from .match_signals import create_match_data_for_new_match
-from .minutes_recompute_signals import (  # noqa: F401
+from .minutes_recompute_signals import (
     _match_data_post_save as _minutes_match_data_post_save,
     _match_data_pre_save as _minutes_match_data_pre_save,
     _pause_changed as _minutes_pause_changed,

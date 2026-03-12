@@ -39,7 +39,7 @@ def test_connected_club_recent_results_returns_latest_three_within_days(
 
     user = get_user_model().objects.create_user(
         username="connected_club_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
     player.club_follow.add(followed_club)

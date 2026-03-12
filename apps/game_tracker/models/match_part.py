@@ -36,4 +36,4 @@ class MatchPart(models.Model):
             str: A string representation of the match part.
 
         """
-        return f"Match Part {self.id_uuid} - {self.match_data} - {self.part_number} - {self.start_time} - {self.end_time}"  # noqa: E501
+        return f"Match Part {self.id_uuid} - {self.match_data} - {self.part_number} - {self.start_time} - {self.end_time}"

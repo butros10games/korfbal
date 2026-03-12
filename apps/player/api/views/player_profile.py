@@ -54,7 +54,7 @@ class PlayerViewSet(viewsets.ModelViewSet):
         if user_id is None or player.user.id != user_id:
             raise PermissionDenied("You do not have permission to modify this player")
 
-    def perform_update(self, serializer: Any) -> None:  # noqa: ANN401
+    def perform_update(self, serializer: Any) -> None:
         """Update a player after enforcing ownership/staff checks."""
         player = self.get_object()
         self._ensure_can_modify(player)
@@ -76,8 +76,8 @@ class CurrentPlayerAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the current player's profile."""
         player = get_current_player(request)
@@ -98,8 +98,8 @@ class PlayerFollowedTeamsAPIView(APIView):
         self,
         request: Request,
         player_id: str | None = None,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return teams followed by the requested player."""
         player = self._resolve_player(request, player_id)
@@ -139,8 +139,8 @@ class PlayerTeamsAPIView(APIView):
         self,
         request: Request,
         player_id: str | None = None,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return teams grouped as playing/coaching/following for a player."""
         player = self._resolve_player(request, player_id)
@@ -190,8 +190,8 @@ class CurrentPlayerTeamsAPIView(PlayerTeamsAPIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return teams grouped as playing/coaching/following for the current player."""
         return super().get(request, None, *args, **kwargs)
@@ -203,8 +203,8 @@ class CurrentPlayerFollowedTeamsAPIView(PlayerFollowedTeamsAPIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return teams followed by the current player."""
         return super().get(request, None, *args, **kwargs)
@@ -220,8 +220,8 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the authenticated player's privacy visibility settings."""
         player = player_detail_queryset().filter(user=request.user).first()
@@ -249,8 +249,8 @@ class CurrentPlayerPrivacySettingsAPIView(APIView):
     def patch(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update the authenticated player's privacy visibility settings."""
         player = player_detail_queryset().filter(user=request.user).first()

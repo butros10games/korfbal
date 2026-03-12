@@ -34,7 +34,7 @@ def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None
     """When Spotify is not configured, the endpoint should return a 400."""
     user = get_user_model().objects.create_user(
         username="spotify_not_configured",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -48,7 +48,7 @@ def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None
 @override_settings(
     SECURE_SSL_REDIRECT=False,
     SPOTIFY_CLIENT_ID="client_id",
-    SPOTIFY_CLIENT_SECRET="client_secret",  # noqa: S106  # nosec
+    SPOTIFY_CLIENT_SECRET="client_secret",  # nosec
     SPOTIFY_REDIRECT_URI="https://example.invalid/oauth/callback",
     WEB_APP_ORIGIN="https://app.example.invalid",
 )
@@ -56,7 +56,7 @@ def test_spotify_connect_sets_oauth_state_and_optional_redirect(client: Client) 
     """The connect endpoint should generate state and store redirect in session."""
     user = get_user_model().objects.create_user(
         username="spotify_connect",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -78,14 +78,14 @@ def test_spotify_connect_sets_oauth_state_and_optional_redirect(client: Client) 
 @override_settings(
     SECURE_SSL_REDIRECT=False,
     SPOTIFY_CLIENT_ID="client_id",
-    SPOTIFY_CLIENT_SECRET="client_secret",  # noqa: S106  # nosec
+    SPOTIFY_CLIENT_SECRET="client_secret",  # nosec
     SPOTIFY_REDIRECT_URI="https://example.invalid/oauth/callback",
 )
 def test_spotify_connect_ignores_non_relative_redirect(client: Client) -> None:
     """Only relative redirect paths should be stored for safety."""
     user = get_user_model().objects.create_user(
         username="spotify_connect_redirect",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 

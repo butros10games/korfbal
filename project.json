@@ -11,6 +11,12 @@
         "domain:sports",
         "framework:django"
     ],
+    "metadata": {
+        "coveragePolicy": {
+            "lineFailUnder": 83,
+            "note": "Raise only after an intentional baseline refresh with nx run korfbal-django:test:ci."
+        }
+    },
     "implicitDependencies": [
         "bg-audit-events",
         "bg-auth",
@@ -34,11 +40,11 @@
         "test": {
             "executor": "nx:run-commands",
             "options": {
-                "command": "uv run python scripts/python/run_pytest_target.py --allow-no-tests -- -n auto --dist loadgroup apps/django_projects/korfbal"
+                "command": "uv run python scripts/python/run_pytest_target.py -- -n auto --dist loadgroup apps/django_projects/korfbal"
             },
             "configurations": {
                 "ci": {
-                    "command": "PYTHONPATH=.:${PYTHONPATH} PYTEST_ADDOPTS=\"${PYTEST_ADDOPTS} --cov-report=xml:reports/coverage/coverage-korfbal.xml\" uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -n auto --dist loadgroup apps/django_projects/korfbal"
+                    "command": "PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -n 0 apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-report=term --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83"
                 }
             }
         },

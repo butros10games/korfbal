@@ -42,7 +42,7 @@ class JwtBearerAuthentication(BaseAuthentication):
 
         return token or None
 
-    def authenticate(self, request: Any) -> tuple[AbstractBaseUser, str] | None:  # noqa: ANN401 - DRF interface
+    def authenticate(self, request: Any) -> tuple[AbstractBaseUser, str] | None:
         """Authenticate the request using a JWT bearer token.
 
         This method delegates header parsing to `_extract_bearer_token` to keep

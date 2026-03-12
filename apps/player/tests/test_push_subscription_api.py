@@ -32,7 +32,7 @@ def test_push_subscriptions_register_list_and_deactivate(client: Client) -> None
     """A user can register, list, upsert and deactivate push subscriptions."""
     user = get_user_model().objects.create_user(
         username="push_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -101,7 +101,7 @@ def test_push_subscriptions_validates_payload(client: Client) -> None:
     """Invalid subscription payloads are rejected with 400."""
     user = get_user_model().objects.create_user(
         username="push_user_invalid",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -127,7 +127,7 @@ def test_push_test_endpoint_requires_staff(client: Client) -> None:
     """Only staff users can call the debug test push endpoint."""
     user = get_user_model().objects.create_user(
         username="push_user_non_staff",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -147,7 +147,7 @@ def test_push_test_endpoint_requires_webpush_configuration(client: Client) -> No
     """The endpoint returns 409 when VAPID keys are not configured."""
     user = get_user_model().objects.create_user(
         username="push_user_staff_missing_config",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user.is_staff = True
     user.save(update_fields=["is_staff"])
@@ -171,7 +171,7 @@ def test_push_test_endpoint_requires_active_subscriptions(client: Client) -> Non
     """The endpoint returns 400 when the user has no active subscriptions."""
     user = get_user_model().objects.create_user(
         username="push_user_staff_no_subs",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user.is_staff = True
     user.save(update_fields=["is_staff"])
@@ -193,7 +193,7 @@ def test_push_test_endpoint_sends_to_all_active_subscriptions(client: Client) ->
     """Staff can send a test push to all of their active subscriptions."""
     user = get_user_model().objects.create_user(
         username="push_user_staff",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user.is_staff = True
     user.save(update_fields=["is_staff"])
@@ -232,7 +232,7 @@ def test_push_test_endpoint_truncates_error_payloads(client: Client) -> None:
     """Push test errors should be capped to a stable actionable payload size."""
     user = get_user_model().objects.create_user(
         username="push_user_staff_many_errors",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user.is_staff = True
     user.save(update_fields=["is_staff"])

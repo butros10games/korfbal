@@ -54,7 +54,7 @@ class Pause(models.Model):
             str: A string representation of the pause.
 
         """
-        return f"Pause {self.id_uuid} - {self.match_data} - {self.start_time} - {self.end_time}"  # noqa: E501
+        return f"Pause {self.id_uuid} - {self.match_data} - {self.start_time} - {self.end_time}"
 
     def length(self) -> timedelta:
         """Return the length of the pause.

@@ -18,7 +18,7 @@ else:
 class MatchPlayerAdmin(MatchPlayerAdminBase):
     """Admin for the MatchPlayer model."""
 
-    list_display = ["id_uuid", "match_data", "team", "player"]  # noqa: RUF012
+    list_display = ["id_uuid", "match_data", "team", "player"]
     show_full_result_count = False
 
     class Meta:

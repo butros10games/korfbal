@@ -36,7 +36,7 @@ def test_goal_song_rejects_non_object_json_payload(client: Client) -> None:
     """The endpoint should reject non-object JSON bodies (e.g. arrays)."""
     user = get_user_model().objects.create_user(
         username="goal_song_non_object",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -56,7 +56,7 @@ def test_goal_song_parsing_validation_errors(client: Client) -> None:
     """Type validation should produce clear 400s."""
     user = get_user_model().objects.create_user(
         username="goal_song_bad_types",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -95,7 +95,7 @@ def test_goal_song_sets_uri_and_start_time_from_selected_song(client: Client) ->
     """Selecting goal_song_song_ids should sync legacy fields to first selection."""
     user = get_user_model().objects.create_user(
         username="goal_song_select",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -142,7 +142,7 @@ def test_goal_song_rejects_unknown_or_not_ready_songs(client: Client) -> None:
     """Unknown ids or not-ready songs should be rejected with helpful payloads."""
     user = get_user_model().objects.create_user(
         username="goal_song_validate",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -195,7 +195,7 @@ def test_goal_song_can_clear_selection_and_fields(client: Client) -> None:
     """Sending null for goal_song_song_ids clears selection and legacy fields."""
     user = get_user_model().objects.create_user(
         username="goal_song_clear",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player: Player = user.player
     player.goal_song_song_ids = ["x"]

@@ -56,7 +56,7 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     response = client.get(f"/api/matches/{match.id_uuid}/live/")

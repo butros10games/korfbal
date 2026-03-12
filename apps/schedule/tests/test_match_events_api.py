@@ -71,11 +71,11 @@ def test_match_events_halftime_substitution_is_serialized_as_rust(
     user_model = get_user_model()
     player_out_user = user_model.objects.create_user(
         username="player_out",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player_in_user = user_model.objects.create_user(
         username="player_in",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     base = timezone.now()
@@ -167,7 +167,7 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     user_model = get_user_model()
     shooter_user = user_model.objects.create_user(
         username="shooter",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     missed = Shot.objects.create(

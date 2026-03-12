@@ -63,7 +63,7 @@ class Command(BaseCommand):
 
     help = "Generate WEBPUSH_VAPID_PUBLIC_KEY / WEBPUSH_VAPID_PRIVATE_KEY"
 
-    def add_arguments(self, parser: Any) -> None:  # noqa: ANN401
+    def add_arguments(self, parser: Any) -> None:
         """Add CLI arguments."""
         parser.add_argument(
             "--subject",
@@ -77,7 +77,7 @@ class Command(BaseCommand):
             ),
         )
 
-    def handle(self, *args: Any, **options: Any) -> None:  # noqa: ANN401
+    def handle(self, *args: Any, **options: Any) -> None:
         """Generate keys and print them to stdout."""
         subject = str(options.get("subject") or DEFAULT_VAPID_SUBJECT).strip()
 

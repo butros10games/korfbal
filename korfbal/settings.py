@@ -8,4 +8,4 @@ but prefer `DJANGO_SETTINGS_MODULE=korfbal.settings`.
 
 from __future__ import annotations
 
-from korfbal.settings import *  # noqa: F403
+from korfbal.settings import *

@@ -31,8 +31,8 @@ class UpdateFeedView(APIView):
     def get(
         self,
         request: HttpRequest,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return serialized updates derived from upcoming matches.
 
@@ -121,8 +121,8 @@ class HubIndexView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return hub index data for the authenticated user."""
         user = request.user
@@ -246,8 +246,8 @@ class CatalogDataView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return catalog data for the given selector payload."""
         # Be lenient about payload encoding (tests send JSON string bodies).

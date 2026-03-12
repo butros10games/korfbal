@@ -30,7 +30,7 @@ def test_upload_profile_picture_missing_file_returns_400(client: Client) -> None
     """Missing file should return a clean 400 with an error message."""
     user = get_user_model().objects.create_user(
         username="upload_profile_picture_missing",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -48,7 +48,7 @@ def test_upload_profile_picture_player_missing_returns_404(
     """If the user has no Player row, the endpoint returns 404 (not 500)."""
     user = get_user_model().objects.create_user(
         username="upload_profile_picture_no_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     Player.objects.filter(user=user).delete()
     client.force_login(user)
@@ -77,7 +77,7 @@ def test_upload_profile_picture_happy_path_persists_file_and_returns_url(
     """Successful upload stores the file and returns its URL."""
     user = get_user_model().objects.create_user(
         username="upload_profile_picture_ok",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -119,7 +119,7 @@ def test_upload_goal_song_missing_file_returns_400(client: Client) -> None:
     """Missing goal_song file should return a clean 400."""
     user = get_user_model().objects.create_user(
         username="upload_goal_song_missing",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -135,7 +135,7 @@ def test_upload_goal_song_rejects_unsupported_content_type(client: Client) -> No
     """If a content type is provided and is not allowed, reject it."""
     user = get_user_model().objects.create_user(
         username="upload_goal_song_unsupported_type",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -163,7 +163,7 @@ def test_upload_goal_song_player_missing_returns_404(client: Client) -> None:
     """If the user has no Player row, goal-song upload returns 404."""
     user = get_user_model().objects.create_user(
         username="upload_goal_song_no_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     Player.objects.filter(user=user).delete()
     client.force_login(user)
@@ -192,7 +192,7 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     """Successful upload sanitizes filename and persists returned URL on Player."""
     user = get_user_model().objects.create_user(
         username="upload_goal_song_ok",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 

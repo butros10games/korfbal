@@ -65,7 +65,7 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user.player.team_follow.add(followed_team)
 
@@ -101,7 +101,7 @@ def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -
 
     user = get_user_model().objects.create_user(
         username="no_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     # Delete the auto-created player row (signal) to mimic a partially-migrated user.
     Player.objects.filter(user=user).delete()

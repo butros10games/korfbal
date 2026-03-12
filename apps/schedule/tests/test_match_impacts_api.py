@@ -83,11 +83,11 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     away_user = get_user_model().objects.create_user(
         username="away_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     home_player = _set_player_uuid(
         home_user.player,
@@ -115,7 +115,7 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
     # Noise row at older version should not be returned.
     legacy_user = get_user_model().objects.create_user(
         username="legacy_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     PlayerMatchImpact.objects.create(
         match_data=match_data,

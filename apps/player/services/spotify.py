@@ -40,7 +40,7 @@ def normalise_spotify_track_uri(value: str) -> str:
     return raw
 
 
-def get_or_create_spotify_oauth_state(request: Any) -> str:  # noqa: ANN401
+def get_or_create_spotify_oauth_state(request: Any) -> str:
     """Generate and persist an OAuth state token in the session."""
     state = secrets.token_urlsafe(24)
     request.session["spotify_oauth_state"] = state

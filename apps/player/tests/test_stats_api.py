@@ -39,7 +39,7 @@ def test_player_stats_returns_counts_for_season(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="stat_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -176,7 +176,7 @@ def test_player_stats_includes_mvps_and_match_summaries(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="mvp_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 

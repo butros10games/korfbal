@@ -10,10 +10,10 @@ The public entrypoint remains `DJANGO_SETTINGS_MODULE=korfbal.settings`.
 from __future__ import annotations
 
 # bg_auth settings
-from .bg_auth import *  # noqa: F403
+from .bg_auth import *
 
 # Core Django configuration
-from .django_core import (  # noqa: F401
+from .django_core import (
     ASGI_APPLICATION,
     AUTH_PASSWORD_VALIDATORS,
     AUTHENTICATION_BACKENDS,
@@ -28,16 +28,16 @@ from .django_core import (  # noqa: F401
 )
 
 # Email
-from .email import *  # noqa: F403
+from .email import *
 
 # i18n
-from .i18n import *  # noqa: F403
+from .i18n import *
 
 # Integrations
-from .integrations import *  # noqa: F403
+from .integrations import *
 
 # App performance switches
-from .performance import (  # noqa: F401
+from .performance import (
     KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE,
     KORFBAL_IMPACT_AUTO_RECOMPUTE_LIMIT,
     KORFBAL_LOG_SLOW_DB_QUERIES,
@@ -52,13 +52,13 @@ from .performance import (  # noqa: F401
 )
 
 # REST / schema
-from .rest import *  # noqa: F403
+from .rest import *
 
 # Runtime flags (DEBUG, SECRET_KEY, etc.)
-from .runtime import *  # noqa: F403
+from .runtime import *
 
 # Security (hosts/CORS/CSRF + web app origin)
-from .security import (  # noqa: F401
+from .security import (
     ALLOWED_HOSTS,
     CORS_ALLOW_ALL_ORIGINS,
     CORS_ALLOW_CREDENTIALS,
@@ -80,7 +80,7 @@ from .security import (  # noqa: F401
 )
 
 # Services
-from .services import (  # noqa: F401
+from .services import (
     CACHES,
     CELERY_ACCEPT_CONTENT,
     CELERY_BROKER_URL,
@@ -96,4 +96,4 @@ from .services import (  # noqa: F401
 )
 
 # Storage
-from .storage import *  # noqa: F403
+from .storage import *

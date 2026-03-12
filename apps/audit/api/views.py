@@ -137,8 +137,8 @@ class AuditEventIngestAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Ingest a normalized audit event."""
         if not _token_valid(request):
@@ -175,8 +175,8 @@ class AuditEventBulkIngestAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Ingest a batch of normalized audit events."""
         if not _token_valid(request):
@@ -219,8 +219,8 @@ class AuditTimelineAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return timeline results with filter support."""
         queryset = self._build_queryset(request)
@@ -326,8 +326,8 @@ class AuditSummaryAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return counts by severity/source/event over a recent time window."""
         window_hours = self._window_hours(request)
@@ -408,8 +408,8 @@ class AuditProducerStatsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return per-source totals, warning/error counts, and last seen timestamp."""
         window_hours = self._window_hours(request)
@@ -479,8 +479,8 @@ class AuditTrendStatsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return hourly event buckets and compare error-rate against prior window."""
         now = timezone.now()
@@ -587,8 +587,8 @@ class AuditProducerHealthAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return per-producer risk scores sorted from worst to best."""
         now = timezone.now()

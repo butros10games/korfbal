@@ -25,7 +25,7 @@ from apps.team.models.team_data import TeamData
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
+def test_team_overview_includes_matches_stats_and_roster(
     client: Client,
 ) -> None:
     """Ensure the overview endpoint returns aggregated data for the new frontend."""
@@ -48,7 +48,7 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
 
     user = get_user_model().objects.create_user(
         username="player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -105,13 +105,13 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     assert payload["roster"][0]["roster_role"] == "main"
     assert payload["meta"]["season_id"] == str(season.id_uuid)
     assert payload["meta"]["season_name"] == season.name
-    assert len(payload["seasons"]) == 2  # noqa: PLR2004
+    assert len(payload["seasons"]) == 2
     assert any(option["is_current"] for option in payload["seasons"])
 
     # Guest players who scored should appear in stats and roster
     guest_user = get_user_model().objects.create_user(
         username="guest_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     guest_player = guest_user.player
     past_match_data.players.create(player=guest_player, team=team)
@@ -126,7 +126,7 @@ def test_team_overview_includes_matches_stats_and_roster(  # noqa: PLR0915
     # Players that only show up in shot data should still appear in roster/stats
     shot_only_user = get_user_model().objects.create_user(
         username="shot_only_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     shot_only_player = shot_only_user.player
     Shot.objects.create(
@@ -194,7 +194,7 @@ def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -244,7 +244,7 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
 
     user = get_user_model().objects.create_user(
         username="impact_bd_api_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -380,7 +380,7 @@ def test_team_impact_breakdown_self_heal_failure_returns_empty_categories(
 
     user = get_user_model().objects.create_user(
         username="impact_bd_missing_breakdown",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -501,7 +501,7 @@ def test_team_overview_meta_includes_goal_song_permissions_and_fallback(
 
     coach_user = get_user_model().objects.create_user(
         username="coach_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     coach_player = coach_user.player
 
@@ -553,13 +553,13 @@ def test_team_goal_song_admin_manage_player_and_fallback(client: Client) -> None
 
     coach_user = get_user_model().objects.create_user(
         username="coach_user_2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     coach_player = coach_user.player
 
     player_user = get_user_model().objects.create_user(
         username="player_user_2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     team_player = player_user.player
 

@@ -53,4 +53,4 @@ class PlayerGroup(models.Model):
             str: A string representation of the player group.
 
         """
-        return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"  # noqa: E501
+        return f"Player Group {self.id_uuid} - {self.team} - {self.match_data} - {self.starting_type} - {self.current_type}"

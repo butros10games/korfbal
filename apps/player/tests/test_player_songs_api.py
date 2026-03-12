@@ -26,7 +26,7 @@ def test_player_songs_create_list_and_update(client: Client) -> None:
     """Authenticated players can create, list and update downloaded songs."""
     user = get_user_model().objects.create_user(
         username="song_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -105,11 +105,11 @@ def test_player_song_delete_does_not_affect_other_players(client: Client) -> Non
     """Deleting a song removes only the current player's song."""
     user_a = get_user_model().objects.create_user(
         username="song_user_a",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user_b = get_user_model().objects.create_user(
         username="song_user_b",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     client.force_login(user_a)
@@ -157,7 +157,7 @@ def test_player_song_delete_cleans_goal_song_selection(client: Client) -> None:
     """Deleting a selected goal-song removes it from Player.goal_song_song_ids."""
     user = get_user_model().objects.create_user(
         username="song_user_goal_clean",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -216,11 +216,11 @@ def test_player_song_uses_cached_song_across_users(client: Client) -> None:
     """The same Spotify track should be downloaded once and reused across users."""
     user_a = get_user_model().objects.create_user(
         username="cache_user_a",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     user_b = get_user_model().objects.create_user(
         username="cache_user_b",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     spotify_url = "https://open.spotify.com/track/the_same_track"

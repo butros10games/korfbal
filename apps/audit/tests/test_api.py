@@ -14,7 +14,7 @@ import pytest
 from apps.audit.models import AuditEvent
 
 
-TEST_PASSWORD = "pass1234"  # noqa: S105  # nosec
+TEST_PASSWORD = "pass1234"  # nosec
 EXPECTED_EXTENSION_ROWS = 2
 EXPECTED_BULK_CREATED = 2
 EXPECTED_CURSOR_PAGE_SIZE = 2
@@ -60,7 +60,7 @@ def test_audit_ingest_creates_event_without_token(client: Client) -> None:
 @pytest.mark.django_db
 @override_settings(
     SECURE_SSL_REDIRECT=False,
-    KORFBAL_AUDIT_INGEST_TOKEN="top-secret",  # noqa: S106  # nosec
+    KORFBAL_AUDIT_INGEST_TOKEN="top-secret",  # nosec
 )
 def test_audit_ingest_requires_matching_token(client: Client) -> None:
     """Configured ingest token should be enforced."""

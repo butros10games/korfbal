@@ -40,8 +40,8 @@ class SpotifyConnectAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return a Spotify OAuth authorization URL for the authenticated user."""
         if not spotify_enabled():
@@ -72,8 +72,8 @@ class SpotifyCallbackView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> HttpResponseRedirect:
         """Handle the Spotify OAuth callback and persist tokens."""
         if not spotify_enabled():
@@ -112,8 +112,8 @@ class SpotifyPlayAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Start playback on the user's active Spotify Connect device."""
         if not spotify_enabled():
@@ -172,8 +172,8 @@ class SpotifyPauseAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Pause playback on the user's active Spotify Connect device."""
         if not spotify_enabled():

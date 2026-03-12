@@ -149,7 +149,7 @@ def _send_payload_to_users(*, user_ids: list[int], payload: WebPushPayload) -> N
 
 @shared_task(bind=True)
 def handle_match_finished(
-    self: Any,  # noqa: ANN401
+    self: Any,
     *,
     match_id: str,
     match_data_id: str,
@@ -230,7 +230,7 @@ def handle_match_finished(
 
 
 @shared_task(bind=True)
-def send_mvp_vote_reminder(self: Any, *, match_id: str) -> None:  # noqa: ANN401
+def send_mvp_vote_reminder(self: Any, *, match_id: str) -> None:
     """Send a reminder to participants who haven't voted yet."""
     match = (
         Match.objects
@@ -281,7 +281,7 @@ def send_mvp_vote_reminder(self: Any, *, match_id: str) -> None:  # noqa: ANN401
 
 
 @shared_task(bind=True)
-def publish_mvp_and_notify(self: Any, *, match_id: str) -> None:  # noqa: ANN401
+def publish_mvp_and_notify(self: Any, *, match_id: str) -> None:
     """Publish MVP if possible and notify participants."""
     match = (
         Match.objects
@@ -520,7 +520,7 @@ def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
 
 
 @shared_task(bind=True)
-def download_cached_song(self: Any, cached_song_id: str) -> None:  # noqa: ANN401
+def download_cached_song(self: Any, cached_song_id: str) -> None:
     """Download a cached song (from a Spotify URL) and upload it to storage."""
     cached = CachedSong.objects.filter(id_uuid=cached_song_id).first()
     if cached is None:
@@ -600,7 +600,7 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:  # noqa: ANN40
 
 
 @shared_task(bind=True)
-def download_player_song(self: Any, song_id: str) -> None:  # noqa: ANN401
+def download_player_song(self: Any, song_id: str) -> None:
     """Backward compatible wrapper.
 
     Historically we queued downloads per PlayerSong. Now PlayerSong can point to a

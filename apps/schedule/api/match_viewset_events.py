@@ -48,8 +48,8 @@ class MatchEventsActionsMixin:
     def events(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return match tracker events for a single match.
 
@@ -101,8 +101,8 @@ class MatchEventsActionsMixin:
     def shots(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return shot attempts (scored + missed) for a single match."""
         match: Match = self.get_object()
@@ -138,8 +138,8 @@ class MatchEventsActionsMixin:
     def can_edit_events(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return whether the current user can edit match events."""
         return Response({"can_edit": IsCoachOrAdmin().has_permission(request, self)})
@@ -153,8 +153,8 @@ class MatchEventsActionsMixin:
     def create_goal(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Create a goal (Shot) event for this match."""
         match: Match = self.get_object()
@@ -186,8 +186,8 @@ class MatchEventsActionsMixin:
         self: _MatchViewSetLike,
         request: Request,
         shot_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update or delete an existing goal (Shot) event."""
         match: Match = self.get_object()
@@ -231,8 +231,8 @@ class MatchEventsActionsMixin:
     def create_substitute(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Create a substitution (PlayerChange) event for this match."""
         match: Match = self.get_object()
@@ -264,8 +264,8 @@ class MatchEventsActionsMixin:
         self: _MatchViewSetLike,
         request: Request,
         change_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update or delete a substitution (PlayerChange) event."""
         match: Match = self.get_object()
@@ -312,8 +312,8 @@ class MatchEventsActionsMixin:
     def create_pause(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Create a pause (Pause) event for this match."""
         match: Match = self.get_object()
@@ -345,8 +345,8 @@ class MatchEventsActionsMixin:
         self: _MatchViewSetLike,
         request: Request,
         pause_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update or delete a pause (Pause) event."""
         match: Match = self.get_object()
@@ -391,8 +391,8 @@ class MatchEventsActionsMixin:
     def create_timeout(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Create a timeout (Timeout + Pause) event for this match."""
         match: Match = self.get_object()
@@ -428,8 +428,8 @@ class MatchEventsActionsMixin:
     def event_options(
         self: _MatchViewSetLike,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return option lists needed to create/update match tracker events."""
         match: Match = self.get_object()
@@ -523,8 +523,8 @@ class MatchEventsActionsMixin:
         self: _MatchViewSetLike,
         request: Request,
         timeout_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update or delete a timeout (Timeout + Pause) event."""
         match: Match = self.get_object()

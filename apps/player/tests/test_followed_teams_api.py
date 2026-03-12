@@ -19,7 +19,7 @@ def test_current_player_followed_teams_returns_followed_teams(client: Client) ->
 
     user = get_user_model().objects.create_user(
         username="follow_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
     player.team_follow.add(team_a)
@@ -47,7 +47,7 @@ def test_player_followed_teams_detail_endpoint_allows_self(client: Client) -> No
 
     user = get_user_model().objects.create_user(
         username="follow_user_2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
     player.team_follow.add(team)

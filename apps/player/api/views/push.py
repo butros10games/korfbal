@@ -38,8 +38,8 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """List active push subscriptions for the current user."""
         subs = PlayerPushSubscription.objects.filter(
@@ -52,8 +52,8 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Register or upsert a push subscription for the current user."""
         serializer = PlayerPushSubscriptionCreateSerializer(data=request.data)
@@ -114,8 +114,8 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
     def delete(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Deactivate a stored push subscription for the current user."""
         serializer = PlayerPushSubscriptionDeactivateSerializer(data=request.data)
@@ -152,7 +152,7 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
     ]
 
     @staticmethod
-    def _is_staff_user(user: Any) -> bool:  # noqa: ANN401
+    def _is_staff_user(user: Any) -> bool:
         return bool(
             getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
         )
@@ -160,8 +160,8 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Send a test push notification to the current user's subscriptions."""
         user = request.user

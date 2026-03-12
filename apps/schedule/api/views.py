@@ -372,8 +372,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def next_match(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the next upcoming match for the active context.
 
@@ -404,8 +404,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def upcoming(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return a limited list of upcoming matches.
 
@@ -427,8 +427,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def recent(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return matches played within the recent window.
 
@@ -450,8 +450,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def finished(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the latest finished matches as match summaries.
 
@@ -535,8 +535,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         self,
         request: Request,
         team_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the live match tracker state for a given team perspective."""
         match: Match = self.get_object()
@@ -565,8 +565,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         self,
         request: Request,
         team_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Apply a match tracker command and return updated state."""
         match: Match = self.get_object()
@@ -605,8 +605,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         self,
         request: Request,
         team_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Long-poll for match tracker state updates."""
         match: Match = self.get_object()
@@ -696,8 +696,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def live_state(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return a match-level live snapshot (timer + score).
 
@@ -740,8 +740,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def live_poll(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Long-poll for match-level live updates (timer + score).
 
@@ -823,8 +823,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def summary(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return a match summary payload for a single match.
 
@@ -847,8 +847,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def stats(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return match-level statistics for a single match.
 
@@ -884,8 +884,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def impacts(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return per-player impact scores for a match (latest algorithm).
 
@@ -966,8 +966,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def mvp_status(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return MVP voting status + candidates + published winner (if any)."""
         match: Match = self.get_object()
@@ -1022,8 +1022,8 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     def mvp_vote(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Cast or update the current user's MVP vote."""
         match: Match = self.get_object()

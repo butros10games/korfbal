@@ -174,7 +174,7 @@ def test_mvp_vote_rejects_candidate_not_in_match(client: Client) -> None:
     # Candidate exists but is not part of the match roster/events.
     outsider_user = get_user_model().objects.create_user(
         username="outsider",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     response = client.post(
         f"/api/matches/{match.id_uuid}/mvp/vote/",
@@ -217,17 +217,17 @@ def test_mvp_vote_flow_and_publish_after_close(client: Client) -> None:
     # Create two users/players: voter + candidates
     user = get_user_model().objects.create_user(
         username="voter",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
     candidate_a_user = get_user_model().objects.create_user(
         username="alice",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     candidate_b_user = get_user_model().objects.create_user(
         username="bob",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     candidate_a: Player = candidate_a_user.player
@@ -310,11 +310,11 @@ def test_mvp_anonymous_vote_persists_via_cookie(client: Client) -> None:
 
     candidate_a_user = get_user_model().objects.create_user(
         username="alice",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     candidate_b_user = get_user_model().objects.create_user(
         username="bob",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     candidate_a: Player = candidate_a_user.player
     candidate_b: Player = candidate_b_user.player

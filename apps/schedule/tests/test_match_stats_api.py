@@ -23,7 +23,7 @@ from apps.team.models import Team, TeamData
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_match_stats_returns_home_vs_away_counts(client: Client) -> None:  # noqa: PLR0915
+def test_match_stats_returns_home_vs_away_counts(client: Client) -> None:
     """Match stats should aggregate shots/goals per side for a match."""
     expected_shots_home = 3
     expected_shots_away = 2
@@ -54,11 +54,11 @@ def test_match_stats_returns_home_vs_away_counts(client: Client) -> None:  # noq
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     away_user = get_user_model().objects.create_user(
         username="away_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     home_player = home_user.player
     away_player = away_user.player
@@ -66,7 +66,7 @@ def test_match_stats_returns_home_vs_away_counts(client: Client) -> None:  # noq
     # A rostered player without shots should still show up.
     bench_user = get_user_model().objects.create_user(
         username="bench_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     bench_player = bench_user.player
     MatchPlayer.objects.create(
@@ -194,11 +194,11 @@ def test_match_stats_prefers_roster_for_player_side(client: Client) -> None:
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     away_user = get_user_model().objects.create_user(
         username="away_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     home_player = home_user.player
     away_player = away_user.player
@@ -268,11 +268,11 @@ def test_match_stats_prefers_teamdata_for_player_side_when_roster_missing(
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     away_user = get_user_model().objects.create_user(
         username="away_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     home_player = home_user.player
     away_player = away_user.player
@@ -352,7 +352,7 @@ def test_match_stats_prefers_playergroup_for_player_side_when_roster_missing(
     # Player is not in TeamData and there are no MatchPlayer rows.
     guest_user = get_user_model().objects.create_user(
         username="guest_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     guest_player = guest_user.player
 

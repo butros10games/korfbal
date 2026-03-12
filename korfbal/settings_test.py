@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from .settings import *  # noqa: F403
+from .settings import *
 from .settings.env import BASE_DIR as SETTINGS_BASE_DIR
 from .settings.services import DATABASES
 

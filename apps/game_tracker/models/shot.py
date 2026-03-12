@@ -79,4 +79,4 @@ class Shot(models.Model):
             str: A string representation of the shot.
 
         """
-        return f"Shot {self.id_uuid} - {self.player} - {self.team} - {self.match_part} - {self.scored}"  # noqa: E501
+        return f"Shot {self.id_uuid} - {self.player} - {self.team} - {self.match_part} - {self.scored}"

@@ -29,9 +29,9 @@ class ShotAdminForm(forms.ModelForm):
         """Meta class for the ShotAdminForm."""
 
         model = Shot
-        fields = ["player", "match_data", "for_team", "team", "scored"]  # noqa: RUF012
+        fields = ["player", "match_data", "for_team", "team", "scored"]
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(
         self,
         data: Mapping[str, Any] | None = None,
         files: MultiValueDict[str, UploadedFile] | None = None,
@@ -46,7 +46,7 @@ class ShotAdminForm(forms.ModelForm):
         renderer: BaseRenderer | None = None,
     ) -> None:
         """Initialize the ShotAdminForm."""
-        from apps.team.models import Team  # noqa: PLC0415
+        from apps.team.models import Team
 
         super().__init__(
             data=data,

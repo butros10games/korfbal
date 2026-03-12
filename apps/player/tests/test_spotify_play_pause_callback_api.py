@@ -20,7 +20,7 @@ from apps.player.models.spotify_token import SpotifyToken
 
 
 SPOTIFY_CLIENT_ID = "client_id"
-SPOTIFY_CLIENT_SECRET = "client_secret"  # noqa: S105  # nosec
+SPOTIFY_CLIENT_SECRET = "client_secret"  # nosec
 SPOTIFY_REDIRECT_URI = "https://example.invalid/oauth/callback"
 WEB_APP_ORIGIN = "https://app.example.invalid"
 
@@ -69,7 +69,7 @@ def test_spotify_play_returns_400_when_not_configured(client: Client) -> None:
     """Not-configured servers should return a clean 400."""
     user = get_user_model().objects.create_user(
         username="spotify_play_not_configured",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -93,7 +93,7 @@ def test_spotify_play_requires_track_uri(client: Client) -> None:
     """track_uri is required and must be a non-empty string."""
     user = get_user_model().objects.create_user(
         username="spotify_play_missing_track",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -117,7 +117,7 @@ def test_spotify_play_returns_400_when_not_connected(client: Client) -> None:
     """When no token exists, the endpoint should return a 400 (not 500)."""
     user = get_user_model().objects.create_user(
         username="spotify_play_not_connected",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -144,7 +144,7 @@ def test_spotify_play_normalises_open_spotify_track_url(
     """open.spotify.com URLs should be normalized to spotify:track URIs."""
     user = get_user_model().objects.create_user(
         username="spotify_play_normalise",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -197,7 +197,7 @@ def test_spotify_play_no_active_device_returns_409(
     """Spotify's 'no active device' case should map to a 409 with code."""
     user = get_user_model().objects.create_user(
         username="spotify_play_no_device",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -243,7 +243,7 @@ def test_spotify_play_other_error_returns_400(
     """Other Spotify errors should return a 400 with a stable code."""
     user = get_user_model().objects.create_user(
         username="spotify_play_other_error",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -301,7 +301,7 @@ def test_spotify_pause_failure_is_best_effort_400(
     """Pause errors should not crash; they return a permissive 400 payload."""
     user = get_user_model().objects.create_user(
         username="spotify_pause_error",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -342,7 +342,7 @@ def test_spotify_callback_state_mismatch_redirects_home(client: Client) -> None:
     """State mismatch should redirect to frontend root without creating tokens."""
     user = get_user_model().objects.create_user(
         username="spotify_cb_state_mismatch",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 
@@ -375,7 +375,7 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
     """A valid callback should store tokens and redirect to stored path."""
     user = get_user_model().objects.create_user(
         username="spotify_cb_ok",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 

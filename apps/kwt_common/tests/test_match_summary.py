@@ -48,7 +48,7 @@ def test_build_match_summaries_uses_matchdata_scores(
 
     user = get_user_model().objects.create_user(
         username="scorer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -118,7 +118,7 @@ def test_build_match_summaries_finished_match_uses_shot_aggregate(
 
     user = get_user_model().objects.create_user(
         username="scorer2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -188,7 +188,7 @@ def test_build_match_summaries_active_match_uses_shots(
 
     user = get_user_model().objects.create_user(
         username="scorer3",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 

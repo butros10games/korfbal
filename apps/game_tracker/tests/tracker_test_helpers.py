@@ -17,7 +17,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-TEST_PASSWORD = "testpass123"  # noqa: S105  # nosec B105 - test credential constant
+TEST_PASSWORD = "testpass123"  # nosec B105 - test credential constant
 
 
 @dataclass(frozen=True, slots=True)

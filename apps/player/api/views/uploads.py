@@ -32,8 +32,8 @@ class UploadProfilePictureAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Upload and persist a profile picture for the authenticated player."""
         files = request.FILES.getlist("profile_picture")
@@ -73,8 +73,8 @@ class UploadGoalSongAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Upload an audio file and store its URL on the authenticated player."""
         files = request.FILES.getlist("goal_song")

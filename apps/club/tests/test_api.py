@@ -153,11 +153,11 @@ def test_club_settings_visible_only_for_club_admin(client: Client) -> None:
 
     viewer = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     admin_player = admin_user.player
     club.admin.add(admin_player)
@@ -182,13 +182,13 @@ def test_club_admin_can_add_and_remove_memberships(client: Client) -> None:
 
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     member_user = get_user_model().objects.create_user(
         username="member",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     client.force_login(admin_user)
@@ -315,7 +315,7 @@ def test_club_overview_meta_viewer_is_admin(client: Client) -> None:
 
     viewer = get_user_model().objects.create_user(
         username="viewer_meta",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(viewer)
     response_user = client.get(f"/api/club/clubs/{club.id_uuid}/overview/")
@@ -324,7 +324,7 @@ def test_club_overview_meta_viewer_is_admin(client: Client) -> None:
 
     admin_user = get_user_model().objects.create_user(
         username="admin_meta",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
     client.force_login(admin_user)
@@ -343,13 +343,13 @@ def test_club_settings_user_search_requires_admin_and_min_length(
 
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     viewer = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(viewer)
     response_forbidden = client.get(
@@ -368,7 +368,7 @@ def test_club_settings_user_search_requires_admin_and_min_length(
 
     member_user = get_user_model().objects.create_user(
         username="member_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     member_player = member_user.player
 
@@ -393,13 +393,13 @@ def test_club_admin_add_membership_duplicate_active_returns_400(
     club = Club.objects.create(name="Dup Membership Club")
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     member_user = get_user_model().objects.create_user(
         username="member",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     _member_player = member_user.player
 
@@ -430,7 +430,7 @@ def test_club_admin_add_membership_unknown_user_returns_400(client: Client) -> N
     club = Club.objects.create(name="Missing User Club")
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
     client.force_login(admin_user)
@@ -451,13 +451,13 @@ def test_club_admin_remove_membership_missing_returns_404(client: Client) -> Non
     club = Club.objects.create(name="Remove Missing Club")
     admin_user = get_user_model().objects.create_user(
         username="club_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     member_user = get_user_model().objects.create_user(
         username="member",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(admin_user)
 
@@ -475,7 +475,7 @@ def test_club_eligibility_dashboard_requires_admin(client: Client) -> None:
     club = Club.objects.create(name="Eligibility Club")
     viewer_user = get_user_model().objects.create_user(
         username="elig_viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     client.force_login(viewer_user)
@@ -519,13 +519,13 @@ def test_club_eligibility_dashboard_returns_own_team_and_distances(
 
     admin_user = get_user_model().objects.create_user(
         username="elig_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     player_user = get_user_model().objects.create_user(
         username="elig_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = player_user.player
     team_2_data.players.add(player)
@@ -628,7 +628,7 @@ def test_club_eligibility_dashboard_enforces_lower_team_limit_until_three_quarte
 
     admin_user = get_user_model().objects.create_user(
         username="limit_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
@@ -636,7 +636,7 @@ def test_club_eligibility_dashboard_enforces_lower_team_limit_until_three_quarte
     for index in range(1, 4):
         user = get_user_model().objects.create_user(
             username=f"limit_player_{index}",
-            password="pass1234",  # noqa: S106  # nosec
+            password="pass1234",  # nosec
         )
         players.append(user.player)
         team_2_data.players.add(user.player)
@@ -766,13 +766,13 @@ def test_club_eligibility_dashboard_counts_lowest_a_team_per_speelweek(
 
     admin_user = get_user_model().objects.create_user(
         username="speelweek_admin",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     club.admin.add(admin_user.player)
 
     player_user = get_user_model().objects.create_user(
         username="speelweek_player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = player_user.player
     team_2_data.players.add(player)

@@ -30,7 +30,7 @@ class SpotifyToken(models.Model):
             str: A string representation of the SpotifyToken instance.
 
         """
-        return f"SpotifyToken(user={self.user.username}, spotify_user_id={self.spotify_user_id})"  # noqa: E501
+        return f"SpotifyToken(user={self.user.username}, spotify_user_id={self.spotify_user_id})"
 
     def is_token_expired(self) -> bool:
         """Check if the Spotify token is expired.

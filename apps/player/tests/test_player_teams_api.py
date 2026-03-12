@@ -41,7 +41,7 @@ def test_current_player_teams_returns_playing_and_following(client: Client) -> N
 
     user = get_user_model().objects.create_user(
         username="teams_me",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -84,7 +84,7 @@ def test_other_player_teams_club_blocks_anonymous(client: Client) -> None:
 
     target_user = get_user_model().objects.create_user(
         username="teams_private_target",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_player = target_user.player
     target_player.teams_visibility = Player.Visibility.CLUB
@@ -108,13 +108,13 @@ def test_other_player_teams_club_allows_connected(client: Client) -> None:
 
     viewer_user = get_user_model().objects.create_user(
         username="teams_private_viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     viewer_player = viewer_user.player
 
     target_user = get_user_model().objects.create_user(
         username="teams_private_target_2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_player = target_user.player
     target_player.teams_visibility = Player.Visibility.CLUB

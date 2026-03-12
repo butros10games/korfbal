@@ -60,8 +60,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     def overview(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return match summaries, stats, roster data, and season options.
 
@@ -201,8 +201,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     def impact_breakdown(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return match-impact category breakdown for a single player.
 
@@ -282,8 +282,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     def goal_song_admin(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return team player songs and fallback song configuration for moderation."""
         team = self.get_object()
@@ -362,8 +362,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     def update_goal_song_fallback(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update the team fallback playlist used when a scorer has no own goal song.
 
@@ -419,8 +419,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         self,
         request: Request,
         player_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update goal-song selection for a team player.
 
@@ -499,8 +499,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         request: Request,
         player_id: str,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Delete a player song from the team moderation view."""
         team = self.get_object()
@@ -594,8 +594,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         request: Request,
         player_id: str,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update song timing/speed for a player song from team moderation."""
         team = self.get_object()
@@ -678,7 +678,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _parse_song_id_list_from_payload(
         *,
-        payload: Any,  # noqa: ANN401
+        payload: Any,
         field_name: str,
     ) -> list[str]:
         if not isinstance(payload, dict):

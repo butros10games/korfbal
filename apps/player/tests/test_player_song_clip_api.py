@@ -21,7 +21,7 @@ def test_player_song_clip_falls_back_when_ffmpeg_missing(client: Client) -> None
     """When ffmpeg isn't available, the clip endpoint should redirect to full audio."""
     user = get_user_model().objects.create_user(
         username="clip_user",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     song = PlayerSong.objects.create(
@@ -52,7 +52,7 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
     """When ffmpeg works, the endpoint redirects to a deterministic v2 clip key."""
     user = get_user_model().objects.create_user(
         username="clip_user_2",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     song = PlayerSong.objects.create(
@@ -112,7 +112,7 @@ def test_player_song_clip_reuses_existing_cached_clip(client: Client) -> None:
     """Existing clip files should be reused without regenerating them."""
     user = get_user_model().objects.create_user(
         username="clip_user_cached",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     song = PlayerSong.objects.create(

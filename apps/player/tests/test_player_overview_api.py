@@ -46,7 +46,7 @@ def test_player_overview_me_includes_upcoming_roster_and_recent_participation(
 
     user = get_user_model().objects.create_user(
         username="player",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -132,7 +132,7 @@ def test_player_overview_respects_visibility_for_other_viewers(client: Client) -
 
     target_user = get_user_model().objects.create_user(
         username="target",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target = target_user.player
 
@@ -162,7 +162,7 @@ def test_player_overview_respects_visibility_for_other_viewers(client: Client) -
 
     viewer_user = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     client.force_login(viewer_user)

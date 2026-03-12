@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def recompute_match_impacts(self, match_data_id: str) -> dict[str, int | str]:  # noqa: ANN001
+def recompute_match_impacts(self, match_data_id: str) -> dict[str, int | str]:
     """Recompute persisted impact rows (+ breakdowns) for a match."""
     match_data = (
         MatchData.objects
@@ -34,7 +34,7 @@ def recompute_match_impacts(self, match_data_id: str) -> dict[str, int | str]:  
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def recompute_match_minutes(self, match_data_id: str) -> dict[str, int | str]:  # noqa: ANN001
+def recompute_match_minutes(self, match_data_id: str) -> dict[str, int | str]:
     """Recompute persisted minutes-played rows for a match."""
     match_data = (
         MatchData.objects

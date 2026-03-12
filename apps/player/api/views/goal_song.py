@@ -45,8 +45,8 @@ class CurrentPlayerGoalSongAPIView(APIView):
     def patch(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update goal-song configuration for the authenticated player."""
         player = self._current_player(request)

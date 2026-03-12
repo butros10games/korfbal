@@ -11,4 +11,4 @@ class PlayerConfig(AppConfig):
 
     def ready(self) -> None:
         """Import signals."""
-        import apps.player.signals  # noqa
+        import apps.player.signals

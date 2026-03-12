@@ -60,7 +60,7 @@ def test_match_stats_shot_only_player_falls_back_to_shot_count_majority(
 
     user = get_user_model().objects.create_user(
         username="shot_only",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -126,7 +126,7 @@ def test_match_stats_shot_only_player_tie_breaks_to_home(
 
     user = get_user_model().objects.create_user(
         username="shot_only_tie",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -191,7 +191,7 @@ def test_match_stats_playergroup_ambiguity_falls_back_to_teamdata(
 
     user = get_user_model().objects.create_user(
         username="both_groups",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 
@@ -277,7 +277,7 @@ def test_match_stats_teamdata_and_groups_ambiguity_falls_back_to_shot_sets(
 
     user = get_user_model().objects.create_user(
         username="ambiguous_sources",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     player = user.player
 

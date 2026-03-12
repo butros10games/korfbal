@@ -52,7 +52,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     search_fields: ClassVar[list[str]] = ["name"]
 
     @action(detail=True, methods=("GET",), url_path="overview")
-    def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
+    def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Return teams and match summaries for a club detail page.
 
         Returns:
@@ -119,7 +119,7 @@ class ClubViewSet(viewsets.ModelViewSet):
         url_path="settings",
         permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
     )
-    def admin_settings(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
+    def admin_settings(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Return data needed for the club admin settings screen."""
         club = self.get_object()
 
@@ -155,7 +155,7 @@ class ClubViewSet(viewsets.ModelViewSet):
         url_path="settings/user-search",
         permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
     )
-    def user_search(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
+    def user_search(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Search users/players by username for adding club memberships."""
         term = (request.query_params.get("search") or "").strip()
         if len(term) < MIN_USER_SEARCH_TERM_LENGTH:
@@ -215,7 +215,7 @@ class ClubViewSet(viewsets.ModelViewSet):
         url_path="memberships",
         permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
     )
-    def add_membership(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
+    def add_membership(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Add a player/user to the club by creating an active membership."""
         club = self.get_object()
 

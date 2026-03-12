@@ -45,8 +45,8 @@ class PlayerOverviewAPIView(APIView):
         self,
         request: Request,
         player_id: str | None = None,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return upcoming and recent matches for the requested player."""
         player = _resolve_player(request, player_id)
@@ -84,8 +84,8 @@ class PlayerConnectedClubRecentResultsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return match summaries for the player's followed clubs."""
         player = get_current_player(request)
@@ -131,8 +131,8 @@ class PlayerStatsAPIView(APIView):
         self,
         request: Request,
         player_id: str | None = None,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return aggregate stats for a player in a season."""
         player = _resolve_player(request, player_id)

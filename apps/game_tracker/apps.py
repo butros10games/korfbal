@@ -11,4 +11,4 @@ class GameTrackerConfig(AppConfig):
 
     def ready(self) -> None:
         """Import signals when the app is ready."""
-        import apps.game_tracker.signals  # noqa
+        import apps.game_tracker.signals

@@ -15,7 +15,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
 
-TEST_PASSWORD = "pass1234"  # noqa: S105  # nosec B105 - test credential constant
+TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
 HTTP_STATUS_OK = 200
 EXPECTED_HOME_SCORE = 2
 EXPECTED_AWAY_SCORE = 1
@@ -309,7 +309,7 @@ def test_hub_updates_returns_recent_matches(client: Client) -> None:
     assert response.status_code == HTTP_STATUS_OK
     payload = response.json()
     assert isinstance(payload, list)
-    assert len(payload) == 2  # noqa: PLR2004
+    assert len(payload) == 2
     assert payload[0]["id"] == str(newest_match.id_uuid)
     assert payload[1]["id"] == str(older_match.id_uuid)
     assert "Home Club" in payload[0]["title"]

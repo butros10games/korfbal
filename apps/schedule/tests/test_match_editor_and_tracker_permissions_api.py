@@ -25,7 +25,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-TEST_PASSWORD = "pass1234"  # noqa: S105  # nosec B105 - test credential constant
+TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
 
 
 def _create_match(*, start_time: timezone.datetime | None = None) -> Match:

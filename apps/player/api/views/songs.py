@@ -53,8 +53,8 @@ class PlayerSongClipAPIView(APIView):
         self,
         request: Request,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> HttpResponseRedirect:
         """Redirect to a short clip URL for the requested song."""
         start_seconds = max(0, self._parse_seconds_query(request, "start", 0))
@@ -99,8 +99,8 @@ class CurrentPlayerSongsAPIView(APIView):
     def get(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Return the current player's downloaded songs."""
         player = get_current_player(request)
@@ -118,8 +118,8 @@ class CurrentPlayerSongsAPIView(APIView):
     def post(
         self,
         request: Request,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Create a new song download request for the current player."""
         player = get_current_player(request)
@@ -154,8 +154,8 @@ class CurrentPlayerSongDetailAPIView(APIView):
         self,
         request: Request,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Update per-song playback settings for a specific downloaded song."""
         player = get_current_player(request)
@@ -180,8 +180,8 @@ class CurrentPlayerSongDetailAPIView(APIView):
         self,
         request: Request,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Delete a specific downloaded song."""
         player = get_current_player(request)
@@ -212,8 +212,8 @@ class CurrentPlayerSongRetryAPIView(APIView):
         self,
         request: Request,
         song_id: str,
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: Any,
+        **kwargs: Any,
     ) -> Response:
         """Reset song status and re-enqueue its download task."""
         player = get_current_player(request)

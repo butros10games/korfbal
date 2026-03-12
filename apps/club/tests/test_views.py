@@ -7,7 +7,7 @@ import pytest
 from apps.club.models import Club
 
 
-TEST_PASSWORD = "pass1234"  # noqa: S105  # nosec B105 - test credential constant
+TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
 HTTP_STATUS_OK = 200
 
 

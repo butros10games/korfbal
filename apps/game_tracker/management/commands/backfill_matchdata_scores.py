@@ -44,7 +44,7 @@ class Command(BaseCommand):
 
     help = "Backfill MatchData scores from shots for finished matches."
 
-    def add_arguments(self, parser: Any) -> None:  # noqa: ANN401
+    def add_arguments(self, parser: Any) -> None:
         """Register CLI arguments for this command."""
         parser.add_argument(
             "--dry-run",
@@ -63,7 +63,7 @@ class Command(BaseCommand):
             help="Number of MatchData rows per batch.",
         )
 
-    def handle(self, *args: Any, **options: Any) -> None:  # noqa: ANN401
+    def handle(self, *args: Any, **options: Any) -> None:
         """Run the backfill."""
         dry_run = bool(options.get("dry_run"))
         only_missing = bool(options.get("only_missing"))

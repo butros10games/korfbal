@@ -48,7 +48,7 @@ def test_other_player_stats_club_blocks_anonymous(client: Client) -> None:
     """Anonymous users cannot access club-only stats."""
     target_user = get_user_model().objects.create_user(
         username="club_target_anon",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_player = target_user.player
     target_player.stats_visibility = Player.Visibility.CLUB
@@ -70,13 +70,13 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
 
     viewer_user = get_user_model().objects.create_user(
         username="club_viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     viewer_player = viewer_user.player
 
     target_user = get_user_model().objects.create_user(
         username="club_target",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_player = target_user.player
     target_player.stats_visibility = Player.Visibility.CLUB
@@ -103,7 +103,7 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
 
     other_user = get_user_model().objects.create_user(
         username="outsider",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(other_user)
     response_forbidden = client.get(
@@ -123,11 +123,11 @@ def test_other_player_stats_club_allows_connected_via_membership(
 
     viewer_user = get_user_model().objects.create_user(
         username="member_viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_user = get_user_model().objects.create_user(
         username="member_target",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
 
     target_player = target_user.player
@@ -153,13 +153,13 @@ def test_other_player_overview_club_allows_connected_and_blocks_unconnected(
 
     viewer_user = get_user_model().objects.create_user(
         username="overview_viewer",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     viewer_player = viewer_user.player
 
     target_user = get_user_model().objects.create_user(
         username="overview_target",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     target_player = target_user.player
     target_player.stats_visibility = Player.Visibility.CLUB
@@ -181,7 +181,7 @@ def test_other_player_overview_club_allows_connected_and_blocks_unconnected(
 
     other_user = get_user_model().objects.create_user(
         username="overview_outsider",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(other_user)
     response_forbidden = client.get(
@@ -197,7 +197,7 @@ def test_privacy_settings_endpoint_get_and_patch(client: Client) -> None:
     """Players can read and update their privacy visibility settings."""
     user = get_user_model().objects.create_user(
         username="privacy_me",
-        password="pass1234",  # noqa: S106  # nosec
+        password="pass1234",  # nosec
     )
     client.force_login(user)
 

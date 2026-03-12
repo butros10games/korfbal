@@ -18,7 +18,7 @@ else:
 class GoalTypeAdmin(GoalTypeAdminBase):
     """Admin for the GoalType model."""
 
-    list_display = ["id_uuid", "name"]  # noqa: RUF012
+    list_display = ["id_uuid", "name"]
     show_full_result_count = False
 
     class Meta:

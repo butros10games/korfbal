@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def clip_or_full_location(
     *,
-    audio_file: Any,  # noqa: ANN401
+    audio_file: Any,
     song: PlayerSong,
     start_seconds: int,
     duration_seconds: int,

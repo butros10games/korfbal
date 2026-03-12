@@ -181,7 +181,7 @@ def parse_goal_song_patch_payload(
     )
 
 
-def _song_audio_file(song: PlayerSong):  # noqa: ANN202
+def _song_audio_file(song: PlayerSong):
     return (
         song.cached_song.audio_file if song.cached_song is not None else song.audio_file
     )
