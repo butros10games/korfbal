@@ -10,12 +10,14 @@ from .match_impact_scorer import (
     MatchImpactRow,
     MatchTeamImpactFeatures,
     PlayerImpactBreakdown,
+    ShotImpactWeights,
     _compute_shooting_efficiency_multipliers,
     compute_match_impact_breakdown,
     compute_match_impact_rows,
     compute_match_team_impact_features,
     doorloop_concede_factor_for_version,
     round_js_1dp,
+    shot_impact_weights_for_version,
 )
 from .match_impact_timeline import (
     Interval,
@@ -32,6 +34,7 @@ __all__ = [
     "MatchTeamImpactFeatures",
     "PlayerImpactBreakdown",
     "RoleIntervals",
+    "ShotImpactWeights",
     "_compute_shooting_efficiency_multipliers",
     "build_match_player_role_timeline",
     "compute_match_end_minutes",
@@ -43,4 +46,5 @@ __all__ = [
     "persist_match_impact_rows",
     "persist_match_impact_rows_with_breakdowns",
     "round_js_1dp",
+    "shot_impact_weights_for_version",
 ]

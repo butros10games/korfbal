@@ -19,6 +19,8 @@ COPY apps/django_projects/korfbal/deps/pyproject.toml ./pyproject.toml
 COPY apps/django_projects/korfbal/deps/uv.lock ./uv.lock
 
 # Copy ONLY build-required files from libs (pyproject.toml, src/, LICENSE, README where needed)
+COPY libs/shared_python_packages/bg_audit_events/pyproject.toml libs/shared_python_packages/bg_audit_events/README.md /build/libs/shared_python_packages/bg_audit_events/
+COPY libs/shared_python_packages/bg_audit_events/src/ /build/libs/shared_python_packages/bg_audit_events/src/
 COPY libs/django_packages/bg_auth/pyproject.toml libs/django_packages/bg_auth/LICENSE libs/django_packages/bg_auth/README.md /build/libs/django_packages/bg_auth/
 COPY libs/django_packages/bg_auth/src/ /build/libs/django_packages/bg_auth/src/
 COPY libs/django_packages/bg_django_caching_paginator/pyproject.toml libs/django_packages/bg_django_caching_paginator/LICENSE libs/django_packages/bg_django_caching_paginator/README.md /build/libs/django_packages/bg_django_caching_paginator/

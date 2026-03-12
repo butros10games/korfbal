@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "django",
     "psycopg[binary,pool]",
+    "bg-audit-events",
     "bg-django-mobile-detector",
     "django-ratelimit",
     "django-storages[boto3]",
@@ -43,6 +44,7 @@ dev = [
 ]
 
 [tool.uv.sources]
+bg-audit-events = { path = "../../../../libs/shared_python_packages/bg_audit_events", editable = true }
 bg-auth = { path = "../../../../libs/django_packages/bg_auth", editable = true }
 bg-django-caching-paginator = { path = "../../../../libs/django_packages/bg_django_caching_paginator", editable = true }
 bg-django-mobile-detector = { path = "../../../../libs/django_packages/bg_django_mobile_detector", editable = true }
