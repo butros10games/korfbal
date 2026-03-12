@@ -212,7 +212,7 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
         return None, expected_url
 
     monkeypatch.setattr(
-        "apps.player.api.views.uploads.store_goal_song_upload_best_effort",
+        "apps.player.services.player_uploads.store_goal_song_upload_best_effort",
         _fake_store_goal_song_upload_best_effort,
     )
 

@@ -16,10 +16,11 @@ from apps.player.api.serializers import (
 )
 from apps.player.models.player import Player
 from apps.player.privacy import can_view_by_visibility
-from apps.player.services.player_overview import current_season
+from apps.player.services.player_teams import (
+    followed_teams_for_player,
+    grouped_teams_for_player,
+)
 from apps.team.api.serializers import TeamSerializer
-from apps.team.models import TeamData
-from apps.team.models.team import Team
 
 from .common import (
     AUTHENTICATION_REQUIRED_MESSAGE,
@@ -115,12 +116,7 @@ class PlayerFollowedTeamsAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        teams_qs = (
-            player.team_follow
-            .all()
-            .select_related("club")
-            .order_by("club__name", "name")
-        )
+        teams_qs = followed_teams_for_player(player)
         return Response(
             TeamSerializer(teams_qs, many=True, context={"request": request}).data
         )
@@ -161,58 +157,21 @@ class PlayerTeamsAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        season = current_season()
-        playing_qs = Team.objects.none()
-        coaching_qs = Team.objects.none()
-        if season is not None:
-            playing_ids = (
-                TeamData.objects
-                .filter(season=season)
-                .filter(players=player)
-                .values_list("team_id", flat=True)
-                .distinct()
-            )
-            coaching_ids = (
-                TeamData.objects
-                .filter(season=season)
-                .filter(coach=player)
-                .values_list("team_id", flat=True)
-                .distinct()
-            )
-
-            playing_qs = (
-                Team.objects
-                .filter(id_uuid__in=playing_ids)
-                .select_related("club")
-                .order_by("club__name", "name")
-            )
-            coaching_qs = (
-                Team.objects
-                .filter(id_uuid__in=coaching_ids)
-                .select_related("club")
-                .order_by("club__name", "name")
-            )
-
-        following_qs = (
-            player.team_follow
-            .all()
-            .select_related("club")
-            .order_by("club__name", "name")
-        )
+        team_groups = grouped_teams_for_player(player)
 
         return Response({
             "playing": TeamSerializer(
-                playing_qs,
+                team_groups.playing,
                 many=True,
                 context={"request": request},
             ).data,
             "coaching": TeamSerializer(
-                coaching_qs,
+                team_groups.coaching,
                 many=True,
                 context={"request": request},
             ).data,
             "following": TeamSerializer(
-                following_qs,
+                team_groups.following,
                 many=True,
                 context={"request": request},
             ).data,
