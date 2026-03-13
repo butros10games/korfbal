@@ -6,7 +6,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get upgrade -y && \
-    apt-get install --no-install-recommends -y build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -49,43 +48,16 @@ RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null
     /build/.venv/lib/python3.13/site-packages/wheel && \
     find /build/.venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
-## ------------------------------- Builder Stage ------------------------------ ##
-FROM venv-optimizer AS builder
-
-WORKDIR /app
-
-# Copy venv to final location
-RUN cp -r /build/.venv .venv
-
-# Copy app source (this layer changes most often - keep it late)
-COPY apps/django_projects/korfbal/manage.py /app/
-COPY apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY apps/django_projects/korfbal/apps/ /app/apps/
-
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-trixie AS production
 
 ARG APP_UID=1000
 ARG APP_GID=1000
-ARG TARGETOS=linux
-ARG TARGETARCH
-ARG TARGETVARIANT=""
 
 RUN set -euo \
-    && ARCH_GUESS="${TARGETARCH:-}" \
-    && if [ -z "$ARCH_GUESS" ]; then ARCH_GUESS="$(dpkg --print-architecture 2>/dev/null || uname -m)"; fi \
-    && if [ "$ARCH_GUESS" = "arm" ] && [ -n "${TARGETVARIANT:-}" ]; then ARCH_GUESS="arm${TARGETVARIANT}"; fi \
-    && case "$ARCH_GUESS" in \
-    amd64|x86_64) MC_ARCH="amd64" ;; \
-    arm64|aarch64) MC_ARCH="arm64" ;; \
-    armv7|armv7l|armhf|armv6|armv6l|armel|arm) MC_ARCH="arm" ;; \
-    *) echo "Unsupported architecture: ${ARCH_GUESS}" >&2 ; exit 1 ;; \
-    esac \
-    && MC_URL="https://dl.min.io/client/mc/release/${TARGETOS}-${MC_ARCH}/mc" \
-    && python -c "import sys, urllib.request; url = sys.argv[1]; open('/usr/local/bin/mc', 'wb').write(urllib.request.urlopen(url).read())" "${MC_URL}" \
-    && chmod +x /usr/local/bin/mc \
     && groupadd --gid "${APP_GID}" appuser \
-    && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && useradd --uid "${APP_UID}" --gid appuser \
+    --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
     && install -d -o appuser -g appuser /app \
     && install -d -o appuser -g appuser /app/logs
 
@@ -93,7 +65,7 @@ COPY --chmod=0555 apps/django_projects/korfbal/configs/collectstatic/entrypoint.
 
 WORKDIR /app
 
-COPY --from=builder --chmod=0555 /app/.venv .venv
+COPY --from=venv-optimizer --chmod=0555 /build/.venv .venv
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 

@@ -4,8 +4,7 @@ FROM python:3.13-slim-trixie AS deps
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get upgrade -y && apt-get install --no-install-recommends -y \
-    build-essential && \
+    apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -48,19 +47,6 @@ RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null
     /build/.venv/lib/python3.13/site-packages/wheel && \
     find /build/.venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
-## ------------------------------- Builder Stage ------------------------------ ##
-FROM venv-optimizer AS builder
-
-WORKDIR /app
-
-# Copy venv and app source directly to final location
-RUN cp -r /build/.venv .venv
-
-# Copy app source (this layer changes most often - keep it late)
-COPY apps/django_projects/korfbal/manage.py /app/
-COPY apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY apps/django_projects/korfbal/apps/ /app/apps/
-
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-trixie AS production
 
@@ -80,7 +66,7 @@ RUN groupadd --gid "${APP_GID}" appuser \
     && chown appuser:appuser /app \
     && install -d -o appuser -g appuser -m 0755 /app/logs
 
-COPY --from=builder --chmod=0555 /app/.venv .venv
+COPY --from=venv-optimizer --chmod=0555 /build/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
 
