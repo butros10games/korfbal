@@ -16,7 +16,7 @@ from .settings.services import DATABASES
 
 # Keep ruff happy with explicit bindings for star-imported settings.
 # (We intentionally override these below.)
-STORAGES = globals().get("STORAGES", {})
+STORAGES: dict[str, dict[str, object]] = globals().get("STORAGES", {})
 STATICFILES_STORAGE = globals().get("STATICFILES_STORAGE", "")
 
 
