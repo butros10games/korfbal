@@ -19,6 +19,7 @@ from contextlib import ExitStack
 import logging
 import operator
 import time
+from typing import Any, cast
 
 from django.conf import settings
 from django.db import connections
@@ -88,8 +89,9 @@ class SlowQueryLoggingMiddleware:
             response = self.get_response(request)
 
         include_sql = bool(getattr(settings, "KORFBAL_SLOW_DB_INCLUDE_SQL", False))
+        request_with_metrics = cast(Any, request)
         if slowest:
-            request._korfbal_slow_queries = [  # type: ignore[attr-defined]
+            request_with_metrics._korfbal_slow_queries = [
                 {
                     "ms": int(elapsed * 1000),
                     "alias": alias,
@@ -98,7 +100,7 @@ class SlowQueryLoggingMiddleware:
                 for elapsed, alias, sql, params in slowest
             ]
         else:
-            request._korfbal_slow_queries = []  # type: ignore[attr-defined]
+            request_with_metrics._korfbal_slow_queries = []
 
         if slowest:
             user_id = getattr(getattr(request, "user", None), "id", None)

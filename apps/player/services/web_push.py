@@ -23,12 +23,18 @@ from apps.player.models.push_subscription import PlayerPushSubscription
 logger = logging.getLogger(__name__)
 
 
+WebPushException: type[Exception]
+webpush: Any
 try:
-    from pywebpush import WebPushException, webpush
+    from pywebpush import WebPushException as _ImportedWebPushException
+    from pywebpush import webpush as _imported_webpush
 except Exception:  # pragma: no cover
     # `pywebpush` is a runtime dependency; keep imports safe for tooling.
-    WebPushException = Exception  # type: ignore[assignment]
-    webpush = None  # type: ignore[assignment]
+    WebPushException = Exception
+    webpush = None
+else:
+    WebPushException = _ImportedWebPushException
+    webpush = _imported_webpush
 
 
 @dataclass(frozen=True, slots=True)

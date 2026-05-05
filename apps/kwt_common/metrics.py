@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final, cast
 
+
+PrometheusCounter: Any
+PrometheusHistogram: Any
 
 try:
-    from prometheus_client import Counter, Histogram
-
-    _PROMETHEUS_AVAILABLE = True
+    from prometheus_client import (
+        Counter as _ImportedPrometheusCounter,
+        Histogram as _ImportedPrometheusHistogram,
+    )
 except Exception:  # pragma: no cover - optional dependency
-    Counter = Histogram = None  # type: ignore[assignment]
+    PrometheusCounter = None
+    PrometheusHistogram = None
     _PROMETHEUS_AVAILABLE = False
+else:
+    PrometheusCounter = _ImportedPrometheusCounter
+    PrometheusHistogram = _ImportedPrometheusHistogram
+    _PROMETHEUS_AVAILABLE = True
 
 
 _MAX_LABEL_LENGTH: Final[int] = 200
@@ -30,7 +39,10 @@ def _safe_label(value: object, default: str = "unknown") -> str:
 
 
 if _PROMETHEUS_AVAILABLE:
-    REQUEST_DURATION_MS = Histogram(
+    counter_factory = cast(Any, PrometheusCounter)
+    histogram_factory = cast(Any, PrometheusHistogram)
+
+    REQUEST_DURATION_MS = histogram_factory(
         "korfbal_request_duration_ms",
         "Request duration in milliseconds",
         ["method", "view", "status"],
@@ -52,23 +64,23 @@ if _PROMETHEUS_AVAILABLE:
             10000,
         ],
     )
-    SLOW_REQUESTS_TOTAL = Counter(
+    SLOW_REQUESTS_TOTAL = counter_factory(
         "korfbal_slow_requests_total",
         "Requests exceeding slow threshold",
         ["method", "view", "status"],
     )
-    SLOW_DB_REQUESTS_TOTAL = Counter(
+    SLOW_DB_REQUESTS_TOTAL = counter_factory(
         "korfbal_slow_db_requests_total",
         "Requests with at least one slow DB query",
         ["method", "view", "status"],
     )
-    SLOW_DB_REQUEST_QUERY_COUNT = Histogram(
+    SLOW_DB_REQUEST_QUERY_COUNT = histogram_factory(
         "korfbal_slow_db_request_query_count",
         "Count of slow DB queries per request",
         ["method", "view", "status"],
         buckets=[1, 2, 3, 5, 8, 13, 21, 34],
     )
-    SLOW_DB_REQUEST_TOTAL_MS = Histogram(
+    SLOW_DB_REQUEST_TOTAL_MS = histogram_factory(
         "korfbal_slow_db_request_total_ms",
         "Total slow DB time per request in milliseconds",
         ["method", "view", "status"],
@@ -87,12 +99,12 @@ if _PROMETHEUS_AVAILABLE:
             10000,
         ],
     )
-    SLOW_DB_QUERIES_TOTAL = Counter(
+    SLOW_DB_QUERIES_TOTAL = counter_factory(
         "korfbal_slow_db_queries_total",
         "Slow DB queries detected",
         ["alias"],
     )
-    SLOW_DB_QUERY_DURATION_MS = Histogram(
+    SLOW_DB_QUERY_DURATION_MS = histogram_factory(
         "korfbal_slow_db_query_duration_ms",
         "Duration of slow DB queries in milliseconds",
         ["alias"],

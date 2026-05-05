@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
@@ -50,7 +52,7 @@ def _match_data_pre_save(
     """Track status transitions so post_save can react to "finished"."""
     if not instance.pk:
         # New row.
-        instance._previous_status_for_impact_recompute = None  # type: ignore[attr-defined]
+        cast(Any, instance)._previous_status_for_impact_recompute = None
         return
 
     previous_status = (
@@ -59,7 +61,7 @@ def _match_data_pre_save(
         .values_list("status", flat=True)
         .first()
     )
-    instance._previous_status_for_impact_recompute = previous_status  # type: ignore[attr-defined]
+    cast(Any, instance)._previous_status_for_impact_recompute = previous_status
 
 
 @receiver(post_save, sender=MatchData)
