@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
@@ -37,9 +37,7 @@ class PlayerViewSet(viewsets.ModelViewSet):
 
     queryset = player_detail_queryset()
     serializer_class = PlayerSerializer
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticatedOrReadOnly,
-    ]
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
     lookup_field = "id_uuid"
 
     def _ensure_can_modify(self, player: Player) -> None:
@@ -69,9 +67,7 @@ class PlayerViewSet(viewsets.ModelViewSet):
 class CurrentPlayerAPIView(APIView):
     """Return the profile for the active player (or a debug fallback)."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -90,9 +86,7 @@ class CurrentPlayerAPIView(APIView):
 class PlayerFollowedTeamsAPIView(APIView):
     """Return teams followed by a player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -131,9 +125,7 @@ class PlayerFollowedTeamsAPIView(APIView):
 class PlayerTeamsAPIView(APIView):
     """Return teams for a player grouped into playing/coaching/following."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -213,9 +205,7 @@ class CurrentPlayerFollowedTeamsAPIView(PlayerFollowedTeamsAPIView):
 class CurrentPlayerPrivacySettingsAPIView(APIView):
     """Read/update privacy visibility settings for the authenticated player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,

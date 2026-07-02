@@ -1,6 +1,6 @@
 """Admin configuration for club-related models."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -20,8 +20,8 @@ else:
 class ClubModelAdmin(ClubModelAdminBase):
     """Admin configuration for the Club model."""
 
-    list_display: ClassVar[list[str]] = ["id_uuid", "name"]
-    search_fields: ClassVar[list[str]] = ["name", "id_uuid"]
+    list_display = ("id_uuid", "name")
+    search_fields = ("name", "id_uuid")
     show_full_result_count = False
 
     class Meta:
@@ -33,13 +33,13 @@ class ClubModelAdmin(ClubModelAdminBase):
 class ClubAdminLinkAdmin(ClubAdminLinkAdminBase):
     """Admin configuration for the ClubAdmin through model."""
 
-    list_display: ClassVar[list[str]] = ["club", "player"]
-    search_fields: ClassVar[list[str]] = [
+    list_display = ("club", "player")
+    search_fields = (
         "club__name",
         "player__user__username",
         "player__user__email",
-    ]
-    autocomplete_fields: ClassVar[list[str]] = ["club", "player"]
+    )
+    autocomplete_fields = ("club", "player")
     show_full_result_count = False
 
     class Meta:

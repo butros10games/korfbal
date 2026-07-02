@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from rest_framework import permissions, status
 from rest_framework.request import Request
@@ -37,9 +37,7 @@ def _resolve_player(request: Request, player_id: str | None) -> Player | None:
 class PlayerOverviewAPIView(APIView):
     """Expose player-specific match data grouped by season."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -77,9 +75,7 @@ class PlayerOverviewAPIView(APIView):
 class PlayerConnectedClubRecentResultsAPIView(APIView):
     """Return recent finished matches for the current player's followed clubs."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -123,9 +119,7 @@ class PlayerConnectedClubRecentResultsAPIView(APIView):
 class PlayerStatsAPIView(APIView):
     """Expose season-scoped player shooting and scoring stats."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,

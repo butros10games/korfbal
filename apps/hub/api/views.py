@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import json
-from typing import Any, ClassVar
+from typing import Any
 
 from django.db.models import Q
 from django.http import HttpRequest
@@ -24,9 +24,7 @@ from .serializers import UpdateSerializer
 class UpdateFeedView(APIView):
     """Return a lightweight feed of match-centric updates."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get(
         self,
@@ -114,9 +112,7 @@ class HubIndexView(APIView):
 
     """
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -239,9 +235,7 @@ class CatalogDataView(APIView):
     Player profile.
     """
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def post(
         self,

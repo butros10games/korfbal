@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar
+from typing import Any
 from uuid import UUID
 
 from bg_audit_events import UnifiedAuditEvent
@@ -130,9 +130,7 @@ def _create_row(*, request: Request, event: UnifiedAuditEvent) -> AuditEvent:
 class AuditEventIngestAPIView(APIView):
     """Receive normalized audit events from any producer/runtime."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def post(
         self,
@@ -168,9 +166,7 @@ class AuditEventIngestAPIView(APIView):
 class AuditEventBulkIngestAPIView(APIView):
     """Receive multiple normalized audit events in a single request."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def post(
         self,
@@ -212,9 +208,7 @@ class AuditEventBulkIngestAPIView(APIView):
 class AuditTimelineAPIView(APIView):
     """List audit events as a searchable timeline."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -319,9 +313,7 @@ class AuditTimelineAPIView(APIView):
 class AuditSummaryAPIView(APIView):
     """Return aggregate audit statistics for dashboards/operations."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -401,9 +393,7 @@ class AuditSummaryAPIView(APIView):
 class AuditProducerStatsAPIView(APIView):
     """Return producer/source health statistics over a configurable window."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -472,9 +462,7 @@ class AuditProducerStatsAPIView(APIView):
 class AuditTrendStatsAPIView(APIView):
     """Return hourly trend points and error-rate delta for dashboards/alerting."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -580,9 +568,7 @@ class AuditTrendStatsAPIView(APIView):
 class AuditProducerHealthAPIView(APIView):
     """Rank producer health using weighted risk metrics for operations."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,

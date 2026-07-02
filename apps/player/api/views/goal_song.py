@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from rest_framework import permissions, status
 from rest_framework.request import Request
@@ -25,9 +25,7 @@ from .common import PLAYER_NOT_FOUND_DETAIL
 class CurrentPlayerGoalSongAPIView(APIView):
     """Update goal song configuration for the current player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     @staticmethod
     def _current_player(request: Request) -> Player | None:

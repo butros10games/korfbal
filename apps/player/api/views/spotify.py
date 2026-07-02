@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.http import HttpResponseRedirect
@@ -33,9 +33,7 @@ from .common import (
 class SpotifyConnectAPIView(APIView):
     """Start Spotify OAuth flow by returning an authorization URL."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -65,9 +63,7 @@ class SpotifyConnectAPIView(APIView):
 class SpotifyCallbackView(APIView):
     """Handle Spotify OAuth callback requests."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def get(
         self,
@@ -105,9 +101,7 @@ class SpotifyCallbackView(APIView):
 class SpotifyPlayAPIView(APIView):
     """Trigger Spotify playback for the connected user."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def post(
         self,
@@ -165,9 +159,7 @@ class SpotifyPlayAPIView(APIView):
 class SpotifyPauseAPIView(APIView):
     """Pause Spotify playback for the connected user."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def post(
         self,

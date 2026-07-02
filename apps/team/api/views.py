@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
@@ -46,14 +46,10 @@ class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.select_related("club").order_by("club__name", "name")
     serializer_class = TeamSerializer
     pagination_class = StandardResultsSetPagination
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        IsStaffOrReadOnly,
-    ]
+    permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
-    filter_backends: ClassVar[list[type[filters.BaseFilterBackend]]] = [
-        filters.SearchFilter
-    ]
-    search_fields: ClassVar[list[str]] = ["name", "club__name"]
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ("name", "club__name")
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(

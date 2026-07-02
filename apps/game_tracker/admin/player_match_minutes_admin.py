@@ -1,6 +1,6 @@
 """Admin settings for the PlayerMatchMinutes model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,22 +18,22 @@ else:
 class PlayerMatchMinutesAdmin(PlayerMatchMinutesAdminBase):
     """Admin for the PlayerMatchMinutes model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "match_data",
         "player",
         "minutes_played",
         "algorithm_version",
         "computed_at",
-    ]
-    list_filter: ClassVar[list[str]] = ["algorithm_version"]
-    search_fields: ClassVar[list[str]] = [
+    )
+    list_filter = ("algorithm_version",)
+    search_fields = (
         "id_uuid",
         "match_data__id_uuid",
         "player__user__username",
         "player__user__email",
-    ]
-    autocomplete_fields: ClassVar[list[str]] = ["match_data", "player"]
+    )
+    autocomplete_fields = ("match_data", "player")
     show_full_result_count = False
 
     class Meta:

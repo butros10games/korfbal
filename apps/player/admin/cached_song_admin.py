@@ -1,6 +1,6 @@
 """Admin settings for the CachedSong model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,7 +18,7 @@ else:
 class CachedSongAdmin(CachedSongAdminBase):
     """Admin configuration for CachedSong."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "status",
         "title",
@@ -26,10 +26,10 @@ class CachedSongAdmin(CachedSongAdminBase):
         "spotify_url",
         "created_at",
         "updated_at",
-    ]
-    list_filter: ClassVar[list[str]] = ["status", "created_at"]
-    search_fields: ClassVar[list[str]] = ["id_uuid", "spotify_url", "title", "artists"]
-    readonly_fields: ClassVar[list[str]] = ["created_at", "updated_at"]
+    )
+    list_filter = ("status", "created_at")
+    search_fields = ("id_uuid", "spotify_url", "title", "artists")
+    readonly_fields = ("created_at", "updated_at")
     show_full_result_count = False
 
     class Meta:

@@ -1,6 +1,6 @@
 """Admin class for the PlayerGroup model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,13 +18,13 @@ else:
 class PlayerGroupAdmin(PlayerGroupAdminBase):
     """Admin for the PlayerGroup model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "team",
         "match_data",
         "starting_type",
         "current_type",
-    ]
+    )
     show_full_result_count = False
 
     class Meta:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -20,7 +20,7 @@ else:
 class PlayerSongAdmin(PlayerSongModelAdminBase):
     """PlayerSong admin configuration."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "player",
         "status",
@@ -29,23 +29,23 @@ class PlayerSongAdmin(PlayerSongModelAdminBase):
         "duration_seconds",
         "start_time_seconds",
         "created_at",
-    ]
+    )
 
-    list_filter: ClassVar[list[str]] = ["status", "created_at"]
-    search_fields: ClassVar[list[str]] = [
+    list_filter = ("status", "created_at")
+    search_fields = (
         "id_uuid",
         "spotify_url",
         "title",
         "artists",
         "player__user__username",
         "player__user__email",
-    ]
+    )
 
-    readonly_fields: ClassVar[list[str]] = [
+    readonly_fields = (
         "id_uuid",
         "created_at",
         "updated_at",
-    ]
+    )
 
     fieldsets = (
         (

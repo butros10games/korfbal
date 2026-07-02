@@ -1,6 +1,6 @@
 """Admin settings for the PlayerChange model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,12 +18,12 @@ else:
 class PlayerChangeAdmin(PlayerChangeAdminBase):
     """Admin for the PlayerChange model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "player_in",
         "player_out",
         "player_group",
-    ]
+    )
     show_full_result_count = False
 
     class Meta:

@@ -1,6 +1,6 @@
 """Admin configuration for the Player model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -29,7 +29,7 @@ class PlayerSongInline(PlayerSongInlineBase):
     extra = 0
     show_change_link = True
 
-    fields: ClassVar[list[str]] = [
+    fields = (
         "id_uuid",
         "status",
         "title",
@@ -37,15 +37,15 @@ class PlayerSongInline(PlayerSongInlineBase):
         "start_time_seconds",
         "created_at",
         "updated_at",
-    ]
-    readonly_fields: ClassVar[list[str]] = [
+    )
+    readonly_fields = (
         "id_uuid",
         "status",
         "title",
         "artists",
         "created_at",
         "updated_at",
-    ]
+    )
 
 
 class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
@@ -55,35 +55,35 @@ class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
     extra = 0
     show_change_link = True
 
-    fields: ClassVar[list[str]] = [
+    fields = (
         "id_uuid",
         "club",
         "start_date",
         "end_date",
         "created_at",
         "updated_at",
-    ]
-    readonly_fields: ClassVar[list[str]] = [
+    )
+    readonly_fields = (
         "id_uuid",
         "created_at",
         "updated_at",
-    ]
+    )
 
 
 class PlayerAdmin(PlayerModelAdminBase):
     """Player admin configuration."""
 
-    list_display: ClassVar[list[str]] = ["id_uuid", "user"]
-    search_fields: ClassVar[list[str]] = [
+    list_display = ("id_uuid", "user")
+    search_fields = (
         "id_uuid",
         "user__username",
         "user__email",
         "user__first_name",
         "user__last_name",
-    ]
-    autocomplete_fields: ClassVar[list[str]] = ["user"]
+    )
+    autocomplete_fields = ("user",)
     show_full_result_count = False
-    inlines: ClassVar[list[type]] = [PlayerClubMembershipInline, PlayerSongInline]
+    inlines = (PlayerClubMembershipInline, PlayerSongInline)
 
     class Meta:
         """Meta class."""

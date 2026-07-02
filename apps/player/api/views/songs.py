@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -35,9 +35,7 @@ from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_
 class PlayerSongClipAPIView(APIView):
     """Return and cache a short clip for a PlayerSong."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     @staticmethod
     def _parse_seconds_query(request: Request, key: str, default: int) -> int:
@@ -87,14 +85,12 @@ class PlayerSongClipAPIView(APIView):
 class CurrentPlayerSongsAPIView(APIView):
     """List and create downloaded songs for the authenticated player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
-    parser_classes: ClassVar[list[type[object]]] = [
+    permission_classes = (permissions.IsAuthenticated,)
+    parser_classes = (
         JSONParser,
         FormParser,
         MultiPartParser,
-    ]
+    )
 
     def get(
         self,
@@ -146,9 +142,7 @@ class CurrentPlayerSongsAPIView(APIView):
 class CurrentPlayerSongDetailAPIView(APIView):
     """Update or delete a specific song for the authenticated player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def patch(
         self,
@@ -204,9 +198,7 @@ class CurrentPlayerSongDetailAPIView(APIView):
 class CurrentPlayerSongRetryAPIView(APIView):
     """Retry downloading a failed song for the authenticated player."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     def post(
         self,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from django.db import transaction
 from rest_framework import permissions, status
@@ -30,10 +30,8 @@ from .common import TEST_PUSH_ERROR_LIMIT
 class CurrentPlayerPushSubscriptionsAPIView(APIView):
     """Register/list/deactivate push subscriptions for the current user."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
-    parser_classes: ClassVar[list[type[Any]]] = [JSONParser]
+    permission_classes = (permissions.IsAuthenticated,)
+    parser_classes = (JSONParser,)
 
     def get(
         self,
@@ -147,9 +145,7 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
 class CurrentPlayerTestPushNotificationAPIView(APIView):
     """Send a test push notification to the current user's active subscriptions."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = (permissions.IsAuthenticated,)
 
     @staticmethod
     def _is_staff_user(user: Any) -> bool:

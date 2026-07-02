@@ -1,6 +1,6 @@
 """Admin settings for the Timeout model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,25 +18,25 @@ else:
 class TimeoutAdmin(TimeoutAdminBase):
     """Admin for the Timeout model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "match_data",
         "team",
         "match_part",
         "pause",
-    ]
-    list_filter: ClassVar[list[str]] = ["team", "match_part"]
-    search_fields: ClassVar[list[str]] = [
+    )
+    list_filter = ("team", "match_part")
+    search_fields = (
         "id_uuid",
         "match_data__id_uuid",
         "team__name",
-    ]
-    autocomplete_fields: ClassVar[list[str]] = [
+    )
+    autocomplete_fields = (
         "match_data",
         "match_part",
         "team",
         "pause",
-    ]
+    )
     show_full_result_count = False
 
     class Meta:

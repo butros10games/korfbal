@@ -1,6 +1,6 @@
 """Admin settings for the MatchData model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,20 +18,20 @@ else:
 class MatchDataAdmin(MatchDataAdminBase):
     """Admin for the MatchData model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "__str__",
         "home_score",
         "away_score",
         "part_length",
         "status",
-    ]
-    search_fields: ClassVar[list[str]] = [
+    )
+    search_fields = (
         "id_uuid",
         "match_link__id_uuid",
         "match_link__home_team__name",
         "match_link__away_team__name",
-    ]
+    )
     show_full_result_count = False
 
     class Meta:

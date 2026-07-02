@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import json
 import logging
-from typing import Any, ClassVar
+from typing import Any
 from uuid import uuid4
 
 from django.conf import settings
@@ -180,9 +180,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
     """Expose match data for the mobile frontend."""
 
     serializer_class = MatchSerializer
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.AllowAny,
-    ]
+    permission_classes = (permissions.AllowAny,)
 
     def get_queryset(self) -> QuerySet[Match]:
         """Return a queryset filtered by the current request context.
@@ -967,8 +965,6 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             )
 
         player = _authenticated_player(request)
-        anon_voter_token: str | None = None
-        anon_tokens: dict[str, str] | None = None
 
         try:
             anon_voter_token, anon_tokens = _cast_mvp_vote_for_request(

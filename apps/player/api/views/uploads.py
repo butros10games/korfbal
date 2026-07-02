@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -24,10 +24,8 @@ from .common import PLAYER_NOT_FOUND_MESSAGE, get_current_player
 class UploadProfilePictureAPIView(APIView):
     """Upload a profile picture (API variant used by the Vite frontend)."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
-    parser_classes: ClassVar[list[type[Any]]] = [MultiPartParser, FormParser]
+    permission_classes = (permissions.IsAuthenticated,)
+    parser_classes = (MultiPartParser, FormParser)
 
     def post(
         self,
@@ -65,10 +63,8 @@ class UploadProfilePictureAPIView(APIView):
 class UploadGoalSongAPIView(APIView):
     """Upload an audio file to use as the goal song."""
 
-    permission_classes: ClassVar[list[type[permissions.BasePermission]]] = [
-        permissions.IsAuthenticated,
-    ]
-    parser_classes: ClassVar[list[type[Any]]] = [MultiPartParser, FormParser]
+    permission_classes = (permissions.IsAuthenticated,)
+    parser_classes = (MultiPartParser, FormParser)
 
     def post(
         self,

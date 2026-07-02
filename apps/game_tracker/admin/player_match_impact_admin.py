@@ -1,6 +1,6 @@
 """Admin settings for the PlayerMatchImpact model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,7 +18,7 @@ else:
 class PlayerMatchImpactAdmin(PlayerMatchImpactAdminBase):
     """Admin for the PlayerMatchImpact model."""
 
-    list_display: ClassVar[list[str]] = [
+    list_display = (
         "id_uuid",
         "match_data",
         "player",
@@ -26,15 +26,15 @@ class PlayerMatchImpactAdmin(PlayerMatchImpactAdminBase):
         "impact_score",
         "algorithm_version",
         "computed_at",
-    ]
-    list_filter: ClassVar[list[str]] = ["algorithm_version", "team"]
-    search_fields: ClassVar[list[str]] = [
+    )
+    list_filter = ("algorithm_version", "team")
+    search_fields = (
         "id_uuid",
         "match_data__id_uuid",
         "player__user__username",
         "player__user__email",
-    ]
-    autocomplete_fields: ClassVar[list[str]] = ["match_data", "player", "team"]
+    )
+    autocomplete_fields = ("match_data", "player", "team")
     show_full_result_count = False
 
     class Meta:

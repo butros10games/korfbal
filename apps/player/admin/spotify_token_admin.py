@@ -1,6 +1,6 @@
 """Admin settings for the SpotifyToken model."""
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
@@ -18,15 +18,15 @@ else:
 class SpotifyTokenAdmin(SpotifyTokenAdminBase):
     """Admin configuration for SpotifyToken."""
 
-    list_display: ClassVar[list[str]] = ["user", "spotify_user_id", "expires_at"]
-    search_fields: ClassVar[list[str]] = [
+    list_display = ("user", "spotify_user_id", "expires_at")
+    search_fields = (
         "user__username",
         "user__email",
         "spotify_user_id",
-    ]
-    list_filter: ClassVar[list[str]] = ["expires_at"]
-    autocomplete_fields: ClassVar[list[str]] = ["user"]
-    readonly_fields: ClassVar[list[str]] = ["spotify_user_id"]
+    )
+    list_filter = ("expires_at",)
+    autocomplete_fields = ("user",)
+    readonly_fields = ("spotify_user_id",)
     show_full_result_count = False
 
     class Meta:
