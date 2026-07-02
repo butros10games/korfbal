@@ -29,7 +29,10 @@ from apps.game_tracker.services.match_impact import (
     build_match_player_role_timeline,
     compute_match_end_minutes,
 )
-from apps.schedule.api.match_events_payload import build_match_events, build_match_shots
+from apps.game_tracker.services.match_timeline_payload import (
+    build_match_events,
+    build_match_shots,
+)
 
 
 logger = logging.getLogger(__name__)

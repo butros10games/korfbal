@@ -11,7 +11,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.core import signing
 from django.core.cache import cache
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -20,16 +20,16 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.awards.services.mvp import (
-    build_mvp_candidates,
+    build_match_mvp_status_payload,
     cast_vote,
     cast_vote_anon,
-    ensure_mvp_published,
 )
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows,
 )
+from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     apply_tracker_command,
@@ -46,7 +46,6 @@ from .constants import (
     MVP_VOTE_COOKIE_NAME,
     MVP_VOTE_COOKIE_SALT,
 )
-from .match_stats_payload import _build_match_stats_payload
 from .match_viewset_events import MatchEventsActionsMixin
 from .permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
 from .serializers import MatchSerializer
@@ -144,130 +143,37 @@ def _authenticated_player(request: Request) -> Player | None:
     return None
 
 
-def _vote_for_request(
+def _cast_mvp_vote_for_request(
     *,
-    match: Match,
     request: Request,
-    anon_voter_token_override: str | None = None,
-) -> tuple[dict[str, str] | None, str | None]:
-    """Return (user_vote_payload, anon_voter_token_used)."""
-    player = _authenticated_player(request)
-    if player:
-        vote = match.mvp_votes.filter(voter=player).first()
-        if not vote:
-            return None, None
-        return {"candidate_id_uuid": str(vote.candidate_id)}, None
-
-    token = anon_voter_token_override
-    if not token:
-        tokens = _read_mvp_vote_tokens(request)
-        token = tokens.get(str(match.id_uuid))
-    if not token:
-        return None, None
-
-    vote = match.mvp_votes.filter(voter_token=token).first()
-    if not vote:
-        return None, token
-    return {"candidate_id_uuid": str(vote.candidate_id)}, token
-
-
-def _build_mvp_status_payload(
-    *,
     match: Match,
     match_data: MatchData,
-    request: Request,
-    anon_voter_token_override: str | None = None,
-) -> dict[str, Any]:
-    mvp = ensure_mvp_published(match, match_data)
-    candidates = build_mvp_candidates(match, match_data)
-    user_vote, _anon_token_used = _vote_for_request(
-        match=match,
-        request=request,
-        anon_voter_token_override=anon_voter_token_override,
-    )
-
-    mvp_player = mvp.mvp_player
-    mvp_payload: dict[str, str | None] | None = None
-    if mvp_player:
-        username = mvp_player.user.username
-        display_name = mvp_player.user.get_full_name() or username
-        mvp_payload = {
-            "id_uuid": str(mvp_player.id_uuid),
-            "username": username,
-            "display_name": display_name,
-            "profile_picture_url": mvp_player.get_profile_picture(),
-        }
-
-    now = timezone.now()
-    open_for_votes = bool(now < mvp.closes_at)
-
-    # Vote breakdown: only players that received at least 1 vote.
-    vote_rows = list(
-        match.mvp_votes
-        .values("candidate")
-        .annotate(votes=Count("id_uuid"))
-        .order_by(
-            "-votes",
-            "candidate",
+    player: Player | None,
+    candidate: Player,
+) -> tuple[str | None, dict[str, str] | None]:
+    if player:
+        cast_vote(
+            match=match,
+            match_data=match_data,
+            voter=player,
+            candidate=candidate,
         )
+        return None, None
+
+    anon_tokens = _read_mvp_vote_tokens(request)
+    match_key = str(match.id_uuid)
+    anon_voter_token = anon_tokens.get(match_key)
+    if not anon_voter_token:
+        anon_voter_token = str(uuid4())
+        anon_tokens[match_key] = anon_voter_token
+
+    cast_vote_anon(
+        match=match,
+        match_data=match_data,
+        voter_token=anon_voter_token,
+        candidate=candidate,
     )
-
-    side_by_id = {c.id_uuid: c.team_side for c in candidates}
-
-    voted_candidate_ids = [
-        str(row.get("candidate"))
-        for row in vote_rows
-        if row.get("candidate") is not None
-    ]
-    voted_players = Player.objects.select_related("user").filter(
-        id_uuid__in=voted_candidate_ids
-    )
-    voted_players_by_id = {str(p.id_uuid): p for p in voted_players}
-
-    vote_breakdown: list[dict[str, Any]] = []
-    for row in vote_rows:
-        cid = row.get("candidate")
-        if cid is None:
-            continue
-        cid_str = str(cid)
-        player = voted_players_by_id.get(cid_str)
-        if not player:
-            continue
-        username = player.user.username
-        display_name = player.user.get_full_name() or username
-        votes = row.get("votes")
-        vote_breakdown.append({
-            "candidate": {
-                "id_uuid": cid_str,
-                "username": username,
-                "display_name": display_name,
-                "profile_picture_url": player.get_profile_picture(),
-                "team_side": side_by_id.get(cid_str),
-            },
-            "votes": int(votes) if isinstance(votes, int) else 0,
-        })
-
-    return {
-        "available": True,
-        "match_status": match_data.status,
-        "open": open_for_votes,
-        "finished_at": mvp.finished_at.isoformat(),
-        "closes_at": mvp.closes_at.isoformat(),
-        "candidates": [
-            {
-                "id_uuid": c.id_uuid,
-                "username": c.username,
-                "display_name": c.display_name,
-                "profile_picture_url": c.profile_picture_url,
-                "team_side": c.team_side,
-            }
-            for c in candidates
-        ],
-        "user_vote": user_vote,
-        "mvp": mvp_payload,
-        "published_at": mvp.published_at.isoformat() if mvp.published_at else None,
-        "vote_breakdown": vote_breakdown,
-    }
+    return anon_voter_token, anon_tokens
 
 
 class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
@@ -877,7 +783,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        payload = _build_match_stats_payload(match=match, match_data=match_data)
+        payload = build_match_stats_payload(match=match, match_data=match_data)
         return Response(payload, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=("GET",), url_path="impacts")
@@ -1006,10 +912,16 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        payload = _build_mvp_status_payload(
+        voter = _authenticated_player(request)
+        anon_voter_token = None
+        if voter is None:
+            anon_voter_token = _read_mvp_vote_tokens(request).get(str(match.id_uuid))
+
+        payload = build_match_mvp_status_payload(
             match=match,
             match_data=match_data,
-            request=request,
+            voter=voter,
+            anon_voter_token=anon_voter_token,
         )
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -1059,38 +971,24 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         anon_tokens: dict[str, str] | None = None
 
         try:
-            if player:
-                cast_vote(
-                    match=match,
-                    match_data=match_data,
-                    voter=player,
-                    candidate=candidate,
-                )
-            else:
-                anon_tokens = _read_mvp_vote_tokens(request)
-                match_key = str(match.id_uuid)
-                anon_voter_token = anon_tokens.get(match_key)
-                if not anon_voter_token:
-                    anon_voter_token = str(uuid4())
-                    anon_tokens[match_key] = anon_voter_token
-
-                cast_vote_anon(
-                    match=match,
-                    match_data=match_data,
-                    voter_token=anon_voter_token,
-                    candidate=candidate,
-                )
+            anon_voter_token, anon_tokens = _cast_mvp_vote_for_request(
+                request=request,
+                match=match,
+                match_data=match_data,
+                player=player,
+                candidate=candidate,
+            )
         except ValueError as exc:
             return Response(
                 {"detail": str(exc)},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        payload = _build_mvp_status_payload(
+        payload = build_match_mvp_status_payload(
             match=match,
             match_data=match_data,
-            request=request,
-            anon_voter_token_override=anon_voter_token,
+            voter=player,
+            anon_voter_token=anon_voter_token,
         )
 
         response = Response(payload, status=status.HTTP_200_OK)

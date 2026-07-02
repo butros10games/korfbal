@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from asgiref.sync import async_to_sync
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rest_framework import filters, permissions, status, viewsets
@@ -27,16 +26,16 @@ from apps.game_tracker.services.match_impact import (
 )
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
-from apps.kwt_common.utils.general_stats import build_general_stats
-from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.kwt_common.utils.players_stats import build_player_stats
 from apps.player.api.serializers import PlayerSongSerializer, PlayerSongUpdateSerializer
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Season
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
+from apps.team.services.overview import (
+    TeamOverviewOptions,
+    build_team_overview_payload,
+)
 
 from .serializers import TeamSerializer
 
@@ -84,113 +83,32 @@ class TeamViewSet(viewsets.ModelViewSet):
             default=True,
         )
 
-        match_data_qs = self._team_match_queryset(team, season)
-        upcoming_matches = build_match_summaries(
-            match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
-                "match_link__start_time"
-            )[:10]
-        )
-        recent_matches = build_match_summaries(
-            match_data_qs.filter(status="finished").order_by("-match_link__start_time")[
-                :10
-            ]
-        )
-
-        stats_general = None
-        if include_stats and match_data_qs.exists():
-            stats_general = async_to_sync(build_general_stats)(match_data_qs)
-
-        roster_players: list[Player] = []
-        if include_roster or include_stats:
-            roster_players = list(
-                self._team_players_queryset(team, season, match_data_qs)
-            )
-
-        # Mark which players are part of the team's main season roster (TeamData)
-        # vs. reserve/guest players who only show up in matches/stats.
-        main_roster_ids = self._main_roster_ids(team=team, season=season)
-        ordered_roster_players = self._order_roster_players(
-            roster_players=roster_players,
-            main_roster_ids=main_roster_ids,
-        )
-
         viewer_player = (
             Player.objects.filter(user=request.user).first()
             if request.user.is_authenticated
             else None
         )
 
-        roster: list[dict[str, str]] = []
-        if include_roster:
-            roster = [
-                {
-                    "id_uuid": str(player.id_uuid),
-                    # Avoid exposing full names to anonymous/outside viewers.
-                    "display_name": player.user.username,
-                    "username": player.user.username,
-                    "roster_role": (
-                        "main" if str(player.id_uuid) in main_roster_ids else "reserve"
-                    ),
-                    "profile_picture_url": (
-                        player.get_profile_picture()
-                        if can_view_by_visibility(
-                            visibility=player.profile_picture_visibility,
-                            viewer=viewer_player,
-                            target=player,
-                        )
-                        else player.get_placeholder_profile_picture_url()
-                    ),
-                    "profile_url": player.get_absolute_url(),
-                }
-                for player in ordered_roster_players
-            ]
-
-        stats_players = []
-        if include_stats and roster_players and match_data_qs.exists():
-            stats_players = async_to_sync(build_player_stats)(
-                roster_players, match_data_qs
-            )
-
-        current_season = self._current_season()
-        seasons_payload = [
-            {
-                "id_uuid": str(option.id_uuid),
-                "name": option.name,
-                "start_date": option.start_date.isoformat(),
-                "end_date": option.end_date.isoformat(),
-                "is_current": current_season is not None
-                and option.id_uuid == current_season.id_uuid,
-            }
-            for option in seasons_qs
-        ]
-
-        payload = {
-            "team": self.get_serializer(team).data,
-            "matches": {
-                "upcoming": upcoming_matches,
-                "recent": recent_matches,
-            },
-            "stats": {
-                "general": stats_general,
-                "players": stats_players,
-            },
-            "roster": roster,
-            "seasons": seasons_payload,
-            "meta": {
-                "season_id": str(season.id_uuid) if season else None,
-                "season_name": season.name if season else None,
-                "roster_count": len(roster),
-                "viewer_can_manage_goal_songs": self._viewer_can_manage_goal_songs(
+        payload = build_team_overview_payload(
+            team=team,
+            season=season,
+            seasons=seasons_qs,
+            options=TeamOverviewOptions(
+                include_stats=include_stats,
+                include_roster=include_roster,
+                viewer_player=viewer_player,
+                viewer_can_manage_goal_songs=self._viewer_can_manage_goal_songs(
                     request=request,
                     team=team,
                     season=season,
                 ),
-                "fallback_goal_song_audio_urls": self._fallback_goal_song_audio_urls(
+                fallback_goal_song_audio_urls=self._fallback_goal_song_audio_urls(
                     team=team,
                     season=season,
                 ),
-            },
-        }
+                team_payload=self.get_serializer(team).data,
+            ),
+        )
         return Response(payload)
 
     @action(

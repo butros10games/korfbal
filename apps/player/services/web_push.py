@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 from django.conf import settings
 
@@ -35,6 +35,47 @@ except Exception:  # pragma: no cover
 else:
     WebPushException = _ImportedWebPushException
     webpush = _imported_webpush
+
+
+class WebPushClient(Protocol):
+    """Outbound web-push provider port."""
+
+    def send(
+        self,
+        *,
+        subscription: dict[str, Any],
+        data: str,
+        ttl_seconds: int,
+    ) -> None:
+        """Send a web-push payload."""
+
+
+class PyWebPushClient:
+    """Production web-push client backed by pywebpush."""
+
+    def send(
+        self,
+        *,
+        subscription: dict[str, Any],
+        data: str,
+        ttl_seconds: int,
+    ) -> None:
+        """Send a web-push payload with pywebpush."""
+        if webpush is None:
+            raise RuntimeError(
+                "pywebpush is not available in this runtime; cannot send web push"
+            )
+
+        webpush(
+            subscription_info=subscription,
+            data=data,
+            vapid_private_key=str(settings.WEBPUSH_VAPID_PRIVATE_KEY),
+            vapid_claims=_vapid_claims(),
+            ttl=ttl_seconds,
+        )
+
+
+DEFAULT_WEB_PUSH_CLIENT = PyWebPushClient()
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +130,7 @@ def send_to_subscription(
     subscription: dict[str, Any],
     payload: WebPushPayload,
     ttl: int | None = None,
+    client: WebPushClient | None = None,
 ) -> None:
     """Send a single web push message.
 
@@ -100,25 +142,16 @@ def send_to_subscription(
         RuntimeError: When the `pywebpush` library is not available in the runtime.
 
     """
-    if webpush is None:
-        # This is a deploy/runtime bug: without pywebpush, we cannot send
-        # anything, and silently returning makes debugging nearly impossible.
-        raise RuntimeError(
-            "pywebpush is not available in this runtime; cannot send web push"
-        )
-
     if not _webpush_configured():
         logger.info("Web push not configured; skipping send")
         return
 
     ttl_seconds = int(ttl or getattr(settings, "WEBPUSH_TTL_SECONDS", 3600) or 3600)
 
-    webpush(
-        subscription_info=subscription,
+    (client or DEFAULT_WEB_PUSH_CLIENT).send(
+        subscription=subscription,
         data=payload.to_json(),
-        vapid_private_key=str(settings.WEBPUSH_VAPID_PRIVATE_KEY),
-        vapid_claims=_vapid_claims(),
-        ttl=ttl_seconds,
+        ttl_seconds=ttl_seconds,
     )
 
 
@@ -126,10 +159,15 @@ def send_to_model_subscription(
     *,
     sub: PlayerPushSubscription,
     payload: WebPushPayload,
+    client: WebPushClient | None = None,
 ) -> None:
     """Send and mark dead subscriptions inactive."""
     try:
-        send_to_subscription(subscription=sub.subscription, payload=payload)
+        send_to_subscription(
+            subscription=sub.subscription,
+            payload=payload,
+            client=client,
+        )
     except WebPushException as exc:  # pragma: no cover
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         if status_code in {404, 410}:

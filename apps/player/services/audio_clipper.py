@@ -11,8 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import shutil
-import subprocess  # nosec B404
 from typing import Final
+
+from apps.player.services.command_runner import (
+    DEFAULT_COMMAND_RUNNER,
+    CommandRunner,
+    CommandRunOptions,
+)
 
 
 _FFMPEG_DEFAULT_QUALITY: Final[str] = "4"
@@ -78,6 +83,7 @@ def transcode_to_mp3_clip_file(
     output_path: str,
     spec: Mp3ClipSpec | None = None,
     ffmpeg_path: str | None = None,
+    command_runner: CommandRunner | None = None,
 ) -> None:
     """Transcode an input audio file into a short MP3 clip.
 
@@ -98,4 +104,5 @@ def transcode_to_mp3_clip_file(
         spec=spec,
     )
 
-    subprocess.run(cmd, check=True)  # nosec B603
+    runner = command_runner or DEFAULT_COMMAND_RUNNER
+    runner.run(cmd, CommandRunOptions(check=True))

@@ -14,7 +14,10 @@ from apps.game_tracker.models import MatchData, PlayerGroup
 
 # We intentionally reuse the match payload builders because they already encode
 # the minute format/rounding used by korfbal-web graphs (e.g. "20+1").
-from apps.schedule.api.match_events_payload import build_match_events, build_match_shots
+from apps.game_tracker.services.match_timeline_payload import (
+    build_match_events,
+    build_match_shots,
+)
 
 from .match_impact_timeline import (
     EPS,

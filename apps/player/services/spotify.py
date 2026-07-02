@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from http import HTTPStatus
 import secrets
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -19,6 +19,69 @@ from apps.player.models.spotify_token import SpotifyToken
 SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
     "No active Spotify device found. Open Spotify on your phone and try again."
 )
+
+
+class SpotifyClient(Protocol):
+    """Outbound Spotify HTTP port."""
+
+    def post_token(self, *, data: dict[str, Any]) -> requests.Response:
+        """POST to the Spotify token endpoint."""
+
+    def get_current_user_profile(self, *, access_token: str) -> requests.Response:
+        """GET the current Spotify user profile."""
+
+    def put_playback(
+        self,
+        *,
+        access_token: str,
+        action: str,
+        device_id: str | None,
+        json_body: dict[str, Any] | None = None,
+    ) -> requests.Response:
+        """PUT to a Spotify playback endpoint."""
+
+
+class RequestsSpotifyClient:
+    """Production Spotify client backed by requests."""
+
+    def post_token(self, *, data: dict[str, Any]) -> requests.Response:
+        """POST to Spotify's token endpoint."""
+        return requests.post(
+            "https://accounts.spotify.com/api/token",
+            data=data,
+            timeout=10,
+        )
+
+    def get_current_user_profile(self, *, access_token: str) -> requests.Response:
+        """GET the current Spotify user profile."""
+        return requests.get(
+            "https://api.spotify.com/v1/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+
+    def put_playback(
+        self,
+        *,
+        access_token: str,
+        action: str,
+        device_id: str | None,
+        json_body: dict[str, Any] | None = None,
+    ) -> requests.Response:
+        """PUT to a Spotify playback endpoint."""
+        query = f"?{urlencode({'device_id': device_id})}" if device_id else ""
+        return requests.put(
+            f"https://api.spotify.com/v1/me/player/{action}{query}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json=json_body,
+            timeout=10,
+        )
+
+
+DEFAULT_SPOTIFY_CLIENT = RequestsSpotifyClient()
 
 
 def spotify_enabled() -> bool:
@@ -69,18 +132,18 @@ def _get_spotify_token(user: AbstractBaseUser) -> SpotifyToken | None:
     return SpotifyToken.objects.filter(user=user).first()
 
 
-def _refresh_spotify_access_token(token: SpotifyToken) -> SpotifyToken:
+def _refresh_spotify_access_token(
+    token: SpotifyToken,
+    *,
+    client: SpotifyClient | None = None,
+) -> SpotifyToken:
     payload = {
         "grant_type": "refresh_token",
         "refresh_token": token.refresh_token,
         "client_id": settings.SPOTIFY_CLIENT_ID,
         "client_secret": settings.SPOTIFY_CLIENT_SECRET,
     }
-    response = requests.post(
-        "https://accounts.spotify.com/api/token",
-        data=payload,
-        timeout=10,
-    )
+    response = (client or DEFAULT_SPOTIFY_CLIENT).post_token(data=payload)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
@@ -99,7 +162,11 @@ def _refresh_spotify_access_token(token: SpotifyToken) -> SpotifyToken:
     return token
 
 
-def ensure_spotify_access_token(user: AbstractBaseUser) -> str:
+def ensure_spotify_access_token(
+    user: AbstractBaseUser,
+    *,
+    client: SpotifyClient | None = None,
+) -> str:
     """Return a fresh Spotify access token for the user.
 
     Raises:
@@ -110,7 +177,7 @@ def ensure_spotify_access_token(user: AbstractBaseUser) -> str:
     if token is None:
         raise RuntimeError("Spotify not connected")
     if token.is_token_expired():
-        token = _refresh_spotify_access_token(token)
+        token = _refresh_spotify_access_token(token, client=client)
     return token.access_token
 
 
@@ -118,10 +185,11 @@ def exchange_callback_code_for_user(
     *,
     user: AbstractBaseUser,
     code: str,
+    client: SpotifyClient | None = None,
 ) -> bool:
     """Exchange a Spotify callback code and persist the resulting token."""
-    token_response = requests.post(
-        "https://accounts.spotify.com/api/token",
+    spotify_client = client or DEFAULT_SPOTIFY_CLIENT
+    token_response = spotify_client.post_token(
         data={
             "grant_type": "authorization_code",
             "code": code,
@@ -129,7 +197,6 @@ def exchange_callback_code_for_user(
             "client_id": settings.SPOTIFY_CLIENT_ID,
             "client_secret": settings.SPOTIFY_CLIENT_SECRET,
         },
-        timeout=10,
     )
     token_response.raise_for_status()
     token_data: dict[str, Any] = token_response.json()
@@ -140,10 +207,8 @@ def exchange_callback_code_for_user(
     if not access_token or not refresh_token:
         return False
 
-    profile_response = requests.get(
-        "https://api.spotify.com/v1/me",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
+    profile_response = spotify_client.get_current_user_profile(
+        access_token=access_token,
     )
     profile_response.raise_for_status()
     profile: dict[str, Any] = profile_response.json()
@@ -171,20 +236,17 @@ def start_spotify_playback(
     track_uri: str,
     position_ms: int,
     device_id: str | None,
+    client: SpotifyClient | None = None,
 ) -> requests.Response:
     """Start Spotify playback for a track on the active or given device."""
-    query = f"?{urlencode({'device_id': device_id})}" if device_id else ""
-    return requests.put(
-        f"https://api.spotify.com/v1/me/player/play{query}",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        json={
+    return (client or DEFAULT_SPOTIFY_CLIENT).put_playback(
+        access_token=access_token,
+        action="play",
+        device_id=device_id,
+        json_body={
             "uris": [track_uri],
             "position_ms": position_ms,
         },
-        timeout=10,
     )
 
 
@@ -192,16 +254,13 @@ def pause_spotify_playback(
     *,
     access_token: str,
     device_id: str | None,
+    client: SpotifyClient | None = None,
 ) -> requests.Response:
     """Pause Spotify playback on the active or given device."""
-    query = f"?{urlencode({'device_id': device_id})}" if device_id else ""
-    return requests.put(
-        f"https://api.spotify.com/v1/me/player/pause{query}",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        timeout=10,
+    return (client or DEFAULT_SPOTIFY_CLIENT).put_playback(
+        access_token=access_token,
+        action="pause",
+        device_id=device_id,
     )
 
 

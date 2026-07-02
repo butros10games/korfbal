@@ -18,16 +18,16 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.services.match_timeline_payload import (
+    build_match_events,
+    build_match_shots,
+    serialize_goal_event,
+    serialize_pause_event,
+    serialize_substitute_event,
+)
 from apps.schedule.models import Match
 
 from .constants import MATCH_TRACKER_DATA_NOT_FOUND
-from .match_events_payload import (
-    _build_match_events,
-    _build_match_shots,
-    _serialize_goal_event,
-    _serialize_pause_event,
-    _serialize_substitute_event,
-)
 from .permissions import IsCoachOrAdmin
 from .serializers import (
     PauseWriteSerializer,
@@ -86,7 +86,7 @@ class MatchEventsActionsMixin:
             .all()
         ]
 
-        events_payload = _build_match_events(match_data)
+        events_payload = build_match_events(match_data)
         return Response(
             {
                 "home_team_id": str(match.home_team.id_uuid),
@@ -118,7 +118,7 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_200_OK,
             )
 
-        shots_payload = _build_match_shots(match_data)
+        shots_payload = build_match_shots(match_data)
         return Response(
             {
                 "home_team_id": str(match.home_team.id_uuid),
@@ -172,7 +172,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         shot = serializer.save()
         return Response(
-            _serialize_goal_event(match_data, shot),
+            serialize_goal_event(match_data, shot),
             status=status.HTTP_201_CREATED,
         )
 
@@ -218,7 +218,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         shot = serializer.save()
         return Response(
-            _serialize_goal_event(match_data, shot),
+            serialize_goal_event(match_data, shot),
             status=status.HTTP_200_OK,
         )
 
@@ -250,7 +250,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         change = serializer.save()
         return Response(
-            _serialize_substitute_event(match_data, change),
+            serialize_substitute_event(match_data, change),
             status=status.HTTP_201_CREATED,
         )
 
@@ -299,7 +299,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         change = serializer.save()
         return Response(
-            _serialize_substitute_event(match_data, change),
+            serialize_substitute_event(match_data, change),
             status=status.HTTP_200_OK,
         )
 
@@ -331,7 +331,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         pause = serializer.save()
         return Response(
-            _serialize_pause_event(match_data, pause),
+            serialize_pause_event(match_data, pause),
             status=status.HTTP_201_CREATED,
         )
 
@@ -378,7 +378,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         pause = serializer.save()
         return Response(
-            _serialize_pause_event(match_data, pause),
+            serialize_pause_event(match_data, pause),
             status=status.HTTP_200_OK,
         )
 
@@ -415,7 +415,7 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(
-            _serialize_pause_event(match_data, timeout.pause),
+            serialize_pause_event(match_data, timeout.pause),
             status=status.HTTP_201_CREATED,
         )
 
@@ -571,6 +571,6 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(
-            _serialize_pause_event(match_data, timeout.pause),
+            serialize_pause_event(match_data, timeout.pause),
             status=status.HTTP_200_OK,
         )

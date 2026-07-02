@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from http import HTTPStatus
 from pathlib import Path
 from subprocess import CompletedProcess  # nosec B404
@@ -13,6 +14,7 @@ from django.test import Client, override_settings
 import pytest
 
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.command_runner import CommandRunOptions
 
 
 @pytest.mark.django_db
@@ -65,12 +67,17 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
 
     captured: dict[str, object] = {}
 
-    def fake_run(args: list[str], check: bool) -> CompletedProcess[str]:
+    def fake_run(
+        args: Sequence[str],
+        options: CommandRunOptions,
+    ) -> CompletedProcess[str]:
+        assert options.check is True
+        args_list = list(args)
         # ffmpeg output is always the last argument.
-        out_path = Path(args[-1])
+        out_path = Path(args_list[-1])
         out_path.write_bytes(b"fake mp3")
-        captured["ffmpeg_args"] = args
-        return CompletedProcess(args=args, returncode=0)
+        captured["ffmpeg_args"] = args_list
+        return CompletedProcess(args=args_list, returncode=0)
 
     # Make storage deterministic for the assertion.
     with (
@@ -88,7 +95,8 @@ def test_player_song_clip_redirects_to_versioned_clip_when_generated(
             side_effect=lambda key: f"/media/{key}",
         ),
         patch(
-            "apps.player.services.audio_clipper.subprocess.run", side_effect=fake_run
+            "apps.player.services.audio_clipper.DEFAULT_COMMAND_RUNNER.run",
+            side_effect=fake_run,
         ),
     ):
         response = client.get(

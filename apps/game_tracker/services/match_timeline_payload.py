@@ -334,6 +334,14 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
     }
 
 
+def serialize_goal_event(
+    match_data: MatchData,
+    event: Shot,
+) -> dict[str, Any] | None:
+    """Serialize a goal event after a write operation."""
+    return _serialize_goal_event(match_data, event)
+
+
 def _serialize_shot_timeline_event(
     match_data: MatchData,
     event: Shot,
@@ -419,6 +427,14 @@ def _serialize_substitute_event(
     return payload
 
 
+def serialize_substitute_event(
+    match_data: MatchData,
+    event: PlayerChange,
+) -> dict[str, Any] | None:
+    """Serialize a substitution event after a write operation."""
+    return _serialize_substitute_event(match_data, event)
+
+
 def _serialize_pause_event(
     match_data: MatchData,
     event: Pause,
@@ -446,3 +462,11 @@ def _serialize_pause_event(
         "start_time": (event.start_time.isoformat() if event.start_time else None),
         "end_time": event.end_time.isoformat() if event.end_time else None,
     }
+
+
+def serialize_pause_event(
+    match_data: MatchData,
+    event: Pause,
+) -> dict[str, Any] | None:
+    """Serialize a pause/timeout event after a write operation."""
+    return _serialize_pause_event(match_data, event)

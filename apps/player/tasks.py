@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
-import subprocess  # nosec B404 - required for invoking spotDL CLI safely (shell=False + input validation)
 import tempfile
 from typing import Any
 
@@ -24,8 +23,8 @@ from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.expo_push import ExpoPushPayload, send_expo_push_tokens
+from apps.player.services.spotdl import download_spotify_track
 from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
-from apps.player.spotify import canonicalize_spotify_track_url
 from apps.schedule.models.match import Match
 
 
@@ -98,6 +97,68 @@ def _lock_cached_song_for_download(
     locked.error_message = ""
     locked.save(update_fields=["status", "error_message", "updated_at"])
     return locked
+
+
+def _download_and_store_cached_song(cached: CachedSong) -> None:
+    with tempfile.TemporaryDirectory(prefix="spotdl_") as tmp:
+        output_dir = Path(tmp)
+        if getattr(settings, "TESTING", False):
+            downloaded = output_dir / "dummy.mp3"
+            downloaded.write_bytes(b"ID3")
+        else:
+            downloaded = download_spotify_track(cached.spotify_url, output_dir)
+
+        with transaction.atomic():
+            cached.status = CachedSongStatus.UPLOADING
+            cached.save(update_fields=["status", "updated_at"])
+
+        suffix = downloaded.suffix or ".mp3"
+        target_name = f"{cached.id_uuid}{suffix}"
+        with downloaded.open("rb") as handle:
+            cached.audio_file.save(target_name, File(handle), save=False)
+
+        with transaction.atomic():
+            cached.status = CachedSongStatus.READY
+            cached.error_message = ""
+            cached.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "audio_file",
+                    "updated_at",
+                ]
+            )
+
+
+def _download_and_store_legacy_player_song(song: PlayerSong) -> None:
+    with tempfile.TemporaryDirectory(prefix="spotdl_") as tmp:
+        output_dir = Path(tmp)
+        if getattr(settings, "TESTING", False):
+            downloaded = output_dir / "dummy.mp3"
+            downloaded.write_bytes(b"ID3")
+        else:
+            downloaded = download_spotify_track(song.spotify_url, output_dir)
+
+        with transaction.atomic():
+            song.status = PlayerSongStatus.UPLOADING
+            song.save(update_fields=["status", "updated_at"])
+
+        suffix = downloaded.suffix or ".mp3"
+        target_name = f"{song.player.id_uuid}/{song.id_uuid}{suffix}"
+        with downloaded.open("rb") as handle:
+            song.audio_file.save(target_name, File(handle), save=False)
+
+        with transaction.atomic():
+            song.status = PlayerSongStatus.READY
+            song.error_message = ""
+            song.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "audio_file",
+                    "updated_at",
+                ]
+            )
 
 
 def _participant_players_for_match_data(match_data: MatchData) -> list[Player]:
@@ -331,194 +392,6 @@ def publish_mvp_and_notify(self: Any, *, match_id: str) -> None:
     _send_payload_to_users(user_ids=user_ids, payload=payload)
 
 
-def _validate_spotify_url_for_spotdl(spotify_url: str) -> None:
-    """Validate Spotify URL before passing it to a subprocess.
-
-    We intentionally run the spotDL CLI via subprocess (shell=False) but still
-    treat user-provided URLs as untrusted input.
-
-    Accepted formats:
-    - https://open.spotify.com/track/<id>
-    - https://open.spotify.com/intl-xx/track/<id>
-
-    Raises:
-        ValueError: if the URL format is not an accepted Spotify track URL.
-
-    """
-    min_printable_ascii = 32
-
-    value = (spotify_url or "").strip()
-    if not value:
-        raise ValueError("Spotify URL is required")
-
-    # Avoid control characters / whitespace that could create surprises in logs or
-    # tooling.
-    if any(ch.isspace() for ch in value) or any(
-        ord(ch) < min_printable_ascii for ch in value
-    ):
-        raise ValueError("Spotify URL contains invalid whitespace/control characters")
-
-    # Ensure it is a canonical track URL (also validates structure).
-    _ = canonicalize_spotify_track_url(value)
-
-
-def _pick_downloaded_audio(output_dir: Path) -> Path:
-    """Pick the most likely downloaded audio file.
-
-    Raises:
-        FileNotFoundError: When spotDL produces no audio file.
-
-    """
-    candidates: list[Path] = []
-    for pattern in ("*.mp3", "*.m4a", "*.opus", "*.ogg", "*.wav", "*.flac"):
-        candidates.extend(output_dir.rglob(pattern))
-
-    if not candidates:
-        raise FileNotFoundError("spotDL finished but no audio file was produced")
-
-    # Prefer the largest file (often the actual audio).
-    candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
-    return candidates[0]
-
-
-def _redact_spotdl_command(cmd: list[str]) -> str:
-    """Return a log-safe command string.
-
-    We invoke spotDL with Spotify client credentials in some environments.
-    Never log secrets.
-    """
-    redacted: list[str] = []
-    redact_next = False
-    redact_flags = {
-        "--client-id",
-        "--client-secret",
-        "--auth-token",
-    }
-    for part in cmd:
-        if redact_next:
-            redacted.append("***")
-            redact_next = False
-            continue
-
-        redacted.append(part)
-        if part in redact_flags:
-            redact_next = True
-
-    return " ".join(redacted)
-
-
-def _spotdl_base_args() -> list[str]:
-    """Build base spotDL argv list (without the action/query arguments)."""
-    args = ["spotdl"]
-
-    client_id = str(getattr(settings, "SPOTIFY_CLIENT_ID", "") or "").strip()
-    client_secret = str(getattr(settings, "SPOTIFY_CLIENT_SECRET", "") or "").strip()
-
-    if client_id and client_secret:
-        args.extend(["--client-id", client_id, "--client-secret", client_secret])
-    elif client_id or client_secret:
-        # Misconfiguration is common and yields confusing failures.
-        logger.warning(
-            "SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET are partially configured; "
-            "spotDL may fail. Configure both to use custom Spotify credentials."
-        )
-
-    return args
-
-
-def _run_spotdl(spotify_url: str, output_dir: Path) -> Path:
-    """Download a Spotify link using spotDL into the given directory.
-
-    Raises:
-        RuntimeError: When spotDL exits non-zero.
-
-    """
-    _validate_spotify_url_for_spotdl(spotify_url)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_template = str(output_dir / "{title}.{output-ext}")
-
-    timeout_seconds = int(getattr(settings, "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS", 60 * 15))
-
-    attempted: list[tuple[list[str], str]] = []
-
-    base = _spotdl_base_args()
-    commands: list[list[str]] = [
-        [
-            *base,
-            "download",
-            spotify_url,
-            "--output",
-            output_template,
-            "--format",
-            "mp3",
-            "--threads",
-            "1",
-        ],
-        [
-            *base,
-            spotify_url,
-            "--output",
-            output_template,
-            "--format",
-            "mp3",
-            "--threads",
-            "1",
-        ],
-    ]
-
-    last_error = ""
-    for cmd in commands:
-        logger.info("Running spotDL: %s", _redact_spotdl_command(cmd))
-        try:
-            proc = subprocess.run(  # nosec B603 - shell=False with validated URL; command is fixed argv list
-                cmd,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                shell=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            # spotDL can occasionally finish the file but hang on cleanup/metadata.
-            # If a plausible audio file exists, accept it.
-            try:
-                downloaded = _pick_downloaded_audio(output_dir)
-                logger.warning(
-                    "spotDL timed out after %s seconds but produced %s; accepting file",
-                    timeout_seconds,
-                    downloaded,
-                )
-                return downloaded
-            except FileNotFoundError:
-                attempted.append((cmd, "TIMEOUT"))
-                last_error = (
-                    f"Download timed out after {timeout_seconds} seconds. Please retry."
-                )
-                logger.warning(
-                    "spotDL timed out after %s seconds (no output file found)",
-                    timeout_seconds,
-                    exc_info=exc,
-                )
-                continue
-
-        attempted.append((cmd, (proc.stdout or "")[-2000:]))
-        if proc.returncode == 0:
-            return _pick_downloaded_audio(output_dir)
-        last_error = (proc.stderr or proc.stdout or "").strip()[-4000:]
-
-    # Log full details for debugging, but keep the raised message user-friendly.
-    redacted_details = "\n".join(_redact_spotdl_command(cmd) for cmd, _ in attempted)
-    logger.warning(
-        "spotDL failed. Tried:\n%s\nLast error:\n%s",
-        redacted_details,
-        last_error,
-    )
-    if "timed out" in last_error.lower():
-        raise RuntimeError(last_error)
-    raise RuntimeError("Download failed. Please retry.")
-
-
 @shared_task(bind=True)
 def download_cached_song(self: Any, cached_song_id: str) -> None:
     """Download a cached song (from a Spotify URL) and upload it to storage."""
@@ -562,34 +435,7 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:
             # Use the locked instance for the remainder of the task.
             cached = locked
 
-        with tempfile.TemporaryDirectory(prefix="spotdl_") as tmp:
-            output_dir = Path(tmp)
-            if getattr(settings, "TESTING", False):
-                downloaded = output_dir / "dummy.mp3"
-                downloaded.write_bytes(b"ID3")
-            else:
-                downloaded = _run_spotdl(cached.spotify_url, output_dir)
-
-            with transaction.atomic():
-                cached.status = CachedSongStatus.UPLOADING
-                cached.save(update_fields=["status", "updated_at"])
-
-            suffix = downloaded.suffix or ".mp3"
-            target_name = f"{cached.id_uuid}{suffix}"
-            with downloaded.open("rb") as handle:
-                cached.audio_file.save(target_name, File(handle), save=False)
-
-            with transaction.atomic():
-                cached.status = CachedSongStatus.READY
-                cached.error_message = ""
-                cached.save(
-                    update_fields=[
-                        "status",
-                        "error_message",
-                        "audio_file",
-                        "updated_at",
-                    ]
-                )
+        _download_and_store_cached_song(cached)
 
     except Exception as exc:
         logger.exception("Failed to download CachedSong %s", cached_song_id)
@@ -627,34 +473,7 @@ def download_player_song(self: Any, song_id: str) -> None:
             song.error_message = ""
             song.save(update_fields=["status", "error_message", "updated_at"])
 
-        with tempfile.TemporaryDirectory(prefix="spotdl_") as tmp:
-            output_dir = Path(tmp)
-            if getattr(settings, "TESTING", False):
-                downloaded = output_dir / "dummy.mp3"
-                downloaded.write_bytes(b"ID3")
-            else:
-                downloaded = _run_spotdl(song.spotify_url, output_dir)
-
-            with transaction.atomic():
-                song.status = PlayerSongStatus.UPLOADING
-                song.save(update_fields=["status", "updated_at"])
-
-            suffix = downloaded.suffix or ".mp3"
-            target_name = f"{song.player.id_uuid}/{song.id_uuid}{suffix}"
-            with downloaded.open("rb") as handle:
-                song.audio_file.save(target_name, File(handle), save=False)
-
-            with transaction.atomic():
-                song.status = PlayerSongStatus.READY
-                song.error_message = ""
-                song.save(
-                    update_fields=[
-                        "status",
-                        "error_message",
-                        "audio_file",
-                        "updated_at",
-                    ]
-                )
+        _download_and_store_legacy_player_song(song)
 
     except Exception as exc:
         logger.exception("Failed to download PlayerSong %s", song_id)

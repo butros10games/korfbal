@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from django.db import transaction
 from django.db.models import Count, Max
@@ -286,6 +287,134 @@ def ensure_mvp_published(match: Match, match_data: MatchData) -> MatchMvp:
     mvp.published_at = now
     mvp.save(update_fields=["mvp_player", "published_at", "updated_at"])
     return mvp
+
+
+def _vote_payload_for_voter(
+    *,
+    match: Match,
+    voter: Player | None,
+    anon_voter_token: str | None,
+) -> dict[str, str] | None:
+    if voter is not None:
+        vote = match.mvp_votes.filter(voter=voter).first()
+        if not vote:
+            return None
+        return {"candidate_id_uuid": str(vote.candidate_id)}
+
+    if not anon_voter_token:
+        return None
+
+    vote = match.mvp_votes.filter(voter_token=anon_voter_token).first()
+    if not vote:
+        return None
+    return {"candidate_id_uuid": str(vote.candidate_id)}
+
+
+def _candidate_payload(
+    player: Player,
+    *,
+    team_side: str | None = None,
+) -> dict[str, str | None]:
+    username = player.user.username
+    display_name = player.user.get_full_name() or username
+    return {
+        "id_uuid": str(player.id_uuid),
+        "username": username,
+        "display_name": display_name,
+        "profile_picture_url": player.get_profile_picture(),
+        "team_side": team_side,
+    }
+
+
+def build_match_mvp_status_payload(
+    *,
+    match: Match,
+    match_data: MatchData,
+    voter: Player | None = None,
+    anon_voter_token: str | None = None,
+) -> dict[str, Any]:
+    """Build the stable API payload for match MVP status."""
+    mvp = ensure_mvp_published(match, match_data)
+    candidates = build_mvp_candidates(match, match_data)
+    user_vote = _vote_payload_for_voter(
+        match=match,
+        voter=voter,
+        anon_voter_token=anon_voter_token,
+    )
+
+    mvp_player = mvp.mvp_player
+    mvp_payload = (
+        None
+        if mvp_player is None
+        else {
+            key: value
+            for key, value in _candidate_payload(mvp_player).items()
+            if key != "team_side"
+        }
+    )
+
+    now = timezone.now()
+    open_for_votes = bool(now < mvp.closes_at)
+
+    vote_rows = list(
+        match.mvp_votes
+        .values("candidate")
+        .annotate(votes=Count("id_uuid"))
+        .order_by("-votes", "candidate")
+    )
+
+    side_by_id = {c.id_uuid: c.team_side for c in candidates}
+    voted_candidate_ids = [
+        str(row.get("candidate"))
+        for row in vote_rows
+        if row.get("candidate") is not None
+    ]
+    voted_players = Player.objects.select_related("user").filter(
+        id_uuid__in=voted_candidate_ids,
+    )
+    voted_players_by_id = {str(p.id_uuid): p for p in voted_players}
+
+    vote_breakdown: list[dict[str, Any]] = []
+    for row in vote_rows:
+        candidate_id = row.get("candidate")
+        if candidate_id is None:
+            continue
+        candidate_id_str = str(candidate_id)
+        player = voted_players_by_id.get(candidate_id_str)
+        if player is None:
+            continue
+        votes = row.get("votes")
+        vote_breakdown.append(
+            {
+                "candidate": _candidate_payload(
+                    player,
+                    team_side=side_by_id.get(candidate_id_str),
+                ),
+                "votes": int(votes) if isinstance(votes, int) else 0,
+            },
+        )
+
+    return {
+        "available": True,
+        "match_status": match_data.status,
+        "open": open_for_votes,
+        "finished_at": mvp.finished_at.isoformat(),
+        "closes_at": mvp.closes_at.isoformat(),
+        "candidates": [
+            {
+                "id_uuid": c.id_uuid,
+                "username": c.username,
+                "display_name": c.display_name,
+                "profile_picture_url": c.profile_picture_url,
+                "team_side": c.team_side,
+            }
+            for c in candidates
+        ],
+        "user_vote": user_vote,
+        "mvp": mvp_payload,
+        "published_at": mvp.published_at.isoformat() if mvp.published_at else None,
+        "vote_breakdown": vote_breakdown,
+    }
 
 
 @transaction.atomic

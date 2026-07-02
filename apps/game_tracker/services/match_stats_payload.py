@@ -376,3 +376,12 @@ def _build_match_stats_payload(
             "away_team_id": str(away_team.id_uuid),
         },
     }
+
+
+def build_match_stats_payload(
+    *,
+    match: Match,
+    match_data: MatchData,
+) -> dict[str, Any]:
+    """Public wrapper for match statistics payloads."""
+    return _build_match_stats_payload(match=match, match_data=match_data)
