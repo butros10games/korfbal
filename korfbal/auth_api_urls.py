@@ -34,6 +34,11 @@ urlpatterns = [
         name="auth-login",
     ),
     path(
+        "auth/register/",
+        cast(ViewType, views.api.register_user_api),
+        name="auth-register",
+    ),
+    path(
         "auth/login/2fa/verify/",
         cast(ViewType, views.api.verify_two_factor_code),
         name="auth-login-2fa-verify",

@@ -5,6 +5,12 @@ from __future__ import annotations
 from django.urls import resolve
 
 
+def test_register_url_is_exposed() -> None:
+    """Registration endpoint should be routable (root + /api/ back-compat)."""
+    assert resolve("/auth/register/").url_name == "auth-register"
+    assert resolve("/api/auth/register/").url_name == "auth-register"
+
+
 def test_jwt_login_url_is_exposed() -> None:
     """JWT login endpoint should be routable (root + /api/ back-compat)."""
     assert resolve("/auth/jwt/login/").url_name == "auth-jwt-login"
