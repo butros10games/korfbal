@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any, cast
 
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
@@ -108,7 +109,7 @@ class IsClubMemberOrCoachOrAdmin(BasePermission):
         return match, team
 
     def _has_club_access(self, player: Player, match: Match, team: Team) -> bool:
-        match_date: date = match.start_time.date()
+        match_date: date = timezone.localdate(match.start_time)
         membership_allowed = (
             PlayerClubMembership.objects
             .filter(

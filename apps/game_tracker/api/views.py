@@ -14,6 +14,7 @@ from typing import Any
 from django.db import transaction
 from django.db.models import Prefetch, Q, QuerySet
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
@@ -32,6 +33,9 @@ from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
+
+
+PLAYER_GROUP_EDIT_PERMISSION_ERROR = "You do not have permission to edit player groups."
 
 
 def _viewer_player(request: Request) -> Player | None:
@@ -59,6 +63,17 @@ def _get_player_groups(match_id: str, team_id: str) -> QuerySet[PlayerGroup]:
     return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by(
         "starting_type__order",
     )
+
+
+def _player_group_editor_error(
+    *,
+    request: Request,
+    match: Match,
+    team: Team,
+) -> Response | None:
+    if can_edit_player_groups(user=request.user, match=match, team=team):
+        return None
+    return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
 
 
 @api_view(["GET"])
@@ -117,11 +132,18 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def players_team(request: Request, match_id: str, team_id: str) -> Response:
     """Return team players that are not in a player group for this match."""
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
+    permission_error = _player_group_editor_error(
+        request=request,
+        match=match_model,
+        team=team_model,
+    )
+    if permission_error is not None:
+        return permission_error
 
     match_data = MatchData.objects.get(match_link=match_model)
     team_data = (
@@ -164,7 +186,7 @@ MAX_PLAYER_NAME_LENGTH = 50
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def player_search(request: Request, match_id: str, team_id: str) -> Response:
     """Search for players by username, excluding already-grouped players."""
     search_query = (request.query_params.get("search") or "").strip()
@@ -189,6 +211,13 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
 
     match_model = get_object_or_404(Match, id_uuid=match_id)
     team_model = get_object_or_404(Team, id_uuid=team_id)
+    permission_error = _player_group_editor_error(
+        request=request,
+        match=match_model,
+        team=team_model,
+    )
+    if permission_error is not None:
+        return permission_error
 
     match_data = MatchData.objects.get(match_link=match_model)
     player_groups = PlayerGroup.objects.filter(match_data=match_data, team=team_model)
@@ -202,7 +231,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         .distinct()
     )
 
-    match_date = match_model.start_time.date()
+    match_date = timezone.localdate(match_model.start_time)
 
     # Only show players who belong to this club context.
     # - TeamData is season-scoped (legacy) and historically incomplete.
@@ -230,7 +259,6 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         Q(user__username__icontains=search_query)
         | Q(user__first_name__icontains=search_query)
         | Q(user__last_name__icontains=search_query)
-        | Q(user__email__icontains=search_query)
     )
 
     players = (
@@ -334,10 +362,7 @@ def player_designation(request: Request) -> Response:
         match=match_context,
         team=team_context,
     ):
-        return Response(
-            {"error": "You do not have permission to edit player groups."},
-            status=403,
-        )
+        return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
 
     with transaction.atomic():
         resolved_group, assignment_error = apply_designation(

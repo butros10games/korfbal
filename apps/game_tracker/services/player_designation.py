@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
 from apps.game_tracker.services.player_groups import (
@@ -121,7 +122,7 @@ def can_edit_player_groups(*, user: object, match: Match, team: Team) -> bool:
     if player is None:
         return False
 
-    match_date = match.start_time.date()
+    match_date = timezone.localdate(match.start_time)
     membership_allowed = (
         PlayerClubMembership.objects
         .filter(player=player, club=team.club, start_date__lte=match_date)

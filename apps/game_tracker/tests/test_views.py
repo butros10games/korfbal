@@ -34,15 +34,17 @@ HTTP_STATUS_BAD_REQUEST = 400
 EXPECTED_GROUPS_PER_TEAM = 3
 EXPECTED_PLAYER_GROUPS_TOTAL = 6
 EXPECTED_TEAMS_PER_MATCH = 2
+HTTP_STATUS_UNAUTHORIZED = 401
 HTTP_STATUS_FORBIDDEN = 403
 
 
-def _create_test_user(*, username: str) -> AbstractBaseUser:
+def _create_test_user(*, username: str, email: str = "") -> AbstractBaseUser:
     user_model = cast(Any, get_user_model())
     return cast(
         AbstractBaseUser,
         user_model.objects.create_user(
             username=username,
+            email=email,
             password=TEST_PASSWORD,
         ),
     )
@@ -55,6 +57,18 @@ def _create_test_player(*, username: str) -> Player:
 def _connect_user_to_club(user: object, club: Club) -> None:
     player = cast(Any, user).player
     PlayerClubMembership.objects.create(player=player, club=club)
+
+
+def _login_club_editor(
+    client: Client,
+    *,
+    username: str,
+    club: Club,
+) -> AbstractBaseUser:
+    user = _create_test_user(username=username)
+    _connect_user_to_club(user, club)
+    client.force_login(user)
+    return user
 
 
 @pytest.mark.django_db
@@ -584,6 +598,7 @@ def test_players_team_returns_empty_when_teamdata_missing(client: Client) -> Non
         season=season,
         start_time=timezone.now(),
     )
+    _login_club_editor(client, username="team_editor", club=club)
 
     response = client.get(
         f"/api/match/players_team/{match.id_uuid}/{team.id_uuid}/",
@@ -592,6 +607,33 @@ def test_players_team_returns_empty_when_teamdata_missing(client: Client) -> Non
 
     assert response.status_code == HTTP_STATUS_OK
     assert response.json() == {"players": []}
+
+
+@pytest.mark.django_db
+def test_players_team_rejects_anonymous_users(client: Client) -> None:
+    """Available players are editable roster data and require authentication."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    response = client.get(
+        f"/api/match/players_team/{match.id_uuid}/{team.id_uuid}/",
+        secure=True,
+    )
+
+    assert response.status_code in {HTTP_STATUS_UNAUTHORIZED, HTTP_STATUS_FORBIDDEN}
 
 
 @pytest.mark.django_db
@@ -616,6 +658,7 @@ def test_player_search_includes_club_membership_players(client: Client) -> None:
 
     member_player = _create_test_player(username="member_player")
     PlayerClubMembership.objects.create(player=member_player, club=club)
+    _login_club_editor(client, username="search_editor", club=club)
 
     response = client.get(
         f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=member",
@@ -660,6 +703,7 @@ def test_player_search_includes_other_team_players_same_club(client: Client) -> 
 
     team_b_data = TeamData.objects.get(team=team_b, season=season)
     team_b_data.players.add(other_player)
+    _login_club_editor(client, username="same_club_editor", club=club)
 
     response = client.get(
         f"/api/match/player_search/{match.id_uuid}/{team_a.id_uuid}/?search=clubmate",
@@ -703,8 +747,7 @@ def test_player_search_does_not_exclude_everything_when_groups_empty(
     GroupType.objects.create(name="Verdediging")
     GroupType.objects.create(name="Reserve")
 
-    viewer = _create_test_user(username="viewer")
-    client.force_login(viewer)
+    _login_club_editor(client, username="viewer", club=club)
 
     resp_groups = client.get(
         f"/api/match/player_overview_data/{match.id_uuid}/{team.id_uuid}/",
@@ -723,3 +766,72 @@ def test_player_search_does_not_exclude_everything_when_groups_empty(
     assert response.status_code == HTTP_STATUS_OK
     payload = response.json()
     assert {p["user"]["username"] for p in payload["players"]} == {"daan_candidate"}
+
+
+@pytest.mark.django_db
+def test_player_search_rejects_non_club_users(client: Client) -> None:
+    """Player search should not expose club roster data to unrelated users."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+    outsider = _create_test_user(username="outsider")
+    client.force_login(outsider)
+
+    response = client.get(
+        f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=member",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_FORBIDDEN
+    assert response.json() == {
+        "error": "You do not have permission to edit player groups.",
+    }
+
+
+@pytest.mark.django_db
+def test_player_search_does_not_match_email_addresses(client: Client) -> None:
+    """Searchable player identifiers should not include private email addresses."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+    player_user = _create_test_user(
+        username="visible_username",
+        email="private-token@example.com",
+    )
+    PlayerClubMembership.objects.create(
+        player=cast(Any, player_user).player,
+        club=club,
+    )
+    _login_club_editor(client, username="email_search_editor", club=club)
+
+    response = client.get(
+        f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/?search=private-token",
+        secure=True,
+    )
+
+    assert response.status_code == HTTP_STATUS_OK
+    assert response.json() == {"players": []}

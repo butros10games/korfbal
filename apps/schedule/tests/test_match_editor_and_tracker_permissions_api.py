@@ -6,6 +6,7 @@ match tracker endpoints.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from http import HTTPStatus
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -120,6 +121,33 @@ def test_is_club_member_or_coach_or_admin_permission_rules() -> None:
     coach_group, _created = Group.objects.get_or_create(name="Coach")
     coach_user.groups.add(coach_group)
     request.user = coach_user
+    assert perm.has_permission(request, view) is True
+
+
+@pytest.mark.django_db
+def test_is_club_member_permission_uses_match_local_date() -> None:
+    """Membership checks should compare against the match date in local time."""
+    rf = RequestFactory()
+    perm = IsClubMemberOrCoachOrAdmin()
+    match = _create_match(start_time=datetime(2026, 7, 4, 22, 30, tzinfo=UTC))
+    member_user = get_user_model().objects.create_user(
+        username="local-date-member",
+        password=TEST_PASSWORD,
+    )
+    PlayerClubMembership.objects.create(
+        player=member_user.player,
+        club=match.home_team.club,
+        start_date=timezone.localdate(match.start_time),
+    )
+
+    request = rf.get(
+        f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/state/"
+    )
+    request.user = member_user
+    view = SimpleNamespace(
+        kwargs={"pk": str(match.id_uuid), "team_id": str(match.home_team.id_uuid)}
+    )
+
     assert perm.has_permission(request, view) is True
 
 
