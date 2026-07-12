@@ -31,7 +31,7 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
 - WebSocket/live features: prefer minimal changes; add/extend tests when behavior changes.
-- API modules are adapters; services, tasks, and signals should not import from `apps.*.api`.
+- API and outbound-provider modules are adapters; application/domain/services/tasks/signals must not import them or HTTP framework modules.
 
 ## PR-first workflow (required)
 

@@ -11,7 +11,6 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.utils import timezone
-import requests
 
 from apps.player.models.spotify_token import SpotifyToken
 
@@ -21,13 +20,26 @@ SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
 )
 
 
-class SpotifyClient(Protocol):
-    """Outbound Spotify HTTP port."""
+class SpotifyResponse(Protocol):
+    """Response contract needed by the Spotify application service."""
 
-    def post_token(self, *, data: dict[str, Any]) -> requests.Response:
+    status_code: int
+    text: str
+
+    def json(self) -> dict[str, Any]:
+        """Return the decoded response body."""
+
+    def raise_for_status(self) -> None:
+        """Raise when the provider returned an unsuccessful response."""
+
+
+class SpotifyClient(Protocol):
+    """Outbound Spotify provider port."""
+
+    def post_token(self, *, data: dict[str, Any]) -> SpotifyResponse:
         """POST to the Spotify token endpoint."""
 
-    def get_current_user_profile(self, *, access_token: str) -> requests.Response:
+    def get_current_user_profile(self, *, access_token: str) -> SpotifyResponse:
         """GET the current Spotify user profile."""
 
     def put_playback(
@@ -37,51 +49,8 @@ class SpotifyClient(Protocol):
         action: str,
         device_id: str | None,
         json_body: dict[str, Any] | None = None,
-    ) -> requests.Response:
+    ) -> SpotifyResponse:
         """PUT to a Spotify playback endpoint."""
-
-
-class RequestsSpotifyClient:
-    """Production Spotify client backed by requests."""
-
-    def post_token(self, *, data: dict[str, Any]) -> requests.Response:
-        """POST to Spotify's token endpoint."""
-        return requests.post(
-            "https://accounts.spotify.com/api/token",
-            data=data,
-            timeout=10,
-        )
-
-    def get_current_user_profile(self, *, access_token: str) -> requests.Response:
-        """GET the current Spotify user profile."""
-        return requests.get(
-            "https://api.spotify.com/v1/me",
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=10,
-        )
-
-    def put_playback(
-        self,
-        *,
-        access_token: str,
-        action: str,
-        device_id: str | None,
-        json_body: dict[str, Any] | None = None,
-    ) -> requests.Response:
-        """PUT to a Spotify playback endpoint."""
-        query = f"?{urlencode({'device_id': device_id})}" if device_id else ""
-        return requests.put(
-            f"https://api.spotify.com/v1/me/player/{action}{query}",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-            json=json_body,
-            timeout=10,
-        )
-
-
-DEFAULT_SPOTIFY_CLIENT = RequestsSpotifyClient()
 
 
 def spotify_enabled() -> bool:
@@ -135,7 +104,7 @@ def _get_spotify_token(user: AbstractBaseUser) -> SpotifyToken | None:
 def _refresh_spotify_access_token(
     token: SpotifyToken,
     *,
-    client: SpotifyClient | None = None,
+    client: SpotifyClient,
 ) -> SpotifyToken:
     payload = {
         "grant_type": "refresh_token",
@@ -143,7 +112,7 @@ def _refresh_spotify_access_token(
         "client_id": settings.SPOTIFY_CLIENT_ID,
         "client_secret": settings.SPOTIFY_CLIENT_SECRET,
     }
-    response = (client or DEFAULT_SPOTIFY_CLIENT).post_token(data=payload)
+    response = client.post_token(data=payload)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
 
@@ -165,7 +134,7 @@ def _refresh_spotify_access_token(
 def ensure_spotify_access_token(
     user: AbstractBaseUser,
     *,
-    client: SpotifyClient | None = None,
+    client: SpotifyClient,
 ) -> str:
     """Return a fresh Spotify access token for the user.
 
@@ -185,11 +154,10 @@ def exchange_callback_code_for_user(
     *,
     user: AbstractBaseUser,
     code: str,
-    client: SpotifyClient | None = None,
+    client: SpotifyClient,
 ) -> bool:
     """Exchange a Spotify callback code and persist the resulting token."""
-    spotify_client = client or DEFAULT_SPOTIFY_CLIENT
-    token_response = spotify_client.post_token(
+    token_response = client.post_token(
         data={
             "grant_type": "authorization_code",
             "code": code,
@@ -207,7 +175,7 @@ def exchange_callback_code_for_user(
     if not access_token or not refresh_token:
         return False
 
-    profile_response = spotify_client.get_current_user_profile(
+    profile_response = client.get_current_user_profile(
         access_token=access_token,
     )
     profile_response.raise_for_status()
@@ -236,10 +204,10 @@ def start_spotify_playback(
     track_uri: str,
     position_ms: int,
     device_id: str | None,
-    client: SpotifyClient | None = None,
-) -> requests.Response:
+    client: SpotifyClient,
+) -> SpotifyResponse:
     """Start Spotify playback for a track on the active or given device."""
-    return (client or DEFAULT_SPOTIFY_CLIENT).put_playback(
+    return client.put_playback(
         access_token=access_token,
         action="play",
         device_id=device_id,
@@ -254,10 +222,10 @@ def pause_spotify_playback(
     *,
     access_token: str,
     device_id: str | None,
-    client: SpotifyClient | None = None,
-) -> requests.Response:
+    client: SpotifyClient,
+) -> SpotifyResponse:
     """Pause Spotify playback on the active or given device."""
-    return (client or DEFAULT_SPOTIFY_CLIENT).put_playback(
+    return client.put_playback(
         access_token=access_token,
         action="pause",
         device_id=device_id,
@@ -265,7 +233,7 @@ def pause_spotify_playback(
 
 
 def spotify_play_error_payload(
-    play_response: requests.Response,
+    play_response: SpotifyResponse,
 ) -> tuple[int, dict[str, str]]:
     """Map Spotify playback failures to the public API payload."""
     detail = play_response.text or "Spotify play failed"

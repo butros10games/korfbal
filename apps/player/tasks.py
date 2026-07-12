@@ -18,11 +18,12 @@ from django.utils import timezone
 from apps.awards.models.mvp import MatchMvpVote
 from apps.awards.services import mvp as mvp_service
 from apps.game_tracker.models import MatchData
+from apps.player.composition import send_expo_push
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
-from apps.player.services.expo_push import ExpoPushPayload, send_expo_push_tokens
+from apps.player.services.expo_push import ExpoPushPayload
 from apps.player.services.spotdl import download_spotify_track
 from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
 from apps.schedule.models.match import Match
@@ -198,7 +199,7 @@ def _send_payload_to_users(*, user_ids: list[int], payload: WebPushPayload) -> N
             send_to_model_subscription(sub=sub, payload=payload)
 
     if expo_tokens:
-        send_expo_push_tokens(
+        send_expo_push(
             tokens=expo_tokens,
             payload=ExpoPushPayload(
                 title=payload.title,

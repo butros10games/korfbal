@@ -6,8 +6,6 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Protocol
 
-import requests
-
 
 logger = logging.getLogger(__name__)
 
@@ -17,22 +15,6 @@ class ExpoPushClient(Protocol):
 
     def send_messages(self, messages: list[dict[str, Any]]) -> None:
         """Send Expo push messages."""
-
-
-class RequestsExpoPushClient:
-    """Production Expo push client backed by requests."""
-
-    def send_messages(self, messages: list[dict[str, Any]]) -> None:
-        """Send messages to Expo's push endpoint."""
-        response = requests.post(
-            "https://exp.host/--/api/v2/push/send",
-            json=messages,
-            timeout=10,
-        )
-        response.raise_for_status()
-
-
-DEFAULT_EXPO_PUSH_CLIENT = RequestsExpoPushClient()
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,14 +44,14 @@ def send_expo_push_tokens(
     *,
     tokens: list[str],
     payload: ExpoPushPayload,
-    client: ExpoPushClient | None = None,
+    client: ExpoPushClient,
 ) -> None:
     """Send Expo push notifications to the given tokens.
 
     Args:
         tokens: The Expo push tokens to send the notification to.
         payload: The payload of the notification.
-        client: Optional provider implementation for tests.
+        client: Outbound Expo provider implementation.
 
     """
     if not tokens:
@@ -80,6 +62,6 @@ def send_expo_push_tokens(
         return
 
     try:
-        (client or DEFAULT_EXPO_PUSH_CLIENT).send_messages(messages)
+        client.send_messages(messages)
     except Exception:
         logger.warning("Failed sending Expo push tokens", exc_info=True)
