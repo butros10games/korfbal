@@ -56,7 +56,11 @@ def _create_test_player(*, username: str) -> Player:
 
 def _connect_user_to_club(user: object, club: Club) -> None:
     player = cast(Any, user).player
-    PlayerClubMembership.objects.create(player=player, club=club)
+    PlayerClubMembership.objects.create(
+        player=player,
+        club=club,
+        start_date=timezone.localdate() - timedelta(days=1),
+    )
 
 
 def _login_club_editor(
