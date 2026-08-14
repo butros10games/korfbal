@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 import json
 import logging
 from typing import Any
@@ -52,6 +52,15 @@ from .serializers import MatchSerializer
 
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_since_revision(raw: str | None) -> int | None:
+    """Parse a non-negative live revision, allowing -1 for an initial snapshot."""
+    try:
+        revision = int(raw) if raw else -1
+    except (TypeError, ValueError):
+        return None
+    return revision if revision >= -1 else None
 
 
 def _self_heal_latest_impacts_for_finished_match(*, match_data: MatchData) -> None:
@@ -516,20 +525,13 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
         match: Match = self.get_object()
         team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
 
-        since_raw = request.query_params.get("since")
+        since_revision_raw = request.query_params.get("since_revision")
         timeout_raw = request.query_params.get("timeout")
 
-        try:
-            since = (
-                datetime.fromisoformat(since_raw)
-                if since_raw
-                else datetime.min.replace(tzinfo=UTC)
-            )
-            if since.tzinfo is None:
-                since = since.replace(tzinfo=UTC)
-        except ValueError:
+        since_revision = _parse_since_revision(since_revision_raw)
+        if since_revision is None:
             return Response(
-                {"detail": "Invalid 'since' timestamp."},
+                {"detail": "Invalid 'since_revision'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -543,7 +545,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                 poll_tracker_state(
                     match,
                     team=team,
-                    since=since,
+                    since_revision=since_revision,
                     timeout_seconds=timeout_seconds,
                 ),
                 status=status.HTTP_200_OK,
@@ -589,6 +591,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             "timer": home_tracker_state.get("timer"),
             "score": {"home": home, "away": away},
             "last_changed_at": home_tracker_state.get("last_changed_at"),
+            "live_revision": match_data.live_revision,
         }
 
     @action(
@@ -662,24 +665,18 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
                     "changed": False,
                     "server_time": timezone.now().isoformat(),
                     "last_changed_at": timezone.now().isoformat(),
+                    "live_revision": 0,
                 },
                 status=status.HTTP_200_OK,
             )
 
-        since_raw = request.query_params.get("since")
+        since_revision_raw = request.query_params.get("since_revision")
         timeout_raw = request.query_params.get("timeout")
 
-        try:
-            since = (
-                datetime.fromisoformat(since_raw)
-                if since_raw
-                else datetime.min.replace(tzinfo=UTC)
-            )
-            if since.tzinfo is None:
-                since = since.replace(tzinfo=UTC)
-        except ValueError:
+        since_revision = _parse_since_revision(since_revision_raw)
+        if since_revision is None:
             return Response(
-                {"detail": "Invalid 'since' timestamp."},
+                {"detail": "Invalid 'since_revision'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -692,7 +689,7 @@ class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
             payload = poll_tracker_state(
                 match,
                 team=match.home_team,
-                since=since,
+                since_revision=since_revision,
                 timeout_seconds=timeout_seconds,
             )
         except TrackerCommandError as exc:

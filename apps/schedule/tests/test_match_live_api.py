@@ -69,16 +69,18 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
     assert "timer" in payload
     assert payload["score"] == {"home": 0, "away": 0}
     assert payload["last_changed_at"]
+    assert payload["live_revision"] == 1
 
     # No change: should return a timeout payload.
     response = client.get(
         f"/api/matches/{match.id_uuid}/live/poll/",
-        {"since": payload["last_changed_at"], "timeout": "1"},
+        {"since_revision": payload["live_revision"], "timeout": "1"},
     )
     assert response.status_code == HTTPStatus.OK
     poll_payload = response.json()
     assert poll_payload["changed"] is False
     assert poll_payload["last_changed_at"]
+    assert poll_payload["live_revision"] == payload["live_revision"]
 
     # Change: register a goal for home; poll should return an updated snapshot.
     goal_type = GoalType.objects.create(name="Doorloop")
@@ -93,10 +95,11 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
 
     response = client.get(
         f"/api/matches/{match.id_uuid}/live/poll/",
-        {"since": payload["last_changed_at"], "timeout": "1"},
+        {"since_revision": payload["live_revision"], "timeout": "1"},
     )
     assert response.status_code == HTTPStatus.OK
     updated = response.json()
 
     assert "changed" not in updated
     assert updated["score"] == {"home": 1, "away": 0}
+    assert updated["live_revision"] == payload["live_revision"] + 1

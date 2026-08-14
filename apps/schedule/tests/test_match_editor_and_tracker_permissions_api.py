@@ -357,8 +357,8 @@ def test_match_tracker_command_rejects_non_object_json(client: Client) -> None:
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_match_tracker_poll_rejects_invalid_since_timestamp(client: Client) -> None:
-    """Tracker poll should return 400 for invalid `since` params."""
+def test_match_tracker_poll_rejects_invalid_since_revision(client: Client) -> None:
+    """Tracker poll should return 400 for invalid revision cursors."""
     match = _create_match()
 
     coach_user = get_user_model().objects.create_user(
@@ -370,6 +370,6 @@ def test_match_tracker_poll_rejects_invalid_since_timestamp(client: Client) -> N
     client.force_login(coach_user)
 
     poll_url = f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/poll/"
-    response = client.get(poll_url, {"since": "not-a-timestamp"})
+    response = client.get(poll_url, {"since_revision": "not-a-revision"})
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"detail": "Invalid 'since' timestamp."}
+    assert response.json() == {"detail": "Invalid 'since_revision'."}

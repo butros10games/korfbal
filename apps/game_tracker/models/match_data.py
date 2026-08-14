@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
+from django.utils import timezone
 
 
 class MatchData(models.Model):
@@ -38,6 +39,10 @@ class MatchData(models.Model):
         choices=STATUS_CHOICES,
         default="upcoming",
     )
+    live_revision: models.PositiveBigIntegerField[int, int] = (
+        models.PositiveBigIntegerField(default=0)
+    )
+    live_changed_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
 
     class Meta:
         """Meta class for MatchData model."""

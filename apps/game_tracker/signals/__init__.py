@@ -21,6 +21,14 @@ from .minutes_recompute_signals import (
     _player_group_players_changed as _minutes_player_group_players_changed,
     _shot_changed as _minutes_shot_changed,
 )
+from .realtime_update_signals import (
+    _attack_realtime_changed,
+    _match_data_realtime_changed,
+    _match_part_realtime_changed,
+    _pause_realtime_changed,
+    _shot_realtime_changed,
+    _substitution_realtime_changed,
+)
 
 
 __all__ = [

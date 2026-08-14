@@ -1,14 +1,4 @@
-"""HTTP-friendly match tracker helpers.
-
-The legacy match tracker UI used a WebSocket consumer (`MatchTrackerConsumer`).
-The React rewrite uses plain HTTP:
-
-- client sends commands via POST
-- clients can long-poll for updates
-
-This module implements the tracker state computation and command side-effects in
-sync Django ORM code so it can be reused from DRF views.
-"""
+"""HTTP-friendly match tracker helpers and mutation commands."""
 
 from __future__ import annotations
 
@@ -36,6 +26,10 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.services.live_update_signal_control import (
+    suppress_live_update_signals,
+)
+from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
 from apps.game_tracker.services.player_groups import (
     RESERVE_GROUP_NAME,
@@ -55,6 +49,17 @@ NO_ACTIVE_MATCH_PART_MESSAGE = "No active match part."
 
 
 _CLIENT_TIME_MAX_SKEW_SECONDS = 5 * 60
+_MUTATING_COMMANDS = frozenset({
+    "start/pause",
+    "part_end",
+    "timeout",
+    "new_attack",
+    "shot_reg",
+    "goal_reg",
+    "substitute_reg",
+    "substitute_against_reg",
+    "remove_last_event",
+})
 
 
 def _parse_client_time_iso(value: str) -> datetime | None:
@@ -572,86 +577,8 @@ def _serialize_last_event_attack(event: Attack) -> dict[str, Any]:
 
 
 def _last_changed_at(match_data: MatchData) -> datetime:
-    """Best-effort change marker for long-polling.
-
-    We don't have updated_at fields on the models, so we approximate with relevant
-    timestamps that *do* change on update (pause end_time, match_part end_time, etc.).
-    """
-    candidates: list[datetime] = []
-
-    shot_time = (
-        Shot.objects
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .values_list("time", flat=True)
-        .first()
-    )
-    if isinstance(shot_time, datetime):
-        candidates.append(shot_time)
-
-    change_time = (
-        PlayerChange.objects
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .values_list("time", flat=True)
-        .first()
-    )
-    if isinstance(change_time, datetime):
-        candidates.append(change_time)
-
-    pause_change = (
-        Pause.objects
-        .filter(match_data=match_data)
-        .order_by("-start_time")
-        .values_list("start_time", flat=True)
-        .first()
-    )
-    if isinstance(pause_change, datetime):
-        candidates.append(pause_change)
-
-    pause_end = (
-        Pause.objects
-        .filter(match_data=match_data, end_time__isnull=False)
-        .order_by("-end_time")
-        .values_list("end_time", flat=True)
-        .first()
-    )
-    if isinstance(pause_end, datetime):
-        candidates.append(pause_end)
-
-    part_start = (
-        MatchPart.objects
-        .filter(match_data=match_data)
-        .order_by("-start_time")
-        .values_list("start_time", flat=True)
-        .first()
-    )
-    if isinstance(part_start, datetime):
-        candidates.append(part_start)
-
-    part_end = (
-        MatchPart.objects
-        .filter(match_data=match_data, end_time__isnull=False)
-        .order_by("-end_time")
-        .values_list("end_time", flat=True)
-        .first()
-    )
-    if isinstance(part_end, datetime):
-        candidates.append(part_end)
-
-    attack_time = (
-        Attack.objects
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .values_list("time", flat=True)
-        .first()
-    )
-    if isinstance(attack_time, datetime):
-        candidates.append(attack_time)
-
-    if not candidates:
-        return datetime.min.replace(tzinfo=UTC)
-    return max(candidates)
+    """Return the durable marker shared by polling and SSE recovery."""
+    return match_data.live_changed_at
 
 
 def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
@@ -746,6 +673,7 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         "goal_types": [{"id": str(gt.id_uuid), "name": gt.name} for gt in goal_types],
         "last_event": _last_event_payload(match_data, team=team, opponent=opponent),
         "last_changed_at": _last_changed_at(match_data).isoformat(),
+        "live_revision": match_data.live_revision,
     }
 
     return state
@@ -808,14 +736,17 @@ def apply_tracker_command(
         match_data = MatchData.objects.select_for_update().get(
             id_uuid=match_data.id_uuid,
         )
-        parsed_command.apply(
-            _TrackerCommandContext(
-                match=match,
-                match_data=match_data,
-                team=team,
-                event_time=event_time,
-            ),
-        )
+        with suppress_live_update_signals():
+            parsed_command.apply(
+                _TrackerCommandContext(
+                    match=match,
+                    match_data=match_data,
+                    team=team,
+                    event_time=event_time,
+                ),
+            )
+        if command in _MUTATING_COMMANDS:
+            record_match_change(match_data)
 
     return get_tracker_state(match, team=team)
 
@@ -824,7 +755,7 @@ def poll_tracker_state(
     match: Match,
     *,
     team: Team,
-    since: datetime,
+    since_revision: int,
     timeout_seconds: int = 25,
 ) -> dict[str, Any]:
     """Long-poll until tracker state changed or timeout.
@@ -846,8 +777,7 @@ def poll_tracker_state(
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
 
     while True:
-        changed_at = _last_changed_at(match_data)
-        if changed_at > since:
+        if match_data.live_revision > since_revision:
             return get_tracker_state(match, team=team)
 
         if time.monotonic() >= deadline:
@@ -855,7 +785,8 @@ def poll_tracker_state(
             return {
                 "changed": False,
                 "server_time": timezone.now().isoformat(),
-                "last_changed_at": changed_at.isoformat(),
+                "last_changed_at": _last_changed_at(match_data).isoformat(),
+                "live_revision": match_data.live_revision,
             }
 
         time.sleep(poll_sleep_seconds)
