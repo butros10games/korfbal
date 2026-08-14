@@ -27,6 +27,7 @@ CACHES = {
         "LOCATION": "korfbal-test-cache",
     }
 }
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # Ensure sessions use the local cache backend defined above
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"

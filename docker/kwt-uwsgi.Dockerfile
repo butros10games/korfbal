@@ -85,4 +85,4 @@ USER appuser
 EXPOSE 1664
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["sh", "-c", "granian --interface wsgi --host 0.0.0.0 --port 1664 --workers $GRANIAN_WORKERS korfbal.wsgi:application"]
+CMD ["sh", "-c", "granian --interface asgi --no-ws --host 0.0.0.0 --port 1664 --workers $GRANIAN_WORKERS korfbal.asgi:application"]

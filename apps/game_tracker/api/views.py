@@ -21,6 +21,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.player_designation import (
     apply_designation,
@@ -383,6 +384,14 @@ def player_designation(request: Request) -> Response:
             if resolved_group is not None
             else MatchData.objects.get(match_link=match_context)
         )
-        record_match_change(match_data)
+        record_match_change(
+            match_data,
+            resources={
+                LiveResource.TRACKER,
+                LiveResource.PLAYER_GROUPS,
+                LiveResource.STATS,
+                LiveResource.IMPACTS,
+            },
+        )
 
     return Response({"success": True})

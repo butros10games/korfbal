@@ -19,6 +19,8 @@ dependencies = [
     "celery",
     "djangorestframework",
     "django-cors-headers",
+    "channels",
+    "channels-redis",
     "drf-spectacular",
     "pywebpush",
     "requests",

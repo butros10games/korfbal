@@ -26,6 +26,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_live_update_signals,
 )
@@ -60,6 +61,51 @@ _MUTATING_COMMANDS = frozenset({
     "substitute_against_reg",
     "remove_last_event",
 })
+_COMMAND_RESOURCES: dict[str, frozenset[LiveResource]] = {
+    "start/pause": frozenset({
+        LiveResource.LIVE,
+        LiveResource.TRACKER,
+        LiveResource.EVENTS,
+    }),
+    "part_end": frozenset(ALL_LIVE_RESOURCES),
+    "timeout": frozenset({
+        LiveResource.LIVE,
+        LiveResource.TRACKER,
+        LiveResource.EVENTS,
+    }),
+    "new_attack": frozenset({LiveResource.TRACKER, LiveResource.EVENTS}),
+    "shot_reg": frozenset({
+        LiveResource.TRACKER,
+        LiveResource.EVENTS,
+        LiveResource.SHOTS,
+        LiveResource.STATS,
+        LiveResource.IMPACTS,
+    }),
+    "goal_reg": frozenset({
+        LiveResource.LIVE,
+        LiveResource.TRACKER,
+        LiveResource.SUMMARY,
+        LiveResource.EVENTS,
+        LiveResource.SHOTS,
+        LiveResource.STATS,
+        LiveResource.IMPACTS,
+        LiveResource.MVP,
+    }),
+    "substitute_reg": frozenset({
+        LiveResource.TRACKER,
+        LiveResource.EVENTS,
+        LiveResource.PLAYER_GROUPS,
+        LiveResource.STATS,
+        LiveResource.IMPACTS,
+    }),
+    "substitute_against_reg": frozenset({
+        LiveResource.TRACKER,
+        LiveResource.EVENTS,
+        LiveResource.STATS,
+        LiveResource.IMPACTS,
+    }),
+    "remove_last_event": frozenset(ALL_LIVE_RESOURCES),
+}
 
 
 def _parse_client_time_iso(value: str) -> datetime | None:
@@ -746,7 +792,10 @@ def apply_tracker_command(
                 ),
             )
         if command in _MUTATING_COMMANDS:
-            record_match_change(match_data)
+            record_match_change(
+                match_data,
+                resources=_COMMAND_RESOURCES[command],
+            )
 
     return get_tracker_state(match, team=team)
 
