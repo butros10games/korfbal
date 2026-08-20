@@ -1,14 +1,8 @@
 ## ------------------------------- Dependency Stage ------------------------------ ##
 # This stage only installs third-party deps. Libs code changes won't invalidate this cache.
-FROM python:3.13-slim-trixie AS deps
+FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS deps
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get upgrade -y && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9 /uv /bin/uv
 
 WORKDIR /build/apps/django_projects/korfbal/deps
 
@@ -49,7 +43,7 @@ RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null
     find /build/.venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
 
 ## ------------------------------- Production Stage ------------------------------ ##
-FROM python:3.13-slim-trixie AS production
+FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS production
 
 ARG APP_UID=1000
 ARG APP_GID=1000
