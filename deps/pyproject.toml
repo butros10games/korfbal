@@ -21,6 +21,7 @@ dependencies = [
     "django-cors-headers",
     "channels",
     "channels-redis",
+    "django-prometheus",
     "drf-spectacular",
     "pywebpush",
     "requests",
@@ -34,7 +35,6 @@ uwsgi = [
     "granian",
     "bg-django-caching-paginator",
     "django-cryptography",
-    "django-prometheus",
 ]
 
 dev = [
@@ -42,7 +42,6 @@ dev = [
     "granian",
     "bg-django-caching-paginator",
     "django-cryptography",
-    "django-prometheus",
 ]
 
 [tool.uv.sources]

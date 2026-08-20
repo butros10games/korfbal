@@ -30,6 +30,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 ## Gotchas
 
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
+- Keep packages imported during Django startup in the base runtime dependencies; Celery and
+  collectstatic images must be able to initialize every installed app too.
 - WebSocket/live features: prefer minimal changes; add/extend tests when behavior changes.
 - API and outbound-provider modules are adapters; application/domain/services/tasks/signals must not import them or HTTP framework modules.
 

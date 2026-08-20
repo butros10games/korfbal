@@ -1063,6 +1063,7 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-crontab" },
     { name = "django-phonenumber-field", extra = ["phonenumbers"] },
+    { name = "django-prometheus" },
     { name = "django-ratelimit" },
     { name = "django-storages", extra = ["boto3"] },
     { name = "django-valkey" },
@@ -1083,14 +1084,12 @@ celery = [
 dev = [
     { name = "bg-django-caching-paginator" },
     { name = "django-cryptography" },
-    { name = "django-prometheus" },
     { name = "granian" },
     { name = "pillow" },
 ]
 uwsgi = [
     { name = "bg-django-caching-paginator" },
     { name = "django-cryptography" },
-    { name = "django-prometheus" },
     { name = "granian" },
     { name = "pillow" },
 ]
@@ -1108,6 +1107,7 @@ requires-dist = [
     { name = "django-cors-headers" },
     { name = "django-crontab" },
     { name = "django-phonenumber-field", extras = ["phonenumbers"] },
+    { name = "django-prometheus" },
     { name = "django-ratelimit" },
     { name = "django-storages", extras = ["boto3"] },
     { name = "django-valkey" },
@@ -1126,14 +1126,12 @@ celery = [{ name = "django-celery-beat" }]
 dev = [
     { name = "bg-django-caching-paginator", editable = "../../../../libs/django_packages/bg_django_caching_paginator" },
     { name = "django-cryptography" },
-    { name = "django-prometheus" },
     { name = "granian" },
     { name = "pillow" },
 ]
 uwsgi = [
     { name = "bg-django-caching-paginator", editable = "../../../../libs/django_packages/bg_django_caching_paginator" },
     { name = "django-cryptography" },
-    { name = "django-prometheus" },
     { name = "granian" },
     { name = "pillow" },
 ]
