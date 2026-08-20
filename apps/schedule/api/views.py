@@ -14,7 +14,7 @@ from django.core.cache import cache
 from django.db.models import Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import permissions, status, viewsets
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -36,6 +36,7 @@ from apps.game_tracker.services.tracker_http import (
     get_tracker_state,
     poll_tracker_state,
 )
+from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Match
@@ -48,7 +49,7 @@ from .constants import (
 )
 from .match_viewset_events import MatchEventsActionsMixin
 from .permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
-from .serializers import MatchSerializer
+from .serializers import MatchSerializer, MatchWriteSerializer
 
 
 logger = logging.getLogger(__name__)
@@ -185,11 +186,22 @@ def _cast_mvp_vote_for_request(
     return anon_voter_token, anon_tokens
 
 
-class MatchViewSet(MatchEventsActionsMixin, viewsets.ReadOnlyModelViewSet):
+class MatchViewSet(
+    MatchEventsActionsMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
     """Expose match data for the mobile frontend."""
 
     serializer_class = MatchSerializer
-    permission_classes = (permissions.AllowAny,)
+    permission_classes = (IsStaffOrReadOnly,)
+
+    def get_serializer_class(self) -> type[MatchSerializer | MatchWriteSerializer]:
+        """Use an explicit flat serializer for staff schedule writes."""
+        if self.action in {"create", "update", "partial_update"}:
+            return MatchWriteSerializer
+        return MatchSerializer
 
     def get_queryset(self) -> QuerySet[Match]:
         """Return a queryset filtered by the current request context.

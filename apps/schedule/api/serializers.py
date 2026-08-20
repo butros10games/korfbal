@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, ClassVar, cast
 
 from django.utils import timezone
@@ -19,7 +19,7 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.player.models.player import Player
-from apps.schedule.models import Match
+from apps.schedule.models import Match, Season
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models.team import Team
 
@@ -37,6 +37,7 @@ class MatchSerializer(serializers.ModelSerializer):
     location = serializers.SerializerMethodField()
     competition = serializers.SerializerMethodField()
     broadcast_url = serializers.SerializerMethodField()
+    season_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         """Meta options for the match serializer."""
@@ -45,6 +46,7 @@ class MatchSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "start_time",
+            "season_id",
             "home_team",
             "away_team",
             "location",
@@ -79,6 +81,106 @@ class MatchSerializer(serializers.ModelSerializer):
 
         """
         return None
+
+
+class MatchWriteSerializer(serializers.ModelSerializer):
+    """Validate schedule-editor match create and partial-update payloads."""
+
+    home_team_id = serializers.PrimaryKeyRelatedField(
+        source="home_team",
+        queryset=Team.objects.select_related("club"),
+    )
+    away_team_id = serializers.PrimaryKeyRelatedField(
+        source="away_team",
+        queryset=Team.objects.select_related("club"),
+    )
+    season_id = serializers.PrimaryKeyRelatedField(
+        source="season",
+        queryset=Season.objects.all(),
+    )
+
+    class Meta:
+        """Meta options for staff schedule writes."""
+
+        model = Match
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "start_time",
+            "season_id",
+            "home_team_id",
+            "away_team_id",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id_uuid"]
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Prevent a team from playing itself, including partial updates.
+
+        Raises:
+            serializers.ValidationError: If both match sides resolve to one team.
+
+        """
+        instance = self.instance if isinstance(self.instance, Match) else None
+        home_team = attrs.get("home_team") or getattr(instance, "home_team", None)
+        away_team = attrs.get("away_team") or getattr(instance, "away_team", None)
+        if home_team is not None and home_team == away_team:
+            raise serializers.ValidationError({
+                "away_team_id": "Home and away team must be different."
+            })
+        return attrs
+
+    def to_representation(self, instance: Match) -> dict[str, object]:
+        """Return the same nested representation used by public match reads."""
+        return dict(MatchSerializer(instance, context=self.context).data)
+
+
+class SeasonSerializer(serializers.ModelSerializer):
+    """Serialize seasons for the schedule editor."""
+
+    is_current = serializers.SerializerMethodField()
+    match_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        """Meta options for season management."""
+
+        model = Season
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "name",
+            "start_date",
+            "end_date",
+            "is_current",
+            "match_count",
+        ]
+        read_only_fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "is_current",
+            "match_count",
+        ]
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require an inclusive, forward-moving season date range.
+
+        Raises:
+            serializers.ValidationError: If the end precedes the start.
+
+        """
+        instance = self.instance if isinstance(self.instance, Season) else None
+        start_date = attrs.get("start_date") or getattr(instance, "start_date", None)
+        end_date = attrs.get("end_date") or getattr(instance, "end_date", None)
+        if (
+            isinstance(start_date, date)
+            and isinstance(end_date, date)
+            and end_date < start_date
+        ):
+            raise serializers.ValidationError({
+                "end_date": "End date must be on or after start date."
+            })
+        return attrs
+
+    def get_is_current(self, obj: Season) -> bool:
+        """Return whether today falls inside the season date range."""
+        today = timezone.localdate()
+        return obj.start_date <= today <= obj.end_date
 
 
 def _ensure_aware(dt: datetime) -> datetime:
