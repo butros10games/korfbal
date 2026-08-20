@@ -214,6 +214,7 @@ class MatchViewSet(
             "home_team__club",
             "away_team__club",
             "season",
+            "pool",
         ).order_by("start_time")
 
         team_ids = self.request.query_params.getlist("team")

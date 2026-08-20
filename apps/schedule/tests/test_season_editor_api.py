@@ -11,7 +11,7 @@ from django.test.client import Client
 import pytest
 
 from apps.club.models import Club
-from apps.schedule.models import Match, Season
+from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.models import Team
 
 
@@ -147,3 +147,145 @@ def test_staff_can_create_and_quick_edit_matches(client: Client) -> None:
 
     delete_response = client.delete(f"/api/matches/{match.id_uuid}/")
     assert delete_response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_staff_can_manage_season_pools(client: Client) -> None:
+    """Staff can create and edit a season pool with its team membership."""
+    staff = get_user_model().objects.create_user(
+        username="pool_staff",
+        password="pass1234",  # nosec
+        is_staff=True,
+    )
+    client.force_login(staff)
+    season = Season.objects.create(
+        name="Pool season",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 1),
+    )
+    club = Club.objects.create(name="Pool club")
+    teams = [Team.objects.create(name=str(number), club=club) for number in range(1, 4)]
+
+    created = client.post(
+        "/api/seasons/pools/",
+        data={
+            "season_id": str(season.id_uuid),
+            "name": "Poule A",
+            "team_ids": [str(teams[0].id_uuid), str(teams[1].id_uuid)],
+        },
+        content_type="application/json",
+    )
+    assert created.status_code == HTTPStatus.CREATED
+    payload = created.json()
+    assert payload["season_id"] == str(season.id_uuid)
+    assert payload["name"] == "Poule A"
+    assert {team["id_uuid"] for team in payload["teams"]} == {
+        str(teams[0].id_uuid),
+        str(teams[1].id_uuid),
+    }
+    assert payload["match_count"] == 0
+
+    listed = client.get(f"/api/seasons/pools/?season={season.id_uuid}")
+    assert listed.status_code == HTTPStatus.OK
+    assert len(listed.json()) == 1
+
+    updated = client.patch(
+        f"/api/seasons/pools/{payload['id_uuid']}/",
+        data={"team_ids": [str(team.id_uuid) for team in teams]},
+        content_type="application/json",
+    )
+    assert updated.status_code == HTTPStatus.OK
+    assert len(updated.json()["teams"]) == len(teams)
+
+    duplicate_membership = client.post(
+        "/api/seasons/pools/",
+        data={
+            "season_id": str(season.id_uuid),
+            "name": "Poule B",
+            "team_ids": [str(teams[0].id_uuid), str(teams[1].id_uuid)],
+        },
+        content_type="application/json",
+    )
+    assert duplicate_membership.status_code == HTTPStatus.BAD_REQUEST
+    assert "team_ids" in duplicate_membership.json()
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_pooled_matches_require_teams_from_the_same_season_pool(client: Client) -> None:
+    """Pool assignment constrains both the season and the participating teams."""
+    staff = get_user_model().objects.create_user(
+        username="pooled_match_staff",
+        password="pass1234",  # nosec
+        is_staff=True,
+    )
+    client.force_login(staff)
+    season = Season.objects.create(
+        name="Pooled match season",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 1),
+    )
+    other_season = Season.objects.create(
+        name="Other pool season",
+        start_date=date(2027, 8, 1),
+        end_date=date(2028, 6, 1),
+    )
+    club = Club.objects.create(name="Pooled match club")
+    home_team = Team.objects.create(name="1", club=club)
+    away_team = Team.objects.create(name="2", club=club)
+    outside_team = Team.objects.create(name="3", club=club)
+    pool = SeasonPool.objects.create(season=season, name="Poule A")
+    pool.teams.set([home_team, away_team])
+    start_time = datetime(2026, 9, 12, 19, 30, tzinfo=UTC)
+
+    wrong_season = client.post(
+        "/api/matches/",
+        data={
+            "season_id": str(other_season.id_uuid),
+            "pool_id": str(pool.id_uuid),
+            "home_team_id": str(home_team.id_uuid),
+            "away_team_id": str(away_team.id_uuid),
+            "start_time": start_time.isoformat(),
+        },
+        content_type="application/json",
+    )
+    assert wrong_season.status_code == HTTPStatus.BAD_REQUEST
+    assert "pool_id" in wrong_season.json()
+
+    wrong_team = client.post(
+        "/api/matches/",
+        data={
+            "season_id": str(season.id_uuid),
+            "pool_id": str(pool.id_uuid),
+            "home_team_id": str(home_team.id_uuid),
+            "away_team_id": str(outside_team.id_uuid),
+            "start_time": start_time.isoformat(),
+        },
+        content_type="application/json",
+    )
+    assert wrong_team.status_code == HTTPStatus.BAD_REQUEST
+    assert "away_team_id" in wrong_team.json()
+
+    created = client.post(
+        "/api/matches/",
+        data={
+            "season_id": str(season.id_uuid),
+            "pool_id": str(pool.id_uuid),
+            "home_team_id": str(home_team.id_uuid),
+            "away_team_id": str(away_team.id_uuid),
+            "start_time": start_time.isoformat(),
+        },
+        content_type="application/json",
+    )
+    assert created.status_code == HTTPStatus.CREATED
+    assert created.json()["pool_id"] == str(pool.id_uuid)
+    assert created.json()["pool_name"] == "Poule A"
+
+    remove_used_team = client.patch(
+        f"/api/seasons/pools/{pool.id_uuid}/",
+        data={"team_ids": [str(home_team.id_uuid), str(outside_team.id_uuid)]},
+        content_type="application/json",
+    )
+    assert remove_used_team.status_code == HTTPStatus.BAD_REQUEST
+    assert "team_ids" in remove_used_team.json()

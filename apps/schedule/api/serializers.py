@@ -19,7 +19,7 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
+from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models.team import Team
 
@@ -27,6 +27,7 @@ from apps.team.models.team import Team
 INVALID_MATCH_PART = "Invalid match part."
 UNKNOWN_PLAYER = "Unknown player."
 UNKNOWN_TEAM = "Unknown team."
+MIN_POOL_TEAMS = 2
 
 
 class MatchSerializer(serializers.ModelSerializer):
@@ -38,6 +39,12 @@ class MatchSerializer(serializers.ModelSerializer):
     competition = serializers.SerializerMethodField()
     broadcast_url = serializers.SerializerMethodField()
     season_id = serializers.UUIDField(read_only=True)
+    pool_id = serializers.UUIDField(read_only=True, allow_null=True)
+    pool_name = serializers.CharField(
+        source="pool.name",
+        read_only=True,
+        allow_null=True,
+    )
 
     class Meta:
         """Meta options for the match serializer."""
@@ -47,6 +54,8 @@ class MatchSerializer(serializers.ModelSerializer):
             "id_uuid",
             "start_time",
             "season_id",
+            "pool_id",
+            "pool_name",
             "home_team",
             "away_team",
             "location",
@@ -98,6 +107,12 @@ class MatchWriteSerializer(serializers.ModelSerializer):
         source="season",
         queryset=Season.objects.all(),
     )
+    pool_id = serializers.PrimaryKeyRelatedField(
+        source="pool",
+        queryset=SeasonPool.objects.prefetch_related("teams"),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         """Meta options for staff schedule writes."""
@@ -107,6 +122,7 @@ class MatchWriteSerializer(serializers.ModelSerializer):
             "id_uuid",
             "start_time",
             "season_id",
+            "pool_id",
             "home_team_id",
             "away_team_id",
         ]
@@ -126,6 +142,31 @@ class MatchWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "away_team_id": "Home and away team must be different."
             })
+
+        season = attrs.get("season") or getattr(instance, "season", None)
+        pool = attrs["pool"] if "pool" in attrs else getattr(instance, "pool", None)
+        if isinstance(pool, SeasonPool):
+            if season is None or pool.season_id != getattr(season, "id_uuid", None):
+                raise serializers.ValidationError({
+                    "pool_id": "Pool must belong to the selected season."
+                })
+            pool_team_ids = set(pool.teams.values_list("id_uuid", flat=True))
+            invalid_fields = [
+                field
+                for field, team in (
+                    ("home_team_id", home_team),
+                    ("away_team_id", away_team),
+                )
+                if team is not None
+                and getattr(team, "id_uuid", None) not in pool_team_ids
+            ]
+            if invalid_fields:
+                raise serializers.ValidationError(
+                    dict.fromkeys(
+                        invalid_fields,
+                        "Team must belong to the selected pool.",
+                    )
+                )
         return attrs
 
     def to_representation(self, instance: Match) -> dict[str, object]:
@@ -138,6 +179,7 @@ class SeasonSerializer(serializers.ModelSerializer):
 
     is_current = serializers.SerializerMethodField()
     match_count = serializers.IntegerField(read_only=True, default=0)
+    pool_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         """Meta options for season management."""
@@ -150,11 +192,13 @@ class SeasonSerializer(serializers.ModelSerializer):
             "end_date",
             "is_current",
             "match_count",
+            "pool_count",
         ]
         read_only_fields: ClassVar[list[str]] = [
             "id_uuid",
             "is_current",
             "match_count",
+            "pool_count",
         ]
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
@@ -181,6 +225,95 @@ class SeasonSerializer(serializers.ModelSerializer):
         """Return whether today falls inside the season date range."""
         today = timezone.localdate()
         return obj.start_date <= today <= obj.end_date
+
+
+class SeasonPoolSerializer(serializers.ModelSerializer):
+    """Serialize a season pool and its editable team membership."""
+
+    season_id = serializers.PrimaryKeyRelatedField(
+        source="season",
+        queryset=Season.objects.all(),
+    )
+    teams = TeamSerializer(many=True, read_only=True)
+    team_ids = serializers.PrimaryKeyRelatedField(
+        source="teams",
+        queryset=Team.objects.select_related("club"),
+        many=True,
+        write_only=True,
+    )
+    match_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        """Expose pool membership without allowing destructive operations."""
+
+        model = SeasonPool
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "season_id",
+            "name",
+            "teams",
+            "team_ids",
+            "match_count",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id_uuid", "match_count"]
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Keep pool identity and existing pooled matches consistent.
+
+        Raises:
+            serializers.ValidationError: If identity or membership is invalid.
+
+        """
+        instance = self.instance if isinstance(self.instance, SeasonPool) else None
+        season = attrs.get("season") or getattr(instance, "season", None)
+        name = attrs.get("name") or getattr(instance, "name", "")
+
+        if instance and "season" in attrs and attrs["season"] != instance.season:
+            raise serializers.ValidationError({
+                "season_id": "A pool cannot be moved to another season."
+            })
+
+        duplicate = SeasonPool.objects.filter(season=season, name__iexact=name)
+        if instance:
+            duplicate = duplicate.exclude(pk=instance.pk)
+        if duplicate.exists():
+            raise serializers.ValidationError({
+                "name": "A pool with this name already exists in this season."
+            })
+
+        if "teams" in attrs:
+            teams = cast(list[Team], attrs["teams"])
+            if len(teams) < MIN_POOL_TEAMS:
+                raise serializers.ValidationError({
+                    "team_ids": "Select at least two teams for a pool."
+                })
+            other_pools = SeasonPool.objects.filter(
+                season=season,
+                teams__in=teams,
+            )
+            if instance:
+                other_pools = other_pools.exclude(pk=instance.pk)
+            if other_pools.exists():
+                raise serializers.ValidationError({
+                    "team_ids": "A team can belong to only one pool per season."
+                })
+            if instance:
+                selected_ids = {team.id_uuid for team in teams}
+                used_ids = set(
+                    Match.objects.filter(pool=instance).values_list(
+                        "home_team_id", flat=True
+                    )
+                ) | set(
+                    Match.objects.filter(pool=instance).values_list(
+                        "away_team_id", flat=True
+                    )
+                )
+                if not used_ids.issubset(selected_ids):
+                    raise serializers.ValidationError({
+                        "team_ids": "Teams with matches in this pool cannot be removed."
+                    })
+
+        return attrs
 
 
 def _ensure_aware(dt: datetime) -> datetime:

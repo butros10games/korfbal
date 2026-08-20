@@ -3,6 +3,7 @@
 from .match import Match
 from .mvp import MatchMvp, MatchMvpVote
 from .season import Season
+from .season_pool import SeasonPool
 
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "MatchMvp",
     "MatchMvpVote",
     "Season",
+    "SeasonPool",
 ]

@@ -50,6 +50,14 @@ class Match(models.Model):
         on_delete=models.CASCADE,
         related_name="matches",
     )
+    pool: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "SeasonPool",
+        on_delete=models.SET_NULL,
+        related_name="matches",
+        null=True,
+        blank=True,
+    )
+    pool_id: str | None
     start_time: models.DateTimeField[datetime, datetime] = models.DateTimeField()
 
     class Meta:
@@ -60,6 +68,7 @@ class Match(models.Model):
             models.Index(fields=["home_team"]),
             models.Index(fields=["away_team"]),
             models.Index(fields=["season", "start_time"]),
+            models.Index(fields=["pool", "start_time"]),
         ]
 
     def __str__(self) -> str:
