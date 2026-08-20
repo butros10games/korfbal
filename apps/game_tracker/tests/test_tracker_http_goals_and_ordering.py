@@ -10,6 +10,7 @@ import pytest
 from apps.club.models import Club
 from apps.game_tracker.models import GoalType, MatchData, MatchPart
 from apps.game_tracker.services.tracker_http import (
+    TrackerCommandError,
     apply_tracker_command,
     get_tracker_state,
 )
@@ -17,6 +18,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     TEST_PASSWORD,
     create_group_types,
     create_player_group,
+    create_tracker_match,
 )
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
@@ -289,3 +291,36 @@ def test_client_time_keeps_last_event_order_stable() -> None:
     state = get_tracker_state(match, team=home_team)
     assert state["last_event"]["type"] == "attack"
     assert state["last_event"]["time_iso"] == late.isoformat()
+
+
+@pytest.mark.django_db
+def test_goal_registration_rejects_player_outside_match_roster() -> None:
+    tracker = create_tracker_match(prefix="Roster Boundary")
+    tracker.match_data.status = "active"
+    tracker.match_data.save(update_fields=["status"])
+    MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=timezone.now(),
+        active=True,
+    )
+    goal_type = GoalType.objects.create(name="Roster Boundary Goal")
+    outsider = (
+        get_user_model()
+        .objects.create_user(username="roster_outsider", password=TEST_PASSWORD)
+        .player
+    )
+
+    with pytest.raises(TrackerCommandError) as exc:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={
+                "command": "goal_reg",
+                "player_id": str(outsider.id_uuid),
+                "goal_type": str(goal_type.id_uuid),
+                "for_team": True,
+            },
+        )
+
+    assert exc.value.code == "bad_request"

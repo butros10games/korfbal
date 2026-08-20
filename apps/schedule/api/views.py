@@ -48,7 +48,7 @@ from .constants import (
     MVP_VOTE_COOKIE_SALT,
 )
 from .match_viewset_events import MatchEventsActionsMixin
-from .permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
+from .permissions import IsClubMemberOrCoachOrAdmin
 from .serializers import MatchSerializer, MatchWriteSerializer
 
 
@@ -485,7 +485,7 @@ class MatchViewSet(
         detail=True,
         methods=("POST",),
         url_path=r"tracker/(?P<team_id>[^/.]+)/commands",
-        permission_classes=[IsCoachOrAdmin],
+        permission_classes=[IsClubMemberOrCoachOrAdmin],
     )
     def tracker_command(
         self,
@@ -534,7 +534,7 @@ class MatchViewSet(
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Long-poll for match tracker state updates."""
+        """Poll once for a match tracker revision update."""
         match: Match = self.get_object()
         team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
 
@@ -663,10 +663,10 @@ class MatchViewSet(
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Long-poll for match-level live updates (timer + score).
+        """Poll once for match-level live updates (timer + score).
 
         Response shape mirrors tracker polling:
-        - on timeout: {changed: false, server_time, last_changed_at}
+        - unchanged: {changed: false, server_time, last_changed_at}
         - on change: live_state payload
 
         """

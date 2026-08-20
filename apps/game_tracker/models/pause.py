@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -19,6 +19,28 @@ class Pause(models.Model):
             models.Index(fields=["match_data", "active", "start_time"]),
             models.Index(fields=["match_data", "start_time"]),
         )
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["match_data"],
+                condition=models.Q(active=True),
+                name="uniq_active_match_pause",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_time__isnull=True)
+                | (
+                    models.Q(start_time__isnull=False)
+                    & models.Q(end_time__gte=models.F("start_time"))
+                ),
+                name="pause_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(active=False)
+                | (
+                    models.Q(start_time__isnull=False) & models.Q(end_time__isnull=True)
+                ),
+                name="active_pause_has_open_start",
+            ),
+        ]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

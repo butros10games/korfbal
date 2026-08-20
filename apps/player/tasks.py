@@ -217,11 +217,6 @@ def handle_match_finished(
     match_data_id: str,
 ) -> None:
     """Entry-point task: send match finished push + schedule MVP tasks."""
-    # Best-effort idempotency guard.
-    cache_key = f"push:match_finished:{match_data_id}"
-    if not cache.add(cache_key, "1", timeout=60 * 60 * 24):
-        return
-
     match = (
         Match.objects
         .select_related(
@@ -247,6 +242,12 @@ def handle_match_finished(
         return
 
     if match_data.status != "finished":
+        return
+
+    # Do not consume idempotency before the committed terminal state is visible.
+    # A worker that runs before a surrounding transaction commits can be retried.
+    cache_key = f"push:match_finished:{match_data_id}"
+    if not cache.add(cache_key, "1", timeout=60 * 60 * 24):
         return
 
     # 1) Notify participants that match finished.

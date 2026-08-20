@@ -16,8 +16,10 @@ from apps.game_tracker.models import (
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.live_update_signal_control import (
     live_update_signals_suppressed,
+    suppress_live_update_signals,
 )
 from apps.game_tracker.services.live_updates import record_match_change
+from apps.game_tracker.services.match_scores import persist_matchdata_scores
 
 
 RealtimeModel = MatchData | Shot | PlayerChange | Pause | Attack | MatchPart
@@ -55,6 +57,19 @@ def _shot_realtime_changed(
     sender: type[Shot], instance: Shot, **kwargs: object
 ) -> None:
     del sender, kwargs
+    if live_update_signals_suppressed():
+        return
+
+    match_data = (
+        MatchData.objects.filter(id_uuid=instance.match_data_id).first()
+        if instance.match_data_id
+        else None
+    )
+    if match_data is not None and match_data.status == "finished":
+        # Event-editor corrections must also update the denormalized final score.
+        # Coalesce the MatchData save into the Shot's single live revision.
+        with suppress_live_update_signals():
+            persist_matchdata_scores(match_data)
     _record(instance, SHOT_RESOURCES)
 
 

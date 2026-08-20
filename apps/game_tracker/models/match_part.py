@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -28,6 +28,26 @@ class MatchPart(models.Model):
         blank=True, null=True
     )
     active: models.BooleanField[bool, bool] = models.BooleanField(default=False)
+
+    class Meta:
+        """Protect the timer from duplicate or overlapping periods."""
+
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["match_data", "part_number"],
+                name="uniq_match_part_number",
+            ),
+            models.UniqueConstraint(
+                fields=["match_data"],
+                condition=models.Q(active=True),
+                name="uniq_active_match_part",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_time__isnull=True)
+                | models.Q(end_time__gte=models.F("start_time")),
+                name="match_part_end_after_start",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return the string representation of the match part.

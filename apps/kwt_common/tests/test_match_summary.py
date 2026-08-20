@@ -122,13 +122,7 @@ def test_build_match_summaries_finished_match_uses_shot_aggregate(
     )
     player = user.player
 
-    # Stored score should be used for finished matches.
-    match_data.status = "finished"
-    match_data.home_score = 7
-    match_data.away_score = 4
-    match_data.save(update_fields=["status", "home_score", "away_score"])
-
-    # Even if shots exist, finished summaries must not recompute scores.
+    # Add timeline records before finalizing the persisted score.
     Shot.objects.create(
         match_data=match_data,
         team=home_team,
@@ -142,6 +136,11 @@ def test_build_match_summaries_finished_match_uses_shot_aggregate(
         scored=True,
     )
 
+    # Finished summaries must use the stored score without querying shots.
+    match_data.status = "finished"
+    match_data.home_score = 7
+    match_data.away_score = 4
+    match_data.save(update_fields=["status", "home_score", "away_score"])
     qs = MatchData.objects.select_related(
         "match_link",
         "match_link__home_team",

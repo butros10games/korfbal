@@ -2,6 +2,7 @@
 """Match-flow and timeout tests for the tracker HTTP service."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -30,7 +31,7 @@ MAX_TIMEOUTS = 2
 
 
 @pytest.mark.django_db
-def test_part_end_closes_active_pause_even_without_active_part() -> None:
+def test_part_end_rejects_missing_active_part_without_advancing() -> None:
     tracker = create_tracker_match(prefix="PartEnd Pause")
     match_data = tracker.match_data
     match_data.status = "active"
@@ -52,15 +53,19 @@ def test_part_end_closes_active_pause_even_without_active_part() -> None:
         active=True,
     )
 
-    apply_tracker_command(
-        tracker.match,
-        team=tracker.home_team,
-        payload={"command": "part_end"},
-    )
+    with pytest.raises(TrackerCommandError) as exc:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={"command": "part_end"},
+        )
 
     pause.refresh_from_db()
-    assert pause.active is False
-    assert pause.end_time is not None
+    match_data.refresh_from_db()
+    assert exc.value.code == "no_active_part"
+    assert pause.active is True
+    assert pause.end_time is None
+    assert match_data.current_part == 1
 
 
 @pytest.mark.django_db
@@ -286,3 +291,128 @@ def test_timeout_command_can_register_opponent_timeout_and_counts_in_state() -> 
     assert state["timeouts"]["for"] == 0
     assert state["timeouts"]["against"] == 1
     assert state["timeouts"]["max"] == MAX_TIMEOUTS
+
+
+@pytest.mark.django_db
+def test_timeout_command_enforces_maximum_for_each_team() -> None:
+    tracker = create_tracker_match(prefix="Timeout Limit")
+    match_data = tracker.match_data
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
+    part = create_match_part(match_data=match_data)
+    Timeout.objects.bulk_create([
+        Timeout(match_data=match_data, match_part=part, team=tracker.home_team),
+        Timeout(match_data=match_data, match_part=part, team=tracker.home_team),
+    ])
+
+    with pytest.raises(TrackerCommandError) as exc:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={"command": "timeout", "for_team": True},
+        )
+
+    assert exc.value.code == "max_timeouts"
+    assert Timeout.objects.filter(match_data=match_data).count() == MAX_TIMEOUTS
+
+
+@pytest.mark.django_db
+def test_duplicate_part_end_does_not_skip_the_next_part() -> None:
+    tracker = create_tracker_match(prefix="Duplicate Part End")
+    match_data = tracker.match_data
+    match_data.status = "active"
+    match_data.parts = 2
+    match_data.save(update_fields=["status", "parts"])
+    create_match_part(match_data=match_data)
+
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "part_end"},
+    )
+    with pytest.raises(TrackerCommandError) as exc:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={"command": "part_end"},
+        )
+
+    match_data.refresh_from_db()
+    assert exc.value.code == "no_active_part"
+    assert match_data.current_part == match_data.parts
+    assert match_data.status == "active"
+
+
+@pytest.mark.django_db
+def test_finished_match_cannot_be_restarted() -> None:
+    tracker = create_tracker_match(prefix="Finished Restart")
+    tracker.match_data.status = "finished"
+    tracker.match_data.save(update_fields=["status"])
+
+    with pytest.raises(TrackerCommandError) as exc:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={"command": "start/pause"},
+        )
+
+    assert exc.value.code == "match_finished"
+    assert not MatchPart.objects.filter(match_data=tracker.match_data).exists()
+
+
+@pytest.mark.django_db
+def test_timer_commands_ignore_skewed_client_time() -> None:
+    tracker = create_tracker_match(prefix="Server Clock")
+    client_time = datetime.now(UTC) + timedelta(minutes=4)
+
+    before = timezone.now()
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "start/pause",
+            "client_time_iso": client_time.isoformat(),
+        },
+    )
+    after = timezone.now()
+
+    part = MatchPart.objects.get(match_data=tracker.match_data, active=True)
+    assert before <= part.start_time <= after
+
+
+@pytest.mark.django_db
+def test_tracker_rejects_a_team_outside_the_match() -> None:
+    tracker = create_tracker_match(prefix="Invalid Perspective")
+    unrelated_team = Team.objects.create(
+        name="Unrelated Team",
+        club=Club.objects.create(name="Unrelated Club"),
+    )
+
+    with pytest.raises(TrackerCommandError) as exc:
+        get_tracker_state(tracker.match, team=unrelated_team)
+
+    assert exc.value.code == "invalid_team"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_finished_task_is_enqueued_after_match_commit() -> None:
+    tracker = create_tracker_match(prefix="Finish Commit")
+    match_data = tracker.match_data
+    match_data.status = "active"
+    match_data.parts = 1
+    match_data.save(update_fields=["status", "parts"])
+    create_match_part(match_data=match_data)
+
+    with patch("apps.player.tasks.handle_match_finished.delay") as delay:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={"command": "part_end"},
+        )
+
+    match_data.refresh_from_db()
+    assert match_data.status == "finished"
+    delay.assert_called_once_with(
+        match_id=str(tracker.match.id_uuid),
+        match_data_id=str(match_data.id_uuid),
+    )

@@ -6,10 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import logging
-import time
 from typing import Any, Protocol, cast
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.module_loading import import_string
@@ -50,6 +50,8 @@ NO_ACTIVE_MATCH_PART_MESSAGE = "No active match part."
 
 
 _CLIENT_TIME_MAX_SKEW_SECONDS = 5 * 60
+_MAX_TIMEOUTS_PER_TEAM = 2
+_SERVER_TIMED_COMMANDS = frozenset({"start/pause", "part_end", "timeout"})
 _MUTATING_COMMANDS = frozenset({
     "start/pause",
     "part_end",
@@ -169,11 +171,23 @@ class TrackerCommandError(RuntimeError):
 
 def _other_team(match: Match, team: Team) -> Team:
     home_team_id = cast(Any, match).home_team_id
-    return match.away_team if home_team_id == team.id_uuid else match.home_team
+    if home_team_id == team.id_uuid:
+        return match.away_team
+    if cast(Any, match).away_team_id == team.id_uuid:
+        return match.home_team
+    raise TrackerCommandError(
+        "Team is not participating in this match.",
+        code="invalid_team",
+    )
 
 
 def _current_part(match_data: MatchData) -> MatchPart | None:
-    return MatchPart.objects.filter(match_data=match_data, active=True).first()
+    return (
+        MatchPart.objects
+        .filter(match_data=match_data, active=True)
+        .order_by("-start_time", "-id_uuid")
+        .first()
+    )
 
 
 def _is_paused(match_data: MatchData, current_part: MatchPart | None) -> bool:
@@ -634,11 +648,11 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         TrackerCommandError: If the tracker data for the match does not exist.
 
     """
+    opponent = _other_team(match, team)
     match_data = MatchData.objects.filter(match_link=match).first()
     if not match_data:
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
 
-    opponent = _other_team(match, team)
     current_part = _current_part(match_data)
 
     goals_for, goals_against = _score(match_data, team=team, opponent=opponent)
@@ -770,8 +784,9 @@ def apply_tracker_command(
     command = payload.get("command")
     if not isinstance(command, str):
         raise TrackerCommandError("Missing command.", code="bad_request")
-    event_time = _command_time_from_payload(payload)
     parsed_command = _parse_command(payload)
+
+    _other_team(match, team)
 
     match_data = MatchData.objects.filter(match_link=match).first()
     if not match_data:
@@ -781,6 +796,11 @@ def apply_tracker_command(
         # Refresh for consistent reads inside the transaction.
         match_data = MatchData.objects.select_for_update().get(
             id_uuid=match_data.id_uuid,
+        )
+        event_time = (
+            timezone.now()
+            if command in _SERVER_TIMED_COMMANDS
+            else _command_time_from_payload(payload)
         )
         with suppress_live_update_signals():
             parsed_command.apply(
@@ -807,46 +827,97 @@ def poll_tracker_state(
     since_revision: int,
     timeout_seconds: int = 25,
 ) -> dict[str, Any]:
-    """Long-poll until tracker state changed or timeout.
+    """Return changed tracker state without occupying a request worker.
 
-    Notes:
-        - This is implemented as a simple sleep loop (thread blocking). Keep
-          `timeout_seconds` modest.
+    The timeout argument remains in the signature for wire compatibility with
+    older clients. Realtime clients reconnect through SSE and polling fallbacks
+    issue ordinary interval requests, so waiting here only ties up server
+    workers without improving delivery.
 
     Raises:
         TrackerCommandError: If the tracker data for the match does not exist.
 
     """
-    timeout_seconds = max(1, min(timeout_seconds, 30))
-    poll_sleep_seconds = 0.8
-    deadline = time.monotonic() + timeout_seconds
+    del timeout_seconds
+
+    _other_team(match, team)
 
     match_data = MatchData.objects.filter(match_link=match).first()
     if not match_data:
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
 
-    while True:
-        if match_data.live_revision > since_revision:
-            return get_tracker_state(match, team=team)
+    if match_data.live_revision > since_revision:
+        return get_tracker_state(match, team=team)
 
-        if time.monotonic() >= deadline:
-            # Return a lightweight response on timeout so the client can poll again.
-            return {
-                "changed": False,
-                "server_time": timezone.now().isoformat(),
-                "last_changed_at": _last_changed_at(match_data).isoformat(),
-                "live_revision": match_data.live_revision,
-            }
+    return {
+        "changed": False,
+        "server_time": timezone.now().isoformat(),
+        "last_changed_at": _last_changed_at(match_data).isoformat(),
+        "live_revision": match_data.live_revision,
+    }
 
-        time.sleep(poll_sleep_seconds)
-        match_data = MatchData.objects.filter(match_link=match).first()
-        if not match_data:
-            raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
+
+def _prepare_new_part(match_data: MatchData) -> None:
+    """Validate and advance state before creating a new active period.
+
+    Raises:
+        TrackerCommandError: If the persisted match state cannot start a part.
+
+    """
+    if match_data.status == "finished":
+        raise TrackerCommandError(
+            "Finished matches cannot be restarted.",
+            code="match_finished",
+        )
+
+    if match_data.status == "upcoming":
+        if (
+            match_data.current_part != 1
+            or MatchPart.objects.filter(
+                match_data=match_data,
+            ).exists()
+        ):
+            raise TrackerCommandError(
+                "Match has an invalid initial state.",
+                code="invalid_match_state",
+            )
+        match_data.status = "active"
+        match_data.save(update_fields=["status"])
+        return
+
+    if match_data.status != "active":
+        raise TrackerCommandError(
+            "Match cannot be started from its current state.",
+            code="invalid_match_state",
+        )
+
+    previous_part_number = match_data.current_part - 1
+    previous_part_finished = MatchPart.objects.filter(
+        match_data=match_data,
+        part_number=previous_part_number,
+        active=False,
+        end_time__isnull=False,
+    ).exists()
+    if previous_part_number < 1 or not previous_part_finished:
+        raise TrackerCommandError(
+            "The previous match part has not been completed.",
+            code="invalid_match_state",
+        )
+    if MatchPart.objects.filter(
+        match_data=match_data,
+        part_number=match_data.current_part,
+    ).exists():
+        raise TrackerCommandError(
+            "This match part has already been started.",
+            code="invalid_match_state",
+        )
 
 
 def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
     current_part = _current_part(match_data)
     if not current_part:
+        _prepare_new_part(match_data)
+
         MatchPart.objects.create(
             match_data=match_data,
             active=True,
@@ -854,11 +925,16 @@ def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
             part_number=match_data.current_part,
         )
 
-        if match_data.current_part == 1:
-            match_data.status = "active"
-            match_data.save(update_fields=["status"])
-
         return
+
+    if (
+        match_data.status != "active"
+        or current_part.part_number != match_data.current_part
+    ):
+        raise TrackerCommandError(
+            "Active match part does not match the match state.",
+            code="invalid_match_state",
+        )
 
     # Toggle pause.
     active_pause = Pause.objects.filter(
@@ -894,32 +970,43 @@ def _cmd_part_end(
     match_data: MatchData,
     event_time: datetime,
 ) -> None:
-    # Defensive cleanup: if a pause is active while a part ends, always close it.
-    # In some edge cases the active MatchPart may already be deactivated or
-    # temporarily missing, but an active Pause would still break timer logic.
-    now = event_time
-    active_pauses = Pause.objects.filter(match_data=match_data, active=True)
-    if active_pauses.exists():
-        active_pauses.update(active=False, end_time=now)
-
     current_part = _current_part(match_data)
-    # Note: pause cleanup is handled above (not scoped to current_part) to be
-    # resilient to inconsistent state.
+    if match_data.status != "active":
+        raise TrackerCommandError(
+            "Only an active match can end a part.",
+            code="match_not_active",
+        )
+    if current_part is None:
+        raise TrackerCommandError(
+            NO_ACTIVE_MATCH_PART_MESSAGE,
+            code="no_active_part",
+        )
+    if current_part.part_number != match_data.current_part:
+        raise TrackerCommandError(
+            "Active match part does not match the match state.",
+            code="invalid_match_state",
+        )
+
+    for active_pause in Pause.objects.filter(
+        match_data=match_data,
+        match_part=current_part,
+        active=True,
+    ):
+        active_pause.active = False
+        active_pause.end_time = max(
+            event_time,
+            active_pause.start_time or event_time,
+        )
+        active_pause.save(update_fields=["active", "end_time"])
+
+    end_time = max(event_time, current_part.start_time)
+    current_part.active = False
+    current_part.end_time = end_time
+    current_part.save(update_fields=["active", "end_time"])
 
     if match_data.current_part < match_data.parts:
         match_data.current_part += 1
         match_data.save(update_fields=["current_part"])
-
-        if current_part:
-            current_part.active = False
-            end_time = event_time
-            if (
-                isinstance(current_part.start_time, datetime)
-                and end_time < current_part.start_time
-            ):
-                end_time = current_part.start_time
-            current_part.end_time = end_time
-            current_part.save(update_fields=["active", "end_time"])
         return
 
     # End match.
@@ -936,31 +1023,23 @@ def _cmd_part_end(
     match_data.status = "finished"
     match_data.home_score, match_data.away_score = scores
     match_data.save(update_fields=["status", "home_score", "away_score"])
-    if current_part:
-        current_part.active = False
-        end_time = event_time
-        if (
-            isinstance(current_part.start_time, datetime)
-            and end_time < current_part.start_time
-        ):
-            end_time = current_part.start_time
-        current_part.end_time = end_time
-        current_part.save(update_fields=["active", "end_time"])
 
-    # Best-effort trigger: schedule push notifications for participants.
-    # This must never block tracker commands.
-    try:
-        handle_match_finished = import_string("apps.player.tasks.handle_match_finished")
-        handle_match_finished.delay(
-            match_id=str(match.id_uuid),
-            match_data_id=str(match_data.id_uuid),
-        )
-    except Exception:
-        # Intentionally swallow: no push should never break match tracking.
-        logger.warning(
-            "Failed to enqueue match finished push task (http)",
-            exc_info=True,
-        )
+    def enqueue_match_finished() -> None:
+        try:
+            handle_match_finished = import_string(
+                "apps.player.tasks.handle_match_finished"
+            )
+            handle_match_finished.delay(
+                match_id=str(match.id_uuid),
+                match_data_id=str(match_data.id_uuid),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to enqueue match finished push task (http)",
+                exc_info=True,
+            )
+
+    transaction.on_commit(enqueue_match_finished)
 
 
 def _cmd_timeout(
@@ -971,6 +1050,15 @@ def _cmd_timeout(
     event_time: datetime,
 ) -> None:
     current_part, _ = _require_not_paused(match_data, team, match)
+
+    if (
+        Timeout.objects.filter(match_data=match_data, team=team).count()
+        >= _MAX_TIMEOUTS_PER_TEAM
+    ):
+        raise TrackerCommandError(
+            "Maximum number of timeouts reached.",
+            code="max_timeouts",
+        )
 
     # A timeout is essentially: pause + timeout record.
     pause = Pause.objects.create(
@@ -1010,6 +1098,45 @@ class _ShotRegParams:
     shot_type_id: str | None = None
 
 
+def _match_player(
+    *,
+    match_data: MatchData,
+    team: Team,
+    player_id: str,
+) -> Player:
+    """Return a player registered in this match for the expected team.
+
+    Raises:
+        TrackerCommandError: If the identifier is invalid or outside the roster.
+
+    """
+    try:
+        player = (
+            Player.objects
+            .select_related("user")
+            .filter(id_uuid=player_id)
+            .filter(
+                models.Q(
+                    player_groups__match_data=match_data,
+                    player_groups__team=team,
+                )
+                | models.Q(
+                    match_players__match_data=match_data,
+                    match_players__team=team,
+                )
+            )
+            .distinct()
+            .first()
+        )
+    except (ValidationError, ValueError) as exc:
+        raise TrackerCommandError("Invalid player.", code="bad_request") from exc
+    if player is None:
+        raise TrackerCommandError(
+            "Player is not registered for this team.", code="bad_request"
+        )
+    return player
+
+
 def _cmd_shot_reg(
     match: Match,
     *,
@@ -1020,14 +1147,18 @@ def _cmd_shot_reg(
 ) -> None:
     current_part, opponent = _require_not_paused(match_data, team, match)
 
-    player = Player.objects.get(id_uuid=params.player_id)
     shot_team = team if params.for_team else opponent
+    player = _match_player(
+        match_data=match_data,
+        team=shot_team,
+        player_id=params.player_id,
+    )
 
     shot_type: GoalType | None = None
     if params.shot_type_id:
         try:
             shot_type = GoalType.objects.get(id_uuid=params.shot_type_id)
-        except GoalType.DoesNotExist as exc:
+        except (GoalType.DoesNotExist, ValidationError, ValueError) as exc:
             raise TrackerCommandError(
                 "Invalid shot type.",
                 code="bad_request",
@@ -1062,9 +1193,16 @@ def _cmd_goal_reg(
 ) -> None:
     current_part, opponent = _require_not_paused(match_data, team, match)
 
-    player = Player.objects.select_related("user").get(id_uuid=params.player_id)
-    goal_type = GoalType.objects.get(id_uuid=params.goal_type_id)
     shot_team = team if params.for_team else opponent
+    player = _match_player(
+        match_data=match_data,
+        team=shot_team,
+        player_id=params.player_id,
+    )
+    try:
+        goal_type = GoalType.objects.get(id_uuid=params.goal_type_id)
+    except (GoalType.DoesNotExist, ValidationError, ValueError) as exc:
+        raise TrackerCommandError("Invalid goal type.", code="bad_request") from exc
 
     Shot.objects.create(
         player=player,

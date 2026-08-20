@@ -29,6 +29,7 @@ class Shot(models.Model):
         on_delete=models.CASCADE,
         related_name="shots",
     )
+    match_data_id: str
     match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchPart",
         on_delete=models.CASCADE,

@@ -173,7 +173,9 @@ def test_hub_index_player_with_active_match_and_scores(client: Client) -> None:
         season=season,
         start_time=timezone.now() - timedelta(minutes=30),
     )
-    match_data = MatchData.objects.create(match_link=match, status="active")
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
 
     # Add some shots/scores
     Shot.objects.create(
@@ -256,7 +258,9 @@ def test_hub_index_caching_match_scores(client: Client) -> None:
         season=season,
         start_time=timezone.now() - timedelta(minutes=30),
     )
-    match_data = MatchData.objects.create(match_link=match, status="active")
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
 
     # Add some shots/scores
     Shot.objects.create(

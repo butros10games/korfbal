@@ -52,6 +52,12 @@ class MatchData(models.Model):
             models.Index(fields=["match_link"]),
             models.Index(fields=["status", "match_link"]),
         ]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["match_link"],
+                name="uniq_match_data_per_match",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return the string representation of the match.

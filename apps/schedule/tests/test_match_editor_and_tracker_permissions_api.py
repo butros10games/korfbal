@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser, Group
+from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 from django.test.client import Client, RequestFactory
 from django.utils import timezone
@@ -20,10 +20,12 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.player.models import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.api.permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
+from apps.team.models.team_data import TeamData
 
 
 TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
@@ -53,9 +55,19 @@ def _ensure_match_part(match: Match) -> MatchPart:
     )
 
 
+def _assign_coach(match: Match, user: object, *, team: Team | None = None) -> None:
+    player = getattr(user, "player", None)
+    assert isinstance(player, Player)
+    team_data, _created = TeamData.objects.get_or_create(
+        team=team or match.home_team,
+        season=match.season,
+    )
+    team_data.coach.add(player)
+
+
 @pytest.mark.django_db
 def test_is_coach_or_admin_permission_rules() -> None:
-    """IsCoachOrAdmin should accept staff and coach-group users."""
+    """IsCoachOrAdmin should accept staff and assigned coaches."""
     rf = RequestFactory()
     perm = IsCoachOrAdmin()
 
@@ -118,9 +130,9 @@ def test_is_club_member_or_coach_or_admin_permission_rules() -> None:
         username="coach",
         password=TEST_PASSWORD,
     )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
     request.user = coach_user
+    assert perm.has_permission(request, view) is False
+    _assign_coach(match, coach_user)
     assert perm.has_permission(request, view) is True
 
 
@@ -152,21 +164,17 @@ def test_is_club_member_permission_uses_match_local_date() -> None:
 
 
 @pytest.mark.django_db
-def test_is_coach_or_admin_handles_group_errors() -> None:
-    """IsCoachOrAdmin should deny access if the user's groups cannot be read."""
+def test_is_coach_or_admin_handles_user_without_player() -> None:
+    """IsCoachOrAdmin should deny access if the user has no player relation."""
 
-    class _ExplodingGroupsUser:
+    class _UserWithoutPlayer:
         is_authenticated = True
         is_staff = False
         is_superuser = False
 
-        @property
-        def groups(self) -> object:
-            raise RuntimeError("boom")
-
     rf = RequestFactory()
     request = rf.get("/")
-    request.user = _ExplodingGroupsUser()
+    request.user = _UserWithoutPlayer()
 
     perm = IsCoachOrAdmin()
     assert perm.has_permission(request, object()) is False
@@ -186,8 +194,7 @@ def test_match_events_can_edit_reflects_permission(client: Client) -> None:
         username="coach",
         password=TEST_PASSWORD,
     )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
+    _assign_coach(match, coach_user)
     client.force_login(coach_user)
 
     response = client.get(f"/api/matches/{match.id_uuid}/events/can-edit/")
@@ -235,9 +242,12 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
         username="coach",
         password=TEST_PASSWORD,
     )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
+    _assign_coach(match, coach_user)
     client.force_login(coach_user)
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
 
     create_response = client.post(
         f"/api/matches/{match.id_uuid}/events/goals/",
@@ -261,9 +271,12 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     shot_model = Shot.objects.get(id_uuid=shot_id)
     assert shot_model.for_team is True
 
+    match_data.refresh_from_db()
+    assert (match_data.home_score, match_data.away_score) == (1, 0)
+
     update_response = client.patch(
         f"/api/matches/{match.id_uuid}/events/goals/{shot_id}/",
-        data={"for_team": False},
+        data={"for_team": False, "team_id": str(match.away_team.id_uuid)},
         content_type="application/json",
     )
     assert update_response.status_code == HTTPStatus.OK
@@ -272,19 +285,26 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
 
     shot_model.refresh_from_db()
     assert shot_model.for_team is False
+    match_data.refresh_from_db()
+    assert (match_data.home_score, match_data.away_score) == (0, 1)
 
     delete_response = client.delete(
         f"/api/matches/{match.id_uuid}/events/goals/{shot_id}/",
     )
     assert delete_response.status_code == HTTPStatus.NO_CONTENT
     assert Shot.objects.filter(id_uuid=shot_id).exists() is False
+    match_data.refresh_from_db()
+    assert (match_data.home_score, match_data.away_score) == (0, 0)
 
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_tracker_endpoints_allow_club_members(client: Client) -> None:
-    """Tracker state/poll endpoints should allow club members or coach/admin."""
+    """Club members can view and operate their club's match tracker."""
     match = _create_match()
+    command_url = (
+        f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/commands/"
+    )
 
     normal_user = get_user_model().objects.create_user(
         username="viewer",
@@ -294,6 +314,12 @@ def test_match_tracker_endpoints_allow_club_members(client: Client) -> None:
 
     state_url = f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/state/"
     response = client.get(state_url)
+    assert response.status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}
+    response = client.post(
+        command_url,
+        data={"command": "start/pause"},
+        content_type="application/json",
+    )
     assert response.status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}
 
     member_user = get_user_model().objects.create_user(
@@ -307,14 +333,6 @@ def test_match_tracker_endpoints_allow_club_members(client: Client) -> None:
     )
     client.force_login(member_user)
 
-    coach_user = get_user_model().objects.create_user(
-        username="coach",
-        password=TEST_PASSWORD,
-    )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
-    client.force_login(coach_user)
-
     with patch(
         "apps.schedule.api.views.get_tracker_state",
         return_value={"score": {"for": 1, "against": 2}},
@@ -324,6 +342,19 @@ def test_match_tracker_endpoints_allow_club_members(client: Client) -> None:
         payload = response.json()
         assert payload["score"] == {"for": 1, "against": 2}
         assert mocked_state.call_count == 1
+
+    with patch(
+        "apps.schedule.api.views.apply_tracker_command",
+        return_value={"status": "active"},
+    ) as mocked_command:
+        response = client.post(
+            command_url,
+            data={"command": "start/pause"},
+            content_type="application/json",
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.json() == {"status": "active"}
+        assert mocked_command.call_count == 1
 
 
 @pytest.mark.django_db
@@ -336,8 +367,7 @@ def test_match_tracker_command_rejects_non_object_json(client: Client) -> None:
         username="coach",
         password=TEST_PASSWORD,
     )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
+    _assign_coach(match, coach_user)
     client.force_login(coach_user)
 
     command_url = (
@@ -365,8 +395,7 @@ def test_match_tracker_poll_rejects_invalid_since_revision(client: Client) -> No
         username="coach",
         password=TEST_PASSWORD,
     )
-    coach_group, _created = Group.objects.get_or_create(name="Coach")
-    coach_user.groups.add(coach_group)
+    _assign_coach(match, coach_user)
     client.force_login(coach_user)
 
     poll_url = f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/poll/"
