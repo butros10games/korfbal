@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from http import HTTPStatus
+import json
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -11,6 +12,7 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import (
+    GoalType,
     GroupType,
     MatchData,
     MatchPart,
@@ -197,3 +199,71 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     assert item["time"] == "?"
     assert "match_part_id" not in item
     assert "time_iso" not in item
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
+    """Timeline refetches transfer only entities changed after the cached revision."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="Delta", start_date=today, end_date=today)
+    home_team = Team.objects.create(
+        name="Delta Home",
+        club=Club.objects.create(name="Delta HC"),
+    )
+    away_team = Team.objects.create(
+        name="Delta Away",
+        club=Club.objects.create(name="Delta AC"),
+    )
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
+    shooter = get_user_model().objects.create_user(username="delta-shooter")
+    for _index in range(10):
+        Shot.objects.create(
+            player=shooter.player,
+            match_data=match_data,
+            team=home_team,
+            scored=False,
+            time=timezone.now(),
+        )
+    goal = Shot.objects.create(
+        player=shooter.player,
+        match_data=match_data,
+        team=home_team,
+        scored=True,
+        shot_type=GoalType.objects.create(name="Delta goal"),
+        time=timezone.now(),
+    )
+
+    full_events = client.get(f"/api/matches/{match.id_uuid}/events/").json()
+    full_shots = client.get(f"/api/matches/{match.id_uuid}/shots/").json()
+    revision = full_events["live_revision"]
+    assert full_shots["live_revision"] == revision
+
+    goal.scored = False
+    goal.save(update_fields=["scored"])
+
+    events_delta = client.get(
+        f"/api/matches/{match.id_uuid}/events/",
+        {"since_revision": revision},
+    ).json()
+    shots_delta = client.get(
+        f"/api/matches/{match.id_uuid}/shots/",
+        {"since_revision": revision},
+    ).json()
+
+    assert events_delta["mode"] == "delta"
+    assert events_delta["upsert"] == []
+    assert events_delta["deleted_ids"] == [str(goal.id_uuid)]
+    assert shots_delta["mode"] == "delta"
+    assert shots_delta["deleted_ids"] == []
+    assert shots_delta["upsert"][0]["event_id"] == str(goal.id_uuid)
+    assert shots_delta["upsert"][0]["scored"] is False
+    assert len(json.dumps(shots_delta)) < len(json.dumps(full_shots))

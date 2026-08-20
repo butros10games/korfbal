@@ -560,6 +560,7 @@ class MatchViewSet(
                     team=team,
                     since_revision=since_revision,
                     timeout_seconds=timeout_seconds,
+                    compact=request.query_params.get("compact") == "1",
                 ),
                 status=status.HTTP_200_OK,
             )
@@ -605,6 +606,11 @@ class MatchViewSet(
             "score": {"home": home, "away": away},
             "last_changed_at": home_tracker_state.get("last_changed_at"),
             "live_revision": match_data.live_revision,
+            **(
+                {"resources": home_tracker_state["resources"]}
+                if isinstance(home_tracker_state.get("resources"), list)
+                else {}
+            ),
         }
 
     @action(

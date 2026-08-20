@@ -103,3 +103,5 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
     assert "changed" not in updated
     assert updated["score"] == {"home": 1, "away": 0}
     assert updated["live_revision"] == payload["live_revision"] + 1
+    assert "events" in updated["resources"]
+    assert "shots" in updated["resources"]

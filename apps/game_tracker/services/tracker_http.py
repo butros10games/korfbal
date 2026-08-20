@@ -30,8 +30,15 @@ from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResourc
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_live_update_signals,
 )
-from apps.game_tracker.services.live_updates import record_match_change
+from apps.game_tracker.services.live_updates import (
+    record_match_change,
+    summarize_match_changes,
+)
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
+from apps.game_tracker.services.match_timeline_payload import (
+    build_match_events,
+    build_match_shots,
+)
 from apps.game_tracker.services.player_groups import (
     RESERVE_GROUP_NAME,
     get_reserve_group,
@@ -739,6 +746,36 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
     return state
 
 
+_TRACKER_CONFIGURATION_KEYS = frozenset({
+    "match_id",
+    "match_data_id",
+    "team",
+    "opponent",
+    "goal_types",
+    "live_revision",
+    "last_changed_at",
+})
+
+
+def compact_tracker_state(
+    state: dict[str, Any],
+    *,
+    resources: list[str],
+) -> dict[str, Any]:
+    """Return a patch that reuses configuration from the initial snapshot."""
+    return {
+        "changed": True,
+        "live_revision": state["live_revision"],
+        "last_changed_at": state["last_changed_at"],
+        "resources": resources,
+        "patch": {
+            key: value
+            for key, value in state.items()
+            if key not in _TRACKER_CONFIGURATION_KEYS and key != "resources"
+        },
+    }
+
+
 def _require_not_paused(
     match_data: MatchData,
     team: Team,
@@ -802,6 +839,18 @@ def apply_tracker_command(
             if command in _SERVER_TIMED_COMMANDS
             else _command_time_from_payload(payload)
         )
+        affected_resources = _COMMAND_RESOURCES.get(command, frozenset())
+        before_events = (
+            {event["event_id"]: event for event in build_match_events(match_data)}
+            if LiveResource.EVENTS in affected_resources
+            else {}
+        )
+        before_shots = (
+            {shot["event_id"]: shot for shot in build_match_shots(match_data)}
+            if LiveResource.SHOTS in affected_resources
+            else {}
+        )
+
         with suppress_live_update_signals():
             parsed_command.apply(
                 _TrackerCommandContext(
@@ -812,9 +861,29 @@ def apply_tracker_command(
                 ),
             )
         if command in _MUTATING_COMMANDS:
+            changed_ids: dict[LiveResource, set[str]] = {}
+            if LiveResource.EVENTS in affected_resources:
+                after_events = {
+                    event["event_id"]: event for event in build_match_events(match_data)
+                }
+                changed_ids[LiveResource.EVENTS] = {
+                    event_id
+                    for event_id in before_events.keys() | after_events.keys()
+                    if before_events.get(event_id) != after_events.get(event_id)
+                }
+            if LiveResource.SHOTS in affected_resources:
+                after_shots = {
+                    shot["event_id"]: shot for shot in build_match_shots(match_data)
+                }
+                changed_ids[LiveResource.SHOTS] = {
+                    event_id
+                    for event_id in before_shots.keys() | after_shots.keys()
+                    if before_shots.get(event_id) != after_shots.get(event_id)
+                }
             record_match_change(
                 match_data,
-                resources=_COMMAND_RESOURCES[command],
+                resources=affected_resources,
+                changed_ids=changed_ids,
             )
 
     return get_tracker_state(match, team=team)
@@ -826,6 +895,7 @@ def poll_tracker_state(
     team: Team,
     since_revision: int,
     timeout_seconds: int = 25,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Return changed tracker state without occupying a request worker.
 
@@ -847,7 +917,16 @@ def poll_tracker_state(
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
 
     if match_data.live_revision > since_revision:
-        return get_tracker_state(match, team=team)
+        state = get_tracker_state(match, team=team)
+        summary = summarize_match_changes(
+            MatchData.objects.get(pk=match_data.pk),
+            since_revision=since_revision,
+        )
+        resources = sorted(resource.value for resource in summary.resources)
+        if compact:
+            return compact_tracker_state(state, resources=resources)
+        state["resources"] = resources
+        return state
 
     return {
         "changed": False,

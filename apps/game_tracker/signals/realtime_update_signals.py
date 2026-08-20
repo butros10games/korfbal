@@ -44,12 +44,21 @@ SUBSTITUTE_RESOURCES = {
 PAUSE_RESOURCES = {LiveResource.LIVE, LiveResource.TRACKER, LiveResource.EVENTS}
 
 
-def _record(instance: RealtimeModel, resources: set[LiveResource]) -> None:
+def _record(
+    instance: RealtimeModel,
+    resources: set[LiveResource],
+    *,
+    changed_ids: dict[LiveResource, set[str]] | None = None,
+) -> None:
     if live_update_signals_suppressed():
         return
     match_data = instance if isinstance(instance, MatchData) else instance.match_data
     if match_data is not None:
-        record_match_change(match_data, resources=resources)
+        record_match_change(
+            match_data,
+            resources=resources,
+            changed_ids=changed_ids,
+        )
 
 
 @receiver([post_save, post_delete], sender=Shot)
@@ -70,7 +79,15 @@ def _shot_realtime_changed(
         # Coalesce the MatchData save into the Shot's single live revision.
         with suppress_live_update_signals():
             persist_matchdata_scores(match_data)
-    _record(instance, SHOT_RESOURCES)
+    entity_id = str(instance.id_uuid)
+    _record(
+        instance,
+        SHOT_RESOURCES,
+        changed_ids={
+            LiveResource.EVENTS: {entity_id},
+            LiveResource.SHOTS: {entity_id},
+        },
+    )
 
 
 @receiver([post_save, post_delete], sender=PlayerChange)
@@ -80,7 +97,11 @@ def _substitution_realtime_changed(
     **kwargs: object,
 ) -> None:
     del sender, kwargs
-    _record(instance, SUBSTITUTE_RESOURCES)
+    _record(
+        instance,
+        SUBSTITUTE_RESOURCES,
+        changed_ids={LiveResource.EVENTS: {str(instance.id_uuid)}},
+    )
 
 
 @receiver([post_save, post_delete], sender=Pause)
@@ -88,7 +109,11 @@ def _pause_realtime_changed(
     sender: type[Pause], instance: Pause, **kwargs: object
 ) -> None:
     del sender, kwargs
-    _record(instance, PAUSE_RESOURCES)
+    _record(
+        instance,
+        PAUSE_RESOURCES,
+        changed_ids={LiveResource.EVENTS: {str(instance.id_uuid)}},
+    )
 
 
 @receiver([post_save, post_delete], sender=Attack)
@@ -98,7 +123,11 @@ def _attack_realtime_changed(
     **kwargs: object,
 ) -> None:
     del sender, kwargs
-    _record(instance, {LiveResource.TRACKER, LiveResource.EVENTS})
+    _record(
+        instance,
+        {LiveResource.TRACKER, LiveResource.EVENTS},
+        changed_ids={LiveResource.EVENTS: set()},
+    )
 
 
 @receiver([post_save, post_delete], sender=MatchPart)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -18,6 +19,8 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.realtime.contracts import LiveResource
+from apps.game_tracker.services.live_updates import summarize_match_changes
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
@@ -61,9 +64,23 @@ class MatchEventsActionsMixin:
         """
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
+        since_revision_raw = request.query_params.get("since_revision")
+        since_revision: int | None = None
+        if since_revision_raw is not None:
+            try:
+                since_revision = int(since_revision_raw)
+            except ValueError:
+                since_revision = -2
+            if since_revision < 0:
+                return Response(
+                    {"detail": "Invalid 'since_revision'."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         if not match_data or match_data.status == "upcoming":
             return Response(
                 {
+                    "mode": "full",
+                    "live_revision": match_data.live_revision if match_data else 0,
                     "home_team_id": str(match.home_team.id_uuid),
                     "match_parts": [],
                     "events": [],
@@ -72,30 +89,67 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_200_OK,
             )
 
-        match_parts_payload = [
-            {
-                "id_uuid": str(part.id_uuid),
-                "part_number": part.part_number,
-                "start_time": part.start_time.isoformat() if part.start_time else None,
-                "end_time": part.end_time.isoformat() if part.end_time else None,
-                "active": bool(part.active),
-            }
-            for part in MatchPart.objects
-            .filter(match_data=match_data)
-            .order_by("part_number", "start_time")
-            .all()
-        ]
-
-        events_payload = build_match_events(match_data)
-        return Response(
-            {
+        with transaction.atomic():
+            match_data = MatchData.objects.select_for_update().get(pk=match_data.pk)
+            match_parts_payload = [
+                {
+                    "id_uuid": str(part.id_uuid),
+                    "part_number": part.part_number,
+                    "start_time": (
+                        part.start_time.isoformat() if part.start_time else None
+                    ),
+                    "end_time": part.end_time.isoformat() if part.end_time else None,
+                    "active": bool(part.active),
+                }
+                for part in MatchPart.objects
+                .filter(match_data=match_data)
+                .order_by("part_number", "start_time")
+                .all()
+            ]
+            events_payload = build_match_events(match_data)
+            base = {
                 "home_team_id": str(match.home_team.id_uuid),
                 "match_parts": match_parts_payload,
-                "events": events_payload,
                 "status": match_data.status,
-            },
-            status=status.HTTP_200_OK,
-        )
+                "live_revision": match_data.live_revision,
+            }
+            if since_revision is None:
+                return Response(
+                    {**base, "mode": "full", "events": events_payload},
+                    status=status.HTTP_200_OK,
+                )
+
+            summary = summarize_match_changes(
+                match_data,
+                since_revision=since_revision,
+            )
+            can_send_delta = summary.history_complete and (
+                LiveResource.EVENTS not in summary.resources
+                or LiveResource.EVENTS in summary.complete_id_resources
+            )
+            if not can_send_delta:
+                return Response(
+                    {**base, "mode": "full", "events": events_payload},
+                    status=status.HTTP_200_OK,
+                )
+
+            changed_ids = summary.changed_ids.get(LiveResource.EVENTS, frozenset())
+            current_ids = {event["event_id"] for event in events_payload}
+            return Response(
+                {
+                    **base,
+                    "mode": "delta",
+                    "base_revision": since_revision,
+                    "upsert": [
+                        event
+                        for event in events_payload
+                        if event["event_id"] in changed_ids
+                    ],
+                    "deleted_ids": sorted(changed_ids - current_ids),
+                    "order": [event["event_id"] for event in events_payload],
+                },
+                status=status.HTTP_200_OK,
+            )
 
     @action(detail=True, methods=("GET",), url_path="shots")
     def shots(
@@ -107,9 +161,23 @@ class MatchEventsActionsMixin:
         """Return shot attempts (scored + missed) for a single match."""
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
+        since_revision_raw = request.query_params.get("since_revision")
+        since_revision: int | None = None
+        if since_revision_raw is not None:
+            try:
+                since_revision = int(since_revision_raw)
+            except ValueError:
+                since_revision = -2
+            if since_revision < 0:
+                return Response(
+                    {"detail": "Invalid 'since_revision'."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         if not match_data or match_data.status == "upcoming":
             return Response(
                 {
+                    "mode": "full",
+                    "live_revision": match_data.live_revision if match_data else 0,
                     "home_team_id": str(match.home_team.id_uuid),
                     "away_team_id": str(match.away_team.id_uuid),
                     "shots": [],
@@ -118,16 +186,52 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_200_OK,
             )
 
-        shots_payload = build_match_shots(match_data)
-        return Response(
-            {
+        with transaction.atomic():
+            match_data = MatchData.objects.select_for_update().get(pk=match_data.pk)
+            shots_payload = build_match_shots(match_data)
+            base = {
                 "home_team_id": str(match.home_team.id_uuid),
                 "away_team_id": str(match.away_team.id_uuid),
-                "shots": shots_payload,
                 "status": match_data.status,
-            },
-            status=status.HTTP_200_OK,
-        )
+                "live_revision": match_data.live_revision,
+            }
+            if since_revision is None:
+                return Response(
+                    {**base, "mode": "full", "shots": shots_payload},
+                    status=status.HTTP_200_OK,
+                )
+
+            summary = summarize_match_changes(
+                match_data,
+                since_revision=since_revision,
+            )
+            can_send_delta = summary.history_complete and (
+                LiveResource.SHOTS not in summary.resources
+                or LiveResource.SHOTS in summary.complete_id_resources
+            )
+            if not can_send_delta:
+                return Response(
+                    {**base, "mode": "full", "shots": shots_payload},
+                    status=status.HTTP_200_OK,
+                )
+
+            changed_ids = summary.changed_ids.get(LiveResource.SHOTS, frozenset())
+            current_ids = {shot["event_id"] for shot in shots_payload}
+            return Response(
+                {
+                    **base,
+                    "mode": "delta",
+                    "base_revision": since_revision,
+                    "upsert": [
+                        shot
+                        for shot in shots_payload
+                        if shot["event_id"] in changed_ids
+                    ],
+                    "deleted_ids": sorted(changed_ids - current_ids),
+                    "order": [shot["event_id"] for shot in shots_payload],
+                },
+                status=status.HTTP_200_OK,
+            )
 
     @action(
         detail=True,

@@ -64,6 +64,27 @@ if _PROMETHEUS_AVAILABLE:
             10000,
         ],
     )
+    RESPONSE_SIZE_BYTES = histogram_factory(
+        "korfbal_response_size_bytes",
+        "Uncompressed HTTP response size in bytes",
+        ["method", "view", "status"],
+        buckets=[
+            128,
+            256,
+            512,
+            1024,
+            2048,
+            4096,
+            8192,
+            16384,
+            32768,
+            65536,
+            131072,
+            262144,
+            524288,
+            1048576,
+        ],
+    )
     SLOW_REQUESTS_TOTAL = counter_factory(
         "korfbal_slow_requests_total",
         "Requests exceeding slow threshold",
@@ -138,6 +159,7 @@ class RequestMetrics:
     slow_db_count: int | None = None
     slow_db_total_ms: int | None = None
     is_slow_request: bool = False
+    response_bytes: int | None = None
 
 
 def record_request_metrics(metrics: RequestMetrics) -> None:
@@ -152,6 +174,8 @@ def record_request_metrics(metrics: RequestMetrics) -> None:
     }
 
     REQUEST_DURATION_MS.labels(**labels).observe(max(0, metrics.elapsed_ms))
+    if metrics.response_bytes is not None:
+        RESPONSE_SIZE_BYTES.labels(**labels).observe(max(0, metrics.response_bytes))
     if metrics.is_slow_request:
         SLOW_REQUESTS_TOTAL.labels(**labels).inc()
 

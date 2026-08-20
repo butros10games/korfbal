@@ -71,6 +71,28 @@ def test_request_timing_adds_headers_even_when_disabled(
     assert "X-Korfbal-Slow-Request" not in response
 
 
+def test_request_timing_records_privacy_safe_response_size(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
+) -> None:
+    """Payload telemetry records bytes without paths, users, or response content."""
+    settings.KORFBAL_LOG_SLOW_REQUESTS = False
+    _perf_counter_sequence(monkeypatch, [1.0, 1.001])
+    recorded: list[object] = []
+    monkeypatch.setattr(request_timing, "record_request_metrics", recorded.append)
+
+    response = _make_middleware(lambda _request: HttpResponse("small"))(
+        RequestFactory().get("/private/value/123")
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert len(recorded) == 1
+    metrics = recorded[0]
+    assert metrics.response_bytes == len(b"small")
+    assert not hasattr(metrics, "path")
+    assert not hasattr(metrics, "user_id")
+
+
 def test_request_timing_marks_slow_and_buffers_when_threshold_met(
     monkeypatch: pytest.MonkeyPatch,
     settings: SettingsWrapper,

@@ -19,7 +19,7 @@ services:
             - CHOKIDAR_USEPOLLING=true
             - VITE_API_BASE_URL=https://api.korfbal.butrosgroot.com/api
             - VITE_USE_MOCK_API=false
-            - VITE_MATCH_REALTIME_TRANSPORT=${VITE_MATCH_REALTIME_TRANSPORT:-poll}
+            - VITE_MATCH_REALTIME_TRANSPORT=${VITE_MATCH_REALTIME_TRANSPORT:-sse}
         networks:
             - kwt-net
 

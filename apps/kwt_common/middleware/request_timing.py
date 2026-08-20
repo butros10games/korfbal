@@ -42,6 +42,22 @@ def _append_server_timing(existing: str | None, value: str) -> str:
     return f"{existing}, {value}"
 
 
+def _response_size_bytes(response: HttpResponse) -> int | None:
+    """Measure non-streaming response bytes without consuming stream content."""
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            return max(0, int(content_length))
+        except ValueError:
+            pass
+    if getattr(response, "streaming", False):
+        return None
+    try:
+        return len(response.content)
+    except AttributeError:
+        return None
+
+
 class RequestTimingMiddleware:
     """Measure request duration and surface slow requests."""
 
@@ -91,6 +107,7 @@ class RequestTimingMiddleware:
                 slow_db_count=len(slow_queries) if slow_queries else None,
                 slow_db_total_ms=slow_db_total_ms if slow_queries else None,
                 is_slow_request=is_slow_request,
+                response_bytes=_response_size_bytes(response),
             )
         )
 
