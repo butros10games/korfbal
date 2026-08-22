@@ -44,6 +44,7 @@ from apps.game_tracker.services.player_groups import (
     get_reserve_group,
 )
 from apps.player.models import Player
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import Match
 from apps.team.models.team import Team
 
@@ -696,6 +697,17 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
     timeouts_for = timeouts_by_team.get(team.id_uuid, 0)
     timeouts_against = timeouts_by_team.get(opponent.id_uuid, 0)
 
+    player_groups = _player_groups_payload(
+        match_data,
+        team=team,
+        opponent=opponent,
+    )
+    reserve_players = _reserve_players_payload(match_data, team=team)
+    player_ids = [
+        player["id"] for group in player_groups for player in group["players"]
+    ]
+    player_ids.extend(player["id"] for player in reserve_players)
+
     state: dict[str, Any] = {
         "match_id": str(match.id_uuid),
         "match_data_id": str(match_data.id_uuid),
@@ -731,12 +743,13 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         "paused": paused,
         "start_stop_label": start_stop_label,
         "timer": _timer_data(match_data, current_part),
-        "player_groups": _player_groups_payload(
-            match_data,
+        "player_groups": player_groups,
+        "reserve_players": reserve_players,
+        "goal_audio": build_goal_song_manifest(
+            player_ids=player_ids,
             team=team,
-            opponent=opponent,
+            season=match.season,
         ),
-        "reserve_players": _reserve_players_payload(match_data, team=team),
         "goal_types": [{"id": str(gt.id_uuid), "name": gt.name} for gt in goal_types],
         "last_event": _last_event_payload(match_data, team=team, opponent=opponent),
         "last_changed_at": _last_changed_at(match_data).isoformat(),
@@ -752,6 +765,7 @@ _TRACKER_CONFIGURATION_KEYS = frozenset({
     "team",
     "opponent",
     "goal_types",
+    "goal_audio",
     "live_revision",
     "last_changed_at",
 })

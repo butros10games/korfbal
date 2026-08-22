@@ -24,12 +24,19 @@ from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.expo_push import ExpoPushPayload
+from apps.player.services.player_audio import prepare_player_song_clip
 from apps.player.services.spotdl import download_spotify_track
 from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
 from apps.schedule.models.match import Match
 
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_cached_song_clips(cached: CachedSong) -> None:
+    songs = PlayerSong.objects.select_related("cached_song").filter(cached_song=cached)
+    for song in songs:
+        prepare_player_song_clip(song)
 
 
 def _cached_song_is_ready(cached: CachedSong) -> bool:
@@ -129,6 +136,7 @@ def _download_and_store_cached_song(cached: CachedSong) -> None:
                     "updated_at",
                 ]
             )
+        _prepare_cached_song_clips(cached)
 
 
 def _download_and_store_legacy_player_song(song: PlayerSong) -> None:
@@ -160,6 +168,7 @@ def _download_and_store_legacy_player_song(song: PlayerSong) -> None:
                     "updated_at",
                 ]
             )
+        prepare_player_song_clip(song)
 
 
 def _participant_players_for_match_data(match_data: MatchData) -> list[Player]:
@@ -414,6 +423,7 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:
     now = timezone.now()
 
     if _cached_song_is_ready(cached):
+        _prepare_cached_song_clips(cached)
         return
 
     # Avoid duplicate work if another worker is already processing it.
@@ -467,6 +477,7 @@ def download_player_song(self: Any, song_id: str) -> None:
 
     # Legacy: if this PlayerSong still stores its own audio, keep the old behavior.
     if song.status == PlayerSongStatus.READY and song.audio_file:
+        prepare_player_song_clip(song)
         return
 
     try:
