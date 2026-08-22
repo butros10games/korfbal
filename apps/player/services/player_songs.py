@@ -14,7 +14,6 @@ from kombu.exceptions import OperationalError as KombuOperationalError
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.player_audio import prepare_player_song_clip
 from apps.player.spotify import canonicalize_spotify_track_url
 from apps.player.tasks import download_cached_song, download_player_song
 
@@ -80,7 +79,14 @@ def create_player_song(
             error_message="",
             audio_file=uploaded_audio,
         )
-        prepare_player_song_clip(song)
+        try:
+            enqueue_download_for_player_song(song)
+        except KombuOperationalError:
+            logger.warning(
+                "Celery broker unavailable; could not prepare PlayerSong %s",
+                song.id_uuid,
+                exc_info=True,
+            )
         return song, True
 
     canonical_url = canonicalize_spotify_track_url(str(spotify_url or "").strip())
@@ -123,11 +129,18 @@ def update_player_song_settings(
         update_fields.append("playback_speed")
 
     song.save(update_fields=update_fields)
-    prepare_player_song_clip(song)
+    try:
+        enqueue_download_for_player_song(song)
+    except KombuOperationalError:
+        logger.warning(
+            "Celery broker unavailable; could not re-prepare PlayerSong %s",
+            song.id_uuid,
+            exc_info=True,
+        )
 
 
 def enqueue_download_for_player_song(song: PlayerSong) -> None:
-    """Enqueue or eagerly execute the download task for a PlayerSong."""
+    """Enqueue download or clip preparation for a PlayerSong."""
     cached = song.cached_song
     if _should_run_tasks_eagerly():
         if cached is not None:

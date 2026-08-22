@@ -203,7 +203,9 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
 
     with (
         override_settings(MEDIA_ROOT=tmp_path, MEDIA_URL="/media/"),
-        patch("apps.player.services.player_songs.prepare_player_song_clip"),
+        patch(
+            "apps.player.services.player_songs.download_player_song.apply"
+        ) as prepare,
     ):
         response = client.post(
             "/api/player/api/upload_goal_song/",
@@ -223,3 +225,4 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     assert user.player.goal_song_uri == payload["url"]
     assert payload["url"].endswith(song.audio_file.name)
     assert payload["player"]["goal_song_uri"] == payload["url"]
+    prepare.assert_called_once_with(args=[str(song.id_uuid)])

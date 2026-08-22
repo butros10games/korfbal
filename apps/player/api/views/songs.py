@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.http import FileResponse, HttpResponseRedirect
+from kombu.exceptions import OperationalError as KombuOperationalError
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
@@ -26,11 +28,15 @@ from apps.player.services.player_songs import (
     create_player_song,
     effective_song_audio_file,
     effective_song_status,
+    enqueue_download_for_player_song,
     retry_player_song_download,
     update_player_song_settings,
 )
 
 from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_player
+
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerSongClipAPIView(APIView):
@@ -86,10 +92,20 @@ class PlayerSongClipAPIView(APIView):
             return HttpResponseRedirect(location)
 
         if not clip_key:
-            return Response(
+            try:
+                enqueue_download_for_player_song(song)
+            except KombuOperationalError:
+                logger.warning(
+                    "Celery broker unavailable; could not prepare PlayerSong %s",
+                    song.id_uuid,
+                    exc_info=True,
+                )
+            response = Response(
                 {"detail": "Goal sound clip is not prepared."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+            response["Retry-After"] = "2"
+            return response
 
         stream = default_storage.open(clip_key, "rb")
         filename = clip_key.rsplit("/", maxsplit=1)[-1]
