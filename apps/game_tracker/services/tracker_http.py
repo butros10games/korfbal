@@ -1243,7 +1243,7 @@ def _cmd_shot_reg(
     shot_team = team if params.for_team else opponent
     player = _match_player(
         match_data=match_data,
-        team=shot_team,
+        team=team,
         player_id=params.player_id,
     )
 
@@ -1289,7 +1289,7 @@ def _cmd_goal_reg(
     shot_team = team if params.for_team else opponent
     player = _match_player(
         match_data=match_data,
-        team=shot_team,
+        team=team,
         player_id=params.player_id,
     )
     try:

@@ -8,7 +8,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPart
+from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     apply_tracker_command,
@@ -324,3 +324,61 @@ def test_goal_registration_rejects_player_outside_match_roster() -> None:
         )
 
     assert exc.value.code == "bad_request"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("command", "scored"),
+    [("goal_reg", True), ("shot_reg", False)],
+)
+def test_against_event_accepts_defender_from_tracked_team_roster(
+    command: str,
+    scored: bool,
+) -> None:
+    tracker = create_tracker_match(prefix="Goal Against Roster")
+    tracker.match_data.status = "active"
+    tracker.match_data.save(update_fields=["status"])
+    MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=timezone.now(),
+        active=True,
+    )
+    goal_type = GoalType.objects.create(name="Goal Against Type")
+    defense_type = create_group_types("Verdediging")["Verdediging"]
+    defense_group = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=defense_type,
+    )
+    defender = (
+        get_user_model()
+        .objects.create_user(username="goal_against_defender", password=TEST_PASSWORD)
+        .player
+    )
+    defense_group.players.add(defender)
+
+    state = get_tracker_state(tracker.match, team=tracker.home_team)
+    assert any(
+        player["id"] == str(defender.id_uuid)
+        for group in state["player_groups"]
+        for player in group["players"]
+    )
+
+    payload = {
+        "command": command,
+        "player_id": str(defender.id_uuid),
+        "for_team": False,
+    }
+    payload["goal_type" if scored else "shot_type"] = str(goal_type.id_uuid)
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload=payload,
+    )
+
+    shot = Shot.objects.get(match_data=tracker.match_data)
+    assert shot.player == defender
+    assert shot.team == tracker.away_team
+    assert shot.for_team is False
+    assert shot.scored is scored
