@@ -190,6 +190,7 @@ class MatchViewSet(
     MatchEventsActionsMixin,
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.ReadOnlyModelViewSet,
 ):
     """Expose match data for the mobile frontend."""

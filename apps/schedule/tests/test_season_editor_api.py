@@ -145,8 +145,17 @@ def test_staff_can_create_and_quick_edit_matches(client: Client) -> None:
     assert invalid.status_code == HTTPStatus.BAD_REQUEST
     assert "away_team_id" in invalid.json()
 
+    staff.is_staff = False
+    staff.save(update_fields=["is_staff"])
+    forbidden_delete = client.delete(f"/api/matches/{match.id_uuid}/")
+    assert forbidden_delete.status_code == HTTPStatus.FORBIDDEN
+    assert Match.objects.filter(id_uuid=match.id_uuid).exists()
+
+    staff.is_staff = True
+    staff.save(update_fields=["is_staff"])
     delete_response = client.delete(f"/api/matches/{match.id_uuid}/")
-    assert delete_response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    assert delete_response.status_code == HTTPStatus.NO_CONTENT
+    assert not Match.objects.filter(id_uuid=match.id_uuid).exists()
 
 
 @pytest.mark.django_db
