@@ -8,9 +8,10 @@ from django.core.files.uploadedfile import UploadedFile
 
 from apps.player.models.player import Player
 from apps.player.services.goal_song import (
+    apply_goal_song_song_ids,
     sanitize_uploaded_filename,
-    store_goal_song_upload_best_effort,
 )
+from apps.player.services.player_songs import create_player_song
 
 
 ALLOWED_GOAL_SONG_CONTENT_TYPES = {
@@ -48,19 +49,21 @@ def save_goal_song_upload(
     *,
     player: Player,
     uploaded: UploadedFile,
-    clip_duration_seconds: int,
 ) -> str:
-    """Persist a goal-song upload and return its public URL."""
+    """Create and select a PlayerSong from the legacy upload endpoint."""
     filename = str(getattr(uploaded, "name", "goal_song") or "goal_song")
     safe_name = sanitize_uploaded_filename(filename, fallback="goal_song")
+    uploaded.name = safe_name
 
-    _, url = store_goal_song_upload_best_effort(
+    song, _created = create_player_song(
         player=player,
-        uploaded=uploaded,
-        safe_name=safe_name,
-        clip_duration_seconds=clip_duration_seconds,
+        uploaded_audio=uploaded,
+        spotify_url=None,
     )
+    update_fields = apply_goal_song_song_ids(
+        player=player,
+        ids=[str(song.id_uuid)],
+    )
+    player.save(update_fields=update_fields)
 
-    player.goal_song_uri = url
-    player.save(update_fields=["goal_song_uri"])
-    return url
+    return str(song.audio_file.url)

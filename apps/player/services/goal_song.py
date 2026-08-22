@@ -3,28 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextlib import suppress
 from dataclasses import dataclass
-import logging
-from pathlib import Path
-import subprocess  # nosec B404
-import tempfile
-
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.core.files.uploadedfile import UploadedFile
-from django.utils import timezone
 
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.audio_clipper import (
-    Mp3ClipSpec,
-    find_ffmpeg,
-    transcode_to_mp3_clip_file,
-)
-
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,76 +242,6 @@ def apply_goal_song_song_ids(
     player.song_start_time = None
     update_fields.extend(["goal_song_uri", "song_start_time"])
     return update_fields
-
-
-def store_goal_song_upload_best_effort(
-    *,
-    player: Player,
-    uploaded: UploadedFile,
-    safe_name: str,
-    clip_duration_seconds: int = 8,
-) -> tuple[str, str]:
-    """Store a clipped goal-song upload, falling back to the original file."""
-
-    def _store_original() -> tuple[str, str]:
-        key_original = (
-            f"goal_songs/{player.id_uuid}/"
-            f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{safe_name}"
-        )
-        with suppress(Exception):
-            uploaded.seek(0)
-        stored = default_storage.save(key_original, uploaded)
-        return stored, default_storage.url(stored)
-
-    ffmpeg_path = find_ffmpeg()
-    if not ffmpeg_path:
-        return _store_original()
-
-    try:
-        with tempfile.TemporaryDirectory(prefix="goal_song_") as tmpdir:
-            tmpdir_path = Path(tmpdir)
-            input_path = tmpdir_path / "input"
-            output_path = tmpdir_path / "clip.mp3"
-
-            with suppress(Exception):
-                uploaded.seek(0)
-            with input_path.open("wb") as handle:
-                handle.writelines(uploaded.chunks())
-
-            transcode_to_mp3_clip_file(
-                input_path=str(input_path),
-                output_path=str(output_path),
-                spec=Mp3ClipSpec(
-                    start_seconds=0,
-                    duration_seconds=clip_duration_seconds,
-                ),
-                ffmpeg_path=ffmpeg_path,
-            )
-
-            clip_key = (
-                f"goal_songs/{player.id_uuid}/"
-                f"{timezone.now().strftime('%Y%m%d%H%M%S')}_clip_"
-                f"{Path(safe_name).stem or 'goal_song'}.mp3"
-            )
-
-            clip_bytes = output_path.read_bytes()
-            stored_path = default_storage.save(
-                clip_key,
-                ContentFile(clip_bytes),
-            )
-            return stored_path, default_storage.url(stored_path)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        logger.info(
-            "ffmpeg unavailable or failed; storing full goal song upload",
-            exc_info=True,
-        )
-        return _store_original()
-    except Exception:
-        logger.warning(
-            "Unexpected error while clipping goal song; storing full upload",
-            exc_info=True,
-        )
-        return _store_original()
 
 
 def remove_deleted_song_from_goal_song_selection(

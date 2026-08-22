@@ -107,7 +107,6 @@ class UploadGoalSongAPIView(APIView):
         url = save_goal_song_upload(
             player=player,
             uploaded=uploaded,
-            clip_duration_seconds=8,
         )
 
         return Response({

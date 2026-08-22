@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.player.models import PlayerSong, PlayerSongStatus
 from apps.player.models.player import Player
-
-
-CLIP_DURATION_SECONDS = 8
 
 
 @pytest.mark.django_db
@@ -187,34 +186,14 @@ def test_upload_goal_song_player_missing_returns_404(client: Client) -> None:
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     client: Client,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """Successful upload sanitizes filename and persists returned URL on Player."""
+    """The legacy endpoint should create and select a modern PlayerSong."""
     user = get_user_model().objects.create_user(
         username="upload_goal_song_ok",
         password="pass1234",  # nosec
     )
     client.force_login(user)
-
-    captured: dict[str, object] = {}
-    expected_url = "https://cdn.example.invalid/goal_song.mp3"
-
-    def _fake_store_goal_song_upload_best_effort(
-        *,
-        player: Player,
-        uploaded: object,
-        safe_name: str,
-        clip_duration_seconds: int,
-    ) -> tuple[None, str]:
-        captured["player_id"] = str(player.id_uuid)
-        captured["safe_name"] = safe_name
-        captured["clip_duration_seconds"] = clip_duration_seconds
-        return None, expected_url
-
-    monkeypatch.setattr(
-        "apps.player.services.player_uploads.store_goal_song_upload_best_effort",
-        _fake_store_goal_song_upload_best_effort,
-    )
 
     uploaded = SimpleUploadedFile(
         "  cool song (1).MP3 ",
@@ -222,19 +201,25 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
         content_type="AuDiO/MpEg",
     )
 
-    response = client.post(
-        "/api/player/api/upload_goal_song/",
-        data={"goal_song": uploaded},
-    )
+    with (
+        override_settings(MEDIA_ROOT=tmp_path, MEDIA_URL="/media/"),
+        patch("apps.player.services.player_songs.prepare_player_song_clip"),
+    ):
+        response = client.post(
+            "/api/player/api/upload_goal_song/",
+            data={"goal_song": uploaded},
+        )
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert payload["url"] == expected_url
-    assert payload["player"]["goal_song_uri"] == expected_url
-
-    assert captured["player_id"] == str(user.player.id_uuid)
-    assert captured["safe_name"] == "coolsong1.MP3"
-    assert captured["clip_duration_seconds"] == CLIP_DURATION_SECONDS
 
     user.refresh_from_db()
-    assert user.player.goal_song_uri == expected_url
+    song = PlayerSong.objects.get(player=user.player)
+    assert song.status == PlayerSongStatus.READY
+    assert song.audio_file.name.startswith("player_songs/")
+    assert Path(song.audio_file.name).stem.startswith("coolsong1")
+    assert Path(song.audio_file.name).suffix == ".MP3"
+    assert user.player.goal_song_song_ids == [str(song.id_uuid)]
+    assert user.player.goal_song_uri == payload["url"]
+    assert payload["url"].endswith(song.audio_file.name)
+    assert payload["player"]["goal_song_uri"] == payload["url"]
