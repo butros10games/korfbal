@@ -31,6 +31,7 @@ from apps.game_tracker.services.player_designation import (
     sync_match_players,
     validate_target_group_capacity,
 )
+from apps.game_tracker.services.player_search import player_name_match_score
 from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Match
@@ -257,20 +258,33 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
 
     allowed_filter = club_roster_filter | membership_filter
 
-    search_filter = (
-        Q(user__username__icontains=search_query)
-        | Q(user__first_name__icontains=search_query)
-        | Q(user__last_name__icontains=search_query)
-    )
-
-    players = (
+    roster_players = (
         Player.objects
-        .filter(search_filter)
         .filter(allowed_filter)
         .exclude(id_uuid__in=excluded_ids)
         .distinct()
         .select_related("user")
     )
+    ranked_players = [
+        (score, player)
+        for player in roster_players
+        if (
+            score := player_name_match_score(
+                search_query,
+                username=player.user.username,
+                first_name=player.user.first_name,
+                last_name=player.user.last_name,
+            )
+        )
+        is not None
+    ]
+    players = [
+        player
+        for _, player in sorted(
+            ranked_players,
+            key=lambda item: (item[0], item[1].user.username.casefold()),
+        )
+    ]
 
     viewer = _viewer_player(request)
 

@@ -676,6 +676,44 @@ def test_player_search_includes_club_membership_players(client: Client) -> None:
 
 
 @pytest.mark.django_db
+def test_player_search_ignores_accents_and_tolerates_close_typos(
+    client: Client,
+) -> None:
+    """The match-player picker should find natural variants of a player's name."""
+    season = Season.objects.create(
+        name="2025 Season",
+        start_date=timezone.now().date(),
+        end_date=timezone.now().date() + timedelta(days=365),
+    )
+    club = Club.objects.create(name="Search Club")
+    opponent_club = Club.objects.create(name="Opponent")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent Team", club=opponent_club)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=opponent,
+        season=season,
+        start_time=timezone.now(),
+    )
+
+    player = _create_test_player(username="Joëlle")
+    PlayerClubMembership.objects.create(player=player, club=club)
+    _login_club_editor(client, username="accent_search_editor", club=club)
+
+    for search_term in ("joelle", "joele"):
+        response = client.get(
+            f"/api/match/player_search/{match.id_uuid}/{team.id_uuid}/"
+            f"?search={search_term}",
+            secure=True,
+        )
+
+        assert response.status_code == HTTP_STATUS_OK
+        assert {p["user"]["username"] for p in response.json()["players"]} == {
+            "Joëlle",
+        }
+
+
+@pytest.mark.django_db
 def test_player_search_includes_other_team_players_same_club(client: Client) -> None:
     """Search should include players from other teams within the same club.
 
