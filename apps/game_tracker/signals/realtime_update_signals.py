@@ -21,6 +21,7 @@ from apps.game_tracker.services.live_update_signal_control import (
 )
 from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_event_context import match_data_is_deleting
+from apps.game_tracker.services.match_events import logical_event_id
 from apps.game_tracker.services.match_scores import persist_matchdata_scores
 
 
@@ -81,7 +82,11 @@ def _shot_realtime_changed(
         # Coalesce the MatchData save into the Shot's single live revision.
         with suppress_live_update_signals():
             persist_matchdata_scores(match_data)
-    entity_id = str(instance.id_uuid)
+    entity_id = logical_event_id(
+        match_data,
+        source_type="shot",
+        source_id=instance.pk,
+    )
     _record(
         instance,
         SHOT_RESOURCES,
@@ -99,10 +104,16 @@ def _substitution_realtime_changed(
     **kwargs: object,
 ) -> None:
     del sender, kwargs
+    match_data = instance.match_data
+    entity_id = logical_event_id(
+        match_data,
+        source_type="player_change",
+        source_id=instance.pk,
+    )
     _record(
         instance,
         SUBSTITUTE_RESOURCES,
-        changed_ids={LiveResource.EVENTS: {str(instance.id_uuid)}},
+        changed_ids={LiveResource.EVENTS: {entity_id}},
     )
 
 
@@ -111,10 +122,15 @@ def _pause_realtime_changed(
     sender: type[Pause], instance: Pause, **kwargs: object
 ) -> None:
     del sender, kwargs
+    entity_id = logical_event_id(
+        instance.match_data,
+        source_type="pause",
+        source_id=instance.pk,
+    )
     _record(
         instance,
         PAUSE_RESOURCES,
-        changed_ids={LiveResource.EVENTS: {str(instance.id_uuid)}},
+        changed_ids={LiveResource.EVENTS: {entity_id}},
     )
 
 

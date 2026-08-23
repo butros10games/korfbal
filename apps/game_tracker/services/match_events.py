@@ -285,3 +285,97 @@ def event_root_ids(match_data: MatchData) -> dict[tuple[str, str], str]:
         .order_by("sequence")
         .only("source_type", "source_id", "logical_id")
     }
+
+
+def logical_event_id(
+    match_data: MatchData,
+    *,
+    source_type: str,
+    source_id: object,
+) -> str:
+    """Resolve a typed projection id to its stable logical event identity."""
+    value = (
+        MatchEvent.objects
+        .filter(
+            match_data=match_data,
+            source_type=source_type,
+            source_id=source_id,
+        )
+        .order_by("sequence")
+        .values_list("logical_id", flat=True)
+        .first()
+    )
+    return str(value) if value else str(source_id)
+
+
+def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
+    """Return the complete ordered audit stream, including inactive versions."""
+    events = (
+        MatchEvent.objects
+        .filter(match_data=match_data)
+        .select_related("shot_detail", "substitution_detail")
+        .order_by("sequence")
+    )
+    history: list[dict[str, Any]] = []
+    for event in events:
+        detail: dict[str, object] | None = None
+        if hasattr(event, "shot_detail"):
+            shot = event.shot_detail
+            detail = {
+                "shooting_team_id": (
+                    str(shot.shooting_team_id) if shot.shooting_team_id else None
+                ),
+                "shooter_id": str(shot.shooter_id) if shot.shooter_id else None,
+                "defender_id": str(shot.defender_id) if shot.defender_id else None,
+                "shot_type_id": str(shot.shot_type_id) if shot.shot_type_id else None,
+                "outcome": shot.outcome,
+            }
+        elif hasattr(event, "substitution_detail"):
+            substitution = event.substitution_detail
+            detail = {
+                "team_id": (
+                    str(substitution.team_id) if substitution.team_id else None
+                ),
+                "player_out_id": (
+                    str(substitution.player_out_id)
+                    if substitution.player_out_id
+                    else None
+                ),
+                "player_in_id": (
+                    str(substitution.player_in_id)
+                    if substitution.player_in_id
+                    else None
+                ),
+                "player_group_id": (
+                    str(substitution.player_group_id)
+                    if substitution.player_group_id
+                    else None
+                ),
+            }
+        history.append({
+            "event_id": str(event.pk),
+            "logical_event_id": str(event.logical_id),
+            "sequence": event.sequence,
+            "kind": event.kind,
+            "status": event.status,
+            "source_type": event.source_type,
+            "source_id": str(event.source_id),
+            "match_part_id": str(event.match_part_id) if event.match_part_id else None,
+            "effective_at": (
+                event.effective_at.isoformat() if event.effective_at else None
+            ),
+            "elapsed_ms": event.elapsed_ms,
+            "recorded_at": event.recorded_at.isoformat(),
+            "command_id": str(event.command_id) if event.command_id else None,
+            "actor_id": str(event.actor_id) if event.actor_id else None,
+            "source": event.source,
+            "device_id": event.device_id,
+            "session_id": event.session_id,
+            "payload_version": event.payload_version,
+            "payload": event.payload,
+            "supersedes_event_id": (
+                str(event.supersedes_id) if event.supersedes_id else None
+            ),
+            "detail": detail,
+        })
+    return history

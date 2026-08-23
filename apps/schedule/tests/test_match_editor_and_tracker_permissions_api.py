@@ -329,7 +329,7 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert created["team_id"] == str(match.home_team.id_uuid)
     assert created["player"] == "coach"
 
-    shot_id = created["event_id"]
+    shot_id = created["source_id"]
     shot_model = Shot.objects.get(id_uuid=shot_id)
     assert shot_model.for_team is True
 
@@ -368,6 +368,18 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert Shot.objects.filter(id_uuid=shot_id).exists() is False
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 0)
+
+    history_response = client.get(f"/api/matches/{match.id_uuid}/events/history/")
+    assert history_response.status_code == HTTPStatus.OK
+    history = history_response.json()["events"]
+    shot_history = [event for event in history if event["source_type"] == "shot"]
+    assert [event["kind"] for event in shot_history] == [
+        "shot.created",
+        "shot.updated",
+        "shot.retracted",
+    ]
+    assert all(event["source"] == "editor" for event in shot_history)
+    assert len({event["logical_event_id"] for event in shot_history}) == 1
 
 
 @pytest.mark.django_db
@@ -447,7 +459,7 @@ def test_goal_editor_minute_accounts_for_completed_pauses(client: Client) -> Non
     )
 
     assert response.status_code == HTTPStatus.CREATED
-    shot = Shot.objects.get(pk=response.json()["event_id"])
+    shot = Shot.objects.get(pk=response.json()["source_id"])
     assert shot.time == match_part.start_time + timezone.timedelta(minutes=10)
 
 
@@ -525,24 +537,25 @@ def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None
     assert response.status_code == HTTPStatus.CREATED
     created = response.json()
     assert created["event_kind"] == "timeout"
-    assert created["event_id"] == created["pause_id"]
+    assert created["source_id"] == created["pause_id"]
+    assert created["event_id"] == created["logical_event_id"]
     assert created["timeout_id"] != created["pause_id"]
 
     delta = client.get(
         f"/api/matches/{match.id_uuid}/events/",
-        {"since_revision": revision_before_create},
+        {"since_revision": revision_before_create, "identity_version": 2},
     ).json()
     assert [event["event_id"] for event in delta["upsert"]] == [created["event_id"]]
 
     update_response = client.patch(
-        f"/api/matches/{match.id_uuid}/events/timeouts/{created['event_id']}/",
+        f"/api/matches/{match.id_uuid}/events/timeouts/{created['source_id']}/",
         data={"length_seconds": 30},
         content_type="application/json",
     )
     assert update_response.status_code == HTTPStatus.OK
     assert update_response.json()["event_id"] == created["event_id"]
     timeout = Timeout.objects.get(id_uuid=created["timeout_id"])
-    assert str(timeout.pause_id) == created["event_id"]
+    assert str(timeout.pause_id) == created["source_id"]
     assert Pause.objects.get(
         id_uuid=created["pause_id"]
     ).length() == timezone.timedelta(seconds=30)

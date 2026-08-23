@@ -25,6 +25,9 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
+TIMELINE_IDENTITY_VERSION = 2
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_events_halftime_substitution_is_serialized_as_rust(
@@ -188,7 +191,7 @@ def test_event_during_pause_subtracts_only_elapsed_pause_time(client: Client) ->
     event = next(
         item
         for item in response.json()["events"]
-        if item["event_id"] == str(goal.id_uuid)
+        if item["source_id"] == str(goal.id_uuid)
     )
     assert event["time"] == "5"
 
@@ -253,7 +256,7 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     shots = payload["shots"]
     assert shots, "Expected at least one shot"
 
-    item = next(s for s in shots if s["event_id"] == str(missed.id_uuid))
+    item = next(s for s in shots if s["source_id"] == str(missed.id_uuid))
     assert item["scored"] is False
     assert item["team_id"] == str(home_team.id_uuid)
     assert item["player"] == "shooter"
@@ -285,6 +288,12 @@ def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
     match_data = MatchData.objects.get(match_link=match)
     match_data.status = "active"
     match_data.save(update_fields=["status"])
+    match_part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=timezone.now() - timedelta(minutes=1),
+        active=True,
+    )
     shooter = get_user_model().objects.create_user(username="delta-shooter")
     for _index in range(10):
         Shot.objects.create(
@@ -294,17 +303,33 @@ def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
             scored=False,
             time=timezone.now(),
         )
+    goal_type = GoalType.objects.create(name="Delta goal")
+    Shot.objects.create(
+        player=shooter.player,
+        match_data=match_data,
+        match_part=match_part,
+        team=home_team,
+        scored=True,
+        shot_type=goal_type,
+        time=timezone.now(),
+    )
     goal = Shot.objects.create(
         player=shooter.player,
         match_data=match_data,
+        match_part=match_part,
         team=home_team,
         scored=True,
-        shot_type=GoalType.objects.create(name="Delta goal"),
+        shot_type=goal_type,
         time=timezone.now(),
     )
 
     full_events = client.get(f"/api/matches/{match.id_uuid}/events/").json()
     full_shots = client.get(f"/api/matches/{match.id_uuid}/shots/").json()
+    goal_event_id = next(
+        shot["event_id"]
+        for shot in full_shots["shots"]
+        if shot["source_id"] == str(goal.pk)
+    )
     revision = full_events["live_revision"]
     assert full_shots["live_revision"] == revision
 
@@ -313,18 +338,39 @@ def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
 
     events_delta = client.get(
         f"/api/matches/{match.id_uuid}/events/",
-        {"since_revision": revision},
+        {
+            "since_revision": revision,
+            "identity_version": TIMELINE_IDENTITY_VERSION,
+        },
     ).json()
     shots_delta = client.get(
         f"/api/matches/{match.id_uuid}/shots/",
-        {"since_revision": revision},
+        {
+            "since_revision": revision,
+            "identity_version": TIMELINE_IDENTITY_VERSION,
+        },
     ).json()
 
     assert events_delta["mode"] == "delta"
     assert events_delta["upsert"] == []
-    assert events_delta["deleted_ids"] == [str(goal.id_uuid)]
+    assert events_delta["deleted_ids"] == [goal_event_id]
     assert shots_delta["mode"] == "delta"
     assert shots_delta["deleted_ids"] == []
-    assert shots_delta["upsert"][0]["event_id"] == str(goal.id_uuid)
+    assert shots_delta["upsert"][0]["source_id"] == str(goal.id_uuid)
     assert shots_delta["upsert"][0]["scored"] is False
     assert len(json.dumps(shots_delta)) < len(json.dumps(full_shots))
+
+    legacy_events = client.get(
+        f"/api/matches/{match.id_uuid}/events/",
+        {"since_revision": events_delta["live_revision"]},
+    ).json()
+    legacy_shots = client.get(
+        f"/api/matches/{match.id_uuid}/shots/",
+        {"since_revision": shots_delta["live_revision"]},
+    ).json()
+    assert legacy_events["mode"] == "full"
+    assert legacy_events["identity_version"] == TIMELINE_IDENTITY_VERSION
+    assert legacy_events["events"]
+    assert legacy_shots["mode"] == "full"
+    assert legacy_shots["identity_version"] == TIMELINE_IDENTITY_VERSION
+    assert legacy_shots["shots"]

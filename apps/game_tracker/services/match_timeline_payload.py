@@ -254,7 +254,9 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
                 serialized["event_sequence"] = sequence
             source_key = _source_key(event)
             if source_key is not None and source_key in logical_ids:
-                serialized["logical_event_id"] = logical_ids[source_key]
+                logical_id = logical_ids[source_key]
+                serialized["event_id"] = logical_id
+                serialized["logical_event_id"] = logical_id
             payload.append(serialized)
 
     return payload
@@ -322,6 +324,7 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
                 serialized["event_sequence"] = sequence
             logical_id = logical_ids.get(("shot", str(shot.id_uuid)))
             if logical_id is not None:
+                serialized["event_id"] = logical_id
                 serialized["logical_event_id"] = logical_id
             payload.append(serialized)
 
@@ -379,10 +382,13 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
             team_id = str(group.team.id_uuid)
     if team_id is None:
         return None
+    source_id = str(event.id_uuid)
 
     return {
         "event_kind": "shot",
-        "event_id": str(event.id_uuid),
+        "event_id": source_id,
+        "logical_event_id": source_id,
+        "source_id": source_id,
         "type": "goal",
         "name": "Gescoord",
         "match_part_id": str(event.match_part.id_uuid),
@@ -397,7 +403,7 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
         "player": event.player.user.username,
         "shot_type_id": str(event.shot_type.id_uuid),
         "goal_type": event.shot_type.name,
-        "for_team": event.for_team,
+        "for_team": team_id == str(match_data.match_link.home_team_id),
         "team_id": team_id,
     }
 
@@ -407,7 +413,13 @@ def serialize_goal_event(
     event: Shot,
 ) -> dict[str, Any] | None:
     """Serialize a goal event after a write operation."""
-    return _serialize_goal_event(match_data, event)
+    payload = _serialize_goal_event(match_data, event)
+    if payload is not None:
+        logical_id = event_root_ids(match_data).get(("shot", str(event.id_uuid)))
+        if logical_id is not None:
+            payload["event_id"] = logical_id
+            payload["logical_event_id"] = logical_id
+    return payload
 
 
 def _serialize_shot_timeline_event(
@@ -430,13 +442,14 @@ def _serialize_shot_timeline_event(
 
     payload: dict[str, Any] = {
         "event_id": str(event.id_uuid),
+        "source_id": str(event.id_uuid),
         "time": "?",
         "player_id": str(event.player.id_uuid),
         "player": event.player.user.username,
         "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
         "shot_type": event.shot_type.name if event.shot_type else None,
         "scored": bool(event.scored),
-        "for_team": bool(event.for_team),
+        "for_team": team_id == str(match_data.match_link.home_team_id),
         "team_id": team_id,
     }
 
@@ -467,9 +480,12 @@ def _serialize_substitute_event(
     has_players = bool(event.player_in) and bool(event.player_out)
     name = "Wissel" if has_players else "Wissel tegenstander"
 
+    source_id = str(event.id_uuid)
     payload: dict[str, Any] = {
         "event_kind": "player_change",
-        "event_id": str(event.id_uuid),
+        "event_id": source_id,
+        "logical_event_id": source_id,
+        "source_id": source_id,
         "type": "substitute",
         "name": name,
         "time_iso": event.time.isoformat(),
@@ -500,7 +516,16 @@ def serialize_substitute_event(
     event: PlayerChange,
 ) -> dict[str, Any] | None:
     """Serialize a substitution event after a write operation."""
-    return _serialize_substitute_event(match_data, event)
+    payload = _serialize_substitute_event(match_data, event)
+    if payload is not None:
+        logical_id = event_root_ids(match_data).get((
+            "player_change",
+            str(event.id_uuid),
+        ))
+        if logical_id is not None:
+            payload["event_id"] = logical_id
+            payload["logical_event_id"] = logical_id
+    return payload
 
 
 def _serialize_pause_event(
@@ -511,12 +536,15 @@ def _serialize_pause_event(
         return None
 
     timeout = Timeout.objects.select_related("team").filter(pause=event).first()
+    source_id = str(event.id_uuid)
 
     return {
         "event_kind": "timeout" if timeout else "pause",
         # Pause is the durable root of both pause and timeout events. Using its id
         # keeps realtime changed ids stable while a Timeout detail row is created.
-        "event_id": str(event.id_uuid),
+        "event_id": source_id,
+        "logical_event_id": source_id,
+        "source_id": source_id,
         "pause_id": str(event.id_uuid),
         "timeout_id": str(timeout.id_uuid) if timeout else None,
         "type": "intermission",
@@ -540,4 +568,10 @@ def serialize_pause_event(
     event: Pause,
 ) -> dict[str, Any] | None:
     """Serialize a pause/timeout event after a write operation."""
-    return _serialize_pause_event(match_data, event)
+    payload = _serialize_pause_event(match_data, event)
+    if payload is not None:
+        logical_id = event_root_ids(match_data).get(("pause", str(event.id_uuid)))
+        if logical_id is not None:
+            payload["event_id"] = logical_id
+            payload["logical_event_id"] = logical_id
+    return payload

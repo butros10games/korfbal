@@ -22,6 +22,7 @@ from apps.game_tracker.models import (
 )
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import summarize_match_changes
+from apps.game_tracker.services.match_events import build_match_event_history
 from apps.game_tracker.services.match_mutations import apply_editor_mutation
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
@@ -40,6 +41,9 @@ from .serializers import (
     ShotWriteSerializer,
     TimeoutWriteSerializer,
 )
+
+
+MATCH_TIMELINE_IDENTITY_VERSION = 2
 
 
 class _MatchViewSetLike(Protocol):
@@ -110,6 +114,7 @@ class MatchEventsActionsMixin:
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
         since_revision_raw = request.query_params.get("since_revision")
+        identity_version_raw = request.query_params.get("identity_version")
         since_revision: int | None = None
         if since_revision_raw is not None:
             try:
@@ -125,6 +130,7 @@ class MatchEventsActionsMixin:
             return Response(
                 {
                     "mode": "full",
+                    "identity_version": MATCH_TIMELINE_IDENTITY_VERSION,
                     "live_revision": match_data.live_revision if match_data else 0,
                     "home_team_id": str(match.home_team.id_uuid),
                     "match_parts": [],
@@ -153,12 +159,15 @@ class MatchEventsActionsMixin:
             ]
             events_payload = build_match_events(match_data)
             base = {
+                "identity_version": MATCH_TIMELINE_IDENTITY_VERSION,
                 "home_team_id": str(match.home_team.id_uuid),
                 "match_parts": match_parts_payload,
                 "status": match_data.status,
                 "live_revision": match_data.live_revision,
             }
-            if since_revision is None:
+            if since_revision is None or identity_version_raw != str(
+                MATCH_TIMELINE_IDENTITY_VERSION
+            ):
                 return Response(
                     {**base, "mode": "full", "events": events_payload},
                     status=status.HTTP_200_OK,
@@ -207,6 +216,7 @@ class MatchEventsActionsMixin:
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
         since_revision_raw = request.query_params.get("since_revision")
+        identity_version_raw = request.query_params.get("identity_version")
         since_revision: int | None = None
         if since_revision_raw is not None:
             try:
@@ -222,6 +232,7 @@ class MatchEventsActionsMixin:
             return Response(
                 {
                     "mode": "full",
+                    "identity_version": MATCH_TIMELINE_IDENTITY_VERSION,
                     "live_revision": match_data.live_revision if match_data else 0,
                     "home_team_id": str(match.home_team.id_uuid),
                     "away_team_id": str(match.away_team.id_uuid),
@@ -235,12 +246,15 @@ class MatchEventsActionsMixin:
             match_data = MatchData.objects.select_for_update().get(pk=match_data.pk)
             shots_payload = build_match_shots(match_data)
             base = {
+                "identity_version": MATCH_TIMELINE_IDENTITY_VERSION,
                 "home_team_id": str(match.home_team.id_uuid),
                 "away_team_id": str(match.away_team.id_uuid),
                 "status": match_data.status,
                 "live_revision": match_data.live_revision,
             }
-            if since_revision is None:
+            if since_revision is None or identity_version_raw != str(
+                MATCH_TIMELINE_IDENTITY_VERSION
+            ):
                 return Response(
                     {**base, "mode": "full", "shots": shots_payload},
                     status=status.HTTP_200_OK,
@@ -292,6 +306,34 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Return whether the current user can edit match events."""
         return Response({"can_edit": IsCoachOrAdmin().has_permission(request, self)})
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="events/history",
+        permission_classes=[IsCoachOrAdmin],
+    )
+    def event_history(
+        self: _MatchViewSetLike,
+        request: Request,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Response:
+        """Return the complete append-only audit stream for authorized editors."""
+        del request, args, kwargs
+        match: Match = self.get_object()
+        match_data = MatchData.objects.filter(match_link=match).first()
+        if match_data is None:
+            return Response(
+                {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        with transaction.atomic():
+            locked = MatchData.objects.select_for_update().get(pk=match_data.pk)
+            return Response(
+                {"events": build_match_event_history(locked)},
+                status=status.HTTP_200_OK,
+            )
 
     @action(
         detail=True,

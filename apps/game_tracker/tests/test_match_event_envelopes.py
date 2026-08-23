@@ -11,6 +11,7 @@ from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import (
+    Attack,
     MatchEvent,
     Pause,
     PlayerChange,
@@ -19,6 +20,7 @@ from apps.game_tracker.models import (
     SubstitutionEventDetail,
 )
 from apps.game_tracker.services.match_event_context import match_event_context
+from apps.game_tracker.services.match_events import build_match_event_history
 from apps.game_tracker.services.match_timeline_payload import build_match_shots
 from apps.game_tracker.services.tracker_http import apply_tracker_command
 from apps.game_tracker.tests.tracker_test_helpers import (
@@ -156,7 +158,7 @@ def test_timeline_uses_commit_sequence_instead_of_client_time() -> None:
     )
 
     shots = build_match_shots(tracker.match_data)
-    assert [shot["event_id"] for shot in shots] == [
+    assert [shot["source_id"] for shot in shots] == [
         str(first.id_uuid),
         str(second.id_uuid),
     ]
@@ -284,3 +286,37 @@ def test_match_deletion_cascades_versioned_event_history() -> None:
     tracker.match.delete()
 
     assert MatchEvent.objects.filter(match_data_id=match_data_id).exists() is False
+
+
+@pytest.mark.django_db
+def test_audit_history_includes_misses_attacks_and_prior_versions() -> None:
+    """The ordered history exposes every fact, not only public timeline goals."""
+    tracker = create_tracker_match(prefix="Complete history")
+    player = create_tracker_player(username="history-player")
+    event_time = timezone.now()
+    shot = Shot.objects.create(
+        player=player,
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        scored=False,
+        time=event_time,
+    )
+    shot.scored = True
+    shot.save(update_fields=["scored"])
+    Attack.objects.create(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        time=event_time,
+    )
+
+    history = build_match_event_history(tracker.match_data)
+
+    assert [event["kind"] for event in history] == [
+        "shot.created",
+        "shot.updated",
+        "attack.created",
+    ]
+    assert history[0]["detail"]["outcome"] == "miss"
+    assert history[0]["status"] == MatchEvent.STATUS_SUPERSEDED
+    assert history[1]["detail"]["outcome"] == "goal"
+    assert history[2]["detail"] is None
