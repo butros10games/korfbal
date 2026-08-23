@@ -8,6 +8,9 @@ from django.db.models.signals import m2m_changed, post_delete, post_save, pre_sa
 from django.dispatch import receiver
 
 from apps.game_tracker.models import MatchData, Pause, PlayerChange, PlayerGroup, Shot
+from apps.game_tracker.services.live_update_signal_control import (
+    tracker_delete_side_effects_suppressed,
+)
 from apps.game_tracker.services.match_impact_recompute import (
     schedule_match_impact_recompute,
 )
@@ -19,6 +22,9 @@ FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS = 30
 def _match_data_id_from_instance(
     instance: Shot | PlayerChange | Pause | PlayerGroup,
 ) -> str | None:
+    if tracker_delete_side_effects_suppressed():
+        return None
+
     match_data_id = instance.__dict__.get("match_data_id")
     if match_data_id:
         return str(match_data_id)

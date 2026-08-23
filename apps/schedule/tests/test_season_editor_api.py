@@ -11,6 +11,7 @@ from django.test.client import Client
 import pytest
 
 from apps.club.models import Club
+from apps.game_tracker.models import MatchData, MatchLiveChange, Shot
 from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.models import Team
 
@@ -156,6 +157,61 @@ def test_staff_can_create_and_quick_edit_matches(client: Client) -> None:
     delete_response = client.delete(f"/api/matches/{match.id_uuid}/")
     assert delete_response.status_code == HTTPStatus.NO_CONTENT
     assert not Match.objects.filter(id_uuid=match.id_uuid).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_staff_can_delete_match_with_tracker_history(client: Client) -> None:
+    """Deleting a tracked match does not recreate live rows during its cascade."""
+    staff = get_user_model().objects.create_user(
+        username="tracked_match_staff",
+        password="pass1234",  # nosec
+        is_staff=True,
+    )
+    client.force_login(staff)
+
+    season = Season.objects.create(
+        name="Tracked season",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 1),
+    )
+    home_team = Team.objects.create(
+        name="1",
+        club=Club.objects.create(name="Tracked home club"),
+    )
+    away_team = Team.objects.create(
+        name="2",
+        club=Club.objects.create(name="Tracked away club"),
+    )
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=datetime(2026, 8, 29, 19, 30, tzinfo=UTC),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
+    shooter = get_user_model().objects.create_user(username="tracked_shooter")
+    for _index in range(3):
+        Shot.objects.create(
+            player=shooter.player,
+            match_data=match_data,
+            team=home_team,
+            scored=True,
+            time=datetime(2026, 8, 22, 19, 30, tzinfo=UTC),
+        )
+
+    match_data_id = match_data.id_uuid
+    assert MatchLiveChange.objects.filter(match_data_id=match_data_id).exists()
+
+    response = client.delete(f"/api/matches/{match.id_uuid}/")
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert not Match.objects.filter(id_uuid=match.id_uuid).exists()
+    assert not MatchData.objects.filter(id_uuid=match_data_id).exists()
+    assert not Shot.objects.filter(match_data_id=match_data_id).exists()
+    assert not MatchLiveChange.objects.filter(match_data_id=match_data_id).exists()
 
 
 @pytest.mark.django_db

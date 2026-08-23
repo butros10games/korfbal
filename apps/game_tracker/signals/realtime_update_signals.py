@@ -17,6 +17,7 @@ from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResourc
 from apps.game_tracker.services.live_update_signal_control import (
     live_update_signals_suppressed,
     suppress_live_update_signals,
+    tracker_delete_side_effects_suppressed,
 )
 from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_scores import persist_matchdata_scores
@@ -50,7 +51,7 @@ def _record(
     *,
     changed_ids: dict[LiveResource, set[str]] | None = None,
 ) -> None:
-    if live_update_signals_suppressed():
+    if live_update_signals_suppressed() or tracker_delete_side_effects_suppressed():
         return
     match_data = instance if isinstance(instance, MatchData) else instance.match_data
     if match_data is not None:
@@ -66,7 +67,7 @@ def _shot_realtime_changed(
     sender: type[Shot], instance: Shot, **kwargs: object
 ) -> None:
     del sender, kwargs
-    if live_update_signals_suppressed():
+    if live_update_signals_suppressed() or tracker_delete_side_effects_suppressed():
         return
 
     match_data = (

@@ -25,6 +25,9 @@ from apps.awards.services.mvp import (
     cast_vote_anon,
 )
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
+from apps.game_tracker.services.live_update_signal_control import (
+    suppress_tracker_delete_side_effects,
+)
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows,
@@ -203,6 +206,11 @@ class MatchViewSet(
         if self.action in {"create", "update", "partial_update"}:
             return MatchWriteSerializer
         return MatchSerializer
+
+    def perform_destroy(self, instance: Match) -> None:
+        """Delete a match without recreating tracker rows during its cascade."""
+        with suppress_tracker_delete_side_effects():
+            instance.delete()
 
     def get_queryset(self) -> QuerySet[Match]:
         """Return a queryset filtered by the current request context.
