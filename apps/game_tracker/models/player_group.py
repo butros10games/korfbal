@@ -40,11 +40,13 @@ class PlayerGroup(models.Model):
         on_delete=models.CASCADE,
         related_name="player_groups",
     )
+    starting_type_id: str
     current_type: models.ForeignKey[Any, Any] = models.ForeignKey(
         "GroupType",
         on_delete=models.CASCADE,
         related_name="current_player_groups",
     )
+    current_type_id: str
 
     def __str__(self) -> str:
         """Return the string representation of the player group.

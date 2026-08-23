@@ -21,6 +21,10 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.realtime.contracts import LiveResource
+from apps.game_tracker.services.lineup_projections import (
+    rebuild_current_lineup,
+    rebuild_group_roles,
+)
 from apps.game_tracker.services.live_updates import summarize_match_changes
 from apps.game_tracker.services.match_event_context import match_event_context
 from apps.game_tracker.services.match_timeline_payload import (
@@ -281,6 +285,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         with match_event_context(actor=request.user):
             shot = serializer.save()
+        rebuild_group_roles(match_data)
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_201_CREATED,
@@ -321,6 +326,7 @@ class MatchEventsActionsMixin:
         if request.method == "DELETE":
             with match_event_context(actor=request.user):
                 shot.delete()
+            rebuild_group_roles(match_data)
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = ShotWriteSerializer(
@@ -332,6 +338,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         with match_event_context(actor=request.user):
             shot = serializer.save()
+        rebuild_group_roles(match_data)
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_200_OK,
@@ -368,6 +375,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         with match_event_context(actor=request.user):
             change = serializer.save()
+        rebuild_current_lineup(match_data)
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_201_CREATED,
@@ -411,6 +419,7 @@ class MatchEventsActionsMixin:
         if request.method == "DELETE":
             with match_event_context(actor=request.user):
                 change.delete()
+            rebuild_current_lineup(match_data)
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = PlayerChangeWriteSerializer(
@@ -422,6 +431,7 @@ class MatchEventsActionsMixin:
         serializer.is_valid(raise_exception=True)
         with match_event_context(actor=request.user):
             change = serializer.save()
+        rebuild_current_lineup(match_data)
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_200_OK,

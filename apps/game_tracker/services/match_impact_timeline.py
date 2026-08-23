@@ -419,21 +419,28 @@ def build_match_player_role_timeline(
     groups: list[PlayerGroup],
     events: list[dict[str, Any]],
     match_end_minutes: float,
+    starting_group_id_by_player: dict[str, str] | None = None,
 ) -> dict[str, RoleIntervals]:
     """Python port of `buildMatchPlayerRoleTimeline` used by korfbal-web."""
     group_role_by_id = _group_role_by_id(groups)
     subs_by_x = _subs_grouped_by_minute(events)
 
-    end_role_by_player_id = _infer_end_roles(
-        groups=groups,
-        group_role_by_id=group_role_by_id,
-        known_player_ids=known_player_ids,
-    )
-    role_by_player_id = _infer_start_roles_from_subs(
-        end_role_by_player_id=end_role_by_player_id,
-        subs_by_x=subs_by_x,
-        group_role_by_id=group_role_by_id,
-    )
+    if starting_group_id_by_player is not None:
+        role_by_player_id = {
+            player_id: group_role_by_id.get(group_id, "unknown")
+            for player_id, group_id in starting_group_id_by_player.items()
+        }
+    else:
+        end_role_by_player_id = _infer_end_roles(
+            groups=groups,
+            group_role_by_id=group_role_by_id,
+            known_player_ids=known_player_ids,
+        )
+        role_by_player_id = _infer_start_roles_from_subs(
+            end_role_by_player_id=end_role_by_player_id,
+            subs_by_x=subs_by_x,
+            group_role_by_id=group_role_by_id,
+        )
     role_intervals_by_id, current_by_id = _initialise_roles(
         known_player_ids=known_player_ids,
         role_by_player_id=role_by_player_id,

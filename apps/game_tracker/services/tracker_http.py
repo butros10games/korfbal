@@ -20,7 +20,6 @@ from django.utils.module_loading import import_string
 from apps.game_tracker.models import (
     Attack,
     GoalType,
-    GroupType,
     MatchData,
     MatchEvent,
     MatchPart,
@@ -32,6 +31,11 @@ from apps.game_tracker.models import (
     TrackerCommand,
 )
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
+from apps.game_tracker.services.lineup_projections import (
+    capture_starting_lineup,
+    rebuild_current_lineup,
+    rebuild_group_roles,
+)
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_live_update_signals,
 )
@@ -271,27 +275,6 @@ def _score(match_data: MatchData, *, team: Team, opponent: Team) -> tuple[int, i
     )
     goals_by_team = {row["team"]: row["count"] for row in totals}
     return goals_by_team.get(team.id_uuid, 0), goals_by_team.get(opponent.id_uuid, 0)
-
-
-def _swap_player_group_types(match_data: MatchData, team: Team) -> None:
-    group_type_attack = GroupType.objects.get(name="Aanval")
-    group_type_defense = GroupType.objects.get(name="Verdediging")
-
-    pg_attack = PlayerGroup.objects.get(
-        match_data=match_data,
-        team=team,
-        current_type=group_type_attack,
-    )
-    pg_defense = PlayerGroup.objects.get(
-        match_data=match_data,
-        team=team,
-        current_type=group_type_defense,
-    )
-
-    pg_attack.current_type = group_type_defense
-    pg_defense.current_type = group_type_attack
-    pg_attack.save(update_fields=["current_type"])
-    pg_defense.save(update_fields=["current_type"])
 
 
 def _player_stats_by_team(
@@ -1101,6 +1084,8 @@ def _prepare_new_part(match_data: MatchData) -> None:
 def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
     current_part = _current_part(match_data)
     if not current_part:
+        if not MatchPart.objects.filter(match_data=match_data).exists():
+            capture_starting_lineup(match_data)
         _prepare_new_part(match_data)
 
         MatchPart.objects.create(
@@ -1400,13 +1385,7 @@ def _cmd_goal_reg(
         scored=True,
     )
 
-    number_of_goals = Shot.objects.filter(
-        match_data=match_data,
-        scored=True,
-    ).count()
-    if number_of_goals % 2 == 0:
-        _swap_player_group_types(match_data, team)
-        _swap_player_group_types(match_data, opponent)
+    rebuild_group_roles(match_data)
 
 
 def _cmd_substitute_reg(
@@ -1450,7 +1429,6 @@ def _cmd_substitute_reg(
     player_in = Player.objects.select_related("user").get(id_uuid=params.new_player_id)
     player_out = Player.objects.select_related("user").get(id_uuid=params.old_player_id)
 
-    reserve_group = get_reserve_group(match_data=match_data, team=team)
     active_group = PlayerGroup.objects.exclude(
         starting_type__name=RESERVE_GROUP_NAME,
     ).get(
@@ -1458,11 +1436,6 @@ def _cmd_substitute_reg(
         match_data=match_data,
         players__in=[player_out],
     )
-
-    active_group.players.remove(player_out)
-    reserve_group.players.add(player_out)
-    reserve_group.players.remove(player_in)
-    active_group.players.add(player_in)
 
     PlayerChange.objects.create(
         player_in=player_in,
@@ -1472,6 +1445,7 @@ def _cmd_substitute_reg(
         match_part=part_for_event,
         time=event_time,
     )
+    rebuild_current_lineup(match_data)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1538,8 +1512,6 @@ def _remove_last_shot(
     event: Shot,
     *,
     match_data: MatchData,
-    team: Team,
-    opponent: Team,
 ) -> None:
     scored = event.scored
     event.__dict__.setdefault("match_data_id", match_data.pk)
@@ -1548,13 +1520,7 @@ def _remove_last_shot(
     if not scored:
         return
 
-    number_of_goals = Shot.objects.filter(
-        match_data=match_data,
-        scored=True,
-    ).count()
-    if number_of_goals % 2 == 1:
-        _swap_player_group_types(match_data, team)
-        _swap_player_group_types(match_data, opponent)
+    rebuild_group_roles(match_data)
 
 
 def _remove_last_player_change(event: PlayerChange, *, match_data: MatchData) -> None:
@@ -1563,17 +1529,8 @@ def _remove_last_player_change(event: PlayerChange, *, match_data: MatchData) ->
         event.delete()
         return
 
-    change_team = event.player_group.team
-    reserve_group = get_reserve_group(match_data=match_data, team=change_team)
-    player_group = PlayerGroup.objects.get(id_uuid=event.player_group.id_uuid)
-
-    player_group.players.remove(event.player_in)
-    reserve_group.players.add(event.player_in)
-
-    player_group.players.add(event.player_out)
-    reserve_group.players.remove(event.player_out)
-
     event.delete()
+    rebuild_current_lineup(match_data)
 
 
 def _remove_last_pause(event: Pause) -> None:
@@ -1594,13 +1551,13 @@ def _remove_last_attack(event: Attack) -> None:
 
 
 def _cmd_remove_last_event(match: Match, *, match_data: MatchData, team: Team) -> None:
-    opponent = _other_team(match, team)
+    _other_team(match, team)
     event = _get_last_event_model(match_data)
     if not event:
         return
 
     if isinstance(event, Shot):
-        _remove_last_shot(event, match_data=match_data, team=team, opponent=opponent)
+        _remove_last_shot(event, match_data=match_data)
         return
 
     if isinstance(event, PlayerChange):

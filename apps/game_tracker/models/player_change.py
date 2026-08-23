@@ -34,17 +34,20 @@ class PlayerChange(models.Model):
         blank=True,
         null=True,
     )
+    player_in_id: str | None
     player_out: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
         on_delete=models.CASCADE,
         blank=True,
         null=True,
     )
+    player_out_id: str | None
     player_group: models.ForeignKey[Any, Any] = models.ForeignKey(
         "PlayerGroup",
         on_delete=models.CASCADE,
         related_name="player_changes",
     )
+    player_group_id: str
     match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,

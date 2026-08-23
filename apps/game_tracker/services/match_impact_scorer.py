@@ -11,6 +11,9 @@ from operator import itemgetter
 from typing import Any, Literal, TypedDict, cast
 
 from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.game_tracker.services.lineup_projections import (
+    starting_group_ids_by_player,
+)
 
 # We intentionally reuse the match payload builders because they already encode
 # the minute format/rounding used by korfbal-web graphs (e.g. "20+1").
@@ -89,6 +92,7 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
         groups=groups,
         events=events,
         match_end_minutes=match_end_minutes,
+        starting_group_id_by_player=(starting_group_ids_by_player(match_data) or None),
     )
 
     side_player_ids = _build_side_player_ids(
@@ -972,6 +976,7 @@ def compute_match_impact_rows(
         groups=groups,
         events=events,
         match_end_minutes=match_end_minutes,
+        starting_group_id_by_player=(starting_group_ids_by_player(match_data) or None),
     )
 
     side_player_ids = _build_side_player_ids(
@@ -1070,6 +1075,7 @@ def compute_match_impact_breakdown(
         groups=groups,
         events=events,
         match_end_minutes=match_end_minutes,
+        starting_group_id_by_player=(starting_group_ids_by_player(match_data) or None),
     )
 
     side_player_ids = _build_side_player_ids(

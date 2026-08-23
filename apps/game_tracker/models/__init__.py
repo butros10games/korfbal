@@ -15,6 +15,7 @@ from .player_match_impact import PlayerMatchImpact
 from .player_match_impact_breakdown import PlayerMatchImpactBreakdown
 from .player_match_minutes import PlayerMatchMinutes
 from .shot import Shot
+from .starting_player_assignment import StartingPlayerAssignment
 from .timeout import Timeout
 from .tracker_command import TrackerCommand
 
@@ -35,6 +36,7 @@ __all__ = [
     "PlayerMatchImpactBreakdown",
     "PlayerMatchMinutes",
     "Shot",
+    "StartingPlayerAssignment",
     "Timeout",
     "TrackerCommand",
 ]

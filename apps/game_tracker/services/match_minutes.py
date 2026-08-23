@@ -25,6 +25,9 @@ from apps.game_tracker.models import (
     PlayerMatchMinutes,
 )
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
+from apps.game_tracker.services.lineup_projections import (
+    starting_group_ids_by_player,
+)
 from apps.game_tracker.services.match_impact import (
     build_match_player_role_timeline,
     compute_match_end_minutes,
@@ -184,6 +187,7 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
         groups=groups,
         events=events,
         match_end_minutes=match_end_minutes,
+        starting_group_id_by_player=(starting_group_ids_by_player(match_data) or None),
     )
 
     minutes_by_player_id: dict[str, float] = {}

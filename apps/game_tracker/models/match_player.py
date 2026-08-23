@@ -44,6 +44,12 @@ class MatchPlayer(models.Model):
             models.Index(fields=["team", "match_data"], name="mp_team_match_idx"),
             models.Index(fields=["match_data", "player"], name="mp_match_player_idx"),
         )
+        constraints: ClassVar[tuple[models.BaseConstraint, ...]] = (
+            models.UniqueConstraint(
+                fields=["match_data", "player"],
+                name="game_tracker_unique_match_player",
+            ),
+        )
 
     def __str__(self) -> str:
         """Return the string representation of the match player.
