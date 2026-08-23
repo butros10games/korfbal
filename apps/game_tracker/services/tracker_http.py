@@ -22,6 +22,7 @@ from apps.game_tracker.models import (
     GoalType,
     GroupType,
     MatchData,
+    MatchEvent,
     MatchPart,
     Pause,
     PlayerChange,
@@ -38,6 +39,7 @@ from apps.game_tracker.services.live_updates import (
     record_match_change,
     summarize_match_changes,
 )
+from apps.game_tracker.services.match_event_context import match_event_context
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
@@ -413,109 +415,63 @@ def _reserve_players_payload(
     ]
 
 
-def _last_event_key(event: object) -> datetime:
-    value = getattr(event, "time", None)
-    if isinstance(value, datetime):
-        return value
-    value = getattr(event, "start_time", None)
-    if isinstance(value, datetime):
-        return value
-    return datetime.min.replace(tzinfo=UTC)
-
-
 def _get_last_event_model(match_data: MatchData) -> object | None:
-    candidates: list[object] = []
-
-    shot = (
-        Shot.objects
-        .select_related("player", "player__user", "shot_type", "match_part", "team")
-        .only(
-            "id_uuid",
-            "match_data_id",
-            "time",
-            "scored",
-            "for_team",
-            "player__id_uuid",
-            "player__user__username",
-            "shot_type__id_uuid",
-            "shot_type__name",
-            "match_part__id_uuid",
-            "match_part__start_time",
-            "match_part__part_number",
-            "team__id_uuid",
+    """Resolve the newest undoable fact from its committed event order."""
+    events = (
+        MatchEvent.objects
+        .filter(
+            match_data=match_data,
+            status=MatchEvent.STATUS_ACTIVE,
+            source_type__in={"shot", "player_change", "pause", "attack"},
         )
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .first()
+        .order_by("-sequence")
+        .values_list("source_type", "source_id")
     )
-    if shot and shot.time:
-        candidates.append(shot)
-
-    change = (
-        PlayerChange.objects
-        .select_related(
-            "player_in",
-            "player_in__user",
-            "player_out",
-            "player_out__user",
-            "player_group",
-            "match_part",
-        )
-        .only(
-            "id_uuid",
-            "match_data_id",
-            "time",
-            "player_in__id_uuid",
-            "player_in__user__username",
-            "player_out__id_uuid",
-            "player_out__user__username",
-            "player_group__id_uuid",
-            "match_part__id_uuid",
-            "match_part__start_time",
-            "match_part__part_number",
-        )
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .first()
-    )
-    if change and change.time:
-        candidates.append(change)
-
-    pause = (
-        Pause.objects
-        .select_related("match_part")
-        .only(
-            "id_uuid",
-            "match_data_id",
-            "start_time",
-            "end_time",
-            "active",
-            "match_part__id_uuid",
-            "match_part__start_time",
-            "match_part__part_number",
-        )
-        .filter(match_data=match_data)
-        .order_by("-start_time")
-        .first()
-    )
-    if pause and pause.start_time:
-        candidates.append(pause)
-
-    attack = (
-        Attack.objects
-        .select_related("team")
-        .only("id_uuid", "match_data_id", "time", "team__id_uuid", "team__name")
-        .filter(match_data=match_data)
-        .order_by("-time")
-        .first()
-    )
-    if attack and attack.time:
-        candidates.append(attack)
-
-    if not candidates:
-        return None
-    candidates.sort(key=_last_event_key)
-    return candidates[-1]
+    for source_type, source_id in events:
+        if source_type == "shot":
+            event = (
+                Shot.objects
+                .select_related(
+                    "player",
+                    "player__user",
+                    "shot_type",
+                    "match_part",
+                    "team",
+                )
+                .filter(match_data=match_data, pk=source_id)
+                .first()
+            )
+        elif source_type == "player_change":
+            event = (
+                PlayerChange.objects
+                .select_related(
+                    "player_in",
+                    "player_in__user",
+                    "player_out",
+                    "player_out__user",
+                    "player_group",
+                    "match_part",
+                )
+                .filter(match_data=match_data, pk=source_id)
+                .first()
+            )
+        elif source_type == "pause":
+            event = (
+                Pause.objects
+                .select_related("match_part")
+                .filter(match_data=match_data, pk=source_id)
+                .first()
+            )
+        else:
+            event = (
+                Attack.objects
+                .select_related("team")
+                .filter(match_data=match_data, pk=source_id)
+                .first()
+            )
+        if event is not None:
+            return event
+    return None
 
 
 def _last_event_payload(
@@ -994,7 +950,14 @@ def apply_tracker_command(
             else {}
         )
 
-        with suppress_live_update_signals():
+        with (
+            match_event_context(
+                actor=actor,
+                source_team=team,
+                command_id=metadata.command_id,
+            ),
+            suppress_live_update_signals(),
+        ):
             parsed_command.apply(
                 _TrackerCommandContext(
                     match=match,

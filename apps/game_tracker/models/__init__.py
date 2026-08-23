@@ -4,6 +4,7 @@ from .attack import Attack
 from .goal_type import GoalType
 from .group_type import GroupType
 from .match_data import MatchData
+from .match_event import MatchEvent
 from .match_live_change import MatchLiveChange
 from .match_part import MatchPart
 from .match_player import MatchPlayer
@@ -23,6 +24,7 @@ __all__ = [
     "GoalType",
     "GroupType",
     "MatchData",
+    "MatchEvent",
     "MatchLiveChange",
     "MatchPart",
     "MatchPlayer",

@@ -20,6 +20,7 @@ from apps.game_tracker.services.live_update_signal_control import (
     tracker_delete_side_effects_suppressed,
 )
 from apps.game_tracker.services.live_updates import record_match_change
+from apps.game_tracker.services.match_event_context import match_data_is_deleting
 from apps.game_tracker.services.match_scores import persist_matchdata_scores
 
 
@@ -54,7 +55,7 @@ def _record(
     if live_update_signals_suppressed() or tracker_delete_side_effects_suppressed():
         return
     match_data = instance if isinstance(instance, MatchData) else instance.match_data
-    if match_data is not None:
+    if match_data is not None and not match_data_is_deleting(match_data.pk):
         record_match_change(
             match_data,
             resources=resources,

@@ -235,7 +235,7 @@ def test_remove_last_event_reverts_swap_when_goal_removed() -> None:
 
 
 @pytest.mark.django_db
-def test_client_time_keeps_last_event_order_stable() -> None:
+def test_commit_sequence_keeps_last_event_order_stable() -> None:
     home_club = Club.objects.create(name="ClientTime Home Club")
     away_club = Club.objects.create(name="ClientTime Away Club")
     home_team = Team.objects.create(name="ClientTime Home Team", club=home_club)
@@ -289,8 +289,8 @@ def test_client_time_keeps_last_event_order_stable() -> None:
     )
 
     state = get_tracker_state(match, team=home_team)
-    assert state["last_event"]["type"] == "attack"
-    assert state["last_event"]["time_iso"] == late.isoformat()
+    assert state["last_event"]["type"] == "pause"
+    assert state["last_event"]["event_kind"] == "timeout"
 
 
 @pytest.mark.django_db

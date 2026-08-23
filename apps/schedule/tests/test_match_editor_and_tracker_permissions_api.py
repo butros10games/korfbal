@@ -304,6 +304,47 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert (match_data.home_score, match_data.away_score) == (0, 0)
 
 
+@pytest.mark.django_db(transaction=True)
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_goal_editor_rolls_back_typed_write_when_event_envelope_fails(
+    client: Client,
+) -> None:
+    """The editor commits a typed event and its audit envelope as one unit."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    goal_type = GoalType.objects.create(name="Atomic goal")
+    coach_user = get_user_model().objects.create_user(
+        username="atomic-goal-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    client.force_login(coach_user)
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+
+    with (
+        patch(
+            "apps.game_tracker.services.match_events.MatchEvent.objects.create",
+            side_effect=RuntimeError("forced envelope failure"),
+        ),
+        pytest.raises(RuntimeError, match="forced envelope failure"),
+    ):
+        client.post(
+            f"/api/matches/{match.id_uuid}/events/goals/",
+            data={
+                "player_id": str(coach_user.player.id_uuid),
+                "team_id": str(match.home_team.id_uuid),
+                "shot_type_id": str(goal_type.id_uuid),
+                "match_part_id": str(match_part.id_uuid),
+                "minute": 0,
+            },
+            content_type="application/json",
+        )
+
+    assert Shot.objects.filter(match_data=match_data).exists() is False
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None:

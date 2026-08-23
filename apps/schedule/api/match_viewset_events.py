@@ -22,6 +22,7 @@ from apps.game_tracker.models import (
 )
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import summarize_match_changes
+from apps.game_tracker.services.match_event_context import match_event_context
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
@@ -278,7 +279,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        shot = serializer.save()
+        with match_event_context(actor=request.user):
+            shot = serializer.save()
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_201_CREATED,
@@ -317,7 +319,8 @@ class MatchEventsActionsMixin:
             )
 
         if request.method == "DELETE":
-            shot.delete()
+            with match_event_context(actor=request.user):
+                shot.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = ShotWriteSerializer(
@@ -327,7 +330,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        shot = serializer.save()
+        with match_event_context(actor=request.user):
+            shot = serializer.save()
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_200_OK,
@@ -362,7 +366,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        change = serializer.save()
+        with match_event_context(actor=request.user):
+            change = serializer.save()
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_201_CREATED,
@@ -404,7 +409,8 @@ class MatchEventsActionsMixin:
             )
 
         if request.method == "DELETE":
-            change.delete()
+            with match_event_context(actor=request.user):
+                change.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = PlayerChangeWriteSerializer(
@@ -414,7 +420,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        change = serializer.save()
+        with match_event_context(actor=request.user):
+            change = serializer.save()
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_200_OK,
@@ -449,7 +456,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        pause = serializer.save()
+        with match_event_context(actor=request.user):
+            pause = serializer.save()
         return Response(
             serialize_pause_event(match_data, pause),
             status=status.HTTP_201_CREATED,
@@ -488,8 +496,9 @@ class MatchEventsActionsMixin:
             )
 
         if request.method == "DELETE":
-            Timeout.objects.filter(pause=pause).delete()
-            pause.delete()
+            with match_event_context(actor=request.user):
+                Timeout.objects.filter(pause=pause).delete()
+                pause.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = PauseWriteSerializer(
@@ -499,7 +508,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        pause = serializer.save()
+        with match_event_context(actor=request.user):
+            pause = serializer.save()
         return Response(
             serialize_pause_event(match_data, pause),
             status=status.HTTP_200_OK,
@@ -534,7 +544,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        timeout = serializer.save()
+        with match_event_context(actor=request.user):
+            timeout = serializer.save()
         if not timeout.pause:
             return Response(
                 {"detail": "Timeout was created without a pause."},
@@ -681,9 +692,10 @@ class MatchEventsActionsMixin:
 
         pause = timeout.pause
         if request.method == "DELETE":
-            timeout.delete()
-            if pause:
-                pause.delete()
+            with match_event_context(actor=request.user):
+                timeout.delete()
+                if pause:
+                    pause.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = TimeoutWriteSerializer(
@@ -693,7 +705,8 @@ class MatchEventsActionsMixin:
             context={"match": match, "match_data": match_data},
         )
         serializer.is_valid(raise_exception=True)
-        timeout = serializer.save()
+        with match_event_context(actor=request.user):
+            timeout = serializer.save()
         if not timeout.pause:
             return Response(
                 {"detail": "Timeout has no pause."},

@@ -11,6 +11,12 @@ from .match_data_signals import (
     create_player_groups_for_new_group_type,
     create_player_groups_for_new_match_data,
 )
+from .match_event_signals import (
+    _match_data_delete_finished,
+    _match_data_delete_started,
+    _typed_record_deleted,
+    _typed_record_saved,
+)
 from .match_signals import create_match_data_for_new_match
 from .minutes_recompute_signals import (
     _match_data_post_save as _minutes_match_data_post_save,

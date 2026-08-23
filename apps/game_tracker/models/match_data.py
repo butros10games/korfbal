@@ -45,6 +45,9 @@ class MatchData(models.Model):
     command_sequence: models.PositiveBigIntegerField[int, int] = (
         models.PositiveBigIntegerField(default=0)
     )
+    event_sequence: models.PositiveBigIntegerField[int, int] = (
+        models.PositiveBigIntegerField(default=0)
+    )
     live_changed_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
 
     class Meta:

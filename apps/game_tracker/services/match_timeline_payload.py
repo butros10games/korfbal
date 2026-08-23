@@ -23,6 +23,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
+from apps.game_tracker.services.match_events import event_root_sequences
 
 
 PART_ONE = 1
@@ -77,6 +78,31 @@ def _event_time_key(event: object) -> datetime:
     if value is not None:
         return value
     return datetime.min.replace(tzinfo=UTC)
+
+
+def _source_key(event: object) -> tuple[str, str] | None:
+    if isinstance(event, Shot):
+        return "shot", str(event.id_uuid)
+    if isinstance(event, PlayerChange):
+        return "player_change", str(event.id_uuid)
+    if isinstance(event, Pause):
+        return "pause", str(event.id_uuid)
+    return None
+
+
+def _ordered_sequence(
+    event: object,
+    sequences: dict[tuple[str, str], int],
+    timeout_ids_by_pause: dict[str, str],
+) -> int | None:
+    key = _source_key(event)
+    candidates = [sequences[key]] if key is not None and key in sequences else []
+    if isinstance(event, Pause):
+        timeout_id = timeout_ids_by_pause.get(str(event.id_uuid))
+        timeout_key = ("timeout", timeout_id) if timeout_id else None
+        if timeout_key is not None and timeout_key in sequences:
+            candidates.append(sequences[timeout_key])
+    return max(candidates, default=None)
 
 
 def _time_in_minutes(
@@ -200,14 +226,31 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
         .order_by("start_time")
     )
 
+    sequences = event_root_sequences(match_data)
+    timeout_ids_by_pause = {
+        str(pause_id): str(timeout_id)
+        for pause_id, timeout_id in Timeout.objects.filter(
+            match_data=match_data,
+            pause_id__isnull=False,
+        ).values_list("pause_id", "id_uuid")
+    }
     events: list[object] = [*goals, *player_changes, *pauses]
-    events.sort(key=_event_time_key)
+    events.sort(
+        key=lambda event: (
+            _ordered_sequence(event, sequences, timeout_ids_by_pause) is None,
+            _ordered_sequence(event, sequences, timeout_ids_by_pause) or 0,
+            _event_time_key(event),
+        )
+    )
 
     payload: list[dict[str, Any]] = []
 
     for event in events:
         serialized = _serialize_match_event(match_data, event)
         if serialized is not None:
+            sequence = _ordered_sequence(event, sequences, timeout_ids_by_pause)
+            if sequence is not None:
+                serialized["event_sequence"] = sequence
             payload.append(serialized)
 
     return payload
@@ -253,6 +296,14 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
         .order_by("time")
     )
 
+    sequences = event_root_sequences(match_data)
+    shots.sort(
+        key=lambda shot: (
+            ("shot", str(shot.id_uuid)) not in sequences,
+            sequences.get(("shot", str(shot.id_uuid)), 0),
+            _event_time_key(shot),
+        )
+    )
     payload: list[dict[str, Any]] = []
     for shot in shots:
         serialized = _serialize_shot_timeline_event(
@@ -261,6 +312,9 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
             player_team_id=player_team_id,
         )
         if serialized is not None:
+            sequence = sequences.get(("shot", str(shot.id_uuid)))
+            if sequence is not None:
+                serialized["event_sequence"] = sequence
             payload.append(serialized)
 
     return payload
