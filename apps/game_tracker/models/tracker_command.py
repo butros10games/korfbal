@@ -19,7 +19,7 @@ class TrackerCommand(models.Model):
         default=uuidv7,
         editable=False,
     )
-    command_id: models.UUIDField[str, str] = models.UUIDField()
+    command_id: models.UUIDField[str, str] = models.UUIDField(unique=True)
     match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
@@ -47,6 +47,29 @@ class TrackerCommand(models.Model):
     expected_revision: models.PositiveBigIntegerField[int, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
+    committed_revision: models.PositiveBigIntegerField[int, int | None] = (
+        models.PositiveBigIntegerField(null=True, blank=True)
+    )
+    response_payload: models.JSONField[dict[str, Any], dict[str, Any]] = (
+        models.JSONField(default=dict)
+    )
+    source: models.CharField[str, str] = models.CharField(
+        max_length=32,
+        default="tracker",
+    )
+    device_id: models.CharField[str, str] = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+    )
+    session_id: models.CharField[str, str] = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+    )
+    client_sequence: models.PositiveBigIntegerField[int, int | None] = (
+        models.PositiveBigIntegerField(null=True, blank=True)
+    )
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -54,18 +77,25 @@ class TrackerCommand(models.Model):
 
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
-                fields=["match_data", "command_id"],
-                name="game_tracker_unique_command_id",
-            ),
-            models.UniqueConstraint(
                 fields=["match_data", "sequence"],
                 name="game_tracker_unique_command_sequence",
+            ),
+            models.UniqueConstraint(
+                fields=["match_data", "device_id", "client_sequence"],
+                condition=(
+                    ~models.Q(device_id="") & models.Q(client_sequence__isnull=False)
+                ),
+                name="game_tracker_unique_device_command_sequence",
             ),
         ]
         indexes: ClassVar[list[models.Index]] = [
             models.Index(
                 fields=["match_data", "-sequence"],
                 name="tracker_cmd_match_seq_idx",
+            ),
+            models.Index(
+                fields=["match_data", "device_id", "client_sequence"],
+                name="tracker_cmd_device_seq_idx",
             ),
         ]
 

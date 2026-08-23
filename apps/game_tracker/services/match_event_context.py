@@ -10,12 +10,23 @@ from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
+class MatchEventClient:
+    """Stable client attribution supplied by an online or offline tracker."""
+
+    device_id: str = ""
+    session_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class MatchEventContext:
     """Attribution shared by all typed writes in one logical command."""
 
     actor: object | None = None
     source_team: object | None = None
     command_id: UUID | None = None
+    source: str = "system"
+    device_id: str = ""
+    session_id: str = ""
 
 
 _current_context: ContextVar[MatchEventContext | None] = ContextVar(
@@ -56,6 +67,8 @@ def match_event_context(
     actor: object | None = None,
     source_team: object | None = None,
     command_id: UUID | None = None,
+    source: str = "system",
+    client: MatchEventClient | None = None,
 ) -> Iterator[None]:
     """Attach actor, team, and command identity to nested model signals."""
     token = _current_context.set(
@@ -63,6 +76,9 @@ def match_event_context(
             actor=actor,
             source_team=source_team,
             command_id=command_id,
+            source=source,
+            device_id=client.device_id if client else "",
+            session_id=client.session_id if client else "",
         )
     )
     try:

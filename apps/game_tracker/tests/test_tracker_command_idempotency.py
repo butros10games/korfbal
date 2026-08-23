@@ -6,12 +6,16 @@ from uuid import uuid4
 
 import pytest
 
-from apps.game_tracker.models import MatchPart, Pause, TrackerCommand
+from apps.game_tracker.models import MatchEvent, MatchPart, Pause, TrackerCommand
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     apply_tracker_command,
 )
 from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
+
+
+SECOND_REVISION = 2
+CLIENT_SEQUENCE = 17
 
 
 @pytest.mark.django_db
@@ -37,14 +41,118 @@ def test_retried_command_is_applied_once() -> None:
     )
 
     assert first["status"] == "active"
-    assert replay["status"] == "active"
-    assert replay["paused"] is False
+    assert replay == first
     assert MatchPart.objects.filter(match_data=tracker.match_data).count() == 1
     assert Pause.objects.filter(match_data=tracker.match_data).count() == 0
     receipt = TrackerCommand.objects.get(command_id=command_id)
     assert receipt.sequence == 1
     assert replay["command_sequence"] == 1
     assert replay["live_revision"] == 1
+    assert receipt.response_payload == first
+    assert receipt.committed_revision == 1
+
+
+@pytest.mark.django_db
+def test_replay_returns_original_response_after_newer_commands() -> None:
+    """A delayed retry receives its committed snapshot, not today's match state."""
+    tracker = create_tracker_match(prefix="Exact replay")
+    first_payload = {
+        "command": "start/pause",
+        "command_id": str(uuid4()),
+        "expected_revision": 0,
+    }
+    first = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload=first_payload,
+    )
+    current = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "start/pause",
+            "command_id": str(uuid4()),
+            "expected_revision": 1,
+        },
+    )
+
+    replay = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload=first_payload,
+    )
+
+    assert current["paused"] is True
+    assert current["live_revision"] == SECOND_REVISION
+    assert replay == first
+    assert replay["paused"] is False
+    assert replay["live_revision"] == 1
+
+
+@pytest.mark.django_db
+def test_command_and_events_capture_client_attribution() -> None:
+    """Receipts and event facts retain device/session ordering metadata."""
+    tracker = create_tracker_match(prefix="Client attribution")
+    command_id = str(uuid4())
+
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "start/pause",
+            "command_id": command_id,
+            "client_source": "offline-web",
+            "device_id": "device-a",
+            "session_id": "session-a",
+            "client_sequence": CLIENT_SEQUENCE,
+        },
+    )
+
+    receipt = TrackerCommand.objects.get(command_id=command_id)
+    assert receipt.source == "offline-web"
+    assert receipt.device_id == "device-a"
+    assert receipt.session_id == "session-a"
+    assert receipt.client_sequence == CLIENT_SEQUENCE
+    event = MatchEvent.objects.get(command_id=command_id)
+    assert event.source == "offline-web"
+    assert event.device_id == "device-a"
+    assert event.session_id == "session-a"
+
+
+@pytest.mark.django_db
+def test_device_sequence_conflict_has_reconciliation_details() -> None:
+    """Two different commands cannot occupy one device outbox position."""
+    tracker = create_tracker_match(prefix="Device sequence")
+    first_id = str(uuid4())
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "start/pause",
+            "command_id": first_id,
+            "device_id": "device-b",
+            "client_sequence": 3,
+        },
+    )
+
+    with pytest.raises(TrackerCommandError) as error:
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={
+                "command": "start/pause",
+                "command_id": str(uuid4()),
+                "device_id": "device-b",
+                "client_sequence": 3,
+            },
+        )
+
+    assert error.value.code == "client_sequence_conflict"
+    assert error.value.details == {
+        "client_sequence": 3,
+        "command_id": first_id,
+        "committed_revision": 1,
+    }
 
 
 @pytest.mark.django_db

@@ -9,6 +9,7 @@ from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import (
+    MatchPart,
     PlayerChange,
     PlayerGroup,
     Shot,
@@ -18,6 +19,7 @@ from apps.game_tracker.services.lineup_projections import (
     capture_starting_lineup,
     rebuild_current_lineup,
     rebuild_group_roles,
+    rebuild_match_projections,
     starting_group_ids_by_player,
 )
 from apps.game_tracker.services.match_impact_timeline import (
@@ -35,6 +37,7 @@ from apps.player.models import Player
 
 
 EXPECTED_TWO_PLAYER_LINEUP = 2
+FINAL_PART_NUMBER = 2
 
 
 def _lineup_fixture() -> tuple[
@@ -158,6 +161,66 @@ def test_group_roles_rebuild_from_goal_parity() -> None:
     defense.refresh_from_db()
     assert attack.current_type == attack.starting_type
     assert defense.current_type == defense.starting_type
+
+
+@pytest.mark.django_db
+def test_all_match_projections_rebuild_from_event_facts() -> None:
+    """Score and lifecycle state can be repaired without trusting cached fields."""
+    tracker, _attack, _defense, _reserve, players = _lineup_fixture()
+    scorer, _substitute = players
+    part_one = MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=timezone.now(),
+        active=True,
+    )
+    Shot.objects.create(
+        player=scorer,
+        match_data=tracker.match_data,
+        match_part=part_one,
+        team=tracker.home_team,
+        scored=True,
+        time=part_one.start_time,
+    )
+    Shot.objects.create(
+        player=scorer,
+        match_data=tracker.match_data,
+        match_part=part_one,
+        team=tracker.away_team,
+        for_team=False,
+        scored=True,
+        time=part_one.start_time,
+    )
+    tracker.match_data.home_score = 99
+    tracker.match_data.away_score = 98
+    tracker.match_data.status = "finished"
+    tracker.match_data.current_part = 2
+    tracker.match_data.save(
+        update_fields=["home_score", "away_score", "status", "current_part"]
+    )
+
+    rebuild_match_projections(tracker.match_data)
+
+    tracker.match_data.refresh_from_db()
+    assert (tracker.match_data.home_score, tracker.match_data.away_score) == (1, 1)
+    assert tracker.match_data.status == "active"
+    assert tracker.match_data.current_part == 1
+
+    part_one.active = False
+    part_one.end_time = timezone.now()
+    part_one.save(update_fields=["active", "end_time"])
+    part_two = MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=2,
+        start_time=timezone.now(),
+        end_time=timezone.now(),
+        active=False,
+    )
+    assert part_two.end_time is not None
+    rebuild_match_projections(tracker.match_data)
+    tracker.match_data.refresh_from_db()
+    assert tracker.match_data.status == "finished"
+    assert tracker.match_data.current_part == FINAL_PART_NUMBER
 
 
 @pytest.mark.django_db

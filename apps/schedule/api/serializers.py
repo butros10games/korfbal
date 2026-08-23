@@ -13,6 +13,7 @@ from apps.game_tracker.models import (
     GoalType,
     MatchData,
     MatchPart,
+    MatchPlayer,
     Pause,
     PlayerChange,
     Shot,
@@ -349,11 +350,13 @@ def _resolve_event_time(
     match_part: MatchPart,
     time: str | None,
     minute: int | None,
+    exclude_pause_id: object | None = None,
 ) -> datetime:
     """Resolve an event timestamp.
 
     Preferred input is a full ISO datetime string (time).
-    As a fallback, `minute` will be interpreted as minutes after the match part start.
+    As a fallback, `minute` is interpreted as match-clock time. Completed pauses
+    are added back so serializing and editing a minute round-trip correctly.
 
     Raises:
         ValidationError: If the provided time/minute input is invalid.
@@ -363,7 +366,9 @@ def _resolve_event_time(
         parsed = parse_datetime(time)
         if parsed is None:
             raise serializers.ValidationError({"time": "Invalid datetime."})
-        return _ensure_aware(parsed)
+        resolved = _ensure_aware(parsed)
+        _validate_event_time_in_part(match_part, resolved)
+        return resolved
 
     if minute is None:
         raise serializers.ValidationError({
@@ -373,7 +378,109 @@ def _resolve_event_time(
     if minute < 0:
         raise serializers.ValidationError({"minute": "Minute must be >= 0."})
 
-    return _ensure_aware(match_part.start_time) + timedelta(minutes=minute)
+    period_offset = (match_part.part_number - 1) * match_part.match_data.part_length
+    elapsed_seconds = (minute * 60) - period_offset
+    if elapsed_seconds < 0:
+        raise serializers.ValidationError({
+            "minute": "Minute is before the selected match part."
+        })
+
+    resolved = _ensure_aware(match_part.start_time) + timedelta(seconds=elapsed_seconds)
+    pauses = Pause.objects.filter(
+        match_part=match_part,
+        start_time__isnull=False,
+        end_time__isnull=False,
+    ).order_by("start_time", "id_uuid")
+    if exclude_pause_id is not None:
+        pauses = pauses.exclude(pk=exclude_pause_id)
+    for pause_start, pause_end in pauses.values_list("start_time", "end_time"):
+        if pause_start <= resolved and pause_end > pause_start:
+            resolved += pause_end - pause_start
+
+    _validate_event_time_in_part(match_part, resolved)
+    return resolved
+
+
+def _validate_event_time_in_part(
+    match_part: MatchPart,
+    event_time: datetime,
+) -> None:
+    start = _ensure_aware(match_part.start_time)
+    if event_time < start:
+        raise serializers.ValidationError({
+            "time": "Event time is before the selected match part."
+        })
+    if match_part.end_time is not None and event_time > _ensure_aware(
+        match_part.end_time
+    ):
+        raise serializers.ValidationError({
+            "time": "Event time is after the selected match part."
+        })
+
+
+def _roster_team_id(*, match_data: MatchData, player: Player) -> str:
+    team_id = (
+        MatchPlayer.objects
+        .filter(
+            match_data=match_data,
+            player=player,
+        )
+        .values_list("team_id", flat=True)
+        .first()
+    )
+    if team_id is None:
+        raise serializers.ValidationError({
+            "player_id": "Player is not on this match roster."
+        })
+    return str(team_id)
+
+
+def _validate_player_team(
+    *,
+    match_data: MatchData,
+    player: Player,
+    team_id: object,
+    field: str = "player_id",
+) -> None:
+    try:
+        roster_team_id = _roster_team_id(match_data=match_data, player=player)
+    except serializers.ValidationError as exc:
+        raise serializers.ValidationError({
+            field: "Player is not on this match roster."
+        }) from exc
+    if roster_team_id != str(team_id):
+        raise serializers.ValidationError({
+            field: "Player does not belong to the selected match team."
+        })
+
+
+def _validate_substitution_players(
+    *,
+    match_data: MatchData,
+    player_in: Player | None,
+    player_out: Player | None,
+    team_id: object,
+) -> None:
+    if player_in is None or player_out is None:
+        raise serializers.ValidationError({
+            "detail": "Substitution requires incoming and outgoing players."
+        })
+    if player_in == player_out:
+        raise serializers.ValidationError({
+            "player_in_id": "Incoming and outgoing player must differ."
+        })
+    _validate_player_team(
+        match_data=match_data,
+        player=player_in,
+        team_id=team_id,
+        field="player_in_id",
+    )
+    _validate_player_team(
+        match_data=match_data,
+        player=player_out,
+        team_id=team_id,
+        field="player_out_id",
+    )
 
 
 class _MatchBoundWriteSerializer(serializers.Serializer):
@@ -432,6 +539,11 @@ def _validate_shot_create(
     player = Player.objects.filter(id_uuid=attrs["player_id"]).first()
     if not player:
         raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
+    _validate_player_team(
+        match_data=match_data,
+        player=player,
+        team_id=attrs["team_id"],
+    )
 
     shot_type = GoalType.objects.filter(id_uuid=attrs["shot_type_id"]).first()
     if not shot_type:
@@ -447,6 +559,7 @@ def _validate_shot_create(
     attrs["_player"] = player
     attrs["_shot_type"] = shot_type
     attrs["_event_time"] = event_time
+    attrs["for_team"] = str(attrs["team_id"]) == str(match.home_team_id)
     return attrs
 
 
@@ -476,13 +589,22 @@ def _validate_shot_update(
             minute=_optional_int(attrs.get("minute")),
         )
 
-    if "team_id" in attrs:
-        _validate_shot_team_id(match=match, team_id=attrs.get("team_id"))
+    selected_team_id = attrs.get("team_id", instance.team_id)
+    _validate_shot_team_id(match=match, team_id=selected_team_id)
 
+    selected_player = instance.player
     if "player_id" in attrs:
         player = Player.objects.filter(id_uuid=attrs.get("player_id")).first()
         if not player:
             raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
+        selected_player = player
+
+    _validate_player_team(
+        match_data=match_data,
+        player=selected_player,
+        team_id=selected_team_id,
+    )
+    attrs["for_team"] = str(selected_team_id) == str(match.home_team_id)
 
     if "shot_type_id" in attrs:
         shot_type = GoalType.objects.filter(id_uuid=attrs.get("shot_type_id")).first()
@@ -668,6 +790,12 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
             raise serializers.ValidationError({"player_in_id": UNKNOWN_PLAYER})
         if not player_out:
             raise serializers.ValidationError({"player_out_id": UNKNOWN_PLAYER})
+        _validate_substitution_players(
+            match_data=match_data,
+            player_in=player_in,
+            player_out=player_out,
+            team_id=player_group.team_id,
+        )
 
         event_time = _resolve_event_time(
             match_part=match_part,
@@ -726,6 +854,7 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
                 minute=_optional_int(validated_data.get("minute")),
             )
 
+        player_group = instance.player_group
         if "player_group_id" in validated_data:
             player_groups = getattr(match_data, "player_groups", None)
             if player_groups is None:
@@ -743,6 +872,7 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
                 })
             instance.player_group = player_group
 
+        player_in = instance.player_in
         if "player_in_id" in validated_data:
             player_in = Player.objects.filter(
                 id_uuid=validated_data["player_in_id"]
@@ -751,6 +881,7 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
                 raise serializers.ValidationError({"player_in_id": UNKNOWN_PLAYER})
             instance.player_in = player_in
 
+        player_out = instance.player_out
         if "player_out_id" in validated_data:
             player_out = Player.objects.filter(
                 id_uuid=validated_data["player_out_id"]
@@ -758,6 +889,13 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
             if not player_out:
                 raise serializers.ValidationError({"player_out_id": UNKNOWN_PLAYER})
             instance.player_out = player_out
+
+        _validate_substitution_players(
+            match_data=match_data,
+            player_in=player_in,
+            player_out=player_out,
+            team_id=player_group.team_id,
+        )
 
         instance.save()
         return instance
@@ -796,6 +934,8 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
         )
         length_seconds = _coerce_int(attrs.get("length_seconds"))
         end = start + timedelta(seconds=length_seconds) if length_seconds else None
+        if end is not None:
+            _validate_event_time_in_part(match_part, end)
 
         attrs["_match_part"] = match_part
         attrs["_start_time"] = start
@@ -842,6 +982,7 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
                     match_part=match_part_for_time,
                     time=_optional_str(validated_data.get("start_time")),
                     minute=_optional_int(validated_data.get("minute")),
+                    exclude_pause_id=instance.pk,
                 )
                 if {"start_time", "minute"} & validated_data.keys()
                 else instance.start_time
@@ -858,6 +999,8 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
             cast(Any, instance).end_time = (
                 start + timedelta(seconds=length_seconds) if length_seconds else None
             )
+            if instance.end_time is not None:
+                _validate_event_time_in_part(match_part_for_time, instance.end_time)
 
         if "active" in validated_data:
             instance.active = bool(validated_data["active"])
@@ -917,6 +1060,8 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
         )
         length_seconds = _coerce_int(attrs.get("length_seconds"))
         end = start + timedelta(seconds=length_seconds) if length_seconds else None
+        if end is not None:
+            _validate_event_time_in_part(match_part, end)
 
         attrs["_match_part"] = match_part
         attrs["_start_time"] = start
@@ -993,6 +1138,7 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
                     match_part=match_part_for_time,
                     time=_optional_str(validated_data.get("start_time")),
                     minute=_optional_int(validated_data.get("minute")),
+                    exclude_pause_id=pause.pk,
                 )
                 if {"start_time", "minute"} & validated_data.keys()
                 else pause.start_time
@@ -1011,6 +1157,8 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
             cast(Any, pause).end_time = (
                 start + timedelta(seconds=length_seconds) if length_seconds else None
             )
+            if pause.end_time is not None:
+                _validate_event_time_in_part(match_part_for_time, pause.end_time)
 
         pause.save()
         instance.save()

@@ -19,9 +19,12 @@ from apps.game_tracker.models import (
     Pause,
     PlayerChange,
     Shot,
+    ShotEventDetail,
+    SubstitutionEventDetail,
     Timeout,
 )
 from apps.game_tracker.services.match_event_context import (
+    MatchEventContext,
     current_match_event_context,
 )
 
@@ -129,6 +132,53 @@ def _event_kind(source_type: str, instance: TrackedModel, operation: str) -> str
     return f"{source_type}.{operation}"
 
 
+def _snapshot_id(snapshot: dict[str, Any], field: str) -> str | None:
+    value = snapshot.get(field)
+    return str(value) if value is not None else None
+
+
+def _create_typed_detail(
+    event: MatchEvent,
+    instance: TrackedModel,
+    snapshot: dict[str, Any],
+    context: MatchEventContext,
+) -> None:
+    """Persist canonical relational semantics for one immutable version."""
+    if isinstance(instance, Shot):
+        player_id = _snapshot_id(snapshot, "player_id")
+        shooting_team_id = _snapshot_id(snapshot, "team_id")
+        source_team_id = getattr(context.source_team, "pk", None)
+        is_shooter = (
+            context.source == "editor"
+            or (source_team_id is not None and str(source_team_id) == shooting_team_id)
+            or (source_team_id is None and bool(snapshot.get("for_team", True)))
+        )
+        ShotEventDetail.objects.create(
+            event=event,
+            shooting_team_id=shooting_team_id,
+            shooter_id=player_id if is_shooter else None,
+            defender_id=None if is_shooter else player_id,
+            shot_type_id=_snapshot_id(snapshot, "shot_type_id"),
+            outcome=(
+                ShotEventDetail.OUTCOME_GOAL
+                if snapshot.get("scored")
+                else ShotEventDetail.OUTCOME_MISS
+            ),
+        )
+        return
+
+    if isinstance(instance, PlayerChange):
+        player_group_id = _snapshot_id(snapshot, "player_group_id")
+        team_id = instance.player_group.team_id if player_group_id is not None else None
+        SubstitutionEventDetail.objects.create(
+            event=event,
+            team_id=team_id,
+            player_out_id=_snapshot_id(snapshot, "player_out_id"),
+            player_in_id=_snapshot_id(snapshot, "player_in_id"),
+            player_group_id=player_group_id,
+        )
+
+
 def record_typed_match_event(
     instance: TrackedModel,
     *,
@@ -176,9 +226,13 @@ def record_typed_match_event(
         MatchData.objects.filter(pk=match_data.pk).update(
             event_sequence=match_data.event_sequence
         )
-        return MatchEvent.objects.create(
+        event_kwargs: dict[str, Any] = {}
+        if previous is not None:
+            event_kwargs["logical_id"] = previous.logical_id
+        event = MatchEvent.objects.create(
             match_data=match_data,
             sequence=match_data.event_sequence,
+            match_part=_match_part(instance),
             kind=_event_kind(source_type, instance, operation),
             source_type=source_type,
             source_id=instance.pk,
@@ -195,12 +249,18 @@ def record_typed_match_event(
                 else None
             ),
             command_id=context.command_id,
+            source=context.source,
+            device_id=context.device_id,
+            session_id=context.session_id,
             payload={
                 "operation": operation,
                 "record": record_snapshot,
             },
             supersedes=previous,
+            **event_kwargs,
         )
+        _create_typed_detail(event, instance, record_snapshot, context)
+        return event
 
 
 def event_root_sequences(
@@ -213,4 +273,15 @@ def event_root_sequences(
         .filter(match_data=match_data)
         .values("source_type", "source_id")
         .annotate(root_sequence=Min("sequence"))
+    }
+
+
+def event_root_ids(match_data: MatchData) -> dict[tuple[str, str], str]:
+    """Return the canonical logical id for each typed source record."""
+    return {
+        (event.source_type, str(event.source_id)): str(event.logical_id)
+        for event in MatchEvent.objects
+        .filter(match_data=match_data)
+        .order_by("sequence")
+        .only("source_type", "source_id", "logical_id")
     }

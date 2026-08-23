@@ -524,12 +524,13 @@ class MatchViewSet(
         except TrackerCommandError as exc:
             code = getattr(exc, "code", "error")
             if code in {
+                "client_sequence_conflict",
                 "match_paused",
                 "revision_conflict",
                 "idempotency_conflict",
             }:
                 return Response(
-                    {"detail": str(exc), "code": code},
+                    {"detail": str(exc), "code": code, **exc.details},
                     status=status.HTTP_409_CONFLICT,
                 )
             http_status = (
@@ -537,7 +538,10 @@ class MatchViewSet(
                 if code == "not_found"
                 else status.HTTP_400_BAD_REQUEST
             )
-            return Response({"detail": str(exc), "code": code}, status=http_status)
+            return Response(
+                {"detail": str(exc), "code": code, **exc.details},
+                status=http_status,
+            )
 
     @action(
         detail=True,

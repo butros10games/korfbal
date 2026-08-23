@@ -21,12 +21,8 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.realtime.contracts import LiveResource
-from apps.game_tracker.services.lineup_projections import (
-    rebuild_current_lineup,
-    rebuild_group_roles,
-)
 from apps.game_tracker.services.live_updates import summarize_match_changes
-from apps.game_tracker.services.match_event_context import match_event_context
+from apps.game_tracker.services.match_mutations import apply_editor_mutation
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
@@ -48,6 +44,49 @@ from .serializers import (
 
 class _MatchViewSetLike(Protocol):
     def get_object(self) -> Match: ...
+
+
+def _find_timeout(match_data: MatchData, timeout_id: str) -> Timeout | None:
+    return (
+        Timeout.objects
+        .select_related("pause")
+        .filter(
+            Q(id_uuid=timeout_id) | Q(pause_id=timeout_id),
+            match_data=match_data,
+        )
+        .first()
+    )
+
+
+def _delete_timeout(match_data: MatchData, timeout_id: str) -> bool:
+    timeout = _find_timeout(match_data, timeout_id)
+    if timeout is None:
+        return False
+    pause = timeout.pause
+    timeout.delete()
+    if pause:
+        pause.delete()
+    return True
+
+
+def _update_timeout(
+    *,
+    match_data: MatchData,
+    match: Match,
+    timeout_id: str,
+    data: Any,
+) -> Timeout | None:
+    timeout = _find_timeout(match_data, timeout_id)
+    if timeout is None:
+        return None
+    serializer = TimeoutWriteSerializer(
+        instance=timeout,
+        data=data,
+        partial=True,
+        context={"match": match, "match_data": match_data},
+    )
+    serializer.is_valid(raise_exception=True)
+    return serializer.save()
 
 
 class MatchEventsActionsMixin:
@@ -260,7 +299,6 @@ class MatchEventsActionsMixin:
         url_path="events/goals",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def create_goal(
         self: _MatchViewSetLike,
         request: Request,
@@ -269,23 +307,26 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a goal (Shot) event for this match."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = ShotWriteSerializer(
-            data=request.data,
-            context={"match": match, "match_data": match_data},
+        def create(locked: MatchData) -> Shot:
+            serializer = ShotWriteSerializer(
+                data=request.data,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, shot = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=create,
         )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            shot = serializer.save()
-        rebuild_group_roles(match_data)
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_201_CREATED,
@@ -297,7 +338,6 @@ class MatchEventsActionsMixin:
         url_path=r"events/goals/(?P<shot_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def goal_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -307,38 +347,62 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete an existing goal (Shot) event."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        shot = Shot.objects.filter(id_uuid=shot_id, match_data=match_data).first()
-        if not shot:
+        if request.method == "DELETE":
+
+            def delete(locked: MatchData) -> bool:
+                shot = Shot.objects.filter(
+                    id_uuid=shot_id,
+                    match_data=locked,
+                ).first()
+                if shot is None:
+                    return False
+                shot.delete()
+                return True
+
+            _match_data, deleted = apply_editor_mutation(
+                match_data_id=match_data.pk,
+                actor=request.user,
+                mutate=delete,
+                no_op_result=False,
+            )
+            if not deleted:
+                return Response(
+                    {"detail": "Goal event not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        def update(locked: MatchData) -> Shot | None:
+            shot = Shot.objects.filter(id_uuid=shot_id, match_data=locked).first()
+            if shot is None:
+                return None
+            serializer = ShotWriteSerializer(
+                instance=shot,
+                data=request.data,
+                partial=True,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, shot = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=update,
+            no_op_result=None,
+        )
+        if shot is None:
             return Response(
                 {"detail": "Goal event not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        if request.method == "DELETE":
-            with match_event_context(actor=request.user):
-                shot.delete()
-            rebuild_group_roles(match_data)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        serializer = ShotWriteSerializer(
-            instance=shot,
-            data=request.data,
-            partial=True,
-            context={"match": match, "match_data": match_data},
-        )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            shot = serializer.save()
-        rebuild_group_roles(match_data)
         return Response(
             serialize_goal_event(match_data, shot),
             status=status.HTTP_200_OK,
@@ -350,7 +414,6 @@ class MatchEventsActionsMixin:
         url_path="events/substitutes",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def create_substitute(
         self: _MatchViewSetLike,
         request: Request,
@@ -359,23 +422,26 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a substitution (PlayerChange) event for this match."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = PlayerChangeWriteSerializer(
-            data=request.data,
-            context={"match": match, "match_data": match_data},
+        def create(locked: MatchData) -> PlayerChange:
+            serializer = PlayerChangeWriteSerializer(
+                data=request.data,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, change = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=create,
         )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            change = serializer.save()
-        rebuild_current_lineup(match_data)
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_201_CREATED,
@@ -387,7 +453,6 @@ class MatchEventsActionsMixin:
         url_path=r"events/substitutes/(?P<change_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def substitute_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -397,41 +462,65 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a substitution (PlayerChange) event."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        change = PlayerChange.objects.filter(
-            id_uuid=change_id,
-            player_group__match_data=match_data,
-        ).first()
-        if not change:
+        if request.method == "DELETE":
+
+            def delete(locked: MatchData) -> bool:
+                change = PlayerChange.objects.filter(
+                    id_uuid=change_id,
+                    player_group__match_data=locked,
+                ).first()
+                if change is None:
+                    return False
+                change.delete()
+                return True
+
+            _match_data, deleted = apply_editor_mutation(
+                match_data_id=match_data.pk,
+                actor=request.user,
+                mutate=delete,
+                no_op_result=False,
+            )
+            if not deleted:
+                return Response(
+                    {"detail": "Substitution event not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        def update(locked: MatchData) -> PlayerChange | None:
+            change = PlayerChange.objects.filter(
+                id_uuid=change_id,
+                player_group__match_data=locked,
+            ).first()
+            if change is None:
+                return None
+            serializer = PlayerChangeWriteSerializer(
+                instance=change,
+                data=request.data,
+                partial=True,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, change = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=update,
+            no_op_result=None,
+        )
+        if change is None:
             return Response(
                 {"detail": "Substitution event not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        if request.method == "DELETE":
-            with match_event_context(actor=request.user):
-                change.delete()
-            rebuild_current_lineup(match_data)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        serializer = PlayerChangeWriteSerializer(
-            instance=change,
-            data=request.data,
-            partial=True,
-            context={"match": match, "match_data": match_data},
-        )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            change = serializer.save()
-        rebuild_current_lineup(match_data)
         return Response(
             serialize_substitute_event(match_data, change),
             status=status.HTTP_200_OK,
@@ -443,7 +532,6 @@ class MatchEventsActionsMixin:
         url_path="events/pauses",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def create_pause(
         self: _MatchViewSetLike,
         request: Request,
@@ -452,22 +540,26 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a pause (Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = PauseWriteSerializer(
-            data=request.data,
-            context={"match": match, "match_data": match_data},
+        def create(locked: MatchData) -> Pause:
+            serializer = PauseWriteSerializer(
+                data=request.data,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, pause = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=create,
         )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            pause = serializer.save()
         return Response(
             serialize_pause_event(match_data, pause),
             status=status.HTTP_201_CREATED,
@@ -479,7 +571,6 @@ class MatchEventsActionsMixin:
         url_path=r"events/pauses/(?P<pause_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def pause_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -489,37 +580,66 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a pause (Pause) event."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        pause = Pause.objects.filter(id_uuid=pause_id, match_data=match_data).first()
-        if not pause:
+        if request.method == "DELETE":
+
+            def delete(locked: MatchData) -> bool:
+                pause = Pause.objects.filter(
+                    id_uuid=pause_id,
+                    match_data=locked,
+                ).first()
+                if pause is None:
+                    return False
+                Timeout.objects.filter(pause=pause).delete()
+                pause.delete()
+                return True
+
+            _match_data, deleted = apply_editor_mutation(
+                match_data_id=match_data.pk,
+                actor=request.user,
+                mutate=delete,
+                no_op_result=False,
+            )
+            if not deleted:
+                return Response(
+                    {"detail": "Pause event not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        def update(locked: MatchData) -> Pause | None:
+            pause = Pause.objects.filter(
+                id_uuid=pause_id,
+                match_data=locked,
+            ).first()
+            if pause is None:
+                return None
+            serializer = PauseWriteSerializer(
+                instance=pause,
+                data=request.data,
+                partial=True,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, pause = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=update,
+            no_op_result=None,
+        )
+        if pause is None:
             return Response(
                 {"detail": "Pause event not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        if request.method == "DELETE":
-            with match_event_context(actor=request.user):
-                Timeout.objects.filter(pause=pause).delete()
-                pause.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        serializer = PauseWriteSerializer(
-            instance=pause,
-            data=request.data,
-            partial=True,
-            context={"match": match, "match_data": match_data},
-        )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            pause = serializer.save()
         return Response(
             serialize_pause_event(match_data, pause),
             status=status.HTTP_200_OK,
@@ -531,7 +651,6 @@ class MatchEventsActionsMixin:
         url_path="events/timeouts",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def create_timeout(
         self: _MatchViewSetLike,
         request: Request,
@@ -540,22 +659,26 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a timeout (Timeout + Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = TimeoutWriteSerializer(
-            data=request.data,
-            context={"match": match, "match_data": match_data},
+        def create(locked: MatchData) -> Timeout:
+            serializer = TimeoutWriteSerializer(
+                data=request.data,
+                context={"match": match, "match_data": locked},
+            )
+            serializer.is_valid(raise_exception=True)
+            return serializer.save()
+
+        match_data, timeout = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=create,
         )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            timeout = serializer.save()
         if not timeout.pause:
             return Response(
                 {"detail": "Timeout was created without a pause."},
@@ -666,7 +789,6 @@ class MatchEventsActionsMixin:
         url_path=r"events/timeouts/(?P<timeout_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
-    @transaction.atomic
     def timeout_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -676,47 +798,43 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a timeout (Timeout + Pause) event."""
         match: Match = self.get_object()
-        match_data = (
-            MatchData.objects.select_for_update().filter(match_link=match).first()
-        )
+        match_data = MatchData.objects.filter(match_link=match).first()
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        timeout = (
-            Timeout.objects
-            .select_related("pause")
-            .filter(
-                Q(id_uuid=timeout_id) | Q(pause_id=timeout_id),
-                match_data=match_data,
+        if request.method == "DELETE":
+            _match_data, deleted = apply_editor_mutation(
+                match_data_id=match_data.pk,
+                actor=request.user,
+                mutate=lambda locked: _delete_timeout(locked, timeout_id),
+                no_op_result=False,
             )
-            .first()
+            if not deleted:
+                return Response(
+                    {"detail": "Timeout event not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        match_data, timeout = apply_editor_mutation(
+            match_data_id=match_data.pk,
+            actor=request.user,
+            mutate=lambda locked: _update_timeout(
+                match_data=locked,
+                match=match,
+                timeout_id=timeout_id,
+                data=request.data,
+            ),
+            no_op_result=None,
         )
-        if not timeout:
+        if timeout is None:
             return Response(
                 {"detail": "Timeout event not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        pause = timeout.pause
-        if request.method == "DELETE":
-            with match_event_context(actor=request.user):
-                timeout.delete()
-                if pause:
-                    pause.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        serializer = TimeoutWriteSerializer(
-            instance=timeout,
-            data=request.data,
-            partial=True,
-            context={"match": match, "match_data": match_data},
-        )
-        serializer.is_valid(raise_exception=True)
-        with match_event_context(actor=request.user):
-            timeout = serializer.save()
         if not timeout.pause:
             return Response(
                 {"detail": "Timeout has no pause."},

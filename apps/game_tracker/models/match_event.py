@@ -38,6 +38,10 @@ class MatchEvent(models.Model):
     sequence: models.PositiveBigIntegerField[int, int] = (
         models.PositiveBigIntegerField()
     )
+    logical_id: models.UUIDField[str, str] = models.UUIDField(
+        default=uuidv7,
+        editable=False,
+    )
     kind: models.CharField[str, str] = models.CharField(max_length=64)
     source_type: models.CharField[str, str] = models.CharField(max_length=32)
     source_id: models.UUIDField[str, str] = models.UUIDField()
@@ -46,6 +50,13 @@ class MatchEvent(models.Model):
     )
     elapsed_ms: models.PositiveBigIntegerField[int, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
+    )
+    match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "MatchPart",
+        on_delete=models.SET_NULL,
+        related_name="domain_events",
+        null=True,
+        blank=True,
     )
     recorded_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
     actor: models.ForeignKey[Any, Any] = models.ForeignKey(
@@ -65,6 +76,20 @@ class MatchEvent(models.Model):
     command_id: models.UUIDField[str, str | None] = models.UUIDField(
         null=True,
         blank=True,
+    )
+    source: models.CharField[str, str] = models.CharField(
+        max_length=32,
+        default="system",
+    )
+    device_id: models.CharField[str, str] = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+    )
+    session_id: models.CharField[str, str] = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
     )
     payload_version: models.PositiveSmallIntegerField[int, int] = (
         models.PositiveSmallIntegerField(default=1)
@@ -106,6 +131,10 @@ class MatchEvent(models.Model):
             models.Index(
                 fields=["match_data", "effective_at"],
                 name="match_event_effective_idx",
+            ),
+            models.Index(
+                fields=["match_data", "logical_id", "-sequence"],
+                name="match_event_logical_idx",
             ),
         ]
 

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
@@ -22,9 +23,13 @@ from apps.club.models import Club
 from apps.game_tracker.models import (
     GoalType,
     MatchData,
+    MatchEvent,
+    MatchLiveChange,
     MatchPart,
+    MatchPlayer,
     Pause,
     Shot,
+    ShotEventDetail,
     Timeout,
 )
 from apps.player.models import Player
@@ -36,6 +41,7 @@ from apps.team.models.team_data import TeamData
 
 
 TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
+CONFLICT_CLIENT_SEQUENCE = 4
 
 
 def _create_match(*, start_time: timezone.datetime | None = None) -> Match:
@@ -70,6 +76,49 @@ def _assign_coach(match: Match, user: object, *, team: Team | None = None) -> No
         season=match.season,
     )
     team_data.coach.add(player)
+
+
+def _add_roster_player(match: Match, user: object, *, team: Team) -> Player:
+    player = getattr(user, "player", None)
+    assert isinstance(player, Player)
+    MatchPlayer.objects.create(
+        match_data=MatchData.objects.get(match_link=match),
+        team=team,
+        player=player,
+    )
+    return player
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+@pytest.mark.parametrize("event_kind", ["goals", "substitutes", "pauses", "timeouts"])
+@pytest.mark.parametrize("method", ["patch", "delete"])
+def test_missing_editor_event_does_not_publish_live_change(
+    client: Client,
+    event_kind: str,
+    method: str,
+) -> None:
+    """A rejected detail mutation is a true no-op for live tracker state."""
+    match = _create_match()
+    coach_user = get_user_model().objects.create_user(
+        username=f"missing-{event_kind}-{method}",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    client.force_login(coach_user)
+    match_data = MatchData.objects.get(match_link=match)
+    revision_before = match_data.live_revision
+    changes_before = MatchLiveChange.objects.filter(match_data=match_data).count()
+    url = f"/api/matches/{match.id_uuid}/events/{event_kind}/{uuid4()}/"
+
+    response = getattr(client, method)(url, data={}, content_type="application/json")
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    match_data.refresh_from_db()
+    assert match_data.live_revision == revision_before
+    assert (
+        MatchLiveChange.objects.filter(match_data=match_data).count() == changes_before
+    )
 
 
 @pytest.mark.django_db
@@ -250,6 +299,12 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
         password=TEST_PASSWORD,
     )
     _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
+    away_user = get_user_model().objects.create_user(
+        username="away-scorer",
+        password=TEST_PASSWORD,
+    )
+    away_player = _add_roster_player(match, away_user, team=match.away_team)
     client.force_login(coach_user)
 
     match_data = MatchData.objects.get(match_link=match)
@@ -283,7 +338,11 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
 
     update_response = client.patch(
         f"/api/matches/{match.id_uuid}/events/goals/{shot_id}/",
-        data={"for_team": False, "team_id": str(match.away_team.id_uuid)},
+        data={
+            "for_team": True,
+            "team_id": str(match.away_team.id_uuid),
+            "player_id": str(away_player.id_uuid),
+        },
         content_type="application/json",
     )
     assert update_response.status_code == HTTPStatus.OK
@@ -292,6 +351,13 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
 
     shot_model.refresh_from_db()
     assert shot_model.for_team is False
+    canonical = ShotEventDetail.objects.get(
+        event__match_data=match_data,
+        event__source_id=shot_model.pk,
+        event__status=MatchEvent.STATUS_ACTIVE,
+    )
+    assert canonical.shooter == away_player
+    assert canonical.defender is None
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 1)
 
@@ -302,6 +368,87 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert Shot.objects.filter(id_uuid=shot_id).exists() is False
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 0)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_goal_editor_validates_roster_team_and_period_time(client: Client) -> None:
+    """Editor goals cannot reference the wrong roster side or leave the period."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    match_part.end_time = match_part.start_time + timezone.timedelta(minutes=10)
+    match_part.active = False
+    match_part.save(update_fields=["end_time", "active"])
+    goal_type = GoalType.objects.create(name="Strict validation")
+    coach_user = get_user_model().objects.create_user(
+        username="strict-goal-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+
+    base_payload = {
+        "player_id": str(coach_user.player.id_uuid),
+        "team_id": str(match.away_team.id_uuid),
+        "shot_type_id": str(goal_type.id_uuid),
+        "match_part_id": str(match_part.id_uuid),
+        "minute": 1,
+    }
+    wrong_team = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data=base_payload,
+        content_type="application/json",
+    )
+    assert wrong_team.status_code == HTTPStatus.BAD_REQUEST
+    assert "player_id" in wrong_team.json()
+
+    outside_period = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data={**base_payload, "team_id": str(match.home_team.id_uuid), "minute": 11},
+        content_type="application/json",
+    )
+    assert outside_period.status_code == HTTPStatus.BAD_REQUEST
+    assert "time" in outside_period.json()
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_goal_editor_minute_accounts_for_completed_pauses(client: Client) -> None:
+    """A displayed match minute maps back through prior paused wall time."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    Pause.objects.create(
+        match_data=match_part.match_data,
+        match_part=match_part,
+        start_time=match_part.start_time + timezone.timedelta(minutes=5),
+        end_time=match_part.start_time + timezone.timedelta(minutes=7),
+        active=False,
+    )
+    goal_type = GoalType.objects.create(name="Pause-aware time")
+    coach_user = get_user_model().objects.create_user(
+        username="pause-aware-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data={
+            "player_id": str(coach_user.player.id_uuid),
+            "team_id": str(match.home_team.id_uuid),
+            "shot_type_id": str(goal_type.id_uuid),
+            "match_part_id": str(match_part.id_uuid),
+            "minute": 8,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    shot = Shot.objects.get(pk=response.json()["event_id"])
+    assert shot.time == match_part.start_time + timezone.timedelta(minutes=10)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -318,6 +465,7 @@ def test_goal_editor_rolls_back_typed_write_when_event_envelope_fails(
         password=TEST_PASSWORD,
     )
     _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
     client.force_login(coach_user)
     match_data = MatchData.objects.get(match_link=match)
     match_data.status = "finished"
@@ -486,6 +634,54 @@ def test_match_tracker_command_rejects_non_object_json(client: Client) -> None:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json() == {"detail": "Invalid JSON body."}
         assert mocked_apply.call_count == 0
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_tracker_conflict_returns_reconciliation_metadata(client: Client) -> None:
+    """Conflict responses tell an offline client which command already committed."""
+    match = _create_match()
+    coach_user = get_user_model().objects.create_user(
+        username="reconciliation-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    client.force_login(coach_user)
+    command_url = (
+        f"/api/matches/{match.id_uuid}/tracker/{match.home_team.id_uuid}/commands/"
+    )
+    first_id = str(uuid4())
+    first = client.post(
+        command_url,
+        data={
+            "command": "start/pause",
+            "command_id": first_id,
+            "device_id": "api-device",
+            "client_sequence": CONFLICT_CLIENT_SEQUENCE,
+        },
+        content_type="application/json",
+    )
+    assert first.status_code == HTTPStatus.OK
+
+    conflict = client.post(
+        command_url,
+        data={
+            "command": "start/pause",
+            "command_id": str(uuid4()),
+            "device_id": "api-device",
+            "client_sequence": CONFLICT_CLIENT_SEQUENCE,
+        },
+        content_type="application/json",
+    )
+
+    assert conflict.status_code == HTTPStatus.CONFLICT
+    assert conflict.json() == {
+        "detail": "client_sequence was already used by another command.",
+        "code": "client_sequence_conflict",
+        "client_sequence": CONFLICT_CLIENT_SEQUENCE,
+        "command_id": first_id,
+        "committed_revision": 1,
+    }
 
 
 @pytest.mark.django_db

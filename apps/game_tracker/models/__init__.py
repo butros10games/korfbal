@@ -5,6 +5,7 @@ from .goal_type import GoalType
 from .group_type import GroupType
 from .match_data import MatchData
 from .match_event import MatchEvent
+from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
 from .match_live_change import MatchLiveChange
 from .match_part import MatchPart
 from .match_player import MatchPlayer
@@ -26,6 +27,7 @@ __all__ = [
     "GroupType",
     "MatchData",
     "MatchEvent",
+    "ShotEventDetail",
     "MatchLiveChange",
     "MatchPart",
     "MatchPlayer",
@@ -37,6 +39,7 @@ __all__ = [
     "PlayerMatchMinutes",
     "Shot",
     "StartingPlayerAssignment",
+    "SubstitutionEventDetail",
     "Timeout",
     "TrackerCommand",
 ]

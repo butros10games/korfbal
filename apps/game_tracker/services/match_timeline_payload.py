@@ -23,7 +23,7 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
-from apps.game_tracker.services.match_events import event_root_sequences
+from apps.game_tracker.services.match_events import event_root_ids, event_root_sequences
 
 
 PART_ONE = 1
@@ -227,6 +227,7 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     )
 
     sequences = event_root_sequences(match_data)
+    logical_ids = event_root_ids(match_data)
     timeout_ids_by_pause = {
         str(pause_id): str(timeout_id)
         for pause_id, timeout_id in Timeout.objects.filter(
@@ -251,6 +252,9 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
             sequence = _ordered_sequence(event, sequences, timeout_ids_by_pause)
             if sequence is not None:
                 serialized["event_sequence"] = sequence
+            source_key = _source_key(event)
+            if source_key is not None and source_key in logical_ids:
+                serialized["logical_event_id"] = logical_ids[source_key]
             payload.append(serialized)
 
     return payload
@@ -297,6 +301,7 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
     )
 
     sequences = event_root_sequences(match_data)
+    logical_ids = event_root_ids(match_data)
     shots.sort(
         key=lambda shot: (
             ("shot", str(shot.id_uuid)) not in sequences,
@@ -315,6 +320,9 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
             sequence = sequences.get(("shot", str(shot.id_uuid)))
             if sequence is not None:
                 serialized["event_sequence"] = sequence
+            logical_id = logical_ids.get(("shot", str(shot.id_uuid)))
+            if logical_id is not None:
+                serialized["logical_event_id"] = logical_id
             payload.append(serialized)
 
     return payload

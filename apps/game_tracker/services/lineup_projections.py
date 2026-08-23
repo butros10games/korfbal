@@ -5,15 +5,16 @@ from __future__ import annotations
 from collections import defaultdict
 
 from django.db import transaction
-from django.db.models import F
 
 from apps.game_tracker.models import (
     GroupType,
     MatchData,
-    PlayerChange,
+    MatchEvent,
+    MatchPart,
     PlayerGroup,
-    Shot,
+    ShotEventDetail,
     StartingPlayerAssignment,
+    SubstitutionEventDetail,
 )
 
 from .player_groups import RESERVE_GROUP_NAME
@@ -83,10 +84,14 @@ def rebuild_current_lineup(match_data: MatchData) -> None:
             if group.starting_type.name == RESERVE_GROUP_NAME
         }
         changes = (
-            PlayerChange.objects
-            .select_related("player_group")
-            .filter(match_data=locked)
-            .order_by(F("time").asc(nulls_last=True), "id_uuid")
+            SubstitutionEventDetail.objects
+            .select_related("player_group", "event")
+            .filter(
+                event__match_data=locked,
+                event__status=MatchEvent.STATUS_ACTIVE,
+            )
+            .exclude(event__kind__endswith=".retracted")
+            .order_by("event__sequence")
         )
         for change in changes:
             if change.player_in_id is None or change.player_out_id is None:
@@ -119,7 +124,17 @@ def rebuild_group_roles(match_data: MatchData) -> None:
         defense = GroupType.objects.filter(name="Verdediging").first()
         if attack is None or defense is None:
             return
-        swapped = (Shot.objects.filter(match_data=locked, scored=True).count() // 2) % 2
+        scored = (
+            ShotEventDetail.objects
+            .filter(
+                event__match_data=locked,
+                event__status=MatchEvent.STATUS_ACTIVE,
+                outcome=ShotEventDetail.OUTCOME_GOAL,
+            )
+            .exclude(event__kind__endswith=".retracted")
+            .count()
+        )
+        swapped = (scored // 2) % 2
         for group in PlayerGroup.objects.filter(match_data=locked).select_related(
             "starting_type"
         ):
@@ -131,3 +146,81 @@ def rebuild_group_roles(match_data: MatchData) -> None:
             if group.current_type_id != desired_type_id:
                 group.current_type_id = desired_type_id
                 group.save(update_fields=["current_type"])
+
+
+def rebuild_match_score(match_data: MatchData) -> tuple[int, int]:
+    """Rebuild the score projection from active canonical goal versions."""
+    with transaction.atomic():
+        locked = (
+            MatchData.objects
+            .select_for_update()
+            .select_related("match_link")
+            .get(pk=match_data.pk)
+        )
+        goals = ShotEventDetail.objects.filter(
+            event__match_data=locked,
+            event__status=MatchEvent.STATUS_ACTIVE,
+            outcome=ShotEventDetail.OUTCOME_GOAL,
+        ).exclude(event__kind__endswith=".retracted")
+        home_score = goals.filter(
+            shooting_team_id=locked.match_link.home_team_id
+        ).count()
+        away_score = goals.filter(
+            shooting_team_id=locked.match_link.away_team_id
+        ).count()
+        MatchData.objects.filter(pk=locked.pk).update(
+            home_score=home_score,
+            away_score=away_score,
+        )
+        match_data.home_score = home_score
+        match_data.away_score = away_score
+        return home_score, away_score
+
+
+def rebuild_match_state(match_data: MatchData) -> tuple[str, int]:
+    """Rebuild aggregate lifecycle state from persisted period intervals."""
+    with transaction.atomic():
+        locked = MatchData.objects.select_for_update().get(pk=match_data.pk)
+        parts = list(
+            MatchPart.objects.filter(match_data=locked).order_by(
+                "part_number", "start_time", "id_uuid"
+            )
+        )
+        if not parts:
+            status = "upcoming"
+            current_part = 1
+        else:
+            active = next((part for part in parts if part.active), None)
+            if active is not None:
+                status = "active"
+                current_part = active.part_number
+            else:
+                last_part_number = max(part.part_number for part in parts)
+                finished = last_part_number >= locked.parts and all(
+                    part.end_time is not None
+                    for part in parts
+                    if part.part_number <= locked.parts
+                )
+                status = "finished" if finished else "active"
+                current_part = (
+                    locked.parts
+                    if finished
+                    else min(locked.parts, last_part_number + 1)
+                )
+        MatchData.objects.filter(pk=locked.pk).update(
+            status=status,
+            current_part=current_part,
+        )
+        match_data.status = status
+        match_data.current_part = current_part
+        return status, current_part
+
+
+def rebuild_match_projections(match_data: MatchData) -> None:
+    """Rebuild every mutable match projection from immutable starting/event facts."""
+    with transaction.atomic():
+        locked = MatchData.objects.select_for_update().get(pk=match_data.pk)
+        rebuild_current_lineup(locked)
+        rebuild_group_roles(locked)
+        rebuild_match_score(locked)
+        rebuild_match_state(locked)
