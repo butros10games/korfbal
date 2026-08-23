@@ -15,6 +15,7 @@ class MatchEventClient:
 
     device_id: str = ""
     session_id: str = ""
+    client_sequence: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class MatchEventContext:
     source: str = "system"
     device_id: str = ""
     session_id: str = ""
+    client_sequence: int | None = None
 
 
 _current_context: ContextVar[MatchEventContext | None] = ContextVar(
@@ -79,6 +81,7 @@ def match_event_context(
             source=source,
             device_id=client.device_id if client else "",
             session_id=client.session_id if client else "",
+            client_sequence=client.client_sequence if client else None,
         )
     )
     try:

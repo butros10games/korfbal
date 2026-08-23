@@ -6,6 +6,11 @@ from .group_type import GroupType
 from .match_data import MatchData
 from .match_event import MatchEvent
 from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
+from .match_event_observation import MatchEventObservation
+from .match_event_reconciliation import (
+    MatchEventReconciliation,
+    MatchEventReconciliationDecision,
+)
 from .match_live_change import MatchLiveChange
 from .match_part import MatchPart
 from .match_player import MatchPlayer
@@ -27,7 +32,9 @@ __all__ = [
     "GroupType",
     "MatchData",
     "MatchEvent",
-    "ShotEventDetail",
+    "MatchEventObservation",
+    "MatchEventReconciliation",
+    "MatchEventReconciliationDecision",
     "MatchLiveChange",
     "MatchPart",
     "MatchPlayer",
@@ -38,6 +45,7 @@ __all__ = [
     "PlayerMatchImpactBreakdown",
     "PlayerMatchMinutes",
     "Shot",
+    "ShotEventDetail",
     "StartingPlayerAssignment",
     "SubstitutionEventDetail",
     "Timeout",

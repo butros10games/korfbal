@@ -13,6 +13,7 @@ import pytest
 from apps.game_tracker.models import (
     Attack,
     MatchEvent,
+    MatchEventObservation,
     Pause,
     PlayerChange,
     Shot,
@@ -80,6 +81,29 @@ def test_canonical_event_migration_assigns_one_logical_id_per_root() -> None:
     assert events[0].logical_id == events[1].logical_id
     assert events[0].logical_id != events[2].logical_id
     assert shared_default not in {event.logical_id for event in events}
+
+
+@pytest.mark.django_db
+def test_observation_migration_backfills_historical_envelopes() -> None:
+    """Every pre-observation audit envelope retains one original report."""
+    tracker = create_tracker_match(prefix="Observation migration")
+    Attack.objects.create(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        time=timezone.now(),
+    )
+    event = MatchEvent.objects.get(match_data=tracker.match_data)
+    MatchEventObservation.objects.filter(event=event).delete()
+
+    migration = import_module(
+        "apps.game_tracker.migrations.0028_match_event_reconciliation"
+    )
+    migration.backfill_event_observations(django_apps, None)
+
+    observation = MatchEventObservation.objects.get(event=event)
+    assert observation.match_data == tracker.match_data
+    assert observation.origin == MatchEventObservation.ORIGIN_CANONICAL
+    assert observation.payload == event.payload
 
 
 @pytest.mark.django_db
@@ -320,3 +344,4 @@ def test_audit_history_includes_misses_attacks_and_prior_versions() -> None:
     assert history[0]["status"] == MatchEvent.STATUS_SUPERSEDED
     assert history[1]["detail"]["outcome"] == "goal"
     assert history[2]["detail"] is None
+    assert all(len(event["observations"]) == 1 for event in history)

@@ -24,6 +24,7 @@ from apps.game_tracker.models import (
     GoalType,
     MatchData,
     MatchEvent,
+    MatchEventReconciliation,
     MatchLiveChange,
     MatchPart,
     MatchPlayer,
@@ -695,6 +696,68 @@ def test_tracker_conflict_returns_reconciliation_metadata(client: Client) -> Non
         "command_id": first_id,
         "committed_revision": 1,
     }
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_coach_can_review_and_separate_event_reconciliation(client: Client) -> None:
+    """Ambiguous cross-team facts have a complete authorized review workflow."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    coach_user = get_user_model().objects.create_user(
+        username="event-reconciliation-reviewer",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+    match_data = MatchData.objects.get(match_link=match)
+    first_shot = Shot.objects.create(
+        match_data=match_data,
+        match_part=match_part,
+        player=coach_user.player,
+        team=match.home_team,
+        scored=True,
+        time=timezone.now(),
+    )
+    second_shot = Shot.objects.create(
+        match_data=match_data,
+        match_part=match_part,
+        player=coach_user.player,
+        team=match.home_team,
+        scored=True,
+        time=timezone.now() + timezone.timedelta(seconds=5),
+    )
+    first_event = MatchEvent.objects.get(source_type="shot", source_id=first_shot.pk)
+    second_event = MatchEvent.objects.get(
+        source_type="shot",
+        source_id=second_shot.pk,
+    )
+    candidate = MatchEventReconciliation.objects.create(
+        match_data=match_data,
+        first_event=first_event,
+        second_event=second_event,
+        confidence=75,
+        reason="Close independent reports",
+    )
+
+    pending = client.get(f"/api/matches/{match.id_uuid}/events/reconciliations/")
+    assert pending.status_code == HTTPStatus.OK
+    assert pending.json()["reconciliations"][0]["id_uuid"] == str(candidate.pk)
+
+    resolved = client.post(
+        (
+            f"/api/matches/{match.id_uuid}/events/reconciliations/"
+            f"{candidate.pk}/resolve/"
+        ),
+        data={"decision": "separate", "reason": "Confirmed as two goals"},
+        content_type="application/json",
+    )
+    assert resolved.status_code == HTTPStatus.OK
+    assert resolved.json()["decision"] == "separate"
+    assert client.get(
+        f"/api/matches/{match.id_uuid}/events/reconciliations/"
+    ).json() == {"reconciliations": []}
 
 
 @pytest.mark.django_db

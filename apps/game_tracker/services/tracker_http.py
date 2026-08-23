@@ -27,10 +27,17 @@ from apps.game_tracker.models import (
     PlayerChange,
     PlayerGroup,
     Shot,
+    ShotEventDetail,
     Timeout,
     TrackerCommand,
 )
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
+from apps.game_tracker.services.event_reconciliation import (
+    ShotObservation,
+    create_reconciliation_candidates,
+    plan_shot_reconciliation,
+    record_matched_observation,
+)
 from apps.game_tracker.services.lineup_projections import (
     capture_starting_lineup,
     rebuild_current_lineup,
@@ -1024,6 +1031,7 @@ def apply_tracker_command(
                 client=MatchEventClient(
                     device_id=metadata.device_id,
                     session_id=metadata.session_id,
+                    client_sequence=metadata.client_sequence,
                 ),
             ),
             suppress_live_update_signals(),
@@ -1426,7 +1434,35 @@ def _cmd_shot_reg(
                 code="bad_request",
             ) from exc
 
-    Shot.objects.create(
+    plan = plan_shot_reconciliation(
+        ShotObservation(
+            match_data=match_data,
+            match_part=current_part,
+            reporting_team_id=team.pk,
+            shooting_team_id=shot_team.pk,
+            outcome=ShotEventDetail.OUTCOME_MISS,
+            shot_type=shot_type,
+            effective_at=event_time,
+        )
+    )
+    observation_payload = {
+        "kind": "shot",
+        "shooting_team_id": str(shot_team.pk),
+        "reporting_team_id": str(team.pk),
+        "reported_player_id": str(player.pk),
+        "reported_player_role": "shooter" if params.for_team else "defender",
+        "shot_type_id": str(shot_type.pk) if shot_type else None,
+        "outcome": ShotEventDetail.OUTCOME_MISS,
+    }
+    if plan.matched_event is not None:
+        record_matched_observation(
+            event=plan.matched_event,
+            effective_at=event_time,
+            payload=observation_payload,
+        )
+        return
+
+    shot = Shot.objects.create(
         player=player,
         match_data=match_data,
         match_part=current_part,
@@ -1435,6 +1471,11 @@ def _cmd_shot_reg(
         team=shot_team,
         shot_type=shot_type,
         scored=False,
+    )
+    event = MatchEvent.objects.get(source_type="shot", source_id=shot.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
     )
 
 
@@ -1466,7 +1507,35 @@ def _cmd_goal_reg(
     except (GoalType.DoesNotExist, ValidationError, ValueError) as exc:
         raise TrackerCommandError("Invalid goal type.", code="bad_request") from exc
 
-    Shot.objects.create(
+    plan = plan_shot_reconciliation(
+        ShotObservation(
+            match_data=match_data,
+            match_part=current_part,
+            reporting_team_id=team.pk,
+            shooting_team_id=shot_team.pk,
+            outcome=ShotEventDetail.OUTCOME_GOAL,
+            shot_type=goal_type,
+            effective_at=event_time,
+        )
+    )
+    observation_payload = {
+        "kind": "shot",
+        "shooting_team_id": str(shot_team.pk),
+        "reporting_team_id": str(team.pk),
+        "reported_player_id": str(player.pk),
+        "reported_player_role": "shooter" if params.for_team else "defender",
+        "shot_type_id": str(goal_type.pk),
+        "outcome": ShotEventDetail.OUTCOME_GOAL,
+    }
+    if plan.matched_event is not None:
+        record_matched_observation(
+            event=plan.matched_event,
+            effective_at=event_time,
+            payload=observation_payload,
+        )
+        return
+
+    shot = Shot.objects.create(
         player=player,
         match_data=match_data,
         match_part=current_part,
@@ -1475,6 +1544,11 @@ def _cmd_goal_reg(
         team=shot_team,
         shot_type=goal_type,
         scored=True,
+    )
+    event = MatchEvent.objects.get(source_type="shot", source_id=shot.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
     )
 
     rebuild_group_roles(match_data)

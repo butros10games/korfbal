@@ -15,6 +15,7 @@ from apps.game_tracker.models import (
     Attack,
     MatchData,
     MatchEvent,
+    MatchEventObservation,
     MatchPart,
     Pause,
     PlayerChange,
@@ -260,6 +261,32 @@ def record_typed_match_event(
             **event_kwargs,
         )
         _create_typed_detail(event, instance, record_snapshot, context)
+        MatchEventObservation.objects.create(
+            match_data=match_data,
+            event=event,
+            command_id=context.command_id,
+            reporting_team=(
+                context.source_team
+                if getattr(context.source_team, "pk", None) is not None
+                else None
+            ),
+            actor=(
+                context.actor
+                if getattr(context.actor, "is_authenticated", False)
+                else None
+            ),
+            source=context.source,
+            device_id=context.device_id,
+            session_id=context.session_id,
+            client_sequence=context.client_sequence,
+            effective_at=effective_at,
+            elapsed_ms=elapsed_ms,
+            origin=MatchEventObservation.ORIGIN_CANONICAL,
+            payload={
+                "kind": event.kind,
+                "record": record_snapshot,
+            },
+        )
         return event
 
 
@@ -314,6 +341,7 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
         MatchEvent.objects
         .filter(match_data=match_data)
         .select_related("shot_detail", "substitution_detail")
+        .prefetch_related("observations")
         .order_by("sequence")
     )
     history: list[dict[str, Any]] = []
@@ -377,5 +405,35 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
                 str(event.supersedes_id) if event.supersedes_id else None
             ),
             "detail": detail,
+            "observations": [
+                {
+                    "observation_id": str(observation.pk),
+                    "command_id": (
+                        str(observation.command_id) if observation.command_id else None
+                    ),
+                    "reporting_team_id": (
+                        str(observation.reporting_team_id)
+                        if observation.reporting_team_id
+                        else None
+                    ),
+                    "actor_id": (
+                        str(observation.actor_id) if observation.actor_id else None
+                    ),
+                    "source": observation.source,
+                    "device_id": observation.device_id,
+                    "session_id": observation.session_id,
+                    "client_sequence": observation.client_sequence,
+                    "effective_at": (
+                        observation.effective_at.isoformat()
+                        if observation.effective_at
+                        else None
+                    ),
+                    "elapsed_ms": observation.elapsed_ms,
+                    "origin": observation.origin,
+                    "payload": observation.payload,
+                    "recorded_at": observation.recorded_at.isoformat(),
+                }
+                for observation in MatchEventObservation.objects.filter(event=event)
+            ],
         })
     return history
