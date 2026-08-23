@@ -637,6 +637,10 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
 
         """
         match_data = self._get_match_data()
+        if isinstance(getattr(self, "instance", None), PlayerChange):
+            # Relation validation for partial updates is performed while applying
+            # each supplied field in ``update`` below.
+            return attrs
 
         match_part = MatchPart.objects.filter(
             id_uuid=attrs["match_part_id"],
@@ -776,6 +780,8 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
 
         """
         match_data = self._get_match_data()
+        if isinstance(getattr(self, "instance", None), Pause):
+            return attrs
         match_part = MatchPart.objects.filter(
             id_uuid=attrs["match_part_id"],
             match_data=match_data,
@@ -825,22 +831,29 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
                 raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
             instance.match_part = match_part
 
-        if (
-            "start_time" in validated_data
-            or "minute" in validated_data
-            or "length_seconds" in validated_data
-        ):
+        if {"start_time", "minute", "length_seconds"} & validated_data.keys():
             match_part_for_time = instance.match_part
             if match_part_for_time is None:
                 raise serializers.ValidationError({
                     "match_part_id": "Pause has no match part."
                 })
-            start = _resolve_event_time(
-                match_part=match_part_for_time,
-                time=_optional_str(validated_data.get("start_time")),
-                minute=_optional_int(validated_data.get("minute")),
+            start = (
+                _resolve_event_time(
+                    match_part=match_part_for_time,
+                    time=_optional_str(validated_data.get("start_time")),
+                    minute=_optional_int(validated_data.get("minute")),
+                )
+                if {"start_time", "minute"} & validated_data.keys()
+                else instance.start_time
             )
-            length_seconds = _coerce_int(validated_data.get("length_seconds"))
+            if start is None:
+                raise serializers.ValidationError({"start_time": "Pause has no start."})
+            current_length = int(instance.length().total_seconds())
+            length_seconds = (
+                _coerce_int(validated_data.get("length_seconds"))
+                if "length_seconds" in validated_data
+                else current_length
+            )
             instance.start_time = start
             cast(Any, instance).end_time = (
                 start + timedelta(seconds=length_seconds) if length_seconds else None
@@ -871,6 +884,18 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
         """
         match = self._get_match()
         match_data = self._get_match_data()
+        if isinstance(getattr(self, "instance", None), Timeout):
+            if "team_id" in attrs:
+                team_id = str(attrs["team_id"])
+                allowed = {
+                    str(match.home_team.id_uuid),
+                    str(match.away_team.id_uuid),
+                }
+                if team_id not in allowed:
+                    raise serializers.ValidationError({
+                        "team_id": "Team is not part of this match."
+                    })
+            return attrs
 
         match_part = MatchPart.objects.filter(
             id_uuid=attrs["match_part_id"],
@@ -957,22 +982,31 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
             instance.match_part = match_part
             pause.match_part = match_part
 
-        if (
-            "start_time" in validated_data
-            or "minute" in validated_data
-            or "length_seconds" in validated_data
-        ):
+        if {"start_time", "minute", "length_seconds"} & validated_data.keys():
             match_part_for_time = pause.match_part
             if match_part_for_time is None:
                 raise serializers.ValidationError({
                     "match_part_id": "Timeout pause has no match part."
                 })
-            start = _resolve_event_time(
-                match_part=match_part_for_time,
-                time=_optional_str(validated_data.get("start_time")),
-                minute=_optional_int(validated_data.get("minute")),
+            start = (
+                _resolve_event_time(
+                    match_part=match_part_for_time,
+                    time=_optional_str(validated_data.get("start_time")),
+                    minute=_optional_int(validated_data.get("minute")),
+                )
+                if {"start_time", "minute"} & validated_data.keys()
+                else pause.start_time
             )
-            length_seconds = _coerce_int(validated_data.get("length_seconds"))
+            if start is None:
+                raise serializers.ValidationError({
+                    "start_time": "Timeout pause has no start."
+                })
+            current_length = int(pause.length().total_seconds())
+            length_seconds = (
+                _coerce_int(validated_data.get("length_seconds"))
+                if "length_seconds" in validated_data
+                else current_length
+            )
             pause.start_time = start
             cast(Any, pause).end_time = (
                 start + timedelta(seconds=length_seconds) if length_seconds else None

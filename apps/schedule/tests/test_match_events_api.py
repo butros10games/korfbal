@@ -16,6 +16,7 @@ from apps.game_tracker.models import (
     GroupType,
     MatchData,
     MatchPart,
+    Pause,
     PlayerChange,
     PlayerGroup,
     Shot,
@@ -130,6 +131,66 @@ def test_match_events_halftime_substitution_is_serialized_as_rust(
     assert halftime_sub["time"] == "Rust"
     assert "match_part_id" not in halftime_sub
     assert "time_iso" in halftime_sub
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_event_during_pause_subtracts_only_elapsed_pause_time(client: Client) -> None:
+    """A completed pause must not subtract time that followed the event itself."""
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="Pause overlap", start_date=today, end_date=today
+    )
+    home_team = Team.objects.create(
+        name="Pause Home",
+        club=Club.objects.create(name="Pause HC"),
+    )
+    away_team = Team.objects.create(
+        name="Pause Away",
+        club=Club.objects.create(name="Pause AC"),
+    )
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
+    part_start = timezone.now() - timedelta(minutes=20)
+    part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=part_start,
+        active=True,
+    )
+    Pause.objects.create(
+        match_data=match_data,
+        match_part=part,
+        start_time=part_start + timedelta(minutes=5),
+        end_time=part_start + timedelta(minutes=10),
+        active=False,
+    )
+    scorer = get_user_model().objects.create_user(username="pause-scorer")
+    goal = Shot.objects.create(
+        player=scorer.player,
+        match_data=match_data,
+        match_part=part,
+        team=home_team,
+        scored=True,
+        shot_type=GoalType.objects.create(name="Pause goal"),
+        time=part_start + timedelta(minutes=7),
+    )
+
+    response = client.get(f"/api/matches/{match.id_uuid}/events/")
+    assert response.status_code == HTTPStatus.OK
+    event = next(
+        item
+        for item in response.json()["events"]
+        if item["event_id"] == str(goal.id_uuid)
+    )
+    assert event["time"] == "5"
 
 
 @pytest.mark.django_db

@@ -19,7 +19,14 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.game_tracker.models import (
+    GoalType,
+    MatchData,
+    MatchPart,
+    Pause,
+    Shot,
+    Timeout,
+)
 from apps.player.models import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.api.permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
@@ -295,6 +302,61 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert Shot.objects.filter(id_uuid=shot_id).exists() is False
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 0)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None:
+    """Timeout deltas and editor routes should share one durable event id."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    coach_user = get_user_model().objects.create_user(
+        username="timeout-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    client.force_login(coach_user)
+
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "active"
+    match_data.save(update_fields=["status"])
+    match_data.refresh_from_db()
+    revision_before_create = match_data.live_revision
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/events/timeouts/",
+        data={
+            "team_id": str(match.home_team_id),
+            "match_part_id": str(match_part.id_uuid),
+            "minute": 0,
+            "length_seconds": 20,
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.CREATED
+    created = response.json()
+    assert created["event_kind"] == "timeout"
+    assert created["event_id"] == created["pause_id"]
+    assert created["timeout_id"] != created["pause_id"]
+
+    delta = client.get(
+        f"/api/matches/{match.id_uuid}/events/",
+        {"since_revision": revision_before_create},
+    ).json()
+    assert [event["event_id"] for event in delta["upsert"]] == [created["event_id"]]
+
+    update_response = client.patch(
+        f"/api/matches/{match.id_uuid}/events/timeouts/{created['event_id']}/",
+        data={"length_seconds": 30},
+        content_type="application/json",
+    )
+    assert update_response.status_code == HTTPStatus.OK
+    assert update_response.json()["event_id"] == created["event_id"]
+    timeout = Timeout.objects.get(id_uuid=created["timeout_id"])
+    assert str(timeout.pause_id) == created["event_id"]
+    assert Pause.objects.get(
+        id_uuid=created["pause_id"]
+    ).length() == timezone.timedelta(seconds=30)
 
 
 @pytest.mark.django_db

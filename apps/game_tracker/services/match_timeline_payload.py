@@ -12,8 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from django.db.models import DurationField, ExpressionWrapper, F, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Q
 
 from apps.game_tracker.models import (
     MatchData,
@@ -87,19 +86,26 @@ def _time_in_minutes(
     match_part_number: int,
     event_time: datetime,
 ) -> str:
-    pause_time = Pause.objects.filter(
-        match_data=match_data,
-        active=False,
-        start_time__lt=event_time,
-        start_time__gte=match_part_start,
-    ).filter(start_time__isnull=False).aggregate(
-        total_pause=Sum(
-            ExpressionWrapper(
-                Coalesce(F("end_time"), F("start_time")) - F("start_time"),
-                output_field=DurationField(),
-            )
+    pause_intervals = (
+        Pause.objects
+        .filter(
+            match_data=match_data,
+            start_time__lt=event_time,
+            start_time__gte=match_part_start,
         )
-    ).get("total_pause") or timedelta(0)
+        .filter(
+            Q(active=True) | Q(end_time__isnull=False),
+        )
+        .values_list("start_time", "end_time")
+    )
+    pause_time = sum(
+        (
+            min(end_time or event_time, event_time) - start_time
+            for start_time, end_time in pause_intervals
+            if end_time is None or end_time > start_time
+        ),
+        timedelta(0),
+    )
     pause_time_seconds = pause_time.total_seconds()
 
     time_in_minutes_value = round(
@@ -446,8 +452,11 @@ def _serialize_pause_event(
 
     return {
         "event_kind": "timeout" if timeout else "pause",
-        "event_id": str(timeout.id_uuid) if timeout else str(event.id_uuid),
+        # Pause is the durable root of both pause and timeout events. Using its id
+        # keeps realtime changed ids stable while a Timeout detail row is created.
+        "event_id": str(event.id_uuid),
         "pause_id": str(event.id_uuid),
+        "timeout_id": str(timeout.id_uuid) if timeout else None,
         "type": "intermission",
         "name": "Time-out" if timeout else "Pauze",
         "match_part_id": str(event.match_part.id_uuid),

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -254,6 +255,7 @@ class MatchEventsActionsMixin:
         url_path="events/goals",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def create_goal(
         self: _MatchViewSetLike,
         request: Request,
@@ -262,7 +264,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a goal (Shot) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -286,6 +290,7 @@ class MatchEventsActionsMixin:
         url_path=r"events/goals/(?P<shot_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def goal_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -295,7 +300,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete an existing goal (Shot) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -332,6 +339,7 @@ class MatchEventsActionsMixin:
         url_path="events/substitutes",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def create_substitute(
         self: _MatchViewSetLike,
         request: Request,
@@ -340,7 +348,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a substitution (PlayerChange) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -364,6 +374,7 @@ class MatchEventsActionsMixin:
         url_path=r"events/substitutes/(?P<change_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def substitute_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -373,7 +384,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a substitution (PlayerChange) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -413,6 +426,7 @@ class MatchEventsActionsMixin:
         url_path="events/pauses",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def create_pause(
         self: _MatchViewSetLike,
         request: Request,
@@ -421,7 +435,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a pause (Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -445,6 +461,7 @@ class MatchEventsActionsMixin:
         url_path=r"events/pauses/(?P<pause_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def pause_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -454,7 +471,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a pause (Pause) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -492,6 +511,7 @@ class MatchEventsActionsMixin:
         url_path="events/timeouts",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def create_timeout(
         self: _MatchViewSetLike,
         request: Request,
@@ -500,7 +520,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a timeout (Timeout + Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -623,6 +645,7 @@ class MatchEventsActionsMixin:
         url_path=r"events/timeouts/(?P<timeout_id>[^/.]+)",
         permission_classes=[IsCoachOrAdmin],
     )
+    @transaction.atomic
     def timeout_detail(
         self: _MatchViewSetLike,
         request: Request,
@@ -632,7 +655,9 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a timeout (Timeout + Pause) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = (
+            MatchData.objects.select_for_update().filter(match_link=match).first()
+        )
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -643,7 +668,7 @@ class MatchEventsActionsMixin:
             Timeout.objects
             .select_related("pause")
             .filter(
-                id_uuid=timeout_id,
+                Q(id_uuid=timeout_id) | Q(pause_id=timeout_id),
                 match_data=match_data,
             )
             .first()
