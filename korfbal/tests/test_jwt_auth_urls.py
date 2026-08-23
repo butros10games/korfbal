@@ -22,3 +22,15 @@ def test_jwt_refresh_url_is_exposed() -> None:
     """JWT refresh endpoint should be routable (root + /api/ back-compat)."""
     assert resolve("/auth/jwt/refresh/").url_name == "auth-jwt-refresh"
     assert resolve("/api/auth/jwt/refresh/").url_name == "auth-jwt-refresh"
+
+
+def test_passkey_urls_are_exposed() -> None:
+    """Passkey ceremonies should be routable on primary and legacy API paths."""
+    assert (
+        resolve("/auth/passkeys/authentication/options/").url_name
+        == "auth-passkey-authentication-options"
+    )
+    assert (
+        resolve("/api/auth/passkeys/registration/options/").url_name
+        == "auth-passkey-registration-options"
+    )

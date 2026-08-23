@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .env import env
+from .runtime import DEBUG
 
 
 SITE = "Korfbal Web Tool"
@@ -18,5 +19,18 @@ BG_AUTH_EMAIL_CODE_VALIDITY_SECONDS: int = 15 * 60
 BG_AUTH_RESEND_CONFIRMATION_MAX_AGE: int = 24 * 60 * 60
 
 BG_AUTH_JWT_SIGNING_KEY = env("BG_AUTH_JWT_SIGNING_KEY", "fill-me-in-with-a-real-key")
+
+_passkey_default_origin = (
+    "https://korfbal.localhost" if DEBUG else "https://korfbal.butrosgroot.com"
+)
+BG_AUTH_PASSKEY_RP_ID = env(
+    "BG_AUTH_PASSKEY_RP_ID",
+    "korfbal.localhost" if DEBUG else "korfbal.butrosgroot.com",
+)
+BG_AUTH_PASSKEY_RP_NAME = env("BG_AUTH_PASSKEY_RP_NAME", SITE)
+BG_AUTH_PASSKEY_ORIGINS = env(
+    "BG_AUTH_PASSKEY_ORIGINS",
+    env("WEB_APP_ORIGIN", _passkey_default_origin),
+)
 
 LOGIN_REDIRECT_URL = "index"

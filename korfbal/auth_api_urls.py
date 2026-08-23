@@ -39,6 +39,36 @@ urlpatterns = [
         name="auth-register",
     ),
     path(
+        "auth/passkeys/",
+        cast(ViewType, views.api.list_passkeys),
+        name="auth-passkeys",
+    ),
+    path(
+        "auth/passkeys/registration/options/",
+        cast(ViewType, views.api.passkey_registration_options),
+        name="auth-passkey-registration-options",
+    ),
+    path(
+        "auth/passkeys/registration/verify/",
+        cast(ViewType, views.api.verify_passkey_registration),
+        name="auth-passkey-registration-verify",
+    ),
+    path(
+        "auth/passkeys/authentication/options/",
+        cast(ViewType, views.api.passkey_authentication_options),
+        name="auth-passkey-authentication-options",
+    ),
+    path(
+        "auth/passkeys/authentication/verify/",
+        cast(ViewType, views.api.verify_passkey_authentication),
+        name="auth-passkey-authentication-verify",
+    ),
+    path(
+        "auth/passkeys/<uuid:passkey_id>/",
+        cast(ViewType, views.api.delete_passkey),
+        name="auth-passkey-delete",
+    ),
+    path(
         "auth/login/2fa/verify/",
         cast(ViewType, views.api.verify_two_factor_code),
         name="auth-login-2fa-verify",
