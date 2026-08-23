@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
+import json
 import logging
 from typing import Any, Protocol, cast
 from uuid import UUID
 
+from bg_uuidv7 import uuidv7
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
@@ -25,6 +28,7 @@ from apps.game_tracker.models import (
     PlayerGroup,
     Shot,
     Timeout,
+    TrackerCommand,
 )
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.live_update_signal_control import (
@@ -754,6 +758,7 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         "last_event": _last_event_payload(match_data, team=team, opponent=opponent),
         "last_changed_at": _last_changed_at(match_data).isoformat(),
         "live_revision": match_data.live_revision,
+        "command_sequence": match_data.command_sequence,
     }
 
     return state
@@ -820,11 +825,126 @@ class _TrackerCommand(Protocol):
         """Apply the command against the locked tracker state."""
 
 
+@dataclass(frozen=True, slots=True)
+class _CommandMetadata:
+    command_id: UUID | None
+    expected_revision: int | None
+    payload_hash: str
+
+
+def _command_metadata(payload: dict[str, Any]) -> _CommandMetadata:
+    """Parse idempotency metadata and hash the command's business payload.
+
+    Raises:
+        TrackerCommandError: If command metadata is malformed.
+
+    """
+    command_id_raw = payload.get("command_id")
+    command_id: UUID | None = None
+    if command_id_raw is not None:
+        if not isinstance(command_id_raw, str):
+            raise TrackerCommandError("Invalid command_id.", code="bad_request")
+        try:
+            command_id = UUID(command_id_raw)
+        except ValueError as exc:
+            raise TrackerCommandError(
+                "Invalid command_id.", code="bad_request"
+            ) from exc
+
+    expected_revision_raw = payload.get("expected_revision")
+    expected_revision: int | None = None
+    if expected_revision_raw is not None:
+        if (
+            isinstance(expected_revision_raw, bool)
+            or not isinstance(expected_revision_raw, int)
+            or expected_revision_raw < 0
+        ):
+            raise TrackerCommandError("Invalid expected_revision.", code="bad_request")
+        expected_revision = expected_revision_raw
+
+    business_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"command_id", "expected_revision", "client_time_ms"}
+    }
+    encoded = json.dumps(
+        business_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    return _CommandMetadata(
+        command_id=command_id,
+        expected_revision=expected_revision,
+        payload_hash=hashlib.sha256(encoded).hexdigest(),
+    )
+
+
+def _register_tracker_command(
+    *,
+    match_data: MatchData,
+    team: Team,
+    command: str,
+    metadata: _CommandMetadata,
+    actor: object | None,
+) -> bool:
+    """Register a state transition, returning true for an idempotent replay.
+
+    Raises:
+        TrackerCommandError: If the idempotency key conflicts or state is stale.
+
+    """
+    if command not in _MUTATING_COMMANDS:
+        return False
+
+    if metadata.command_id is not None:
+        previous = TrackerCommand.objects.filter(
+            match_data=match_data,
+            command_id=metadata.command_id,
+        ).first()
+        if previous is not None:
+            if (
+                previous.team_id != team.id_uuid
+                or previous.command != command
+                or previous.payload_hash != metadata.payload_hash
+            ):
+                raise TrackerCommandError(
+                    "command_id was already used for a different command.",
+                    code="idempotency_conflict",
+                )
+            return True
+
+    if (
+        metadata.expected_revision is not None
+        and metadata.expected_revision != match_data.live_revision
+    ):
+        raise TrackerCommandError(
+            "Tracker state changed; refresh before retrying the command.",
+            code="revision_conflict",
+        )
+
+    match_data.command_sequence += 1
+    with suppress_live_update_signals():
+        match_data.save(update_fields=["command_sequence"])
+    TrackerCommand.objects.create(
+        command_id=metadata.command_id or uuidv7(),
+        match_data=match_data,
+        team=team,
+        actor=actor if getattr(actor, "is_authenticated", False) else None,
+        sequence=match_data.command_sequence,
+        command=command,
+        payload_hash=metadata.payload_hash,
+        expected_revision=metadata.expected_revision,
+    )
+    return False
+
+
 def apply_tracker_command(
     match: Match,
     *,
     team: Team,
     payload: dict[str, Any],
+    actor: object | None = None,
 ) -> dict[str, Any]:
     """Apply a tracker command and return the updated state.
 
@@ -836,6 +956,7 @@ def apply_tracker_command(
     if not isinstance(command, str):
         raise TrackerCommandError("Missing command.", code="bad_request")
     parsed_command = _parse_command(payload)
+    metadata = _command_metadata(payload)
 
     _other_team(match, team)
 
@@ -848,6 +969,14 @@ def apply_tracker_command(
         match_data = MatchData.objects.select_for_update().get(
             id_uuid=match_data.id_uuid,
         )
+        if _register_tracker_command(
+            match_data=match_data,
+            team=team,
+            command=command,
+            metadata=metadata,
+            actor=actor,
+        ):
+            return get_tracker_state(match, team=team)
         event_time = (
             timezone.now()
             if command in _SERVER_TIMED_COMMANDS

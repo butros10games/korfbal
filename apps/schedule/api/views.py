@@ -513,12 +513,21 @@ class MatchViewSet(
             )
         try:
             return Response(
-                apply_tracker_command(match, team=team, payload=request.data),
+                apply_tracker_command(
+                    match,
+                    team=team,
+                    payload=request.data,
+                    actor=request.user,
+                ),
                 status=status.HTTP_200_OK,
             )
         except TrackerCommandError as exc:
             code = getattr(exc, "code", "error")
-            if code == "match_paused":
+            if code in {
+                "match_paused",
+                "revision_conflict",
+                "idempotency_conflict",
+            }:
                 return Response(
                     {"detail": str(exc), "code": code},
                     status=status.HTTP_409_CONFLICT,
