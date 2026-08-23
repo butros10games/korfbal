@@ -352,11 +352,16 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
 
     shot_model.refresh_from_db()
     assert shot_model.for_team is False
-    canonical = ShotEventDetail.objects.get(
-        event__match_data=match_data,
-        event__source_id=shot_model.pk,
-        event__status=MatchEvent.STATUS_ACTIVE,
+    canonical = (
+        ShotEventDetail.objects
+        .filter(
+            event__match_data=match_data,
+            event__source_id=shot_model.pk,
+        )
+        .order_by("-event__sequence")
+        .first()
     )
+    assert canonical is not None
     assert canonical.shooter == away_player
     assert canonical.defender is None
     match_data.refresh_from_db()

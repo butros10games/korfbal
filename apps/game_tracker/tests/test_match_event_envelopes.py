@@ -14,13 +14,25 @@ from apps.game_tracker.models import (
     Attack,
     MatchEvent,
     MatchEventObservation,
+    MatchPart,
     Pause,
     PlayerChange,
     Shot,
     ShotEventDetail,
     SubstitutionEventDetail,
+    Timeout,
 )
-from apps.game_tracker.services.match_event_context import match_event_context
+from apps.game_tracker.services.lineup_projections import (
+    capture_starting_lineup,
+    rebuild_match_projections,
+)
+from apps.game_tracker.services.match_event_context import (
+    match_event_context,
+    suppress_match_event_recording,
+)
+from apps.game_tracker.services.match_event_replay import (
+    rebuild_typed_event_projections,
+)
 from apps.game_tracker.services.match_events import build_match_event_history
 from apps.game_tracker.services.match_timeline_payload import build_match_shots
 from apps.game_tracker.services.tracker_http import apply_tracker_command
@@ -141,11 +153,7 @@ def test_typed_updates_append_versions_and_retractions() -> None:
         "shot.updated",
         "shot.retracted",
     ]
-    assert [event.status for event in events] == [
-        MatchEvent.STATUS_SUPERSEDED,
-        MatchEvent.STATUS_RETRACTED,
-        MatchEvent.STATUS_ACTIVE,
-    ]
+    assert all(event.status == MatchEvent.STATUS_ACTIVE for event in events)
     assert events[1].supersedes == events[0]
     assert events[2].supersedes == events[1]
     assert len({event.logical_id for event in events}) == 1
@@ -158,6 +166,13 @@ def test_typed_updates_append_versions_and_retractions() -> None:
         .order_by("event__sequence")
         .values_list("outcome", flat=True)
     ) == ["miss", "goal", "goal"]
+    assert [
+        event["status"] for event in build_match_event_history(tracker.match_data)
+    ] == [
+        MatchEvent.STATUS_SUPERSEDED,
+        MatchEvent.STATUS_SUPERSEDED,
+        MatchEvent.STATUS_RETRACTED,
+    ]
 
 
 @pytest.mark.django_db
@@ -345,3 +360,121 @@ def test_audit_history_includes_misses_attacks_and_prior_versions() -> None:
     assert history[1]["detail"]["outcome"] == "goal"
     assert history[2]["detail"] is None
     assert all(len(event["observations"]) == 1 for event in history)
+
+
+@pytest.mark.django_db
+def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
+    """Every operational event table and aggregate can be replayed from envelopes."""
+    tracker = create_tracker_match(prefix="Projection replay")
+    player_out = create_tracker_player(username="replay-player-out")
+    player_in = create_tracker_player(username="replay-player-in")
+    group_types = create_group_types("Aanval", "Reserve")
+    group = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=group_types["Aanval"],
+    )
+    reserve = create_player_group(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        group_type=group_types["Reserve"],
+    )
+    group.players.add(player_out)
+    reserve.players.add(player_in)
+    capture_starting_lineup(tracker.match_data)
+
+    now = timezone.now()
+    part = MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=now - timedelta(minutes=5),
+        end_time=None,
+        active=True,
+    )
+    pause = Pause.objects.create(
+        match_data=tracker.match_data,
+        match_part=part,
+        start_time=now - timedelta(minutes=2),
+        end_time=now - timedelta(minutes=1),
+        active=False,
+    )
+    timeout = Timeout.objects.create(
+        match_data=tracker.match_data,
+        match_part=part,
+        pause=pause,
+        team=tracker.home_team,
+    )
+    shot = Shot.objects.create(
+        player=player_out,
+        match_data=tracker.match_data,
+        match_part=part,
+        team=tracker.home_team,
+        scored=True,
+        time=now - timedelta(seconds=30),
+    )
+    change = PlayerChange.objects.create(
+        match_data=tracker.match_data,
+        match_part=part,
+        player_group=group,
+        player_out=player_out,
+        player_in=player_in,
+        time=now - timedelta(seconds=20),
+    )
+    attack = Attack.objects.create(
+        match_data=tracker.match_data,
+        match_part=part,
+        team=tracker.away_team,
+        time=now - timedelta(seconds=10),
+    )
+    rebuild_match_projections(tracker.match_data)
+
+    expected = {
+        "part": part.pk,
+        "pause": pause.pk,
+        "timeout": timeout.pk,
+        "shot": shot.pk,
+        "change": change.pk,
+        "attack": attack.pk,
+    }
+    event_count = MatchEvent.objects.filter(match_data=tracker.match_data).count()
+    tracker.match_data.refresh_from_db()
+    last_sequence = tracker.match_data.event_sequence
+
+    with suppress_match_event_recording():
+        Timeout.objects.filter(match_data=tracker.match_data).delete()
+        Shot.objects.filter(match_data=tracker.match_data).delete()
+        PlayerChange.objects.filter(match_data=tracker.match_data).delete()
+        Attack.objects.filter(match_data=tracker.match_data).delete()
+        Pause.objects.filter(match_data=tracker.match_data).delete()
+        MatchPart.objects.filter(pk=part.pk).update(
+            start_time=now,
+            active=False,
+        )
+        tracker.match_data.home_score = 99
+        tracker.match_data.away_score = 98
+        tracker.match_data.save(update_fields=["home_score", "away_score"])
+        group.players.clear()
+        reserve.players.set([player_out, player_in])
+
+    rebuild_typed_event_projections(tracker.match_data)
+    # Replaying an already-correct projection is also a no-op for the event log.
+    rebuild_typed_event_projections(tracker.match_data)
+
+    tracker.match_data.refresh_from_db()
+    part.refresh_from_db()
+    assert MatchPart.objects.get(pk=expected["part"]).active is True
+    assert Pause.objects.get(pk=expected["pause"]).end_time == pause.end_time
+    assert Timeout.objects.get(pk=expected["timeout"]).pause_id == expected["pause"]
+    assert Shot.objects.get(pk=expected["shot"]).scored is True
+    assert PlayerChange.objects.get(pk=expected["change"]).player_in == player_in
+    assert Attack.objects.get(pk=expected["attack"]).team == tracker.away_team
+    assert tracker.match_data.home_score == 1
+    assert tracker.match_data.away_score == 0
+    assert set(group.players.values_list("pk", flat=True)) == {player_in.pk}
+    assert set(reserve.players.values_list("pk", flat=True)) == {player_out.pk}
+    assert (
+        MatchEvent.objects.filter(match_data=tracker.match_data).count()
+        == event_count
+    )
+    tracker.match_data.refresh_from_db()
+    assert tracker.match_data.event_sequence == last_sequence

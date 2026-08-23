@@ -17,6 +17,7 @@ from apps.game_tracker.models import (
 from apps.game_tracker.services.match_event_context import (
     mark_match_data_deleting,
     match_data_is_deleting,
+    match_event_recording_is_suppressed,
     unmark_match_data_deleting,
 )
 from apps.game_tracker.services.match_events import record_typed_match_event
@@ -59,7 +60,11 @@ def _typed_record_saved(
     **kwargs: object,
 ) -> None:
     del sender, kwargs
-    if raw or not isinstance(instance, _TRACKED_SENDERS):
+    if (
+        raw
+        or match_event_recording_is_suppressed()
+        or not isinstance(instance, _TRACKED_SENDERS)
+    ):
         return
     record_typed_match_event(instance, operation="created" if created else "updated")
 
@@ -76,7 +81,9 @@ def _typed_record_deleted(
     **kwargs: object,
 ) -> None:
     del sender, kwargs
-    if not isinstance(instance, _TRACKED_SENDERS):
+    if match_event_recording_is_suppressed() or not isinstance(
+        instance, _TRACKED_SENDERS
+    ):
         return
     match_data_id = instance.__dict__.get("match_data_id")
     if match_data_id is not None and match_data_is_deleting(match_data_id):

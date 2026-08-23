@@ -9,7 +9,7 @@ from typing import Any, Protocol, cast
 from uuid import UUID
 
 from django.db import models, transaction
-from django.db.models import Min
+from django.db.models import Min, OuterRef, QuerySet, Subquery
 
 from apps.game_tracker.models import (
     Attack,
@@ -45,6 +45,42 @@ _SOURCE_TYPES: dict[type[models.Model], str] = {
     Shot: "shot",
     Timeout: "timeout",
 }
+
+
+def latest_match_events(
+    match_data: MatchData,
+    *,
+    source_types: set[str] | None = None,
+) -> QuerySet[MatchEvent]:
+    """Return the immutable latest version of each logical event root."""
+    latest_id = (
+        MatchEvent.objects
+        .filter(
+            match_data=match_data,
+            logical_id=OuterRef("logical_id"),
+        )
+        .order_by("-sequence")
+        .values("pk")[:1]
+    )
+    events = MatchEvent.objects.filter(
+        match_data=match_data,
+        pk=Subquery(latest_id),
+    )
+    if source_types is not None:
+        events = events.filter(source_type__in=source_types)
+    return events
+
+
+def active_match_events(
+    match_data: MatchData,
+    *,
+    source_types: set[str] | None = None,
+) -> QuerySet[MatchEvent]:
+    """Return latest logical versions whose final fact is not a retraction."""
+    return latest_match_events(
+        match_data,
+        source_types=source_types,
+    ).exclude(kind__endswith=".retracted")
 
 
 def _json_value(value: object) -> object:
@@ -201,18 +237,10 @@ def record_typed_match_event(
                 match_data=match_data,
                 source_type=source_type,
                 source_id=instance.pk,
-                status=MatchEvent.STATUS_ACTIVE,
             )
             .order_by("-sequence")
             .first()
         )
-        if previous is not None:
-            previous.status = (
-                MatchEvent.STATUS_RETRACTED
-                if operation == "deleted"
-                else MatchEvent.STATUS_SUPERSEDED
-            )
-            previous.save(update_fields=["status"])
 
         if operation == "deleted" and previous is not None:
             effective_at = previous.effective_at
@@ -337,13 +365,16 @@ def logical_event_id(
 
 def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
     """Return the complete ordered audit stream, including inactive versions."""
-    events = (
+    events = list(
         MatchEvent.objects
         .filter(match_data=match_data)
         .select_related("shot_detail", "substitution_detail")
         .prefetch_related("observations")
         .order_by("sequence")
     )
+    latest_sequence_by_logical_id = {
+        event.logical_id: event.sequence for event in events
+    }
     history: list[dict[str, Any]] = []
     for event in events:
         detail: dict[str, object] | None = None
@@ -385,7 +416,15 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
             "logical_event_id": str(event.logical_id),
             "sequence": event.sequence,
             "kind": event.kind,
-            "status": event.status,
+            "status": (
+                MatchEvent.STATUS_SUPERSEDED
+                if event.sequence != latest_sequence_by_logical_id[event.logical_id]
+                else (
+                    MatchEvent.STATUS_RETRACTED
+                    if event.kind.endswith(".retracted")
+                    else MatchEvent.STATUS_ACTIVE
+                )
+            ),
             "source_type": event.source_type,
             "source_id": str(event.source_id),
             "match_part_id": str(event.match_part_id) if event.match_part_id else None,

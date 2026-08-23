@@ -54,6 +54,7 @@ from apps.game_tracker.services.match_event_context import (
     MatchEventClient,
     match_event_context,
 )
+from apps.game_tracker.services.match_events import active_match_events
 from apps.game_tracker.services.match_mutations import locked_match_mutation
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
 from apps.game_tracker.services.match_timeline_payload import (
@@ -421,11 +422,9 @@ def _reserve_players_payload(
 def _get_last_event_model(match_data: MatchData) -> object | None:
     """Resolve the newest undoable fact from its committed event order."""
     events = (
-        MatchEvent.objects
-        .filter(
-            match_data=match_data,
-            status=MatchEvent.STATUS_ACTIVE,
-            source_type__in={"shot", "player_change", "pause", "attack"},
+        active_match_events(
+            match_data,
+            source_types={"shot", "player_change", "pause", "attack"},
         )
         .order_by("-sequence")
         .values_list("source_type", "source_id")

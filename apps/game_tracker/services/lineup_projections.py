@@ -9,7 +9,6 @@ from django.db import transaction
 from apps.game_tracker.models import (
     GroupType,
     MatchData,
-    MatchEvent,
     MatchPart,
     PlayerGroup,
     ShotEventDetail,
@@ -17,6 +16,7 @@ from apps.game_tracker.models import (
     SubstitutionEventDetail,
 )
 
+from .match_events import active_match_events
 from .player_groups import RESERVE_GROUP_NAME
 
 
@@ -88,9 +88,11 @@ def rebuild_current_lineup(match_data: MatchData) -> None:
             .select_related("player_group", "event")
             .filter(
                 event__match_data=locked,
-                event__status=MatchEvent.STATUS_ACTIVE,
+                event_id__in=active_match_events(
+                    locked,
+                    source_types={"player_change"},
+                ).values("pk"),
             )
-            .exclude(event__kind__endswith=".retracted")
             .order_by("event__sequence")
         )
         for change in changes:
@@ -124,16 +126,14 @@ def rebuild_group_roles(match_data: MatchData) -> None:
         defense = GroupType.objects.filter(name="Verdediging").first()
         if attack is None or defense is None:
             return
-        scored = (
-            ShotEventDetail.objects
-            .filter(
-                event__match_data=locked,
-                event__status=MatchEvent.STATUS_ACTIVE,
-                outcome=ShotEventDetail.OUTCOME_GOAL,
-            )
-            .exclude(event__kind__endswith=".retracted")
-            .count()
-        )
+        scored = ShotEventDetail.objects.filter(
+            event__match_data=locked,
+            event_id__in=active_match_events(
+                locked,
+                source_types={"shot"},
+            ).values("pk"),
+            outcome=ShotEventDetail.OUTCOME_GOAL,
+        ).count()
         swapped = (scored // 2) % 2
         for group in PlayerGroup.objects.filter(match_data=locked).select_related(
             "starting_type"
@@ -159,9 +159,12 @@ def rebuild_match_score(match_data: MatchData) -> tuple[int, int]:
         )
         goals = ShotEventDetail.objects.filter(
             event__match_data=locked,
-            event__status=MatchEvent.STATUS_ACTIVE,
+            event_id__in=active_match_events(
+                locked,
+                source_types={"shot"},
+            ).values("pk"),
             outcome=ShotEventDetail.OUTCOME_GOAL,
-        ).exclude(event__kind__endswith=".retracted")
+        )
         home_score = goals.filter(
             shooting_team_id=locked.match_link.home_team_id
         ).count()

@@ -29,6 +29,7 @@ from apps.game_tracker.services.match_event_context import (
     current_match_event_context,
     match_event_context,
 )
+from apps.game_tracker.services.match_events import active_match_events
 
 from .match_events import _elapsed_ms
 
@@ -96,8 +97,11 @@ def _candidate_shots(
         .filter(
             event__match_data=observation.match_data,
             event__match_part=observation.match_part,
-            event__status=MatchEvent.STATUS_ACTIVE,
             event__kind="shot.created",
+            event_id__in=active_match_events(
+                observation.match_data,
+                source_types={"shot"},
+            ).values("pk"),
             event__effective_at__gte=observation.effective_at - window,
             event__effective_at__lte=observation.effective_at + window,
             shooting_team_id=observation.shooting_team_id,
@@ -267,11 +271,7 @@ def _append_resolution_event(
     return MatchEvent.objects.create(
         match_data=match_data,
         sequence=match_data.event_sequence,
-        logical_id=(
-            resolution.canonical_event.logical_id
-            if resolution.canonical_event
-            else uuidv7()
-        ),
+        logical_id=uuidv7(),
         kind=f"reconciliation.{resolution.decision}",
         source_type="reconciliation",
         source_id=reconciliation.pk,

@@ -39,6 +39,10 @@ _deleting_match_data_ids: ContextVar[frozenset[str] | None] = ContextVar(
     "deleting_match_data_ids",
     default=None,
 )
+_recording_suppressed: ContextVar[bool] = ContextVar(
+    "match_event_recording_suppressed",
+    default=False,
+)
 
 
 def current_match_event_context() -> MatchEventContext:
@@ -61,6 +65,21 @@ def unmark_match_data_deleting(match_data_id: object) -> None:
 def match_data_is_deleting(match_data_id: object) -> bool:
     """Return whether the aggregate is being removed by a cascade."""
     return str(match_data_id) in (_deleting_match_data_ids.get() or frozenset())
+
+
+def match_event_recording_is_suppressed() -> bool:
+    """Return whether projection maintenance must bypass event capture."""
+    return _recording_suppressed.get()
+
+
+@contextmanager
+def suppress_match_event_recording() -> Iterator[None]:
+    """Prevent replayed projection writes from creating new domain events."""
+    token = _recording_suppressed.set(True)
+    try:
+        yield
+    finally:
+        _recording_suppressed.reset(token)
 
 
 @contextmanager
