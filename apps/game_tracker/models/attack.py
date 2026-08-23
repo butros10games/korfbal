@@ -9,9 +9,10 @@ from bg_uuidv7 import uuidv7
 from django.db import models
 
 from .constants import team_model_string
+from .event_projection import EventProjectionModel
 
 
-class Attack(models.Model):
+class Attack(EventProjectionModel):
     """Model for a timeout in a match."""
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(

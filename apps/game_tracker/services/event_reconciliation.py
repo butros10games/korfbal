@@ -12,6 +12,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.game_tracker.models import (
+    Attack,
     GoalType,
     MatchData,
     MatchEvent,
@@ -19,8 +20,11 @@ from apps.game_tracker.models import (
     MatchEventReconciliation,
     MatchEventReconciliationDecision,
     MatchPart,
+    PlayerChange,
     Shot,
     ShotEventDetail,
+    SubstitutionEventDetail,
+    Timeout,
 )
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES
 from apps.game_tracker.services.lineup_projections import rebuild_match_projections
@@ -51,6 +55,18 @@ class ShotReconciliationPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class SimpleEventObservation:
+    """Semantic identity for non-shot reports shared by both teams."""
+
+    match_data: MatchData
+    match_part: MatchPart | None
+    reporting_team_id: object
+    source_type: str
+    record_filters: dict[str, object]
+    effective_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ShotObservation:
     """Canonical semantics shared by candidate selection and persistence."""
 
@@ -60,6 +76,19 @@ class ShotObservation:
     shooting_team_id: object
     outcome: str
     shot_type: GoalType | None
+    effective_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SubstitutionObservation:
+    """Cross-perspective identity for a substitution report."""
+
+    match_data: MatchData
+    match_part: MatchPart | None
+    reporting_team_id: object
+    team_id: object
+    player_out_id: object | None
+    player_in_id: object | None
     effective_at: datetime
 
 
@@ -96,7 +125,7 @@ def _candidate_shots(
         .select_related("event")
         .filter(
             event__match_data=observation.match_data,
-            event__match_part=observation.match_part,
+            event__period_id=observation.match_part.pk,
             event__kind="shot.created",
             event_id__in=active_match_events(
                 observation.match_data,
@@ -143,6 +172,104 @@ def plan_shot_reconciliation(
     )
 
 
+def _candidate_simple_events(
+    observation: SimpleEventObservation,
+    *,
+    window: timedelta,
+) -> QuerySet[MatchEvent]:
+    filters: dict[str, object] = {
+        f"payload__record__{field}": value
+        for field, value in observation.record_filters.items()
+    }
+    return (
+        active_match_events(
+            observation.match_data,
+            source_types={observation.source_type},
+        )
+        .filter(
+            period_id=(
+                observation.match_part.pk
+                if observation.match_part is not None
+                else None
+            ),
+            effective_at__gte=observation.effective_at - window,
+            effective_at__lte=observation.effective_at + window,
+            **filters,
+        )
+        .exclude(observations__reporting_team_id=observation.reporting_team_id)
+        .filter(observations__reporting_team__isnull=False)
+        .distinct()
+        .order_by("sequence")
+    )
+
+
+def plan_simple_event_reconciliation(
+    observation: SimpleEventObservation,
+) -> ShotReconciliationPlan:
+    """Reconcile one timeout/attack report by canonical record semantics."""
+    exact = list(_candidate_simple_events(observation, window=AUTO_MATCH_WINDOW))
+    if len(exact) == 1:
+        return ShotReconciliationPlan(matched_event=exact[0], review_events=())
+    review = tuple(
+        _candidate_simple_events(observation, window=REVIEW_WINDOW)
+    )
+    return ShotReconciliationPlan(matched_event=None, review_events=review)
+
+
+def _candidate_substitutions(
+    observation: SubstitutionObservation,
+    *,
+    window: timedelta,
+) -> QuerySet[SubstitutionEventDetail]:
+    candidates = (
+        SubstitutionEventDetail.objects
+        .select_related("event")
+        .filter(
+            event__match_data=observation.match_data,
+            event__period_id=(
+                observation.match_part.pk
+                if observation.match_part is not None
+                else None
+            ),
+            event_id__in=active_match_events(
+                observation.match_data,
+                source_types={"player_change"},
+            ).values("pk"),
+            event__effective_at__gte=observation.effective_at - window,
+            event__effective_at__lte=observation.effective_at + window,
+            team_id=observation.team_id,
+        )
+        .exclude(event__observations__reporting_team_id=observation.reporting_team_id)
+        .filter(event__observations__reporting_team__isnull=False)
+    )
+    if observation.player_out_id is not None and observation.player_in_id is not None:
+        candidates = candidates.filter(
+            Q(player_out__isnull=True, player_in__isnull=True)
+            | Q(
+                player_out_id=observation.player_out_id,
+                player_in_id=observation.player_in_id,
+            )
+        )
+    return candidates.distinct().order_by("event__sequence")
+
+
+def plan_substitution_reconciliation(
+    observation: SubstitutionObservation,
+) -> ShotReconciliationPlan:
+    """Match an opponent marker with the corresponding detailed substitution."""
+    exact = list(_candidate_substitutions(observation, window=AUTO_MATCH_WINDOW))
+    if len(exact) == 1:
+        return ShotReconciliationPlan(
+            matched_event=exact[0].event,
+            review_events=(),
+        )
+    review = tuple(
+        detail.event
+        for detail in _candidate_substitutions(observation, window=REVIEW_WINDOW)
+    )
+    return ShotReconciliationPlan(matched_event=None, review_events=review)
+
+
 def record_matched_observation(
     *,
     event: MatchEvent,
@@ -168,7 +295,7 @@ def record_matched_observation(
         session_id=context.session_id,
         client_sequence=context.client_sequence,
         effective_at=effective_at,
-        elapsed_ms=_elapsed_ms(event.match_data, cast(Any, event), effective_at),
+        elapsed_ms=_elapsed_ms(event.match_data, event, effective_at),
         origin=MatchEventObservation.ORIGIN_MATCHED,
         payload=payload,
     )
@@ -199,7 +326,9 @@ def create_reconciliation_candidates(
             second_event=second,
             defaults={
                 "confidence": confidence,
-                "reason": f"compatible shot reports {delta_ms}ms apart",
+                "reason": (
+                    f"compatible {event.source_type} reports {delta_ms}ms apart"
+                ),
             },
         )
         if was_created:
@@ -297,6 +426,69 @@ def _append_resolution_event(
     )
 
 
+def _merge_duplicate_projection(
+    *,
+    match_data: MatchData,
+    duplicate: MatchEvent,
+    canonical_event: MatchEvent,
+    actor: object | None,
+) -> None:
+    """Retract one duplicate projection and retain its reports on the winner.
+
+    Raises:
+        EventReconciliationError: If the duplicate projection cannot be merged.
+
+    """
+    projection_models = {
+        "attack": Attack,
+        "player_change": PlayerChange,
+        "shot": Shot,
+        "timeout": Timeout,
+    }
+    projection_model = projection_models.get(duplicate.source_type)
+    if projection_model is None:
+        raise EventReconciliationError(
+            f"{duplicate.source_type} reconciliation is not supported."
+        )
+    projection = projection_model.objects.filter(
+        pk=duplicate.source_id,
+        match_data=match_data,
+    ).first()
+    if projection is None:
+        raise EventReconciliationError(
+            "Duplicate event projection is no longer active."
+        )
+
+    with match_event_context(actor=actor, source="reconciliation"):
+        timeout_pause = (
+            projection.pause if isinstance(projection, Timeout) else None
+        )
+        projection.delete()
+        if timeout_pause is not None:
+            timeout_pause.delete()
+        rebuild_match_projections(match_data)
+
+    for observation in MatchEventObservation.objects.filter(event=duplicate):
+        MatchEventObservation.objects.create(
+            match_data=match_data,
+            event=canonical_event,
+            command_id=observation.command_id,
+            reporting_team_id=observation.reporting_team_id,
+            actor_id=observation.actor_id,
+            source="reconciliation",
+            device_id=observation.device_id,
+            session_id=observation.session_id,
+            client_sequence=observation.client_sequence,
+            effective_at=observation.effective_at,
+            elapsed_ms=observation.elapsed_ms,
+            origin=MatchEventObservation.ORIGIN_MATCHED,
+            payload={
+                "merged_from_event_id": str(duplicate.pk),
+                "report": observation.payload,
+            },
+        )
+
+
 def resolve_reconciliation(
     resolution: ReconciliationResolution,
 ) -> MatchEventReconciliationDecision:
@@ -347,24 +539,12 @@ def resolve_reconciliation(
                 if canonical_event.pk == reconciliation.first_event_id
                 else reconciliation.first_event
             )
-            if duplicate.source_type != "shot":
-                raise EventReconciliationError(
-                    "Only shot reconciliation is supported currently."
-                )
-            projection = Shot.objects.filter(
-                pk=duplicate.source_id,
+            _merge_duplicate_projection(
                 match_data=locked,
-            ).first()
-            if projection is None:
-                raise EventReconciliationError(
-                    "Duplicate shot projection is no longer active."
-                )
-            with match_event_context(
+                duplicate=duplicate,
+                canonical_event=canonical_event,
                 actor=resolution.actor,
-                source="reconciliation",
-            ):
-                projection.delete()
-                rebuild_match_projections(locked)
+            )
 
         resolution_event = _append_resolution_event(
             locked,

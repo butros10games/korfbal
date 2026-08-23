@@ -18,11 +18,6 @@ class MatchEvent(models.Model):
     STATUS_ACTIVE = "active"
     STATUS_SUPERSEDED = "superseded"
     STATUS_RETRACTED = "retracted"
-    STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [
-        (STATUS_ACTIVE, "Active"),
-        (STATUS_SUPERSEDED, "Superseded"),
-        (STATUS_RETRACTED, "Retracted"),
-    ]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
@@ -51,10 +46,7 @@ class MatchEvent(models.Model):
     elapsed_ms: models.PositiveBigIntegerField[int, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
-    match_part: models.ForeignKey[Any, Any] = models.ForeignKey(
-        "MatchPart",
-        on_delete=models.SET_NULL,
-        related_name="domain_events",
+    period_id: models.UUIDField[str, str | None] = models.UUIDField(
         null=True,
         blank=True,
     )
@@ -97,11 +89,6 @@ class MatchEvent(models.Model):
     payload: models.JSONField[dict[str, Any], dict[str, Any]] = models.JSONField(
         default=dict
     )
-    status: models.CharField[str, str] = models.CharField(
-        max_length=12,
-        choices=STATUS_CHOICES,
-        default=STATUS_ACTIVE,
-    )
     supersedes: models.ForeignKey[Any, Any] = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,
@@ -125,8 +112,8 @@ class MatchEvent(models.Model):
                 name="match_event_match_seq_idx",
             ),
             models.Index(
-                fields=["match_data", "source_type", "source_id", "status"],
-                name="match_event_source_idx",
+                fields=["match_data", "source_type", "source_id"],
+                name="match_event_source_v2_idx",
             ),
             models.Index(
                 fields=["match_data", "effective_at"],

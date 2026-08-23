@@ -7,11 +7,13 @@ from importlib import import_module
 from uuid import uuid4
 
 from django.apps import apps as django_apps
+from django.db import IntegrityError
 from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import (
     Attack,
+    MatchData,
     MatchEvent,
     MatchEventObservation,
     MatchPart,
@@ -31,6 +33,7 @@ from apps.game_tracker.services.match_event_context import (
     suppress_match_event_recording,
 )
 from apps.game_tracker.services.match_event_replay import (
+    IncompleteMatchEventHistoryError,
     rebuild_typed_event_projections,
 )
 from apps.game_tracker.services.match_events import build_match_event_history
@@ -43,6 +46,35 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
     create_tracker_user,
 )
+
+
+def _convert_historical_events(match_data: MatchData) -> None:
+    """Emulate and validate conversion of pre-snapshot canonical envelopes."""
+    MatchEvent.objects.filter(match_data=match_data).update(
+        payload={"operation": "created", "backfilled": True},
+        elapsed_ms=None,
+    )
+    migration = import_module(
+        "apps.game_tracker.migrations.0030_backfill_historical_event_snapshots"
+    )
+    migration.backfill_historical_event_snapshots(django_apps, None)
+    assert all(
+        event.payload.get("record")
+        for event in MatchEvent.objects.filter(match_data=match_data)
+    )
+    assert not MatchEvent.objects.filter(
+        match_data=match_data,
+        period_id__isnull=False,
+        effective_at__isnull=False,
+        elapsed_ms__isnull=True,
+    ).exists()
+    assert all(
+        observation.payload.get("record")
+        for observation in MatchEventObservation.objects.filter(
+            match_data=match_data,
+            origin=MatchEventObservation.ORIGIN_CANONICAL,
+        )
+    )
 
 
 @pytest.mark.django_db
@@ -153,7 +185,6 @@ def test_typed_updates_append_versions_and_retractions() -> None:
         "shot.updated",
         "shot.retracted",
     ]
-    assert all(event.status == MatchEvent.STATUS_ACTIVE for event in events)
     assert events[1].supersedes == events[0]
     assert events[2].supersedes == events[1]
     assert len({event.logical_id for event in events}) == 1
@@ -173,6 +204,32 @@ def test_typed_updates_append_versions_and_retractions() -> None:
         MatchEvent.STATUS_SUPERSEDED,
         MatchEvent.STATUS_RETRACTED,
     ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_projection_failure_rolls_back_the_event_appended_first() -> None:
+    """A failed typed projection cannot leave a canonical fact without its row."""
+    tracker = create_tracker_match(prefix="Event-first rollback")
+    now = timezone.now()
+    MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=now,
+        active=False,
+    )
+
+    with pytest.raises(IntegrityError):
+        MatchPart.objects.create(
+            match_data=tracker.match_data,
+            part_number=1,
+            start_time=now + timedelta(minutes=1),
+            active=False,
+        )
+
+    tracker.match_data.refresh_from_db()
+    assert tracker.match_data.event_sequence == 1
+    assert MatchEvent.objects.filter(match_data=tracker.match_data).count() == 1
+    assert MatchPart.objects.filter(match_data=tracker.match_data).count() == 1
 
 
 @pytest.mark.django_db
@@ -257,6 +314,7 @@ def test_tracker_command_attributes_events_to_actor_and_team() -> None:
     assert event.kind == "match_part.started"
     assert event.sequence == 1
     assert event.elapsed_ms == 0
+    assert event.period_id is not None
     assert event.actor == actor
     assert event.source_team == tracker.home_team
     assert event.command_id == command_id
@@ -428,6 +486,9 @@ def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
     )
     rebuild_match_projections(tracker.match_data)
 
+    # Reproduce envelopes produced for matches that predate snapshot payloads.
+    _convert_historical_events(tracker.match_data)
+
     expected = {
         "part": part.pk,
         "pause": pause.pk,
@@ -462,12 +523,21 @@ def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
 
     tracker.match_data.refresh_from_db()
     part.refresh_from_db()
-    assert MatchPart.objects.get(pk=expected["part"]).active is True
-    assert Pause.objects.get(pk=expected["pause"]).end_time == pause.end_time
-    assert Timeout.objects.get(pk=expected["timeout"]).pause_id == expected["pause"]
-    assert Shot.objects.get(pk=expected["shot"]).scored is True
-    assert PlayerChange.objects.get(pk=expected["change"]).player_in == player_in
-    assert Attack.objects.get(pk=expected["attack"]).team == tracker.away_team
+    assert (
+        MatchPart.objects.get(pk=expected["part"]).active,
+        Pause.objects.get(pk=expected["pause"]).end_time,
+        Timeout.objects.get(pk=expected["timeout"]).pause_id,
+        Shot.objects.get(pk=expected["shot"]).scored,
+        PlayerChange.objects.get(pk=expected["change"]).player_in,
+        Attack.objects.get(pk=expected["attack"]).team,
+    ) == (
+        True,
+        pause.end_time,
+        expected["pause"],
+        True,
+        player_in,
+        tracker.away_team,
+    )
     assert tracker.match_data.home_score == 1
     assert tracker.match_data.away_score == 0
     assert set(group.players.values_list("pk", flat=True)) == {player_in.pk}
@@ -478,3 +548,46 @@ def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
     )
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.event_sequence == last_sequence
+
+
+@pytest.mark.django_db
+def test_replay_refuses_incomplete_history_before_deleting_projections() -> None:
+    """An unconverted historical envelope cannot cause destructive replay."""
+    tracker = create_tracker_match(prefix="Incomplete replay")
+    attack = Attack.objects.create(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        time=timezone.now(),
+    )
+    MatchEvent.objects.filter(
+        match_data=tracker.match_data,
+        source_type="attack",
+    ).update(payload={"operation": "created", "backfilled": True})
+
+    with pytest.raises(IncompleteMatchEventHistoryError):
+        rebuild_typed_event_projections(tracker.match_data)
+
+    assert Attack.objects.filter(pk=attack.pk).exists()
+
+
+@pytest.mark.django_db
+def test_historical_conversion_fails_if_an_active_projection_is_missing() -> None:
+    """Deployment stops instead of silently blessing unrecoverable active facts."""
+    tracker = create_tracker_match(prefix="Unrecoverable history")
+    attack = Attack.objects.create(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        time=timezone.now(),
+    )
+    MatchEvent.objects.filter(
+        match_data=tracker.match_data,
+        source_type="attack",
+    ).update(payload={"operation": "created", "backfilled": True})
+    with suppress_match_event_recording():
+        attack.delete()
+
+    migration = import_module(
+        "apps.game_tracker.migrations.0030_backfill_historical_event_snapshots"
+    )
+    with pytest.raises(RuntimeError, match="missing projections"):
+        migration.backfill_historical_event_snapshots(django_apps, None)

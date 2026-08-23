@@ -9,9 +9,10 @@ from bg_uuidv7 import uuidv7
 from django.db import models
 
 from .constants import player_model_string
+from .event_projection import EventProjectionModel
 
 
-class PlayerChange(models.Model):
+class PlayerChange(EventProjectionModel):
     """Model for a player change in a match."""
 
     class Meta:

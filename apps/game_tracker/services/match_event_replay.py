@@ -36,16 +36,31 @@ _PROJECTION_MODELS: dict[str, type[models.Model]] = {
 _DEPENDENT_SOURCE_TYPES = ("timeout", "shot", "player_change", "attack", "pause")
 
 
+class IncompleteMatchEventHistoryError(RuntimeError):
+    """Raised before replay when an active fact has no materializable snapshot."""
+
+
 def _records_by_source(
     events: Iterable[MatchEvent],
 ) -> dict[str, list[tuple[MatchEvent, dict[str, Any]]]]:
     records: dict[str, list[tuple[MatchEvent, dict[str, Any]]]] = {
         source_type: [] for source_type in _PROJECTION_MODELS
     }
+    incomplete: list[MatchEvent] = []
     for event in events:
         record = event.payload.get("record")
-        if event.source_type in records and isinstance(record, dict):
-            records[event.source_type].append((event, record))
+        if event.source_type not in records:
+            continue
+        if not isinstance(record, dict) or not record:
+            incomplete.append(event)
+            continue
+        records[event.source_type].append((event, record))
+    if incomplete:
+        identifiers = ", ".join(
+            f"{event.sequence}:{event.source_type}" for event in incomplete[:10]
+        )
+        msg = f"Active canonical events are missing replay snapshots: {identifiers}"
+        raise IncompleteMatchEventHistoryError(msg)
     return records
 
 
@@ -77,21 +92,19 @@ def _rebuild_match_parts(
     *,
     match_data_id: object,
 ) -> None:
-    """Upsert periods without severing surviving event-to-period references."""
-    desired_ids = {event.source_id for event, _record in rows}
-    MatchPart.objects.filter(match_data_id=match_data_id).update(active=False)
-    MatchPart.objects.filter(match_data_id=match_data_id).exclude(
-        pk__in=desired_ids
-    ).delete()
-    for event, record in rows:
-        values = _projection_values(
-            MatchPart,
-            event,
-            record,
-            match_data_id=match_data_id,
+    """Replace every period now that envelopes own stable period identities."""
+    MatchPart.objects.filter(match_data_id=match_data_id).delete()
+    MatchPart.objects.bulk_create([
+        MatchPart(
+            **_projection_values(
+                MatchPart,
+                event,
+                record,
+                match_data_id=match_data_id,
+            )
         )
-        primary_key = values.pop(MatchPart._meta.pk.attname)
-        MatchPart.objects.update_or_create(pk=primary_key, defaults=values)
+        for event, record in rows
+    ])
 
 
 def rebuild_typed_event_projections(match_data: MatchData) -> None:

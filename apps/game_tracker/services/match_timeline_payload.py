@@ -23,7 +23,11 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
-from apps.game_tracker.services.match_events import event_root_ids, event_root_sequences
+from apps.game_tracker.services.match_events import (
+    event_root_ids,
+    event_root_sequences,
+    logical_event_id,
+)
 
 
 PART_ONE = 1
@@ -103,6 +107,18 @@ def _ordered_sequence(
         if timeout_key is not None and timeout_key in sequences:
             candidates.append(sequences[timeout_key])
     return max(candidates, default=None)
+
+
+def _logical_source_key(
+    event: object,
+    timeout_ids_by_pause: dict[str, str],
+) -> tuple[str, str] | None:
+    """Return the one public logical root for a projected timeline item."""
+    if isinstance(event, Pause):
+        timeout_id = timeout_ids_by_pause.get(str(event.id_uuid))
+        if timeout_id is not None:
+            return "timeout", timeout_id
+    return _source_key(event)
 
 
 def _time_in_minutes(
@@ -252,7 +268,7 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
             sequence = _ordered_sequence(event, sequences, timeout_ids_by_pause)
             if sequence is not None:
                 serialized["event_sequence"] = sequence
-            source_key = _source_key(event)
+            source_key = _logical_source_key(event, timeout_ids_by_pause)
             if source_key is not None and source_key in logical_ids:
                 logical_id = logical_ids[source_key]
                 serialized["event_id"] = logical_id
@@ -540,8 +556,7 @@ def _serialize_pause_event(
 
     return {
         "event_kind": "timeout" if timeout else "pause",
-        # Pause is the durable root of both pause and timeout events. Using its id
-        # keeps realtime changed ids stable while a Timeout detail row is created.
+        # The wrapper replaces this projection id with the canonical timeout root.
         "event_id": source_id,
         "logical_event_id": source_id,
         "source_id": source_id,
@@ -570,8 +585,11 @@ def serialize_pause_event(
     """Serialize a pause/timeout event after a write operation."""
     payload = _serialize_pause_event(match_data, event)
     if payload is not None:
-        logical_id = event_root_ids(match_data).get(("pause", str(event.id_uuid)))
-        if logical_id is not None:
-            payload["event_id"] = logical_id
-            payload["logical_event_id"] = logical_id
+        root_id = logical_event_id(
+            match_data,
+            source_type="pause",
+            source_id=event.id_uuid,
+        )
+        payload["event_id"] = root_id
+        payload["logical_event_id"] = root_id
     return payload

@@ -8,8 +8,10 @@ from typing import Any, ClassVar
 from bg_uuidv7 import uuidv7
 from django.db import models
 
+from .event_projection import EventProjectionModel
 
-class MatchPart(models.Model):
+
+class MatchPart(EventProjectionModel):
     """Model for a part of a match."""
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(

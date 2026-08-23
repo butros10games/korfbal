@@ -34,8 +34,12 @@ from apps.game_tracker.models import (
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.event_reconciliation import (
     ShotObservation,
+    SimpleEventObservation,
+    SubstitutionObservation,
     create_reconciliation_candidates,
     plan_shot_reconciliation,
+    plan_simple_event_reconciliation,
+    plan_substitution_reconciliation,
     record_matched_observation,
 )
 from apps.game_tracker.services.lineup_projections import (
@@ -1180,7 +1184,30 @@ def _prepare_new_part(match_data: MatchData) -> None:
         )
 
 
-def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
+def _timer_report_matches(
+    observation: SimpleEventObservation,
+) -> bool:
+    plan = plan_simple_event_reconciliation(observation)
+    if plan.matched_event is None:
+        return False
+    record_matched_observation(
+        event=plan.matched_event,
+        effective_at=observation.effective_at,
+        payload={
+            "kind": observation.source_type,
+            "reporting_team_id": str(observation.reporting_team_id),
+            "record": observation.record_filters,
+        },
+    )
+    return True
+
+
+def _cmd_start_pause(
+    *,
+    match_data: MatchData,
+    reporting_team: Team,
+    event_time: datetime,
+) -> None:
     current_part = _current_part(match_data)
     if not current_part:
         if not MatchPart.objects.filter(match_data=match_data).exists():
@@ -1212,6 +1239,42 @@ def _cmd_start_pause(*, match_data: MatchData, event_time: datetime) -> None:
         match_part=current_part,
     ).first()
 
+    if active_pause is not None and _timer_report_matches(
+        SimpleEventObservation(
+            match_data=match_data,
+            match_part=current_part,
+            reporting_team_id=reporting_team.pk,
+            source_type="pause",
+            record_filters={"active": True},
+            effective_at=event_time,
+        )
+    ):
+        return
+
+    if active_pause is None:
+        if _timer_report_matches(
+            SimpleEventObservation(
+                match_data=match_data,
+                match_part=current_part,
+                reporting_team_id=reporting_team.pk,
+                source_type="pause",
+                record_filters={"active": False},
+                effective_at=event_time,
+            )
+        ):
+            return
+        if _timer_report_matches(
+            SimpleEventObservation(
+                match_data=match_data,
+                match_part=current_part,
+                reporting_team_id=reporting_team.pk,
+                source_type="match_part",
+                record_filters={"active": True},
+                effective_at=event_time,
+            )
+        ):
+            return
+
     if not active_pause:
         Pause.objects.create(
             match_data=match_data,
@@ -1237,9 +1300,28 @@ def _cmd_part_end(
     match: Match,
     *,
     match_data: MatchData,
+    reporting_team: Team,
     event_time: datetime,
 ) -> None:
     current_part = _current_part(match_data)
+    last_part = current_part or (
+        MatchPart.objects.filter(match_data=match_data).order_by("-part_number").first()
+    )
+    if (
+        last_part is not None
+        and not last_part.active
+        and _timer_report_matches(
+            SimpleEventObservation(
+                match_data=match_data,
+                match_part=last_part,
+                reporting_team_id=reporting_team.pk,
+                source_type="match_part",
+                record_filters={"active": False},
+                effective_at=event_time,
+            )
+        )
+    ):
+        return
     if match_data.status != "active":
         raise TrackerCommandError(
             "Only an active match can end a part.",
@@ -1315,13 +1397,39 @@ def _cmd_timeout(
     match: Match,
     *,
     match_data: MatchData,
-    team: Team,
+    reporting_team: Team,
+    timeout_team: Team,
     event_time: datetime,
 ) -> None:
-    current_part, _ = _require_not_paused(match_data, team, match)
+    current_part = _current_part(match_data)
+    if current_part is not None:
+        plan = plan_simple_event_reconciliation(
+            SimpleEventObservation(
+                match_data=match_data,
+                match_part=current_part,
+                reporting_team_id=reporting_team.pk,
+                source_type="timeout",
+                record_filters={"team_id": str(timeout_team.pk)},
+                effective_at=event_time,
+            )
+        )
+        observation_payload = {
+            "kind": "timeout",
+            "timeout_team_id": str(timeout_team.pk),
+            "reporting_team_id": str(reporting_team.pk),
+        }
+        if plan.matched_event is not None:
+            record_matched_observation(
+                event=plan.matched_event,
+                effective_at=event_time,
+                payload=observation_payload,
+            )
+            return
+
+    current_part, _ = _require_not_paused(match_data, reporting_team, match)
 
     if (
-        Timeout.objects.filter(match_data=match_data, team=team).count()
+        Timeout.objects.filter(match_data=match_data, team=timeout_team).count()
         >= _MAX_TIMEOUTS_PER_TEAM
     ):
         raise TrackerCommandError(
@@ -1336,11 +1444,16 @@ def _cmd_timeout(
         start_time=event_time,
         match_part=current_part,
     )
-    Timeout.objects.create(
+    timeout = Timeout.objects.create(
         match_data=match_data,
         match_part=current_part,
-        team=team,
+        team=timeout_team,
         pause=pause,
+    )
+    event = MatchEvent.objects.get(source_type="timeout", source_id=timeout.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events if current_part is not None else (),
     )
 
 
@@ -1352,11 +1465,33 @@ def _cmd_new_attack(
     event_time: datetime,
 ) -> None:
     current_part, _ = _require_not_paused(match_data, team, match)
-    Attack.objects.create(
+    plan = plan_simple_event_reconciliation(
+        SimpleEventObservation(
+            match_data=match_data,
+            match_part=current_part,
+            reporting_team_id=team.pk,
+            source_type="attack",
+            record_filters={},
+            effective_at=event_time,
+        )
+    )
+    if plan.matched_event is not None:
+        record_matched_observation(
+            event=plan.matched_event,
+            effective_at=event_time,
+            payload={"kind": "attack", "reporting_team_id": str(team.pk)},
+        )
+        return
+    attack = Attack.objects.create(
         match_data=match_data,
         match_part=current_part,
         team=team,
         time=event_time,
+    )
+    event = MatchEvent.objects.get(source_type="attack", source_id=attack.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
     )
 
 
@@ -1580,17 +1715,6 @@ def _cmd_substitute_reg(
             )
         part_for_event = None
 
-    substitutions_max = 8
-    substitutions_for = PlayerChange.objects.filter(
-        match_data=match_data,
-        player_group__team=team,
-    ).count()
-    if substitutions_for >= substitutions_max:
-        raise TrackerCommandError(
-            "Max wissels bereikt.",
-            code="max_substitutions",
-        )
-
     player_in = Player.objects.select_related("user").get(id_uuid=params.new_player_id)
     player_out = Player.objects.select_related("user").get(id_uuid=params.old_player_id)
 
@@ -1602,13 +1726,75 @@ def _cmd_substitute_reg(
         players__in=[player_out],
     )
 
-    PlayerChange.objects.create(
+    plan = plan_substitution_reconciliation(
+        SubstitutionObservation(
+            match_data=match_data,
+            match_part=part_for_event,
+            reporting_team_id=team.pk,
+            team_id=team.pk,
+            player_out_id=player_out.pk,
+            player_in_id=player_in.pk,
+            effective_at=event_time,
+        )
+    )
+    if plan.matched_event is not None:
+        detail = plan.matched_event.substitution_detail
+        if detail.player_out_id is None and detail.player_in_id is None:
+            marker = PlayerChange.objects.get(
+                pk=plan.matched_event.source_id,
+                match_data=match_data,
+            )
+            marker.player_in = player_in
+            marker.player_out = player_out
+            marker.player_group = active_group
+            marker.match_part = part_for_event
+            marker.time = event_time
+            marker.save(
+                update_fields=[
+                    "player_in",
+                    "player_out",
+                    "player_group",
+                    "match_part",
+                    "time",
+                ]
+            )
+        else:
+            record_matched_observation(
+                event=plan.matched_event,
+                effective_at=event_time,
+                payload={
+                    "kind": "player_change",
+                    "team_id": str(team.pk),
+                    "player_out_id": str(player_out.pk),
+                    "player_in_id": str(player_in.pk),
+                },
+            )
+        rebuild_current_lineup(match_data)
+        return
+
+    substitutions_max = 8
+    substitutions_for = PlayerChange.objects.filter(
+        match_data=match_data,
+        player_group__team=team,
+    ).count()
+    if substitutions_for >= substitutions_max:
+        raise TrackerCommandError(
+            "Max wissels bereikt.",
+            code="max_substitutions",
+        )
+
+    change = PlayerChange.objects.create(
         player_in=player_in,
         player_out=player_out,
         player_group=active_group,
         match_data=match_data,
         match_part=part_for_event,
         time=event_time,
+    )
+    event = MatchEvent.objects.get(source_type="player_change", source_id=change.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
     )
     rebuild_current_lineup(match_data)
 
@@ -1650,6 +1836,32 @@ def _cmd_substitute_against_reg(
             )
         part_for_event = None
 
+    opponent_reserve_group = get_reserve_group(match_data=match_data, team=opponent)
+
+    plan = plan_substitution_reconciliation(
+        SubstitutionObservation(
+            match_data=match_data,
+            match_part=part_for_event,
+            reporting_team_id=team.pk,
+            team_id=opponent.pk,
+            player_out_id=None,
+            player_in_id=None,
+            effective_at=event_time,
+        )
+    )
+    if plan.matched_event is not None:
+        record_matched_observation(
+            event=plan.matched_event,
+            effective_at=event_time,
+            payload={
+                "kind": "player_change",
+                "team_id": str(opponent.pk),
+                "player_out_id": None,
+                "player_in_id": None,
+            },
+        )
+        return
+
     substitutions_max = 8
     substitutions_against = PlayerChange.objects.filter(
         match_data=match_data,
@@ -1661,15 +1873,18 @@ def _cmd_substitute_against_reg(
             code="max_substitutions",
         )
 
-    opponent_reserve_group = get_reserve_group(match_data=match_data, team=opponent)
-
-    PlayerChange.objects.create(
+    change = PlayerChange.objects.create(
         player_in=None,
         player_out=None,
         player_group=opponent_reserve_group,
         match_data=match_data,
         match_part=part_for_event,
         time=event_time,
+    )
+    event = MatchEvent.objects.get(source_type="player_change", source_id=change.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
     )
 
 
@@ -1742,6 +1957,7 @@ class _StartPauseCommand:
     def apply(self, context: _TrackerCommandContext) -> None:
         _cmd_start_pause(
             match_data=context.match_data,
+            reporting_team=context.team,
             event_time=context.event_time,
         )
 
@@ -1752,6 +1968,7 @@ class _PartEndCommand:
         _cmd_part_end(
             context.match,
             match_data=context.match_data,
+            reporting_team=context.team,
             event_time=context.event_time,
         )
 
@@ -1767,7 +1984,8 @@ class _TimeoutCommand:
         _cmd_timeout(
             context.match,
             match_data=context.match_data,
-            team=timeout_team,
+            reporting_team=context.team,
+            timeout_team=timeout_team,
             event_time=context.event_time,
         )
 

@@ -10,13 +10,17 @@ from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import (
+    Attack,
     GoalType,
     MatchEvent,
     MatchEventObservation,
     MatchEventReconciliation,
     MatchEventReconciliationDecision,
     MatchPart,
+    Pause,
+    PlayerChange,
     Shot,
+    Timeout,
 )
 from apps.game_tracker.services.event_reconciliation import (
     ReconciliationResolution,
@@ -32,6 +36,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
 )
 from apps.player.models import Player
+from apps.team.models.team import Team
 
 
 TWO_REPORTS = 2
@@ -148,6 +153,184 @@ def test_opposing_team_reports_attach_to_one_canonical_goal() -> None:
     }
     assert observations.last().origin == MatchEventObservation.ORIGIN_MATCHED
     assert state["score"] == {"for": 0, "against": 1}
+
+
+@pytest.mark.django_db
+def test_opposing_team_reports_attach_to_one_canonical_timeout() -> None:
+    """A timeout reported from both perspectives creates one interval and fact."""
+    context = _active_tracker("reconcile-timeout")
+    observed_at = timezone.now()
+    apply_tracker_command(
+        context.tracker.match,
+        team=context.tracker.home_team,
+        payload={
+            "command": "timeout",
+            "command_id": str(uuid4()),
+            "for_team": True,
+            "client_time_ms": int(observed_at.timestamp() * 1_000),
+        },
+    )
+    apply_tracker_command(
+        context.tracker.match,
+        team=context.tracker.away_team,
+        payload={
+            "command": "timeout",
+            "command_id": str(uuid4()),
+            "for_team": False,
+            "client_time_ms": int(
+                (observed_at + timedelta(seconds=1)).timestamp() * 1_000
+            ),
+        },
+    )
+
+    timeout = Timeout.objects.get(match_data=context.tracker.match_data)
+    event = MatchEvent.objects.get(source_type="timeout", source_id=timeout.pk)
+    assert event.observations.count() == TWO_REPORTS
+    assert set(event.observations.values_list("reporting_team_id", flat=True)) == {
+        context.tracker.home_team.pk,
+        context.tracker.away_team.pk,
+    }
+
+
+@pytest.mark.django_db
+def test_opposing_team_reports_attach_to_one_canonical_attack() -> None:
+    """A possession transition reported by both teams remains one event."""
+    context = _active_tracker("reconcile-attack")
+    for team in (context.tracker.home_team, context.tracker.away_team):
+        apply_tracker_command(
+            context.tracker.match,
+            team=team,
+            payload={"command": "new_attack", "command_id": str(uuid4())},
+        )
+
+    attack = Attack.objects.get(match_data=context.tracker.match_data)
+    event = MatchEvent.objects.get(source_type="attack", source_id=attack.pk)
+    assert event.observations.count() == TWO_REPORTS
+
+
+@pytest.mark.django_db
+def test_detailed_substitution_enriches_opponent_marker_without_duplication() -> None:
+    """The owning team's detailed report replaces an earlier anonymous marker."""
+    context = _active_tracker("reconcile-substitution")
+    reserve_type = create_group_types("Reserve")["Reserve"]
+    reserve = create_player_group(
+        match_data=context.tracker.match_data,
+        team=context.tracker.home_team,
+        group_type=reserve_type,
+    )
+    player_in = create_tracker_player(username="reconcile-substitution-player-in")
+    reserve.players.add(player_in)
+    observed_at = timezone.now()
+
+    apply_tracker_command(
+        context.tracker.match,
+        team=context.tracker.away_team,
+        payload={
+            "command": "substitute_against_reg",
+            "command_id": str(uuid4()),
+            "client_time_ms": int(observed_at.timestamp() * 1_000),
+        },
+    )
+    apply_tracker_command(
+        context.tracker.match,
+        team=context.tracker.home_team,
+        payload={
+            "command": "substitute_reg",
+            "command_id": str(uuid4()),
+            "new_player_id": str(player_in.pk),
+            "old_player_id": str(context.home_player.pk),
+            "client_time_ms": int(
+                (observed_at + timedelta(seconds=1)).timestamp() * 1_000
+            ),
+        },
+    )
+
+    change = PlayerChange.objects.get(match_data=context.tracker.match_data)
+    versions = MatchEvent.objects.filter(
+        match_data=context.tracker.match_data,
+        source_type="player_change",
+        source_id=change.pk,
+    )
+    assert change.player_out == context.home_player
+    assert change.player_in == player_in
+    assert versions.count() == TWO_REPORTS
+    assert (
+        MatchEventObservation.objects.filter(event__in=versions).count()
+        == TWO_REPORTS
+    )
+    assert len(set(versions.values_list("logical_id", flat=True))) == 1
+
+
+@pytest.mark.django_db
+def test_both_teams_can_report_start_pause_and_resume_once() -> None:
+    """Duplicate timer gestures become observations instead of inverse toggles."""
+    tracker = create_tracker_match(prefix="reconcile-timer")
+
+    def report(team: Team) -> None:
+        apply_tracker_command(
+            tracker.match,
+            team=team,
+            payload={"command": "start/pause", "command_id": str(uuid4())},
+        )
+
+    report(tracker.home_team)
+    report(tracker.away_team)
+    assert MatchPart.objects.filter(match_data=tracker.match_data).count() == 1
+    assert Pause.objects.filter(match_data=tracker.match_data).count() == 0
+
+    report(tracker.home_team)
+    report(tracker.away_team)
+    pause = Pause.objects.get(match_data=tracker.match_data)
+    assert pause.active is True
+
+    report(tracker.home_team)
+    report(tracker.away_team)
+    pause.refresh_from_db()
+    assert pause.active is False
+    assert pause.end_time is not None
+
+    part_event = MatchEvent.objects.get(
+        match_data=tracker.match_data,
+        source_type="match_part",
+    )
+    pause_versions = MatchEvent.objects.filter(
+        match_data=tracker.match_data,
+        source_type="pause",
+    )
+    assert part_event.observations.count() == TWO_REPORTS
+    assert (
+        MatchEventObservation.objects.filter(event__in=pause_versions).count()
+        == 2 * TWO_REPORTS
+    )
+
+
+@pytest.mark.django_db
+def test_both_teams_can_report_period_end_once() -> None:
+    """The second period-end report cannot advance the aggregate twice."""
+    tracker = create_tracker_match(prefix="reconcile-period-end")
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "start/pause", "command_id": str(uuid4())},
+    )
+    for team in (tracker.home_team, tracker.away_team):
+        apply_tracker_command(
+            tracker.match,
+            team=team,
+            payload={"command": "part_end", "command_id": str(uuid4())},
+        )
+
+    tracker.match_data.refresh_from_db()
+    part = MatchPart.objects.get(match_data=tracker.match_data)
+    versions = MatchEvent.objects.filter(
+        match_data=tracker.match_data,
+        source_type="match_part",
+        source_id=part.pk,
+    )
+    assert tracker.match_data.current_part == TWO_REPORTS
+    assert part.active is False
+    assert versions.count() == TWO_REPORTS
+    assert versions.order_by("-sequence").first().observations.count() == TWO_REPORTS
 
 
 @pytest.mark.django_db

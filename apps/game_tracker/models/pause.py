@@ -8,8 +8,10 @@ from typing import Any, ClassVar
 from bg_uuidv7 import uuidv7
 from django.db import models
 
+from .event_projection import EventProjectionModel
 
-class Pause(models.Model):
+
+class Pause(EventProjectionModel):
     """Model for a pause in a match."""
 
     class Meta:

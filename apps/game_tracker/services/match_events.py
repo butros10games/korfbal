@@ -119,15 +119,19 @@ def _effective_at(instance: TrackedModel, *, operation: str) -> datetime | None:
     return instance.time
 
 
-def _match_part(instance: TrackedModel) -> MatchPart | None:
+def _match_part(instance: TrackedModel | MatchEvent) -> MatchPart | None:
     if isinstance(instance, MatchPart):
         return instance
+    if isinstance(instance, MatchEvent):
+        if instance.period_id is None:
+            return None
+        return MatchPart.objects.filter(pk=instance.period_id).first()
     return instance.match_part
 
 
 def _elapsed_ms(
     match_data: MatchData,
-    instance: TrackedModel,
+    instance: TrackedModel | MatchEvent,
     effective_at: datetime | None,
 ) -> int | None:
     """Calculate a stable match-clock position for the event version."""
@@ -261,7 +265,9 @@ def record_typed_match_event(
         event = MatchEvent.objects.create(
             match_data=match_data,
             sequence=match_data.event_sequence,
-            match_part=_match_part(instance),
+            period_id=(
+                part.pk if (part := _match_part(instance)) is not None else None
+            ),
             kind=_event_kind(source_type, instance, operation),
             source_type=source_type,
             source_id=instance.pk,
@@ -349,6 +355,18 @@ def logical_event_id(
     source_id: object,
 ) -> str:
     """Resolve a typed projection id to its stable logical event identity."""
+    if source_type == "pause":
+        timeout_source_id = (
+            Timeout.objects.filter(
+                match_data=match_data,
+                pause_id=source_id,
+            )
+            .values_list("pk", flat=True)
+            .first()
+        )
+        if timeout_source_id is not None:
+            source_type = "timeout"
+            source_id = timeout_source_id
     value = (
         MatchEvent.objects
         .filter(
@@ -427,7 +445,7 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
             ),
             "source_type": event.source_type,
             "source_id": str(event.source_id),
-            "match_part_id": str(event.match_part_id) if event.match_part_id else None,
+            "match_part_id": str(event.period_id) if event.period_id else None,
             "effective_at": (
                 event.effective_at.isoformat() if event.effective_at else None
             ),
