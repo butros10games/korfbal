@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from asgiref.sync import async_to_sync
+from django.db import models
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.game_tracker.models import MatchData, MatchPlayer, Shot
-from apps.kwt_common.utils.general_stats import build_general_stats
+from apps.kwt_common.utils.general_stats import build_general_stats_sync
 from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.kwt_common.utils.players_stats import build_player_stats
+from apps.kwt_common.utils.players_stats import build_player_stats_sync
 from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Season
@@ -53,9 +53,10 @@ def build_team_overview_payload(
         ],
     )
 
+    has_matches = match_data_qs.exists() if options.include_stats else False
     stats_general = None
-    if options.include_stats and match_data_qs.exists():
-        stats_general = async_to_sync(build_general_stats)(match_data_qs)
+    if options.include_stats and has_matches:
+        stats_general = build_general_stats_sync(match_data_qs)
 
     roster_players: list[Player] = []
     if options.include_roster or options.include_stats:
@@ -92,8 +93,8 @@ def build_team_overview_payload(
         ]
 
     stats_players = []
-    if options.include_stats and roster_players and match_data_qs.exists():
-        stats_players = async_to_sync(build_player_stats)(roster_players, match_data_qs)
+    if options.include_stats and roster_players and has_matches:
+        stats_players = build_player_stats_sync(roster_players, match_data_qs)
 
     current_season = _current_season()
     seasons_payload = [
@@ -143,15 +144,20 @@ def team_match_queryset(
     season: Season | None,
 ) -> QuerySet[MatchData]:
     """Return match data for a team, optionally scoped to one season."""
-    queryset = MatchData.objects.select_related(
-        "match_link",
-        "match_link__home_team",
-        "match_link__home_team__club",
-        "match_link__away_team",
-        "match_link__away_team__club",
-        "match_link__season",
-    ).filter(
-        Q(match_link__home_team=team) | Q(match_link__away_team=team),
+    queryset = (
+        MatchData.objects
+        .select_related(
+            "match_link",
+            "match_link__home_team",
+            "match_link__home_team__club",
+            "match_link__away_team",
+            "match_link__away_team__club",
+            "match_link__season",
+        )
+        .filter(
+            Q(match_link__home_team=team) | Q(match_link__away_team=team),
+        )
+        .fetch_mode(models.FETCH_RAISE)
     )
     if season:
         queryset = queryset.filter(match_link__season=season)
@@ -200,7 +206,8 @@ def team_players_queryset(
             "user__username",
         )
         .filter(id_uuid__in=all_player_ids)
-        .order_by("user__username")
+        .order_by("user__username", "id_uuid")
+        .fetch_mode(models.FETCH_RAISE)
     )
 
 

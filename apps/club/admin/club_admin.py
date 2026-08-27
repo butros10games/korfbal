@@ -17,6 +17,7 @@ else:
     ClubAdminLinkAdminBase = admin.ModelAdmin
 
 
+@admin.register(Club)
 class ClubModelAdmin(ClubModelAdminBase):
     """Admin configuration for the Club model."""
 
@@ -30,6 +31,7 @@ class ClubModelAdmin(ClubModelAdminBase):
         model = Club
 
 
+@admin.register(ClubAdmin)
 class ClubAdminLinkAdmin(ClubAdminLinkAdminBase):
     """Admin configuration for the ClubAdmin through model."""
 
@@ -46,7 +48,3 @@ class ClubAdminLinkAdmin(ClubAdminLinkAdminBase):
         """Meta class for the ClubAdminLinkAdmin."""
 
         model = ClubAdmin
-
-
-admin.site.register(Club, ClubModelAdmin)
-admin.site.register(ClubAdmin, ClubAdminLinkAdmin)

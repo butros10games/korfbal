@@ -60,3 +60,4 @@ packages = ["korfbal", "apps"]
 DJANGO_SETTINGS_MODULE = "korfbal.settings_test"
 python_files = ["test_*.py"]
 pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"

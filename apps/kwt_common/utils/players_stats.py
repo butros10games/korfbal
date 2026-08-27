@@ -283,10 +283,10 @@ def _minutes_played_by_username(
     return _persisted_minutes_by_username(players=players, match_qs=match_qs)
 
 
-async def build_player_stats(
+def build_player_stats_sync(
     players: list[Any], match_dataset: Iterable[Any]
 ) -> list[PlayerStatRow]:
-    """Compute the raw player statistics for a collection of matches.
+    """Compute player statistics for a synchronous request handler.
 
     Returns:
         list[PlayerStatRow]: List of player stats.
@@ -295,71 +295,48 @@ async def build_player_stats(
     if not players:
         return []
 
-    def _fetch() -> tuple[
-        list[dict[str, object]],
-        dict[str, float],
-        dict[str, float],
-        bool,
-    ]:
-        _ensure_latest_match_impacts(match_dataset=match_dataset)
+    _ensure_latest_match_impacts(match_dataset=match_dataset)
+    dataset_has_full_impacts = _dataset_has_complete_latest_impacts(
+        match_dataset=match_dataset,
+    )
+    minutes_by_username = _minutes_played_by_username(
+        players=players,
+        match_dataset=match_dataset,
+    )
 
-        dataset_has_full_impacts = _dataset_has_complete_latest_impacts(
-            match_dataset=match_dataset,
+    rows = list(
+        Shot.objects
+        .filter(
+            match_data__in=match_dataset,
+            player__in=players,
         )
-
-        minutes_by_username = _minutes_played_by_username(
-            players=players,
-            match_dataset=match_dataset,
+        .values("player__user__username")
+        .annotate(
+            shots_for=Count("id_uuid", filter=Q(for_team=True)),
+            shots_against=Count("id_uuid", filter=Q(for_team=False)),
+            goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
+            goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
         )
+        .order_by("-goals_for", "player__user__username")
+    )
 
-        shot_rows = list(
-            Shot.objects
-            .filter(
-                match_data__in=match_dataset,
-                player__in=players,
-            )
-            .values("player__user__username")
-            .annotate(
-                shots_for=Count("id_uuid", filter=Q(for_team=True)),
-                shots_against=Count("id_uuid", filter=Q(for_team=False)),
-                goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
-                goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
-            )
-            .order_by("-goals_for", "player__user__username")
+    impact_rows = (
+        PlayerMatchImpact.objects
+        .filter(
+            match_data__in=match_dataset,
+            player__in=players,
+            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
         )
-
-        impact_rows = (
-            PlayerMatchImpact.objects
-            .filter(
-                match_data__in=match_dataset,
-                player__in=players,
-                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            )
-            .values("player__user__username")
-            .annotate(total=Sum("impact_score"))
-        )
-
-        impact_by_username: dict[str, float] = {}
-        for row in impact_rows:
-            username = str(row.get("player__user__username") or "").strip()
-            total = row.get("total")
-            if not username or total is None:
-                continue
-            impact_by_username[username] = round(float(total), 1)
-
-        return (
-            shot_rows,
-            impact_by_username,
-            minutes_by_username,
-            dataset_has_full_impacts,
-        )
-
-    (
-        rows,
-        impact_by_username,
-        minutes_by_username,
-        dataset_has_full_impacts,
-    ) = await sync_to_async(_fetch)()
+        .values("player__user__username")
+        .annotate(total=Sum("impact_score"))
+    )
+    impact_by_username: dict[str, float] = {}
+    for row in impact_rows:
+        username = str(row.get("player__user__username") or "").strip()
+        total = row.get("total")
+        if not username or total is None:
+            continue
+        impact_by_username[username] = round(float(total), 1)
 
     player_rows: list[PlayerStatRow] = [
         {
@@ -388,6 +365,13 @@ async def build_player_stats(
     ]
 
     return sorted(player_rows, key=operator.itemgetter("goals_for"), reverse=True)
+
+
+async def build_player_stats(
+    players: list[Any], match_dataset: Iterable[Any]
+) -> list[PlayerStatRow]:
+    """Compute player statistics without blocking an asynchronous caller."""
+    return await sync_to_async(build_player_stats_sync)(players, match_dataset)
 
 
 async def players_stats(players: list[Any], match_dataset: Iterable[Any]) -> str:

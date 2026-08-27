@@ -15,6 +15,7 @@ else:
     PlayerChangeAdminBase = admin.ModelAdmin
 
 
+@admin.register(PlayerChange)
 class PlayerChangeAdmin(PlayerChangeAdminBase):
     """Admin for the PlayerChange model."""
 
@@ -30,6 +31,3 @@ class PlayerChangeAdmin(PlayerChangeAdminBase):
         """Meta class for the PlayerChangeAdmin."""
 
         model = PlayerChange
-
-
-admin.site.register(PlayerChange, PlayerChangeAdmin)

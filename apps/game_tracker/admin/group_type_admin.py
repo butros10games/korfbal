@@ -15,6 +15,7 @@ else:
     GroupTypeAdminBase = admin.ModelAdmin
 
 
+@admin.register(GroupType)
 class GroupTypeAdmin(GroupTypeAdminBase):
     """Admin for the GroupType model."""
 
@@ -25,6 +26,3 @@ class GroupTypeAdmin(GroupTypeAdminBase):
         """Meta class for the GroupTypeAdmin."""
 
         model = GroupType
-
-
-admin.site.register(GroupType, GroupTypeAdmin)

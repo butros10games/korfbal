@@ -15,6 +15,7 @@ else:
     SpotifyTokenAdminBase = admin.ModelAdmin
 
 
+@admin.register(SpotifyToken)
 class SpotifyTokenAdmin(SpotifyTokenAdminBase):
     """Admin configuration for SpotifyToken."""
 
@@ -33,6 +34,3 @@ class SpotifyTokenAdmin(SpotifyTokenAdminBase):
         """Meta class."""
 
         model = SpotifyToken
-
-
-admin.site.register(SpotifyToken, SpotifyTokenAdmin)

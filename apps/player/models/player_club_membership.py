@@ -50,8 +50,6 @@ class PlayerClubMembership(models.Model):
         """Model metadata."""
 
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["player"], name="pcm_player_idx"),
-            models.Index(fields=["club"], name="pcm_club_idx"),
             models.Index(fields=["player", "club"], name="pcm_player_club_idx"),
             models.Index(fields=["start_date"], name="pcm_start_date_idx"),
             models.Index(fields=["end_date"], name="pcm_end_date_idx"),

@@ -80,9 +80,6 @@ class PlayerMatchImpact(models.Model):
             ),
         )
         indexes: ClassVar[tuple[models.Index, ...]] = (
-            models.Index(fields=["match_data"], name="impact_match_idx"),
-            models.Index(fields=["team"], name="impact_team_idx"),
-            models.Index(fields=["player"], name="impact_player_idx"),
             # Common read path: aggregate impacts for player(s) within a match
             # dataset, scoped to the current algorithm version.
             models.Index(

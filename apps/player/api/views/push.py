@@ -9,8 +9,8 @@ from rest_framework import permissions, status
 from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import (
     PlayerPushSubscriptionCreateSerializer,
     PlayerPushSubscriptionDeactivateSerializer,
@@ -27,7 +27,7 @@ from apps.player.services.web_push import WebPushPayload, webpush_library_availa
 from .common import TEST_PUSH_ERROR_LIMIT
 
 
-class CurrentPlayerPushSubscriptionsAPIView(APIView):
+class CurrentPlayerPushSubscriptionsAPIView(KorfbalAPIView):
     """Register/list/deactivate push subscriptions for the current user."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -142,7 +142,7 @@ class CurrentPlayerPushSubscriptionsAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class CurrentPlayerTestPushNotificationAPIView(APIView):
+class CurrentPlayerTestPushNotificationAPIView(KorfbalAPIView):
     """Send a test push notification to the current user's active subscriptions."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -186,18 +186,20 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        subs_qs = PlayerPushSubscription.objects.filter(
-            user=user,
-            is_active=True,
-        ).order_by("-updated_at")
-        if not subs_qs.exists():
+        subscriptions = list(
+            PlayerPushSubscription.objects.filter(
+                user=user,
+                is_active=True,
+            ).order_by("-updated_at")
+        )
+        if not subscriptions:
             return Response(
                 {"detail": "No active push subscriptions"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         sent, failed, errors = send_test_payload(
-            subs=list(subs_qs),
+            subs=subscriptions,
             payload=WebPushPayload(
                 title="Test pushmelding",
                 body="Als je dit ziet werkt push via de PWA.",
@@ -207,7 +209,7 @@ class CurrentPlayerTestPushNotificationAPIView(APIView):
         )
 
         response_payload: dict[str, Any] = {
-            "total": subs_qs.count(),
+            "total": len(subscriptions),
             "sent": sent,
             "failed": failed,
         }

@@ -69,7 +69,6 @@ class MatchMvp(models.Model):
 
         db_table = "schedule_matchmvp"
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["match"], name="schedule_ma_match_i_2ed106_idx"),
             models.Index(fields=["closes_at"], name="schedule_ma_closes__b44233_idx"),
             models.Index(
                 fields=["published_at"],
@@ -153,8 +152,6 @@ class MatchMvpVote(models.Model):
             ),
         ]
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["match"], name="schedule_ma_match_i_5b6a08_idx"),
-            models.Index(fields=["candidate"], name="schedule_ma_candida_77f876_idx"),
             models.Index(fields=["voter_token"], name="schedule_mvpvote_token_idx"),
         ]
 

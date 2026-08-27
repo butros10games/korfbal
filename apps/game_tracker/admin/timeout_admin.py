@@ -15,6 +15,7 @@ else:
     TimeoutAdminBase = admin.ModelAdmin
 
 
+@admin.register(Timeout)
 class TimeoutAdmin(TimeoutAdminBase):
     """Admin for the Timeout model."""
 
@@ -43,6 +44,3 @@ class TimeoutAdmin(TimeoutAdminBase):
         """Meta class."""
 
         model = Timeout
-
-
-admin.site.register(Timeout, TimeoutAdmin)

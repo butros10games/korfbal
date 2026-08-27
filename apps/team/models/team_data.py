@@ -48,8 +48,6 @@ class TeamData(models.Model):
         """Meta class for TeamData model."""
 
         indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["team"]),
-            models.Index(fields=["season"]),
             models.Index(fields=["team", "season"]),
         ]
 

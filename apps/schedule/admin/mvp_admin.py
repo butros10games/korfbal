@@ -17,6 +17,7 @@ else:
     MatchMvpVoteAdminBase = admin.ModelAdmin
 
 
+@admin.register(MatchMvp)
 class MatchMvpAdmin(MatchMvpAdminBase):
     """Admin for MatchMvp."""
 
@@ -45,6 +46,7 @@ class MatchMvpAdmin(MatchMvpAdminBase):
         model = MatchMvp
 
 
+@admin.register(MatchMvpVote)
 class MatchMvpVoteAdmin(MatchMvpVoteAdminBase):
     """Admin for MatchMvpVote."""
 
@@ -73,7 +75,3 @@ class MatchMvpVoteAdmin(MatchMvpVoteAdminBase):
         """Meta class."""
 
         model = MatchMvpVote
-
-
-admin.site.register(MatchMvp, MatchMvpAdmin)
-admin.site.register(MatchMvpVote, MatchMvpVoteAdmin)

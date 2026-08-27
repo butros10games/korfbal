@@ -15,6 +15,7 @@ else:
     PageConnectRegistrationAdminBase = admin.ModelAdmin
 
 
+@admin.register(PageConnectRegistration)
 class PageConnectRegistrationAdmin(PageConnectRegistrationAdminBase):
     """PageConnectRegistration admin configuration."""
 
@@ -25,6 +26,3 @@ class PageConnectRegistrationAdmin(PageConnectRegistrationAdminBase):
         """Meta class."""
 
         model = PageConnectRegistration
-
-
-admin.site.register(PageConnectRegistration, PageConnectRegistrationAdmin)

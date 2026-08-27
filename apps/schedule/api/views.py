@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 import json
 import logging
@@ -11,9 +12,12 @@ from uuid import uuid4
 from django.conf import settings
 from django.core import signing
 from django.core.cache import cache
+from django.db import models
 from django.db.models import Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -189,6 +193,26 @@ def _cast_mvp_vote_for_request(
     return anon_voter_token, anon_tokens
 
 
+def _uuid_path_parameter(name: str) -> OpenApiParameter:
+    return OpenApiParameter(name, OpenApiTypes.UUID, OpenApiParameter.PATH)
+
+
+@extend_schema_view(
+    retrieve=extend_schema(parameters=[_uuid_path_parameter("id")]),
+    update=extend_schema(parameters=[_uuid_path_parameter("id")]),
+    partial_update=extend_schema(parameters=[_uuid_path_parameter("id")]),
+    destroy=extend_schema(parameters=[_uuid_path_parameter("id")]),
+    resolve_event_reconciliation=extend_schema(
+        parameters=[_uuid_path_parameter("reconciliation_id")]
+    ),
+    goal_detail=extend_schema(parameters=[_uuid_path_parameter("shot_id")]),
+    substitute_detail=extend_schema(parameters=[_uuid_path_parameter("change_id")]),
+    pause_detail=extend_schema(parameters=[_uuid_path_parameter("pause_id")]),
+    timeout_detail=extend_schema(parameters=[_uuid_path_parameter("timeout_id")]),
+    tracker_state=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
+    tracker_command=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
+    tracker_poll=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
+)
 class MatchViewSet(
     MatchEventsActionsMixin,
     mixins.CreateModelMixin,
@@ -200,6 +224,8 @@ class MatchViewSet(
 
     serializer_class = MatchSerializer
     permission_classes = (IsStaffOrReadOnly,)
+    lookup_field = "id_uuid"
+    lookup_url_kwarg = "id"
 
     def get_serializer_class(self) -> type[MatchSerializer | MatchWriteSerializer]:
         """Use an explicit flat serializer for staff schedule writes."""
@@ -212,6 +238,14 @@ class MatchViewSet(
         with suppress_tracker_delete_side_effects():
             instance.delete()
 
+    @staticmethod
+    def _match_data(match: Match) -> MatchData | None:
+        """Return eagerly loaded tracker data without issuing a fallback query."""
+        try:
+            return match.tracker_data
+        except MatchData.DoesNotExist:
+            return None
+
     def get_queryset(self) -> QuerySet[Match]:
         """Return a queryset filtered by the current request context.
 
@@ -219,12 +253,18 @@ class MatchViewSet(
             QuerySet[Match]: Filtered match queryset.
 
         """
-        queryset = Match.objects.select_related(
-            "home_team__club",
-            "away_team__club",
-            "season",
-            "pool",
-        ).order_by("start_time")
+        queryset = (
+            Match.objects
+            .select_related(
+                "home_team__club",
+                "away_team__club",
+                "season",
+                "pool",
+                "tracker_data",
+            )
+            .order_by("start_time", "id_uuid")
+            .fetch_mode(models.FETCH_RAISE)
+        )
 
         team_ids = self.request.query_params.getlist("team")
         club_ids = self.request.query_params.getlist("club")
@@ -506,7 +546,7 @@ class MatchViewSet(
         """Apply a match tracker command and return updated state."""
         match: Match = self.get_object()
         team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
-        if not isinstance(request.data, dict):
+        if not isinstance(request.data, Mapping):
             return Response(
                 {"detail": "Invalid JSON body."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -516,7 +556,7 @@ class MatchViewSet(
                 apply_tracker_command(
                     match,
                     team=team,
-                    payload=request.data,
+                    payload=dict(request.data),
                     actor=request.user,
                 ),
                 status=status.HTTP_200_OK,
@@ -655,7 +695,7 @@ class MatchViewSet(
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(None, status=status.HTTP_200_OK)
 
@@ -699,7 +739,7 @@ class MatchViewSet(
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {
@@ -778,7 +818,7 @@ class MatchViewSet(
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(None, status=status.HTTP_200_OK)
 
@@ -805,7 +845,7 @@ class MatchViewSet(
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {
@@ -842,7 +882,7 @@ class MatchViewSet(
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {
@@ -913,7 +953,7 @@ class MatchViewSet(
     ) -> Response:
         """Return MVP voting status + candidates + published winner (if any)."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {
@@ -975,14 +1015,14 @@ class MatchViewSet(
     ) -> Response:
         """Cast or update the current user's MVP vote."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data or match_data.status != "finished":
             return Response(
                 {"detail": "Voting is only available after the match is finished."},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        if not isinstance(request.data, dict):
+        if not isinstance(request.data, Mapping):
             return Response(
                 {"detail": "Invalid JSON body."},
                 status=status.HTTP_400_BAD_REQUEST,

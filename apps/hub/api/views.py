@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
-import json
 from typing import Any
 
-from django.db.models import Q
+from django.db import models
+from django.db.models import Count, Q
 from django.http import HttpRequest
 from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.game_tracker.models import MatchData, Shot
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.schedule.models import Match
 from apps.team.models import TeamData
 
 from .serializers import UpdateSerializer
 
 
-class UpdateFeedView(APIView):
+class UpdateFeedView(KorfbalAPIView):
     """Return a lightweight feed of match-centric updates."""
 
     permission_classes = (permissions.AllowAny,)
@@ -49,17 +50,21 @@ class UpdateFeedView(APIView):
                 "season",
             )
             .filter(start_time__gte=match_window_start)
-            .order_by("-start_time")
+            .order_by("-start_time", "id_uuid")
+            .fetch_mode(models.FETCH_RAISE)
         )
 
         matches = list(queryset[:10])
         if not matches:
             matches = list(
-                Match.objects.select_related(
+                Match.objects
+                .select_related(
                     "home_team__club",
                     "away_team__club",
                     "season",
-                ).order_by("-start_time")[:5]
+                )
+                .order_by("-start_time", "id_uuid")
+                .fetch_mode(models.FETCH_RAISE)[:5]
             )
 
         updates: list[dict[str, Any]] = [
@@ -101,7 +106,7 @@ def _payload_match_data(match_data: MatchData) -> dict[str, Any]:
     }
 
 
-class HubIndexView(APIView):
+class HubIndexView(KorfbalAPIView):
     """Return hub landing-page data for the authenticated user.
 
     The old Django-rendered hub index page was removed in favor of a React SPA.
@@ -163,26 +168,24 @@ class HubIndexView(APIView):
                 | Q(match_link__away_team_id__in=team_ids)
             )
             .order_by("-match_link__start_time")
+            .fetch_mode(models.FETCH_RAISE)
             .first()
         )
         if active_match_data is not None:
             match = active_match_data.match_link
-            home_score = Shot.objects.filter(
+            scores = Shot.objects.filter(
                 match_data=active_match_data,
-                team=match.home_team,
                 scored=True,
-            ).count()
-            away_score = Shot.objects.filter(
-                match_data=active_match_data,
-                team=match.away_team,
-                scored=True,
-            ).count()
+            ).aggregate(
+                home=Count("id_uuid", filter=Q(team_id=match.home_team_id)),
+                away=Count("id_uuid", filter=Q(team_id=match.away_team_id)),
+            )
             return Response(
                 {
                     "match": _payload_match(match),
                     "match_data": _payload_match_data(active_match_data),
-                    "home_score": home_score,
-                    "away_score": away_score,
+                    "home_score": int(scores["home"] or 0),
+                    "away_score": int(scores["away"] or 0),
                 },
                 status=HTTP_STATUS_OK,
             )
@@ -199,6 +202,7 @@ class HubIndexView(APIView):
                 start_time__gte=now,
             )
             .order_by("start_time")
+            .fetch_mode(models.FETCH_RAISE)
             .first()
         )
         if upcoming_match is not None:
@@ -226,7 +230,7 @@ class HubIndexView(APIView):
         )
 
 
-class CatalogDataView(APIView):
+class CatalogDataView(KorfbalAPIView):
     """Return catalog data for hub pickers.
 
     Legacy code used a server-side endpoint named `api_catalog_data`. The SPA
@@ -244,16 +248,9 @@ class CatalogDataView(APIView):
         **kwargs: Any,
     ) -> Response:
         """Return catalog data for the given selector payload."""
-        # Be lenient about payload encoding (tests send JSON string bodies).
-        payload: dict[str, Any]
-        if isinstance(request.data, dict):
-            payload = request.data
-        else:
-            try:
-                parsed = json.loads(request.body)
-            except Exception:
-                parsed = {}
-            payload = parsed if isinstance(parsed, dict) else {}
+        # DRF has already parsed the body; non-object JSON keeps the legacy
+        # empty-result behavior without reparsing the raw request stream.
+        payload = request.data if isinstance(request.data, Mapping) else {}
 
         value = str(payload.get("value") or "")
         # Older client shape

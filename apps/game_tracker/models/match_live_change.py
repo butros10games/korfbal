@@ -33,12 +33,6 @@ class MatchLiveChange(models.Model):
                 name="game_tracker_unique_live_revision",
             ),
         ]
-        indexes: ClassVar[list[models.Index]] = [
-            models.Index(
-                fields=["match_data", "revision"],
-                name="game_tracke_match_d_23208e_idx",
-            ),
-        ]
 
     def __str__(self) -> str:
         """Return a concise revision identifier."""

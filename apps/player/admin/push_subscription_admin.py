@@ -17,6 +17,7 @@ else:
     PlayerPushSubscriptionAdminBase = admin.ModelAdmin
 
 
+@admin.register(PlayerPushSubscription)
 class PlayerPushSubscriptionAdmin(PlayerPushSubscriptionAdminBase):
     """Admin for web push subscriptions."""
 
@@ -41,6 +42,3 @@ class PlayerPushSubscriptionAdmin(PlayerPushSubscriptionAdminBase):
         """Meta options."""
 
         model = PlayerPushSubscription
-
-
-admin.site.register(PlayerPushSubscription, PlayerPushSubscriptionAdmin)

@@ -6,11 +6,15 @@ import logging
 from typing import Final
 
 from django.conf import settings
-from django.db.models import QuerySet
+from django.db import models
+from django.db.models import Prefetch, Q, QuerySet
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 from rest_framework.request import Request
 
 from apps.player.models.player import Player
+from apps.player.models.player_club_membership import PlayerClubMembership
+from apps.player.models.player_song import PlayerSong
 
 
 logger = logging.getLogger(__name__)
@@ -33,12 +37,40 @@ SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
 
 def player_detail_queryset() -> QuerySet[Player]:
     """Return the default queryset used by player API endpoints."""
-    return Player.objects.select_related("user").prefetch_related(
-        "team_follow",
-        "club_follow",
-        "member_clubs",
-        "club_membership_links",
-        "club_membership_links__club",
+    today = timezone.localdate()
+    active_memberships = (
+        PlayerClubMembership.objects
+        .select_related("club")
+        .filter(start_date__lte=today)
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        .order_by("club__name", "id_uuid")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+    songs = (
+        PlayerSong.objects
+        .select_related("cached_song")
+        .order_by("-created_at", "id_uuid")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+    return (
+        Player.objects
+        .select_related("user")
+        .prefetch_related(
+            "team_follow",
+            "club_follow",
+            "member_clubs",
+            Prefetch(
+                "club_membership_links",
+                queryset=active_memberships,
+                to_attr="_api_active_memberships",
+            ),
+            Prefetch(
+                "songs",
+                queryset=songs,
+                to_attr="_api_songs",
+            ),
+        )
+        .fetch_mode(models.FETCH_RAISE)
     )
 
 

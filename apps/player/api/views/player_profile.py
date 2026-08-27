@@ -8,8 +8,8 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import (
     PlayerPrivacySettingsSerializer,
     PlayerSerializer,
@@ -64,7 +64,7 @@ class PlayerViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class CurrentPlayerAPIView(APIView):
+class CurrentPlayerAPIView(KorfbalAPIView):
     """Return the profile for the active player (or a debug fallback)."""
 
     permission_classes = (permissions.AllowAny,)
@@ -83,7 +83,7 @@ class CurrentPlayerAPIView(APIView):
         return Response(PlayerSerializer(player, context={"request": request}).data)
 
 
-class PlayerFollowedTeamsAPIView(APIView):
+class PlayerFollowedTeamsAPIView(KorfbalAPIView):
     """Return teams followed by a player."""
 
     permission_classes = (permissions.AllowAny,)
@@ -122,7 +122,7 @@ class PlayerFollowedTeamsAPIView(APIView):
         return get_current_player(request)
 
 
-class PlayerTeamsAPIView(APIView):
+class PlayerTeamsAPIView(KorfbalAPIView):
     """Return teams for a player grouped into playing/coaching/following."""
 
     permission_classes = (permissions.AllowAny,)
@@ -202,7 +202,7 @@ class CurrentPlayerFollowedTeamsAPIView(PlayerFollowedTeamsAPIView):
         return super().get(request, None, *args, **kwargs)
 
 
-class CurrentPlayerPrivacySettingsAPIView(APIView):
+class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
     """Read/update privacy visibility settings for the authenticated player."""
 
     permission_classes = (permissions.IsAuthenticated,)

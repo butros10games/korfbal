@@ -36,6 +36,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   `deps/uv.lock`; do not recreate a project-local lock beside `manage.py`.
 - WebSocket/live features: prefer minimal changes; add/extend tests when behavior changes.
 - API and outbound-provider modules are adapters; application/domain/services/tasks/signals must not import them or HTTP framework modules.
+- With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
+  loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
+  Django invalidates the relation cache before DRF renders the response.
+- Don’t add standalone indexes for `ForeignKey` or `OneToOneField` columns; Django already indexes
+  them. Add only composite or specialized indexes that serve a measured query shape.
 
 ## PR-first workflow (required)
 

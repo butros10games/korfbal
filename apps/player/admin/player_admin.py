@@ -70,6 +70,7 @@ class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
     )
 
 
+@admin.register(Player)
 class PlayerAdmin(PlayerModelAdminBase):
     """Player admin configuration."""
 
@@ -89,6 +90,3 @@ class PlayerAdmin(PlayerModelAdminBase):
         """Meta class."""
 
         model = Player
-
-
-admin.site.register(Player, PlayerAdmin)

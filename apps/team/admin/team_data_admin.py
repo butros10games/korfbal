@@ -15,6 +15,7 @@ else:
     TeamDataAdminBase = admin.ModelAdmin
 
 
+@admin.register(TeamData)
 class TeamDataAdmin(TeamDataAdminBase):
     """Admin class for the TeamData model."""
 
@@ -25,6 +26,3 @@ class TeamDataAdmin(TeamDataAdminBase):
         """Meta class for the TeamData model."""
 
         model = TeamData
-
-
-admin.site.register(TeamData, TeamDataAdmin)

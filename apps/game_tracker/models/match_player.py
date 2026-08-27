@@ -44,7 +44,6 @@ class MatchPlayer(models.Model):
 
         indexes: ClassVar[tuple[models.Index, ...]] = (
             models.Index(fields=["team", "match_data"], name="mp_team_match_idx"),
-            models.Index(fields=["match_data", "player"], name="mp_match_player_idx"),
         )
         constraints: ClassVar[tuple[models.BaseConstraint, ...]] = (
             models.UniqueConstraint(

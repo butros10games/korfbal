@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
-from .env import env, env_bool
+from .env import env, env_bool, env_int
 
 
-EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = env("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-EMAIL_PORT = env("EMAIL_PORT", "587")
-EMAIL_HOST_USER = env("EMAIL_USER", "")
-EMAIL_HOST_PASSWORD = env("EMAIL_PASSWORD", "")
+MAILERS = {
+    "default": {
+        "BACKEND": env(
+            "EMAIL_BACKEND",
+            "django.core.mail.backends.smtp.EmailBackend",
+        ),
+        "OPTIONS": {
+            "host": env("EMAIL_HOST", "smtp.gmail.com"),
+            "port": env_int("EMAIL_PORT", 587),
+            "use_tls": env_bool("EMAIL_USE_TLS", True),
+            "username": env("EMAIL_USER", ""),
+            "password": env("EMAIL_PASSWORD", ""),
+        },
+    },
+}

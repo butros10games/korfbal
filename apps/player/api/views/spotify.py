@@ -11,8 +11,8 @@ from rest_framework import permissions, status
 from rest_framework.exceptions import ParseError
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.adapters.outbound.spotify import DEFAULT_SPOTIFY_CLIENT
 from apps.player.services.spotify import (
     build_spotify_authorize_url,
@@ -46,7 +46,7 @@ def _request_payload(request: Request) -> Mapping[str, Any]:
     return payload
 
 
-class SpotifyConnectAPIView(APIView):
+class SpotifyConnectAPIView(KorfbalAPIView):
     """Start Spotify OAuth flow by returning an authorization URL."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -76,7 +76,7 @@ class SpotifyConnectAPIView(APIView):
         })
 
 
-class SpotifyCallbackView(APIView):
+class SpotifyCallbackView(KorfbalAPIView):
     """Handle Spotify OAuth callback requests."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -118,7 +118,7 @@ class SpotifyCallbackView(APIView):
         )
 
 
-class SpotifyPlayAPIView(APIView):
+class SpotifyPlayAPIView(KorfbalAPIView):
     """Trigger Spotify playback for the connected user."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -181,7 +181,7 @@ class SpotifyPlayAPIView(APIView):
         return Response({"ok": True})
 
 
-class SpotifyPauseAPIView(APIView):
+class SpotifyPauseAPIView(KorfbalAPIView):
     """Pause Spotify playback for the connected user."""
 
     permission_classes = (permissions.IsAuthenticated,)

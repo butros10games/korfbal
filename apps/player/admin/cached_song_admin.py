@@ -15,6 +15,7 @@ else:
     CachedSongAdminBase = admin.ModelAdmin
 
 
+@admin.register(CachedSong)
 class CachedSongAdmin(CachedSongAdminBase):
     """Admin configuration for CachedSong."""
 
@@ -36,6 +37,3 @@ class CachedSongAdmin(CachedSongAdminBase):
         """Meta class."""
 
         model = CachedSong
-
-
-admin.site.register(CachedSong, CachedSongAdmin)

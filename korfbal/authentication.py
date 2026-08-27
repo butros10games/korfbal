@@ -10,6 +10,7 @@ from bg_auth.jwt import (
 )
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -80,3 +81,19 @@ class JwtBearerAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid user")
 
         return user, token
+
+
+class JwtBearerAuthenticationScheme(OpenApiAuthenticationExtension):
+    """Describe the custom BG Auth bearer token in the OpenAPI contract."""
+
+    target_class = JwtBearerAuthentication
+    name = "jwtBearerAuth"
+
+    def get_security_definition(self, auto_schema: object) -> dict[str, str]:
+        """Return the OpenAPI HTTP bearer security scheme."""
+        del auto_schema
+        return {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }

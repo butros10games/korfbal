@@ -15,6 +15,7 @@ else:
     MatchAdminBase = admin.ModelAdmin
 
 
+@admin.register(Match)
 class MatchAdmin(MatchAdminBase):
     """Admin settings for the Match model."""
 
@@ -39,6 +40,3 @@ class MatchAdmin(MatchAdminBase):
         """Meta class for the Match model."""
 
         model = Match
-
-
-admin.site.register(Match, MatchAdmin)

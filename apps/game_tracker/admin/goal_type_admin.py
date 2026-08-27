@@ -15,6 +15,7 @@ else:
     GoalTypeAdminBase = admin.ModelAdmin
 
 
+@admin.register(GoalType)
 class GoalTypeAdmin(GoalTypeAdminBase):
     """Admin for the GoalType model."""
 
@@ -25,6 +26,3 @@ class GoalTypeAdmin(GoalTypeAdminBase):
         """Meta class for the GoalTypeAdmin."""
 
         model = GoalType
-
-
-admin.site.register(GoalType, GoalTypeAdmin)

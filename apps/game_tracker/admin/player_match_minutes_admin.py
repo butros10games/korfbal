@@ -15,6 +15,7 @@ else:
     PlayerMatchMinutesAdminBase = admin.ModelAdmin
 
 
+@admin.register(PlayerMatchMinutes)
 class PlayerMatchMinutesAdmin(PlayerMatchMinutesAdminBase):
     """Admin for the PlayerMatchMinutes model."""
 
@@ -40,6 +41,3 @@ class PlayerMatchMinutesAdmin(PlayerMatchMinutesAdminBase):
         """Meta class."""
 
         model = PlayerMatchMinutes
-
-
-admin.site.register(PlayerMatchMinutes, PlayerMatchMinutesAdmin)

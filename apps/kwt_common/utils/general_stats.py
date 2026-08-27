@@ -10,16 +10,14 @@ from django.db.models import Count, Q
 from apps.game_tracker.models import GoalType, Shot
 
 
-async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
+def build_general_stats_sync(match_dataset: Iterable[Any]) -> dict[str, Any]:
     """Assemble the general statistics payload for a collection of matches.
 
     Returns:
         dict[str, Any]: General stats payload.
 
     """
-    goal_types = await sync_to_async(
-        lambda: list(GoalType.objects.all().values("id_uuid", "name").order_by("name"))
-    )()
+    goal_types = list(GoalType.objects.values("id_uuid", "name").order_by("name"))
 
     goal_types_json = [
         {"id": str(row["id_uuid"]), "name": row["name"]} for row in goal_types
@@ -27,28 +25,24 @@ async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
 
     shot_qs = Shot.objects.filter(match_data__in=match_dataset)
 
-    aggregated = await sync_to_async(
-        lambda: shot_qs.aggregate(
-            shots_for=Count("id_uuid", filter=Q(for_team=True)),
-            shots_against=Count("id_uuid", filter=Q(for_team=False)),
-            goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
-            goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
-        ),
-    )()
+    aggregated = shot_qs.aggregate(
+        shots_for=Count("id_uuid", filter=Q(for_team=True)),
+        shots_against=Count("id_uuid", filter=Q(for_team=False)),
+        goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
+        goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
+    )
 
     team_goal_stats: dict[str, dict[str, int]] = {
         row["name"]: {"goals_by_player": 0, "goals_against_player": 0}
         for row in goal_types
     }
 
-    goal_type_rows = await sync_to_async(
-        lambda: list(
-            shot_qs
-            .filter(scored=True, shot_type__isnull=False)
-            .values("shot_type__name", "for_team")
-            .annotate(count=Count("id_uuid"))
-        )
-    )()
+    goal_type_rows = list(
+        shot_qs
+        .filter(scored=True, shot_type__isnull=False)
+        .values("shot_type__name", "for_team")
+        .annotate(count=Count("id_uuid"))
+    )
 
     for row in goal_type_rows:
         name = row.get("shot_type__name")
@@ -71,6 +65,11 @@ async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
         "team_goal_stats": team_goal_stats,
         "goal_types": goal_types_json,
     }
+
+
+async def build_general_stats(match_dataset: Iterable[Any]) -> dict[str, Any]:
+    """Build general statistics without blocking an asynchronous caller."""
+    return await sync_to_async(build_general_stats_sync)(match_dataset)
 
 
 async def general_stats(match_dataset: Iterable[Any]) -> str:

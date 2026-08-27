@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db import models
 from django.db.models import Count, QuerySet
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -23,10 +24,15 @@ class SeasonViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self) -> QuerySet[Season]:
         """Return newest seasons first with their match totals."""
-        return Season.objects.annotate(
-            match_count=Count("matches", distinct=True),
-            pool_count=Count("pools", distinct=True),
-        ).order_by("-start_date", "-end_date")
+        return (
+            Season.objects
+            .annotate(
+                match_count=Count("matches", distinct=True),
+                pool_count=Count("pools", distinct=True),
+            )
+            .order_by("-start_date", "-end_date", "id_uuid")
+            .fetch_mode(models.FETCH_RAISE)
+        )
 
     @action(
         detail=False,
@@ -62,7 +68,11 @@ class SeasonPoolViewSet(viewsets.ModelViewSet):
             .select_related("season")
             .prefetch_related("teams__club")
             .annotate(match_count=Count("matches", distinct=True))
-            .order_by("name")
+            .order_by("name", "id_uuid")
+            # M2M writes invalidate the teams prefetch before DRF renders the
+            # response. FETCH_PEERS batches the resulting club access instead
+            # of allowing one query per team.
+            .fetch_mode(models.FETCH_PEERS)
         )
         season_id = self.request.query_params.get("season")
         if season_id:

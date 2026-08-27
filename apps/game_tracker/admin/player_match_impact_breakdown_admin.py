@@ -17,6 +17,7 @@ else:
     PlayerMatchImpactBreakdownAdminBase = admin.ModelAdmin
 
 
+@admin.register(PlayerMatchImpactBreakdown)
 class PlayerMatchImpactBreakdownAdmin(PlayerMatchImpactBreakdownAdminBase):
     """Admin for the PlayerMatchImpactBreakdown model."""
 
@@ -35,6 +36,3 @@ class PlayerMatchImpactBreakdownAdmin(PlayerMatchImpactBreakdownAdminBase):
     )
     autocomplete_fields = ("impact",)
     show_full_result_count = False
-
-
-admin.site.register(PlayerMatchImpactBreakdown, PlayerMatchImpactBreakdownAdmin)

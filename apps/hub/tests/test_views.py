@@ -4,7 +4,9 @@ from datetime import timedelta
 import json
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test.client import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 import pytest
@@ -193,7 +195,8 @@ def test_hub_index_player_with_active_match_and_scores(client: Client) -> None:
 
     client.force_login(user)
 
-    response = client.get(reverse("index"), secure=True)
+    with CaptureQueriesContext(connection) as queries:
+        response = client.get(reverse("index"), secure=True)
 
     assert response.status_code == HTTP_STATUS_OK
     payload = response.json()
@@ -201,6 +204,12 @@ def test_hub_index_player_with_active_match_and_scores(client: Client) -> None:
     assert payload["match_data"]["id_uuid"] == str(match_data.id_uuid)
     assert payload["home_score"] == EXPECTED_HOME_SCORE  # 2 scored shots
     assert payload["away_score"] == EXPECTED_AWAY_SCORE  # 1 scored shot
+    shot_queries = [
+        query
+        for query in queries.captured_queries
+        if "game_tracker_shot" in query["sql"] and "SELECT" in query["sql"]
+    ]
+    assert len(shot_queries) == 1
 
 
 @pytest.mark.django_db

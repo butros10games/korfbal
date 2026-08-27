@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db import models
 from django.db.models import Q, QuerySet
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -40,10 +43,34 @@ from apps.team.services.overview import (
 from .serializers import TeamSerializer
 
 
+_PLAYER_ID_PARAMETER = OpenApiParameter(
+    "player_id", OpenApiTypes.UUID, OpenApiParameter.PATH
+)
+_SONG_ID_PARAMETER = OpenApiParameter(
+    "song_id", OpenApiTypes.UUID, OpenApiParameter.PATH
+)
+
+
+@extend_schema_view(
+    update_player_goal_song_selection=extend_schema(
+        parameters=[_PLAYER_ID_PARAMETER]
+    ),
+    remove_player_song=extend_schema(
+        parameters=[_PLAYER_ID_PARAMETER, _SONG_ID_PARAMETER]
+    ),
+    update_player_song_settings=extend_schema(
+        parameters=[_PLAYER_ID_PARAMETER, _SONG_ID_PARAMETER]
+    ),
+)
 class TeamViewSet(viewsets.ModelViewSet):
     """Expose team CRUD endpoints with lightweight search support."""
 
-    queryset = Team.objects.select_related("club").order_by("club__name", "name")
+    queryset = (
+        Team.objects
+        .select_related("club")
+        .order_by("club__name", "name", "id_uuid")
+        .fetch_mode(models.FETCH_RAISE)
+    )
     serializer_class = TeamSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes = (IsStaffOrReadOnly,)

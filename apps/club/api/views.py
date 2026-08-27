@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db import models
 from django.db.models import Q, QuerySet
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -24,7 +27,6 @@ from apps.game_tracker.models import MatchData
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.player.models.player import Player
 from apps.schedule.models import Season
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models.team import Team
@@ -38,10 +40,17 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    remove_membership=extend_schema(
+        parameters=[
+            OpenApiParameter("player_id", OpenApiTypes.UUID, OpenApiParameter.PATH)
+        ]
+    )
+)
 class ClubViewSet(viewsets.ModelViewSet):
     """Expose club CRUD endpoints with search support."""
 
-    queryset = Club.objects.all().order_by("name")
+    queryset = Club.objects.order_by("name", "id_uuid").fetch_mode(models.FETCH_RAISE)
     serializer_class = ClubSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes = (IsStaffOrReadOnly,)
@@ -228,19 +237,18 @@ class ClubViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _viewer_is_admin(self, request: Request, club: Club) -> bool:
-        viewer = self._viewer_player(request)
-        if viewer is None:
+        user = request.user
+        if not user.is_authenticated:
             return False
-        return club.admin.filter(id_uuid=viewer.id_uuid).exists()
-
-    def _viewer_player(self, request: Request) -> Player | None:
-        user = getattr(request, "user", None)
-        if user is None or not getattr(user, "is_authenticated", False):
-            return None
-        return Player.objects.filter(user=user).first()
+        return club.admin.filter(user=user).exists()
 
     def _club_teams_queryset(self, club: Club, season: Season | None) -> QuerySet[Team]:
-        queryset = club.teams.select_related("club").order_by("name")
+        queryset = (
+            club.teams
+            .select_related("club")
+            .order_by("name", "id_uuid")
+            .fetch_mode(models.FETCH_RAISE)
+        )
         if season:
             queryset = queryset.filter(
                 Q(team_data__season_id=season.id_uuid)
@@ -252,15 +260,21 @@ class ClubViewSet(viewsets.ModelViewSet):
     def _club_match_queryset(
         self, club: Club, season: Season | None
     ) -> QuerySet[MatchData]:
-        queryset = MatchData.objects.select_related(
-            "match_link",
-            "match_link__home_team",
-            "match_link__home_team__club",
-            "match_link__away_team",
-            "match_link__away_team__club",
-            "match_link__season",
-        ).filter(
-            Q(match_link__home_team__club=club) | Q(match_link__away_team__club=club),
+        queryset = (
+            MatchData.objects
+            .select_related(
+                "match_link",
+                "match_link__home_team",
+                "match_link__home_team__club",
+                "match_link__away_team",
+                "match_link__away_team__club",
+                "match_link__season",
+            )
+            .filter(
+                Q(match_link__home_team__club=club)
+                | Q(match_link__away_team__club=club),
+            )
+            .fetch_mode(models.FETCH_RAISE)
         )
         if season:
             queryset = queryset.filter(match_link__season_id=season.id_uuid)

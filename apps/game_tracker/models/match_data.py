@@ -26,9 +26,10 @@ class MatchData(models.Model):
         default=uuidv7,
         editable=False,
     )
-    match_link: models.ForeignKey[Any, Any] = models.ForeignKey(
+    match_link: models.OneToOneField[Any, Any] = models.OneToOneField(
         "schedule.Match",
         on_delete=models.CASCADE,
+        related_name="tracker_data",
     )
     home_score: models.IntegerField[int, int] = models.IntegerField(default=0)
     away_score: models.IntegerField[int, int] = models.IntegerField(default=0)
@@ -56,14 +57,7 @@ class MatchData(models.Model):
 
         indexes: ClassVar[list[models.Index]] = [
             models.Index(fields=["status"]),
-            models.Index(fields=["match_link"]),
             models.Index(fields=["status", "match_link"]),
-        ]
-        constraints: ClassVar[list[models.BaseConstraint]] = [
-            models.UniqueConstraint(
-                fields=["match_link"],
-                name="uniq_match_data_per_match",
-            ),
         ]
 
     def __str__(self) -> str:

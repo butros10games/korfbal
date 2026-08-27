@@ -15,6 +15,7 @@ else:
     SeasonAdminBase = admin.ModelAdmin
 
 
+@admin.register(Season)
 class SeasonAdmin(SeasonAdminBase):
     """Admin settings for the Season model."""
 
@@ -26,6 +27,3 @@ class SeasonAdmin(SeasonAdminBase):
         """Meta class for the Season model."""
 
         model = Season
-
-
-admin.site.register(Season, SeasonAdmin)

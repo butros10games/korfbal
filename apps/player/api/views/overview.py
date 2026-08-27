@@ -7,8 +7,8 @@ from typing import Any
 from rest_framework import permissions, status
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.models.player import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_overview import (
@@ -34,7 +34,7 @@ def _resolve_player(request: Request, player_id: str | None) -> Player | None:
     return get_current_player(request)
 
 
-class PlayerOverviewAPIView(APIView):
+class PlayerOverviewAPIView(KorfbalAPIView):
     """Expose player-specific match data grouped by season."""
 
     permission_classes = (permissions.AllowAny,)
@@ -72,7 +72,7 @@ class PlayerOverviewAPIView(APIView):
         )
 
 
-class PlayerConnectedClubRecentResultsAPIView(APIView):
+class PlayerConnectedClubRecentResultsAPIView(KorfbalAPIView):
     """Return recent finished matches for the current player's followed clubs."""
 
     permission_classes = (permissions.AllowAny,)
@@ -116,7 +116,7 @@ class PlayerConnectedClubRecentResultsAPIView(APIView):
         )
 
 
-class PlayerStatsAPIView(APIView):
+class PlayerStatsAPIView(KorfbalAPIView):
     """Expose season-scoped player shooting and scoring stats."""
 
     permission_classes = (permissions.AllowAny,)

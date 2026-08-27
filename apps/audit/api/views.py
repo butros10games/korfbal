@@ -8,15 +8,15 @@ from uuid import UUID
 
 from bg_audit_events import UnifiedAuditEvent
 from django.conf import settings
-from django.db.models import Count, Max, Q, QuerySet
+from django.db.models import Count, Max, Min, Q, QuerySet
 from django.db.models.functions import TruncHour
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.audit.models import AuditEvent
+from apps.kwt_common.api.base import KorfbalAPIView
 
 from .serializers import (
     AuditEventBulkIngestSerializer,
@@ -127,7 +127,7 @@ def _create_row(*, request: Request, event: UnifiedAuditEvent) -> AuditEvent:
     )
 
 
-class AuditEventIngestAPIView(APIView):
+class AuditEventIngestAPIView(KorfbalAPIView):
     """Receive normalized audit events from any producer/runtime."""
 
     permission_classes = (permissions.AllowAny,)
@@ -163,7 +163,7 @@ class AuditEventIngestAPIView(APIView):
         )
 
 
-class AuditEventBulkIngestAPIView(APIView):
+class AuditEventBulkIngestAPIView(KorfbalAPIView):
     """Receive multiple normalized audit events in a single request."""
 
     permission_classes = (permissions.AllowAny,)
@@ -205,7 +205,7 @@ class AuditEventBulkIngestAPIView(APIView):
         )
 
 
-class AuditTimelineAPIView(APIView):
+class AuditTimelineAPIView(KorfbalAPIView):
     """List audit events as a searchable timeline."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -310,7 +310,7 @@ class AuditTimelineAPIView(APIView):
         return queryset.none()
 
 
-class AuditSummaryAPIView(APIView):
+class AuditSummaryAPIView(KorfbalAPIView):
     """Return aggregate audit statistics for dashboards/operations."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -333,7 +333,11 @@ class AuditSummaryAPIView(APIView):
                 | Q(severity__in=["info", "warning", "error"])
             )
 
-        total = queryset.count()
+        bounds = queryset.aggregate(
+            total=Count("id_uuid"),
+            latest=Max("occurred_at"),
+            oldest=Min("occurred_at"),
+        )
 
         by_severity = {
             row["severity"]: row["count"]
@@ -360,19 +364,16 @@ class AuditSummaryAPIView(APIView):
             .order_by("-count", "event_name")[:20]
         ]
 
-        latest = queryset.order_by("-occurred_at", "-id_uuid").first()
-        oldest = queryset.order_by("occurred_at", "id_uuid").first()
-
         return Response(
             {
                 "window_hours": window_hours,
                 "cutoff": cutoff.isoformat(),
-                "total": total,
+                "total": bounds["total"],
                 "by_severity": by_severity,
                 "by_source": by_source,
                 "top_events": top_events,
-                "latest": latest.occurred_at.isoformat() if latest else None,
-                "oldest": oldest.occurred_at.isoformat() if oldest else None,
+                "latest": (bounds["latest"].isoformat() if bounds["latest"] else None),
+                "oldest": (bounds["oldest"].isoformat() if bounds["oldest"] else None),
             },
             status=HTTP_STATUS_OK,
         )
@@ -390,7 +391,7 @@ class AuditSummaryAPIView(APIView):
         return max(1, min(parsed, MAX_SUMMARY_WINDOW_HOURS))
 
 
-class AuditProducerStatsAPIView(APIView):
+class AuditProducerStatsAPIView(KorfbalAPIView):
     """Return producer/source health statistics over a configurable window."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -459,7 +460,7 @@ class AuditProducerStatsAPIView(APIView):
         return max(1, min(parsed, MAX_SUMMARY_WINDOW_HOURS))
 
 
-class AuditTrendStatsAPIView(APIView):
+class AuditTrendStatsAPIView(KorfbalAPIView):
     """Return hourly trend points and error-rate delta for dashboards/alerting."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -526,10 +527,18 @@ class AuditTrendStatsAPIView(APIView):
             })
             cursor += timedelta(hours=1)
 
-        current_total = current_queryset.count()
-        current_errors = current_queryset.filter(severity="error").count()
-        previous_total = previous_queryset.count()
-        previous_errors = previous_queryset.filter(severity="error").count()
+        current_metrics = current_queryset.aggregate(
+            total=Count("id_uuid"),
+            errors=Count("id_uuid", filter=Q(severity="error")),
+        )
+        previous_metrics = previous_queryset.aggregate(
+            total=Count("id_uuid"),
+            errors=Count("id_uuid", filter=Q(severity="error")),
+        )
+        current_total = int(current_metrics["total"] or 0)
+        current_errors = int(current_metrics["errors"] or 0)
+        previous_total = int(previous_metrics["total"] or 0)
+        previous_errors = int(previous_metrics["errors"] or 0)
 
         current_error_rate = (
             (current_errors / current_total) * 100 if current_total else 0.0
@@ -565,7 +574,7 @@ class AuditTrendStatsAPIView(APIView):
         return max(1, min(parsed, MAX_SUMMARY_WINDOW_HOURS))
 
 
-class AuditProducerHealthAPIView(APIView):
+class AuditProducerHealthAPIView(KorfbalAPIView):
     """Rank producer health using weighted risk metrics for operations."""
 
     permission_classes = (permissions.IsAuthenticated,)

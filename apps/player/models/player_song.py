@@ -72,7 +72,7 @@ class PlayerSong(models.Model):
 
     status: models.CharField[str, str] = models.CharField(
         max_length=20,
-        choices=PlayerSongStatus.choices,
+        choices=PlayerSongStatus,
         default=PlayerSongStatus.QUEUED,
     )
     error_message: models.TextField[str, str] = models.TextField(blank=True)

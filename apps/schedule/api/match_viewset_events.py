@@ -58,6 +58,8 @@ RECONCILIATION_REASON_MAX_LENGTH = 255
 class _MatchViewSetLike(Protocol):
     def get_object(self) -> Match: ...
 
+    def _match_data(self, match: Match) -> MatchData | None: ...
+
 
 def _request_payload(request: Request) -> Mapping[str, Any]:
     """Return an object-shaped request body.
@@ -155,7 +157,7 @@ class MatchEventsActionsMixin:
 
         """
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         identity_version_raw = request.query_params.get("identity_version")
         try:
             since_revision = _parse_since_revision(request)
@@ -252,7 +254,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Return shot attempts (scored + missed) for a single match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         identity_version_raw = request.query_params.get("identity_version")
         try:
             since_revision = _parse_since_revision(request)
@@ -355,7 +357,7 @@ class MatchEventsActionsMixin:
         """Return the complete append-only audit stream for authorized editors."""
         del request, args, kwargs
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if match_data is None:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -383,7 +385,7 @@ class MatchEventsActionsMixin:
         """Return ambiguous cross-team reports requiring a decision."""
         del request, args, kwargs
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if match_data is None:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -407,7 +409,7 @@ class MatchEventsActionsMixin:
         """Merge a duplicate pair or confirm that both events are real."""
         del args, kwargs
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if match_data is None:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -473,7 +475,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a goal (Shot) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -513,7 +515,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete an existing goal (Shot) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -588,7 +590,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a substitution (PlayerChange) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -628,7 +630,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a substitution (PlayerChange) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -706,7 +708,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a pause (Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -746,7 +748,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a pause (Pause) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -825,7 +827,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Create a timeout (Timeout + Pause) event for this match."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -869,7 +871,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Return option lists needed to create/update match tracker events."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
@@ -964,7 +966,7 @@ class MatchEventsActionsMixin:
     ) -> Response:
         """Update or delete a timeout (Timeout + Pause) event."""
         match: Match = self.get_object()
-        match_data = MatchData.objects.filter(match_link=match).first()
+        match_data = self._match_data(match)
         if not match_data:
             return Response(
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},

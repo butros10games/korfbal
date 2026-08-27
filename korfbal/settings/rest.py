@@ -18,4 +18,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API for Korfbal application",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "PlayerVisibilityEnum": "apps.player.models.player.Player.Visibility",
+    },
 }

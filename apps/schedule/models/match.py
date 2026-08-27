@@ -17,6 +17,7 @@ from .constants import team_model_string
 
 if TYPE_CHECKING:
     from apps.awards.models import MatchMvp, MatchMvpVote
+    from apps.game_tracker.models import MatchData
 
 
 class Match(models.Model):
@@ -27,6 +28,7 @@ class Match(models.Model):
     if TYPE_CHECKING:
         mvp: MatchMvp
         mvp_votes: models.Manager[MatchMvpVote]
+        tracker_data: MatchData
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
@@ -65,8 +67,6 @@ class Match(models.Model):
 
         indexes: ClassVar[list[Any]] = [
             models.Index(fields=["start_time"]),
-            models.Index(fields=["home_team"]),
-            models.Index(fields=["away_team"]),
             models.Index(fields=["season", "start_time"]),
             models.Index(fields=["pool", "start_time"]),
         ]

@@ -1,6 +1,6 @@
 """Model for ClubAdmin."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 
@@ -18,7 +18,12 @@ class ClubAdmin(models.Model):
     class Meta:
         """Meta class for the ClubAdmin model."""
 
-        unique_together = ("club", "player")
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["club", "player"],
+                name="unique_club_admin",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return the string representation of the ClubAdmin.

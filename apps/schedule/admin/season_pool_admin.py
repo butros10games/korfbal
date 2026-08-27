@@ -15,6 +15,7 @@ else:
     SeasonPoolAdminBase = admin.ModelAdmin
 
 
+@admin.register(SeasonPool)
 class SeasonPoolAdmin(SeasonPoolAdminBase):
     """Show pool membership alongside the existing schedule models."""
 
@@ -23,6 +24,3 @@ class SeasonPoolAdmin(SeasonPoolAdminBase):
     search_fields = ("id_uuid", "name", "season__name")
     filter_horizontal = ("teams",)
     show_full_result_count = False
-
-
-admin.site.register(SeasonPool, SeasonPoolAdmin)

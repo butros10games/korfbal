@@ -15,6 +15,7 @@ else:
     AttackAdminBase = admin.ModelAdmin
 
 
+@admin.register(Attack)
 class AttackAdmin(AttackAdminBase):
     """Admin for the Attack model."""
 
@@ -38,6 +39,3 @@ class AttackAdmin(AttackAdminBase):
         """Meta class."""
 
         model = Attack
-
-
-admin.site.register(Attack, AttackAdmin)

@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.models import User
 from django.urls import reverse
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.club.api.serializers import ClubSerializer
@@ -15,6 +16,14 @@ from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.privacy import can_view_by_visibility
+
+
+class PlayerGoalSongSelectionSerializer(serializers.Serializer):
+    """Output contract for a selected goal-song clip."""
+
+    id_uuid = serializers.UUIDField()
+    audio_url = serializers.URLField()
+    start_time_seconds = serializers.IntegerField(allow_null=True)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -218,12 +227,19 @@ class PlayerSerializer(serializers.ModelSerializer):
             data["active_member_clubs"] = []
         return data
 
+    @extend_schema_field(ClubSerializer(many=True))
     def get_active_member_clubs(self, obj: Player) -> list[dict[str, object]]:
         """Return active club memberships as embedded Club objects."""
-        clubs = obj.active_member_clubs()
+        memberships = getattr(obj, "_api_active_memberships", None)
+        clubs = (
+            [membership.club for membership in memberships]
+            if isinstance(memberships, list)
+            else obj.active_member_clubs()
+        )
         data = ClubSerializer(clubs, many=True, context=self.context).data
         return cast(list[dict[str, object]], data)
 
+    @extend_schema_field(PlayerGoalSongSelectionSerializer(many=True))
     def get_goal_song_songs(self, obj: Player) -> list[dict[str, object]]:
         """Return ordered goal-song info for cycling.
 
@@ -234,10 +250,15 @@ class PlayerSerializer(serializers.ModelSerializer):
         if not ids:
             return []
 
-        songs = list(
-            PlayerSong.objects.select_related("cached_song").filter(
-                player=obj,
-                id_uuid__in=ids,
+        prefetched_songs = getattr(obj, "_api_songs", None)
+        songs = (
+            prefetched_songs
+            if isinstance(prefetched_songs, list)
+            else list(
+                PlayerSong.objects.select_related("cached_song").filter(
+                    player=obj,
+                    id_uuid__in=ids,
+                )
             )
         )
         by_id = {str(song.id_uuid): song for song in songs}

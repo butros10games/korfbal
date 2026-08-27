@@ -114,7 +114,13 @@ def _get_match_and_team(
 ) -> tuple[Match | None, Team | None]:
     """Resolve and validate the match/team pair encoded in an action route."""
     view_kwargs = getattr(view, "kwargs", {})
-    match_id = view_kwargs.get("pk") or view_kwargs.get("id_uuid")
+    lookup_url_kwarg = getattr(view, "lookup_url_kwarg", None)
+    match_id = (
+        view_kwargs.get(lookup_url_kwarg)
+        if isinstance(lookup_url_kwarg, str)
+        else None
+    )
+    match_id = match_id or view_kwargs.get("pk") or view_kwargs.get("id_uuid")
     team_id = view_kwargs.get("team_id")
     if not match_id or (require_team and not team_id):
         return None, None

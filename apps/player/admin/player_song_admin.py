@@ -17,6 +17,7 @@ else:
     PlayerSongModelAdminBase = admin.ModelAdmin
 
 
+@admin.register(PlayerSong)
 class PlayerSongAdmin(PlayerSongModelAdminBase):
     """PlayerSong admin configuration."""
 
@@ -94,6 +95,3 @@ class PlayerSongAdmin(PlayerSongModelAdminBase):
         """Meta class."""
 
         model = PlayerSong
-
-
-admin.site.register(PlayerSong, PlayerSongAdmin)

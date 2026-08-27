@@ -8,13 +8,15 @@ The React SPA should use these endpoints via `/api/match/...`.
 
 from __future__ import annotations
 
-import json
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 from django.db import transaction
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
@@ -39,6 +41,9 @@ from apps.team.models import Team, TeamData
 
 
 PLAYER_GROUP_EDIT_PERMISSION_ERROR = "You do not have permission to edit player groups."
+# DRF's ``api_view`` returns a callable view object that is valid input for
+# drf-spectacular but narrower than its type annotation permits.
+_function_schema = cast(Any, extend_schema)
 
 
 def _viewer_player(request: Request) -> Player | None:
@@ -58,16 +63,6 @@ def _profile_picture_for(viewer: Player | None, target: Player) -> str:
     return target.get_placeholder_profile_picture_url()
 
 
-def _get_player_groups(match_id: str, team_id: str) -> QuerySet[PlayerGroup]:
-    match_model = get_object_or_404(Match, id_uuid=match_id)
-    team_model = get_object_or_404(Team, id_uuid=team_id)
-    match_data = MatchData.objects.get(match_link=match_model)
-
-    return PlayerGroup.objects.filter(match_data=match_data, team=team_model).order_by(
-        "starting_type__order",
-    )
-
-
 def _player_group_editor_error(
     *,
     request: Request,
@@ -79,6 +74,7 @@ def _player_group_editor_error(
     return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
 
 
+@_function_schema(responses=OpenApiTypes.OBJECT)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def player_overview_data(request: Request, match_id: str, team_id: str) -> Response:
@@ -134,6 +130,7 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
     return Response({"player_groups": player_groups_data})
 
 
+@_function_schema(responses=OpenApiTypes.OBJECT)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def players_team(request: Request, match_id: str, team_id: str) -> Response:
@@ -188,6 +185,7 @@ MIN_PLAYER_NAME_LENGTH = 3
 MAX_PLAYER_NAME_LENGTH = 50
 
 
+@_function_schema(responses=OpenApiTypes.OBJECT)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def player_search(request: Request, match_id: str, team_id: str) -> Response:
@@ -303,16 +301,10 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
 
 
 def _parse_designation_payload(request: Request) -> dict[str, Any] | None:
-    """Parse and normalize the player designation payload (best-effort)."""
-    if isinstance(request.data, dict):
-        return request.data
-
-    try:
-        parsed = json.loads(request.body)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    """Return DRF's parsed payload when it is object-shaped."""
+    if not isinstance(request.data, Mapping):
         return None
-
-    return parsed if isinstance(parsed, dict) else None
+    return dict(request.data)
 
 
 def _extract_designation_players(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -348,6 +340,7 @@ def _prepare_player_designation(
     return selected_players, target_group, None
 
 
+@_function_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def player_designation(request: Request) -> Response:

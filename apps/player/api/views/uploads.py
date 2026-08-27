@@ -8,8 +8,8 @@ from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import PlayerSerializer
 from apps.player.services.player_uploads import (
     goal_song_content_type_allowed,
@@ -21,7 +21,7 @@ from apps.player.services.player_uploads import (
 from .common import PLAYER_NOT_FOUND_MESSAGE, get_current_player
 
 
-class UploadProfilePictureAPIView(APIView):
+class UploadProfilePictureAPIView(KorfbalAPIView):
     """Upload a profile picture (API variant used by the Vite frontend)."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -60,7 +60,7 @@ class UploadProfilePictureAPIView(APIView):
         })
 
 
-class UploadGoalSongAPIView(APIView):
+class UploadGoalSongAPIView(KorfbalAPIView):
     """Upload an audio file to use as the goal song."""
 
     permission_classes = (permissions.IsAuthenticated,)

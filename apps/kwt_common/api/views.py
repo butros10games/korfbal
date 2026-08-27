@@ -6,15 +6,15 @@ from django.core.cache import cache
 from rest_framework import permissions
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.kwt_common.utils.slow_requests import slow_request_buffer_ttl_s
 
 
 _CACHE_KEY = "korfbal:slow_requests"
 
 
-class SlowRequestsAPIView(APIView):
+class SlowRequestsAPIView(KorfbalAPIView):
     """Get/clear a rolling buffer of slow requests.
 
     This is intended to make it easy to see *which* endpoints are slow without

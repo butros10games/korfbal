@@ -8,8 +8,8 @@ from typing import Any
 from rest_framework import permissions, status
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import PlayerSerializer
 from apps.player.models.player import Player
 from apps.player.services.goal_song import (
@@ -22,7 +22,7 @@ from apps.player.services.goal_song import (
 from .common import PLAYER_NOT_FOUND_DETAIL
 
 
-class CurrentPlayerGoalSongAPIView(APIView):
+class CurrentPlayerGoalSongAPIView(KorfbalAPIView):
     """Update goal song configuration for the current player."""
 
     permission_classes = (permissions.IsAuthenticated,)

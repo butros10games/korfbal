@@ -66,8 +66,6 @@ class PlayerMatchMinutes(models.Model):
             ),
         )
         indexes: ClassVar[tuple[models.Index, ...]] = (
-            models.Index(fields=["match_data"], name="minutes_match_idx"),
-            models.Index(fields=["player"], name="minutes_player_idx"),
             models.Index(
                 fields=["player", "algorithm_version", "match_data"],
                 name="minutes_pl_ver_md_idx",

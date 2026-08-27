@@ -14,8 +14,8 @@ from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
+from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import (
     PlayerSongCreateSerializer,
     PlayerSongSerializer,
@@ -39,7 +39,7 @@ from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_
 logger = logging.getLogger(__name__)
 
 
-class PlayerSongClipAPIView(APIView):
+class PlayerSongClipAPIView(KorfbalAPIView):
     """Return and cache a short clip for a PlayerSong."""
 
     permission_classes = (permissions.AllowAny,)
@@ -123,7 +123,7 @@ class PlayerSongClipAPIView(APIView):
         return response
 
 
-class CurrentPlayerSongsAPIView(APIView):
+class CurrentPlayerSongsAPIView(KorfbalAPIView):
     """List and create downloaded songs for the authenticated player."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -180,7 +180,7 @@ class CurrentPlayerSongsAPIView(APIView):
         )
 
 
-class CurrentPlayerSongDetailAPIView(APIView):
+class CurrentPlayerSongDetailAPIView(KorfbalAPIView):
     """Update or delete a specific song for the authenticated player."""
 
     permission_classes = (permissions.IsAuthenticated,)
@@ -236,7 +236,7 @@ class CurrentPlayerSongDetailAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class CurrentPlayerSongRetryAPIView(APIView):
+class CurrentPlayerSongRetryAPIView(KorfbalAPIView):
     """Retry downloading a failed song for the authenticated player."""
 
     permission_classes = (permissions.IsAuthenticated,)

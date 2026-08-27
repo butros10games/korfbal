@@ -15,6 +15,7 @@ else:
     PauseAdminBase = admin.ModelAdmin
 
 
+@admin.register(Pause)
 class PauseAdmin(PauseAdminBase):
     """Admin for the Pause model."""
 
@@ -31,6 +32,3 @@ class PauseAdmin(PauseAdminBase):
         """Meta class for the PauseAdmin."""
 
         model = Pause
-
-
-admin.site.register(Pause, PauseAdmin)

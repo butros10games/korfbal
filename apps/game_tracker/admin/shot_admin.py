@@ -75,6 +75,7 @@ class ShotAdminForm(forms.ModelForm):
             team_field.queryset = Team.objects.none()
 
 
+@admin.register(Shot)
 class ShotAdmin(ShotAdminBase):
     """Admin for the Shot model."""
 
@@ -93,6 +94,3 @@ class ShotAdmin(ShotAdminBase):
         """Meta class for the ShotAdmin."""
 
         model = Shot
-
-
-admin.site.register(Shot, ShotAdmin)
