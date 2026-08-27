@@ -25,7 +25,7 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-TIMELINE_IDENTITY_VERSION = 2
+TIMELINE_IDENTITY_VERSION = 3
 
 
 @pytest.mark.django_db

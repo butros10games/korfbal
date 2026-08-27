@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
-from apps.schedule.models import MatchMvp, MatchMvpVote
+from apps.awards.models import MatchMvp, MatchMvpVote
 
 
 if TYPE_CHECKING:

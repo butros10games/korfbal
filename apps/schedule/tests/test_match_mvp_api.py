@@ -11,10 +11,11 @@ from django.test.client import Client
 from django.utils import timezone
 import pytest
 
+from apps.awards.models import MatchMvp
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData, MatchPart, MatchPlayer
 from apps.player.models.player import Player
-from apps.schedule.models import Match, MatchMvp, Season
+from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 

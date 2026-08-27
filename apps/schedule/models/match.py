@@ -16,7 +16,7 @@ from .constants import team_model_string
 
 
 if TYPE_CHECKING:
-    from .mvp import MatchMvp, MatchMvpVote
+    from apps.awards.models import MatchMvp, MatchMvpVote
 
 
 class Match(models.Model):

@@ -78,46 +78,16 @@ If/when we add global award endpoints, add them under `/api/awards/…` and incl
 - Telemetry/tracker endpoints belong under match routes but implemented in `game_tracker.services`.
 - Award endpoints belong under match routes or `/api/awards` depending on resource shape.
 
-## MVP extraction plan (safe migration)
+## MVP ownership
 
-This is the recommended approach to move MVP into `apps.awards` **without changing the database tables**.
-
-### Step A — Create the new app
-
-- Add `apps.awards` with `models/` and `services/`.
-- Move/copy:
-    - `apps/schedule/models/mvp.py` → `apps/awards/models/mvp.py`
-    - `apps/schedule/services/mvp.py` → `apps/awards/services/mvp.py`
-
-### Step B — Keep existing DB tables
-
-Today the tables are created by schedule migrations and are named like:
+MVP models and services live in `apps.awards`. The existing database tables keep
+their historical names:
 
 - `schedule_matchmvp`
 - `schedule_matchmvpvote`
 
-To avoid a risky table rename:
-
-- In the new awards models, set `db_table` to the existing names.
-- Use a **state-only migration** (via `SeparateDatabaseAndState`) so Django does not attempt to create/drop tables.
-
-### Step C — Update imports and endpoints
-
-- Update `apps.schedule.api.views` to import MVP functions from `apps.awards.services.mvp`.
-- Update any other references (`Match.mvp_votes`, etc.) as needed (related names can stay the same).
-
-### Step D — Content types / permissions
-
-Moving models between apps changes content type labels. If you rely on Django admin permissions for these models, verify permissions after migration.
-
-### Step E — Notifications and badges (next)
-
-When ready:
-
-- Add award events in `apps.awards.services` (e.g. `award.mvp_published`).
-- Add a notification pipeline:
-    - Create notification records (DB) + optional delivery via Web Push.
-    - Prefer asynchronous delivery via Celery tasks.
+The awards models declare these names explicitly, so no runtime compatibility
+modules are needed under `apps.schedule`.
 
 ## When to split further
 

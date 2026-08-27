@@ -41,7 +41,7 @@ def build_team_overview_payload(
     options: TeamOverviewOptions,
 ) -> dict[str, Any]:
     """Build the stable API payload for the team overview endpoint."""
-    match_data_qs = _team_match_queryset(team, season)
+    match_data_qs = team_match_queryset(team, season)
     upcoming_matches = build_match_summaries(
         match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
             "match_link__start_time",
@@ -59,7 +59,7 @@ def build_team_overview_payload(
 
     roster_players: list[Player] = []
     if options.include_roster or options.include_stats:
-        roster_players = list(_team_players_queryset(team, season, match_data_qs))
+        roster_players = list(team_players_queryset(team, season, match_data_qs))
 
     main_roster_ids = _main_roster_ids(team=team, season=season)
     ordered_roster_players = _order_roster_players(
@@ -138,10 +138,11 @@ def _current_season() -> Season | None:
     ).first()
 
 
-def _team_match_queryset(
+def team_match_queryset(
     team: Team,
     season: Season | None,
 ) -> QuerySet[MatchData]:
+    """Return match data for a team, optionally scoped to one season."""
     queryset = MatchData.objects.select_related(
         "match_link",
         "match_link__home_team",
@@ -157,11 +158,12 @@ def _team_match_queryset(
     return queryset
 
 
-def _team_players_queryset(
+def team_players_queryset(
     team: Team,
     season: Season | None,
     match_data_qs: QuerySet[MatchData],
 ) -> QuerySet[Player]:
+    """Return players observed in the team roster, matches, or shots."""
     teamdata_qs = TeamData.objects.filter(team=team)
     if season is not None:
         teamdata_qs = teamdata_qs.filter(season=season)

@@ -49,7 +49,7 @@ from .serializers import (
 )
 
 
-MATCH_TIMELINE_IDENTITY_VERSION = 2
+MATCH_TIMELINE_IDENTITY_VERSION = 3
 RECONCILIATION_REASON_MAX_LENGTH = 255
 
 
@@ -100,6 +100,27 @@ def _update_timeout(
     return serializer.save()
 
 
+def _parse_since_revision(request: Request) -> int | None:
+    """Parse an optional non-negative timeline revision.
+
+    Raises:
+        ValueError: The supplied revision is not a non-negative integer.
+
+    """
+    raw_revision = request.query_params.get("since_revision")
+    if raw_revision is None:
+        return None
+
+    try:
+        revision = int(raw_revision)
+    except ValueError as error:
+        raise ValueError("Invalid 'since_revision'.") from error
+
+    if revision < 0:
+        raise ValueError("Invalid 'since_revision'.")
+    return revision
+
+
 class MatchEventsActionsMixin:
     """Adds match event timeline + event editor actions to `MatchViewSet`."""
 
@@ -120,19 +141,14 @@ class MatchEventsActionsMixin:
         """
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
-        since_revision_raw = request.query_params.get("since_revision")
         identity_version_raw = request.query_params.get("identity_version")
-        since_revision: int | None = None
-        if since_revision_raw is not None:
-            try:
-                since_revision = int(since_revision_raw)
-            except ValueError:
-                since_revision = -2
-            if since_revision < 0:
-                return Response(
-                    {"detail": "Invalid 'since_revision'."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        try:
+            since_revision = _parse_since_revision(request)
+        except ValueError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not match_data or match_data.status == "upcoming":
             return Response(
                 {
@@ -222,19 +238,14 @@ class MatchEventsActionsMixin:
         """Return shot attempts (scored + missed) for a single match."""
         match: Match = self.get_object()
         match_data = MatchData.objects.filter(match_link=match).first()
-        since_revision_raw = request.query_params.get("since_revision")
         identity_version_raw = request.query_params.get("identity_version")
-        since_revision: int | None = None
-        if since_revision_raw is not None:
-            try:
-                since_revision = int(since_revision_raw)
-            except ValueError:
-                since_revision = -2
-            if since_revision < 0:
-                return Response(
-                    {"detail": "Invalid 'since_revision'."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        try:
+            since_revision = _parse_since_revision(request)
+        except ValueError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not match_data or match_data.status == "upcoming":
             return Response(
                 {

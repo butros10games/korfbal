@@ -14,10 +14,8 @@ from rest_framework.response import Response
 
 from apps.game_tracker.models import (
     MatchData,
-    MatchPlayer,
     PlayerMatchImpact,
     PlayerMatchImpactBreakdown,
-    Shot,
 )
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
@@ -35,6 +33,8 @@ from apps.team.models.team_data import TeamData
 from apps.team.services.overview import (
     TeamOverviewOptions,
     build_team_overview_payload,
+    team_match_queryset,
+    team_players_queryset,
 )
 
 from .serializers import TeamSerializer
@@ -210,8 +210,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             season=season,
         )
 
-        match_data_qs = self._team_match_queryset(team, season)
-        players = list(self._team_players_queryset(team, season, match_data_qs))
+        match_data_qs = team_match_queryset(team, season)
+        players = list(team_players_queryset(team, season, match_data_qs))
         songs = list(
             PlayerSong.objects
             .select_related("cached_song", "player", "player__user")
@@ -655,9 +655,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         season: Season | None,
         player: Player,
     ) -> QuerySet[MatchData]:
-        match_data_qs = self._team_match_queryset(team, season).filter(
-            status="finished"
-        )
+        match_data_qs = team_match_queryset(team, season).filter(status="finished")
 
         # When available, prefer stored match-impact rows for the given player.
         # This keeps the match set tight (only games where the player actually
@@ -887,42 +885,6 @@ class TeamViewSet(viewsets.ModelViewSet):
         return audio_urls
 
     @staticmethod
-    def _main_roster_ids(*, team: Team, season: Season | None) -> set[str]:
-        team_data_qs = TeamData.objects.filter(team=team)
-        if season is not None:
-            team_data_qs = team_data_qs.filter(season=season)
-
-        return {
-            str(player_id)
-            for player_id in team_data_qs
-            .values_list("players__id_uuid", flat=True)
-            .distinct()
-            .exclude(players__id_uuid__isnull=True)
-        }
-
-    @staticmethod
-    def _order_roster_players(
-        *,
-        roster_players: list[Player],
-        main_roster_ids: set[str],
-    ) -> list[Player]:
-        main_roster_players = [
-            player
-            for player in roster_players
-            if str(player.id_uuid) in main_roster_ids
-        ]
-        reserve_roster_players = [
-            player
-            for player in roster_players
-            if str(player.id_uuid) not in main_roster_ids
-        ]
-
-        # Keep username ordering within each section.
-        main_roster_players.sort(key=lambda p: p.user.username.lower())
-        reserve_roster_players.sort(key=lambda p: p.user.username.lower())
-        return [*main_roster_players, *reserve_roster_players]
-
-    @staticmethod
     def _parse_bool_query_param(
         request: Request,
         name: str,
@@ -940,23 +902,6 @@ class TeamViewSet(viewsets.ModelViewSet):
         if normalized in {"0", "false", "f", "no", "n", "off"}:
             return False
         return default
-
-    def _team_match_queryset(
-        self, team: Team, season: Season | None
-    ) -> QuerySet[MatchData]:
-        queryset = MatchData.objects.select_related(
-            "match_link",
-            "match_link__home_team",
-            "match_link__home_team__club",
-            "match_link__away_team",
-            "match_link__away_team__club",
-            "match_link__season",
-        ).filter(
-            Q(match_link__home_team=team) | Q(match_link__away_team=team),
-        )
-        if season:
-            queryset = queryset.filter(match_link__season=season)
-        return queryset
 
     def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
         """Resolve the requested season in a safe, team-scoped way.
@@ -996,60 +941,6 @@ class TeamViewSet(viewsets.ModelViewSet):
     def _most_recent_season(self) -> Season | None:
         today = timezone.now().date()
         return Season.objects.filter(end_date__lte=today).order_by("-end_date").first()
-
-    def _team_players_queryset(
-        self, team: Team, season: Season | None, match_data_qs: QuerySet[MatchData]
-    ) -> QuerySet[Player]:
-        # IMPORTANT:
-        # Avoid OR-of-joins filtering here.
-        # The old approach produced large LEFT JOIN chains + DISTINCT and can
-        # easily degrade into multi-second queries on real datasets.
-        #
-        # Instead, build candidate player ids from each source table and UNION
-        # them. Postgres can satisfy these subqueries using indexes, and the
-        # final Player query becomes a simple IN (subquery).
-        teamdata_qs = TeamData.objects.filter(team=team)
-        if season is not None:
-            teamdata_qs = teamdata_qs.filter(season=season)
-
-        # Pull roster ids from the M2M join table directly to avoid LEFT JOIN +
-        # DISTINCT patterns.
-        teamdata_player_ids = TeamData.players.through.objects.filter(
-            teamdata_id__in=teamdata_qs.values_list("id", flat=True)
-        ).values_list("player_id", flat=True)
-
-        # Materialize match ids once so we don't embed the same match subquery
-        # multiple times (once for MatchPlayer, once for Shot).
-        match_ids = list(match_data_qs.values_list("id_uuid", flat=True))
-
-        all_player_ids = teamdata_player_ids
-        if match_ids:
-            match_player_ids = MatchPlayer.objects.filter(
-                team=team,
-                match_data_id__in=match_ids,
-            ).values_list("player_id", flat=True)
-            shot_player_ids = Shot.objects.filter(
-                team=team,
-                match_data_id__in=match_ids,
-            ).values_list("player_id", flat=True)
-            all_player_ids = all_player_ids.union(match_player_ids, shot_player_ids)
-
-        return (
-            Player.objects
-            .select_related("user")
-            .only(
-                "id_uuid",
-                "profile_picture",
-                "profile_picture_visibility",
-                "stats_visibility",
-                "goal_song_uri",
-                "song_start_time",
-                "goal_song_song_ids",
-                "user__username",
-            )
-            .filter(id_uuid__in=all_player_ids)
-            .order_by("user__username")
-        )
 
     def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:
         return (

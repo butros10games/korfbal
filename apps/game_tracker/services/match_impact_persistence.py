@@ -18,10 +18,55 @@ from apps.team.models.team import Team
 from .match_impact_scorer import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     MATCH_IMPACT_BREAKDOWN_CACHE_VERSION,
+    MatchImpactRow,
     PlayerImpactBreakdown,
     compute_match_impact_breakdown,
     compute_match_impact_rows,
 )
+
+
+def _load_impact_dependencies(
+    rows: list[MatchImpactRow],
+) -> tuple[dict[str, Player], dict[str, Team]]:
+    """Load the player and team records shared by both persistence paths."""
+    players_by_id = {
+        str(player.id_uuid): player
+        for player in Player.objects.filter(
+            id_uuid__in={row.player_id for row in rows},
+        ).only("id_uuid")
+    }
+    teams_by_id = {
+        str(team.id_uuid): team
+        for team in Team.objects.filter(
+            id_uuid__in={row.team_id for row in rows if row.team_id},
+        ).only("id_uuid")
+    }
+    return players_by_id, teams_by_id
+
+
+def _upsert_impact_row(
+    *,
+    match_data: MatchData,
+    row: MatchImpactRow,
+    algorithm_version: str,
+    players_by_id: dict[str, Player],
+    teams_by_id: dict[str, Team],
+) -> PlayerMatchImpact | None:
+    """Persist one score row, skipping rows whose player no longer exists."""
+    player = players_by_id.get(row.player_id)
+    if not player:
+        return None
+
+    impact, _created = PlayerMatchImpact.objects.update_or_create(
+        match_data=match_data,
+        player=player,
+        defaults={
+            "team": teams_by_id.get(row.team_id) if row.team_id else None,
+            "impact_score": row.impact_score,
+            "algorithm_version": algorithm_version,
+        },
+    )
+    return impact
 
 
 def compute_match_impact_breakdown_cached(
@@ -68,38 +113,20 @@ def persist_match_impact_rows(
     if not rows:
         return 0
 
-    players_by_id: dict[str, Player] = {
-        str(p.id_uuid): p
-        for p in Player.objects.filter(id_uuid__in=[r.player_id for r in rows]).only(
-            "id_uuid"
-        )
-    }
-
-    team_ids = [r.team_id for r in rows if r.team_id]
-    teams_by_id: dict[str, Team] = {
-        str(t.id_uuid): t
-        for t in Team.objects.filter(id_uuid__in=team_ids).only("id_uuid")
-    }
+    players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
     with transaction.atomic():
         for row in rows:
-            player = players_by_id.get(row.player_id)
-            if not player:
-                continue
-
-            team = teams_by_id.get(row.team_id) if row.team_id else None
-
-            PlayerMatchImpact.objects.update_or_create(
+            impact = _upsert_impact_row(
                 match_data=match_data,
-                player=player,
-                defaults={
-                    "team": team,
-                    "impact_score": row.impact_score,
-                    "algorithm_version": algorithm_version,
-                },
+                row=row,
+                algorithm_version=algorithm_version,
+                players_by_id=players_by_id,
+                teams_by_id=teams_by_id,
             )
-            upserted += 1
+            if impact is not None:
+                upserted += 1
 
     return upserted
 
@@ -117,37 +144,20 @@ def persist_match_impact_rows_with_breakdowns(
     if not rows:
         return 0
 
-    players_by_id: dict[str, Player] = {
-        str(p.id_uuid): p
-        for p in Player.objects.filter(id_uuid__in=[r.player_id for r in rows]).only(
-            "id_uuid"
-        )
-    }
-
-    team_ids = [r.team_id for r in rows if r.team_id]
-    teams_by_id: dict[str, Team] = {
-        str(t.id_uuid): t
-        for t in Team.objects.filter(id_uuid__in=team_ids).only("id_uuid")
-    }
+    players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
     with transaction.atomic():
         for row in rows:
-            player = players_by_id.get(row.player_id)
-            if not player:
-                continue
-
-            team = teams_by_id.get(row.team_id) if row.team_id else None
-
-            impact_obj, _created = PlayerMatchImpact.objects.update_or_create(
+            impact_obj = _upsert_impact_row(
                 match_data=match_data,
-                player=player,
-                defaults={
-                    "team": team,
-                    "impact_score": row.impact_score,
-                    "algorithm_version": algorithm_version,
-                },
+                row=row,
+                algorithm_version=algorithm_version,
+                players_by_id=players_by_id,
+                teams_by_id=teams_by_id,
             )
+            if impact_obj is None:
+                continue
 
             per_player_breakdown = breakdown_by_player.get(row.player_id) or {}
 
