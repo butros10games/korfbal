@@ -16,13 +16,16 @@ from apps.player.api.serializers import (
     PlayerPushSubscriptionDeactivateSerializer,
     PlayerPushSubscriptionSerializer,
 )
+from apps.player.composition import (
+    send_test_web_pushes,
+    webpush_library_available,
+)
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.push_notifications import (
     build_target_url,
     missing_webpush_settings,
-    send_test_payload,
 )
-from apps.player.services.web_push import WebPushPayload, webpush_library_available
+from apps.player.services.web_push import WebPushPayload
 
 from .common import TEST_PUSH_ERROR_LIMIT
 
@@ -198,7 +201,7 @@ class CurrentPlayerTestPushNotificationAPIView(KorfbalAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        sent, failed, errors = send_test_payload(
+        sent, failed, errors = send_test_web_pushes(
             subs=subscriptions,
             payload=WebPushPayload(
                 title="Test pushmelding",

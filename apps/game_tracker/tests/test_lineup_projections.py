@@ -8,6 +8,7 @@ from django.apps import apps as django_apps
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import (
     MatchPart,
     PlayerChange,
@@ -25,7 +26,6 @@ from apps.game_tracker.services.lineup_projections import (
 from apps.game_tracker.services.match_impact_timeline import (
     build_match_player_role_timeline,
 )
-from apps.game_tracker.services.tracker_http import apply_tracker_command
 from apps.game_tracker.tests.tracker_test_helpers import (
     TrackerMatchContext,
     create_group_types,

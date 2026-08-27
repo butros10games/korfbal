@@ -28,6 +28,7 @@ from apps.awards.services.mvp import (
     cast_vote,
     cast_vote_anon,
 )
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
@@ -39,7 +40,6 @@ from apps.game_tracker.services.match_impact import (
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
-    apply_tracker_command,
     get_tracker_state,
     poll_tracker_state,
 )

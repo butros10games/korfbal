@@ -6,14 +6,13 @@ import json
 
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command, record_match_change
 from apps.game_tracker.models import MatchData, MatchLiveChange
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import (
-    record_match_change,
     summarize_match_changes,
 )
 from apps.game_tracker.services.tracker_http import (
-    apply_tracker_command,
     get_tracker_state,
     poll_tracker_state,
 )

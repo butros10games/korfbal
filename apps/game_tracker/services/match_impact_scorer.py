@@ -6,10 +6,24 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 import logging
-import math
 from operator import itemgetter
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, TypedDict, cast
 
+from apps.game_tracker.domain.impact_scoring import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    ShotImpactWeights,
+    Side,
+    advance_score_state as _advance_score_state,
+    conceding_side_for_goal as _conceding_side_for_goal,
+    defending_side_for_shot as _defending_side_for_shot,
+    doorloop_concede_factor_for_version,
+    efficiency_multipliers_for_rate as _efficiency_multipliers_for_rate,
+    goal_points as _compute_goal_points,
+    next_streak_state as _next_streak_state,
+    normalise_goal_type as _normalise_goal_type,
+    round_js_1dp,
+    shot_impact_weights_for_version,
+)
 from apps.game_tracker.models import MatchData, PlayerGroup
 from apps.game_tracker.services.lineup_projections import (
     starting_group_ids_by_player,
@@ -35,14 +49,6 @@ from .match_impact_timeline import (
 
 
 logger = logging.getLogger(__name__)
-
-
-Side = Literal["home", "away"]
-
-
-# Bump this when tuning the algorithm so team/season aggregations can
-# opportunistically recompute persisted rows.
-LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v6"
 
 
 @dataclass(frozen=True)
@@ -132,15 +138,8 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
     )
 
     for x, shot in _iter_shot_events(shots):
-        for_team = bool(shot.get("for_team", True))
         scored = bool(shot.get("scored"))
-
-        shooting_team_id = _shooting_team_id_from_shot(
-            shot_team_id=str(shot.get("team_id") or "").strip() or None,
-            for_team=for_team,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
-        )
+        shooting_team_id = str(shot.get("team_id") or "").strip() or None
 
         if not scored:
             shooter_id = str(shot.get("player_id") or "").strip()
@@ -183,12 +182,7 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
 
     for index, goal in enumerate(goal_events):
         for_team = bool(goal.get("for_team", True))
-        scoring_team_id = _scoring_team_id_from_goal(
-            goal_team_id=str(goal.get("team_id") or "").strip() or None,
-            for_team=for_team,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
-        )
+        scoring_team_id = str(goal.get("team_id") or "").strip() or None
         last_team_id, streak = _next_streak_state(
             scoring_team_id=scoring_team_id,
             last_team_id=last_team_id,
@@ -258,60 +252,6 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
 
 MATCH_IMPACT_BREAKDOWN_CACHE_VERSION = 2
 
-MIN_SHOTS_FOR_EFFICIENCY_SCALING = 5
-
-EFFICIENCY_RATE_VERY_GOOD = 0.5
-EFFICIENCY_RATE_GOOD = 1.0 / 3.0
-EFFICIENCY_RATE_FINE = 0.2
-
-
-@dataclass(frozen=True)
-class ShotImpactWeights:
-    """Weights used for shot-related impact scoring."""
-
-    miss_for_penalty: float
-    shot_against_total: float
-    goal_against_total: float
-    miss_against_total: float
-
-
-def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
-    """Return the weights for a given algorithm version."""
-    if version == "v1":
-        return ShotImpactWeights(0.9, -0.25, -6.2, 0.55)
-    if version == "v2":
-        return ShotImpactWeights(0.6, -0.25, -6.2, 0.8)
-    if version in {"v3", "v4", "v5"}:
-        return shot_impact_weights_for_version("v2")
-    if version == "v6":
-        return ShotImpactWeights(0.2, -0.17, -2.94, 0.31)
-    logger.warning("Unknown match impact algorithm version: %s", version)
-    return shot_impact_weights_for_version(LATEST_MATCH_IMPACT_ALGORITHM_VERSION)
-
-
-@dataclass(frozen=True)
-class ShootingEfficiencyMultipliers:
-    """Per-shooter multipliers derived from match shooting efficiency."""
-
-    goal_points: float
-    miss_penalty: float
-
-
-def _efficiency_multipliers_for_rate(
-    *, goals: int, shots: int
-) -> ShootingEfficiencyMultipliers:
-    if shots < MIN_SHOTS_FOR_EFFICIENCY_SCALING:
-        return ShootingEfficiencyMultipliers(goal_points=1.0, miss_penalty=1.0)
-
-    rate = (goals / shots) if shots else 0.0
-    if rate >= EFFICIENCY_RATE_VERY_GOOD:
-        return ShootingEfficiencyMultipliers(goal_points=1.2, miss_penalty=0.7)
-    if rate >= EFFICIENCY_RATE_GOOD:
-        return ShootingEfficiencyMultipliers(goal_points=1.1, miss_penalty=0.85)
-    if rate >= EFFICIENCY_RATE_FINE:
-        return ShootingEfficiencyMultipliers(goal_points=1.0, miss_penalty=1.0)
-    return ShootingEfficiencyMultipliers(goal_points=0.9, miss_penalty=1.15)
-
 
 def _compute_shooting_efficiency_multipliers(
     *, shots: list[dict[str, Any]], algorithm_version: str
@@ -347,121 +287,6 @@ def _compute_shooting_efficiency_multipliers(
     return goal_mult_by_player, miss_mult_by_player
 
 
-def _normalise_goal_type(value: str) -> str:
-    return " ".join((value or "").lower().split()).strip()
-
-
-def _goal_type_impact_weight(goal_type: str) -> float:
-    normalised = _normalise_goal_type(goal_type)
-    if "straf" in normalised:
-        weight = 0.55
-    elif "vrije" in normalised:
-        weight = 0.65
-    elif "korte" in normalised:
-        weight = 1.35
-    elif "doorloop" in normalised:
-        weight = 1.25
-    elif (
-        "1/2 afstand" in normalised
-        or "halve afstand" in normalised
-        or "half afstand" in normalised
-    ):
-        weight = 1.1
-    elif "afstand" in normalised:
-        weight = 0.95
-    else:
-        weight = 1.0
-    return weight
-
-
-def _compute_streak_factor(streak: int) -> float:
-    streak_boost = 0.12
-    max_streak_for_bonus = 4
-    effective_streak = min(max(1, int(streak)), max_streak_for_bonus)
-    return 1 + (effective_streak - 1) * streak_boost
-
-
-def _compute_goal_points(*, goal_type: str, streak: int) -> float:
-    return 3.2 * _goal_type_impact_weight(goal_type) * _compute_streak_factor(streak)
-
-
-def _next_streak_state(
-    *, scoring_team_id: str | None, last_team_id: str | None, streak: int
-) -> tuple[str | None, int]:
-    if scoring_team_id and scoring_team_id == last_team_id:
-        return last_team_id, streak + 1
-    return scoring_team_id, 1
-
-
-def _advance_score_state(
-    *,
-    home_score: int,
-    away_score: int,
-    scoring_team_id: str | None,
-    home_team_id: str,
-    away_team_id: str,
-) -> tuple[int, int]:
-    if scoring_team_id == home_team_id:
-        return home_score + 1, away_score
-    if scoring_team_id == away_team_id:
-        return home_score, away_score + 1
-    return home_score, away_score
-
-
-def _defending_side_for_shot(
-    *, shot_team_id: str | None, home_team_id: str, away_team_id: str
-) -> Side | None:
-    if not shot_team_id:
-        return None
-    if shot_team_id == home_team_id:
-        return "away"
-    if shot_team_id == away_team_id:
-        return "home"
-    return None
-
-
-def _conceding_side_for_goal(
-    *, scoring_team_id: str | None, home_team_id: str, away_team_id: str
-) -> Side | None:
-    if not scoring_team_id:
-        return None
-    if scoring_team_id == home_team_id:
-        return "away"
-    if scoring_team_id == away_team_id:
-        return "home"
-    return None
-
-
-def _opponent_team_id(
-    *, team_id: str | None, home_team_id: str, away_team_id: str
-) -> str | None:
-    if not team_id:
-        return None
-    if team_id == home_team_id:
-        return away_team_id
-    if team_id == away_team_id:
-        return home_team_id
-    return None
-
-
-def _shooting_team_id_from_shot(
-    *, shot_team_id: str | None, for_team: bool, home_team_id: str, away_team_id: str
-) -> str | None:
-    if not shot_team_id:
-        return None
-    _ = (for_team, home_team_id, away_team_id)
-    return shot_team_id
-
-
-def _scoring_team_id_from_goal(
-    *, goal_team_id: str | None, for_team: bool, home_team_id: str, away_team_id: str
-) -> str | None:
-    if not goal_team_id:
-        return None
-    _ = (for_team, home_team_id, away_team_id)
-    return goal_team_id
-
-
 @dataclass(frozen=True)
 class MatchImpactRow:
     """Computed persisted impact score for a single player in a match."""
@@ -469,16 +294,6 @@ class MatchImpactRow:
     player_id: str
     team_id: str | None
     impact_score: Decimal
-
-
-def _round_js_1dp(value: float) -> Decimal:
-    rounded = math.floor(value * 10.0 + 0.5) / 10.0
-    return Decimal(str(rounded))
-
-
-def round_js_1dp(value: float) -> Decimal:
-    """Round to 1 decimal like JS: `Math.round(x * 10) / 10`."""
-    return _round_js_1dp(value)
 
 
 class ImpactBreakdownItem(TypedDict):
@@ -766,16 +581,9 @@ def _apply_shot_impacts(
     )
 
     for x, shot in _iter_shot_events(shots):
-        for_team = bool(shot.get("for_team", True))
         shooter_id = str(shot.get("player_id") or "").strip()
         scored = bool(shot.get("scored"))
-
-        shooting_team_id = _shooting_team_id_from_shot(
-            shot_team_id=str(shot.get("team_id") or "").strip() or None,
-            for_team=for_team,
-            home_team_id=ctx.home_team_id,
-            away_team_id=ctx.away_team_id,
-        )
+        shooting_team_id = str(shot.get("team_id") or "").strip() or None
 
         miss_multiplier = (
             (miss_multiplier_by_shooter or {}).get(shooter_id, 1.0)
@@ -873,13 +681,6 @@ def _apply_doorloop_concede_penalty(
         )
 
 
-def doorloop_concede_factor_for_version(version: str) -> float:
-    """Return the per-defender doorloop concede penalty factor."""
-    if version == "v6":
-        return 0.0
-    return 0.06
-
-
 def _apply_goal_impacts(
     *,
     events: list[dict[str, Any]],
@@ -895,12 +696,7 @@ def _apply_goal_impacts(
     last_goal_x = 0.0
     for index, goal in enumerate(goal_events):
         for_team = bool(goal.get("for_team", True))
-        scoring_team_id = _scoring_team_id_from_goal(
-            goal_team_id=str(goal.get("team_id") or "").strip() or None,
-            for_team=for_team,
-            home_team_id=ctx.home_team_id,
-            away_team_id=ctx.away_team_id,
-        )
+        scoring_team_id = str(goal.get("team_id") or "").strip() or None
         last_team_id, streak = _next_streak_state(
             scoring_team_id=scoring_team_id,
             last_team_id=last_team_id,
@@ -1034,7 +830,7 @@ def compute_match_impact_rows(
             MatchImpactRow(
                 player_id=pid,
                 team_id=team_id,
-                impact_score=_round_js_1dp(score),
+                impact_score=round_js_1dp(score),
             )
         )
 
@@ -1134,7 +930,7 @@ def compute_match_impact_breakdown(
             MatchImpactRow(
                 player_id=pid,
                 team_id=team_id,
-                impact_score=_round_js_1dp(score),
+                impact_score=round_js_1dp(score),
             )
         )
 

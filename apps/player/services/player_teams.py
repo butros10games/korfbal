@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from django.db.models import QuerySet
 
 from apps.player.models.player import Player
-from apps.player.services.player_overview import current_season
+from apps.schedule.queries.seasons import current_season
 from apps.team.models import TeamData
 from apps.team.models.team import Team
 

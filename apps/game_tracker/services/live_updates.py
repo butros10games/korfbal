@@ -9,9 +9,9 @@ from functools import partial
 from django.db import connection, transaction
 from django.utils import timezone
 
+from apps.game_tracker.application.ports import MatchChangePublisher
 from apps.game_tracker.models import MatchData, MatchLiveChange
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
-from apps.game_tracker.realtime.publisher import publish_match_changed
 
 
 _LIVE_CHANGE_RETENTION = 512
@@ -22,6 +22,7 @@ def _record_match_change_in_transaction(
     *,
     resources: frozenset[LiveResource],
     changed_ids: Mapping[LiveResource, Iterable[str]],
+    publisher: MatchChangePublisher,
 ) -> int:
     locked = MatchData.objects.select_for_update().filter(pk=match_data.pk).first()
     if locked is None:
@@ -53,7 +54,7 @@ def _record_match_change_in_transaction(
 
     transaction.on_commit(
         partial(
-            publish_match_changed,
+            publisher.publish,
             match_id=str(locked.match_link.id_uuid),
             revision=locked.live_revision,
             resources=resources,
@@ -67,6 +68,7 @@ def record_match_change(
     *,
     resources: Iterable[LiveResource] = ALL_LIVE_RESOURCES,
     changed_ids: Mapping[LiveResource, Iterable[str]] | None = None,
+    publisher: MatchChangePublisher,
 ) -> int:
     """Increment a match revision and publish affected resources after commit."""
     normalized = frozenset(resources)
@@ -79,6 +81,7 @@ def record_match_change(
             match_data,
             resources=normalized,
             changed_ids=normalized_changed_ids,
+            publisher=publisher,
         )
 
     with transaction.atomic():
@@ -86,6 +89,7 @@ def record_match_change(
             match_data,
             resources=normalized,
             changed_ids=normalized_changed_ids,
+            publisher=publisher,
         )
 
 

@@ -6,10 +6,10 @@ from uuid import uuid4
 
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import MatchEvent, MatchPart, Pause, TrackerCommand
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
-    apply_tracker_command,
 )
 from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 

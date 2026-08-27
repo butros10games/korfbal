@@ -29,6 +29,7 @@ from apps.game_tracker.services.lineup_projections import (
     starting_group_ids_by_player,
 )
 from apps.game_tracker.services.match_impact import (
+    Interval,
     build_match_player_role_timeline,
     compute_match_end_minutes,
 )
@@ -39,6 +40,19 @@ from apps.game_tracker.services.match_timeline_payload import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _sum_interval_minutes(
+    intervals: Iterable[Interval],
+    *,
+    match_end_minutes: float,
+) -> float:
+    total = 0.0
+    for interval in intervals:
+        start = max(0.0, min(interval.start, match_end_minutes))
+        end = max(0.0, min(interval.end, match_end_minutes))
+        total += max(0.0, end - start)
+    return total
 
 
 def _collect_known_player_ids(
@@ -67,39 +81,6 @@ def _collect_known_player_ids(
                 known_player_ids.add(pid)
 
     return known_player_ids
-
-
-def _sum_interval_minutes(
-    *,
-    items: Iterable[object],
-    match_end_minutes: float,
-) -> float:
-    total = 0.0
-    for item in items:
-        start = float(getattr(item, "start", 0.0) or 0.0)
-        end = float(getattr(item, "end", 0.0) or 0.0)
-        start = max(0.0, min(start, match_end_minutes))
-        end = max(0.0, min(end, match_end_minutes))
-        if end > start:
-            total += end - start
-    return total
-
-
-def _sum_on_field_minutes(*, intervals: object, match_end_minutes: float) -> float:
-    return (
-        _sum_interval_minutes(
-            items=getattr(intervals, "aanval", ()),
-            match_end_minutes=match_end_minutes,
-        )
-        + _sum_interval_minutes(
-            items=getattr(intervals, "verdediging", ()),
-            match_end_minutes=match_end_minutes,
-        )
-        + _sum_interval_minutes(
-            items=getattr(intervals, "unknown", ()),
-            match_end_minutes=match_end_minutes,
-        )
-    )
 
 
 def _expected_match_end_minutes(match_data: MatchData) -> float:
@@ -192,9 +173,13 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
 
     minutes_by_player_id: dict[str, float] = {}
     for pid, intervals in role_intervals_by_id.items():
-        minutes = _sum_on_field_minutes(
-            intervals=intervals,
-            match_end_minutes=match_end_minutes,
+        minutes = sum(
+            _sum_interval_minutes(items, match_end_minutes=match_end_minutes)
+            for items in (
+                intervals.aanval,
+                intervals.verdediging,
+                intervals.unknown,
+            )
         )
         minutes_by_player_id[pid] = round(minutes, 2)
 

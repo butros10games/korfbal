@@ -12,10 +12,10 @@ from channels.layers import get_channel_layer
 from django.test import override_settings
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.realtime.consumer import MatchEventsSseConsumer
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.realtime.publisher import match_group_name
-from apps.game_tracker.services.tracker_http import apply_tracker_command
 from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 
@@ -40,7 +40,7 @@ def test_committed_revision_publishes_affected_resources() -> None:
     tracker = create_tracker_match(prefix="Realtime publication")
 
     with patch(
-        "apps.game_tracker.services.live_updates.publish_match_changed",
+        "apps.game_tracker.adapters.outbound.runtime.publish_match_changed",
     ) as publish:
         state = apply_tracker_command(
             tracker.match,

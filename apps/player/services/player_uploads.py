@@ -6,6 +6,7 @@ from typing import cast
 
 from django.core.files.uploadedfile import UploadedFile
 
+from apps.player.application.ports import SongDownloadDispatcher
 from apps.player.models.player import Player
 from apps.player.services.goal_song import (
     apply_goal_song_song_ids,
@@ -49,6 +50,7 @@ def save_goal_song_upload(
     *,
     player: Player,
     uploaded: UploadedFile,
+    jobs: SongDownloadDispatcher,
 ) -> str:
     """Create and select a PlayerSong from the legacy upload endpoint."""
     filename = str(getattr(uploaded, "name", "goal_song") or "goal_song")
@@ -59,6 +61,7 @@ def save_goal_song_upload(
         player=player,
         uploaded_audio=uploaded,
         spotify_url=None,
+        jobs=jobs,
     )
     update_fields = apply_goal_song_song_ids(
         player=player,

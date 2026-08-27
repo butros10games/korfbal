@@ -7,12 +7,10 @@ from typing import Any, cast
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
+from apps.game_tracker.composition import schedule_match_impact_recompute
 from apps.game_tracker.models import MatchData, Pause, PlayerChange, PlayerGroup, Shot
 from apps.game_tracker.services.live_update_signal_control import (
     tracker_delete_side_effects_suppressed,
-)
-from apps.game_tracker.services.match_impact_recompute import (
-    schedule_match_impact_recompute,
 )
 
 

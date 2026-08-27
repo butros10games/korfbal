@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import logging
 from pathlib import Path
 import subprocess  # nosec B404
-from uuid import uuid4
 
 from django.conf import settings
 
-from apps.player.services.command_runner import (
-    DEFAULT_COMMAND_RUNNER,
-    CommandRunner,
-    CommandRunOptions,
-)
+from apps.player.application.ports import CommandRunner, CommandRunOptions
 from apps.player.spotify import canonicalize_spotify_track_url
 
 
@@ -132,7 +126,7 @@ def download_spotify_track(
     spotify_url: str,
     output_dir: Path,
     *,
-    command_runner: CommandRunner | None = None,
+    command_runner: CommandRunner,
 ) -> Path:
     """Download a Spotify link using spotDL into the given directory.
 
@@ -144,22 +138,19 @@ def download_spotify_track(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timeout_seconds = int(getattr(settings, "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS", 60 * 15))
-    runner = command_runner or DEFAULT_COMMAND_RUNNER
-
     attempted: list[tuple[list[str], str]] = []
     last_error = ""
 
     for cmd in _spotdl_commands(spotify_url=spotify_url, output_dir=output_dir):
         logger.info("Running spotDL: %s", redact_spotdl_command(cmd))
         try:
-            proc = runner.run(
+            proc = command_runner.run(
                 cmd,
                 CommandRunOptions(
                     check=False,
                     capture_output=True,
                     text=True,
                     timeout=timeout_seconds,
-                    shell=False,
                 ),
             )
         except subprocess.TimeoutExpired as exc:
@@ -198,22 +189,3 @@ def download_spotify_track(
     if "timed out" in last_error.lower():
         raise RuntimeError(last_error)
     raise RuntimeError("Download failed. Please retry.")
-
-
-class DummySpotdlRunner:
-    """Test/dev helper that creates a small dummy MP3 file."""
-
-    def run(
-        self,
-        cmd: Sequence[str],
-        options: CommandRunOptions,
-    ) -> subprocess.CompletedProcess[str]:
-        """Create a dummy output file and report success."""
-        del options
-        cmd_list = list(cmd)
-        out_idx = cmd_list.index("--output") + 1
-        output_dir = Path(cmd_list[out_idx]).parent
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{uuid4().hex}.mp3"
-        output_path.write_bytes(b"ID3")
-        return subprocess.CompletedProcess(cmd_list, 0, stdout="ok", stderr="")

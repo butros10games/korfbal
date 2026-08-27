@@ -22,9 +22,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.game_tracker.composition import record_match_change
 from apps.game_tracker.models import MatchData, PlayerGroup
 from apps.game_tracker.realtime.contracts import LiveResource
-from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.player_designation import (
     apply_designation,
     can_edit_player_groups,

@@ -22,16 +22,12 @@ from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup, Shot
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Season
+from apps.schedule.queries.seasons import (
+    default_season,
+    find_season,
+    season_options_payload,
+)
 from apps.team.models import TeamData
-
-
-def current_season() -> Season | None:
-    """Return the active season for today's date."""
-    today = timezone.now().date()
-    return Season.objects.filter(
-        start_date__lte=today,
-        end_date__gte=today,
-    ).first()
 
 
 def resolve_season(
@@ -40,19 +36,8 @@ def resolve_season(
 ) -> Season | None:
     """Resolve a requested season, defaulting to current or first available."""
     if season_id:
-        return next(
-            (option for option in seasons if str(option.id_uuid) == season_id),
-            None,
-        )
-
-    if not seasons:
-        return None
-
-    current = current_season()
-    if current and any(option.id_uuid == current.id_uuid for option in seasons):
-        return current
-
-    return seasons[0]
+        return find_season(season_id, seasons)
+    return default_season(seasons)
 
 
 def player_seasons_queryset(player: Player) -> QuerySet[Season]:
@@ -157,21 +142,6 @@ def match_queryset_for_player(
     return queryset
 
 
-def build_seasons_payload(seasons: list[Season]) -> list[dict[str, Any]]:
-    """Serialize season choices for API responses."""
-    active = current_season()
-    return [
-        {
-            "id_uuid": str(option.id_uuid),
-            "name": option.name,
-            "start_date": option.start_date.isoformat(),
-            "end_date": option.end_date.isoformat(),
-            "is_current": active is not None and option.id_uuid == active.id_uuid,
-        }
-        for option in seasons
-    ]
-
-
 def build_player_overview_payload(
     *,
     player: Player,
@@ -204,7 +174,7 @@ def build_player_overview_payload(
             "upcoming": upcoming_matches,
             "recent": recent_matches,
         },
-        "seasons": build_seasons_payload(seasons),
+        "seasons": season_options_payload(seasons),
         "meta": {
             "season_id": str(season.id_uuid) if season else None,
             "season_name": season.name if season else None,

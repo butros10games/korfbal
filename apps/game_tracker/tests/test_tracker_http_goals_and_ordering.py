@@ -8,10 +8,10 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
-    apply_tracker_command,
     get_tracker_state,
 )
 from apps.game_tracker.tests.tracker_test_helpers import (

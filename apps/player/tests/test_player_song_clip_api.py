@@ -13,8 +13,8 @@ from django.core.files.base import ContentFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.player.application.ports import CommandRunOptions
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.command_runner import CommandRunOptions
 
 
 @pytest.mark.django_db
@@ -117,11 +117,11 @@ def test_player_song_clip_streams_versioned_clip_when_generated(
     with (
         patch("apps.player.services.player_audio.find_ffmpeg", return_value="ffmpeg"),
         patch(
-            "apps.player.services.player_audio.default_storage.exists",
+            "apps.player.composition.audio_storage.exists",
             return_value=False,
         ),
         patch(
-            "apps.player.services.audio_clipper.DEFAULT_COMMAND_RUNNER.run",
+            "apps.player.composition.command_runner.run",
             side_effect=fake_run,
         ),
     ):
@@ -160,11 +160,11 @@ def test_player_song_clip_reuses_existing_cached_clip(client: Client) -> None:
     with (
         patch("apps.player.services.player_audio.find_ffmpeg", return_value="ffmpeg"),
         patch(
-            "apps.player.services.player_audio.default_storage.exists",
+            "apps.player.composition.audio_storage.exists",
             return_value=True,
         ),
         patch(
-            "apps.player.api.views.songs.default_storage.open",
+            "apps.player.composition.audio_storage.open",
             return_value=ContentFile(b"existing clip"),
         ),
         patch(

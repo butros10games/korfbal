@@ -6,7 +6,6 @@ from typing import Any
 
 from django.db import models
 from django.db.models import Q, QuerySet
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import filters, permissions, status, viewsets
@@ -33,11 +32,15 @@ from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.schedule.models import Season
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
+from apps.team.queries.overview import (
+    resolve_team_season,
+    team_matches,
+    team_players,
+    team_seasons,
+)
 from apps.team.services.overview import (
     TeamOverviewOptions,
     build_team_overview_payload,
-    team_match_queryset,
-    team_players_queryset,
 )
 
 from .serializers import TeamSerializer
@@ -52,9 +55,7 @@ _SONG_ID_PARAMETER = OpenApiParameter(
 
 
 @extend_schema_view(
-    update_player_goal_song_selection=extend_schema(
-        parameters=[_PLAYER_ID_PARAMETER]
-    ),
+    update_player_goal_song_selection=extend_schema(parameters=[_PLAYER_ID_PARAMETER]),
     remove_player_song=extend_schema(
         parameters=[_PLAYER_ID_PARAMETER, _SONG_ID_PARAMETER]
     ),
@@ -92,8 +93,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         include_stats = self._parse_bool_query_param(
             request,
@@ -158,8 +159,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         player_param = (request.query_params.get("player") or "").strip()
         if not player_param:
@@ -228,8 +229,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     ) -> Response:
         """Return team player songs and fallback song configuration for moderation."""
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         self._ensure_goal_song_admin_access(
             request=request,
@@ -237,8 +238,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             season=season,
         )
 
-        match_data_qs = team_match_queryset(team, season)
-        players = list(team_players_queryset(team, season, match_data_qs))
+        match_data_qs = team_matches(team, season)
+        players = list(team_players(team, season, match_data_qs))
         songs = list(
             PlayerSong.objects
             .select_related("cached_song", "player", "player__user")
@@ -313,8 +314,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         self._ensure_goal_song_admin_access(
             request=request,
@@ -371,8 +372,8 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         """
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         self._ensure_goal_song_admin_access(
             request=request,
@@ -445,8 +446,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     ) -> Response:
         """Delete a player song from the team moderation view."""
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         if not self._viewer_can_manage_goal_songs(
             request=request,
@@ -540,8 +541,8 @@ class TeamViewSet(viewsets.ModelViewSet):
     ) -> Response:
         """Update song timing/speed for a player song from team moderation."""
         team = self.get_object()
-        seasons_qs = list(self._team_seasons_queryset(team))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(team_seasons(team))
+        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
         if not self._viewer_can_manage_goal_songs(
             request=request,
@@ -682,7 +683,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         season: Season | None,
         player: Player,
     ) -> QuerySet[MatchData]:
-        match_data_qs = team_match_queryset(team, season).filter(status="finished")
+        match_data_qs = team_matches(team, season).filter(status="finished")
 
         # When available, prefer stored match-impact rows for the given player.
         # This keeps the match set tight (only games where the player actually
@@ -929,54 +930,3 @@ class TeamViewSet(viewsets.ModelViewSet):
         if normalized in {"0", "false", "f", "no", "n", "off"}:
             return False
         return default
-
-    def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
-        """Resolve the requested season in a safe, team-scoped way.
-
-        Important:
-            If a `season` query param is supplied but cannot be resolved, we do
-            **not** return `None` (which would broaden queries to all seasons).
-            Instead, we fall back to a sensible default within the provided
-            season list.
-
-        """
-        season_param = request.query_params.get("season")
-        if season_param:
-            selected = next(
-                (option for option in seasons if str(option.id_uuid) == season_param),
-                None,
-            )
-            if selected is not None:
-                return selected
-
-        if not seasons:
-            return self._current_season() or self._most_recent_season()
-
-        current = self._current_season()
-        if current and any(option.id_uuid == current.id_uuid for option in seasons):
-            return current
-
-        return seasons[0]
-
-    def _current_season(self) -> Season | None:
-        today = timezone.now().date()
-        return Season.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today,
-        ).first()
-
-    def _most_recent_season(self) -> Season | None:
-        today = timezone.now().date()
-        return Season.objects.filter(end_date__lte=today).order_by("-end_date").first()
-
-    def _team_seasons_queryset(self, team: Team) -> QuerySet[Season]:
-        return (
-            Season.objects
-            .filter(
-                Q(team_data__team=team)
-                | Q(matches__home_team=team)
-                | Q(matches__away_team=team)
-            )
-            .distinct()
-            .order_by("-start_date")
-        )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
+from apps.game_tracker.composition import record_match_change
 from apps.game_tracker.models import (
     Attack,
     MatchData,
@@ -19,7 +20,6 @@ from apps.game_tracker.services.live_update_signal_control import (
     suppress_live_update_signals,
     tracker_delete_side_effects_suppressed,
 )
-from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_event_context import match_data_is_deleting
 from apps.game_tracker.services.match_events import logical_event_id
 from apps.game_tracker.services.match_scores import persist_matchdata_scores

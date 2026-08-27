@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.http import FileResponse, HttpResponseRedirect
-from kombu.exceptions import OperationalError as KombuOperationalError
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
@@ -21,16 +19,20 @@ from apps.player.api.serializers import (
     PlayerSongSerializer,
     PlayerSongUpdateSerializer,
 )
-from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.goal_song import remove_deleted_song_from_goal_song_selection
-from apps.player.services.player_audio import ensure_goal_song_clip
-from apps.player.services.player_songs import (
+from apps.player.application.ports import JobDispatchUnavailableError
+from apps.player.composition import (
+    audio_storage,
     create_player_song,
-    effective_song_audio_file,
-    effective_song_status,
     enqueue_download_for_player_song,
+    ensure_goal_song_clip,
     retry_player_song_download,
     update_player_song_settings,
+)
+from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.goal_song import remove_deleted_song_from_goal_song_selection
+from apps.player.services.player_songs import (
+    effective_song_audio_file,
+    effective_song_status,
 )
 
 from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_player
@@ -86,15 +88,13 @@ class PlayerSongClipAPIView(KorfbalAPIView):
             duration_seconds=duration_seconds,
         )
         if request.query_params.get("stream") != "1":
-            location = (
-                default_storage.url(clip_key) if clip_key else str(audio_file.url)
-            )
+            location = audio_storage.url(clip_key) if clip_key else str(audio_file.url)
             return HttpResponseRedirect(location)
 
         if not clip_key:
             try:
                 enqueue_download_for_player_song(song)
-            except KombuOperationalError:
+            except JobDispatchUnavailableError:
                 logger.warning(
                     "Celery broker unavailable; could not prepare PlayerSong %s",
                     song.id_uuid,
@@ -107,7 +107,7 @@ class PlayerSongClipAPIView(KorfbalAPIView):
             response["Retry-After"] = "2"
             return response
 
-        stream = default_storage.open(clip_key, "rb")
+        stream = audio_storage.open(clip_key)
         filename = clip_key.rsplit("/", maxsplit=1)[-1]
 
         response = FileResponse(

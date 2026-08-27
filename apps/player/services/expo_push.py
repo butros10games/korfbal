@@ -4,17 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any, Protocol
+from typing import Any
+
+from apps.player.application.ports import ExpoPushClient
 
 
 logger = logging.getLogger(__name__)
-
-
-class ExpoPushClient(Protocol):
-    """Outbound Expo push provider port."""
-
-    def send_messages(self, messages: list[dict[str, Any]]) -> None:
-        """Send Expo push messages."""
 
 
 @dataclass(frozen=True, slots=True)

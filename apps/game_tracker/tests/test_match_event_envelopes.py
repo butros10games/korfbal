@@ -11,6 +11,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import (
     Attack,
     MatchData,
@@ -38,7 +39,6 @@ from apps.game_tracker.services.match_event_replay import (
 )
 from apps.game_tracker.services.match_events import build_match_event_history
 from apps.game_tracker.services.match_timeline_payload import build_match_shots
-from apps.game_tracker.services.tracker_http import apply_tracker_command
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_group_types,
     create_player_group,

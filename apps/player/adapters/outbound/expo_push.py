@@ -6,8 +6,6 @@ from typing import Any
 
 import requests
 
-from apps.player.services.expo_push import ExpoPushClient
-
 
 class RequestsExpoPushClient:
     """Production Expo push client backed by requests."""
@@ -20,6 +18,3 @@ class RequestsExpoPushClient:
             timeout=10,
         )
         response.raise_for_status()
-
-
-DEFAULT_EXPO_PUSH_CLIENT: ExpoPushClient = RequestsExpoPushClient()

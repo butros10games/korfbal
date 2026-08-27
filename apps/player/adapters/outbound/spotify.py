@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from apps.player.services.spotify import SpotifyClient, SpotifyResponse
+from apps.player.application.ports import SpotifyResponse
 
 
 class RequestsSpotifyClient:
@@ -57,6 +57,3 @@ class RequestsSpotifyClient:
                 timeout=10,
             ),
         )
-
-
-DEFAULT_SPOTIFY_CLIENT: SpotifyClient = RequestsSpotifyClient()

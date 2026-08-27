@@ -7,9 +7,9 @@ from typing import Any
 
 from django.conf import settings
 
+from apps.player.application.ports import WebPushClient, WebPushDeliveryError
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.web_push import (
-    WebPushException,
     WebPushPayload,
     send_to_model_subscription,
 )
@@ -47,6 +47,8 @@ def send_test_payload(
     *,
     subs: list[PlayerPushSubscription],
     payload: WebPushPayload,
+    client: WebPushClient,
+    ttl_seconds: int,
 ) -> tuple[int, int, list[dict[str, Any]]]:
     """Send a push payload to subscriptions and capture non-fatal errors."""
     sent = 0
@@ -55,19 +57,19 @@ def send_test_payload(
 
     for sub in subs:
         try:
-            send_to_model_subscription(sub=sub, payload=payload)
-            sent += 1
-        except WebPushException as exc:
-            failed += 1
-            status_code = getattr(
-                getattr(exc, "response", None),
-                "status_code",
-                None,
+            send_to_model_subscription(
+                sub=sub,
+                payload=payload,
+                client=client,
+                ttl_seconds=ttl_seconds,
             )
+            sent += 1
+        except WebPushDeliveryError as exc:
+            failed += 1
             errors.append({
                 "subscription_id": str(sub.id_uuid),
                 "endpoint": str(sub.endpoint),
-                "status_code": status_code,
+                "status_code": exc.status_code,
                 "detail": str(exc),
             })
         except Exception as exc:

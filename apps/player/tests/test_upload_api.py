@@ -203,9 +203,7 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
 
     with (
         override_settings(MEDIA_ROOT=tmp_path, MEDIA_URL="/media/"),
-        patch(
-            "apps.player.services.player_songs.download_player_song.apply"
-        ) as prepare,
+        patch("apps.player.tasks.download_player_song.apply") as prepare,
     ):
         response = client.post(
             "/api/player/api/upload_goal_song/",

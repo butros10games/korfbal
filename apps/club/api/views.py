@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import models
-from django.db.models import Q, QuerySet
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import filters, permissions, status, viewsets
@@ -15,6 +13,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.club.models.club import Club
+from apps.club.queries.overview import (
+    club_matches,
+    club_seasons,
+    club_teams,
+)
 from apps.club.services.admin import (
     close_active_membership,
     create_active_membership,
@@ -23,13 +26,14 @@ from apps.club.services.admin import (
     search_club_admin_users,
 )
 from apps.club.services.eligibility_dashboard import build_club_eligibility_dashboard
-from apps.game_tracker.models import MatchData
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.schedule.models import Season
+from apps.schedule.queries.seasons import (
+    requested_or_default_season,
+    season_options_payload,
+)
 from apps.team.api.serializers import TeamSerializer
-from apps.team.models.team import Team
 
 from .permissions import IsClubAdmin
 from .serializers import (
@@ -67,17 +71,19 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         """
         club = self.get_object()
-        seasons_qs = list(self._club_seasons_queryset(club))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(club_seasons(club))
+        season = requested_or_default_season(
+            request.query_params.get("season"), seasons_qs
+        )
 
-        teams_qs = self._club_teams_queryset(club, season)
+        teams_qs = club_teams(club, season)
         teams_payload = TeamSerializer(
             teams_qs,
             many=True,
             context=self.get_serializer_context(),
         ).data
 
-        match_data_qs = self._club_match_queryset(club, season)
+        match_data_qs = club_matches(club, season)
 
         upcoming_matches = build_match_summaries(
             match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
@@ -90,19 +96,6 @@ class ClubViewSet(viewsets.ModelViewSet):
             ]
         )
 
-        current_season = self._current_season()
-        seasons_payload = [
-            {
-                "id_uuid": str(option.id_uuid),
-                "name": option.name,
-                "start_date": option.start_date.isoformat(),
-                "end_date": option.end_date.isoformat(),
-                "is_current": current_season is not None
-                and option.id_uuid == current_season.id_uuid,
-            }
-            for option in seasons_qs
-        ]
-
         payload = {
             "club": self.get_serializer(club).data,
             "teams": teams_payload,
@@ -110,7 +103,7 @@ class ClubViewSet(viewsets.ModelViewSet):
                 "upcoming": upcoming_matches,
                 "recent": recent_matches,
             },
-            "seasons": seasons_payload,
+            "seasons": season_options_payload(seasons_qs),
             "meta": {
                 "team_count": len(teams_payload),
                 "season_id": str(season.id_uuid) if season else None,
@@ -167,8 +160,10 @@ class ClubViewSet(viewsets.ModelViewSet):
     ) -> Response:
         """Return club-level player eligibility/vastspelen dashboard data."""
         club = self.get_object()
-        seasons_qs = list(self._club_seasons_queryset(club))
-        season = self._resolve_season(request, seasons_qs)
+        seasons_qs = list(club_seasons(club))
+        season = requested_or_default_season(
+            request.query_params.get("season"), seasons_qs
+        )
         return Response(
             build_club_eligibility_dashboard(
                 club=club,
@@ -241,88 +236,3 @@ class ClubViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return False
         return club.admin.filter(user=user).exists()
-
-    def _club_teams_queryset(self, club: Club, season: Season | None) -> QuerySet[Team]:
-        queryset = (
-            club.teams
-            .select_related("club")
-            .order_by("name", "id_uuid")
-            .fetch_mode(models.FETCH_RAISE)
-        )
-        if season:
-            queryset = queryset.filter(
-                Q(team_data__season_id=season.id_uuid)
-                | Q(home_matches__season_id=season.id_uuid)
-                | Q(away_matches__season_id=season.id_uuid)
-            ).distinct()
-        return queryset
-
-    def _club_match_queryset(
-        self, club: Club, season: Season | None
-    ) -> QuerySet[MatchData]:
-        queryset = (
-            MatchData.objects
-            .select_related(
-                "match_link",
-                "match_link__home_team",
-                "match_link__home_team__club",
-                "match_link__away_team",
-                "match_link__away_team__club",
-                "match_link__season",
-            )
-            .filter(
-                Q(match_link__home_team__club=club)
-                | Q(match_link__away_team__club=club),
-            )
-            .fetch_mode(models.FETCH_RAISE)
-        )
-        if season:
-            queryset = queryset.filter(match_link__season_id=season.id_uuid)
-        return queryset
-
-    def _resolve_season(self, request: Request, seasons: list[Season]) -> Season | None:
-        """Resolve the requested season in a safe, club-scoped way.
-
-        Important:
-            If a `season` query param is supplied but cannot be resolved within
-            the club's known seasons, we do **not** return `None` (which would
-            broaden queries to all seasons). Instead, we fall back to a sensible
-            default within the provided season list.
-
-        """
-        season_param = request.query_params.get("season")
-        if season_param:
-            selected = next(
-                (option for option in seasons if str(option.id_uuid) == season_param),
-                None,
-            )
-            if selected is not None:
-                return selected
-
-        if not seasons:
-            return None
-
-        current = self._current_season()
-        if current and any(option.id_uuid == current.id_uuid for option in seasons):
-            return current
-
-        return seasons[0]
-
-    def _current_season(self) -> Season | None:
-        today = timezone.now().date()
-        return Season.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today,
-        ).first()
-
-    def _club_seasons_queryset(self, club: Club) -> QuerySet[Season]:
-        return (
-            Season.objects
-            .filter(
-                Q(team_data__team__club=club)
-                | Q(matches__home_team__club=club)
-                | Q(matches__away_team__club=club)
-            )
-            .distinct()
-            .order_by("-start_date")
-        )

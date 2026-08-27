@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 from django.db import transaction
 
+from apps.game_tracker.application.ports import MatchChangePublisher
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.lineup_projections import rebuild_match_projections
@@ -41,6 +42,7 @@ def apply_editor_mutation[ResultT](
     match_data_id: object,
     actor: object | None,
     mutate: Callable[[MatchData], ResultT],
+    publisher: MatchChangePublisher,
     no_op_result: object = _NO_OP_UNSET,
 ) -> tuple[MatchData, ResultT]:
     """Apply one editor correction with tracker-equivalent write semantics."""
@@ -79,5 +81,6 @@ def apply_editor_mutation[ResultT](
             match_data,
             resources=set(ALL_LIVE_RESOURCES),
             changed_ids=changed_ids,
+            publisher=publisher,
         )
         return match_data, result

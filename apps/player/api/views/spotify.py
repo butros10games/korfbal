@@ -13,7 +13,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
-from apps.player.adapters.outbound.spotify import DEFAULT_SPOTIFY_CLIENT
+from apps.player.composition import spotify_client
 from apps.player.services.spotify import (
     build_spotify_authorize_url,
     ensure_spotify_access_token,
@@ -104,7 +104,7 @@ class SpotifyCallbackView(KorfbalAPIView):
         if not exchange_callback_code_for_user(
             user=user,
             code=str(code),
-            client=DEFAULT_SPOTIFY_CLIENT,
+            client=spotify_client,
         ):
             return redirect_to_frontend()
 
@@ -160,7 +160,7 @@ class SpotifyPlayAPIView(KorfbalAPIView):
                 )
             access_token = ensure_spotify_access_token(
                 user,
-                client=DEFAULT_SPOTIFY_CLIENT,
+                client=spotify_client,
             )
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -171,7 +171,7 @@ class SpotifyPlayAPIView(KorfbalAPIView):
             track_uri=normalise_spotify_track_uri(track_uri_raw),
             position_ms=position_ms,
             device_id=device_id if isinstance(device_id, str) and device_id else None,
-            client=DEFAULT_SPOTIFY_CLIENT,
+            client=spotify_client,
         )
 
         if play_response.status_code not in {200, 202, 204}:
@@ -209,7 +209,7 @@ class SpotifyPauseAPIView(KorfbalAPIView):
                 )
             access_token = ensure_spotify_access_token(
                 user,
-                client=DEFAULT_SPOTIFY_CLIENT,
+                client=spotify_client,
             )
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -218,7 +218,7 @@ class SpotifyPauseAPIView(KorfbalAPIView):
         pause_response = pause_spotify_playback(
             access_token=access_token,
             device_id=device_id if isinstance(device_id, str) and device_id else None,
-            client=DEFAULT_SPOTIFY_CLIENT,
+            client=spotify_client,
         )
 
         if pause_response.status_code not in {200, 202, 204}:

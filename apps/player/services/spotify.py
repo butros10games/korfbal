@@ -5,52 +5,20 @@ from __future__ import annotations
 from datetime import timedelta
 from http import HTTPStatus
 import secrets
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.utils import timezone
 
+from apps.player.application.ports import SpotifyClient, SpotifyResponse
 from apps.player.models.spotify_token import SpotifyToken
 
 
 SPOTIFY_NO_ACTIVE_DEVICE_DETAIL = (
     "No active Spotify device found. Open Spotify on your phone and try again."
 )
-
-
-class SpotifyResponse(Protocol):
-    """Response contract needed by the Spotify application service."""
-
-    status_code: int
-    text: str
-
-    def json(self) -> dict[str, Any]:
-        """Return the decoded response body."""
-
-    def raise_for_status(self) -> None:
-        """Raise when the provider returned an unsuccessful response."""
-
-
-class SpotifyClient(Protocol):
-    """Outbound Spotify provider port."""
-
-    def post_token(self, *, data: dict[str, Any]) -> SpotifyResponse:
-        """POST to the Spotify token endpoint."""
-
-    def get_current_user_profile(self, *, access_token: str) -> SpotifyResponse:
-        """GET the current Spotify user profile."""
-
-    def put_playback(
-        self,
-        *,
-        access_token: str,
-        action: str,
-        device_id: str | None,
-        json_body: dict[str, Any] | None = None,
-    ) -> SpotifyResponse:
-        """PUT to a Spotify playback endpoint."""
 
 
 def spotify_enabled() -> bool:

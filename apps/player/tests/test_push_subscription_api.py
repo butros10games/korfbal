@@ -210,9 +210,7 @@ def test_push_test_endpoint_sends_to_all_active_subscriptions(client: Client) ->
         user_agent="pytest",
     )
 
-    with patch(
-        "apps.player.services.push_notifications.send_to_model_subscription"
-    ) as mocked_send:
+    with patch("apps.player.composition.web_push_client.send") as mocked_send:
         response = client.post("/api/player/me/push-subscriptions/test/")
 
     assert response.status_code == HTTPStatus.OK
@@ -252,7 +250,7 @@ def test_push_test_endpoint_truncates_error_payloads(client: Client) -> None:
         )
 
     with patch(
-        "apps.player.services.push_notifications.send_to_model_subscription",
+        "apps.player.composition.web_push_client.send",
         side_effect=RuntimeError("boom"),
     ):
         response = client.post("/api/player/me/push-subscriptions/test/")

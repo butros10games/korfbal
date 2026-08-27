@@ -9,6 +9,7 @@ from uuid import uuid4
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import (
     Attack,
     GoalType,
@@ -27,7 +28,7 @@ from apps.game_tracker.services.event_reconciliation import (
     pending_reconciliations,
     resolve_reconciliation,
 )
-from apps.game_tracker.services.tracker_http import apply_tracker_command
+from apps.game_tracker.tests.fakes import RecordingMatchChangePublisher
 from apps.game_tracker.tests.tracker_test_helpers import (
     TrackerMatchContext,
     create_group_types,
@@ -445,7 +446,8 @@ def test_manual_merge_retracts_duplicate_and_rebuilds_score() -> None:
             canonical_event_id=candidate.first_event_id,
             actor=None,
             reason="Both scorers confirmed the same goal.",
-        )
+        ),
+        publisher=RecordingMatchChangePublisher(),
     )
 
     context.tracker.match_data.refresh_from_db()
@@ -496,7 +498,8 @@ def test_manual_separate_decision_preserves_both_events() -> None:
             canonical_event_id=None,
             actor=None,
             reason="Two separate goals.",
-        )
+        ),
+        publisher=RecordingMatchChangePublisher(),
     )
 
     assert result.canonical_event is None

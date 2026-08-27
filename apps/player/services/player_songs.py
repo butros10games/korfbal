@@ -5,17 +5,18 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
-from kombu.exceptions import OperationalError as KombuOperationalError
 
+from apps.player.application.ports import (
+    JobDispatchUnavailableError,
+    SongDownloadDispatcher,
+)
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.spotify import canonicalize_spotify_track_url
-from apps.player.tasks import download_cached_song, download_player_song
 
 
 logger = logging.getLogger(__name__)
@@ -33,13 +34,6 @@ def effective_song_audio_file(song: PlayerSong) -> FieldFile:
 def effective_song_status(song: PlayerSong) -> str:
     """Return the effective status for a PlayerSong."""
     return song.cached_song.status if song.cached_song is not None else song.status
-
-
-def _should_run_tasks_eagerly() -> bool:
-    return bool(
-        getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)
-        or getattr(settings, "TESTING", False)
-    )
 
 
 def _mark_broker_unavailable(song: PlayerSong) -> None:
@@ -60,6 +54,7 @@ def create_player_song(
     player: Player,
     uploaded_audio: UploadedFile | None,
     spotify_url: str | None,
+    jobs: SongDownloadDispatcher,
 ) -> tuple[PlayerSong, bool]:
     """Create a player song from an upload or queue a Spotify download."""
     if isinstance(uploaded_audio, UploadedFile):
@@ -80,8 +75,8 @@ def create_player_song(
             audio_file=uploaded_audio,
         )
         try:
-            enqueue_download_for_player_song(song)
-        except KombuOperationalError:
+            enqueue_download_for_player_song(song, jobs=jobs)
+        except JobDispatchUnavailableError:
             logger.warning(
                 "Celery broker unavailable; could not prepare PlayerSong %s",
                 song.id_uuid,
@@ -98,11 +93,8 @@ def create_player_song(
     )
 
     try:
-        if _should_run_tasks_eagerly():
-            download_cached_song.apply(args=[str(cached.id_uuid)])
-        else:
-            download_cached_song.delay(str(cached.id_uuid))
-    except KombuOperationalError:
+        jobs.cached_song(str(cached.id_uuid))
+    except JobDispatchUnavailableError:
         logger.warning(
             "Celery broker unavailable; could not enqueue PlayerSong %s",
             song.id_uuid,
@@ -118,6 +110,7 @@ def update_player_song_settings(
     song: PlayerSong,
     start_time_seconds: int | None = None,
     playback_speed: float | None = None,
+    jobs: SongDownloadDispatcher,
 ) -> None:
     """Persist playback settings for a PlayerSong."""
     update_fields: list[str] = ["updated_at"]
@@ -130,8 +123,8 @@ def update_player_song_settings(
 
     song.save(update_fields=update_fields)
     try:
-        enqueue_download_for_player_song(song)
-    except KombuOperationalError:
+        enqueue_download_for_player_song(song, jobs=jobs)
+    except JobDispatchUnavailableError:
         logger.warning(
             "Celery broker unavailable; could not re-prepare PlayerSong %s",
             song.id_uuid,
@@ -139,24 +132,21 @@ def update_player_song_settings(
         )
 
 
-def enqueue_download_for_player_song(song: PlayerSong) -> None:
+def enqueue_download_for_player_song(
+    song: PlayerSong, *, jobs: SongDownloadDispatcher
+) -> None:
     """Enqueue download or clip preparation for a PlayerSong."""
     cached = song.cached_song
-    if _should_run_tasks_eagerly():
-        if cached is not None:
-            download_cached_song.apply(args=[str(cached.id_uuid)])
-        else:
-            download_player_song.apply(args=[str(song.id_uuid)])
-        return
-
     if cached is not None:
-        download_cached_song.delay(str(cached.id_uuid))
+        jobs.cached_song(str(cached.id_uuid))
         return
 
-    download_player_song.delay(str(song.id_uuid))
+    jobs.player_song(str(song.id_uuid))
 
 
-def retry_player_song_download(song: PlayerSong) -> None:
+def retry_player_song_download(
+    song: PlayerSong, *, jobs: SongDownloadDispatcher
+) -> None:
     """Reset a failed song back to queued and re-enqueue its download."""
     cached = song.cached_song
     with transaction.atomic():
@@ -170,8 +160,8 @@ def retry_player_song_download(song: PlayerSong) -> None:
             song.save(update_fields=["status", "error_message", "updated_at"])
 
     try:
-        enqueue_download_for_player_song(song)
-    except KombuOperationalError:
+        enqueue_download_for_player_song(song, jobs=jobs)
+    except JobDispatchUnavailableError:
         logger.warning(
             "Celery broker unavailable; could not retry PlayerSong %s",
             song.id_uuid,

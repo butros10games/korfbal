@@ -116,9 +116,7 @@ def _get_match_and_team(
     view_kwargs = getattr(view, "kwargs", {})
     lookup_url_kwarg = getattr(view, "lookup_url_kwarg", None)
     match_id = (
-        view_kwargs.get(lookup_url_kwarg)
-        if isinstance(lookup_url_kwarg, str)
-        else None
+        view_kwargs.get(lookup_url_kwarg) if isinstance(lookup_url_kwarg, str) else None
     )
     match_id = match_id or view_kwargs.get("pk") or view_kwargs.get("id_uuid")
     team_id = view_kwargs.get("team_id")

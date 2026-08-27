@@ -13,6 +13,7 @@ from rest_framework.exceptions import ParseError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.game_tracker.composition import apply_editor_mutation, change_publisher
 from apps.game_tracker.models import (
     GoalType,
     MatchData,
@@ -31,7 +32,6 @@ from apps.game_tracker.services.event_reconciliation import (
 )
 from apps.game_tracker.services.live_updates import summarize_match_changes
 from apps.game_tracker.services.match_events import build_match_event_history
-from apps.game_tracker.services.match_mutations import apply_editor_mutation
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
@@ -443,7 +443,8 @@ class MatchEventsActionsMixin:
                     canonical_event_id=canonical_event_id,
                     actor=request.user,
                     reason=reason,
-                )
+                ),
+                publisher=change_publisher,
             )
         except EventReconciliationError as exc:
             return Response(

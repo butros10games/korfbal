@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from apps.game_tracker.application.ports import MatchChangePublisher
 from apps.game_tracker.models import (
     Attack,
     GoalType,
@@ -487,6 +488,8 @@ def _merge_duplicate_projection(
 
 def resolve_reconciliation(
     resolution: ReconciliationResolution,
+    *,
+    publisher: MatchChangePublisher,
 ) -> MatchEventReconciliationDecision:
     """Resolve one candidate once and rebuild affected projections.
 
@@ -602,5 +605,9 @@ def resolve_reconciliation(
                     ),
                     reason=stale_reason,
                 )
-        record_match_change(locked, resources=set(ALL_LIVE_RESOURCES))
+        record_match_change(
+            locked,
+            resources=set(ALL_LIVE_RESOURCES),
+            publisher=publisher,
+        )
         return result

@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import PlayerSerializer
+from apps.player.composition import song_jobs
 from apps.player.services.player_uploads import (
     goal_song_content_type_allowed,
     save_goal_song_upload,
@@ -107,6 +108,7 @@ class UploadGoalSongAPIView(KorfbalAPIView):
         url = save_goal_song_upload(
             player=player,
             uploaded=uploaded,
+            jobs=song_jobs,
         )
 
         return Response({

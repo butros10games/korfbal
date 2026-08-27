@@ -15,8 +15,12 @@ from bg_uuidv7 import uuidv7
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
-from django.utils.module_loading import import_string
 
+from apps.game_tracker.application.ports import (
+    TrackerJobDispatcher,
+    TrackerRuntime,
+)
+from apps.game_tracker.domain.command_time import command_time_from_payload
 from apps.game_tracker.models import (
     Attack,
     GoalType,
@@ -83,7 +87,6 @@ MATCH_IS_PAUSED_MESSAGE = "match is paused"
 NO_ACTIVE_MATCH_PART_MESSAGE = "No active match part."
 
 
-_CLIENT_TIME_MAX_SKEW_SECONDS = 5 * 60
 _CLIENT_ID_MAX_LENGTH = 128
 _CLIENT_SOURCE_MAX_LENGTH = 32
 _MAX_TIMEOUTS_PER_TEAM = 2
@@ -144,56 +147,6 @@ _COMMAND_RESOURCES: dict[str, frozenset[LiveResource]] = {
     }),
     "remove_last_event": frozenset(ALL_LIVE_RESOURCES),
 }
-
-
-def _parse_client_time_iso(value: str) -> datetime | None:
-    """Parse a client-supplied ISO timestamp.
-
-    Notes:
-        - Accepts both offset timestamps and `Z` suffix.
-        - If timezone is omitted, assume UTC.
-
-    """
-    try:
-        normalized = value.strip().replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _command_time_from_payload(payload: dict[str, Any]) -> datetime:
-    """Best-effort event time for a command.
-
-    We prefer a client timestamp (so UI actions are ordered consistently), but
-    fall back to server time if missing/invalid or wildly skewed.
-    """
-    server_now = datetime.now(UTC)
-
-    client_time: datetime | None = None
-
-    client_time_ms = payload.get("client_time_ms")
-    if isinstance(client_time_ms, int):
-        try:
-            client_time = datetime.fromtimestamp(client_time_ms / 1000, tz=UTC)
-        except (OSError, OverflowError, ValueError):
-            client_time = None
-
-    client_time_iso = payload.get("client_time_iso")
-    if client_time is None and isinstance(client_time_iso, str):
-        client_time = _parse_client_time_iso(client_time_iso)
-
-    if client_time is None:
-        return server_now
-
-    skew_seconds = abs((client_time - server_now).total_seconds())
-    if skew_seconds > _CLIENT_TIME_MAX_SKEW_SECONDS:
-        return server_now
-
-    return client_time
 
 
 class TrackerCommandError(RuntimeError):
@@ -780,6 +733,7 @@ class _TrackerCommandContext:
     match_data: MatchData
     team: Team
     event_time: datetime
+    jobs: TrackerJobDispatcher
 
 
 class _TrackerCommand(Protocol):
@@ -971,12 +925,13 @@ def _register_tracker_command(
     return receipt, False
 
 
-def apply_tracker_command(
+def execute_tracker_command(
     match: Match,
     *,
     team: Team,
     payload: dict[str, Any],
     actor: object | None = None,
+    runtime: TrackerRuntime,
 ) -> dict[str, Any]:
     """Apply a tracker command and return the updated state.
 
@@ -1009,9 +964,9 @@ def apply_tracker_command(
                 return json.loads(json.dumps(receipt.response_payload))
             return get_tracker_state(match, team=team)
         event_time = (
-            timezone.now()
+            runtime.now()
             if command in _SERVER_TIMED_COMMANDS
-            else _command_time_from_payload(payload)
+            else command_time_from_payload(payload, server_now=runtime.now())
         )
         affected_resources = _COMMAND_RESOURCES.get(command, frozenset())
         before_events = (
@@ -1045,6 +1000,7 @@ def apply_tracker_command(
                     match_data=match_data,
                     team=team,
                     event_time=event_time,
+                    jobs=runtime.jobs,
                 ),
             )
         if command in _MUTATING_COMMANDS:
@@ -1071,6 +1027,7 @@ def apply_tracker_command(
                 match_data,
                 resources=affected_resources,
                 changed_ids=changed_ids,
+                publisher=runtime.publisher,
             )
         result = get_tracker_state(match, team=team)
         if receipt is not None:
@@ -1305,6 +1262,7 @@ def _cmd_part_end(
     match_data: MatchData,
     reporting_team: Team,
     event_time: datetime,
+    jobs: TrackerJobDispatcher,
 ) -> None:
     current_part = _current_part(match_data)
     last_part = current_part or (
@@ -1380,10 +1338,7 @@ def _cmd_part_end(
 
     def enqueue_match_finished() -> None:
         try:
-            handle_match_finished = import_string(
-                "apps.player.tasks.handle_match_finished"
-            )
-            handle_match_finished.delay(
+            jobs.match_finished(
                 match_id=str(match.id_uuid),
                 match_data_id=str(match_data.id_uuid),
             )
@@ -1978,6 +1933,7 @@ class _PartEndCommand:
             match_data=context.match_data,
             reporting_team=context.team,
             event_time=context.event_time,
+            jobs=context.jobs,
         )
 
 

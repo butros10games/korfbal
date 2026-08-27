@@ -7,11 +7,10 @@ import logging
 from pathlib import Path
 import subprocess  # nosec B404
 import tempfile
-from typing import Any
 
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
+from django.db.models.fields.files import FieldFile
 
+from apps.player.application.ports import AudioRuntime
 from apps.player.models.player_song import PlayerSong
 from apps.player.services.audio_clipper import (
     Mp3ClipSpec,
@@ -27,7 +26,7 @@ GOAL_SONG_CLIP_DURATION_SECONDS = 8
 
 def goal_song_clip_key(
     *,
-    audio_file: Any,
+    audio_file: FieldFile,
     song: PlayerSong,
     start_seconds: int,
     duration_seconds: int = GOAL_SONG_CLIP_DURATION_SECONDS,
@@ -44,10 +43,11 @@ def goal_song_clip_key(
 
 def ensure_goal_song_clip(
     *,
-    audio_file: Any,
+    audio_file: FieldFile,
     song: PlayerSong,
     start_seconds: int,
     duration_seconds: int = GOAL_SONG_CLIP_DURATION_SECONDS,
+    runtime: AudioRuntime,
 ) -> str | None:
     """Materialize a short goal-song clip and return its storage key.
 
@@ -62,7 +62,7 @@ def ensure_goal_song_clip(
         duration_seconds=duration_seconds,
     )
 
-    if default_storage.exists(clip_key):
+    if runtime.storage.exists(clip_key):
         return clip_key
 
     ffmpeg_path = find_ffmpeg()
@@ -82,18 +82,12 @@ def ensure_goal_song_clip(
             transcode_to_mp3_clip_file(
                 input_path=str(input_path),
                 output_path=str(output_path),
-                spec=Mp3ClipSpec(
-                    start_seconds=start_seconds,
-                    duration_seconds=duration_seconds,
-                ),
+                spec=Mp3ClipSpec(start_seconds, duration_seconds),
                 ffmpeg_path=ffmpeg_path,
+                command_runner=runtime.commands,
             )
 
-            saved_key = default_storage.save(
-                clip_key,
-                ContentFile(output_path.read_bytes()),
-            )
-            return str(saved_key)
+            return runtime.storage.save_bytes(clip_key, output_path.read_bytes())
     except (FileNotFoundError, subprocess.CalledProcessError):
         logger.info(
             "Goal-song clip generation failed for %s",
@@ -109,7 +103,11 @@ def ensure_goal_song_clip(
     return None
 
 
-def prepare_player_song_clip(song: PlayerSong) -> str | None:
+def prepare_player_song_clip(
+    song: PlayerSong,
+    *,
+    runtime: AudioRuntime,
+) -> str | None:
     """Prepare the standard tracker clip for a ready PlayerSong."""
     audio_file = (
         song.cached_song.audio_file if song.cached_song is not None else song.audio_file
@@ -120,21 +118,5 @@ def prepare_player_song_clip(song: PlayerSong) -> str | None:
         audio_file=audio_file,
         song=song,
         start_seconds=max(0, int(song.start_time_seconds or 0)),
+        runtime=runtime,
     )
-
-
-def clip_or_full_location(
-    *,
-    audio_file: Any,
-    song: PlayerSong,
-    start_seconds: int,
-    duration_seconds: int,
-) -> str:
-    """Return a deterministic clip URL, falling back to the full audio URL."""
-    clip_key = ensure_goal_song_clip(
-        audio_file=audio_file,
-        song=song,
-        start_seconds=start_seconds,
-        duration_seconds=duration_seconds,
-    )
-    return default_storage.url(clip_key) if clip_key else str(audio_file.url)
