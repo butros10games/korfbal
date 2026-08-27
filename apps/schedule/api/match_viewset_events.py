@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Protocol
 
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import permissions, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ParseError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -55,6 +57,19 @@ RECONCILIATION_REASON_MAX_LENGTH = 255
 
 class _MatchViewSetLike(Protocol):
     def get_object(self) -> Match: ...
+
+
+def _request_payload(request: Request) -> Mapping[str, Any]:
+    """Return an object-shaped request body.
+
+    Raises:
+        ParseError: If the request body is not a JSON object.
+
+    """
+    payload = request.data
+    if not isinstance(payload, Mapping):
+        raise ParseError("Request body must be a JSON object.")
+    return payload
 
 
 def _find_timeout(match_data: MatchData, timeout_id: str) -> Timeout | None:
@@ -398,9 +413,10 @@ class MatchEventsActionsMixin:
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        decision = request.data.get("decision")
-        canonical_event_id = request.data.get("canonical_event_id")
-        reason = request.data.get("reason", "")
+        payload = _request_payload(request)
+        decision = payload.get("decision")
+        canonical_event_id = payload.get("canonical_event_id")
+        reason = payload.get("reason", "")
         if not isinstance(decision, str) or not isinstance(reason, str):
             return Response(
                 {"detail": "Invalid reconciliation decision."},

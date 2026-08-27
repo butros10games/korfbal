@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.http import HttpResponseRedirect
 from rest_framework import permissions, status
+from rest_framework.exceptions import ParseError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,6 +31,19 @@ from .common import (
     SPOTIFY_NOT_CONFIGURED_DETAIL,
     redirect_to_frontend,
 )
+
+
+def _request_payload(request: Request) -> Mapping[str, Any]:
+    """Return an object-shaped request body.
+
+    Raises:
+        ParseError: If the request body is not a JSON object.
+
+    """
+    payload = request.data
+    if not isinstance(payload, Mapping):
+        raise ParseError("Request body must be a JSON object")
+    return payload
 
 
 class SpotifyConnectAPIView(APIView):
@@ -121,14 +136,15 @@ class SpotifyPlayAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        track_uri_raw = request.data.get("track_uri")
+        payload = _request_payload(request)
+        track_uri_raw = payload.get("track_uri")
         if not isinstance(track_uri_raw, str) or not track_uri_raw.strip():
             return Response(
                 {"detail": "track_uri is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        position_ms_raw = request.data.get("position_ms", 0)
+        position_ms_raw = payload.get("position_ms", 0)
         try:
             position_ms = int(float(position_ms_raw))
         except (TypeError, ValueError):
@@ -149,7 +165,7 @@ class SpotifyPlayAPIView(APIView):
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        device_id = request.data.get("device_id")
+        device_id = payload.get("device_id")
         play_response = start_spotify_playback(
             access_token=access_token,
             track_uri=normalise_spotify_track_uri(track_uri_raw),
@@ -183,6 +199,7 @@ class SpotifyPauseAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        payload = _request_payload(request)
         try:
             user = request.user
             if not isinstance(user, AbstractBaseUser):
@@ -197,7 +214,7 @@ class SpotifyPauseAPIView(APIView):
         except RuntimeError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        device_id = request.data.get("device_id")
+        device_id = payload.get("device_id")
         pause_response = pause_spotify_playback(
             access_token=access_token,
             device_id=device_id if isinstance(device_id, str) and device_id else None,

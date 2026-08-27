@@ -3,7 +3,7 @@ name = "korfbal-deps"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
-    "django>=5.2,<5.3",
+    "django>=6.1,<6.2",
     "psycopg[binary,pool]",
     "bg-audit-events",
     "bg-django-mobile-detector",
@@ -21,7 +21,7 @@ dependencies = [
     "django-cors-headers",
     "channels",
     "channels-redis",
-    "django-prometheus",
+    "django-prometheus==2.6.0.dev4",
     "drf-spectacular",
     "pywebpush",
     "requests",
@@ -29,7 +29,6 @@ dependencies = [
 ]
 
 [dependency-groups]
-celery = ["django-celery-beat"]
 uwsgi = [
     "Pillow",
     "granian",

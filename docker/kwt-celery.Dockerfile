@@ -25,7 +25,7 @@ COPY libs/shared_python_packages/bg_uuidv7/src/ /build/libs/shared_python_packag
 ENV UV_PROJECT_ENVIRONMENT=/build/.venv
 ENV UV_LINK_MODE=copy
 
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --group celery --no-dev --no-editable --compile-bytecode
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable --compile-bytecode
 
 ## ------------------------------- Venv Optimizer Stage ------------------------------ ##
 # Separate stage so app source changes don't re-run optimization

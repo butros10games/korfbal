@@ -3,7 +3,7 @@ name = "KWT"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "django>=5.2,<5.3",
+    "django>=6.1,<6.2",
     "psycopg[binary,pool]",
     "bg-django-mobile-detector",
     "bg-audit-events",
@@ -27,20 +27,19 @@ dependencies = [
 ]
 
 [dependency-groups]
-celery = ["django-celery-beat"]
 uwsgi = [
     "Pillow",
     "pyuwsgi",
     "bg-django-caching-paginator",
     "django-cryptography",
-    "django-prometheus",
+    "django-prometheus==2.6.0.dev4",
 ]
 dev = [
     "Pillow",
     "pyuwsgi; sys_platform == 'linux'",
     "bg-django-caching-paginator",
     "django-cryptography",
-    "django-prometheus",
+    "django-prometheus==2.6.0.dev4",
 ]
 
 [tool.uv.sources]

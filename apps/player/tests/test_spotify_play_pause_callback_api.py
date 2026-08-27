@@ -108,6 +108,37 @@ def test_spotify_play_requires_track_uri(client: Client) -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/player/spotify/play/",
+        "/api/player/spotify/pause/",
+    ],
+)
+@override_settings(
+    SECURE_SSL_REDIRECT=False,
+    SPOTIFY_CLIENT_ID=SPOTIFY_CLIENT_ID,
+    SPOTIFY_CLIENT_SECRET=SPOTIFY_CLIENT_SECRET,
+)
+def test_spotify_playback_rejects_json_array(client: Client, path: str) -> None:
+    """Playback endpoints require an object-shaped JSON body."""
+    user = get_user_model().objects.create_user(
+        username=f"spotify_array_{path.split('/')[-2]}",
+        password="pass1234",  # nosec
+    )
+    client.force_login(user)
+
+    response = client.post(
+        path,
+        data=json.dumps(["unexpected"]),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["detail"] == "Request body must be a JSON object"
+
+
+@pytest.mark.django_db
 @override_settings(
     SECURE_SSL_REDIRECT=False,
     SPOTIFY_CLIENT_ID=SPOTIFY_CLIENT_ID,
