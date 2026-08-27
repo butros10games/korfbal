@@ -561,11 +561,16 @@ def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None
     assert update_response.status_code == HTTPStatus.OK
     assert update_response.json()["event_id"] == created["event_id"]
     timeout = Timeout.objects.get(id_uuid=created["timeout_id"])
-    timeout_event = MatchEvent.objects.filter(
-        match_data=match_data,
-        source_type="timeout",
-        source_id=timeout.pk,
-    ).order_by("-sequence").first()
+    timeout_event = (
+        MatchEvent.objects
+        .filter(
+            match_data=match_data,
+            source_type="timeout",
+            source_id=timeout.pk,
+        )
+        .order_by("-sequence")
+        .first()
+    )
     assert timeout_event is not None
     assert created["event_id"] == str(timeout_event.logical_id)
     assert str(timeout.pause_id) == created["source_id"]

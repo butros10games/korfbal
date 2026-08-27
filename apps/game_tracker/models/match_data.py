@@ -12,6 +12,7 @@ from django.utils import timezone
 class MatchData(models.Model):
     """Model for MatchData."""
 
+    objects: ClassVar[models.Manager[MatchData]]
     player_groups: models.Manager[Any]
 
     STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [

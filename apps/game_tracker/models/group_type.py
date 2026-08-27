@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 
 
 class GroupType(models.Model):
     """Model for GroupType."""
+
+    objects: ClassVar[models.Manager[GroupType]]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

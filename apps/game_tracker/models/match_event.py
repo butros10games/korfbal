@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -12,8 +12,14 @@ from django.db import models
 from .constants import team_model_string
 
 
+if TYPE_CHECKING:
+    from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
+
+
 class MatchEvent(models.Model):
     """Versioned, ordered audit envelope around a typed tracker record."""
+
+    objects: ClassVar[models.Manager[MatchEvent]]
 
     STATUS_ACTIVE = "active"
     STATUS_SUPERSEDED = "superseded"
@@ -58,6 +64,7 @@ class MatchEvent(models.Model):
         null=True,
         blank=True,
     )
+    actor_id: int | None
     source_team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,
         on_delete=models.SET_NULL,
@@ -96,6 +103,9 @@ class MatchEvent(models.Model):
         null=True,
         blank=True,
     )
+    supersedes_id: str | None
+    shot_detail: ShotEventDetail
+    substitution_detail: SubstitutionEventDetail
 
     class Meta:
         """Enforce one total event order per match."""

@@ -478,7 +478,9 @@ class Command(BaseCommand):
         # Show top performers by stored impact.
         by_stored = sorted(
             with_stored,
-            key=lambda a: a.stored,
+            key=lambda aggregate: (
+                aggregate.stored if aggregate.stored is not None else float("-inf")
+            ),
             reverse=True,
         )
         self.stdout.write("\nTop players by stored impact:")

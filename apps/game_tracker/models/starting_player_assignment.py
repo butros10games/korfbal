@@ -13,6 +13,8 @@ from .constants import player_model_string
 class StartingPlayerAssignment(models.Model):
     """Records the group in which a player started the match."""
 
+    objects: ClassVar[models.Manager[StartingPlayerAssignment]]
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,

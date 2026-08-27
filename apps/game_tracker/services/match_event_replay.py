@@ -130,18 +130,16 @@ def rebuild_typed_event_projections(match_data: MatchData) -> None:
 
         for source_type in ("pause", "timeout", "shot", "player_change", "attack"):
             model = _PROJECTION_MODELS[source_type]
-            model.objects.bulk_create(
-                [
-                    model(
-                        **_projection_values(
-                            model,
-                            event,
-                            record,
-                            match_data_id=locked.pk,
-                        )
+            model.objects.bulk_create([
+                model(
+                    **_projection_values(
+                        model,
+                        event,
+                        record,
+                        match_data_id=locked.pk,
                     )
-                    for event, record in records[source_type]
-                ]
-            )
+                )
+                for event, record in records[source_type]
+            ])
 
         rebuild_match_projections(locked)

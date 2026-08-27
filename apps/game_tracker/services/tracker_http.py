@@ -1074,7 +1074,10 @@ def apply_tracker_command(
             )
         result = get_tracker_state(match, team=team)
         if receipt is not None:
-            receipt.committed_revision = result.get("live_revision")
+            committed_revision = result.get("live_revision")
+            receipt.committed_revision = (
+                int(committed_revision) if committed_revision is not None else None
+            )
             receipt.response_payload = result
             receipt.save(update_fields=["committed_revision", "response_payload"])
 
@@ -1541,6 +1544,69 @@ def _match_player(
     return player
 
 
+@dataclass(frozen=True, slots=True)
+class _ShotRegistration:
+    match_data: MatchData
+    match_part: MatchPart
+    reporting_team: Team
+    shooting_team: Team
+    player: Player
+    for_team: bool
+    shot_type: GoalType | None
+    outcome: str
+    event_time: datetime
+
+
+def _record_shot_observation(registration: _ShotRegistration) -> bool:
+    """Reconcile a shot report, creating a projection only when unmatched."""
+    plan = plan_shot_reconciliation(
+        ShotObservation(
+            match_data=registration.match_data,
+            match_part=registration.match_part,
+            reporting_team_id=registration.reporting_team.pk,
+            shooting_team_id=registration.shooting_team.pk,
+            outcome=registration.outcome,
+            shot_type=registration.shot_type,
+            effective_at=registration.event_time,
+        )
+    )
+    observation_payload = {
+        "kind": "shot",
+        "shooting_team_id": str(registration.shooting_team.pk),
+        "reporting_team_id": str(registration.reporting_team.pk),
+        "reported_player_id": str(registration.player.pk),
+        "reported_player_role": "shooter" if registration.for_team else "defender",
+        "shot_type_id": (
+            str(registration.shot_type.pk) if registration.shot_type else None
+        ),
+        "outcome": registration.outcome,
+    }
+    if plan.matched_event is not None:
+        record_matched_observation(
+            event=plan.matched_event,
+            effective_at=registration.event_time,
+            payload=observation_payload,
+        )
+        return False
+
+    shot = Shot.objects.create(
+        player=registration.player,
+        match_data=registration.match_data,
+        match_part=registration.match_part,
+        time=registration.event_time,
+        for_team=registration.for_team,
+        team=registration.shooting_team,
+        shot_type=registration.shot_type,
+        scored=registration.outcome == ShotEventDetail.OUTCOME_GOAL,
+    )
+    event = MatchEvent.objects.get(source_type="shot", source_id=shot.pk)
+    create_reconciliation_candidates(
+        event=event,
+        possible_duplicates=plan.review_events,
+    )
+    return True
+
+
 def _cmd_shot_reg(
     match: Match,
     *,
@@ -1568,48 +1634,18 @@ def _cmd_shot_reg(
                 code="bad_request",
             ) from exc
 
-    plan = plan_shot_reconciliation(
-        ShotObservation(
+    _record_shot_observation(
+        _ShotRegistration(
+            player=player,
             match_data=match_data,
             match_part=current_part,
-            reporting_team_id=team.pk,
-            shooting_team_id=shot_team.pk,
-            outcome=ShotEventDetail.OUTCOME_MISS,
+            reporting_team=team,
+            shooting_team=shot_team,
+            for_team=params.for_team,
             shot_type=shot_type,
-            effective_at=event_time,
+            outcome=ShotEventDetail.OUTCOME_MISS,
+            event_time=event_time,
         )
-    )
-    observation_payload = {
-        "kind": "shot",
-        "shooting_team_id": str(shot_team.pk),
-        "reporting_team_id": str(team.pk),
-        "reported_player_id": str(player.pk),
-        "reported_player_role": "shooter" if params.for_team else "defender",
-        "shot_type_id": str(shot_type.pk) if shot_type else None,
-        "outcome": ShotEventDetail.OUTCOME_MISS,
-    }
-    if plan.matched_event is not None:
-        record_matched_observation(
-            event=plan.matched_event,
-            effective_at=event_time,
-            payload=observation_payload,
-        )
-        return
-
-    shot = Shot.objects.create(
-        player=player,
-        match_data=match_data,
-        match_part=current_part,
-        time=event_time,
-        for_team=params.for_team,
-        team=shot_team,
-        shot_type=shot_type,
-        scored=False,
-    )
-    event = MatchEvent.objects.get(source_type="shot", source_id=shot.pk)
-    create_reconciliation_candidates(
-        event=event,
-        possible_duplicates=plan.review_events,
     )
 
 
@@ -1641,49 +1677,21 @@ def _cmd_goal_reg(
     except (GoalType.DoesNotExist, ValidationError, ValueError) as exc:
         raise TrackerCommandError("Invalid goal type.", code="bad_request") from exc
 
-    plan = plan_shot_reconciliation(
-        ShotObservation(
+    created = _record_shot_observation(
+        _ShotRegistration(
+            player=player,
             match_data=match_data,
             match_part=current_part,
-            reporting_team_id=team.pk,
-            shooting_team_id=shot_team.pk,
-            outcome=ShotEventDetail.OUTCOME_GOAL,
+            reporting_team=team,
+            shooting_team=shot_team,
+            for_team=params.for_team,
             shot_type=goal_type,
-            effective_at=event_time,
+            outcome=ShotEventDetail.OUTCOME_GOAL,
+            event_time=event_time,
         )
     )
-    observation_payload = {
-        "kind": "shot",
-        "shooting_team_id": str(shot_team.pk),
-        "reporting_team_id": str(team.pk),
-        "reported_player_id": str(player.pk),
-        "reported_player_role": "shooter" if params.for_team else "defender",
-        "shot_type_id": str(goal_type.pk),
-        "outcome": ShotEventDetail.OUTCOME_GOAL,
-    }
-    if plan.matched_event is not None:
-        record_matched_observation(
-            event=plan.matched_event,
-            effective_at=event_time,
-            payload=observation_payload,
-        )
+    if not created:
         return
-
-    shot = Shot.objects.create(
-        player=player,
-        match_data=match_data,
-        match_part=current_part,
-        time=event_time,
-        for_team=params.for_team,
-        team=shot_team,
-        shot_type=goal_type,
-        scored=True,
-    )
-    event = MatchEvent.objects.get(source_type="shot", source_id=shot.pk)
-    create_reconciliation_candidates(
-        event=event,
-        possible_duplicates=plan.review_events,
-    )
 
     rebuild_group_roles(match_data)
 

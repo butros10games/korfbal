@@ -13,6 +13,8 @@ from .constants import player_model_string, team_model_string
 class MatchPlayer(models.Model):
     """Model for a player in a match."""
 
+    objects: ClassVar[models.Manager[MatchPlayer]]
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,

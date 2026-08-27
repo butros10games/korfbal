@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from bg_uuidv7 import uuidv7
 from django.db import models
 from django.db.models import Q
@@ -87,7 +89,7 @@ class PlayerSong(models.Model):
     class Meta:
         """Model metadata."""
 
-        ordering = ("-created_at",)
+        ordering: ClassVar[list[str]] = ["-created_at"]
         constraints = (
             models.UniqueConstraint(
                 fields=["player", "cached_song"],

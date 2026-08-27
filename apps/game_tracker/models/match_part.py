@@ -14,6 +14,8 @@ from .event_projection import EventProjectionModel
 class MatchPart(EventProjectionModel):
     """Model for a part of a match."""
 
+    objects: ClassVar[models.Manager[MatchPart]]
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,

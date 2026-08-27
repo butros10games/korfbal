@@ -3,7 +3,7 @@ name = "korfbal-deps"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
-    "django",
+    "django>=5.2,<5.3",
     "psycopg[binary,pool]",
     "bg-audit-events",
     "bg-django-mobile-detector",

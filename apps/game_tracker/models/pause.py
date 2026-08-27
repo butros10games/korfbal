@@ -14,12 +14,20 @@ from .event_projection import EventProjectionModel
 class Pause(EventProjectionModel):
     """Model for a pause in a match."""
 
+    objects: ClassVar[models.Manager[Pause]]
+
     class Meta:
         """Meta options for Pause."""
 
         indexes = (
-            models.Index(fields=["match_data", "active", "start_time"]),
-            models.Index(fields=["match_data", "start_time"]),
+            models.Index(
+                fields=["match_data", "active", "start_time"],
+                name="pause_match_active_time_idx",
+            ),
+            models.Index(
+                fields=["match_data", "start_time"],
+                name="pause_match_time_idx",
+            ),
         )
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(

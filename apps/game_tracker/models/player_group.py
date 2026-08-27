@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -12,6 +12,8 @@ from .constants import player_model_string, team_model_string
 
 class PlayerGroup(models.Model):
     """Model for a group of players in a match."""
+
+    objects: ClassVar[models.Manager[PlayerGroup]]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from bg_audit_events import UnifiedAuditEvent
@@ -601,7 +601,10 @@ class AuditProducerHealthAPIView(APIView):
         ]
 
         items.sort(
-            key=lambda item: (float(item["score"]), str(item["source_system"])),
+            key=lambda item: (
+                cast(float, item["score"]),
+                str(item["source_system"]),
+            ),
             reverse=True,
         )
 

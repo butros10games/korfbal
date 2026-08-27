@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -15,12 +15,20 @@ from .event_projection import EventProjectionModel
 class PlayerChange(EventProjectionModel):
     """Model for a player change in a match."""
 
+    objects: ClassVar[models.Manager[PlayerChange]]
+
     class Meta:
         """Meta options for PlayerChange."""
 
         indexes = (
-            models.Index(fields=["match_data", "time"]),
-            models.Index(fields=["match_data", "player_group", "time"]),
+            models.Index(
+                fields=["match_data", "time"],
+                name="playerchange_match_time_idx",
+            ),
+            models.Index(
+                fields=["match_data", "player_group", "time"],
+                name="playerchange_group_time_idx",
+            ),
         )
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(

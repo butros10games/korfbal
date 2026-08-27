@@ -543,8 +543,7 @@ def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
     assert set(group.players.values_list("pk", flat=True)) == {player_in.pk}
     assert set(reserve.players.values_list("pk", flat=True)) == {player_out.pk}
     assert (
-        MatchEvent.objects.filter(match_data=tracker.match_data).count()
-        == event_count
+        MatchEvent.objects.filter(match_data=tracker.match_data).count() == event_count
     )
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.event_sequence == last_sequence

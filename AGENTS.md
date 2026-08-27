@@ -32,6 +32,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
 - Keep packages imported during Django startup in the base runtime dependencies; Celery and
   collectstatic images must be able to initialize every installed app too.
+- Keep Korfbal Python dependencies synchronized in the root workspace `uv.lock` and the production
+  `deps/uv.lock`; do not recreate a project-local lock beside `manage.py`.
 - WebSocket/live features: prefer minimal changes; add/extend tests when behavior changes.
 - API and outbound-provider modules are adapters; application/domain/services/tasks/signals must not import them or HTTP framework modules.
 

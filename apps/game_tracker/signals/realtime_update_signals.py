@@ -82,10 +82,14 @@ def _shot_realtime_changed(
         # Coalesce the MatchData save into the Shot's single live revision.
         with suppress_live_update_signals():
             persist_matchdata_scores(match_data)
-    entity_id = logical_event_id(
-        match_data,
-        source_type="shot",
-        source_id=instance.pk,
+    entity_id = (
+        logical_event_id(
+            match_data,
+            source_type="shot",
+            source_id=instance.pk,
+        )
+        if match_data is not None
+        else str(instance.pk)
     )
     _record(
         instance,

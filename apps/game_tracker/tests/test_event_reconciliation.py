@@ -255,8 +255,7 @@ def test_detailed_substitution_enriches_opponent_marker_without_duplication() ->
     assert change.player_in == player_in
     assert versions.count() == TWO_REPORTS
     assert (
-        MatchEventObservation.objects.filter(event__in=versions).count()
-        == TWO_REPORTS
+        MatchEventObservation.objects.filter(event__in=versions).count() == TWO_REPORTS
     )
     assert len(set(versions.values_list("logical_id", flat=True))) == 1
 

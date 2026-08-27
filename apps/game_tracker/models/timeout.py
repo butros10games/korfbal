@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -13,6 +13,8 @@ from .event_projection import EventProjectionModel
 
 class Timeout(EventProjectionModel):
     """Model for a timeout in a match."""
+
+    objects: ClassVar[models.Manager[Timeout]]
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

@@ -210,9 +210,7 @@ def plan_simple_event_reconciliation(
     exact = list(_candidate_simple_events(observation, window=AUTO_MATCH_WINDOW))
     if len(exact) == 1:
         return ShotReconciliationPlan(matched_event=exact[0], review_events=())
-    review = tuple(
-        _candidate_simple_events(observation, window=REVIEW_WINDOW)
-    )
+    review = tuple(_candidate_simple_events(observation, window=REVIEW_WINDOW))
     return ShotReconciliationPlan(matched_event=None, review_events=review)
 
 
@@ -460,9 +458,7 @@ def _merge_duplicate_projection(
         )
 
     with match_event_context(actor=actor, source="reconciliation"):
-        timeout_pause = (
-            projection.pause if isinstance(projection, Timeout) else None
-        )
+        timeout_pause = projection.pause if isinstance(projection, Timeout) else None
         projection.delete()
         if timeout_pause is not None:
             timeout_pause.delete()

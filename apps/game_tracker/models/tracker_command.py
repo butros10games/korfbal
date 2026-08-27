@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from uuid import UUID
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -14,12 +15,14 @@ from .constants import team_model_string
 class TrackerCommand(models.Model):
     """Records the identity and commit order of a tracker state transition."""
 
+    objects: ClassVar[models.Manager[TrackerCommand]]
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
         editable=False,
     )
-    command_id: models.UUIDField[str, str] = models.UUIDField(unique=True)
+    command_id: models.UUIDField[UUID | str, UUID] = models.UUIDField(unique=True)
     match_data: models.ForeignKey[Any, Any] = models.ForeignKey(
         "MatchData",
         on_delete=models.CASCADE,
@@ -44,10 +47,10 @@ class TrackerCommand(models.Model):
     )
     command: models.CharField[str, str] = models.CharField(max_length=40)
     payload_hash: models.CharField[str, str] = models.CharField(max_length=64)
-    expected_revision: models.PositiveBigIntegerField[int, int | None] = (
+    expected_revision: models.PositiveBigIntegerField[int | None, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
-    committed_revision: models.PositiveBigIntegerField[int, int | None] = (
+    committed_revision: models.PositiveBigIntegerField[int | None, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
     response_payload: models.JSONField[dict[str, Any], dict[str, Any]] = (
@@ -67,7 +70,7 @@ class TrackerCommand(models.Model):
         blank=True,
         default="",
     )
-    client_sequence: models.PositiveBigIntegerField[int, int | None] = (
+    client_sequence: models.PositiveBigIntegerField[int | None, int | None] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)

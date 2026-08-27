@@ -357,7 +357,8 @@ def logical_event_id(
     """Resolve a typed projection id to its stable logical event identity."""
     if source_type == "pause":
         timeout_source_id = (
-            Timeout.objects.filter(
+            Timeout.objects
+            .filter(
                 match_data=match_data,
                 pause_id=source_id,
             )
