@@ -12,7 +12,7 @@ from apps.team.models import Team
 RESERVE_GROUP_NAME = "Reserve"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PlayerGroupAssignmentError(ValueError):
     """Raised when a player-group mutation would break tracker rules."""
 

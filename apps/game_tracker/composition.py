@@ -21,6 +21,9 @@ from apps.game_tracker.services.event_editor import (
 from apps.game_tracker.services.live_updates import (
     record_match_change as _record_change,
 )
+from apps.game_tracker.services.player_designation import (
+    apply_player_designation as _apply_player_designation,
+)
 from apps.game_tracker.services.recompute import schedule_recompute
 from apps.game_tracker.services.tracker_http import execute_tracker_command
 from apps.schedule.models import Match
@@ -36,6 +39,10 @@ tracker_runtime = TrackerRuntime(
 )
 apply_event_editor_command = partial(
     _apply_event_editor_command,
+    publisher=change_publisher,
+)
+apply_player_designation = partial(
+    _apply_player_designation,
     publisher=change_publisher,
 )
 

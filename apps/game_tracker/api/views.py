@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -22,16 +21,15 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.composition import record_match_change
+from apps.game_tracker.composition import apply_player_designation
 from apps.game_tracker.models import MatchData, PlayerGroup
-from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.player_designation import (
-    apply_designation,
+    PLAYER_GROUP_EDIT_PERMISSION_ERROR,
+    DesignatePlayersCommand,
+    PlayerDesignationPermissionError,
+    PlayerDesignationSelection,
+    PlayerDesignationValidationError,
     can_edit_player_groups,
-    get_player_group,
-    resolve_designation_context,
-    sync_match_players,
-    validate_target_group_capacity,
 )
 from apps.game_tracker.services.player_search import player_name_match_score
 from apps.player.models import Player
@@ -40,7 +38,6 @@ from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
 
-PLAYER_GROUP_EDIT_PERMISSION_ERROR = "You do not have permission to edit player groups."
 # DRF's ``api_view`` returns a callable view object that is valid input for
 # drf-spectacular but narrower than its type annotation permits.
 _function_schema = cast(Any, extend_schema)
@@ -316,28 +313,46 @@ def _extract_designation_players(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _prepare_player_designation(
     request: Request,
-) -> tuple[list[dict[str, Any]], PlayerGroup | None, Response | None]:
-    """Validate payload and return selected players and target group."""
+) -> tuple[DesignatePlayersCommand | None, Response | None]:
+    """Validate HTTP payload shape and build a typed application command."""
     data = _parse_designation_payload(request)
     if data is None:
-        return [], None, Response({"error": "Invalid JSON data"}, status=400)
+        return None, Response({"error": "Invalid JSON data"}, status=400)
 
     selected_players = _extract_designation_players(data)
     if not selected_players:
-        return [], None, Response({"error": "No player selected"}, status=400)
+        return None, Response({"error": "No player selected"}, status=400)
+
+    selections: list[PlayerDesignationSelection] = []
+    for player_data in selected_players:
+        player_id = player_data.get("id_uuid")
+        if not isinstance(player_id, str) or not player_id:
+            return None, Response({"error": "Invalid player"}, status=400)
+        source_group_id = player_data.get("groupId")
+        selections.append(
+            PlayerDesignationSelection(
+                player_id=player_id,
+                source_group_id=(
+                    source_group_id
+                    if isinstance(source_group_id, str) and source_group_id
+                    else None
+                ),
+            )
+        )
 
     new_group_id = data.get("new_group_id")
-    target_group = get_player_group(new_group_id)
-    if new_group_id and target_group is None:
-        return [], None, Response({"error": "Unknown player group"}, status=400)
+    if new_group_id and not isinstance(new_group_id, str):
+        return None, Response({"error": "Unknown player group"}, status=400)
 
-    if target_group is not None and not validate_target_group_capacity(
-        player_group_model=target_group,
-        selected_players=selected_players,
-    ):
-        return [], None, Response({"error": "Too many players selected"}, status=400)
-
-    return selected_players, target_group, None
+    return (
+        DesignatePlayersCommand(
+            players=tuple(selections),
+            target_group_id=(
+                new_group_id if isinstance(new_group_id, str) and new_group_id else None
+            ),
+        ),
+        None,
+    )
 
 
 @_function_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
@@ -353,52 +368,15 @@ def player_designation(request: Request) -> Response:
         }
 
     """
-    selected_players, target_group, error_response = _prepare_player_designation(
-        request
-    )
+    command, error_response = _prepare_player_designation(request)
     if error_response is not None:
         return error_response
-
-    match_context, team_context = resolve_designation_context(
-        selected_players=selected_players,
-        target_group=target_group,
-    )
-    if match_context is None or team_context is None:
-        return Response({"error": "Invalid player group context"}, status=400)
-
-    if not can_edit_player_groups(
-        user=request.user,
-        match=match_context,
-        team=team_context,
-    ):
-        return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
-
-    with transaction.atomic():
-        resolved_group, assignment_error = apply_designation(
-            selected_players=selected_players,
-            target_group=target_group,
-        )
-        if assignment_error is not None:
-            transaction.set_rollback(True)
-            return Response({"error": assignment_error}, status=400)
-
-        # Keep MatchPlayer roster in sync with PlayerGroup assignments.
-        # This ensures match stats can reliably place players on the correct side.
-        if resolved_group is not None:
-            sync_match_players(match_data=resolved_group.match_data)
-        match_data = (
-            resolved_group.match_data
-            if resolved_group is not None
-            else MatchData.objects.get(match_link=match_context)
-        )
-        record_match_change(
-            match_data,
-            resources={
-                LiveResource.TRACKER,
-                LiveResource.PLAYER_GROUPS,
-                LiveResource.STATS,
-                LiveResource.IMPACTS,
-            },
-        )
+    assert command is not None
+    try:
+        apply_player_designation(actor=request.user, command=command)
+    except PlayerDesignationPermissionError as exc:
+        return Response({"error": str(exc)}, status=403)
+    except PlayerDesignationValidationError as exc:
+        return Response({"error": str(exc)}, status=400)
 
     return Response({"success": True})

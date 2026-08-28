@@ -50,6 +50,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   Django invalidates the relation cache before DRF renders the response.
 - Don’t add standalone indexes for `ForeignKey` or `OneToOneField` columns; Django already indexes
   them. Add only composite or specialized indexes that serve a measured query shape.
+- Don’t make exception dataclasses frozen. Python context managers attach traceback state while
+  unwinding, and frozen exceptions can mask the original domain error with a `TypeError`.
 
 ## PR-first workflow (required)
 
