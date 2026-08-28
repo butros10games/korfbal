@@ -12,7 +12,7 @@ from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import (
     summarize_match_changes,
 )
-from apps.game_tracker.services.tracker_http import (
+from apps.game_tracker.services.tracker_state import (
     get_tracker_state,
     poll_tracker_state,
 )

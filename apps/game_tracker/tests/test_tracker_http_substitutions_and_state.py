@@ -12,10 +12,8 @@ import pytest
 from apps.club.models import Club
 from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import MatchData, MatchPart, PlayerChange
-from apps.game_tracker.services.tracker_http import (
-    TrackerCommandError,
-    get_tracker_state,
-)
+from apps.game_tracker.services.tracker_commands import TrackerCommandError
+from apps.game_tracker.services.tracker_state import get_tracker_state
 from apps.game_tracker.tests.tracker_test_helpers import (
     TEST_PASSWORD,
     create_group_types,

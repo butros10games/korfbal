@@ -12,6 +12,11 @@ PORT_FILES = (
     APPS_ROOT / "game_tracker" / "application" / "ports.py",
     APPS_ROOT / "player" / "application" / "ports.py",
 )
+COMMAND_HANDLER_DIRECTORY = APPS_ROOT / "game_tracker" / "services" / "tracker_commands"
+TRACKER_APPLICATION_FILES = (
+    *COMMAND_HANDLER_DIRECTORY.glob("*.py"),
+    APPS_ROOT / "game_tracker" / "services" / "tracker_state.py",
+)
 FORBIDDEN_DOMAIN_IMPORTS = (
     "celery",
     "django",
@@ -52,6 +57,23 @@ def test_outbound_ports_do_not_import_implementations() -> None:
     violations = [
         f"{path.relative_to(APPS_ROOT)} -> {imported}"
         for path in PORT_FILES
+        for imported in _imports(path)
+        if imported.startswith(forbidden)
+    ]
+
+    assert violations == []
+
+
+def test_tracker_application_services_do_not_import_adapters() -> None:
+    """Tracker command and read behavior remain independent of adapters."""
+    forbidden = (
+        "rest_framework",
+        "apps.game_tracker.adapters",
+        "apps.game_tracker.api",
+    )
+    violations = [
+        f"{path.relative_to(APPS_ROOT)} -> {imported}"
+        for path in TRACKER_APPLICATION_FILES
         for imported in _imports(path)
         if imported.startswith(forbidden)
     ]

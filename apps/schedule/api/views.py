@@ -38,8 +38,8 @@ from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows,
 )
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
-from apps.game_tracker.services.tracker_http import (
-    TrackerCommandError,
+from apps.game_tracker.services.tracker_commands import TrackerCommandError
+from apps.game_tracker.services.tracker_state import (
     get_tracker_state,
     poll_tracker_state,
 )
