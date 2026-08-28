@@ -15,11 +15,11 @@ from apps.game_tracker.adapters.outbound.runtime import (
 from apps.game_tracker.application.ports import TrackerRuntime
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
+from apps.game_tracker.services.event_editor import (
+    apply_event_editor_command as _apply_event_editor_command,
+)
 from apps.game_tracker.services.live_updates import (
     record_match_change as _record_change,
-)
-from apps.game_tracker.services.match_mutations import (
-    apply_editor_mutation as _apply_editor_mutation,
 )
 from apps.game_tracker.services.recompute import schedule_recompute
 from apps.game_tracker.services.tracker_http import execute_tracker_command
@@ -34,8 +34,8 @@ tracker_runtime = TrackerRuntime(
     jobs=tracker_jobs,
     publisher=change_publisher,
 )
-apply_editor_mutation = partial(
-    _apply_editor_mutation,
+apply_event_editor_command = partial(
+    _apply_event_editor_command,
     publisher=change_publisher,
 )
 

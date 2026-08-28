@@ -39,6 +39,9 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Keep tracker command metadata in `services/tracker_commands/registry.py`, mutation behavior
   in its family handlers, read snapshots in `services/tracker_state.py`, and the shared
   lock/idempotency/publication envelope in `services/tracker_http.py`.
+- Keep event-editor DRF serializers input-only. Apply typed event corrections through the
+  `game_tracker` event-editor command boundary so validation, the aggregate lock, projections,
+  revision recording, and realtime publication commit together.
 - With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.

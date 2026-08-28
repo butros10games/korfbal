@@ -36,6 +36,12 @@ from apps.game_tracker.models import (
 from apps.player.models import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.api.permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
+from apps.schedule.api.serializers import (
+    PauseWriteSerializer,
+    PlayerChangeWriteSerializer,
+    ShotWriteSerializer,
+    TimeoutWriteSerializer,
+)
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
@@ -43,6 +49,23 @@ from apps.team.models.team_data import TeamData
 
 TEST_PASSWORD = "pass1234"  # nosec B105 - test credential constant
 CONFLICT_CLIENT_SEQUENCE = 4
+
+
+@pytest.mark.parametrize(
+    "serializer_type",
+    [
+        ShotWriteSerializer,
+        PlayerChangeWriteSerializer,
+        PauseWriteSerializer,
+        TimeoutWriteSerializer,
+    ],
+)
+def test_event_editor_serializers_are_input_adapters_only(
+    serializer_type: type[object],
+) -> None:
+    """Event serializers may parse commands but must not persist models."""
+    assert "create" not in serializer_type.__dict__
+    assert "update" not in serializer_type.__dict__
 
 
 def _create_match(*, start_time: timezone.datetime | None = None) -> Match:

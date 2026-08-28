@@ -74,8 +74,8 @@ class Pause(EventProjectionModel):
         blank=True,
         null=True,
     )
-    end_time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
-        blank=True, null=True
+    end_time: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(blank=True, null=True)
     )
     active: models.BooleanField[bool, bool] = models.BooleanField(default=False)
 

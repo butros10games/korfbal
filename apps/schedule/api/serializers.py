@@ -2,32 +2,30 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from typing import Any, ClassVar, cast
+from datetime import date
+from typing import ClassVar, cast
 
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
-from apps.game_tracker.models import (
-    GoalType,
-    MatchData,
-    MatchPart,
-    MatchPlayer,
-    Pause,
-    PlayerChange,
-    Shot,
-    Timeout,
+from apps.game_tracker.services.event_editor import (
+    UNSET,
+    CreateGoalEvent,
+    CreatePauseEvent,
+    CreateSubstitutionEvent,
+    CreateTimeoutEvent,
+    EntityId,
+    UnsetValue,
+    UpdateGoalEvent,
+    UpdatePauseEvent,
+    UpdateSubstitutionEvent,
+    UpdateTimeoutEvent,
 )
-from apps.player.models.player import Player
 from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models.team import Team
 
 
-INVALID_MATCH_PART = "Invalid match part."
-UNKNOWN_PLAYER = "Unknown player."
-UNKNOWN_TEAM = "Unknown team."
 MIN_POOL_TEAMS = 2
 
 
@@ -317,303 +315,31 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
         return attrs
 
 
-def _ensure_aware(dt: datetime) -> datetime:
-    if timezone.is_aware(dt):
-        return dt
-    return timezone.make_aware(dt, timezone.get_current_timezone())
+def _required_id(data: dict[str, object], key: str) -> EntityId:
+    return cast(EntityId, data[key])
 
 
-def _optional_str(value: object) -> str | None:
-    if isinstance(value, str) and value:
-        return value
-    return None
+def _optional_text(data: dict[str, object], key: str) -> str | None:
+    value = data.get(key)
+    return value if isinstance(value, str) else None
 
 
-def _optional_int(value: object) -> int | None:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    return None
+def _optional_integer(data: dict[str, object], key: str) -> int | None:
+    value = data.get(key)
+    return value if isinstance(value, int) else None
 
 
-def _coerce_int(value: object, *, default: int = 0) -> int:
-    coerced = _optional_int(value)
-    return coerced if coerced is not None else default
+def _integer(data: dict[str, object], key: str, *, default: int = 0) -> int:
+    value = data.get(key)
+    return value if isinstance(value, int) else default
 
 
-def _resolve_event_time(
-    *,
-    match_part: MatchPart,
-    time: str | None,
-    minute: int | None,
-    exclude_pause_id: object | None = None,
-) -> datetime:
-    """Resolve an event timestamp.
-
-    Preferred input is a full ISO datetime string (time).
-    As a fallback, `minute` is interpreted as match-clock time. Completed pauses
-    are added back so serializing and editing a minute round-trip correctly.
-
-    Raises:
-        ValidationError: If the provided time/minute input is invalid.
-
-    """
-    if time:
-        parsed = parse_datetime(time)
-        if parsed is None:
-            raise serializers.ValidationError({"time": "Invalid datetime."})
-        resolved = _ensure_aware(parsed)
-        _validate_event_time_in_part(match_part, resolved)
-        return resolved
-
-    if minute is None:
-        raise serializers.ValidationError({
-            "time": "Provide either 'time' (ISO datetime) or 'minute'."
-        })
-
-    if minute < 0:
-        raise serializers.ValidationError({"minute": "Minute must be >= 0."})
-
-    period_offset = (match_part.part_number - 1) * match_part.match_data.part_length
-    elapsed_seconds = (minute * 60) - period_offset
-    if elapsed_seconds < 0:
-        raise serializers.ValidationError({
-            "minute": "Minute is before the selected match part."
-        })
-
-    resolved = _ensure_aware(match_part.start_time) + timedelta(seconds=elapsed_seconds)
-    pauses = Pause.objects.filter(
-        match_part=match_part,
-        start_time__isnull=False,
-        end_time__isnull=False,
-    ).order_by("start_time", "id_uuid")
-    if exclude_pause_id is not None:
-        pauses = pauses.exclude(pk=exclude_pause_id)
-    for pause_start, pause_end in pauses.values_list("start_time", "end_time"):
-        if pause_start <= resolved and pause_end > pause_start:
-            resolved += pause_end - pause_start
-
-    _validate_event_time_in_part(match_part, resolved)
-    return resolved
+def _patch[T](data: dict[str, object], key: str) -> T | UnsetValue:
+    return cast(T, data[key]) if key in data else UNSET
 
 
-def _validate_event_time_in_part(
-    match_part: MatchPart,
-    event_time: datetime,
-) -> None:
-    start = _ensure_aware(match_part.start_time)
-    if event_time < start:
-        raise serializers.ValidationError({
-            "time": "Event time is before the selected match part."
-        })
-    if match_part.end_time is not None and event_time > _ensure_aware(
-        match_part.end_time
-    ):
-        raise serializers.ValidationError({
-            "time": "Event time is after the selected match part."
-        })
-
-
-def _roster_team_id(*, match_data: MatchData, player: Player) -> str:
-    team_id = (
-        MatchPlayer.objects
-        .filter(
-            match_data=match_data,
-            player=player,
-        )
-        .values_list("team_id", flat=True)
-        .first()
-    )
-    if team_id is None:
-        raise serializers.ValidationError({
-            "player_id": "Player is not on this match roster."
-        })
-    return str(team_id)
-
-
-def _validate_player_team(
-    *,
-    match_data: MatchData,
-    player: Player,
-    team_id: object,
-    field: str = "player_id",
-) -> None:
-    try:
-        roster_team_id = _roster_team_id(match_data=match_data, player=player)
-    except serializers.ValidationError as exc:
-        raise serializers.ValidationError({
-            field: "Player is not on this match roster."
-        }) from exc
-    if roster_team_id != str(team_id):
-        raise serializers.ValidationError({
-            field: "Player does not belong to the selected match team."
-        })
-
-
-def _validate_substitution_players(
-    *,
-    match_data: MatchData,
-    player_in: Player | None,
-    player_out: Player | None,
-    team_id: object,
-) -> None:
-    if player_in is None or player_out is None:
-        raise serializers.ValidationError({
-            "detail": "Substitution requires incoming and outgoing players."
-        })
-    if player_in == player_out:
-        raise serializers.ValidationError({
-            "player_in_id": "Incoming and outgoing player must differ."
-        })
-    _validate_player_team(
-        match_data=match_data,
-        player=player_in,
-        team_id=team_id,
-        field="player_in_id",
-    )
-    _validate_player_team(
-        match_data=match_data,
-        player=player_out,
-        team_id=team_id,
-        field="player_out_id",
-    )
-
-
-class _MatchBoundWriteSerializer(serializers.Serializer):
-    """Base serializer that expects match/match_data in context."""
-
-    def _get_match(self) -> Match:
-        match = self.context.get("match")
-        if not isinstance(match, Match):
-            raise serializers.ValidationError("Missing match context.")
-        return match
-
-    def _get_match_data(self) -> MatchData:
-        match_data = self.context.get("match_data")
-        if not isinstance(match_data, MatchData):
-            raise serializers.ValidationError("Missing match_data context.")
-        return match_data
-
-
-def _validate_shot_team_id(*, match: Match, team_id: object) -> None:
-    team_id_str = str(team_id)
-    allowed = {str(match.home_team.id_uuid), str(match.away_team.id_uuid)}
-    if team_id_str not in allowed:
-        raise serializers.ValidationError({
-            "team_id": "Team is not part of this match."
-        })
-
-
-def _validate_shot_create(
-    *,
-    attrs: dict[str, object],
-    match: Match,
-    match_data: MatchData,
-) -> dict[str, object]:
-    required_fields = {
-        "player_id",
-        "team_id",
-        "shot_type_id",
-        "match_part_id",
-    }
-    missing = required_fields - set(attrs)
-    if missing:
-        raise serializers.ValidationError({
-            "detail": "Missing required fields.",
-            "missing": sorted(missing),
-        })
-
-    match_part = MatchPart.objects.filter(
-        id_uuid=attrs["match_part_id"],
-        match_data=match_data,
-    ).first()
-    if not match_part:
-        raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-
-    _validate_shot_team_id(match=match, team_id=attrs["team_id"])
-
-    player = Player.objects.filter(id_uuid=attrs["player_id"]).first()
-    if not player:
-        raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
-    _validate_player_team(
-        match_data=match_data,
-        player=player,
-        team_id=attrs["team_id"],
-    )
-
-    shot_type = GoalType.objects.filter(id_uuid=attrs["shot_type_id"]).first()
-    if not shot_type:
-        raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
-
-    event_time = _resolve_event_time(
-        match_part=match_part,
-        time=_optional_str(attrs.get("time")),
-        minute=_optional_int(attrs.get("minute")),
-    )
-
-    attrs["_match_part"] = match_part
-    attrs["_player"] = player
-    attrs["_shot_type"] = shot_type
-    attrs["_event_time"] = event_time
-    attrs["for_team"] = str(attrs["team_id"]) == str(match.home_team_id)
-    return attrs
-
-
-def _validate_shot_update(
-    *,
-    attrs: dict[str, object],
-    match: Match,
-    match_data: MatchData,
-    instance: Shot,
-) -> None:
-    if {"match_part_id", "time", "minute"} & attrs.keys():
-        match_part_id = attrs.get("match_part_id")
-        if match_part_id is None:
-            match_part_id = getattr(instance, "match_part_id", None)
-
-        match_part = MatchPart.objects.filter(
-            id_uuid=match_part_id,
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-
-        # Validate timestamp inputs.
-        _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(attrs.get("time")),
-            minute=_optional_int(attrs.get("minute")),
-        )
-
-    selected_team_id = attrs.get("team_id", instance.team_id)
-    _validate_shot_team_id(match=match, team_id=selected_team_id)
-
-    selected_player = instance.player
-    if "player_id" in attrs:
-        player = Player.objects.filter(id_uuid=attrs.get("player_id")).first()
-        if not player:
-            raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
-        selected_player = player
-
-    _validate_player_team(
-        match_data=match_data,
-        player=selected_player,
-        team_id=selected_team_id,
-    )
-    attrs["for_team"] = str(selected_team_id) == str(match.home_team_id)
-
-    if "shot_type_id" in attrs:
-        shot_type = GoalType.objects.filter(id_uuid=attrs.get("shot_type_id")).first()
-        if not shot_type:
-            raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
-
-
-class ShotWriteSerializer(_MatchBoundWriteSerializer):
-    """Write serializer for creating/updating shots."""
+class ShotWriteSerializer(serializers.Serializer):
+    """Parse goal-event input into a typed editor command."""
 
     player_id = serializers.UUIDField()
     team_id = serializers.UUIDField()
@@ -624,125 +350,35 @@ class ShotWriteSerializer(_MatchBoundWriteSerializer):
     time = serializers.CharField(required=False, allow_blank=True)
     minute = serializers.IntegerField(required=False)
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Validate incoming shot payload and resolve related objects."""
-        match = self._get_match()
-        match_data = self._get_match_data()
-
-        instance = getattr(self, "instance", None)
-        if isinstance(instance, Shot):
-            _validate_shot_update(
-                attrs=attrs,
-                match=match,
-                match_data=match_data,
-                instance=instance,
+    def to_command(
+        self, *, event_id: str | None = None
+    ) -> CreateGoalEvent | UpdateGoalEvent:
+        """Return the application command represented by validated input."""
+        data = cast(dict[str, object], self.validated_data)
+        if event_id is None:
+            return CreateGoalEvent(
+                player_id=_required_id(data, "player_id"),
+                team_id=_required_id(data, "team_id"),
+                shot_type_id=_required_id(data, "shot_type_id"),
+                match_part_id=_required_id(data, "match_part_id"),
+                time=_optional_text(data, "time"),
+                minute=_optional_integer(data, "minute"),
+                scored=bool(data.get("scored", True)),
             )
-            return attrs
-
-        return _validate_shot_create(attrs=attrs, match=match, match_data=match_data)
-
-    def create(self, validated_data: dict[str, object]) -> Shot:
-        """Create a new shot instance from validated data.
-
-        Raises:
-            ValidationError: If the referenced team is unknown.
-
-        """
-        match_data = self._get_match_data()
-        match_part = validated_data["_match_part"]
-        player = validated_data["_player"]
-        shot_type = validated_data["_shot_type"]
-        event_time = validated_data["_event_time"]
-
-        team_id = validated_data["team_id"]
-        team = Team.objects.filter(id_uuid=team_id).first()
-        if not team:
-            raise serializers.ValidationError({"team_id": UNKNOWN_TEAM})
-
-        return Shot.objects.create(
-            match_data=match_data,
-            match_part=match_part,
-            player=player,
-            team=team,
-            shot_type=shot_type,
-            for_team=bool(validated_data.get("for_team", True)),
-            scored=bool(validated_data.get("scored", True)),
-            time=event_time,
-        )
-
-    def update(self, instance: Shot, validated_data: dict[str, object]) -> Shot:
-        """Update an existing shot instance."""
-        match_data = self._get_match_data()
-
-        _apply_shot_part_and_time(instance, validated_data, match_data)
-        _apply_shot_player(instance, validated_data)
-        _apply_shot_goal_type(instance, validated_data)
-        _apply_shot_team(instance, validated_data)
-        _apply_shot_flags(instance, validated_data)
-
-        instance.save()
-        return instance
-
-
-def _apply_shot_part_and_time(
-    shot: Shot,
-    data: dict[str, object],
-    match_data: MatchData,
-) -> None:
-    if {"match_part_id", "time", "minute"} & data.keys():
-        match_part_id = data.get("match_part_id") or getattr(
-            shot, "match_part_id", None
-        )
-        match_part = MatchPart.objects.filter(
-            id_uuid=match_part_id,
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-        shot.match_part = match_part
-        shot.time = _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(data.get("time")),
-            minute=_optional_int(data.get("minute")),
+        return UpdateGoalEvent(
+            event_id=event_id,
+            player_id=_patch(data, "player_id"),
+            team_id=_patch(data, "team_id"),
+            shot_type_id=_patch(data, "shot_type_id"),
+            match_part_id=_patch(data, "match_part_id"),
+            time=_patch(data, "time"),
+            minute=_patch(data, "minute"),
+            scored=_patch(data, "scored"),
         )
 
 
-def _apply_shot_player(shot: Shot, data: dict[str, object]) -> None:
-    if "player_id" not in data:
-        return
-    player = Player.objects.filter(id_uuid=data["player_id"]).first()
-    if not player:
-        raise serializers.ValidationError({"player_id": UNKNOWN_PLAYER})
-    shot.player = player
-
-
-def _apply_shot_goal_type(shot: Shot, data: dict[str, object]) -> None:
-    if "shot_type_id" not in data:
-        return
-    shot_type = GoalType.objects.filter(id_uuid=data["shot_type_id"]).first()
-    if not shot_type:
-        raise serializers.ValidationError({"shot_type_id": "Unknown goal type."})
-    shot.shot_type = shot_type
-
-
-def _apply_shot_team(shot: Shot, data: dict[str, object]) -> None:
-    if "team_id" not in data:
-        return
-    team = Team.objects.filter(id_uuid=data["team_id"]).first()
-    if not team:
-        raise serializers.ValidationError({"team_id": UNKNOWN_TEAM})
-    shot.team = team
-
-
-def _apply_shot_flags(shot: Shot, data: dict[str, object]) -> None:
-    if "for_team" in data:
-        shot.for_team = bool(data["for_team"])
-    if "scored" in data:
-        shot.scored = bool(data["scored"])
-
-
-class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
-    """Write serializer for creating/updating player changes."""
+class PlayerChangeWriteSerializer(serializers.Serializer):
+    """Parse substitution input into a typed editor command."""
 
     player_in_id = serializers.UUIDField()
     player_out_id = serializers.UUIDField()
@@ -751,158 +387,33 @@ class PlayerChangeWriteSerializer(_MatchBoundWriteSerializer):
     time = serializers.CharField(required=False, allow_blank=True)
     minute = serializers.IntegerField(required=False)
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Validate incoming player change payload and resolve related objects.
-
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
-        match_data = self._get_match_data()
-        if isinstance(getattr(self, "instance", None), PlayerChange):
-            # Relation validation for partial updates is performed while applying
-            # each supplied field in ``update`` below.
-            return attrs
-
-        match_part = MatchPart.objects.filter(
-            id_uuid=attrs["match_part_id"],
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-
-        player_groups = getattr(match_data, "player_groups", None)
-        if player_groups is None:
-            raise serializers.ValidationError({
-                "player_group_id": "Player group relation not available."
-            })
-        player_group = (
-            cast(Any, player_groups).filter(id_uuid=attrs["player_group_id"]).first()
-        )
-        if not player_group:
-            raise serializers.ValidationError({
-                "player_group_id": "Invalid player group."
-            })
-
-        player_in = Player.objects.filter(id_uuid=attrs["player_in_id"]).first()
-        player_out = Player.objects.filter(id_uuid=attrs["player_out_id"]).first()
-        if not player_in:
-            raise serializers.ValidationError({"player_in_id": UNKNOWN_PLAYER})
-        if not player_out:
-            raise serializers.ValidationError({"player_out_id": UNKNOWN_PLAYER})
-        _validate_substitution_players(
-            match_data=match_data,
-            player_in=player_in,
-            player_out=player_out,
-            team_id=player_group.team_id,
-        )
-
-        event_time = _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(attrs.get("time")),
-            minute=_optional_int(attrs.get("minute")),
-        )
-
-        attrs["_match_part"] = match_part
-        attrs["_player_group"] = player_group
-        attrs["_player_in"] = player_in
-        attrs["_player_out"] = player_out
-        attrs["_event_time"] = event_time
-        return attrs
-
-    def create(self, validated_data: dict[str, object]) -> PlayerChange:
-        """Create a new player change instance from validated data."""
-        match_data = self._get_match_data()
-        return PlayerChange.objects.create(
-            match_data=match_data,
-            match_part=validated_data["_match_part"],
-            player_group=validated_data["_player_group"],
-            player_in=validated_data["_player_in"],
-            player_out=validated_data["_player_out"],
-            time=validated_data["_event_time"],
-        )
-
-    def update(
-        self, instance: PlayerChange, validated_data: dict[str, object]
-    ) -> PlayerChange:
-        """Update an existing player change instance.
-
-        Raises:
-            ValidationError: If any referenced objects are invalid.
-
-        """
-        match_data = self._get_match_data()
-
-        if (
-            "match_part_id" in validated_data
-            or "time" in validated_data
-            or "minute" in validated_data
-        ):
-            match_part = MatchPart.objects.filter(
-                id_uuid=validated_data.get(
-                    "match_part_id",
-                    getattr(instance, "match_part_id", None),
-                ),
-                match_data=match_data,
-            ).first()
-            if not match_part:
-                raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-            instance.match_part = match_part
-            instance.time = _resolve_event_time(
-                match_part=match_part,
-                time=_optional_str(validated_data.get("time")),
-                minute=_optional_int(validated_data.get("minute")),
+    def to_command(
+        self, *, event_id: str | None = None
+    ) -> CreateSubstitutionEvent | UpdateSubstitutionEvent:
+        """Return the application command represented by validated input."""
+        data = cast(dict[str, object], self.validated_data)
+        if event_id is None:
+            return CreateSubstitutionEvent(
+                player_in_id=_required_id(data, "player_in_id"),
+                player_out_id=_required_id(data, "player_out_id"),
+                player_group_id=_required_id(data, "player_group_id"),
+                match_part_id=_required_id(data, "match_part_id"),
+                time=_optional_text(data, "time"),
+                minute=_optional_integer(data, "minute"),
             )
-
-        player_group = instance.player_group
-        if "player_group_id" in validated_data:
-            player_groups = getattr(match_data, "player_groups", None)
-            if player_groups is None:
-                raise serializers.ValidationError({
-                    "player_group_id": "Player group relation not available."
-                })
-            player_group = (
-                cast(Any, player_groups)
-                .filter(id_uuid=validated_data["player_group_id"])
-                .first()
-            )
-            if not player_group:
-                raise serializers.ValidationError({
-                    "player_group_id": "Invalid player group."
-                })
-            instance.player_group = player_group
-
-        player_in = instance.player_in
-        if "player_in_id" in validated_data:
-            player_in = Player.objects.filter(
-                id_uuid=validated_data["player_in_id"]
-            ).first()
-            if not player_in:
-                raise serializers.ValidationError({"player_in_id": UNKNOWN_PLAYER})
-            instance.player_in = player_in
-
-        player_out = instance.player_out
-        if "player_out_id" in validated_data:
-            player_out = Player.objects.filter(
-                id_uuid=validated_data["player_out_id"]
-            ).first()
-            if not player_out:
-                raise serializers.ValidationError({"player_out_id": UNKNOWN_PLAYER})
-            instance.player_out = player_out
-
-        _validate_substitution_players(
-            match_data=match_data,
-            player_in=player_in,
-            player_out=player_out,
-            team_id=player_group.team_id,
+        return UpdateSubstitutionEvent(
+            event_id=event_id,
+            player_in_id=_patch(data, "player_in_id"),
+            player_out_id=_patch(data, "player_out_id"),
+            player_group_id=_patch(data, "player_group_id"),
+            match_part_id=_patch(data, "match_part_id"),
+            time=_patch(data, "time"),
+            minute=_patch(data, "minute"),
         )
 
-        instance.save()
-        return instance
 
-
-class PauseWriteSerializer(_MatchBoundWriteSerializer):
-    """Write serializer for creating/updating pauses."""
+class PauseWriteSerializer(serializers.Serializer):
+    """Parse pause input into a typed editor command."""
 
     match_part_id = serializers.UUIDField()
     start_time = serializers.CharField(required=False, allow_blank=True)
@@ -910,107 +421,31 @@ class PauseWriteSerializer(_MatchBoundWriteSerializer):
     length_seconds = serializers.IntegerField(required=False, min_value=0)
     active = serializers.BooleanField(required=False)
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Validate incoming pause payload and resolve derived timestamps.
-
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
-        match_data = self._get_match_data()
-        if isinstance(getattr(self, "instance", None), Pause):
-            return attrs
-        match_part = MatchPart.objects.filter(
-            id_uuid=attrs["match_part_id"],
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-
-        start = _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(attrs.get("start_time")),
-            minute=_optional_int(attrs.get("minute")),
-        )
-        length_seconds = _coerce_int(attrs.get("length_seconds"))
-        end = start + timedelta(seconds=length_seconds) if length_seconds else None
-        if end is not None:
-            _validate_event_time_in_part(match_part, end)
-
-        attrs["_match_part"] = match_part
-        attrs["_start_time"] = start
-        attrs["_end_time"] = end
-        return attrs
-
-    def create(self, validated_data: dict[str, object]) -> Pause:
-        """Create a new pause instance from validated data."""
-        match_data = self._get_match_data()
-        return Pause.objects.create(
-            match_data=match_data,
-            match_part=validated_data["_match_part"],
-            start_time=validated_data["_start_time"],
-            end_time=validated_data.get("_end_time"),
-            active=bool(validated_data.get("active")),
+    def to_command(
+        self, *, event_id: str | None = None
+    ) -> CreatePauseEvent | UpdatePauseEvent:
+        """Return the application command represented by validated input."""
+        data = cast(dict[str, object], self.validated_data)
+        if event_id is None:
+            return CreatePauseEvent(
+                match_part_id=_required_id(data, "match_part_id"),
+                start_time=_optional_text(data, "start_time"),
+                minute=_optional_integer(data, "minute"),
+                length_seconds=_integer(data, "length_seconds"),
+                active=bool(data.get("active", False)),
+            )
+        return UpdatePauseEvent(
+            event_id=event_id,
+            match_part_id=_patch(data, "match_part_id"),
+            start_time=_patch(data, "start_time"),
+            minute=_patch(data, "minute"),
+            length_seconds=_patch(data, "length_seconds"),
+            active=_patch(data, "active"),
         )
 
-    def update(self, instance: Pause, validated_data: dict[str, object]) -> Pause:
-        """Update an existing pause instance.
 
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
-        match_data = self._get_match_data()
-
-        if "match_part_id" in validated_data:
-            match_part = MatchPart.objects.filter(
-                id_uuid=validated_data["match_part_id"],
-                match_data=match_data,
-            ).first()
-            if not match_part:
-                raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-            instance.match_part = match_part
-
-        if {"start_time", "minute", "length_seconds"} & validated_data.keys():
-            match_part_for_time = instance.match_part
-            if match_part_for_time is None:
-                raise serializers.ValidationError({
-                    "match_part_id": "Pause has no match part."
-                })
-            start = (
-                _resolve_event_time(
-                    match_part=match_part_for_time,
-                    time=_optional_str(validated_data.get("start_time")),
-                    minute=_optional_int(validated_data.get("minute")),
-                    exclude_pause_id=instance.pk,
-                )
-                if {"start_time", "minute"} & validated_data.keys()
-                else instance.start_time
-            )
-            if start is None:
-                raise serializers.ValidationError({"start_time": "Pause has no start."})
-            current_length = int(instance.length().total_seconds())
-            length_seconds = (
-                _coerce_int(validated_data.get("length_seconds"))
-                if "length_seconds" in validated_data
-                else current_length
-            )
-            instance.start_time = start
-            cast(Any, instance).end_time = (
-                start + timedelta(seconds=length_seconds) if length_seconds else None
-            )
-            if instance.end_time is not None:
-                _validate_event_time_in_part(match_part_for_time, instance.end_time)
-
-        if "active" in validated_data:
-            instance.active = bool(validated_data["active"])
-
-        instance.save()
-        return instance
-
-
-class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
-    """Write serializer for creating/updating timeouts."""
+class TimeoutWriteSerializer(serializers.Serializer):
+    """Parse timeout input into a typed editor command."""
 
     team_id = serializers.UUIDField()
     match_part_id = serializers.UUIDField()
@@ -1018,148 +453,24 @@ class TimeoutWriteSerializer(_MatchBoundWriteSerializer):
     minute = serializers.IntegerField(required=False)
     length_seconds = serializers.IntegerField(required=False, min_value=0)
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Validate incoming timeout payload and resolve related objects.
-
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
-        match = self._get_match()
-        match_data = self._get_match_data()
-        if isinstance(getattr(self, "instance", None), Timeout):
-            if "team_id" in attrs:
-                team_id = str(attrs["team_id"])
-                allowed = {
-                    str(match.home_team.id_uuid),
-                    str(match.away_team.id_uuid),
-                }
-                if team_id not in allowed:
-                    raise serializers.ValidationError({
-                        "team_id": "Team is not part of this match."
-                    })
-            return attrs
-
-        match_part = MatchPart.objects.filter(
-            id_uuid=attrs["match_part_id"],
-            match_data=match_data,
-        ).first()
-        if not match_part:
-            raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-
-        team_id = str(attrs["team_id"])
-        if team_id not in {str(match.home_team.id_uuid), str(match.away_team.id_uuid)}:
-            raise serializers.ValidationError({
-                "team_id": "Team is not part of this match."
-            })
-
-        start = _resolve_event_time(
-            match_part=match_part,
-            time=_optional_str(attrs.get("start_time")),
-            minute=_optional_int(attrs.get("minute")),
-        )
-        length_seconds = _coerce_int(attrs.get("length_seconds"))
-        end = start + timedelta(seconds=length_seconds) if length_seconds else None
-        if end is not None:
-            _validate_event_time_in_part(match_part, end)
-
-        attrs["_match_part"] = match_part
-        attrs["_start_time"] = start
-        attrs["_end_time"] = end
-        return attrs
-
-    def create(self, validated_data: dict[str, object]) -> Timeout:
-        """Create a new timeout instance from validated data.
-
-        Raises:
-            ValidationError: If the referenced team is unknown.
-
-        """
-        match_data = self._get_match_data()
-
-        team_id = validated_data["team_id"]
-        team = Team.objects.filter(id_uuid=team_id).first()
-        if not team:
-            raise serializers.ValidationError({"team_id": UNKNOWN_TEAM})
-
-        pause = Pause.objects.create(
-            match_data=match_data,
-            match_part=validated_data["_match_part"],
-            start_time=validated_data["_start_time"],
-            end_time=validated_data.get("_end_time"),
-            active=False,
-        )
-
-        return Timeout.objects.create(
-            match_data=match_data,
-            match_part=validated_data["_match_part"],
-            team=team,
-            pause=pause,
-        )
-
-    def update(self, instance: Timeout, validated_data: dict[str, object]) -> Timeout:
-        """Update an existing timeout instance.
-
-        Raises:
-            ValidationError: If the payload is invalid.
-
-        """
-        match_data = self._get_match_data()
-
-        if "team_id" in validated_data:
-            team_id = validated_data["team_id"]
-            team = Team.objects.filter(id_uuid=team_id).first()
-            if not team:
-                raise serializers.ValidationError({"team_id": UNKNOWN_TEAM})
-            instance.team = team
-
-        if instance.pause is None:
-            raise serializers.ValidationError({"pause": "Timeout has no pause."})
-
-        pause = instance.pause
-        if "match_part_id" in validated_data:
-            match_part = MatchPart.objects.filter(
-                id_uuid=validated_data["match_part_id"],
-                match_data=match_data,
-            ).first()
-            if not match_part:
-                raise serializers.ValidationError({"match_part_id": INVALID_MATCH_PART})
-            instance.match_part = match_part
-            pause.match_part = match_part
-
-        if {"start_time", "minute", "length_seconds"} & validated_data.keys():
-            match_part_for_time = pause.match_part
-            if match_part_for_time is None:
-                raise serializers.ValidationError({
-                    "match_part_id": "Timeout pause has no match part."
-                })
-            start = (
-                _resolve_event_time(
-                    match_part=match_part_for_time,
-                    time=_optional_str(validated_data.get("start_time")),
-                    minute=_optional_int(validated_data.get("minute")),
-                    exclude_pause_id=pause.pk,
-                )
-                if {"start_time", "minute"} & validated_data.keys()
-                else pause.start_time
+    def to_command(
+        self, *, event_id: str | None = None
+    ) -> CreateTimeoutEvent | UpdateTimeoutEvent:
+        """Return the application command represented by validated input."""
+        data = cast(dict[str, object], self.validated_data)
+        if event_id is None:
+            return CreateTimeoutEvent(
+                team_id=_required_id(data, "team_id"),
+                match_part_id=_required_id(data, "match_part_id"),
+                start_time=_optional_text(data, "start_time"),
+                minute=_optional_integer(data, "minute"),
+                length_seconds=_integer(data, "length_seconds"),
             )
-            if start is None:
-                raise serializers.ValidationError({
-                    "start_time": "Timeout pause has no start."
-                })
-            current_length = int(pause.length().total_seconds())
-            length_seconds = (
-                _coerce_int(validated_data.get("length_seconds"))
-                if "length_seconds" in validated_data
-                else current_length
-            )
-            pause.start_time = start
-            cast(Any, pause).end_time = (
-                start + timedelta(seconds=length_seconds) if length_seconds else None
-            )
-            if pause.end_time is not None:
-                _validate_event_time_in_part(match_part_for_time, pause.end_time)
-
-        pause.save()
-        instance.save()
-        return instance
+        return UpdateTimeoutEvent(
+            event_id=event_id,
+            team_id=_patch(data, "team_id"),
+            match_part_id=_patch(data, "match_part_id"),
+            start_time=_patch(data, "start_time"),
+            minute=_patch(data, "minute"),
+            length_seconds=_patch(data, "length_seconds"),
+        )
