@@ -12,7 +12,10 @@ from apps.game_tracker.application.ports import MatchChangePublisher
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import record_match_change
-from apps.game_tracker.services.match_mutations import locked_match_mutation
+from apps.game_tracker.services.match_mutations import (
+    locked_match_mutation,
+    require_match_revision,
+)
 from apps.game_tracker.services.player_groups import (
     PlayerGroupAssignmentError,
     add_player_to_group,
@@ -48,6 +51,7 @@ class DesignatePlayersCommand:
 
     players: tuple[PlayerDesignationSelection, ...]
     target_group_id: str | None
+    expected_revision: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,6 +299,10 @@ def apply_player_designation(
 
     try:
         with locked_match_mutation(match_data.pk) as locked:
+            require_match_revision(
+                locked,
+                expected_revision=command.expected_revision,
+            )
             groups_by_id, players_by_id = _load_locked_command_state(
                 command=command,
                 match_data=locked,

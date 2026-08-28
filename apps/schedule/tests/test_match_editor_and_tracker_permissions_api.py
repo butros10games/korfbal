@@ -113,6 +113,44 @@ def _add_roster_player(match: Match, user: object, *, team: Team) -> Player:
     return player
 
 
+def _live_revision(match: Match) -> int:
+    return MatchData.objects.get(match_link=match).live_revision
+
+
+def _assert_updated_shot_projection(
+    *,
+    match_data: MatchData,
+    shot: Shot,
+    expected_shooter: Player,
+) -> None:
+    canonical = (
+        ShotEventDetail.objects
+        .filter(
+            event__match_data=match_data,
+            event__source_id=shot.pk,
+        )
+        .order_by("-event__sequence")
+        .first()
+    )
+    assert canonical is not None
+    assert canonical.shooter == expected_shooter
+    assert canonical.defender is None
+
+
+def _assert_editor_shot_history(client: Client, match: Match) -> None:
+    history_response = client.get(f"/api/matches/{match.id_uuid}/events/history/")
+    assert history_response.status_code == HTTPStatus.OK
+    history = history_response.json()["events"]
+    shot_history = [event for event in history if event["source_type"] == "shot"]
+    assert [event["kind"] for event in shot_history] == [
+        "shot.created",
+        "shot.updated",
+        "shot.retracted",
+    ]
+    assert all(event["source"] == "editor" for event in shot_history)
+    assert len({event["logical_event_id"] for event in shot_history}) == 1
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 @pytest.mark.parametrize("event_kind", ["goals", "substitutes", "pauses", "timeouts"])
@@ -135,7 +173,11 @@ def test_missing_editor_event_does_not_publish_live_change(
     changes_before = MatchLiveChange.objects.filter(match_data=match_data).count()
     url = f"/api/matches/{match.id_uuid}/events/{event_kind}/{uuid4()}/"
 
-    response = getattr(client, method)(url, data={}, content_type="application/json")
+    response = getattr(client, method)(
+        url,
+        data={"expected_revision": revision_before},
+        content_type="application/json",
+    )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     match_data.refresh_from_db()
@@ -334,6 +376,7 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     match_data = MatchData.objects.get(match_link=match)
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
+    match_data.refresh_from_db()
 
     create_response = client.post(
         f"/api/matches/{match.id_uuid}/events/goals/",
@@ -343,12 +386,15 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
             "shot_type_id": str(goal_type.id_uuid),
             "match_part_id": str(match_part.id_uuid),
             "minute": 0,
+            "expected_revision": match_data.live_revision,
         },
         content_type="application/json",
     )
     assert create_response.status_code == HTTPStatus.CREATED
 
-    created = create_response.json()
+    create_payload = create_response.json()
+    created = create_payload["event"]
+    assert create_payload["live_revision"] == match_data.live_revision + 1
     assert created["type"] == "goal"
     assert created["team_id"] == str(match.home_team.id_uuid)
     assert created["player"] == "coach"
@@ -366,49 +412,120 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
             "for_team": True,
             "team_id": str(match.away_team.id_uuid),
             "player_id": str(away_player.id_uuid),
+            "expected_revision": create_payload["live_revision"],
         },
         content_type="application/json",
     )
     assert update_response.status_code == HTTPStatus.OK
-    updated = update_response.json()
+    update_payload = update_response.json()
+    updated = update_payload["event"]
     assert updated["for_team"] is False
 
     shot_model.refresh_from_db()
     assert shot_model.for_team is False
-    canonical = (
-        ShotEventDetail.objects
-        .filter(
-            event__match_data=match_data,
-            event__source_id=shot_model.pk,
-        )
-        .order_by("-event__sequence")
-        .first()
+    _assert_updated_shot_projection(
+        match_data=match_data,
+        shot=shot_model,
+        expected_shooter=away_player,
     )
-    assert canonical is not None
-    assert canonical.shooter == away_player
-    assert canonical.defender is None
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 1)
 
     delete_response = client.delete(
         f"/api/matches/{match.id_uuid}/events/goals/{shot_id}/",
+        data={"expected_revision": update_payload["live_revision"]},
+        content_type="application/json",
     )
-    assert delete_response.status_code == HTTPStatus.NO_CONTENT
+    assert delete_response.status_code == HTTPStatus.OK
+    assert delete_response.json() == {
+        "event": None,
+        "live_revision": update_payload["live_revision"] + 1,
+    }
     assert Shot.objects.filter(id_uuid=shot_id).exists() is False
     match_data.refresh_from_db()
     assert (match_data.home_score, match_data.away_score) == (0, 0)
 
-    history_response = client.get(f"/api/matches/{match.id_uuid}/events/history/")
-    assert history_response.status_code == HTTPStatus.OK
-    history = history_response.json()["events"]
-    shot_history = [event for event in history if event["source_type"] == "shot"]
-    assert [event["kind"] for event in shot_history] == [
-        "shot.created",
-        "shot.updated",
-        "shot.retracted",
-    ]
-    assert all(event["source"] == "editor" for event in shot_history)
-    assert len({event["logical_event_id"] for event in shot_history}) == 1
+    _assert_editor_shot_history(client, match)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_goal_editor_rejects_stale_revision(client: Client) -> None:
+    """A stale editor cannot overwrite a newer aggregate revision."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    goal_type = GoalType.objects.create(name="Revision conflict goal")
+    coach_user = get_user_model().objects.create_user(
+        username="revision-conflict-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+    expected_revision = _live_revision(match)
+    payload = {
+        "player_id": str(coach_user.player.id_uuid),
+        "team_id": str(match.home_team.id_uuid),
+        "shot_type_id": str(goal_type.id_uuid),
+        "match_part_id": str(match_part.id_uuid),
+        "minute": 0,
+        "expected_revision": expected_revision,
+    }
+
+    first = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data=payload,
+        content_type="application/json",
+    )
+    assert first.status_code == HTTPStatus.CREATED
+
+    stale = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data=payload,
+        content_type="application/json",
+    )
+
+    assert stale.status_code == HTTPStatus.CONFLICT
+    assert stale.json() == {
+        "code": "revision_conflict",
+        "detail": "The match changed while you were editing.",
+        "expected_revision": expected_revision,
+        "live_revision": first.json()["live_revision"],
+    }
+    assert Shot.objects.filter(match_data__match_link=match).count() == 1
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_goal_editor_requires_expected_revision(client: Client) -> None:
+    """Revision-aware editor writes report a structured field error."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    goal_type = GoalType.objects.create(name="Missing revision goal")
+    coach_user = get_user_model().objects.create_user(
+        username="missing-revision-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    player = _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data={
+            "player_id": str(player.id_uuid),
+            "team_id": str(match.home_team.id_uuid),
+            "shot_type_id": str(goal_type.id_uuid),
+            "match_part_id": str(match_part.id_uuid),
+            "minute": 0,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {
+        "expected_revision": "A non-negative integer is required."
+    }
 
 
 @pytest.mark.django_db
@@ -435,6 +552,7 @@ def test_goal_editor_validates_roster_team_and_period_time(client: Client) -> No
         "shot_type_id": str(goal_type.id_uuid),
         "match_part_id": str(match_part.id_uuid),
         "minute": 1,
+        "expected_revision": _live_revision(match),
     }
     wrong_team = client.post(
         f"/api/matches/{match.id_uuid}/events/goals/",
@@ -483,12 +601,13 @@ def test_goal_editor_minute_accounts_for_completed_pauses(client: Client) -> Non
             "shot_type_id": str(goal_type.id_uuid),
             "match_part_id": str(match_part.id_uuid),
             "minute": 8,
+            "expected_revision": _live_revision(match),
         },
         content_type="application/json",
     )
 
     assert response.status_code == HTTPStatus.CREATED
-    shot = Shot.objects.get(pk=response.json()["source_id"])
+    shot = Shot.objects.get(pk=response.json()["event"]["source_id"])
     assert shot.time == match_part.start_time + timezone.timedelta(minutes=10)
 
 
@@ -527,6 +646,7 @@ def test_goal_editor_rolls_back_typed_write_when_event_envelope_fails(
                 "shot_type_id": str(goal_type.id_uuid),
                 "match_part_id": str(match_part.id_uuid),
                 "minute": 0,
+                "expected_revision": _live_revision(match),
             },
             content_type="application/json",
         )
@@ -560,11 +680,13 @@ def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None
             "match_part_id": str(match_part.id_uuid),
             "minute": 0,
             "length_seconds": 20,
+            "expected_revision": revision_before_create,
         },
         content_type="application/json",
     )
     assert response.status_code == HTTPStatus.CREATED
-    created = response.json()
+    create_payload = response.json()
+    created = create_payload["event"]
     assert created["event_kind"] == "timeout"
     assert created["source_id"] == created["pause_id"]
     assert created["event_id"] == created["logical_event_id"]
@@ -578,11 +700,14 @@ def test_timeout_editor_uses_stable_pause_event_identity(client: Client) -> None
 
     update_response = client.patch(
         f"/api/matches/{match.id_uuid}/events/timeouts/{created['source_id']}/",
-        data={"length_seconds": 30},
+        data={
+            "length_seconds": 30,
+            "expected_revision": create_payload["live_revision"],
+        },
         content_type="application/json",
     )
     assert update_response.status_code == HTTPStatus.OK
-    assert update_response.json()["event_id"] == created["event_id"]
+    assert update_response.json()["event"]["event_id"] == created["event_id"]
     timeout = Timeout.objects.get(id_uuid=created["timeout_id"])
     timeout_event = (
         MatchEvent.objects

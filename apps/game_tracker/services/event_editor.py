@@ -25,7 +25,10 @@ from apps.game_tracker.models import (
     Shot,
     Timeout,
 )
-from apps.game_tracker.services.match_mutations import apply_editor_mutation
+from apps.game_tracker.services.match_mutations import (
+    EditorMutationContext,
+    apply_editor_mutation,
+)
 from apps.player.models.player import Player
 from apps.team.models.team import Team
 
@@ -192,6 +195,7 @@ class EventEditorResult:
 
     match_data: MatchData
     event: EditedEvent | None
+    revision: int
     found: bool = True
 
 
@@ -778,22 +782,32 @@ def _delete_timeout(
 def apply_event_editor_command(
     *,
     match_data_id: object,
+    expected_revision: int,
     actor: object | None,
     command: EventEditorCommand,
     publisher: MatchChangePublisher,
 ) -> EventEditorResult:
     """Validate and apply one event correction under the aggregate lock."""
     match_data, applied = apply_editor_mutation(
-        match_data_id=match_data_id,
-        actor=actor,
+        context=EditorMutationContext(
+            match_data_id=match_data_id,
+            expected_revision=expected_revision,
+            actor=actor,
+            publisher=publisher,
+        ),
         mutate=lambda locked: _apply_command(command, locked),
-        publisher=publisher,
         no_op_result=_CommandOutcome.NOT_FOUND,
     )
     if applied is _CommandOutcome.NOT_FOUND:
-        return EventEditorResult(match_data=match_data, event=None, found=False)
+        return EventEditorResult(
+            match_data=match_data,
+            event=None,
+            revision=match_data.live_revision,
+            found=False,
+        )
     return EventEditorResult(
         match_data=match_data,
+        revision=match_data.live_revision,
         event=(
             applied
             if isinstance(applied, (Shot, PlayerChange, Pause, Timeout))

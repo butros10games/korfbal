@@ -48,6 +48,7 @@ def test_designation_command_commits_roster_revision_and_publication() -> None:
         command=DesignatePlayersCommand(
             players=(PlayerDesignationSelection(player_id=str(player.id_uuid)),),
             target_group_id=str(reserve.id_uuid),
+            expected_revision=tracker.match_data.live_revision,
         ),
         publisher=publisher,
     )
@@ -108,6 +109,7 @@ def test_invalid_batch_rolls_back_all_designations() -> None:
                     ),
                 ),
                 target_group_id=str(groups["Aanval"].id_uuid),
+                expected_revision=tracker.match_data.live_revision,
             ),
             publisher=publisher,
         )
@@ -148,6 +150,7 @@ def test_capacity_failure_is_revision_free() -> None:
             command=DesignatePlayersCommand(
                 players=(PlayerDesignationSelection(player_id=str(candidate.id_uuid)),),
                 target_group_id=str(attack.id_uuid),
+                expected_revision=tracker.match_data.live_revision,
             ),
             publisher=publisher,
         )

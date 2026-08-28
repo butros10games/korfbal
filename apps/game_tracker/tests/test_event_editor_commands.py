@@ -58,6 +58,7 @@ def test_create_goal_command_commits_one_revision_and_publication() -> None:
 
     result = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=revision_before,
         actor=None,
         command=CreateGoalEvent(
             player_id=player.id_uuid,
@@ -105,6 +106,7 @@ def test_invalid_editor_command_rolls_back_without_publication() -> None:
     with pytest.raises(EventEditorValidationError) as captured:
         apply_event_editor_command(
             match_data_id=tracker.match_data.pk,
+            expected_revision=revision_before,
             actor=None,
             command=CreateGoalEvent(
                 player_id=player.id_uuid,
@@ -149,6 +151,7 @@ def test_substitution_commands_own_the_full_event_lifecycle() -> None:
 
     created = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=tracker.match_data.live_revision,
         actor=None,
         command=CreateSubstitutionEvent(
             player_in_id=player_in.id_uuid,
@@ -164,6 +167,7 @@ def test_substitution_commands_own_the_full_event_lifecycle() -> None:
 
     updated = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=created.revision,
         actor=None,
         command=UpdateSubstitutionEvent(
             event_id=str(created.event.pk),
@@ -176,6 +180,7 @@ def test_substitution_commands_own_the_full_event_lifecycle() -> None:
 
     deleted = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=updated.revision,
         actor=None,
         command=DeleteSubstitutionEvent(event_id=str(created.event.pk)),
         publisher=publisher,
@@ -195,6 +200,7 @@ def test_pause_commands_own_the_full_event_lifecycle() -> None:
 
     created = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=tracker.match_data.live_revision,
         actor=None,
         command=CreatePauseEvent(
             match_part_id=match_part.id_uuid,
@@ -209,6 +215,7 @@ def test_pause_commands_own_the_full_event_lifecycle() -> None:
 
     updated = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=created.revision,
         actor=None,
         command=UpdatePauseEvent(
             event_id=str(created.event.pk),
@@ -221,6 +228,7 @@ def test_pause_commands_own_the_full_event_lifecycle() -> None:
 
     deleted = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=updated.revision,
         actor=None,
         command=DeletePauseEvent(event_id=str(created.event.pk)),
         publisher=publisher,
@@ -239,6 +247,7 @@ def test_missing_editor_command_is_a_revision_free_no_op() -> None:
 
     result = apply_event_editor_command(
         match_data_id=tracker.match_data.pk,
+        expected_revision=tracker.match_data.live_revision,
         actor=None,
         command=DeleteGoalEvent(event_id=str(uuid4())),
         publisher=publisher,

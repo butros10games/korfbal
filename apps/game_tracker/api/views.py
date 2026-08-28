@@ -23,6 +23,7 @@ from rest_framework.response import Response
 
 from apps.game_tracker.composition import apply_player_designation
 from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 from apps.game_tracker.services.player_designation import (
     PLAYER_GROUP_EDIT_PERMISSION_ERROR,
     DesignatePlayersCommand,
@@ -124,7 +125,10 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
             },
         )
 
-    return Response({"player_groups": player_groups_data})
+    return Response({
+        "player_groups": player_groups_data,
+        "live_revision": match_data.live_revision,
+    })
 
 
 @_function_schema(responses=OpenApiTypes.OBJECT)
@@ -344,12 +348,24 @@ def _prepare_player_designation(
     if new_group_id and not isinstance(new_group_id, str):
         return None, Response({"error": "Unknown player group"}, status=400)
 
+    expected_revision = data.get("expected_revision")
+    if (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+        or expected_revision < 0
+    ):
+        return None, Response(
+            {"expected_revision": ["A non-negative integer is required."]},
+            status=400,
+        )
+
     return (
         DesignatePlayersCommand(
             players=tuple(selections),
             target_group_id=(
                 new_group_id if isinstance(new_group_id, str) and new_group_id else None
             ),
+            expected_revision=expected_revision,
         ),
         None,
     )
@@ -373,10 +389,20 @@ def player_designation(request: Request) -> Response:
         return error_response
     assert command is not None
     try:
-        apply_player_designation(actor=request.user, command=command)
+        result = apply_player_designation(actor=request.user, command=command)
+    except MatchRevisionConflictError as exc:
+        return Response(
+            {
+                "code": "revision_conflict",
+                "detail": str(exc),
+                "expected_revision": exc.expected_revision,
+                "live_revision": exc.live_revision,
+            },
+            status=409,
+        )
     except PlayerDesignationPermissionError as exc:
         return Response({"error": str(exc)}, status=403)
     except PlayerDesignationValidationError as exc:
         return Response({"error": str(exc)}, status=400)
 
-    return Response({"success": True})
+    return Response({"success": True, "live_revision": result.revision})

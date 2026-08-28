@@ -7,7 +7,7 @@ from typing import Any, Protocol, cast
 
 from rest_framework import permissions, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import ParseError, ValidationError
+from rest_framework.exceptions import APIException, ParseError, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -36,6 +36,7 @@ from apps.game_tracker.services.event_reconciliation import (
     pending_reconciliations,
     resolve_reconciliation,
 )
+from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 from apps.game_tracker.services.match_timeline_payload import (
     serialize_goal_event,
     serialize_pause_event,
@@ -60,6 +61,23 @@ from .serializers import (
 
 
 RECONCILIATION_REASON_MAX_LENGTH = 255
+
+
+class MatchRevisionConflictApiError(APIException):
+    """Translate an aggregate revision conflict to a structured HTTP 409."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "revision_conflict"
+
+    def __init__(self, conflict: MatchRevisionConflictError) -> None:
+        """Build the API error from the provider-neutral conflict."""
+        Exception.__init__(self, str(conflict))
+        self.detail = {
+            "code": self.default_code,
+            "detail": str(conflict),
+            "expected_revision": conflict.expected_revision,
+            "live_revision": conflict.live_revision,
+        }
 
 
 class _MatchViewSetLike(Protocol):
@@ -90,11 +108,31 @@ def _apply_command(
     try:
         return apply_event_editor_command(
             match_data_id=match_data.pk,
+            expected_revision=_expected_revision(request),
             actor=request.user,
             command=command,
         )
+    except MatchRevisionConflictError as exc:
+        raise MatchRevisionConflictApiError(exc) from exc
     except EventEditorValidationError as exc:
         raise ValidationError(exc.errors) from exc
+
+
+def _expected_revision(request: Request) -> int:
+    payload = _request_payload(request)
+    value = payload.get("expected_revision")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValidationError({
+            "expected_revision": "A non-negative integer is required."
+        })
+    return value
+
+
+def _mutation_payload(
+    result: EventEditorResult,
+    event: dict[str, object] | None,
+) -> dict[str, object]:
+    return {"event": event, "live_revision": result.revision}
 
 
 def _parse_since_revision(request: Request) -> int | None:
@@ -369,7 +407,10 @@ class MatchEventsActionsMixin:
         )
         shot = cast(Shot, result.event)
         return Response(
-            serialize_goal_event(result.match_data, shot),
+            _mutation_payload(
+                result,
+                serialize_goal_event(result.match_data, shot),
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -406,7 +447,10 @@ class MatchEventsActionsMixin:
                     {"detail": "Goal event not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(
+                _mutation_payload(result, None),
+                status=status.HTTP_200_OK,
+            )
 
         serializer = ShotWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -422,7 +466,10 @@ class MatchEventsActionsMixin:
             )
         shot = cast(Shot, result.event)
         return Response(
-            serialize_goal_event(result.match_data, shot),
+            _mutation_payload(
+                result,
+                serialize_goal_event(result.match_data, shot),
+            ),
             status=status.HTTP_200_OK,
         )
 
@@ -456,7 +503,10 @@ class MatchEventsActionsMixin:
         )
         change = cast(PlayerChange, result.event)
         return Response(
-            serialize_substitute_event(result.match_data, change),
+            _mutation_payload(
+                result,
+                serialize_substitute_event(result.match_data, change),
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -493,7 +543,10 @@ class MatchEventsActionsMixin:
                     {"detail": "Substitution event not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(
+                _mutation_payload(result, None),
+                status=status.HTTP_200_OK,
+            )
 
         serializer = PlayerChangeWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -509,7 +562,10 @@ class MatchEventsActionsMixin:
             )
         change = cast(PlayerChange, result.event)
         return Response(
-            serialize_substitute_event(result.match_data, change),
+            _mutation_payload(
+                result,
+                serialize_substitute_event(result.match_data, change),
+            ),
             status=status.HTTP_200_OK,
         )
 
@@ -543,7 +599,10 @@ class MatchEventsActionsMixin:
         )
         pause = cast(Pause, result.event)
         return Response(
-            serialize_pause_event(result.match_data, pause),
+            _mutation_payload(
+                result,
+                serialize_pause_event(result.match_data, pause),
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -580,7 +639,10 @@ class MatchEventsActionsMixin:
                     {"detail": "Pause event not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(
+                _mutation_payload(result, None),
+                status=status.HTTP_200_OK,
+            )
 
         serializer = PauseWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -596,7 +658,10 @@ class MatchEventsActionsMixin:
             )
         pause = cast(Pause, result.event)
         return Response(
-            serialize_pause_event(result.match_data, pause),
+            _mutation_payload(
+                result,
+                serialize_pause_event(result.match_data, pause),
+            ),
             status=status.HTTP_200_OK,
         )
 
@@ -635,7 +700,10 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(
-            serialize_pause_event(result.match_data, timeout.pause),
+            _mutation_payload(
+                result,
+                serialize_pause_event(result.match_data, timeout.pause),
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -766,7 +834,10 @@ class MatchEventsActionsMixin:
                     {"detail": "Timeout event not found."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(
+                _mutation_payload(result, None),
+                status=status.HTTP_200_OK,
+            )
 
         serializer = TimeoutWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -787,6 +858,9 @@ class MatchEventsActionsMixin:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(
-            serialize_pause_event(result.match_data, timeout.pause),
+            _mutation_payload(
+                result,
+                serialize_pause_event(result.match_data, timeout.pause),
+            ),
             status=status.HTTP_200_OK,
         )

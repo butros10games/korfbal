@@ -36,6 +36,7 @@ EXPECTED_PLAYER_GROUPS_TOTAL = 6
 EXPECTED_TEAMS_PER_MATCH = 2
 HTTP_STATUS_UNAUTHORIZED = 401
 HTTP_STATUS_FORBIDDEN = 403
+HTTP_STATUS_CONFLICT = 409
 
 
 def _create_test_user(*, username: str, email: str = "") -> AbstractBaseUser:
@@ -101,6 +102,7 @@ def test_player_overview_data_creates_player_groups_automatically(
     assert response.status_code == HTTP_STATUS_OK
     payload = response.json()
     assert "player_groups" in payload
+    assert payload["live_revision"] == match_data.live_revision
 
     # 3 groups (Aanval/Verdediging/Reserve) x 2 teams
     assert PlayerGroup.objects.count() == EXPECTED_PLAYER_GROUPS_TOTAL
@@ -220,6 +222,7 @@ def test_player_designation_allows_many_players_for_reserve_group(
             {
                 "new_group_id": str(reserve_group.id_uuid),
                 "players": [{"id_uuid": str(p.id_uuid)} for p in players],
+                "expected_revision": match_data.live_revision,
             },
         ),
         content_type="application/json",
@@ -227,7 +230,10 @@ def test_player_designation_allows_many_players_for_reserve_group(
     )
 
     assert response.status_code == HTTP_STATUS_OK
-    assert response.json() == {"success": True}
+    assert response.json() == {
+        "success": True,
+        "live_revision": match_data.live_revision + 1,
+    }
     assert reserve_group.players.count() == len(players)
 
 
@@ -280,6 +286,7 @@ def test_player_designation_rejects_more_than_16_total_in_reserve_group(
             {
                 "new_group_id": str(reserve_group.id_uuid),
                 "players": [{"id_uuid": str(p.id_uuid)} for p in new_players],
+                "expected_revision": match_data.live_revision,
             },
         ),
         content_type="application/json",
@@ -334,6 +341,7 @@ def test_player_designation_rejects_more_than_4_for_non_reserve_group(
             {
                 "new_group_id": str(attack_group.id_uuid),
                 "players": [{"id_uuid": str(p.id_uuid)} for p in players],
+                "expected_revision": match_data.live_revision,
             },
         ),
         content_type="application/json",
@@ -399,6 +407,7 @@ def test_player_designation_requires_reserve_source_for_non_reserve_moves(
         data=json.dumps(
             {
                 "new_group_id": str(attack_group.id_uuid),
+                "expected_revision": match_data.live_revision,
                 "players": [
                     {
                         "id_uuid": str(player.id_uuid),
@@ -417,6 +426,7 @@ def test_player_designation_requires_reserve_source_for_non_reserve_moves(
         data=json.dumps(
             {
                 "new_group_id": str(defense_group.id_uuid),
+                "expected_revision": first_move.json()["live_revision"],
                 "players": [
                     {
                         "id_uuid": str(player.id_uuid),
@@ -487,6 +497,7 @@ def test_player_designation_syncs_matchplayer_roster(
             {
                 "new_group_id": str(reserve_group.id_uuid),
                 "players": [{"id_uuid": str(p.id_uuid)} for p in players],
+                "expected_revision": match_data.live_revision,
             },
         ),
         content_type="application/json",
@@ -507,6 +518,7 @@ def test_player_designation_syncs_matchplayer_roster(
         data=json.dumps(
             {
                 "new_group_id": None,
+                "expected_revision": response.json()["live_revision"],
                 "players": [
                     {
                         "id_uuid": str(players[0].id_uuid),
@@ -527,6 +539,59 @@ def test_player_designation_syncs_matchplayer_roster(
         ).exists()
         is False
     )
+
+
+@pytest.mark.django_db
+def test_player_designation_rejects_stale_revision(client: Client) -> None:
+    """A stale lineup snapshot cannot overwrite a newer designation."""
+    tracker = create_tracker_match(prefix="Designation conflict")
+    GroupType.objects.create(name="Reserve")
+    reserve = PlayerGroup.objects.get(
+        match_data=tracker.match_data,
+        team=tracker.home_team,
+        starting_type__name="Reserve",
+    )
+    _login_club_editor(
+        client,
+        username="designation-conflict-editor",
+        club=tracker.home_team.club,
+    )
+    first_player = _create_test_player(username="designation-conflict-first")
+    stale_player = _create_test_player(username="designation-conflict-stale")
+    expected_revision = tracker.match_data.live_revision
+
+    first = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps({
+            "new_group_id": str(reserve.id_uuid),
+            "players": [{"id_uuid": str(first_player.id_uuid)}],
+            "expected_revision": expected_revision,
+        }),
+        content_type="application/json",
+        secure=True,
+    )
+    assert first.status_code == HTTP_STATUS_OK
+
+    stale = client.post(
+        "/api/match/player_designation/",
+        data=json.dumps({
+            "new_group_id": str(reserve.id_uuid),
+            "players": [{"id_uuid": str(stale_player.id_uuid)}],
+            "expected_revision": expected_revision,
+        }),
+        content_type="application/json",
+        secure=True,
+    )
+
+    assert stale.status_code == HTTP_STATUS_CONFLICT
+    assert stale.json() == {
+        "code": "revision_conflict",
+        "detail": "The match changed while you were editing.",
+        "expected_revision": expected_revision,
+        "live_revision": first.json()["live_revision"],
+    }
+    assert reserve.players.filter(pk=first_player.pk).exists()
+    assert not reserve.players.filter(pk=stale_player.pk).exists()
 
 
 @pytest.mark.django_db
@@ -570,6 +635,7 @@ def test_player_designation_forbidden_for_authenticated_user_without_club_access
             {
                 "new_group_id": str(reserve_group.id_uuid),
                 "players": [{"id_uuid": str(player_to_add.id_uuid)}],
+                "expected_revision": match_data.live_revision,
             },
         ),
         content_type="application/json",
