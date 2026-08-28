@@ -14,6 +14,7 @@ from .constants import team_model_string
 
 if TYPE_CHECKING:
     from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
+    from .match_event_observation import MatchEventObservation
 
 
 class MatchEvent(models.Model):
@@ -106,6 +107,7 @@ class MatchEvent(models.Model):
     supersedes_id: str | None
     shot_detail: ShotEventDetail
     substitution_detail: SubstitutionEventDetail
+    observations: models.Manager[MatchEventObservation]
 
     class Meta:
         """Enforce one total event order per match."""

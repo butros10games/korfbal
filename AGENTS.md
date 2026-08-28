@@ -42,6 +42,9 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Keep event-editor DRF serializers input-only. Apply typed event corrections through the
   `game_tracker` event-editor command boundary so validation, the aggregate lock, projections,
   revision recording, and realtime publication commit together.
+- Keep timeline GET endpoints on the `game_tracker` timeline-read boundary. Build related payloads
+  from one consistent read snapshot and never use `select_for_update()` for events, shots, or audit
+  history reads; those row locks serialize readers with live tracker writes.
 - With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.

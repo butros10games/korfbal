@@ -32,8 +32,7 @@ from apps.game_tracker.services.lineup_projections import (
 # We intentionally reuse the match payload builders because they already encode
 # the minute format/rounding used by korfbal-web graphs (e.g. "20+1").
 from apps.game_tracker.services.match_timeline_payload import (
-    build_match_events,
-    build_match_shots,
+    build_match_timeline_payloads,
 )
 
 from .match_impact_timeline import (
@@ -77,8 +76,7 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
     home_team_id = str(match.home_team_id)
     away_team_id = str(match.away_team_id)
 
-    events = build_match_events(match_data)
-    shots = build_match_shots(match_data)
+    events, shots = build_match_timeline_payloads(match_data)
 
     match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
     goal_switch_times = _build_goal_switch_times(events)
@@ -751,8 +749,7 @@ def compute_match_impact_rows(
     home_team_id = str(match.home_team_id)
     away_team_id = str(match.away_team_id)
 
-    events = build_match_events(match_data)
-    shots = build_match_shots(match_data)
+    events, shots = build_match_timeline_payloads(match_data)
 
     match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
     goal_switch_times = _build_goal_switch_times(events)
@@ -850,8 +847,7 @@ def compute_match_impact_breakdown(
     home_team_id = str(match.home_team_id)
     away_team_id = str(match.away_team_id)
 
-    events = build_match_events(match_data)
-    shots = build_match_shots(match_data)
+    events, shots = build_match_timeline_payloads(match_data)
 
     match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
     goal_switch_times = _build_goal_switch_times(events)

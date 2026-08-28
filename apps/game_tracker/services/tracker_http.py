@@ -28,6 +28,7 @@ from apps.game_tracker.services.match_mutations import locked_match_mutation
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
+    build_match_timeline_payloads,
 )
 from apps.game_tracker.services.tracker_commands import (
     CommandDefinition,
@@ -58,6 +59,21 @@ __all__ = (
 
 _CLIENT_ID_MAX_LENGTH = 128
 _CLIENT_SOURCE_MAX_LENGTH = 32
+
+
+def _timeline_resource_payloads(
+    match_data: MatchData,
+    resources: frozenset[LiveResource],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build only requested timeline resources, sharing context when possible."""
+    include_events = LiveResource.EVENTS in resources
+    include_shots = LiveResource.SHOTS in resources
+    if include_events and include_shots:
+        return build_match_timeline_payloads(match_data)
+    return (
+        build_match_events(match_data) if include_events else [],
+        build_match_shots(match_data) if include_shots else [],
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,16 +302,12 @@ def execute_tracker_command(
             else command_time_from_payload(payload, server_now=runtime.now())
         )
         affected_resources = definition.resources
-        before_events = (
-            {event["event_id"]: event for event in build_match_events(match_data)}
-            if LiveResource.EVENTS in affected_resources
-            else {}
+        before_event_rows, before_shot_rows = _timeline_resource_payloads(
+            match_data,
+            affected_resources,
         )
-        before_shots = (
-            {shot["event_id"]: shot for shot in build_match_shots(match_data)}
-            if LiveResource.SHOTS in affected_resources
-            else {}
-        )
+        before_events = {event["event_id"]: event for event in before_event_rows}
+        before_shots = {shot["event_id"]: shot for shot in before_shot_rows}
 
         with (
             match_event_context(
@@ -322,19 +334,19 @@ def execute_tracker_command(
             )
         if definition.mutating:
             changed_ids: dict[LiveResource, set[str]] = {}
+            after_event_rows, after_shot_rows = _timeline_resource_payloads(
+                match_data,
+                affected_resources,
+            )
             if LiveResource.EVENTS in affected_resources:
-                after_events = {
-                    event["event_id"]: event for event in build_match_events(match_data)
-                }
+                after_events = {event["event_id"]: event for event in after_event_rows}
                 changed_ids[LiveResource.EVENTS] = {
                     event_id
                     for event_id in before_events.keys() | after_events.keys()
                     if before_events.get(event_id) != after_events.get(event_id)
                 }
             if LiveResource.SHOTS in affected_resources:
-                after_shots = {
-                    shot["event_id"]: shot for shot in build_match_shots(match_data)
-                }
+                after_shots = {shot["event_id"]: shot for shot in after_shot_rows}
                 changed_ids[LiveResource.SHOTS] = {
                     event_id
                     for event_id in before_shots.keys() | after_shots.keys()

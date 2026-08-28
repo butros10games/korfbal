@@ -9,10 +9,11 @@ improves testability.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from django.db.models import Q
+from django.db import models
 
 from apps.game_tracker.models import (
     MatchData,
@@ -25,7 +26,7 @@ from apps.game_tracker.models import (
 )
 from apps.game_tracker.services.match_events import (
     event_root_ids,
-    event_root_sequences,
+    event_root_metadata,
     logical_event_id,
 )
 
@@ -34,7 +35,101 @@ PART_ONE = 1
 PART_TWO = 2
 
 
-def _intermission_label_for_time(match_data: MatchData, event_time: datetime) -> str:
+@dataclass(frozen=True, slots=True)
+class _PauseInterval:
+    start: datetime
+    end: datetime | None
+    active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _TimeoutTimelineData:
+    timeout_id: str
+    team_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MatchTimelineContext:
+    """Relations shared by timeline serializers, loaded in bounded queries."""
+
+    match_parts: tuple[MatchPart, ...]
+    pauses: tuple[Pause, ...]
+    pause_intervals: tuple[_PauseInterval, ...]
+    timeouts_by_pause: dict[str, _TimeoutTimelineData]
+    player_team_ids: dict[str, str]
+    event_sequences: dict[tuple[str, str], int]
+    logical_event_ids: dict[tuple[str, str], str]
+
+
+def load_match_timeline_context(match_data: MatchData) -> MatchTimelineContext:
+    """Load the stable relation context used by event and shot projections."""
+    match_parts = tuple(
+        MatchPart.objects
+        .filter(match_data=match_data)
+        .order_by("part_number", "start_time")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+    pauses = tuple(
+        Pause.objects
+        .select_related("match_part")
+        .only(
+            "id_uuid",
+            "start_time",
+            "end_time",
+            "active",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+        )
+        .filter(match_data=match_data)
+        .order_by("start_time")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+    pause_intervals = tuple(
+        _PauseInterval(
+            start=pause.start_time,
+            end=pause.end_time,
+            active=pause.active,
+        )
+        for pause in pauses
+        if pause.start_time is not None
+    )
+
+    timeouts_by_pause = {
+        str(pause_id): _TimeoutTimelineData(
+            timeout_id=str(timeout_id),
+            team_id=str(team_id) if team_id is not None else None,
+        )
+        for pause_id, timeout_id, team_id in Timeout.objects.filter(
+            match_data=match_data,
+            pause_id__isnull=False,
+        ).values_list("pause_id", "id_uuid", "team_id")
+    }
+    player_team_ids = {
+        str(player_id): str(team_id)
+        for player_id, team_id in PlayerGroup.objects.filter(
+            match_data=match_data,
+            players__id_uuid__isnull=False,
+        ).values_list("players__id_uuid", "team_id")
+    }
+    event_sequences, logical_event_ids = event_root_metadata(match_data)
+    return MatchTimelineContext(
+        match_parts=match_parts,
+        pauses=pauses,
+        pause_intervals=pause_intervals,
+        timeouts_by_pause=timeouts_by_pause,
+        player_team_ids=player_team_ids,
+        event_sequences=event_sequences,
+        logical_event_ids=logical_event_ids,
+    )
+
+
+def _intermission_label_for_time(
+    match_data: MatchData,
+    event_time: datetime,
+    *,
+    context: MatchTimelineContext | None = None,
+) -> str:
     """Return a human label for events that happened between match parts.
 
     We intentionally keep this as a string label (instead of forcing an artificial
@@ -42,25 +137,39 @@ def _intermission_label_for_time(match_data: MatchData, event_time: datetime) ->
     for the previous part.
 
     """
-    previous_part = (
-        MatchPart.objects
-        .filter(
-            match_data=match_data,
-            end_time__isnull=False,
-            end_time__lte=event_time,
+    if context is None:
+        previous_part = (
+            MatchPart.objects
+            .filter(
+                match_data=match_data,
+                end_time__isnull=False,
+                end_time__lte=event_time,
+            )
+            .order_by("-part_number", "-end_time")
+            .first()
         )
-        .order_by("-part_number", "-end_time")
-        .first()
-    )
-    next_part = (
-        MatchPart.objects
-        .filter(
-            match_data=match_data,
-            start_time__gte=event_time,
+        next_part = (
+            MatchPart.objects
+            .filter(
+                match_data=match_data,
+                start_time__gte=event_time,
+            )
+            .order_by("part_number", "start_time")
+            .first()
         )
-        .order_by("part_number", "start_time")
-        .first()
-    )
+    else:
+        previous_part = next(
+            (
+                part
+                for part in reversed(context.match_parts)
+                if part.end_time is not None and part.end_time <= event_time
+            ),
+            None,
+        )
+        next_part = next(
+            (part for part in context.match_parts if part.start_time >= event_time),
+            None,
+        )
 
     # If this event happened between part 1 and part 2 (or part 2 hasn't started
     # yet, so `next_part` is unknown), treat it as half-time.
@@ -124,22 +233,33 @@ def _logical_source_key(
 def _time_in_minutes(
     *,
     match_data: MatchData,
-    match_part_start: datetime,
-    match_part_number: int,
+    match_part: MatchPart,
     event_time: datetime,
+    context: MatchTimelineContext | None = None,
 ) -> str:
-    pause_intervals = (
-        Pause.objects
-        .filter(
-            match_data=match_data,
-            start_time__lt=event_time,
-            start_time__gte=match_part_start,
+    match_part_start = match_part.start_time
+    match_part_number = match_part.part_number
+    if context is None:
+        pause_intervals = (
+            Pause.objects
+            .filter(
+                match_data=match_data,
+                start_time__lt=event_time,
+                start_time__gte=match_part_start,
+            )
+            .filter(
+                models.Q(active=True) | models.Q(end_time__isnull=False),
+            )
+            .values_list("start_time", "end_time")
         )
-        .filter(
-            Q(active=True) | Q(end_time__isnull=False),
+    else:
+        pause_intervals = (
+            (interval.start, interval.end)
+            for interval in context.pause_intervals
+            if interval.start < event_time
+            and interval.start >= match_part_start
+            and (interval.active or interval.end is not None)
         )
-        .values_list("start_time", "end_time")
-    )
     pause_time = sum(
         (
             min(end_time or event_time, event_time) - start_time
@@ -171,7 +291,11 @@ def _time_in_minutes(
     return str(time_in_minutes_value)
 
 
-def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
+def _build_match_events(
+    match_data: MatchData,
+    *,
+    context: MatchTimelineContext,
+) -> list[dict[str, Any]]:
     goals = list(
         Shot.objects
         .select_related(
@@ -196,6 +320,7 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
         )
         .filter(match_data=match_data, scored=True)
         .order_by("time")
+        .fetch_mode(models.FETCH_RAISE)
     )
 
     player_changes = list(
@@ -224,32 +349,15 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
         )
         .filter(player_group__match_data=match_data)
         .order_by("time")
+        .fetch_mode(models.FETCH_RAISE)
     )
 
-    pauses = list(
-        Pause.objects
-        .select_related("match_part")
-        .only(
-            "id_uuid",
-            "start_time",
-            "end_time",
-            "active",
-            "match_part__id_uuid",
-            "match_part__start_time",
-            "match_part__part_number",
-        )
-        .filter(match_data=match_data)
-        .order_by("start_time")
-    )
-
-    sequences = event_root_sequences(match_data)
-    logical_ids = event_root_ids(match_data)
+    pauses = context.pauses
+    sequences = context.event_sequences
+    logical_ids = context.logical_event_ids
     timeout_ids_by_pause = {
-        str(pause_id): str(timeout_id)
-        for pause_id, timeout_id in Timeout.objects.filter(
-            match_data=match_data,
-            pause_id__isnull=False,
-        ).values_list("pause_id", "id_uuid")
+        pause_id: timeout.timeout_id
+        for pause_id, timeout in context.timeouts_by_pause.items()
     }
     events: list[object] = [*goals, *player_changes, *pauses]
     events.sort(
@@ -263,7 +371,11 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     payload: list[dict[str, Any]] = []
 
     for event in events:
-        serialized = _serialize_match_event(match_data, event)
+        serialized = _serialize_match_event(
+            match_data,
+            event,
+            context=context,
+        )
         if serialized is not None:
             sequence = _ordered_sequence(event, sequences, timeout_ids_by_pause)
             if sequence is not None:
@@ -278,19 +390,11 @@ def _build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     return payload
 
 
-def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
-    player_team_id: dict[str, str] = {}
-    groups = list(
-        PlayerGroup.objects
-        .select_related("team")
-        .prefetch_related("players")
-        .filter(match_data=match_data)
-    )
-    for g in groups:
-        tid = str(g.team_id)
-        for p in g.players.all():
-            player_team_id[str(p.id_uuid)] = tid
-
+def _build_match_shots(
+    match_data: MatchData,
+    *,
+    context: MatchTimelineContext,
+) -> list[dict[str, Any]]:
     shots = list(
         Shot.objects
         .select_related(
@@ -316,10 +420,11 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
         )
         .filter(match_data=match_data)
         .order_by("time")
+        .fetch_mode(models.FETCH_RAISE)
     )
 
-    sequences = event_root_sequences(match_data)
-    logical_ids = event_root_ids(match_data)
+    sequences = context.event_sequences
+    logical_ids = context.logical_event_ids
     shots.sort(
         key=lambda shot: (
             ("shot", str(shot.id_uuid)) not in sequences,
@@ -332,7 +437,7 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
         serialized = _serialize_shot_timeline_event(
             match_data,
             shot,
-            player_team_id=player_team_id,
+            context=context,
         )
         if serialized is not None:
             sequence = sequences.get(("shot", str(shot.id_uuid)))
@@ -347,7 +452,11 @@ def _build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
     return payload
 
 
-def build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
+def build_match_events(
+    match_data: MatchData,
+    *,
+    context: MatchTimelineContext | None = None,
+) -> list[dict[str, Any]]:
     """Public wrapper for match event timelines.
 
     The korfbal-web frontend depends on the exact time formatting produced by
@@ -355,28 +464,56 @@ def build_match_events(match_data: MatchData) -> list[dict[str, Any]]:
     same semantics for derived statistics.
 
     """
-    return _build_match_events(match_data)
+    return _build_match_events(
+        match_data,
+        context=context or load_match_timeline_context(match_data),
+    )
 
 
-def build_match_shots(match_data: MatchData) -> list[dict[str, Any]]:
+def build_match_shots(
+    match_data: MatchData,
+    *,
+    context: MatchTimelineContext | None = None,
+) -> list[dict[str, Any]]:
     """Public wrapper for match shot timelines."""
-    return _build_match_shots(match_data)
+    return _build_match_shots(
+        match_data,
+        context=context or load_match_timeline_context(match_data),
+    )
+
+
+def build_match_timeline_payloads(
+    match_data: MatchData,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build event and shot projections while sharing their relation context."""
+    context = load_match_timeline_context(match_data)
+    return (
+        _build_match_events(match_data, context=context),
+        _build_match_shots(match_data, context=context),
+    )
 
 
 def _serialize_match_event(
     match_data: MatchData,
     event: object,
+    *,
+    context: MatchTimelineContext | None = None,
 ) -> dict[str, Any] | None:
     if isinstance(event, Shot):
-        return _serialize_goal_event(match_data, event)
+        return _serialize_goal_event(match_data, event, context=context)
     if isinstance(event, PlayerChange):
-        return _serialize_substitute_event(match_data, event)
+        return _serialize_substitute_event(match_data, event, context=context)
     if isinstance(event, Pause):
-        return _serialize_pause_event(match_data, event)
+        return _serialize_pause_event(match_data, event, context=context)
     return None
 
 
-def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] | None:
+def _serialize_goal_event(
+    match_data: MatchData,
+    event: Shot,
+    *,
+    context: MatchTimelineContext | None = None,
+) -> dict[str, Any] | None:
     if not event.match_part or not event.time or not event.shot_type:
         return None
 
@@ -386,7 +523,9 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
     # Some trackers fail to set Shot.team for missed shots; in rare cases this
     # also occurs for scored shots. Fall back to group membership.
     team_id = str(event.team.id_uuid) if event.team else None
-    if team_id is None:
+    if team_id is None and context is not None:
+        team_id = context.player_team_ids.get(str(event.player.id_uuid))
+    elif team_id is None:
         group = (
             PlayerGroup.objects
             .select_related("team")
@@ -411,9 +550,9 @@ def _serialize_goal_event(match_data: MatchData, event: Shot) -> dict[str, Any] 
         "time_iso": event.time.isoformat(),
         "time": _time_in_minutes(
             match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
+            match_part=event.match_part,
             event_time=event.time,
+            context=context,
         ),
         "player_id": str(event.player.id_uuid),
         "player": event.player.user.username,
@@ -442,7 +581,7 @@ def _serialize_shot_timeline_event(
     match_data: MatchData,
     event: Shot,
     *,
-    player_team_id: dict[str, str] | None = None,
+    context: MatchTimelineContext | None = None,
 ) -> dict[str, Any] | None:
     if not event.player:
         return None
@@ -451,8 +590,8 @@ def _serialize_shot_timeline_event(
     # We still want to return them for the advanced timeline, even when part/time
     # metadata is missing.
     team_id = str(event.team.id_uuid) if event.team else None
-    if team_id is None and player_team_id is not None:
-        team_id = player_team_id.get(str(event.player.id_uuid))
+    if team_id is None and context is not None:
+        team_id = context.player_team_ids.get(str(event.player.id_uuid))
     if team_id is None:
         return None
 
@@ -478,9 +617,9 @@ def _serialize_shot_timeline_event(
     if event.match_part is not None and event.time is not None:
         payload["time"] = _time_in_minutes(
             match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
+            match_part=event.match_part,
             event_time=event.time,
+            context=context,
         )
 
     return payload
@@ -489,6 +628,8 @@ def _serialize_shot_timeline_event(
 def _serialize_substitute_event(
     match_data: MatchData,
     event: PlayerChange,
+    *,
+    context: MatchTimelineContext | None = None,
 ) -> dict[str, Any] | None:
     if not event.time:
         return None
@@ -517,12 +658,16 @@ def _serialize_substitute_event(
         payload["match_part_id"] = str(event.match_part.id_uuid)
         payload["time"] = _time_in_minutes(
             match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
+            match_part=event.match_part,
             event_time=event.time,
+            context=context,
         )
     else:
-        payload["time"] = _intermission_label_for_time(match_data, event.time)
+        payload["time"] = _intermission_label_for_time(
+            match_data,
+            event.time,
+            context=context,
+        )
 
     return payload
 
@@ -547,30 +692,46 @@ def serialize_substitute_event(
 def _serialize_pause_event(
     match_data: MatchData,
     event: Pause,
+    *,
+    context: MatchTimelineContext | None = None,
 ) -> dict[str, Any] | None:
     if not event.match_part or not event.start_time:
         return None
 
-    timeout = Timeout.objects.select_related("team").filter(pause=event).first()
+    timeout_data = (
+        context.timeouts_by_pause.get(str(event.id_uuid))
+        if context is not None
+        else None
+    )
+    timeout = (
+        None
+        if context is not None
+        else Timeout.objects.select_related("team").filter(pause=event).first()
+    )
+    timeout_id = timeout_data.timeout_id if timeout_data else None
+    timeout_team_id = timeout_data.team_id if timeout_data else None
+    if timeout is not None:
+        timeout_id = str(timeout.id_uuid)
+        timeout_team_id = str(timeout.team_id) if timeout.team_id else None
     source_id = str(event.id_uuid)
 
     return {
-        "event_kind": "timeout" if timeout else "pause",
+        "event_kind": "timeout" if timeout_id else "pause",
         # The wrapper replaces this projection id with the canonical timeout root.
         "event_id": source_id,
         "logical_event_id": source_id,
         "source_id": source_id,
         "pause_id": str(event.id_uuid),
-        "timeout_id": str(timeout.id_uuid) if timeout else None,
+        "timeout_id": timeout_id,
         "type": "intermission",
-        "name": "Time-out" if timeout else "Pauze",
+        "name": "Time-out" if timeout_id else "Pauze",
         "match_part_id": str(event.match_part.id_uuid),
-        "team_id": str(timeout.team_id) if timeout else None,
+        "team_id": timeout_team_id,
         "time": _time_in_minutes(
             match_data=match_data,
-            match_part_start=event.match_part.start_time,
-            match_part_number=event.match_part.part_number,
+            match_part=event.match_part,
             event_time=event.start_time,
+            context=context,
         ),
         "length": event.length().total_seconds(),
         "start_time": (event.start_time.isoformat() if event.start_time else None),

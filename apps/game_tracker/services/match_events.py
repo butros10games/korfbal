@@ -9,7 +9,7 @@ from typing import Any, Protocol, cast
 from uuid import UUID
 
 from django.db import models, transaction
-from django.db.models import Min, OuterRef, QuerySet, Subquery
+from django.db.models import OuterRef, QuerySet, Subquery
 
 from apps.game_tracker.models import (
     Attack,
@@ -328,24 +328,33 @@ def event_root_sequences(
     match_data: MatchData,
 ) -> dict[tuple[str, str], int]:
     """Return the stable first-envelope sequence for each logical record."""
-    return {
-        (row["source_type"], str(row["source_id"])): row["root_sequence"]
-        for row in MatchEvent.objects
-        .filter(match_data=match_data)
-        .values("source_type", "source_id")
-        .annotate(root_sequence=Min("sequence"))
-    }
+    sequences, _logical_ids = event_root_metadata(match_data)
+    return sequences
 
 
 def event_root_ids(match_data: MatchData) -> dict[tuple[str, str], str]:
     """Return the canonical logical id for each typed source record."""
-    return {
-        (event.source_type, str(event.source_id)): str(event.logical_id)
-        for event in MatchEvent.objects
+    _sequences, logical_ids = event_root_metadata(match_data)
+    return logical_ids
+
+
+def event_root_metadata(
+    match_data: MatchData,
+) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str], str]]:
+    """Load ordering and logical identities for typed records in one query."""
+    sequences: dict[tuple[str, str], int] = {}
+    logical_ids: dict[tuple[str, str], str] = {}
+    rows = (
+        MatchEvent.objects
         .filter(match_data=match_data)
         .order_by("sequence")
-        .only("source_type", "source_id", "logical_id")
-    }
+        .values_list("source_type", "source_id", "sequence", "logical_id")
+    )
+    for source_type, source_id, sequence, logical_id in rows:
+        key = (source_type, str(source_id))
+        sequences.setdefault(key, sequence)
+        logical_ids[key] = str(logical_id)
+    return sequences, logical_ids
 
 
 def logical_event_id(
@@ -390,6 +399,7 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
         .select_related("shot_detail", "substitution_detail")
         .prefetch_related("observations")
         .order_by("sequence")
+        .fetch_mode(models.FETCH_RAISE)
     )
     latest_sequence_by_logical_id = {
         event.logical_id: event.sequence for event in events
@@ -491,7 +501,7 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
                     "payload": observation.payload,
                     "recorded_at": observation.recorded_at.isoformat(),
                 }
-                for observation in MatchEventObservation.objects.filter(event=event)
+                for observation in event.observations.all()
             ],
         })
     return history

@@ -34,8 +34,7 @@ from apps.game_tracker.services.match_impact import (
     compute_match_end_minutes,
 )
 from apps.game_tracker.services.match_timeline_payload import (
-    build_match_events,
-    build_match_shots,
+    build_match_timeline_payloads,
 )
 
 
@@ -140,8 +139,7 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
 
     Returns a mapping of player UUID (string) -> minutes played (float).
     """
-    events = build_match_events(match_data)
-    shots = build_match_shots(match_data)
+    events, shots = build_match_timeline_payloads(match_data)
 
     match_end_minutes = compute_match_end_minutes(events=events, shots=shots)
 

@@ -17,8 +17,7 @@ from apps.game_tracker.services.live_update_signal_control import (
 from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_event_context import match_event_context
 from apps.game_tracker.services.match_timeline_payload import (
-    build_match_events,
-    build_match_shots,
+    build_match_timeline_payloads,
 )
 
 
@@ -47,12 +46,9 @@ def apply_editor_mutation[ResultT](
 ) -> tuple[MatchData, ResultT]:
     """Apply one editor correction with tracker-equivalent write semantics."""
     with locked_match_mutation(match_data_id) as match_data:
-        before_events = {
-            event["event_id"]: event for event in build_match_events(match_data)
-        }
-        before_shots = {
-            shot["event_id"]: shot for shot in build_match_shots(match_data)
-        }
+        before_event_rows, before_shot_rows = build_match_timeline_payloads(match_data)
+        before_events = {event["event_id"]: event for event in before_event_rows}
+        before_shots = {shot["event_id"]: shot for shot in before_shot_rows}
         with (
             match_event_context(actor=actor, source="editor"),
             suppress_live_update_signals(),
@@ -61,10 +57,9 @@ def apply_editor_mutation[ResultT](
             if no_op_result is not _NO_OP_UNSET and result is no_op_result:
                 return match_data, result
             rebuild_match_projections(match_data)
-        after_events = {
-            event["event_id"]: event for event in build_match_events(match_data)
-        }
-        after_shots = {shot["event_id"]: shot for shot in build_match_shots(match_data)}
+        after_event_rows, after_shot_rows = build_match_timeline_payloads(match_data)
+        after_events = {event["event_id"]: event for event in after_event_rows}
+        after_shots = {shot["event_id"]: shot for shot in after_shot_rows}
         changed_ids = {
             LiveResource.EVENTS: {
                 event_id
