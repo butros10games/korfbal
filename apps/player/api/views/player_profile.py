@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from django.contrib.auth import update_session_auth_hash
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -11,14 +14,18 @@ from rest_framework.response import Response
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.permissions import CanModifyPlayer
 from apps.player.api.serializers import (
+    PlayerAccountUpdateSerializer,
+    PlayerPasswordChangeSerializer,
     PlayerPrivacySettingsSerializer,
     PlayerSerializer,
 )
 from apps.player.models.player import Player
 from apps.player.services.player_queries import player_by_id, player_detail_queryset
 from apps.player.services.player_settings import (
+    change_player_password,
     delete_player_profile,
     player_privacy_settings,
+    update_player_account,
     update_player_privacy_settings,
     update_player_profile,
 )
@@ -89,6 +96,12 @@ class CurrentPlayerAPIView(KorfbalAPIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    def get_permissions(self) -> list[permissions.BasePermission]:
+        """Allow public reads while requiring authentication for account writes."""
+        if self.request.method == "PATCH":
+            return [permissions.IsAuthenticated()]
+        return cast(list[permissions.BasePermission], super().get_permissions())
+
     def get(
         self,
         request: Request,
@@ -106,6 +119,71 @@ class CurrentPlayerAPIView(KorfbalAPIView):
                 context=player_serializer_context(request, current_player=player),
             ).data
         )
+
+    @extend_schema(request=PlayerAccountUpdateSerializer, responses=PlayerSerializer)
+    def patch(
+        self,
+        request: Request,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Response:
+        """Update the authenticated player's username and email address."""
+        del args, kwargs
+        player = get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PlayerAccountUpdateSerializer(
+            data=request.data,
+            context={"user": player.user},
+        )
+        serializer.is_valid(raise_exception=True)
+        update_player_account(
+            player=player,
+            username=str(serializer.validated_data["username"]),
+            email=str(serializer.validated_data["email"]),
+        )
+        refreshed = player_by_id(str(player.id_uuid)) or player
+        return Response(
+            PlayerSerializer(
+                refreshed,
+                context=player_serializer_context(request, current_player=refreshed),
+            ).data
+        )
+
+
+class CurrentPlayerPasswordAPIView(KorfbalAPIView):
+    """Change the authenticated player's password."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    @extend_schema(
+        request=PlayerPasswordChangeSerializer,
+        responses={status.HTTP_200_OK: OpenApiTypes.OBJECT},
+    )
+    def post(
+        self,
+        request: Request,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Response:
+        """Validate and persist a password change without ending the web session."""
+        del args, kwargs
+        player = get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PlayerPasswordChangeSerializer(
+            data=request.data,
+            context={"user": player.user},
+        )
+        serializer.is_valid(raise_exception=True)
+        change_player_password(
+            player=player,
+            new_password=str(serializer.validated_data["new_password1"]),
+        )
+        update_session_auth_hash(request._request, player.user)
+        return Response({"detail": "Password changed."})
 
 
 class PlayerFollowedTeamsAPIView(KorfbalAPIView):

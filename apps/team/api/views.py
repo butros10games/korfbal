@@ -90,6 +90,12 @@ class TeamViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ("name", "club__name")
 
+    def get_queryset(self) -> QuerySet[Team]:
+        """Optionally scope the paginated catalog to one club."""
+        queryset = super().get_queryset()
+        club_id = self.request.query_params.get("club")
+        return queryset.filter(club__id_uuid=club_id) if club_id else queryset
+
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(
         self,

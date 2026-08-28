@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any, ClassVar, cast
 from urllib.parse import urlencode
 
+from django.contrib.auth import password_validation
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -39,6 +41,63 @@ class UserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
         ]
+
+
+class PlayerAccountUpdateSerializer(serializers.Serializer):
+    """Validate mutable account fields exposed by the current-player API."""
+
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+
+    def validate_username(self, value: str) -> str:
+        """Keep usernames non-empty and unique without changing case semantics.
+
+        Raises:
+            serializers.ValidationError: If the username is empty or already in use.
+
+        """
+        username = value.strip()
+        user = self.context.get("user")
+        user_id = getattr(user, "pk", None)
+        if User.objects.exclude(pk=user_id).filter(username=username).exists():
+            raise serializers.ValidationError("This username is already in use.")
+        return username
+
+
+class PlayerPasswordChangeSerializer(serializers.Serializer):
+    """Validate an authenticated password change request."""
+
+    current_password = serializers.CharField(trim_whitespace=False, write_only=True)
+    new_password1 = serializers.CharField(trim_whitespace=False, write_only=True)
+    new_password2 = serializers.CharField(trim_whitespace=False, write_only=True)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Check the old password, confirmation, and Django password policy.
+
+        Raises:
+            serializers.ValidationError: If any password check fails.
+
+        """
+        user = self.context.get("user")
+        current_password = str(attrs.get("current_password") or "")
+        new_password = str(attrs.get("new_password1") or "")
+        confirmation = str(attrs.get("new_password2") or "")
+
+        if not isinstance(user, User) or not user.check_password(current_password):
+            raise serializers.ValidationError({
+                "current_password": ["The current password is incorrect."]
+            })
+        if new_password != confirmation:
+            raise serializers.ValidationError({
+                "new_password2": ["The new passwords do not match."]
+            })
+        try:
+            password_validation.validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({
+                "new_password1": list(exc.messages)
+            }) from exc
+        return attrs
 
 
 class PlayerSerializer(serializers.ModelSerializer):

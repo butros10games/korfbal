@@ -79,3 +79,24 @@ def test_team_crud_allows_staff_user(client: Client) -> None:
 
     response_delete = client.delete(f"/api/team/teams/{created_id}/")
     assert response_delete.status_code == HTTPStatus.NO_CONTENT
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_team_list_supports_server_side_club_and_search_filters(client: Client) -> None:
+    """Catalog filtering should happen before pagination."""
+    selected_club = Club.objects.create(name="Selected Club")
+    other_club = Club.objects.create(name="Other Club")
+    selected = Team.objects.create(name="Seniors 1", club=selected_club)
+    Team.objects.create(name="Seniors 2", club=selected_club)
+    Team.objects.create(name="Seniors 1", club=other_club)
+
+    response = client.get(
+        "/api/team/teams/",
+        {"club": str(selected_club.id_uuid), "search": "Seniors 1"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [item["id_uuid"] for item in response.json()["results"]] == [
+        str(selected.id_uuid)
+    ]

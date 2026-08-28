@@ -347,6 +347,7 @@ def execute_tracker_command(
                 publisher=runtime.publisher,
             )
         result = get_tracker_state(match, team=team)
+        result["resources"] = sorted(resource.value for resource in affected_resources)
         if receipt is not None:
             committed_revision = result.get("live_revision")
             receipt.committed_revision = (

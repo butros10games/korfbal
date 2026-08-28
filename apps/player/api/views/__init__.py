@@ -9,6 +9,7 @@ from .overview import (
 from .player_profile import (
     CurrentPlayerAPIView,
     CurrentPlayerFollowedTeamsAPIView,
+    CurrentPlayerPasswordAPIView,
     CurrentPlayerPrivacySettingsAPIView,
     CurrentPlayerTeamsAPIView,
     PlayerFollowedTeamsAPIView,
@@ -38,6 +39,7 @@ __all__ = [
     "CurrentPlayerAPIView",
     "CurrentPlayerFollowedTeamsAPIView",
     "CurrentPlayerGoalSongAPIView",
+    "CurrentPlayerPasswordAPIView",
     "CurrentPlayerPrivacySettingsAPIView",
     "CurrentPlayerPushSubscriptionsAPIView",
     "CurrentPlayerSongDetailAPIView",

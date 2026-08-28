@@ -48,6 +48,7 @@ def test_retried_command_is_applied_once() -> None:
     assert receipt.sequence == 1
     assert replay["command_sequence"] == 1
     assert replay["live_revision"] == 1
+    assert replay["resources"] == ["events", "live", "tracker"]
     assert receipt.response_payload == first
     assert receipt.committed_revision == 1
 

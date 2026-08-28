@@ -52,6 +52,28 @@ def update_player_privacy_settings(
 
 
 @transaction.atomic
+def update_player_account(
+    *,
+    player: Player,
+    username: str,
+    email: str,
+) -> None:
+    """Persist account fields owned by the player's Django user."""
+    user = player.user
+    user.username = username
+    user.email = email
+    user.save(update_fields=["username", "email"])
+
+
+@transaction.atomic
+def change_player_password(*, player: Player, new_password: str) -> None:
+    """Persist a validated password for the player's Django user."""
+    user = player.user
+    user.set_password(new_password)
+    user.save(update_fields=["password"])
+
+
+@transaction.atomic
 def update_player_profile(
     *,
     player: Player,
