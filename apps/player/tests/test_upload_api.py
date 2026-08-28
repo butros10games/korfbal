@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +15,12 @@ import pytest
 
 from apps.player.models import PlayerSong, PlayerSongStatus
 from apps.player.models.player import Player
+
+
+OnCommitCapture = Callable[
+    ...,
+    AbstractContextManager[list[Callable[[], None]]],
+]
 
 
 @pytest.mark.django_db
@@ -187,6 +195,7 @@ def test_upload_goal_song_player_missing_returns_404(client: Client) -> None:
 def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     client: Client,
     tmp_path: Path,
+    django_capture_on_commit_callbacks: OnCommitCapture,
 ) -> None:
     """The legacy endpoint should create and select a modern PlayerSong."""
     user = get_user_model().objects.create_user(
@@ -204,6 +213,7 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     with (
         override_settings(MEDIA_ROOT=tmp_path, MEDIA_URL="/media/"),
         patch("apps.player.tasks.download_player_song.apply") as prepare,
+        django_capture_on_commit_callbacks(execute=True),
     ):
         response = client.post(
             "/api/player/api/upload_goal_song/",

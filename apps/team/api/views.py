@@ -27,8 +27,18 @@ from apps.game_tracker.services.match_impact import (
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.player.api.serializers import PlayerSongSerializer, PlayerSongUpdateSerializer
+from apps.player.composition import update_owned_player_song_settings
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.player_song_queries import (
+    owned_player_song_or_none,
+    player_songs_by_ids,
+    player_songs_for_players,
+)
+from apps.player.services.player_songs import (
+    PlayerSongNotFoundError,
+    PlayerSongSettingsPatch,
+)
 from apps.schedule.models import Season
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
@@ -38,6 +48,7 @@ from apps.team.queries.overview import (
     team_players,
     team_seasons,
 )
+from apps.team.services.goal_songs import delete_team_player_song
 from apps.team.services.overview import (
     TeamOverviewOptions,
     build_team_overview_payload,
@@ -240,12 +251,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         match_data_qs = team_matches(team, season)
         players = list(team_players(team, season, match_data_qs))
-        songs = list(
-            PlayerSong.objects
-            .select_related("cached_song", "player", "player__user")
-            .filter(player__in=players)
-            .order_by("-created_at")
-        )
+        songs = list(player_songs_for_players(players))
 
         songs_by_player: dict[str, list[PlayerSong]] = {}
         for song in songs:
@@ -330,9 +336,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         roster_player_ids = self._team_roster_player_ids(team=team, season=season)
         valid_songs = self._validated_ready_songs(
             ids=ids,
-            songs_qs=PlayerSong.objects.select_related("cached_song").filter(
-                id_uuid__in=ids,
-                player_id__in=roster_player_ids,
+            songs_qs=player_songs_by_ids(song_ids=ids).filter(
+                player_id__in=roster_player_ids
             ),
         )
 
@@ -395,10 +400,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         songs = self._validated_ready_songs(
             ids=ids,
-            songs_qs=PlayerSong.objects.select_related("cached_song").filter(
-                player=player,
-                id_uuid__in=ids,
-            ),
+            songs_qs=player_songs_by_ids(song_ids=ids, player=player),
         )
         by_id = {str(song.id_uuid): song for song in songs}
 
@@ -406,11 +408,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         update_fields: list[str] = ["goal_song_song_ids"]
         if ids:
             first = by_id[ids[0]]
-            audio_file = (
-                first.cached_song.audio_file
-                if first.cached_song is not None
-                else first.audio_file
-            )
+            audio_file = first.effective_audio_file
             player.goal_song_uri = audio_file.url if audio_file else ""
             player.song_start_time = first.start_time_seconds
             update_fields.extend(["goal_song_uri", "song_start_time"])
@@ -466,60 +464,24 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        song = (
-            PlayerSong.objects
-            .select_related("player")
-            .filter(id_uuid=song_id, player_id=player_id)
-            .first()
-        )
-        if song is None:
+        player = Player.objects.filter(id_uuid=player_id).first()
+        if player is None:
             return Response(
                 {"detail": "Song not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        player = song.player
-        selected_ids = [sid for sid in (player.goal_song_song_ids or []) if sid]
-        fallback_ids = self._fallback_goal_song_song_ids(team=team, season=season)
-
-        if str(song.id_uuid) in selected_ids:
-            next_selected_ids = [
-                sid for sid in selected_ids if sid != str(song.id_uuid)
-            ]
-            player.goal_song_song_ids = next_selected_ids
-            update_fields: list[str] = ["goal_song_song_ids"]
-            if next_selected_ids:
-                first = (
-                    PlayerSong.objects
-                    .select_related("cached_song")
-                    .filter(player=player, id_uuid=next_selected_ids[0])
-                    .first()
-                )
-                audio_file = None
-                if first is not None:
-                    audio_file = (
-                        first.cached_song.audio_file
-                        if first.cached_song is not None
-                        else first.audio_file
-                    )
-                player.goal_song_uri = audio_file.url if audio_file else ""
-                player.song_start_time = first.start_time_seconds if first else None
-            else:
-                player.goal_song_uri = ""
-                player.song_start_time = None
-            update_fields.extend(["goal_song_uri", "song_start_time"])
-            player.save(update_fields=update_fields)
-
-        if str(song.id_uuid) in fallback_ids:
-            next_fallback_ids = [
-                sid for sid in fallback_ids if sid != str(song.id_uuid)
-            ]
-            team_data = self._team_data_for_season(team=team, season=season)
-            if team_data is not None:
-                team_data.fallback_goal_song_song_ids = next_fallback_ids
-                team_data.save(update_fields=["fallback_goal_song_song_ids"])
-
-        song.delete()
+        try:
+            delete_team_player_song(
+                player=player,
+                song_id=song_id,
+                team_data=self._team_data_for_season(team=team, season=season),
+            )
+        except PlayerSongNotFoundError:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(
@@ -566,13 +528,13 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        song = (
-            PlayerSong.objects
-            .select_related("player")
-            .filter(id_uuid=song_id, player_id=player_id)
-            .first()
-        )
-        if song is None:
+        player = Player.objects.filter(id_uuid=player_id).first()
+        if player is None:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if owned_player_song_or_none(player=player, song_id=song_id) is None:
             return Response(
                 {"detail": "Song not found"},
                 status=status.HTTP_404_NOT_FOUND,
@@ -580,23 +542,22 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         serializer = PlayerSongUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        update_fields: list[str] = ["updated_at"]
-        if "start_time_seconds" in serializer.validated_data:
-            song.start_time_seconds = int(
-                serializer.validated_data["start_time_seconds"]
+        try:
+            song = update_owned_player_song_settings(
+                player=player,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(
+                    start_time_seconds=serializer.validated_data.get(
+                        "start_time_seconds"
+                    ),
+                    playback_speed=serializer.validated_data.get("playback_speed"),
+                ),
             )
-            update_fields.append("start_time_seconds")
-        if "playback_speed" in serializer.validated_data:
-            song.playback_speed = float(serializer.validated_data["playback_speed"])
-            update_fields.append("playback_speed")
-        song.save(update_fields=update_fields)
-
-        player = song.player
-        current_selected = [sid for sid in (player.goal_song_song_ids or []) if sid]
-        if current_selected and current_selected[0] == str(song.id_uuid):
-            player.song_start_time = song.start_time_seconds
-            player.save(update_fields=["song_start_time"])
+        except PlayerSongNotFoundError:
+            return Response(
+                {"detail": "Song not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         return Response(PlayerSongSerializer(song).data)
 
@@ -854,19 +815,17 @@ class TeamViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _song_entry(song: PlayerSong) -> dict[str, object] | None:
-        cached = song.cached_song
-        status_value = cached.status if cached is not None else song.status
-        audio_file = cached.audio_file if cached is not None else song.audio_file
-        if status_value != PlayerSongStatus.READY or not audio_file:
+        audio_file = song.effective_audio_file
+        if song.effective_status != PlayerSongStatus.READY or not audio_file:
             return None
         return {
             "id_uuid": str(song.id_uuid),
             "audio_url": audio_file.url,
             "start_time_seconds": int(song.start_time_seconds or 0),
             "playback_speed": float(song.playback_speed or 1.0),
-            "title": song.title,
-            "artists": song.artists,
-            "player_id": str(song.player.id_uuid),
+            "title": song.effective_title,
+            "artists": song.effective_artists,
+            "player_id": str(song.player_id),
         }
 
     def _song_entries_for_ids(
@@ -899,10 +858,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         roster_player_ids = self._team_roster_player_ids(team=team, season=season)
         songs = list(
-            PlayerSong.objects.select_related("cached_song").filter(
-                id_uuid__in=ids,
-                player_id__in=roster_player_ids,
-            )
+            player_songs_by_ids(song_ids=ids).filter(player_id__in=roster_player_ids)
         )
         entries = self._song_entries_for_ids(songs=songs, ids=ids)
         audio_urls: list[str] = []

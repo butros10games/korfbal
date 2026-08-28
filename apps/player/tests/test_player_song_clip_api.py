@@ -41,9 +41,7 @@ def test_player_song_clip_reports_unavailable_when_ffmpeg_missing(
     # Force the ffmpeg path to be missing deterministically.
     with (
         patch("apps.player.services.player_audio.find_ffmpeg", return_value=None),
-        patch(
-            "apps.player.api.views.songs.enqueue_download_for_player_song"
-        ) as enqueue,
+        patch("apps.player.composition.song_jobs.player_song") as enqueue,
     ):
         response = client.get(
             f"/api/player/api/songs/{song.id_uuid}/clip/?start=12&duration=8&stream=1"
@@ -52,7 +50,7 @@ def test_player_song_clip_reports_unavailable_when_ffmpeg_missing(
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json() == {"detail": "Goal sound clip is not prepared."}
     assert response["Retry-After"] == "2"
-    enqueue.assert_called_once_with(song)
+    enqueue.assert_called_once_with(str(song.id_uuid))
 
 
 @pytest.mark.django_db

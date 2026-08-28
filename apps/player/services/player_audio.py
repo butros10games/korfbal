@@ -109,9 +109,7 @@ def prepare_player_song_clip(
     runtime: AudioRuntime,
 ) -> str | None:
     """Prepare the standard tracker clip for a ready PlayerSong."""
-    audio_file = (
-        song.cached_song.audio_file if song.cached_song is not None else song.audio_file
-    )
+    audio_file = song.effective_audio_file
     if not audio_file:
         return None
     return ensure_goal_song_clip(

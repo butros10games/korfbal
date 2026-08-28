@@ -16,6 +16,10 @@ from django.utils import timezone
 
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.player_song_queries import (
+    player_song_by_id,
+    player_song_queryset,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +33,7 @@ def _prepare_cached_song_clips(
     *,
     prepare_clip: ClipPreparer,
 ) -> None:
-    songs = PlayerSong.objects.select_related("cached_song").filter(cached_song=cached)
+    songs = player_song_queryset().filter(cached_song=cached)
     for song in songs:
         prepare_clip(song)
 
@@ -239,9 +243,7 @@ def process_player_song_download(
     prepare_clip: ClipPreparer,
 ) -> None:
     """Prepare a player song through shared cache or legacy direct storage."""
-    song = (
-        PlayerSong.objects.select_related("cached_song").filter(id_uuid=song_id).first()
-    )
+    song = player_song_by_id(song_id)
     if song is None:
         logger.warning("PlayerSong %s not found", song_id)
         return

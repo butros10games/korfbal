@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from http import HTTPStatus
 import json
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import override_settings
 from django.test.client import Client
+from django.test.utils import CaptureQueriesContext
 import pytest
 
+from apps.player.api.serializers import PlayerSongSerializer
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.player_song_queries import player_songs_for_player
 
 
 START_TIME_SECONDS = 42
 SECOND_SONG_START_TIME_SECONDS = 12
 PLAYBACK_SPEED = 1.25
+QueryCounter = Callable[[int], AbstractContextManager[None]]
 
 
 @pytest.mark.django_db
@@ -175,6 +182,30 @@ def test_missing_player_song_patch_returns_not_found_before_validation(
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
+def test_player_song_patch_hides_another_players_song(client: Client) -> None:
+    """Song settings commands must enforce ownership at the HTTP boundary."""
+    original_start_seconds = 4
+    owner = get_user_model().objects.create_user(username="song-patch-owner")
+    other = get_user_model().objects.create_user(username="song-patch-other")
+    song = PlayerSong.objects.create(
+        player=owner.player,
+        start_time_seconds=original_start_seconds,
+    )
+    client.force_login(other)
+
+    response = client.patch(
+        f"/api/player/me/songs/{song.id_uuid}/",
+        data=json.dumps({"start_time_seconds": 20}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    song.refresh_from_db()
+    assert song.start_time_seconds == original_start_seconds
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
 def test_player_song_delete_cleans_goal_song_selection(client: Client) -> None:
     """Deleting a selected goal-song removes it from Player.goal_song_song_ids."""
     user = get_user_model().objects.create_user(
@@ -223,11 +254,7 @@ def test_player_song_delete_cleans_goal_song_selection(client: Client) -> None:
     assert player.goal_song_song_ids == [song_two_id]
     assert player.song_start_time == SECOND_SONG_START_TIME_SECONDS
     song_two = PlayerSong.objects.select_related("cached_song").get(id_uuid=song_two_id)
-    audio_file = (
-        song_two.cached_song.audio_file
-        if song_two.cached_song is not None
-        else song_two.audio_file
-    )
+    audio_file = song_two.effective_audio_file
     expected_uri = audio_file.url if audio_file else ""
     assert player.goal_song_uri == expected_uri
 
@@ -281,3 +308,48 @@ def test_player_song_uses_cached_song_across_users(client: Client) -> None:
     delete_b = client.delete(f"/api/player/me/songs/{song_b_id}/")
     assert delete_b.status_code == HTTPStatus.NO_CONTENT
     assert CachedSong.objects.filter(id_uuid=cached_id).exists()
+
+
+@pytest.mark.django_db
+def test_player_song_serialization_uses_the_query_read_model(
+    django_assert_num_queries: QueryCounter,
+) -> None:
+    """Effective cached metadata must serialize without hidden queries."""
+    user = get_user_model().objects.create_user(username="song-query-serializer")
+    cached = CachedSong.objects.create(
+        spotify_url="https://open.spotify.com/track/query-serializer",
+        title="Cached title",
+        artists="Cached artist",
+        duration_seconds=120,
+        status=CachedSongStatus.READY,
+        audio_file="cached_songs/query-serializer.mp3",
+    )
+    song = PlayerSong.objects.create(player=user.player, cached_song=cached)
+    loaded = player_songs_for_player(user.player).get(id_uuid=song.id_uuid)
+
+    with django_assert_num_queries(0):
+        payload = PlayerSongSerializer(loaded).data
+
+    assert payload["title"] == "Cached title"
+    assert payload["artists"] == "Cached artist"
+    assert payload["status"] == CachedSongStatus.READY
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_player_song_list_queries_do_not_scale_with_song_count(client: Client) -> None:
+    """The song list endpoint must not add queries per serialized song."""
+    user = get_user_model().objects.create_user(username="song-query-list")
+    client.force_login(user)
+    PlayerSong.objects.create(player=user.player, title="First")
+
+    with CaptureQueriesContext(connection) as initial_queries:
+        initial_response = client.get("/api/player/me/songs/")
+    for index in range(4):
+        PlayerSong.objects.create(player=user.player, title=f"Extra {index}")
+    with CaptureQueriesContext(connection) as expanded_queries:
+        expanded_response = client.get("/api/player/me/songs/")
+
+    assert initial_response.status_code == HTTPStatus.OK
+    assert expanded_response.status_code == HTTPStatus.OK
+    assert len(expanded_queries) == len(initial_queries)

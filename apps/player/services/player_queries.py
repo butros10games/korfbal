@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from apps.player.models.player import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
-from apps.player.models.player_song import PlayerSong
+from apps.player.services.player_song_queries import player_song_queryset
 from apps.team.models.team_data import TeamData
 
 
@@ -56,12 +56,7 @@ def player_access_queryset() -> QuerySet[Player]:
 
 def player_detail_queryset() -> QuerySet[Player]:
     """Return players with every relation required by PlayerSerializer."""
-    songs = (
-        PlayerSong.objects
-        .select_related("cached_song")
-        .order_by("-created_at", "id_uuid")
-        .fetch_mode(models.FETCH_RAISE)
-    )
+    songs = player_song_queryset().order_by("-created_at", "id_uuid")
     return (
         player_access_queryset()
         .prefetch_related(

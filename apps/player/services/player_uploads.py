@@ -57,12 +57,13 @@ def save_goal_song_upload(
     safe_name = sanitize_uploaded_filename(filename, fallback="goal_song")
     uploaded.name = safe_name
 
-    song, _created = create_player_song(
+    creation = create_player_song(
         player=player,
         uploaded_audio=uploaded,
         spotify_url=None,
         jobs=jobs,
     )
+    song = creation.song
     update_fields = apply_goal_song_song_ids(
         player=player,
         ids=[str(song.id_uuid)],

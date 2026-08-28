@@ -11,7 +11,6 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.club.api.serializers import ClubSerializer
-from apps.player.models.cached_song import CachedSong
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
 from apps.player.models.push_subscription import PlayerPushSubscription
@@ -243,11 +242,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             song = by_id.get(song_id)
             audio_file = None
             if song is not None:
-                audio_file = (
-                    song.cached_song.audio_file
-                    if song.cached_song is not None
-                    else song.audio_file
-                )
+                audio_file = song.effective_audio_file
             if song is None or not audio_file:
                 continue
 
@@ -316,40 +311,29 @@ class PlayerSongSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    @staticmethod
-    def _cached(obj: PlayerSong) -> CachedSong | None:
-        """Return the linked CachedSong when present."""
-        return getattr(obj, "cached_song", None)
-
     def get_title(self, obj: PlayerSong) -> str:
-        """Return the song title (from cache when linked)."""
-        cached = self._cached(obj)
-        return cached.title if cached is not None else obj.title
+        """Return the song title from its effective audio source."""
+        return obj.effective_title
 
     def get_artists(self, obj: PlayerSong) -> str:
-        """Return the song artists (from cache when linked)."""
-        cached = self._cached(obj)
-        return cached.artists if cached is not None else obj.artists
+        """Return artists from the effective audio source."""
+        return obj.effective_artists
 
     def get_duration_seconds(self, obj: PlayerSong) -> int | None:
-        """Return the song duration in seconds (from cache when linked)."""
-        cached = self._cached(obj)
-        return cached.duration_seconds if cached is not None else obj.duration_seconds
+        """Return duration from the effective audio source."""
+        return obj.effective_duration_seconds
 
     def get_status(self, obj: PlayerSong) -> str:
-        """Return the effective lifecycle status (from cache when linked)."""
-        cached = self._cached(obj)
-        return cached.status if cached is not None else obj.status
+        """Return the effective lifecycle status."""
+        return obj.effective_status
 
     def get_error_message(self, obj: PlayerSong) -> str:
-        """Return the effective error message (from cache when linked)."""
-        cached = self._cached(obj)
-        return cached.error_message if cached is not None else obj.error_message
+        """Return the effective lifecycle error."""
+        return obj.effective_error_message
 
     def get_audio_url(self, obj: PlayerSong) -> str | None:
         """Return the resolved audio URL when available."""
-        cached = self._cached(obj)
-        audio_file = cached.audio_file if cached is not None else obj.audio_file
+        audio_file = obj.effective_audio_file
         if not audio_file:
             return None
         return audio_file.url

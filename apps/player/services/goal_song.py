@@ -9,6 +9,7 @@ from django.db import transaction
 
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.player_song_queries import player_songs_by_ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,12 +166,6 @@ def parse_goal_song_patch_payload(
     )
 
 
-def _song_audio_file(song: PlayerSong):
-    return (
-        song.cached_song.audio_file if song.cached_song is not None else song.audio_file
-    )
-
-
 def validate_goal_song_ids(
     *,
     player: Player,
@@ -185,12 +180,7 @@ def validate_goal_song_ids(
     if not ids:
         return []
 
-    songs = list(
-        PlayerSong.objects.select_related("cached_song").filter(
-            player=player,
-            id_uuid__in=ids,
-        )
-    )
+    songs = list(player_songs_by_ids(song_ids=ids, player=player))
     by_id = {str(song.id_uuid): song for song in songs}
 
     missing = [song_id for song_id in ids if song_id not in by_id]
@@ -203,11 +193,10 @@ def validate_goal_song_ids(
     ordered = [by_id[song_id] for song_id in ids]
     not_ready: list[str] = []
     for song in ordered:
-        audio_file = _song_audio_file(song)
-        status_value = (
-            song.cached_song.status if song.cached_song is not None else song.status
-        )
-        if status_value != PlayerSongStatus.READY or not audio_file:
+        if (
+            song.effective_status != PlayerSongStatus.READY
+            or not song.effective_audio_file
+        ):
             not_ready.append(str(song.id_uuid))
 
     if not_ready:
@@ -232,7 +221,7 @@ def apply_goal_song_song_ids(
 
     if ordered:
         first = ordered[0]
-        audio_file = _song_audio_file(first)
+        audio_file = first.effective_audio_file
         if audio_file:
             player.goal_song_uri = audio_file.url
             update_fields.append("goal_song_uri")
@@ -296,19 +285,8 @@ def remove_deleted_song_from_goal_song_selection(
         player.save(update_fields=update_fields)
         return
 
-    first = (
-        PlayerSong.objects
-        .select_related("cached_song")
-        .filter(player=player, id_uuid=next_ids[0])
-        .only(
-            "id_uuid",
-            "start_time_seconds",
-            "audio_file",
-            "cached_song__audio_file",
-        )
-        .first()
-    )
-    audio_file = _song_audio_file(first) if first is not None else None
+    first = player_songs_by_ids(song_ids=next_ids[:1], player=player).first()
+    audio_file = first.effective_audio_file if first is not None else None
     player.goal_song_uri = audio_file.url if audio_file else ""
     player.song_start_time = first.start_time_seconds if first is not None else None
     player.save(update_fields=update_fields)

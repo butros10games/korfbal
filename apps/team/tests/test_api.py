@@ -631,8 +631,10 @@ def test_team_goal_song_admin_manage_player_and_fallback(client: Client) -> None
     assert response_update_song_settings.status_code == HTTPStatus.OK
 
     song_a.refresh_from_db()
+    team_player.refresh_from_db()
     assert song_a.start_time_seconds == updated_start_seconds
     assert float(song_a.playback_speed) == pytest.approx(1.1)
+    assert team_player.song_start_time == updated_start_seconds
 
     team_data.refresh_from_db()
     assert team_data.fallback_goal_song_song_ids == [str(song_b.id_uuid)]

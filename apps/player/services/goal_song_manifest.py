@@ -8,8 +8,8 @@ from urllib.parse import urlencode
 from django.urls import reverse
 
 from apps.player.models import Player, PlayerSong, PlayerSongStatus
-from apps.player.models.cached_song import CachedSongStatus
 from apps.player.services.player_audio import GOAL_SONG_CLIP_DURATION_SECONDS
+from apps.player.services.player_song_queries import player_songs_by_ids
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
 
@@ -30,21 +30,15 @@ def _normalized_ids(values: object) -> list[str]:
 
 
 def _song_is_ready(song: PlayerSong) -> bool:
-    if song.cached_song is not None:
-        return song.cached_song.status == CachedSongStatus.READY and bool(
-            song.cached_song.audio_file
-        )
-    return song.status == PlayerSongStatus.READY and bool(song.audio_file)
+    return song.effective_status == PlayerSongStatus.READY and bool(
+        song.effective_audio_file
+    )
 
 
 def _entry(song: PlayerSong) -> dict[str, object]:
     start_seconds = max(0, int(song.start_time_seconds or 0))
-    audio_file = (
-        song.cached_song.audio_file if song.cached_song is not None else song.audio_file
-    )
-    source_updated_at = (
-        song.cached_song.updated_at if song.cached_song is not None else song.updated_at
-    )
+    audio_file = song.effective_audio_file
+    source_updated_at = song.effective_updated_at
     query = urlencode({
         "start": start_seconds,
         "duration": GOAL_SONG_CLIP_DURATION_SECONDS,
@@ -90,11 +84,7 @@ def build_goal_song_manifest(
         song_id for values in player_selections.values() for song_id in values
     }
     selected_ids.update(fallback_ids)
-    songs = list(
-        PlayerSong.objects.select_related("cached_song").filter(
-            id_uuid__in=selected_ids
-        )
-    )
+    songs = list(player_songs_by_ids(song_ids=selected_ids))
     songs_by_id = {str(song.id_uuid): song for song in songs if _song_is_ready(song)}
 
     players: dict[str, list[dict[str, object]]] = {}

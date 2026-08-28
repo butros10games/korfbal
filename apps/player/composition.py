@@ -21,9 +21,9 @@ from apps.player.services.player_audio import (
 )
 from apps.player.services.player_songs import (
     create_player_song as _create_player_song,
-    enqueue_download_for_player_song as _enqueue_download,
+    resolve_player_song_clip as _resolve_player_song_clip,
     retry_owned_player_song_download as _retry_owned_song,
-    update_player_song_settings as _update_song_settings,
+    update_owned_player_song_settings as _update_owned_song_settings,
 )
 from apps.player.services.push_notifications import (
     missing_webpush_settings,
@@ -59,9 +59,16 @@ prepare_player_song_clip = partial(
     runtime=audio_runtime,
 )
 create_player_song = partial(_create_player_song, jobs=song_jobs)
-update_player_song_settings = partial(_update_song_settings, jobs=song_jobs)
-enqueue_download_for_player_song = partial(_enqueue_download, jobs=song_jobs)
+update_owned_player_song_settings = partial(
+    _update_owned_song_settings,
+    jobs=song_jobs,
+)
 retry_owned_player_song_download = partial(_retry_owned_song, jobs=song_jobs)
+resolve_player_song_clip = partial(
+    _resolve_player_song_clip,
+    prepare_clip=ensure_goal_song_clip,
+    jobs=song_jobs,
+)
 
 
 def _web_push_ttl_seconds() -> int:

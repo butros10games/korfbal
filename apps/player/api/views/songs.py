@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
@@ -18,28 +17,26 @@ from apps.player.api.serializers import (
     PlayerSongSerializer,
     PlayerSongUpdateSerializer,
 )
-from apps.player.application.ports import JobDispatchUnavailableError
 from apps.player.composition import (
     audio_storage,
     create_player_song,
-    enqueue_download_for_player_song,
-    ensure_goal_song_clip,
+    resolve_player_song_clip,
     retry_owned_player_song_download,
-    update_player_song_settings,
+    update_owned_player_song_settings,
 )
-from apps.player.models.player_song import PlayerSong
+from apps.player.services.player_song_queries import (
+    owned_player_song_or_none,
+    player_songs_for_player,
+)
 from apps.player.services.player_songs import (
     PlayerSongAlreadyReadyError,
+    PlayerSongClipRequest,
     PlayerSongNotFoundError,
+    PlayerSongSettingsPatch,
     delete_owned_player_song,
-    effective_song_audio_file,
-    owned_player_song,
 )
 
 from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_player
-
-
-logger = logging.getLogger(__name__)
 
 
 class PlayerSongClipAPIView(KorfbalAPIView):
@@ -69,38 +66,27 @@ class PlayerSongClipAPIView(KorfbalAPIView):
         duration_seconds = self._parse_seconds_query(request, "duration", 8)
         duration_seconds = max(1, min(15, duration_seconds))
 
-        song = (
-            PlayerSong.objects
-            .select_related("cached_song")
-            .filter(id_uuid=song_id)
-            .first()
+        stream_requested = request.query_params.get("stream") == "1"
+        clip = resolve_player_song_clip(
+            request=PlayerSongClipRequest(
+                song_id=song_id,
+                start_seconds=start_seconds,
+                duration_seconds=duration_seconds,
+                enqueue_if_missing=stream_requested,
+            )
         )
-        if song is None:
+        if clip is None:
             return HttpResponseRedirect("/")
 
-        audio_file = effective_song_audio_file(song)
-        if not audio_file:
-            return HttpResponseRedirect("/")
-
-        clip_key = ensure_goal_song_clip(
-            audio_file=audio_file,
-            song=song,
-            start_seconds=start_seconds,
-            duration_seconds=duration_seconds,
-        )
-        if request.query_params.get("stream") != "1":
-            location = audio_storage.url(clip_key) if clip_key else str(audio_file.url)
+        if not stream_requested:
+            location = (
+                audio_storage.url(clip.clip_key)
+                if clip.clip_key
+                else str(clip.audio_file.url)
+            )
             return HttpResponseRedirect(location)
 
-        if not clip_key:
-            try:
-                enqueue_download_for_player_song(song)
-            except JobDispatchUnavailableError:
-                logger.warning(
-                    "Celery broker unavailable; could not prepare PlayerSong %s",
-                    song.id_uuid,
-                    exc_info=True,
-                )
+        if not clip.clip_key:
             response = Response(
                 {"detail": "Goal sound clip is not prepared."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -108,8 +94,8 @@ class PlayerSongClipAPIView(KorfbalAPIView):
             response["Retry-After"] = "2"
             return response
 
-        stream = audio_storage.open(clip_key)
-        filename = clip_key.rsplit("/", maxsplit=1)[-1]
+        stream = audio_storage.open(clip.clip_key)
+        filename = clip.clip_key.rsplit("/", maxsplit=1)[-1]
 
         response = FileResponse(
             stream,
@@ -145,12 +131,7 @@ class CurrentPlayerSongsAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        songs = (
-            PlayerSong.objects
-            .select_related("cached_song")
-            .filter(player=player)
-            .order_by("-created_at")
-        )
+        songs = player_songs_for_player(player)
         return Response(PlayerSongSerializer(songs, many=True).data)
 
     def post(
@@ -168,7 +149,7 @@ class CurrentPlayerSongsAPIView(KorfbalAPIView):
         serializer.is_valid(raise_exception=True)
 
         uploaded_audio = serializer.validated_data.get("audio_file")
-        song, created = create_player_song(
+        creation = create_player_song(
             player=player,
             uploaded_audio=(
                 uploaded_audio if isinstance(uploaded_audio, UploadedFile) else None
@@ -176,8 +157,10 @@ class CurrentPlayerSongsAPIView(KorfbalAPIView):
             spotify_url=str(serializer.validated_data.get("spotify_url") or ""),
         )
         return Response(
-            PlayerSongSerializer(song).data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            PlayerSongSerializer(creation.song).data,
+            status=(
+                status.HTTP_201_CREATED if creation.created else status.HTTP_200_OK
+            ),
         )
 
 
@@ -198,18 +181,24 @@ class CurrentPlayerSongDetailAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        try:
-            song = owned_player_song(player=player, song_id=song_id)
-        except PlayerSongNotFoundError:
+        if owned_player_song_or_none(player=player, song_id=song_id) is None:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         serializer = PlayerSongUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        update_player_song_settings(
-            song=song,
-            start_time_seconds=serializer.validated_data.get("start_time_seconds"),
-            playback_speed=serializer.validated_data.get("playback_speed"),
-        )
+        try:
+            song = update_owned_player_song_settings(
+                player=player,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(
+                    start_time_seconds=serializer.validated_data.get(
+                        "start_time_seconds"
+                    ),
+                    playback_speed=serializer.validated_data.get("playback_speed"),
+                ),
+            )
+        except PlayerSongNotFoundError:
+            return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
         return Response(PlayerSongSerializer(song).data)
 
     def delete(
