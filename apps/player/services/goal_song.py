@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from django.db import transaction
+
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 
@@ -242,6 +244,32 @@ def apply_goal_song_song_ids(
     player.song_start_time = None
     update_fields.extend(["goal_song_uri", "song_start_time"])
     return update_fields
+
+
+@transaction.atomic
+def update_goal_song_settings(
+    *,
+    player: Player,
+    settings: ParsedGoalSongPatchPayload,
+) -> None:
+    """Persist a validated goal-song settings command."""
+    update_fields: list[str] = []
+    if settings.goal_song_uri_provided:
+        player.goal_song_uri = settings.goal_song_uri or ""
+        update_fields.append("goal_song_uri")
+    if settings.song_start_time_provided:
+        player.song_start_time = settings.song_start_time
+        update_fields.append("song_start_time")
+    if settings.goal_song_ids_provided:
+        update_fields.extend(
+            apply_goal_song_song_ids(
+                player=player,
+                ids=settings.goal_song_song_ids or [],
+            )
+        )
+
+    if update_fields:
+        player.save(update_fields=list(dict.fromkeys(update_fields)))
 
 
 def remove_deleted_song_from_goal_song_selection(

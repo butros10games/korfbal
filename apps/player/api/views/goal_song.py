@@ -15,8 +15,8 @@ from apps.player.models.player import Player
 from apps.player.services.goal_song import (
     GoalSongPayloadError,
     GoalSongSelectionError,
-    apply_goal_song_song_ids,
     parse_goal_song_patch_payload,
+    update_goal_song_settings,
 )
 
 from .common import PLAYER_NOT_FOUND_DETAIL
@@ -65,26 +65,9 @@ class CurrentPlayerGoalSongAPIView(KorfbalAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        update_fields: list[str] = []
-        if parsed.goal_song_uri_provided:
-            player.goal_song_uri = parsed.goal_song_uri or ""
-            update_fields.append("goal_song_uri")
-        if parsed.song_start_time_provided:
-            player.song_start_time = parsed.song_start_time
-            update_fields.append("song_start_time")
-
-        if parsed.goal_song_ids_provided:
-            try:
-                update_fields.extend(
-                    apply_goal_song_song_ids(
-                        player=player,
-                        ids=parsed.goal_song_song_ids or [],
-                    )
-                )
-            except GoalSongSelectionError as exc:
-                return self._selection_error_response(exc)
-
-        if update_fields:
-            player.save(update_fields=list(dict.fromkeys(update_fields)))
+        try:
+            update_goal_song_settings(player=player, settings=parsed)
+        except GoalSongSelectionError as exc:
+            return self._selection_error_response(exc)
 
         return Response(PlayerSerializer(player, context={"request": request}).data)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 from django.conf import settings
 
@@ -16,6 +18,41 @@ from apps.player.services.web_push import (
 
 
 logger = logging.getLogger(__name__)
+
+
+class TestPushSender(Protocol):
+    """Deliver a test payload to stored subscriptions."""
+
+    def __call__(
+        self,
+        *,
+        subs: list[PlayerPushSubscription],
+        payload: WebPushPayload,
+    ) -> tuple[int, int, list[dict[str, Any]]]:
+        """Return sent, failed, and error details."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PushTestConfigurationError(Exception):
+    """Raised when the test-push runtime is not configured."""
+
+    detail: str
+    missing: list[str]
+
+
+class NoActivePushSubscriptionsError(Exception):
+    """Raised when a user has no active push destinations."""
+
+
+@dataclass(frozen=True, slots=True)
+class PushTestResult:
+    """Delivery totals returned by the test-push command."""
+
+    total: int
+    sent: int
+    failed: int
+    errors: list[dict[str, Any]]
 
 
 def missing_webpush_settings() -> list[str]:
@@ -86,3 +123,54 @@ def send_test_payload(
             })
 
     return sent, failed, errors
+
+
+def send_test_push_notification(
+    *,
+    user_id: int,
+    webpush_available: Callable[[], bool],
+    send_pushes: TestPushSender,
+) -> PushTestResult:
+    """Send the standard test notification to a user's active subscriptions.
+
+    Raises:
+        NoActivePushSubscriptionsError: If the user has no active subscriptions.
+        PushTestConfigurationError: If required settings or libraries are missing.
+
+    """
+    missing = missing_webpush_settings()
+    if missing:
+        raise PushTestConfigurationError(
+            detail="Web push not configured",
+            missing=missing,
+        )
+    if not webpush_available():
+        raise PushTestConfigurationError(
+            detail="Web push runtime is missing pywebpush",
+            missing=["pywebpush"],
+        )
+
+    subscriptions = list(
+        PlayerPushSubscription.objects.filter(
+            user_id=user_id,
+            is_active=True,
+        ).order_by("-updated_at")
+    )
+    if not subscriptions:
+        raise NoActivePushSubscriptionsError
+
+    sent, failed, errors = send_pushes(
+        subs=subscriptions,
+        payload=WebPushPayload(
+            title="Test pushmelding",
+            body="Als je dit ziet werkt push via de PWA.",
+            url=build_target_url(),
+            tag="debug-test",
+        ),
+    )
+    return PushTestResult(
+        total=len(subscriptions),
+        sent=sent,
+        failed=failed,
+        errors=errors,
+    )

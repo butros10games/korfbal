@@ -153,6 +153,28 @@ def test_player_song_delete_does_not_affect_other_players(client: Client) -> Non
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
+def test_missing_player_song_patch_returns_not_found_before_validation(
+    client: Client,
+) -> None:
+    """Song ownership lookup remains the first PATCH application check."""
+    user = get_user_model().objects.create_user(
+        username="missing_song_patch",
+        password="pass1234",  # nosec
+    )
+    client.force_login(user)
+
+    response = client.patch(
+        "/api/player/me/songs/00000000-0000-0000-0000-000000000001/",
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {"detail": "Song not found"}
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
 def test_player_song_delete_cleans_goal_song_selection(client: Client) -> None:
     """Deleting a selected goal-song removes it from Player.goal_song_song_ids."""
     user = get_user_model().objects.create_user(

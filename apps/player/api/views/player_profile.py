@@ -16,6 +16,10 @@ from apps.player.api.serializers import (
 )
 from apps.player.models.player import Player
 from apps.player.privacy import can_view_by_visibility
+from apps.player.services.player_settings import (
+    player_privacy_settings,
+    update_player_privacy_settings,
+)
 from apps.player.services.player_teams import (
     followed_teams_for_player,
     grouped_teams_for_player,
@@ -218,23 +222,7 @@ class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        profile_visibility = player.profile_picture_visibility
-        if profile_visibility == Player.Visibility.PRIVATE:
-            profile_visibility = Player.Visibility.CLUB
-
-        stats_visibility = player.stats_visibility
-        if stats_visibility == Player.Visibility.PRIVATE:
-            stats_visibility = Player.Visibility.CLUB
-
-        teams_visibility = player.teams_visibility
-        if teams_visibility == Player.Visibility.PRIVATE:
-            teams_visibility = Player.Visibility.CLUB
-
-        return Response({
-            "profile_picture_visibility": profile_visibility,
-            "stats_visibility": stats_visibility,
-            "teams_visibility": teams_visibility,
-        })
+        return Response(player_privacy_settings(player))
 
     def patch(
         self,
@@ -250,22 +238,9 @@ class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
         serializer = PlayerPrivacySettingsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        update_fields: list[str] = []
-        if "profile_picture_visibility" in serializer.validated_data:
-            player.profile_picture_visibility = str(
-                serializer.validated_data["profile_picture_visibility"]
-            )
-            update_fields.append("profile_picture_visibility")
-
-        if "stats_visibility" in serializer.validated_data:
-            player.stats_visibility = str(serializer.validated_data["stats_visibility"])
-            update_fields.append("stats_visibility")
-
-        if "teams_visibility" in serializer.validated_data:
-            player.teams_visibility = str(serializer.validated_data["teams_visibility"])
-            update_fields.append("teams_visibility")
-
-        if update_fields:
-            player.save(update_fields=update_fields)
+        update_player_privacy_settings(
+            player=player,
+            changes=serializer.validated_data,
+        )
 
         return Response(PlayerSerializer(player, context={"request": request}).data)

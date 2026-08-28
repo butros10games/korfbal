@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction
 from django.http import FileResponse, HttpResponseRedirect
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -25,14 +24,16 @@ from apps.player.composition import (
     create_player_song,
     enqueue_download_for_player_song,
     ensure_goal_song_clip,
-    retry_player_song_download,
+    retry_owned_player_song_download,
     update_player_song_settings,
 )
-from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.goal_song import remove_deleted_song_from_goal_song_selection
+from apps.player.models.player_song import PlayerSong
 from apps.player.services.player_songs import (
+    PlayerSongAlreadyReadyError,
+    PlayerSongNotFoundError,
+    delete_owned_player_song,
     effective_song_audio_file,
-    effective_song_status,
+    owned_player_song,
 )
 
 from .common import PLAYER_NOT_FOUND_DETAIL, SONG_NOT_FOUND_DETAIL, get_current_player
@@ -197,13 +198,13 @@ class CurrentPlayerSongDetailAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
-        if song is None:
+        try:
+            song = owned_player_song(player=player, song_id=song_id)
+        except PlayerSongNotFoundError:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         serializer = PlayerSongUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         update_player_song_settings(
             song=song,
             start_time_seconds=serializer.validated_data.get("start_time_seconds"),
@@ -223,16 +224,10 @@ class CurrentPlayerSongDetailAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        song = PlayerSong.objects.filter(player=player, id_uuid=song_id).first()
-        if song is None:
+        try:
+            delete_owned_player_song(player=player, song_id=song_id)
+        except PlayerSongNotFoundError:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        with transaction.atomic():
-            remove_deleted_song_from_goal_song_selection(
-                player=player,
-                deleted_song_id=str(song.id_uuid),
-            )
-            song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -253,23 +248,16 @@ class CurrentPlayerSongRetryAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        song = (
-            PlayerSong.objects
-            .select_related("cached_song")
-            .filter(
+        try:
+            song = retry_owned_player_song_download(
                 player=player,
-                id_uuid=song_id,
+                song_id=song_id,
             )
-            .first()
-        )
-        if song is None:
+        except PlayerSongNotFoundError:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        if effective_song_status(song) == PlayerSongStatus.READY:
+        except PlayerSongAlreadyReadyError:
             return Response(
                 {"detail": "Song is already ready"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        retry_player_song_download(song)
         return Response(PlayerSongSerializer(song).data)

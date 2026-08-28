@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
@@ -22,10 +21,15 @@ from apps.player.composition import (
 )
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.push_notifications import (
-    build_target_url,
-    missing_webpush_settings,
+    NoActivePushSubscriptionsError,
+    PushTestConfigurationError,
+    send_test_push_notification,
 )
-from apps.player.services.web_push import WebPushPayload
+from apps.player.services.push_subscriptions import (
+    PushSubscriptionNotFoundError,
+    deactivate_push_subscription,
+    register_push_subscription,
+)
 
 from .common import TEST_PUSH_ERROR_LIMIT
 
@@ -49,7 +53,6 @@ class CurrentPlayerPushSubscriptionsAPIView(KorfbalAPIView):
         ).order_by("-updated_at")
         return Response(PlayerPushSubscriptionSerializer(subs, many=True).data)
 
-    @transaction.atomic
     def post(
         self,
         request: Request,
@@ -60,58 +63,26 @@ class CurrentPlayerPushSubscriptionsAPIView(KorfbalAPIView):
         serializer = PlayerPushSubscriptionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        subscription = serializer.validated_data["subscription"]
-        if not isinstance(subscription, dict):
-            return Response(
-                {"detail": "Invalid subscription payload"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        endpoint = str(subscription.get("endpoint") or "").strip()
+        subscription = cast(
+            dict[str, Any],
+            serializer.validated_data["subscription"],
+        )
         user_agent = str(serializer.validated_data.get("user_agent") or "").strip()
         platform = str(serializer.validated_data.get("platform") or "web").strip()
-        if not endpoint:
-            return Response(
-                {"detail": "subscription.endpoint is required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        obj = PlayerPushSubscription.objects.filter(endpoint=endpoint).first()
-        created = False
-        if obj is None:
-            obj = PlayerPushSubscription.objects.create(
-                user=request.user,
-                endpoint=endpoint,
-                subscription=subscription,
-                platform=platform,
-                is_active=True,
-                user_agent=user_agent,
-            )
-            created = True
-        else:
-            obj.user = request.user
-            obj.subscription = subscription
-            obj.platform = platform
-            obj.is_active = True
-            obj.user_agent = user_agent
-            obj.save(
-                update_fields=[
-                    "user",
-                    "subscription",
-                    "platform",
-                    "is_active",
-                    "user_agent",
-                    "updated_at",
-                ]
-            )
-
-        payload = PlayerPushSubscriptionSerializer(obj).data
+        registration = register_push_subscription(
+            user_id=cast(int, request.user.pk),
+            subscription=subscription,
+            platform=platform,
+            user_agent=user_agent,
+        )
+        payload = PlayerPushSubscriptionSerializer(registration.subscription).data
         return Response(
-            {"created": created, "subscription": payload},
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            {"created": registration.created, "subscription": payload},
+            status=(
+                status.HTTP_201_CREATED if registration.created else status.HTTP_200_OK
+            ),
         )
 
-    @transaction.atomic
     def delete(
         self,
         request: Request,
@@ -125,23 +96,17 @@ class CurrentPlayerPushSubscriptionsAPIView(KorfbalAPIView):
         endpoint = serializer.validated_data.get("endpoint")
         sub_id = serializer.validated_data.get("id_uuid")
 
-        queryset = PlayerPushSubscription.objects.filter(user=request.user)
-        if endpoint:
-            queryset = queryset.filter(endpoint=endpoint)
-        if sub_id:
-            queryset = queryset.filter(id_uuid=sub_id)
-
-        obj = queryset.first()
-        if obj is None:
+        try:
+            deactivate_push_subscription(
+                user_id=cast(int, request.user.pk),
+                endpoint=str(endpoint) if endpoint else None,
+                subscription_id=sub_id,
+            )
+        except PushSubscriptionNotFoundError:
             return Response(
                 {"detail": "Subscription not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        if obj.is_active:
-            obj.is_active = False
-            obj.save(update_fields=["is_active", "updated_at"])
-
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -170,55 +135,34 @@ class CurrentPlayerTestPushNotificationAPIView(KorfbalAPIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        missing = missing_webpush_settings()
-        if missing:
+        try:
+            result = send_test_push_notification(
+                user_id=cast(int, user.pk),
+                webpush_available=webpush_library_available,
+                send_pushes=send_test_web_pushes,
+            )
+        except PushTestConfigurationError as exc:
             return Response(
                 {
-                    "detail": "Web push not configured",
-                    "missing": missing,
+                    "detail": exc.detail,
+                    "missing": exc.missing,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-
-        if not webpush_library_available():
-            return Response(
-                {
-                    "detail": "Web push runtime is missing pywebpush",
-                    "missing": ["pywebpush"],
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        subscriptions = list(
-            PlayerPushSubscription.objects.filter(
-                user=user,
-                is_active=True,
-            ).order_by("-updated_at")
-        )
-        if not subscriptions:
+        except NoActivePushSubscriptionsError:
             return Response(
                 {"detail": "No active push subscriptions"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        sent, failed, errors = send_test_web_pushes(
-            subs=subscriptions,
-            payload=WebPushPayload(
-                title="Test pushmelding",
-                body="Als je dit ziet werkt push via de PWA.",
-                url=build_target_url(),
-                tag="debug-test",
-            ),
-        )
-
         response_payload: dict[str, Any] = {
-            "total": len(subscriptions),
-            "sent": sent,
-            "failed": failed,
+            "total": result.total,
+            "sent": result.sent,
+            "failed": result.failed,
         }
-        if errors:
-            response_payload["errors"] = errors[:TEST_PUSH_ERROR_LIMIT]
-            if len(errors) > TEST_PUSH_ERROR_LIMIT:
+        if result.errors:
+            response_payload["errors"] = result.errors[:TEST_PUSH_ERROR_LIMIT]
+            if len(result.errors) > TEST_PUSH_ERROR_LIMIT:
                 response_payload["errors_truncated"] = True
 
         return Response(response_payload, status=status.HTTP_200_OK)

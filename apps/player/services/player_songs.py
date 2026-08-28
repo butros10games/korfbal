@@ -16,12 +16,21 @@ from apps.player.application.ports import (
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.goal_song import remove_deleted_song_from_goal_song_selection
 from apps.player.spotify import canonicalize_spotify_track_url
 
 
 logger = logging.getLogger(__name__)
 
 CELERY_BROKER_UNAVAILABLE_MESSAGE = "Celery broker unavailable"
+
+
+class PlayerSongNotFoundError(Exception):
+    """Raised when a player does not own the requested song."""
+
+
+class PlayerSongAlreadyReadyError(Exception):
+    """Raised when a ready song is submitted for retry."""
 
 
 def effective_song_audio_file(song: PlayerSong) -> FieldFile:
@@ -168,3 +177,55 @@ def retry_player_song_download(
             exc_info=True,
         )
         _mark_broker_unavailable(song)
+
+
+def owned_player_song(
+    *,
+    player: Player,
+    song_id: str,
+) -> PlayerSong:
+    """Return a song owned by a player.
+
+    Raises:
+        PlayerSongNotFoundError: If the player does not own the requested song.
+
+    """
+    song = (
+        PlayerSong.objects
+        .select_related("cached_song")
+        .filter(player=player, id_uuid=song_id)
+        .first()
+    )
+    if song is None:
+        raise PlayerSongNotFoundError
+    return song
+
+
+@transaction.atomic
+def delete_owned_player_song(*, player: Player, song_id: str) -> None:
+    """Delete an owned song and repair the player's goal-song selection."""
+    song = owned_player_song(player=player, song_id=song_id)
+    remove_deleted_song_from_goal_song_selection(
+        player=player,
+        deleted_song_id=str(song.id_uuid),
+    )
+    song.delete()
+
+
+def retry_owned_player_song_download(
+    *,
+    player: Player,
+    song_id: str,
+    jobs: SongDownloadDispatcher,
+) -> PlayerSong:
+    """Retry a non-ready song owned by a player.
+
+    Raises:
+        PlayerSongAlreadyReadyError: If the song is already ready.
+
+    """
+    song = owned_player_song(player=player, song_id=song_id)
+    if effective_song_status(song) == PlayerSongStatus.READY:
+        raise PlayerSongAlreadyReadyError
+    retry_player_song_download(song, jobs=jobs)
+    return song
