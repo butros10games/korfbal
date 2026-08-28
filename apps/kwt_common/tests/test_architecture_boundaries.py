@@ -69,6 +69,27 @@ def test_inner_layers_do_not_import_adapters_or_http_frameworks() -> None:
     assert sorted(violations) == []
 
 
+def test_api_layers_do_not_import_outbound_adapters() -> None:
+    """Inbound HTTP adapters must reach providers through composition and ports."""
+    violations: list[str] = []
+
+    for path in APPS_DIR.rglob("*.py"):
+        if "__pycache__" in path.parts or "tests" in path.parts:
+            continue
+        if "api" not in path.relative_to(APPS_DIR).parts:
+            continue
+
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for line_number, module, relative_level in _imported_modules(tree):
+            module_parts = module.split(".")
+            is_local_import = relative_level > 0 or module.startswith("apps.")
+            if is_local_import and "adapters" in module_parts:
+                rel_path = path.relative_to(APPS_DIR)
+                violations.append(f"{rel_path}:{line_number} imports {module}")
+
+    assert sorted(violations) == []
+
+
 def test_boundary_file_detection_includes_task_and_signal_packages() -> None:
     """Nested task/signal modules are application boundaries too."""
     assert _is_boundary_file(APPS_DIR / "player" / "tasks" / "downloads.py")

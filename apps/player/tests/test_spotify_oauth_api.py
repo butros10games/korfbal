@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.test import Client, override_settings
 import pytest
 
@@ -32,7 +32,7 @@ def test_spotify_connect_requires_authentication(client: Client) -> None:
 )
 def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None:
     """When Spotify is not configured, the endpoint should return a 400."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_not_configured",
         password="pass1234",  # nosec
     )
@@ -54,7 +54,7 @@ def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None
 )
 def test_spotify_connect_sets_oauth_state_and_optional_redirect(client: Client) -> None:
     """The connect endpoint should generate state and store redirect in session."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_connect",
         password="pass1234",  # nosec
     )
@@ -81,16 +81,23 @@ def test_spotify_connect_sets_oauth_state_and_optional_redirect(client: Client) 
     SPOTIFY_CLIENT_SECRET="client_secret",  # nosec
     SPOTIFY_REDIRECT_URI="https://example.invalid/oauth/callback",
 )
-def test_spotify_connect_ignores_non_relative_redirect(client: Client) -> None:
+@pytest.mark.parametrize(
+    "redirect",
+    ["https://evil.example/", "//evil.example/"],
+)
+def test_spotify_connect_ignores_non_relative_redirect(
+    client: Client,
+    redirect: str,
+) -> None:
     """Only relative redirect paths should be stored for safety."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_connect_redirect",
         password="pass1234",  # nosec
     )
     client.force_login(user)
 
     response = client.get(
-        "/api/player/spotify/connect/?redirect=https://evil.example/",
+        f"/api/player/spotify/connect/?redirect={redirect}",
         secure=True,
     )
 

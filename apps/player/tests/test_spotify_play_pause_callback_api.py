@@ -11,7 +11,7 @@ import json
 import secrets
 from typing import Any
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.test import Client, override_settings
 from django.utils import timezone
 import pytest
@@ -67,7 +67,7 @@ def test_spotify_play_requires_auth(client: Client) -> None:
 )
 def test_spotify_play_returns_400_when_not_configured(client: Client) -> None:
     """Not-configured servers should return a clean 400."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_not_configured",
         password="pass1234",  # nosec
     )
@@ -91,7 +91,7 @@ def test_spotify_play_returns_400_when_not_configured(client: Client) -> None:
 )
 def test_spotify_play_requires_track_uri(client: Client) -> None:
     """track_uri is required and must be a non-empty string."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_missing_track",
         password="pass1234",  # nosec
     )
@@ -122,7 +122,7 @@ def test_spotify_play_requires_track_uri(client: Client) -> None:
 )
 def test_spotify_playback_rejects_json_array(client: Client, path: str) -> None:
     """Playback endpoints require an object-shaped JSON body."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username=f"spotify_array_{path.split('/')[-2]}",
         password="pass1234",  # nosec
     )
@@ -146,7 +146,7 @@ def test_spotify_playback_rejects_json_array(client: Client, path: str) -> None:
 )
 def test_spotify_play_returns_400_when_not_connected(client: Client) -> None:
     """When no token exists, the endpoint should return a 400 (not 500)."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_not_connected",
         password="pass1234",  # nosec
     )
@@ -173,7 +173,7 @@ def test_spotify_play_normalises_open_spotify_track_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """open.spotify.com URLs should be normalized to spotify:track URIs."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_normalise",
         password="pass1234",  # nosec
     )
@@ -229,7 +229,7 @@ def test_spotify_play_no_active_device_returns_409(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Spotify's 'no active device' case should map to a 409 with code."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_no_device",
         password="pass1234",  # nosec
     )
@@ -278,7 +278,7 @@ def test_spotify_play_other_error_returns_400(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Other Spotify errors should return a 400 with a stable code."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_play_other_error",
         password="pass1234",  # nosec
     )
@@ -339,7 +339,7 @@ def test_spotify_pause_failure_is_best_effort_400(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pause errors should not crash; they return a permissive 400 payload."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_pause_error",
         password="pass1234",  # nosec
     )
@@ -383,7 +383,7 @@ def test_spotify_pause_failure_is_best_effort_400(
 )
 def test_spotify_callback_state_mismatch_redirects_home(client: Client) -> None:
     """State mismatch should redirect to frontend root without creating tokens."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_cb_state_mismatch",
         password="pass1234",  # nosec
     )
@@ -400,6 +400,7 @@ def test_spotify_callback_state_mismatch_redirects_home(client: Client) -> None:
 
     assert response.status_code == HTTPStatus.FOUND
     assert response["Location"] == f"{WEB_APP_ORIGIN}/"
+    assert "spotify_oauth_state" not in client.session
     assert not SpotifyToken.objects.filter(user=user).exists()
 
 
@@ -416,7 +417,7 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A valid callback should store tokens and redirect to stored path."""
-    user = get_user_model().objects.create_user(
+    user = User.objects.create_user(
         username="spotify_cb_ok",
         password="pass1234",  # nosec
     )
@@ -426,13 +427,14 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
     session["spotify_oauth_state"] = "expected"
     session["spotify_oauth_redirect"] = "/settings"
     session.save()
+    token_exchange_calls = 0
+    access_token = secrets.token_urlsafe(16)
+    refresh_token = secrets.token_urlsafe(16)
 
     def _fake_post(url: str, **kwargs: object) -> _FakeResponse:
+        nonlocal token_exchange_calls
+        token_exchange_calls += 1
         assert "accounts.spotify.com/api/token" in url
-        access_token = secrets.token_urlsafe(16)
-        refresh_token = secrets.token_urlsafe(16)
-        _fake_post.access_token = access_token  # type: ignore[attr-defined]
-        _fake_post.refresh_token = refresh_token  # type: ignore[attr-defined]
         return _FakeResponse(
             status_code=200,
             json_data={
@@ -462,9 +464,19 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
 
     assert response.status_code == HTTPStatus.FOUND
     assert response["Location"] == f"{WEB_APP_ORIGIN}/settings"
+    assert "spotify_oauth_state" not in client.session
 
     token = SpotifyToken.objects.filter(user=user).first()
     assert token is not None
     assert token.spotify_user_id == "spotify_user"
-    assert token.access_token == _fake_post.access_token  # type: ignore[attr-defined]
-    assert token.refresh_token == _fake_post.refresh_token  # type: ignore[attr-defined]
+    assert token.access_token == access_token
+    assert token.refresh_token == refresh_token
+
+    replay = client.get(
+        "/api/player/spotify/callback/?code=abc&state=expected",
+        secure=True,
+    )
+
+    assert replay.status_code == HTTPStatus.FOUND
+    assert replay["Location"] == f"{WEB_APP_ORIGIN}/"
+    assert token_exchange_calls == 1

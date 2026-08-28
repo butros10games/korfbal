@@ -1,4 +1,4 @@
-"""Spotify OAuth and playback API views."""
+"""HTTP adapters for Spotify authorization and playback."""
 
 from __future__ import annotations
 
@@ -13,17 +13,20 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
-from apps.player.composition import spotify_client
+from apps.player.composition import (
+    complete_spotify_authorization,
+    create_spotify_authorization,
+    pause_spotify,
+    play_spotify,
+)
 from apps.player.services.spotify import (
-    build_spotify_authorize_url,
-    ensure_spotify_access_token,
-    exchange_callback_code_for_user,
-    get_or_create_spotify_oauth_state,
-    normalise_spotify_track_uri,
-    pause_spotify_playback,
+    SpotifyAccessError,
+    SpotifyConnectionOutcome,
+    SpotifyInputError,
+    SpotifyPauseCommand,
+    SpotifyPlaybackError,
+    SpotifyPlayCommand,
     spotify_enabled,
-    spotify_play_error_payload,
-    start_spotify_playback,
 )
 
 from .common import (
@@ -46,8 +49,35 @@ def _request_payload(request: Request) -> Mapping[str, Any]:
     return payload
 
 
+def _relative_redirect_path(value: object) -> str | None:
+    """Return a local absolute path while rejecting scheme-relative URLs."""
+    if isinstance(value, str) and value.startswith("/") and not value.startswith("//"):
+        return value
+    return None
+
+
+def _authenticated_user(request: Request) -> AbstractBaseUser | None:
+    user = request.user
+    return user if isinstance(user, AbstractBaseUser) else None
+
+
+def _spotify_error_response(
+    exc: SpotifyInputError | SpotifyAccessError | SpotifyPlaybackError,
+) -> Response:
+    if isinstance(exc, SpotifyPlaybackError):
+        return Response(
+            {"code": exc.code, "detail": exc.detail},
+            status=(
+                status.HTTP_409_CONFLICT
+                if exc.conflict
+                else status.HTTP_400_BAD_REQUEST
+            ),
+        )
+    return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class SpotifyConnectAPIView(KorfbalAPIView):
-    """Start Spotify OAuth flow by returning an authorization URL."""
+    """Start the Spotify OAuth flow."""
 
     permission_classes = (permissions.IsAuthenticated,)
 
@@ -57,27 +87,24 @@ class SpotifyConnectAPIView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Return a Spotify OAuth authorization URL for the authenticated user."""
+        """Return an authorization URL and persist its single-use state."""
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        redirect_path = request.query_params.get("redirect")
-        if isinstance(redirect_path, str) and redirect_path.startswith("/"):
+        authorization = create_spotify_authorization()
+        request.session["spotify_oauth_state"] = authorization.state
+        redirect_path = _relative_redirect_path(request.query_params.get("redirect"))
+        if redirect_path is not None:
             request.session["spotify_oauth_redirect"] = redirect_path
-            request.session.modified = True
-
-        return Response({
-            "url": build_spotify_authorize_url(
-                state=get_or_create_spotify_oauth_state(request)
-            )
-        })
+        request.session.modified = True
+        return Response({"url": authorization.url})
 
 
 class SpotifyCallbackView(KorfbalAPIView):
-    """Handle Spotify OAuth callback requests."""
+    """Complete a Spotify OAuth callback."""
 
     permission_classes = (permissions.IsAuthenticated,)
 
@@ -87,35 +114,33 @@ class SpotifyCallbackView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> HttpResponseRedirect:
-        """Handle the Spotify OAuth callback and persist tokens."""
+        """Consume callback state, persist the connection, and return to the SPA."""
         if not spotify_enabled():
             return redirect_to_frontend()
 
-        code = request.query_params.get("code")
-        state = request.query_params.get("state")
-        expected_state = request.session.get("spotify_oauth_state")
-        if not code or not state or not expected_state or state != expected_state:
-            return redirect_to_frontend()
-
-        user = request.user
-        if not isinstance(user, AbstractBaseUser):
-            return redirect_to_frontend()
-
-        if not exchange_callback_code_for_user(
-            user=user,
-            code=str(code),
-            client=spotify_client,
-        ):
-            return redirect_to_frontend()
-
-        redirect_path = request.query_params.get("redirect")
-        if not (isinstance(redirect_path, str) and redirect_path.startswith("/")):
-            redirect_path = request.session.pop("spotify_oauth_redirect", None)
+        expected_state = request.session.pop("spotify_oauth_state", None)
+        if expected_state is not None:
             request.session.modified = True
+        user = _authenticated_user(request)
+        if user is None:
+            return redirect_to_frontend()
 
-        return redirect_to_frontend(
-            redirect_path if isinstance(redirect_path, str) else None,
+        outcome = complete_spotify_authorization(
+            user=user,
+            code=request.query_params.get("code"),
+            state=request.query_params.get("state"),
+            expected_state=expected_state,
         )
+        if outcome is not SpotifyConnectionOutcome.CONNECTED:
+            return redirect_to_frontend()
+
+        redirect_path = _relative_redirect_path(request.query_params.get("redirect"))
+        if redirect_path is None:
+            redirect_path = _relative_redirect_path(
+                request.session.pop("spotify_oauth_redirect", None)
+            )
+            request.session.modified = True
+        return redirect_to_frontend(redirect_path)
 
 
 class SpotifyPlayAPIView(KorfbalAPIView):
@@ -129,7 +154,7 @@ class SpotifyPlayAPIView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Start playback on the user's active Spotify Connect device."""
+        """Start playback on the user's active or requested device."""
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
@@ -137,47 +162,24 @@ class SpotifyPlayAPIView(KorfbalAPIView):
             )
 
         payload = _request_payload(request)
-        track_uri_raw = payload.get("track_uri")
-        if not isinstance(track_uri_raw, str) or not track_uri_raw.strip():
+        user = _authenticated_user(request)
+        if user is None:
             return Response(
-                {"detail": "track_uri is required"},
-                status=status.HTTP_400_BAD_REQUEST,
+                AUTHENTICATION_REQUIRED_DETAIL,
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        position_ms_raw = payload.get("position_ms", 0)
         try:
-            position_ms = int(float(position_ms_raw))
-        except (TypeError, ValueError):
-            position_ms = 0
-        position_ms = max(0, position_ms)
-
-        try:
-            user = request.user
-            if not isinstance(user, AbstractBaseUser):
-                return Response(
-                    AUTHENTICATION_REQUIRED_DETAIL,
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
-            access_token = ensure_spotify_access_token(
-                user,
-                client=spotify_client,
+            play_spotify(
+                user=user,
+                command=SpotifyPlayCommand(
+                    track_uri=payload.get("track_uri"),
+                    position_ms=payload.get("position_ms", 0),
+                    device_id=payload.get("device_id"),
+                ),
             )
-        except RuntimeError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        device_id = payload.get("device_id")
-        play_response = start_spotify_playback(
-            access_token=access_token,
-            track_uri=normalise_spotify_track_uri(track_uri_raw),
-            position_ms=position_ms,
-            device_id=device_id if isinstance(device_id, str) and device_id else None,
-            client=spotify_client,
-        )
-
-        if play_response.status_code not in {200, 202, 204}:
-            status_code, payload = spotify_play_error_payload(play_response)
-            return Response(payload, status=status_code)
-
+        except (SpotifyInputError, SpotifyAccessError, SpotifyPlaybackError) as exc:
+            return _spotify_error_response(exc)
         return Response({"ok": True})
 
 
@@ -192,7 +194,7 @@ class SpotifyPauseAPIView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Pause playback on the user's active Spotify Connect device."""
+        """Pause playback on the user's active or requested device."""
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
@@ -200,32 +202,18 @@ class SpotifyPauseAPIView(KorfbalAPIView):
             )
 
         payload = _request_payload(request)
-        try:
-            user = request.user
-            if not isinstance(user, AbstractBaseUser):
-                return Response(
-                    AUTHENTICATION_REQUIRED_DETAIL,
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
-            access_token = ensure_spotify_access_token(
-                user,
-                client=spotify_client,
-            )
-        except RuntimeError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        device_id = payload.get("device_id")
-        pause_response = pause_spotify_playback(
-            access_token=access_token,
-            device_id=device_id if isinstance(device_id, str) and device_id else None,
-            client=spotify_client,
-        )
-
-        if pause_response.status_code not in {200, 202, 204}:
-            detail = pause_response.text or "Spotify pause failed"
+        user = _authenticated_user(request)
+        if user is None:
             return Response(
-                {"code": "spotify_pause_failed", "detail": detail},
-                status=status.HTTP_400_BAD_REQUEST,
+                AUTHENTICATION_REQUIRED_DETAIL,
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
+        try:
+            pause_spotify(
+                user=user,
+                command=SpotifyPauseCommand(device_id=payload.get("device_id")),
+            )
+        except (SpotifyAccessError, SpotifyPlaybackError) as exc:
+            return _spotify_error_response(exc)
         return Response({"ok": True})
