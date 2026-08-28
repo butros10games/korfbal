@@ -11,7 +11,6 @@ from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import PlayerSerializer
-from apps.player.models.player import Player
 from apps.player.services.goal_song import (
     GoalSongPayloadError,
     GoalSongSelectionError,
@@ -19,17 +18,17 @@ from apps.player.services.goal_song import (
     update_goal_song_settings,
 )
 
-from .common import PLAYER_NOT_FOUND_DETAIL
+from .common import (
+    PLAYER_NOT_FOUND_DETAIL,
+    get_current_player,
+    player_serializer_context,
+)
 
 
 class CurrentPlayerGoalSongAPIView(KorfbalAPIView):
     """Update goal song configuration for the current player."""
 
     permission_classes = (permissions.IsAuthenticated,)
-
-    @staticmethod
-    def _current_player(request: Request) -> Player | None:
-        return Player.objects.select_related("user").filter(user=request.user).first()
 
     @staticmethod
     def _selection_error_response(exc: GoalSongSelectionError) -> Response:
@@ -47,7 +46,7 @@ class CurrentPlayerGoalSongAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Update goal-song configuration for the authenticated player."""
-        player = self._current_player(request)
+        player = get_current_player(request)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
@@ -70,4 +69,9 @@ class CurrentPlayerGoalSongAPIView(KorfbalAPIView):
         except GoalSongSelectionError as exc:
             return self._selection_error_response(exc)
 
-        return Response(PlayerSerializer(player, context={"request": request}).data)
+        return Response(
+            PlayerSerializer(
+                player,
+                context=player_serializer_context(request, current_player=player),
+            ).data
+        )

@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from rest_framework import permissions, status, viewsets
-from rest_framework.exceptions import PermissionDenied
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
+from apps.player.api.permissions import CanModifyPlayer
 from apps.player.api.serializers import (
     PlayerPrivacySettingsSerializer,
     PlayerSerializer,
 )
 from apps.player.models.player import Player
-from apps.player.privacy import can_view_by_visibility
+from apps.player.services.player_queries import player_by_id, player_detail_queryset
 from apps.player.services.player_settings import (
+    delete_player_profile,
     player_privacy_settings,
     update_player_privacy_settings,
+    update_player_profile,
 )
 from apps.player.services.player_teams import (
     followed_teams_for_player,
@@ -27,45 +29,59 @@ from apps.player.services.player_teams import (
 from apps.team.api.serializers import TeamSerializer
 
 from .common import (
-    AUTHENTICATION_REQUIRED_MESSAGE,
     PLAYER_NOT_FOUND_DETAIL,
     PRIVATE_ACCOUNT_DETAIL,
+    cache_viewer_player,
     get_current_player,
     get_viewer_player,
-    player_detail_queryset,
+    player_serializer_context,
+    resolve_player_access,
 )
 
 
-class PlayerViewSet(viewsets.ModelViewSet):
-    """Provide CRUD operations for players."""
+class PlayerViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Read, update, and delete player profiles."""
 
     queryset = player_detail_queryset()
     serializer_class = PlayerSerializer
-    permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
+    permission_classes = (
+        permissions.IsAuthenticatedOrReadOnly,
+        CanModifyPlayer,
+    )
     lookup_field = "id_uuid"
 
-    def _ensure_can_modify(self, player: Player) -> None:
-        user = self.request.user
-        if not user or not getattr(user, "is_authenticated", False):
-            raise PermissionDenied(AUTHENTICATION_REQUIRED_MESSAGE)
+    def get_object(self) -> Player:
+        """Resolve the target and reuse it when it is also the viewer."""
+        player = cast(Player, super().get_object())
+        cache_viewer_player(self.request, player)
+        return player
 
-        if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-            return
-
-        user_id = getattr(user, "id", None)
-        if user_id is None or player.user.id != user_id:
-            raise PermissionDenied("You do not have permission to modify this player")
+    def get_serializer_context(self) -> dict[str, object]:
+        """Provide the serializer with an already-resolved viewer."""
+        context: dict[str, object] = dict(super().get_serializer_context())
+        context["viewer_player"] = get_viewer_player(self.request)
+        return context
 
     def perform_update(self, serializer: Any) -> None:
-        """Update a player after enforcing ownership/staff checks."""
-        player = self.get_object()
-        self._ensure_can_modify(player)
-        serializer.save()
+        """Apply validated profile changes through the command service."""
+        player = cast(Player, serializer.instance)
+        update_player_profile(
+            player=player,
+            changes=cast(dict[str, object], serializer.validated_data),
+        )
+        refreshed = player_by_id(str(player.id_uuid))
+        if refreshed is not None:
+            serializer.instance = refreshed
 
     def perform_destroy(self, instance: Player) -> None:
-        """Delete a player after enforcing ownership/staff checks."""
-        self._ensure_can_modify(instance)
-        instance.delete()
+        """Delete a profile through the command service."""
+        delete_player_profile(instance)
 
 
 class CurrentPlayerAPIView(KorfbalAPIView):
@@ -84,7 +100,12 @@ class CurrentPlayerAPIView(KorfbalAPIView):
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
-        return Response(PlayerSerializer(player, context={"request": request}).data)
+        return Response(
+            PlayerSerializer(
+                player,
+                context=player_serializer_context(request, current_player=player),
+            ).data
+        )
 
 
 class PlayerFollowedTeamsAPIView(KorfbalAPIView):
@@ -100,15 +121,15 @@ class PlayerFollowedTeamsAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Return teams followed by the requested player."""
-        player = self._resolve_player(request, player_id)
+        access = resolve_player_access(
+            request,
+            player_id=player_id,
+            visibility_field="teams_visibility",
+        )
+        player = access.player
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        if player_id and not can_view_by_visibility(
-            visibility=player.teams_visibility,
-            viewer=get_viewer_player(request),
-            target=player,
-        ):
+        if access.forbidden:
             return Response(
                 PRIVATE_ACCOUNT_DETAIL,
                 status=status.HTTP_403_FORBIDDEN,
@@ -118,12 +139,6 @@ class PlayerFollowedTeamsAPIView(KorfbalAPIView):
         return Response(
             TeamSerializer(teams_qs, many=True, context={"request": request}).data
         )
-
-    @staticmethod
-    def _resolve_player(request: Request, player_id: str | None) -> Player | None:
-        if player_id:
-            return player_detail_queryset().filter(id_uuid=player_id).first()
-        return get_current_player(request)
 
 
 class PlayerTeamsAPIView(KorfbalAPIView):
@@ -139,15 +154,15 @@ class PlayerTeamsAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Return teams grouped as playing/coaching/following for a player."""
-        player = self._resolve_player(request, player_id)
+        access = resolve_player_access(
+            request,
+            player_id=player_id,
+            visibility_field="teams_visibility",
+        )
+        player = access.player
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        if player_id and not can_view_by_visibility(
-            visibility=player.teams_visibility,
-            viewer=get_viewer_player(request),
-            target=player,
-        ):
+        if access.forbidden:
             return Response(
                 PRIVATE_ACCOUNT_DETAIL,
                 status=status.HTTP_403_FORBIDDEN,
@@ -172,12 +187,6 @@ class PlayerTeamsAPIView(KorfbalAPIView):
                 context={"request": request},
             ).data,
         })
-
-    @staticmethod
-    def _resolve_player(request: Request, player_id: str | None) -> Player | None:
-        if player_id:
-            return player_detail_queryset().filter(id_uuid=player_id).first()
-        return get_current_player(request)
 
 
 class CurrentPlayerTeamsAPIView(PlayerTeamsAPIView):
@@ -218,7 +227,7 @@ class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Return the authenticated player's privacy visibility settings."""
-        player = player_detail_queryset().filter(user=request.user).first()
+        player = get_current_player(request)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
@@ -231,7 +240,7 @@ class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Update the authenticated player's privacy visibility settings."""
-        player = player_detail_queryset().filter(user=request.user).first()
+        player = get_current_player(request)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
@@ -243,4 +252,9 @@ class CurrentPlayerPrivacySettingsAPIView(KorfbalAPIView):
             changes=serializer.validated_data,
         )
 
-        return Response(PlayerSerializer(player, context={"request": request}).data)
+        return Response(
+            PlayerSerializer(
+                player,
+                context=player_serializer_context(request, current_player=player),
+            ).data
+        )

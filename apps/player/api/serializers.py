@@ -58,28 +58,12 @@ class PlayerSerializer(serializers.ModelSerializer):
     _viewer_player: Player | None = None
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        """Initialise the serializer and resolve the viewer player (if any)."""
+        """Initialise the serializer from pre-resolved request context."""
         # DRF's `Serializer.__init__` accepts a wide set of keyword arguments;
         # we cast to keep strict typing (and satisfy ruff's ANN401 rules).
         super().__init__(*args, **cast(dict[str, Any], kwargs))
-
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if user is not None and getattr(user, "is_authenticated", False):
-            # Cache once per serializer instance to avoid repeated queries.
-            # If we're serializing the *current* player, avoid a redundant DB
-            # lookup by reusing the instance.
-            instance = getattr(self, "instance", None)
-            if isinstance(instance, Player) and getattr(
-                instance, "user_id", None
-            ) == getattr(
-                user,
-                "id",
-                None,
-            ):
-                self._viewer_player = instance
-            else:
-                self._viewer_player = Player.objects.filter(user=user).first()
+        viewer = self.context.get("viewer_player")
+        self._viewer_player = viewer if isinstance(viewer, Player) else None
 
     class Meta:
         """Meta class for PlayerSerializer."""
@@ -234,7 +218,7 @@ class PlayerSerializer(serializers.ModelSerializer):
         clubs = (
             [membership.club for membership in memberships]
             if isinstance(memberships, list)
-            else obj.active_member_clubs()
+            else []
         )
         data = ClubSerializer(clubs, many=True, context=self.context).data
         return cast(list[dict[str, object]], data)
@@ -251,16 +235,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             return []
 
         prefetched_songs = getattr(obj, "_api_songs", None)
-        songs = (
-            prefetched_songs
-            if isinstance(prefetched_songs, list)
-            else list(
-                PlayerSong.objects.select_related("cached_song").filter(
-                    player=obj,
-                    id_uuid__in=ids,
-                )
-            )
-        )
+        songs = prefetched_songs if isinstance(prefetched_songs, list) else []
         by_id = {str(song.id_uuid): song for song in songs}
 
         ordered: list[dict[str, object]] = []

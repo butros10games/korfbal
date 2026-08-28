@@ -19,7 +19,11 @@ from apps.player.services.player_uploads import (
     uploaded_file_or_none,
 )
 
-from .common import PLAYER_NOT_FOUND_MESSAGE, get_current_player
+from .common import (
+    PLAYER_NOT_FOUND_MESSAGE,
+    get_current_player,
+    player_serializer_context,
+)
 
 
 class UploadProfilePictureAPIView(KorfbalAPIView):
@@ -113,5 +117,8 @@ class UploadGoalSongAPIView(KorfbalAPIView):
 
         return Response({
             "url": url,
-            "player": PlayerSerializer(player, context={"request": request}).data,
+            "player": PlayerSerializer(
+                player,
+                context=player_serializer_context(request, current_player=player),
+            ).data,
         })

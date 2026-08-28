@@ -9,10 +9,33 @@ from django.contrib.auth import get_user_model
 from django.test import Client, override_settings
 import pytest
 
+from apps.club.models import Club
 from apps.player.models.player import Player
+from apps.team.models import Team
 
 
 MODIFY_PERMISSION_DENIED_DETAIL = "You do not have permission to modify this player"
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_player_create_route_is_not_exposed(client: Client) -> None:
+    """Player creation remains owned by the user lifecycle signal."""
+    user = get_user_model().objects.create_user(
+        username="player_create_not_exposed",
+        password="pass1234",  # nosec
+    )
+    client.force_login(user)
+    before = Player.objects.count()
+
+    response = client.post(
+        "/api/player/players/",
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    assert Player.objects.count() == before
 
 
 @pytest.mark.django_db
@@ -77,6 +100,38 @@ def test_player_patch_allows_owner(client: Client) -> None:
 
     owner.refresh_from_db()
     assert owner.player.stats_visibility == Player.Visibility.CLUB
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_player_patch_persists_follow_relationships(client: Client) -> None:
+    """Profile commands preserve writable many-to-many fields."""
+    owner = get_user_model().objects.create_user(
+        username="player_patch_follows",
+        password="pass1234",  # nosec
+    )
+    club = Club.objects.create(name="Profile command club")
+    team = Team.objects.create(name="Profile command team", club=club)
+    client.force_login(owner)
+
+    response = client.patch(
+        f"/api/player/players/{owner.player.id_uuid}/",
+        data=json.dumps({
+            "club_follow": [str(club.id_uuid)],
+            "team_follow": [str(team.id_uuid)],
+        }),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["club_follow"] == [str(club.id_uuid)]
+    assert response.json()["team_follow"] == [str(team.id_uuid)]
+    assert list(owner.player.club_follow.values_list("id_uuid", flat=True)) == [
+        club.id_uuid
+    ]
+    assert list(owner.player.team_follow.values_list("id_uuid", flat=True)) == [
+        team.id_uuid
+    ]
 
 
 @pytest.mark.django_db

@@ -11,8 +11,27 @@ from .models.player import Player
 from .models.player_club_membership import PlayerClubMembership
 
 
+def _prefetched_active_membership_club_ids(player: Player) -> set[str] | None:
+    memberships = getattr(player, "_api_active_memberships", None)
+    if not isinstance(memberships, list):
+        return None
+    return {str(membership.club_id) for membership in memberships}
+
+
+def _prefetched_legacy_club_ids(player: Player) -> set[str] | None:
+    playing = getattr(player, "_api_playing_team_data", None)
+    coaching = getattr(player, "_api_coaching_team_data", None)
+    if not isinstance(playing, list) or not isinstance(coaching, list):
+        return None
+    return {str(team_data.team.club_id) for team_data in [*playing, *coaching]}
+
+
 def _active_membership_club_ids(player: Player) -> set[str]:
     """Return active club IDs for the player based on PlayerClubMembership."""
+    prefetched = _prefetched_active_membership_club_ids(player)
+    if prefetched is not None:
+        return prefetched
+
     today = timezone.localdate()
     return {
         str(club_id)
@@ -43,6 +62,11 @@ def viewer_connected_to_player_club(*, viewer: Player, target: Player) -> bool:
     # If either player has explicit memberships configured, use them.
     if viewer_membership_ids or target_membership_ids:
         return bool(viewer_membership_ids & target_membership_ids)
+
+    viewer_prefetched_clubs = _prefetched_legacy_club_ids(viewer)
+    target_prefetched_clubs = _prefetched_legacy_club_ids(target)
+    if viewer_prefetched_clubs is not None and target_prefetched_clubs is not None:
+        return bool(viewer_prefetched_clubs & target_prefetched_clubs)
 
     viewer_clubs = TeamData.objects.filter(
         Q(players=viewer) | Q(coach=viewer)

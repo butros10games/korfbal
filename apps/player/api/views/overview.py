@@ -9,8 +9,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
-from apps.player.models.player import Player
-from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_overview import (
     build_player_overview_payload,
     build_player_stats_payload,
@@ -23,15 +21,8 @@ from .common import (
     PLAYER_NOT_FOUND_DETAIL,
     PRIVATE_ACCOUNT_DETAIL,
     get_current_player,
-    get_viewer_player,
-    player_detail_queryset,
+    resolve_player_access,
 )
-
-
-def _resolve_player(request: Request, player_id: str | None) -> Player | None:
-    if player_id:
-        return player_detail_queryset().filter(id_uuid=player_id).first()
-    return get_current_player(request)
 
 
 class PlayerOverviewAPIView(KorfbalAPIView):
@@ -47,15 +38,15 @@ class PlayerOverviewAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Return upcoming and recent matches for the requested player."""
-        player = _resolve_player(request, player_id)
+        access = resolve_player_access(
+            request,
+            player_id=player_id,
+            visibility_field="stats_visibility",
+        )
+        player = access.player
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        if player_id and not can_view_by_visibility(
-            visibility=player.stats_visibility,
-            viewer=get_viewer_player(request),
-            target=player,
-        ):
+        if access.forbidden:
             return Response(
                 PRIVATE_ACCOUNT_DETAIL,
                 status=status.HTTP_403_FORBIDDEN,
@@ -129,15 +120,15 @@ class PlayerStatsAPIView(KorfbalAPIView):
         **kwargs: Any,
     ) -> Response:
         """Return aggregate stats for a player in a season."""
-        player = _resolve_player(request, player_id)
+        access = resolve_player_access(
+            request,
+            player_id=player_id,
+            visibility_field="stats_visibility",
+        )
+        player = access.player
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
-
-        if player_id and not can_view_by_visibility(
-            visibility=player.stats_visibility,
-            viewer=get_viewer_player(request),
-            target=player,
-        ):
+        if access.forbidden:
             return Response(
                 PRIVATE_ACCOUNT_DETAIL,
                 status=status.HTTP_403_FORBIDDEN,

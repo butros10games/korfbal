@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Final
+from collections.abc import Iterable, Mapping
+from typing import Final, cast
+
+from django.db import transaction
+from django.db.models import Model
 
 from apps.player.models.player import Player
 
@@ -12,6 +15,11 @@ PRIVACY_FIELDS: Final[tuple[str, ...]] = (
     "profile_picture_visibility",
     "stats_visibility",
     "teams_visibility",
+)
+PROFILE_RELATION_FIELDS: Final[tuple[str, ...]] = (
+    "team_follow",
+    "club_follow",
+    "member_clubs",
 )
 
 
@@ -41,3 +49,32 @@ def update_player_privacy_settings(
 
     if update_fields:
         player.save(update_fields=update_fields)
+
+
+@transaction.atomic
+def update_player_profile(
+    *,
+    player: Player,
+    changes: Mapping[str, object],
+) -> None:
+    """Persist validated scalar and relationship profile changes."""
+    scalar_fields: list[str] = []
+    relationships: dict[str, Iterable[Model]] = {}
+
+    for field, value in changes.items():
+        if field in PROFILE_RELATION_FIELDS:
+            relationships[field] = cast(Iterable[Model], value)
+            continue
+        setattr(player, field, value)
+        scalar_fields.append(field)
+
+    if scalar_fields:
+        player.save(update_fields=scalar_fields)
+    for field, values in relationships.items():
+        manager = getattr(player, field)
+        manager.set(values)
+
+
+def delete_player_profile(player: Player) -> None:
+    """Delete a Player profile without deleting its user account."""
+    player.delete()

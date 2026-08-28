@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import logging
-from typing import Final
+from dataclasses import dataclass
+from typing import Final, Literal
 
 from django.conf import settings
-from django.db import models
-from django.db.models import Prefetch, Q, QuerySet
 from django.http import HttpResponseRedirect
-from django.utils import timezone
 from rest_framework.request import Request
 
 from apps.player.models.player import Player
-from apps.player.models.player_club_membership import PlayerClubMembership
-from apps.player.models.player_song import PlayerSong
+from apps.player.privacy import can_view_by_visibility
+from apps.player.services.player_queries import (
+    player_by_id,
+    player_detail_queryset,
+    player_for_user_id,
+    viewer_player_for_user_id,
+)
 
-
-logger = logging.getLogger(__name__)
 
 TEST_PUSH_ERROR_LIMIT: Final[int] = 10
 
@@ -33,73 +33,114 @@ PRIVATE_ACCOUNT_DETAIL = {"code": "private_account", "detail": PRIVATE_ACCOUNT_M
 
 SPOTIFY_NOT_CONFIGURED_MESSAGE = "Spotify is not configured on the server"
 SPOTIFY_NOT_CONFIGURED_DETAIL = {"detail": SPOTIFY_NOT_CONFIGURED_MESSAGE}
+_VIEWER_CACHE_ATTRIBUTE: Final[str] = "_player_api_viewer"
+_CURRENT_PLAYER_CACHE_ATTRIBUTE: Final[str] = "_player_api_current"
+_CACHE_MISSING = object()
+VisibilityField = Literal[
+    "profile_picture_visibility",
+    "stats_visibility",
+    "teams_visibility",
+]
 
 
-def player_detail_queryset() -> QuerySet[Player]:
-    """Return the default queryset used by player API endpoints."""
-    today = timezone.localdate()
-    active_memberships = (
-        PlayerClubMembership.objects
-        .select_related("club")
-        .filter(start_date__lte=today)
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-        .order_by("club__name", "id_uuid")
-        .fetch_mode(models.FETCH_RAISE)
-    )
-    songs = (
-        PlayerSong.objects
-        .select_related("cached_song")
-        .order_by("-created_at", "id_uuid")
-        .fetch_mode(models.FETCH_RAISE)
-    )
-    return (
-        Player.objects
-        .select_related("user")
-        .prefetch_related(
-            "team_follow",
-            "club_follow",
-            "member_clubs",
-            Prefetch(
-                "club_membership_links",
-                queryset=active_memberships,
-                to_attr="_api_active_memberships",
-            ),
-            Prefetch(
-                "songs",
-                queryset=songs,
-                to_attr="_api_songs",
-            ),
-        )
-        .fetch_mode(models.FETCH_RAISE)
-    )
+@dataclass(frozen=True, slots=True)
+class PlayerAccessResult:
+    """Resolved player and visibility outcome for an API request."""
+
+    player: Player | None
+    forbidden: bool = False
+
+
+def _authenticated_user_id(request: Request) -> int | None:
+    if not getattr(request.user, "is_authenticated", False):
+        return None
+    user_id = getattr(request.user, "id", None)
+    return user_id if isinstance(user_id, int) else None
 
 
 def get_current_player(request: Request) -> Player | None:
     """Resolve the current player from the request context."""
-    queryset = player_detail_queryset()
+    user_id = _authenticated_user_id(request)
+    if user_id is not None:
+        cached = getattr(request, _CURRENT_PLAYER_CACHE_ATTRIBUTE, _CACHE_MISSING)
+        if cached is not _CACHE_MISSING:
+            return cached if isinstance(cached, Player) else None
 
-    if request.user.is_authenticated:
-        try:
-            return queryset.get(user=request.user)
-        except Player.DoesNotExist:
-            return None
+        player = player_for_user_id(user_id)
+        setattr(request, _CURRENT_PLAYER_CACHE_ATTRIBUTE, player)
+        setattr(request, _VIEWER_CACHE_ATTRIBUTE, player)
+        return player
 
     if settings.DEBUG:
         player_id = request.query_params.get("player_id")
         if player_id:
-            player = queryset.filter(id_uuid=player_id).first()
+            player = player_by_id(player_id)
             if player:
                 return player
-        return queryset.first()
+        return player_detail_queryset().first()
 
     return None
 
 
 def get_viewer_player(request: Request) -> Player | None:
     """Resolve the viewer player when the request is authenticated."""
-    if not request.user.is_authenticated:
+    user_id = _authenticated_user_id(request)
+    if user_id is None:
         return None
-    return Player.objects.filter(user=request.user).first()
+
+    cached = getattr(request, _VIEWER_CACHE_ATTRIBUTE, _CACHE_MISSING)
+    if cached is not _CACHE_MISSING:
+        return cached if isinstance(cached, Player) else None
+
+    player = viewer_player_for_user_id(user_id)
+    setattr(request, _VIEWER_CACHE_ATTRIBUTE, player)
+    return player
+
+
+def cache_viewer_player(request: Request, player: Player) -> None:
+    """Cache an already-loaded player as the authenticated request viewer."""
+    if player.user_id == _authenticated_user_id(request):
+        setattr(request, _VIEWER_CACHE_ATTRIBUTE, player)
+
+
+def player_serializer_context(
+    request: Request,
+    *,
+    current_player: Player | None = None,
+) -> dict[str, object]:
+    """Build query-free PlayerSerializer context for one request."""
+    viewer = current_player
+    user_id = _authenticated_user_id(request)
+    if viewer is None or viewer.user_id != user_id:
+        viewer = get_viewer_player(request)
+    return {"request": request, "viewer_player": viewer}
+
+
+def resolve_player_access(
+    request: Request,
+    *,
+    player_id: str | None,
+    visibility_field: VisibilityField | None = None,
+) -> PlayerAccessResult:
+    """Resolve a current or explicit player and evaluate optional visibility."""
+    player = player_by_id(player_id) if player_id else get_current_player(request)
+    if player is None:
+        return PlayerAccessResult(player=None)
+    if not player_id or visibility_field is None:
+        return PlayerAccessResult(player=player)
+
+    visibility = str(getattr(player, visibility_field))
+    if player.user_id == _authenticated_user_id(request):
+        return PlayerAccessResult(player=player)
+    if visibility == Player.Visibility.PUBLIC:
+        return PlayerAccessResult(player=player)
+
+    allowed = can_view_by_visibility(
+        visibility=visibility,
+        viewer=get_viewer_player(request),
+        target=player,
+    )
+    return PlayerAccessResult(player=player, forbidden=not allowed)
 
 
 def redirect_to_frontend(
