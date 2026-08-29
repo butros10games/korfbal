@@ -13,7 +13,11 @@ from .constants import team_model_string
 
 
 if TYPE_CHECKING:
-    from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
+    from .match_event_detail import (
+        PossessionChangeEventDetail,
+        ShotEventDetail,
+        SubstitutionEventDetail,
+    )
     from .match_event_observation import MatchEventObservation
 
 
@@ -107,6 +111,7 @@ class MatchEvent(models.Model):
     supersedes_id: str | None
     shot_detail: ShotEventDetail
     substitution_detail: SubstitutionEventDetail
+    possession_change_detail: PossessionChangeEventDetail
     observations: models.Manager[MatchEventObservation]
 
     class Meta:

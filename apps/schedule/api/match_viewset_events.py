@@ -24,6 +24,7 @@ from apps.game_tracker.models import (
 from apps.game_tracker.services.event_editor import (
     DeleteGoalEvent,
     DeletePauseEvent,
+    DeletePossessionChangeEvent,
     DeleteSubstitutionEvent,
     DeleteTimeoutEvent,
     EventEditorCommand,
@@ -470,6 +471,43 @@ class MatchEventsActionsMixin:
                 result,
                 serialize_goal_event(result.match_data, shot),
             ),
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=("DELETE",),
+        url_path=r"events/possession-changes/(?P<event_id>[^/.]+)",
+        permission_classes=[IsCoachOrAdmin],
+    )
+    def possession_change_detail(
+        self: _MatchViewSetLike,
+        request: Request,
+        event_id: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Response:
+        """Delete a possession-change event from this match."""
+        match: Match = self.get_object()
+        match_data = self._match_data(match)
+        if not match_data:
+            return Response(
+                {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        result = _apply_command(
+            match_data=match_data,
+            request=request,
+            command=DeletePossessionChangeEvent(event_id=event_id),
+        )
+        if not result.found:
+            return Response(
+                {"detail": "Possession-change event not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(
+            _mutation_payload(result, None),
             status=status.HTTP_200_OK,
         )
 

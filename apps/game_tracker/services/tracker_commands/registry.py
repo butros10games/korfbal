@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from apps.game_tracker.models import PossessionChange
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 
 from .base import TrackerCommand, TrackerCommandError
@@ -15,6 +16,7 @@ from .lifecycle import (
     StartPauseCommand,
     TimeoutCommand,
 )
+from .possession import PossessionChangeCommand
 from .scoring import GoalCommand, ShotCommand
 from .substitutions import (
     GetNonActivePlayersCommand,
@@ -84,6 +86,25 @@ def _parse_goal(payload: dict[str, Any]) -> TrackerCommand:
     )
 
 
+def _parse_possession_change(payload: dict[str, Any]) -> TrackerCommand:
+    player_id = payload.get("player_id")
+    kind = payload.get("kind")
+    if kind not in {
+        PossessionChange.BALL_LOSS,
+        PossessionChange.INTERCEPTION,
+    }:
+        raise TrackerCommandError(
+            "Invalid possession_change_reg payload.",
+            code="bad_request",
+        )
+    if player_id is not None and not isinstance(player_id, str):
+        raise TrackerCommandError(
+            "Invalid possession_change_reg payload.",
+            code="bad_request",
+        )
+    return PossessionChangeCommand(player_id=player_id, kind=kind)
+
+
 def _parse_substitution(payload: dict[str, Any]) -> TrackerCommand:
     new_player_id = payload.get("new_player_id")
     old_player_id = payload.get("old_player_id")
@@ -150,6 +171,15 @@ COMMAND_DEFINITIONS = (
             LiveResource.STATS,
             LiveResource.IMPACTS,
             LiveResource.MVP,
+        }),
+    ),
+    CommandDefinition(
+        name="possession_change_reg",
+        parse=_parse_possession_change,
+        resources=frozenset({
+            LiveResource.TRACKER,
+            LiveResource.EVENTS,
+            LiveResource.STATS,
         }),
     ),
     CommandDefinition(

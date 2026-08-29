@@ -118,3 +118,38 @@ class SubstitutionEventDetail(models.Model):
     def __str__(self) -> str:
         """Return the event id and player transition."""
         return f"{self.event_id}: {self.player_out_id} -> {self.player_in_id}"
+
+
+class PossessionChangeEventDetail(models.Model):
+    """Canonical possession-change semantics for one immutable event version."""
+
+    objects: ClassVar[models.Manager[PossessionChangeEventDetail]]
+
+    event: models.OneToOneField[Any, Any] = models.OneToOneField(
+        "MatchEvent",
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="possession_change_detail",
+    )
+    event_id: str
+    team: models.ForeignKey[Any, Any] = models.ForeignKey(
+        team_model_string,
+        on_delete=models.SET_NULL,
+        related_name="canonical_possession_change_events",
+        null=True,
+        blank=True,
+    )
+    team_id: str | None
+    player: models.ForeignKey[Any, Any] = models.ForeignKey(
+        player_model_string,
+        on_delete=models.SET_NULL,
+        related_name="canonical_possession_change_events",
+        null=True,
+        blank=True,
+    )
+    player_id: str | None
+    kind: models.CharField[str, str] = models.CharField(max_length=16)
+
+    def __str__(self) -> str:
+        """Return the event id and possession-change kind."""
+        return f"{self.event_id}: {self.kind}"

@@ -19,6 +19,8 @@ from apps.game_tracker.models import (
     MatchPart,
     Pause,
     PlayerChange,
+    PossessionChange,
+    PossessionChangeEventDetail,
     Shot,
     ShotEventDetail,
     SubstitutionEventDetail,
@@ -30,7 +32,9 @@ from apps.game_tracker.services.match_event_context import (
 )
 
 
-TrackedModel = Attack | MatchPart | Pause | PlayerChange | Shot | Timeout
+TrackedModel = (
+    Attack | MatchPart | Pause | PlayerChange | PossessionChange | Shot | Timeout
+)
 
 
 class _MatchDataBound(Protocol):
@@ -42,6 +46,7 @@ _SOURCE_TYPES: dict[type[models.Model], str] = {
     MatchPart: "match_part",
     Pause: "pause",
     PlayerChange: "player_change",
+    PossessionChange: "possession_change",
     Shot: "shot",
     Timeout: "timeout",
 }
@@ -215,6 +220,15 @@ def _create_typed_detail(
             player_out_id=_snapshot_id(snapshot, "player_out_id"),
             player_in_id=_snapshot_id(snapshot, "player_in_id"),
             player_group_id=player_group_id,
+        )
+        return
+
+    if isinstance(instance, PossessionChange):
+        PossessionChangeEventDetail.objects.create(
+            event=event,
+            team_id=_snapshot_id(snapshot, "team_id"),
+            player_id=_snapshot_id(snapshot, "player_id"),
+            kind=str(snapshot.get("kind") or ""),
         )
 
 
@@ -394,7 +408,11 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
     events = list(
         MatchEvent.objects
         .filter(match_data=match_data)
-        .select_related("shot_detail", "substitution_detail")
+        .select_related(
+            "shot_detail",
+            "substitution_detail",
+            "possession_change_detail",
+        )
         .prefetch_related("observations")
         .order_by("sequence")
         .fetch_mode(models.FETCH_RAISE)
@@ -437,6 +455,21 @@ def build_match_event_history(match_data: MatchData) -> list[dict[str, Any]]:
                     if substitution.player_group_id
                     else None
                 ),
+            }
+        elif hasattr(event, "possession_change_detail"):
+            possession_change = event.possession_change_detail
+            detail = {
+                "team_id": (
+                    str(possession_change.team_id)
+                    if possession_change.team_id
+                    else None
+                ),
+                "player_id": (
+                    str(possession_change.player_id)
+                    if possession_change.player_id
+                    else None
+                ),
+                "kind": possession_change.kind,
             }
         history.append({
             "event_id": str(event.pk),

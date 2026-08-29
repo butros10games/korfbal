@@ -30,6 +30,7 @@ from .realtime_update_signals import (
     _match_data_realtime_changed,
     _match_part_realtime_changed,
     _pause_realtime_changed,
+    _possession_change_realtime_changed,
     _shot_realtime_changed,
     _substitution_realtime_changed,
 )

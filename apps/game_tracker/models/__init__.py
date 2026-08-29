@@ -5,7 +5,11 @@ from .goal_type import GoalType
 from .group_type import GroupType
 from .match_data import MatchData
 from .match_event import MatchEvent
-from .match_event_detail import ShotEventDetail, SubstitutionEventDetail
+from .match_event_detail import (
+    PossessionChangeEventDetail,
+    ShotEventDetail,
+    SubstitutionEventDetail,
+)
 from .match_event_observation import MatchEventObservation
 from .match_event_reconciliation import (
     MatchEventReconciliation,
@@ -20,6 +24,7 @@ from .player_group import PlayerGroup
 from .player_match_impact import PlayerMatchImpact
 from .player_match_impact_breakdown import PlayerMatchImpactBreakdown
 from .player_match_minutes import PlayerMatchMinutes
+from .possession_change import PossessionChange
 from .shot import Shot
 from .starting_player_assignment import StartingPlayerAssignment
 from .timeout import Timeout
@@ -44,6 +49,8 @@ __all__ = [
     "PlayerMatchImpact",
     "PlayerMatchImpactBreakdown",
     "PlayerMatchMinutes",
+    "PossessionChange",
+    "PossessionChangeEventDetail",
     "Shot",
     "ShotEventDetail",
     "StartingPlayerAssignment",

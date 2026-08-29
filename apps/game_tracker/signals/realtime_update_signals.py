@@ -12,6 +12,7 @@ from apps.game_tracker.models import (
     MatchPart,
     Pause,
     PlayerChange,
+    PossessionChange,
     Shot,
 )
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
@@ -25,7 +26,9 @@ from apps.game_tracker.services.match_events import logical_event_id
 from apps.game_tracker.services.match_scores import persist_matchdata_scores
 
 
-RealtimeModel = MatchData | Shot | PlayerChange | Pause | Attack | MatchPart
+RealtimeModel = (
+    MatchData | Shot | PlayerChange | PossessionChange | Pause | Attack | MatchPart
+)
 
 SHOT_RESOURCES = {
     LiveResource.LIVE,
@@ -45,6 +48,11 @@ SUBSTITUTE_RESOURCES = {
     LiveResource.IMPACTS,
 }
 PAUSE_RESOURCES = {LiveResource.LIVE, LiveResource.TRACKER, LiveResource.EVENTS}
+POSSESSION_CHANGE_RESOURCES = {
+    LiveResource.TRACKER,
+    LiveResource.EVENTS,
+    LiveResource.STATS,
+}
 
 
 def _record(
@@ -117,6 +125,25 @@ def _substitution_realtime_changed(
     _record(
         instance,
         SUBSTITUTE_RESOURCES,
+        changed_ids={LiveResource.EVENTS: {entity_id}},
+    )
+
+
+@receiver([post_save, post_delete], sender=PossessionChange)
+def _possession_change_realtime_changed(
+    sender: type[PossessionChange],
+    instance: PossessionChange,
+    **kwargs: object,
+) -> None:
+    del sender, kwargs
+    entity_id = logical_event_id(
+        instance.match_data,
+        source_type="possession_change",
+        source_id=instance.pk,
+    )
+    _record(
+        instance,
+        POSSESSION_CHANGE_RESOURCES,
         changed_ids={LiveResource.EVENTS: {entity_id}},
     )
 

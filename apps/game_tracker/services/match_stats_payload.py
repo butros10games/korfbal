@@ -7,7 +7,14 @@ from typing import Any, TypedDict
 
 from django.db.models import Count, Q
 
-from apps.game_tracker.models import GoalType, MatchData, MatchPlayer, PlayerGroup, Shot
+from apps.game_tracker.models import (
+    GoalType,
+    MatchData,
+    MatchPlayer,
+    PlayerGroup,
+    PossessionChange,
+    Shot,
+)
 from apps.player.models.player import Player
 from apps.schedule.models import Match
 from apps.team.models.team import Team
@@ -85,6 +92,26 @@ def _build_general_stats(
             team=away_team,
             scored=True,
         ).count(),
+        "ball_losses_for": PossessionChange.objects.filter(
+            match_data=match_data,
+            team=home_team,
+            kind=PossessionChange.BALL_LOSS,
+        ).count(),
+        "ball_losses_against": PossessionChange.objects.filter(
+            match_data=match_data,
+            team=away_team,
+            kind=PossessionChange.BALL_LOSS,
+        ).count(),
+        "interceptions_for": PossessionChange.objects.filter(
+            match_data=match_data,
+            team=home_team,
+            kind=PossessionChange.INTERCEPTION,
+        ).count(),
+        "interceptions_against": PossessionChange.objects.filter(
+            match_data=match_data,
+            team=away_team,
+            kind=PossessionChange.INTERCEPTION,
+        ).count(),
         "team_goal_stats": team_goal_stats,
         "goal_types": goal_types_json,
     }
@@ -107,6 +134,7 @@ def _build_player_lines(
         .annotate(
             shots_for=Count(
                 "shots__id_uuid",
+                distinct=True,
                 filter=Q(
                     shots__match_data=match_data,
                     shots__team=team,
@@ -114,6 +142,7 @@ def _build_player_lines(
             ),
             shots_against=Count(
                 "shots__id_uuid",
+                distinct=True,
                 filter=Q(
                     shots__match_data=match_data,
                     shots__team=other_team,
@@ -121,6 +150,7 @@ def _build_player_lines(
             ),
             goals_for=Count(
                 "shots__id_uuid",
+                distinct=True,
                 filter=Q(
                     shots__match_data=match_data,
                     shots__team=team,
@@ -129,10 +159,29 @@ def _build_player_lines(
             ),
             goals_against=Count(
                 "shots__id_uuid",
+                distinct=True,
                 filter=Q(
                     shots__match_data=match_data,
                     shots__team=other_team,
                     shots__scored=True,
+                ),
+            ),
+            ball_losses=Count(
+                "possession_changes__id_uuid",
+                distinct=True,
+                filter=Q(
+                    possession_changes__match_data=match_data,
+                    possession_changes__team=team,
+                    possession_changes__kind=PossessionChange.BALL_LOSS,
+                ),
+            ),
+            interceptions=Count(
+                "possession_changes__id_uuid",
+                distinct=True,
+                filter=Q(
+                    possession_changes__match_data=match_data,
+                    possession_changes__team=team,
+                    possession_changes__kind=PossessionChange.INTERCEPTION,
                 ),
             ),
         )
@@ -150,6 +199,8 @@ def _build_player_lines(
             "shots_against": int(getattr(player, "shots_against", 0)),
             "goals_for": int(getattr(player, "goals_for", 0)),
             "goals_against": int(getattr(player, "goals_against", 0)),
+            "ball_losses": int(getattr(player, "ball_losses", 0)),
+            "interceptions": int(getattr(player, "interceptions", 0)),
         }
         for player in queryset
     ]

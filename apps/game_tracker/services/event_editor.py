@@ -22,6 +22,7 @@ from apps.game_tracker.models import (
     Pause,
     PlayerChange,
     PlayerGroup,
+    PossessionChange,
     Shot,
     Timeout,
 )
@@ -174,6 +175,13 @@ class DeleteTimeoutEvent:
     event_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class DeletePossessionChangeEvent:
+    """Delete one player-attributed possession change."""
+
+    event_id: str
+
+
 type EventEditorCommand = (
     CreateGoalEvent
     | UpdateGoalEvent
@@ -187,8 +195,9 @@ type EventEditorCommand = (
     | CreateTimeoutEvent
     | UpdateTimeoutEvent
     | DeleteTimeoutEvent
+    | DeletePossessionChangeEvent
 )
-type EditedEvent = Shot | PlayerChange | Pause | Timeout
+type EditedEvent = Shot | PlayerChange | PossessionChange | Pause | Timeout
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,6 +505,21 @@ def _delete_goal(
     if shot is None:
         return _CommandOutcome.NOT_FOUND
     shot.delete()
+    return None
+
+
+@_apply_command.register
+def _delete_possession_change(
+    command: DeletePossessionChangeEvent,
+    match_data: MatchData,
+) -> _CommandOutcome | None:
+    event = PossessionChange.objects.filter(
+        id_uuid=command.event_id,
+        match_data=match_data,
+    ).first()
+    if event is None:
+        return _CommandOutcome.NOT_FOUND
+    event.delete()
     return None
 
 

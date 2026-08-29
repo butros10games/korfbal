@@ -9,12 +9,13 @@ from apps.game_tracker.models import (
     MatchData,
     Pause,
     PlayerChange,
+    PossessionChange,
     Shot,
 )
 from apps.game_tracker.services.match_events import active_match_events
 
 
-UndoableMatchEvent = Shot | PlayerChange | Pause | Attack
+UndoableMatchEvent = Shot | PlayerChange | PossessionChange | Pause | Attack
 
 
 def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
@@ -22,7 +23,13 @@ def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
     events = (
         active_match_events(
             match_data,
-            source_types={"shot", "player_change", "pause", "attack"},
+            source_types={
+                "shot",
+                "player_change",
+                "possession_change",
+                "pause",
+                "attack",
+            },
         )
         .order_by("-sequence")
         .values_list("source_type", "source_id")
@@ -60,6 +67,13 @@ def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
             event = (
                 Pause.objects
                 .select_related("match_part")
+                .filter(match_data=match_data, pk=source_id)
+                .first()
+            )
+        elif source_type == "possession_change":
+            event = (
+                PossessionChange.objects
+                .select_related("player", "player__user", "team", "match_part")
                 .filter(match_data=match_data, pk=source_id)
                 .first()
             )

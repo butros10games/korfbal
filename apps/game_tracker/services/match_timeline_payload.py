@@ -21,6 +21,7 @@ from apps.game_tracker.models import (
     Pause,
     PlayerChange,
     PlayerGroup,
+    PossessionChange,
     Shot,
     Timeout,
 )
@@ -198,6 +199,8 @@ def _source_key(event: object) -> tuple[str, str] | None:
         return "shot", str(event.id_uuid)
     if isinstance(event, PlayerChange):
         return "player_change", str(event.id_uuid)
+    if isinstance(event, PossessionChange):
+        return "possession_change", str(event.id_uuid)
     if isinstance(event, Pause):
         return "pause", str(event.id_uuid)
     return None
@@ -352,6 +355,25 @@ def _build_match_events(
         .fetch_mode(models.FETCH_RAISE)
     )
 
+    possession_changes = list(
+        PossessionChange.objects
+        .select_related("player", "player__user", "team", "match_part")
+        .only(
+            "id_uuid",
+            "kind",
+            "time",
+            "player__id_uuid",
+            "player__user__username",
+            "team__id_uuid",
+            "match_part__id_uuid",
+            "match_part__start_time",
+            "match_part__part_number",
+        )
+        .filter(match_data=match_data)
+        .order_by("time")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+
     pauses = context.pauses
     sequences = context.event_sequences
     logical_ids = context.logical_event_ids
@@ -359,7 +381,12 @@ def _build_match_events(
         pause_id: timeout.timeout_id
         for pause_id, timeout in context.timeouts_by_pause.items()
     }
-    events: list[object] = [*goals, *player_changes, *pauses]
+    events: list[object] = [
+        *goals,
+        *player_changes,
+        *possession_changes,
+        *pauses,
+    ]
     events.sort(
         key=lambda event: (
             _ordered_sequence(event, sequences, timeout_ids_by_pause) is None,
@@ -503,9 +530,45 @@ def _serialize_match_event(
         return _serialize_goal_event(match_data, event, context=context)
     if isinstance(event, PlayerChange):
         return _serialize_substitute_event(match_data, event, context=context)
+    if isinstance(event, PossessionChange):
+        return _serialize_possession_change_event(match_data, event, context=context)
     if isinstance(event, Pause):
         return _serialize_pause_event(match_data, event, context=context)
     return None
+
+
+def _serialize_possession_change_event(
+    match_data: MatchData,
+    event: PossessionChange,
+    *,
+    context: MatchTimelineContext | None = None,
+) -> dict[str, Any]:
+    source_id = str(event.id_uuid)
+    return {
+        "event_kind": "possession_change",
+        "event_id": source_id,
+        "logical_event_id": source_id,
+        "source_id": source_id,
+        "type": "possession_change",
+        "name": (
+            "Balverlies"
+            if event.kind == PossessionChange.BALL_LOSS
+            else "Onderschepping"
+        ),
+        "kind": event.kind,
+        "match_part_id": str(event.match_part_id),
+        "time_iso": event.time.isoformat(),
+        "time": _time_in_minutes(
+            match_data=match_data,
+            match_part=event.match_part,
+            event_time=event.time,
+            context=context,
+        ),
+        "player_id": str(event.player_id) if event.player_id else None,
+        "player": event.player.user.username if event.player else None,
+        "team_id": str(event.team_id),
+        "for_team": event.team_id == match_data.match_link.home_team_id,
+    }
 
 
 def _serialize_goal_event(

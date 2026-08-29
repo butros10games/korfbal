@@ -30,6 +30,7 @@ from apps.game_tracker.models import (
     MatchPart,
     MatchPlayer,
     Pause,
+    PossessionChange,
     Shot,
     ShotEventDetail,
     Timeout,
@@ -448,6 +449,46 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert (match_data.home_score, match_data.away_score) == (0, 0)
 
     _assert_editor_shot_history(client, match)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_possession_change_editor_delete_flow(client: Client) -> None:
+    """Coaches can remove an incorrectly registered possession change."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    coach_user = get_user_model().objects.create_user(
+        username="possession-change-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    player = _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+
+    match_data = MatchData.objects.get(match_link=match)
+    event = PossessionChange.objects.create(
+        match_data=match_data,
+        match_part=match_part,
+        team=match.home_team,
+        player=player,
+        kind=PossessionChange.BALL_LOSS,
+        time=timezone.now(),
+    )
+    match_data.refresh_from_db()
+    revision_before = match_data.live_revision
+
+    response = client.delete(
+        f"/api/matches/{match.id_uuid}/events/possession-changes/{event.pk}/",
+        data={"expected_revision": revision_before},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "event": None,
+        "live_revision": revision_before + 1,
+    }
+    assert not PossessionChange.objects.filter(pk=event.pk).exists()
 
 
 @pytest.mark.django_db

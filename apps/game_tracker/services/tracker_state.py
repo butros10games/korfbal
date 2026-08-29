@@ -20,6 +20,7 @@ from apps.game_tracker.models import (
     Pause,
     PlayerChange,
     PlayerGroup,
+    PossessionChange,
     Shot,
     Timeout,
 )
@@ -53,6 +54,8 @@ _EMPTY_PLAYER_STATS = {
     "shots_against": 0,
     "goals_for": 0,
     "goals_against": 0,
+    "ball_losses": 0,
+    "interceptions": 0,
 }
 
 
@@ -130,6 +133,25 @@ def _player_stats_by_team(
         else:
             stats["shots_against"] = row["shots"]
             stats["goals_against"] = row["goals"]
+    possession_totals = (
+        PossessionChange.objects
+        .filter(match_data=match_data, team=team)
+        .values("player_id", "kind")
+        .annotate(count=models.Count("id_uuid"))
+    )
+    for row in possession_totals:
+        if row["player_id"] is None:
+            continue
+        stats = player_stats.setdefault(
+            str(row["player_id"]),
+            dict(_EMPTY_PLAYER_STATS),
+        )
+        field = (
+            "ball_losses"
+            if row["kind"] == PossessionChange.BALL_LOSS
+            else "interceptions"
+        )
+        stats[field] = row["count"]
     return player_stats
 
 
@@ -215,13 +237,18 @@ def _last_event_payload(
             goals_for=goals_for,
             goals_against=goals_against,
         )
+    payload: dict[str, Any]
     if isinstance(event, PlayerChange):
-        return _serialize_last_event_player_change(event)
-    if isinstance(event, Pause):
-        return _serialize_last_event_pause(event)
-    if isinstance(event, Attack):
-        return _serialize_last_event_attack(event)
-    return {"type": "no_event"}
+        payload = _serialize_last_event_player_change(event)
+    elif isinstance(event, PossessionChange):
+        payload = _serialize_last_event_possession_change(event, team=team)
+    elif isinstance(event, Pause):
+        payload = _serialize_last_event_pause(event)
+    elif isinstance(event, Attack):
+        payload = _serialize_last_event_attack(event)
+    else:
+        payload = {"type": "no_event"}
+    return payload
 
 
 def _serialize_last_event_shot(
@@ -283,6 +310,29 @@ def _serialize_last_event_player_change(event: PlayerChange) -> dict[str, Any]:
         "player_in_id": str(event.player_in.id_uuid),
         "player_out": event.player_out.user.username,
         "player_out_id": str(event.player_out.id_uuid),
+    }
+
+
+def _serialize_last_event_possession_change(
+    event: PossessionChange,
+    *,
+    team: Team,
+) -> dict[str, Any]:
+    return {
+        "type": "possession_change",
+        "id": str(event.id_uuid),
+        "name": (
+            "Balverlies"
+            if event.kind == PossessionChange.BALL_LOSS
+            else "Onderschepping"
+        ),
+        "kind": event.kind,
+        "player": event.player.user.username if event.player else None,
+        "player_id": str(event.player_id) if event.player_id else None,
+        "for_team": event.team_id == team.id_uuid,
+        "team_id": str(event.team_id),
+        "time_iso": event.time.isoformat(),
+        "time": event.time.isoformat(),
     }
 
 
