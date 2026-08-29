@@ -190,10 +190,8 @@ def _create_typed_detail(
         shooting_team_id = _snapshot_id(snapshot, "team_id")
         source_team_id = getattr(context.source_team, "pk", None)
         is_shooter = (
-            context.source == "editor"
-            or (source_team_id is not None and str(source_team_id) == shooting_team_id)
-            or (source_team_id is None and bool(snapshot.get("for_team", True)))
-        )
+            source_team_id is not None and str(source_team_id) == shooting_team_id
+        ) or (source_team_id is None and bool(snapshot.get("for_team", True)))
         ShotEventDetail.objects.create(
             event=event,
             shooting_team_id=shooting_team_id,

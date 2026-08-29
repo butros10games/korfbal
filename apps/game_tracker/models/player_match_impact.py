@@ -22,8 +22,8 @@ class PlayerMatchImpact(models.Model):
     """Stores precomputed match impact per player.
 
     Notes:
-        We store `impact_score` rounded to one decimal place to mirror the
-        korfbal-web Match page display.
+        Scores retain three decimal places so season totals are not distorted by
+        per-match display rounding. Clients present one decimal place.
 
     """
 
@@ -58,9 +58,9 @@ class PlayerMatchImpact(models.Model):
     team_id: str | None
 
     impact_score: models.DecimalField = models.DecimalField(
-        max_digits=7,
-        decimal_places=1,
-        default=Decimal("0.0"),
+        max_digits=9,
+        decimal_places=3,
+        default=Decimal("0.000"),
     )
 
     algorithm_version: models.CharField = models.CharField(

@@ -57,6 +57,7 @@ class CreateGoalEvent:
     time: str | None
     minute: int | None
     scored: bool
+    for_team: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,7 @@ class UpdateGoalEvent:
     time: PatchValue[str] = UNSET
     minute: PatchValue[int] = UNSET
     scored: PatchValue[bool] = UNSET
+    for_team: PatchValue[bool] = UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +338,21 @@ def _validate_player_team(
         _validation_error(field, "Player does not belong to the selected match team.")
 
 
+def _responsible_player_team(
+    *, match_data: MatchData, shooting_team: Team, for_team: bool
+) -> Team:
+    """Return the roster team expected for an editor-selected shot player."""
+    if for_team:
+        return shooting_team
+
+    match = match_data.match_link
+    if str(shooting_team.id_uuid) == str(match.home_team_id):
+        return match.away_team
+    if str(shooting_team.id_uuid) == str(match.away_team_id):
+        return match.home_team
+    _validation_error("team_id", "Team is not part of this match.")
+
+
 def _validate_substitution_players(
     *,
     match_data: MatchData,
@@ -380,10 +397,15 @@ def _create_goal(command: CreateGoalEvent, match_data: MatchData) -> Shot:
     match_part = _match_part(match_data, command.match_part_id)
     team = _match_team(match_data, command.team_id)
     player = _player(command.player_id)
+    responsible_team = _responsible_player_team(
+        match_data=match_data,
+        shooting_team=team,
+        for_team=command.for_team,
+    )
     _validate_player_team(
         match_data=match_data,
         player=player,
-        team_id=command.team_id,
+        team_id=responsible_team.id_uuid,
     )
     return Shot.objects.create(
         match_data=match_data,
@@ -391,7 +413,7 @@ def _create_goal(command: CreateGoalEvent, match_data: MatchData) -> Shot:
         player=player,
         team=team,
         shot_type=_goal_type(command.shot_type_id),
-        for_team=str(command.team_id) == str(match_data.match_link.home_team_id),
+        for_team=command.for_team,
         scored=command.scored,
         time=_resolve_event_time(
             match_part=match_part,
@@ -440,14 +462,22 @@ def _update_goal(
     player = (
         _player(command.player_id) if command.player_id is not UNSET else shot.player
     )
+    for_team = (
+        bool(command.for_team) if command.for_team is not UNSET else bool(shot.for_team)
+    )
+    responsible_team = _responsible_player_team(
+        match_data=match_data,
+        shooting_team=team,
+        for_team=for_team,
+    )
     _validate_player_team(
         match_data=match_data,
         player=player,
-        team_id=team.id_uuid,
+        team_id=responsible_team.id_uuid,
     )
     shot.player = player
     shot.team = team
-    shot.for_team = str(team.id_uuid) == str(match_data.match_link.home_team_id)
+    shot.for_team = for_team
 
     if command.shot_type_id is not UNSET:
         shot.shot_type = _goal_type(command.shot_type_id)

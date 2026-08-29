@@ -1,16 +1,9 @@
-"""Tests for match impact semantics around `Shot.for_team`.
-
-In this codebase's stored tracker data, `team_id` already represents the actual
-shooting/scoring team. The `for_team` flag is *not* treated as a defensive
-duplicate indicator for impact calculations.
-
-Therefore, a scored shot should count as `goal_scored` for the linked player
-regardless of the `for_team` value.
-"""
+"""Regression tests for attacker/defender attribution in impact scoring."""
 
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -28,8 +21,8 @@ from apps.team.models import Team
 
 
 @pytest.mark.django_db
-def test_goal_scored_breakdown_ignores_for_team_false_goal() -> None:
-    """A scored shot counts as goal_scored regardless of `for_team`."""
+def test_v7_scores_for_team_false_as_direct_defensive_responsibility() -> None:
+    """A conceded goal must hurt the selected defender, not credit a scorer."""
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
     home_team = Team.objects.create(name="Home Team", club=home_club)
@@ -94,7 +87,7 @@ def test_goal_scored_breakdown_ignores_for_team_false_goal() -> None:
         time=part_start + timedelta(minutes=2),
     )
 
-    _rows, breakdown = compute_match_impact_breakdown(
+    rows, breakdown = compute_match_impact_breakdown(
         match_data=match_data,
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
@@ -102,5 +95,14 @@ def test_goal_scored_breakdown_ignores_for_team_false_goal() -> None:
     scorer_key = str(scorer.id_uuid)
     defender_key = str(defender.id_uuid)
 
-    assert breakdown[scorer_key]["goal_scored"]["count"] == 1
-    assert breakdown[defender_key]["goal_scored"]["count"] == 1
+    rows_by_player = {row.player_id: row for row in rows}
+    assert breakdown[scorer_key]["offense_goal_above_expected"]["count"] == 1
+    assert rows_by_player[scorer_key].impact_score == Decimal("0.820")
+    assert breakdown[defender_key]["defense_goal_below_expected"]["count"] == 1
+    assert rows_by_player[defender_key].impact_score == Decimal("-0.820")
+
+    _legacy_rows, legacy_breakdown = compute_match_impact_breakdown(
+        match_data=match_data,
+        algorithm_version="v6",
+    )
+    assert legacy_breakdown[defender_key]["goal_scored"]["count"] == 1

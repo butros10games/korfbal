@@ -25,7 +25,6 @@ from django.core.management.base import BaseCommand
 
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_impact import (
-    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     MatchTeamImpactFeatures,
     ShotImpactWeights,
     compute_match_team_impact_features,
@@ -152,7 +151,7 @@ def _load_match_rows(*, max_matches: int) -> list[dict[str, object]]:
         away_team_id = str(match.away_team_id)
         features_by_team = compute_match_team_impact_features(
             match_data=md,
-            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            algorithm_version="v6",
         )
         if home_team_id not in features_by_team:
             continue

@@ -7,6 +7,7 @@ match tracker endpoints.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from http import HTTPStatus
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -33,6 +34,7 @@ from apps.game_tracker.models import (
     ShotEventDetail,
     Timeout,
 )
+from apps.game_tracker.services.match_impact import compute_match_impact_rows
 from apps.player.models import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.api.permissions import IsClubMemberOrCoachOrAdmin, IsCoachOrAdmin
@@ -419,10 +421,10 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert update_response.status_code == HTTPStatus.OK
     update_payload = update_response.json()
     updated = update_payload["event"]
-    assert updated["for_team"] is False
+    assert updated["for_team"] is True
 
     shot_model.refresh_from_db()
-    assert shot_model.for_team is False
+    assert shot_model.for_team is True
     _assert_updated_shot_projection(
         match_data=match_data,
         shot=shot_model,
@@ -446,6 +448,58 @@ def test_match_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert (match_data.home_score, match_data.away_score) == (0, 0)
 
     _assert_editor_shot_history(client, match)
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_goal_editor_preserves_direct_defender_responsibility(
+    client: Client,
+) -> None:
+    """An editor can attribute an opponent goal to the responsible defender."""
+    match = _create_match()
+    match_part = _ensure_match_part(match)
+    goal_type = GoalType.objects.create(name="Defended open-play goal")
+    coach_user = get_user_model().objects.create_user(
+        username="defending-coach",
+        password=TEST_PASSWORD,
+    )
+    _assign_coach(match, coach_user)
+    defender = _add_roster_player(match, coach_user, team=match.home_team)
+    client.force_login(coach_user)
+    match_data = MatchData.objects.get(match_link=match)
+
+    response = client.post(
+        f"/api/matches/{match.id_uuid}/events/goals/",
+        data={
+            "player_id": str(defender.id_uuid),
+            "team_id": str(match.away_team.id_uuid),
+            "shot_type_id": str(goal_type.id_uuid),
+            "match_part_id": str(match_part.id_uuid),
+            "minute": 0,
+            "for_team": False,
+            "expected_revision": match_data.live_revision,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    created = response.json()["event"]
+    assert created["for_team"] is False
+    assert created["team_id"] == str(match.away_team.id_uuid)
+
+    shot = Shot.objects.get(pk=created["source_id"])
+    assert shot.player == defender
+    assert shot.team == match.away_team
+    assert shot.for_team is False
+    detail = ShotEventDetail.objects.get(event__source_id=shot.pk)
+    assert detail.shooter is None
+    assert detail.defender == defender
+
+    impacts = {
+        row.player_id: row for row in compute_match_impact_rows(match_data=match_data)
+    }
+    assert impacts[str(defender.id_uuid)].team_id == str(match.home_team.id_uuid)
+    assert impacts[str(defender.id_uuid)].impact_score == Decimal("-0.820")
 
 
 @pytest.mark.django_db

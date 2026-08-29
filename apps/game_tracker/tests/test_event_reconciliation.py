@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 from django.utils import timezone
@@ -28,6 +29,7 @@ from apps.game_tracker.services.event_reconciliation import (
     pending_reconciliations,
     resolve_reconciliation,
 )
+from apps.game_tracker.services.match_impact import compute_match_impact_rows
 from apps.game_tracker.tests.fakes import RecordingMatchChangePublisher
 from apps.game_tracker.tests.tracker_test_helpers import (
     TrackerMatchContext,
@@ -154,6 +156,60 @@ def test_opposing_team_reports_attach_to_one_canonical_goal() -> None:
     }
     assert observations.last().origin == MatchEventObservation.ORIGIN_MATCHED
     assert state["score"] == {"for": 0, "against": 1}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("attacker_reports_first", [True, False])
+def test_reconciled_goal_scores_both_responsible_players(
+    attacker_reports_first: bool,
+) -> None:
+    """V7 attribution is complete regardless of which team's report arrives first."""
+    context = _active_tracker(f"reconcile-impact-{attacker_reports_first}")
+    observed_at = timezone.now()
+    reports = [
+        (
+            context.tracker.home_team,
+            _goal_payload(
+                player=context.home_player,
+                goal_type=context.goal_type,
+                for_team=True,
+                observed_at_ms=int(observed_at.timestamp() * 1_000),
+            ),
+        ),
+        (
+            context.tracker.away_team,
+            _goal_payload(
+                player=context.away_player,
+                goal_type=context.goal_type,
+                for_team=False,
+                observed_at_ms=int(
+                    (observed_at + timedelta(seconds=1)).timestamp() * 1_000
+                ),
+            ),
+        ),
+    ]
+    if not attacker_reports_first:
+        reports.reverse()
+
+    for team, payload in reports:
+        apply_tracker_command(
+            context.tracker.match,
+            team=team,
+            payload=payload,
+        )
+
+    rows = {
+        row.player_id: row
+        for row in compute_match_impact_rows(match_data=context.tracker.match_data)
+    }
+    home_player_id = str(context.home_player.id_uuid)
+    away_player_id = str(context.away_player.id_uuid)
+
+    assert Shot.objects.filter(match_data=context.tracker.match_data).count() == 1
+    assert rows[home_player_id].impact_score == Decimal("0.820")
+    assert rows[home_player_id].team_id == str(context.tracker.home_team.id_uuid)
+    assert rows[away_player_id].impact_score == Decimal("-0.820")
+    assert rows[away_player_id].team_id == str(context.tracker.away_team.id_uuid)
 
 
 @pytest.mark.django_db

@@ -7,12 +7,14 @@ from .match_impact_persistence import (
 )
 from .match_impact_scorer import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    MatchImpactContribution,
     MatchImpactRow,
     MatchTeamImpactFeatures,
     PlayerImpactBreakdown,
     ShotImpactWeights,
     _compute_shooting_efficiency_multipliers,
     compute_match_impact_breakdown,
+    compute_match_impact_contributions,
     compute_match_impact_rows,
     compute_match_team_impact_features,
     doorloop_concede_factor_for_version,
@@ -30,6 +32,7 @@ from .match_impact_timeline import (
 __all__ = [
     "LATEST_MATCH_IMPACT_ALGORITHM_VERSION",
     "Interval",
+    "MatchImpactContribution",
     "MatchImpactRow",
     "MatchTeamImpactFeatures",
     "PlayerImpactBreakdown",
@@ -40,6 +43,7 @@ __all__ = [
     "compute_match_end_minutes",
     "compute_match_impact_breakdown",
     "compute_match_impact_breakdown_cached",
+    "compute_match_impact_contributions",
     "compute_match_impact_rows",
     "compute_match_team_impact_features",
     "doorloop_concede_factor_for_version",

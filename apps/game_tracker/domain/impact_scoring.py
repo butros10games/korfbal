@@ -2,19 +2,119 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 import math
-from typing import Literal
+from typing import Any, Literal
 
 
-LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v6"
+LATEST_MATCH_IMPACT_ALGORITHM_VERSION = "v7"
+
+# Historical tracker data does not contain an unbiased shot-type selection for
+# open-play misses. Keep one deliberately conservative open-play baseline and
+# only distinguish set pieces, whose type is consistently captured.
+V7_OPEN_PLAY_XG = 0.18
+V7_FREE_PASS_XG = 0.35
+V7_PENALTY_XG = 0.75
 MIN_SHOTS_FOR_EFFICIENCY_SCALING = 5
 EFFICIENCY_RATE_VERY_GOOD = 0.5
 EFFICIENCY_RATE_GOOD = 1.0 / 3.0
 EFFICIENCY_RATE_FINE = 0.2
 
 Side = Literal["home", "away"]
+ImpactCategory = Literal[
+    "offense_goal_above_expected",
+    "offense_miss_below_expected",
+    "defense_stop_above_expected",
+    "defense_goal_below_expected",
+]
+
+
+@dataclass(frozen=True)
+class MatchImpactContribution:
+    """One auditable v7 contribution from a tracked shot."""
+
+    player_id: str
+    time: str
+    category: ImpactCategory
+    points: float
+    expected_goals: float
+    scored: bool
+    for_team: bool
+    shot_type: str
+
+
+def expected_goal_probability(shot_type: str | None) -> float:
+    """Return the v7 expected-goal baseline for a tracked shot type."""
+    normalised = normalise_goal_type(shot_type or "")
+    if "straf" in normalised or "penalty" in normalised:
+        return V7_PENALTY_XG
+    if "vrije" in normalised or "free pass" in normalised:
+        return V7_FREE_PASS_XG
+    return V7_OPEN_PLAY_XG
+
+
+def compute_v7_contributions(
+    shots: Sequence[Mapping[str, Any]],
+) -> list[MatchImpactContribution]:
+    """Score shots as goals above expected for the responsible player.
+
+    ``for_team=True`` identifies the attacking player. ``for_team=False``
+    identifies the directly responsible defender while ``team_id`` remains the
+    shooting team. This is the tracker write contract.
+    """
+    contributions: list[MatchImpactContribution] = []
+    for shot in shots:
+        player_id = str(shot.get("player_id") or "").strip()
+        if not player_id:
+            continue
+
+        shot_type = str(shot.get("shot_type") or "")
+        expected = expected_goal_probability(shot_type)
+        scored = bool(shot.get("scored"))
+        for_team = bool(shot.get("for_team", True))
+
+        if for_team:
+            points = (1.0 - expected) if scored else -expected
+            category: ImpactCategory = (
+                "offense_goal_above_expected"
+                if scored
+                else "offense_miss_below_expected"
+            )
+        else:
+            points = -(1.0 - expected) if scored else expected
+            category = (
+                "defense_goal_below_expected"
+                if scored
+                else "defense_stop_above_expected"
+            )
+
+        contributions.append(
+            MatchImpactContribution(
+                player_id=player_id,
+                time=str(shot.get("time") or "?"),
+                category=category,
+                points=points,
+                expected_goals=expected,
+                scored=scored,
+                for_team=for_team,
+                shot_type=shot_type,
+            )
+        )
+    return contributions
+
+
+def aggregate_v7_contributions(
+    contributions: list[MatchImpactContribution],
+) -> dict[str, float]:
+    """Aggregate v7 contributions by player without display rounding."""
+    totals: dict[str, float] = {}
+    for contribution in contributions:
+        totals[contribution.player_id] = (
+            totals.get(contribution.player_id, 0.0) + contribution.points
+        )
+    return totals
 
 
 @dataclass(frozen=True)
@@ -36,14 +136,14 @@ class ShootingEfficiencyMultipliers:
 
 
 def shot_impact_weights_for_version(version: str) -> ShotImpactWeights:
-    """Return the configured shot weights, defaulting to the latest policy."""
+    """Return legacy shot weights, defaulting unknown legacy versions to v6."""
     if version == "v1":
         return ShotImpactWeights(0.9, -0.25, -6.2, 0.55)
     if version in {"v2", "v3", "v4", "v5"}:
         return ShotImpactWeights(0.6, -0.25, -6.2, 0.8)
     if version == "v6":
         return ShotImpactWeights(0.2, -0.17, -2.94, 0.31)
-    return shot_impact_weights_for_version(LATEST_MATCH_IMPACT_ALGORITHM_VERSION)
+    return shot_impact_weights_for_version("v6")
 
 
 def efficiency_multipliers_for_rate(

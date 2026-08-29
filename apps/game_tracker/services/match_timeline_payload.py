@@ -558,7 +558,9 @@ def _serialize_goal_event(
         "player": event.player.user.username,
         "shot_type_id": str(event.shot_type.id_uuid),
         "goal_type": event.shot_type.name,
-        "for_team": team_id == str(match_data.match_link.home_team_id),
+        # This flag describes the selected player's role, not the match side:
+        # true is the attacker, false is the responsible defender.
+        "for_team": bool(event.for_team),
         "team_id": team_id,
     }
 
@@ -604,7 +606,7 @@ def _serialize_shot_timeline_event(
         "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
         "shot_type": event.shot_type.name if event.shot_type else None,
         "scored": bool(event.scored),
-        "for_team": team_id == str(match_data.match_link.home_team_id),
+        "for_team": bool(event.for_team),
         "team_id": team_id,
     }
 

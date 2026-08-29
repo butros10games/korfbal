@@ -16,6 +16,9 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData, MatchPart, PlayerMatchImpact, Shot
+from apps.game_tracker.services.match_impact import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+)
 from apps.kwt_common.utils.players_stats import build_player_stats
 from apps.player.models.player import Player
 from apps.schedule.models import Match, Season
@@ -23,7 +26,8 @@ from apps.team.models import Team
 
 
 EXPECTED_SINGLE_MISS_IMPACT = -0.2
-EXPECTED_FIVE_MISSES_IMPACT = -1.0
+EXPECTED_SINGLE_MISS_STORED = -0.18
+EXPECTED_FIVE_MISSES_IMPACT = -0.9
 
 
 @pytest.mark.django_db
@@ -60,7 +64,7 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     user = get_user_model().objects.create_user(username="impact_recompute")
     player = getattr(user, "player", None) or Player.objects.create(user=user)
 
-    # A missed shot should yield -0.2 impact in the latest match-page algorithm.
+    # The stored -0.18 open-play miss is presented as -0.2 on the Team page.
     Shot.objects.create(
         player=player,
         match_data=match_data,
@@ -93,8 +97,8 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v6"
-    assert float(updated.impact_score) == pytest.approx(EXPECTED_SINGLE_MISS_IMPACT)
+    assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
+    assert float(updated.impact_score) == pytest.approx(EXPECTED_SINGLE_MISS_STORED)
 
 
 @pytest.mark.django_db
@@ -131,7 +135,7 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
     user = get_user_model().objects.create_user(username="impact_eff_v3")
     player = getattr(user, "player", None) or Player.objects.create(user=user)
 
-    # v6: 5 misses at -0.2 each => -1.0.
+    # v7: 5 open-play misses at -0.18 each => -0.9.
     for i in range(5):
         Shot.objects.create(
             player=player,
@@ -164,5 +168,5 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
-    assert updated.algorithm_version == "v6"
+    assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert float(updated.impact_score) == pytest.approx(EXPECTED_FIVE_MISSES_IMPACT)

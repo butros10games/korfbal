@@ -182,12 +182,14 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category() -> None:
 
     pid = str(player.id_uuid)
     assert pid in by_player
-    assert by_player[pid].impact_score == Decimal("-0.2")
+    assert by_player[pid].impact_score == Decimal("-0.180")
 
     player_breakdown = breakdown.get(pid)
     assert player_breakdown is not None
-    assert player_breakdown["shot_miss_for"]["count"] == 1
-    assert round_js_1dp(player_breakdown["shot_miss_for"]["points"]) == Decimal("-0.2")
+    assert player_breakdown["offense_miss_below_expected"]["count"] == 1
+    assert player_breakdown["offense_miss_below_expected"]["points"] == pytest.approx(
+        -0.18
+    )
 
     total_raw = sum(item["points"] for item in player_breakdown.values())
     assert round_js_1dp(total_raw) == Decimal("-0.2")
@@ -244,4 +246,4 @@ def test_persist_match_impact_rows_with_breakdowns_creates_db_rows() -> None:
     breakdown = PlayerMatchImpactBreakdown.objects.get(impact=impact)
 
     assert breakdown.algorithm_version == impact.algorithm_version
-    assert "shot_miss_for" in breakdown.breakdown
+    assert "offense_miss_below_expected" in breakdown.breakdown

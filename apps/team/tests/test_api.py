@@ -295,7 +295,9 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
     assert payload["algorithm_version"] == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert payload["matches_considered"] == 1
     assert payload["categories"]
-    assert any(cat["key"] == "shot_miss_for" for cat in payload["categories"])
+    assert any(
+        cat["key"] == "offense_miss_below_expected" for cat in payload["categories"]
+    )
 
 
 @pytest.mark.django_db

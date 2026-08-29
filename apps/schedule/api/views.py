@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import asdict
 from datetime import timedelta
 import json
 import logging
@@ -35,6 +36,7 @@ from apps.game_tracker.services.live_update_signal_control import (
 )
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    compute_match_impact_contributions,
     persist_match_impact_rows,
 )
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
@@ -889,6 +891,7 @@ class MatchViewSet(
                     "match_data_id": None,
                     "status": "unknown",
                     "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+                    "score_unit": "goals_above_expected",
                     "computed_at": None,
                     "impacts": [],
                 },
@@ -911,6 +914,12 @@ class MatchViewSet(
         if impacts:
             computed_at = max(impact.computed_at for impact in impacts).isoformat()
 
+        contributions_by_player: dict[str, list[dict[str, object]]] = {}
+        for contribution in compute_match_impact_contributions(match_data=match_data):
+            contributions_by_player.setdefault(contribution.player_id, []).append(
+                asdict(contribution)
+            )
+
         def _side_for_team_id(team_id: str | None) -> str | None:
             if not team_id:
                 return None
@@ -924,6 +933,7 @@ class MatchViewSet(
             "match_data_id": str(match_data.id_uuid),
             "status": match_data.status,
             "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            "score_unit": "goals_above_expected",
             "computed_at": computed_at,
             "impacts": [
                 {
@@ -933,6 +943,9 @@ class MatchViewSet(
                         str(impact.team_id) if impact.team_id else None
                     ),
                     "impact_score": float(impact.impact_score),
+                    "contributions": contributions_by_player.get(
+                        str(impact.player_id), []
+                    ),
                 }
                 for impact in impacts
             ],

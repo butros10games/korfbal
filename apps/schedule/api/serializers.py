@@ -364,6 +364,7 @@ class ShotWriteSerializer(serializers.Serializer):
                 time=_optional_text(data, "time"),
                 minute=_optional_integer(data, "minute"),
                 scored=bool(data.get("scored", True)),
+                for_team=bool(data.get("for_team", True)),
             )
         return UpdateGoalEvent(
             event_id=event_id,
@@ -374,6 +375,7 @@ class ShotWriteSerializer(serializers.Serializer):
             time=_patch(data, "time"),
             minute=_patch(data, "minute"),
             scored=_patch(data, "scored"),
+            for_team=_patch(data, "for_team"),
         )
 
 

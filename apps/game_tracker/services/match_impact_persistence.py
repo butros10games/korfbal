@@ -69,6 +69,16 @@ def _upsert_impact_row(
     return impact
 
 
+def _delete_stale_impact_rows(
+    *, match_data: MatchData, retained_player_ids: set[str]
+) -> None:
+    """Remove rows for players no longer represented by the match tracker."""
+    stale = PlayerMatchImpact.objects.filter(match_data=match_data)
+    if retained_player_ids:
+        stale = stale.exclude(player_id__in=retained_player_ids)
+    stale.delete()
+
+
 def compute_match_impact_breakdown_cached(
     *,
     match_data: MatchData,
@@ -110,13 +120,14 @@ def persist_match_impact_rows(
         match_data=match_data,
         algorithm_version=algorithm_version,
     )
-    if not rows:
-        return 0
-
     players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
     with transaction.atomic():
+        _delete_stale_impact_rows(
+            match_data=match_data,
+            retained_player_ids=set(players_by_id),
+        )
         for row in rows:
             impact = _upsert_impact_row(
                 match_data=match_data,
@@ -141,13 +152,14 @@ def persist_match_impact_rows_with_breakdowns(
         match_data=match_data,
         algorithm_version=algorithm_version,
     )
-    if not rows:
-        return 0
-
     players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
     with transaction.atomic():
+        _delete_stale_impact_rows(
+            match_data=match_data,
+            retained_player_ids=set(players_by_id),
+        )
         for row in rows:
             impact_obj = _upsert_impact_row(
                 match_data=match_data,

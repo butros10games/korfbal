@@ -15,7 +15,6 @@ import pytest
 from apps.club.models import Club
 from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
 from apps.game_tracker.services.match_impact import (
-    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     compute_match_impact_breakdown,
 )
 from apps.player.models.player import Player
@@ -81,7 +80,7 @@ def test_goal_points_streak_bonus_is_capped() -> None:
 
     _rows, breakdown = compute_match_impact_breakdown(
         match_data=match_data,
-        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+        algorithm_version="v6",
     )
 
     per_player = breakdown[str(scorer.id_uuid)]
