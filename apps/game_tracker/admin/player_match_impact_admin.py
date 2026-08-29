@@ -25,6 +25,7 @@ class PlayerMatchImpactAdmin(PlayerMatchImpactAdminBase):
         "player",
         "team",
         "impact_score",
+        "win_probability_added",
         "algorithm_version",
         "computed_at",
     )

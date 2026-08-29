@@ -246,4 +246,5 @@ def test_persist_match_impact_rows_with_breakdowns_creates_db_rows() -> None:
     breakdown = PlayerMatchImpactBreakdown.objects.get(impact=impact)
 
     assert breakdown.algorithm_version == impact.algorithm_version
+    assert impact.win_probability_added == Decimal("0.00000")
     assert "offense_miss_below_expected" in breakdown.breakdown

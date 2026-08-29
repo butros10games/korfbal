@@ -48,6 +48,7 @@ class PlayerStatRow(TypedDict):
     goals_for: int
     goals_against: int
     impact_score: float
+    win_probability_added: float | None
     impact_is_stored: bool
     minutes_played: float | None
 
@@ -328,15 +329,22 @@ def build_player_stats_sync(
             algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
         )
         .values("player__user__username")
-        .annotate(total=Sum("impact_score"))
+        .annotate(
+            total=Sum("impact_score"),
+            total_wpa=Sum("win_probability_added"),
+        )
     )
     impact_by_username: dict[str, float] = {}
+    wpa_by_username: dict[str, float] = {}
     for row in impact_rows:
         username = str(row.get("player__user__username") or "").strip()
         total = row.get("total")
         if not username or total is None:
             continue
         impact_by_username[username] = round(float(total), 1)
+        total_wpa = row.get("total_wpa")
+        if total_wpa is not None:
+            wpa_by_username[username] = round(float(total_wpa), 5)
 
     player_rows: list[PlayerStatRow] = [
         {
@@ -351,6 +359,9 @@ def build_player_stats_sync(
                 else _compute_impact_score(gf=gf, ga=ga, sf=sf, sa=sa)
             ),
             "impact_is_stored": bool(dataset_has_full_impacts),
+            "win_probability_added": (
+                wpa_by_username.get(username, 0.0) if dataset_has_full_impacts else None
+            ),
             # Minutes-played are persisted asynchronously (Celery) into
             # PlayerMatchMinutes. When minutes are unavailable or missing for a
             # specific player, return null to avoid implying "0 minutes".

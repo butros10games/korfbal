@@ -63,6 +63,12 @@ class PlayerMatchImpact(models.Model):
         default=Decimal("0.000"),
     )
 
+    win_probability_added: models.DecimalField = models.DecimalField(
+        max_digits=9,
+        decimal_places=5,
+        default=Decimal("0.00000"),
+    )
+
     algorithm_version: models.CharField = models.CharField(
         max_length=32,
         default="v1",

@@ -233,13 +233,13 @@ def _logical_source_key(
     return _source_key(event)
 
 
-def _time_in_minutes(
+def _elapsed_match_seconds(
     *,
     match_data: MatchData,
     match_part: MatchPart,
     event_time: datetime,
     context: MatchTimelineContext | None = None,
-) -> str:
+) -> float:
     match_part_start = match_part.start_time
     match_part_number = match_part.part_number
     if context is None:
@@ -273,14 +273,30 @@ def _time_in_minutes(
     )
     pause_time_seconds = pause_time.total_seconds()
 
+    return (
+        (event_time - match_part_start).total_seconds()
+        + ((match_part_number - 1) * int(match_data.part_length))
+        - pause_time_seconds
+    )
+
+
+def _time_in_minutes(
+    *,
+    match_data: MatchData,
+    match_part: MatchPart,
+    event_time: datetime,
+    context: MatchTimelineContext | None = None,
+) -> str:
     time_in_minutes_value = round(
-        (
-            (event_time - match_part_start).total_seconds()
-            + ((match_part_number - 1) * int(match_data.part_length))
-            - pause_time_seconds
+        _elapsed_match_seconds(
+            match_data=match_data,
+            match_part=match_part,
+            event_time=event_time,
+            context=context,
         )
         / 60,
     )
+    match_part_number = match_part.part_number
 
     left_over = time_in_minutes_value - (
         (match_part_number * match_data.part_length) / 60
@@ -564,6 +580,12 @@ def _serialize_possession_change_event(
             event_time=event.time,
             context=context,
         ),
+        "elapsed_seconds": _elapsed_match_seconds(
+            match_data=match_data,
+            match_part=event.match_part,
+            event_time=event.time,
+            context=context,
+        ),
         "player_id": str(event.player_id) if event.player_id else None,
         "player": event.player.user.username if event.player else None,
         "team_id": str(event.team_id),
@@ -612,6 +634,12 @@ def _serialize_goal_event(
         "match_part_id": str(event.match_part.id_uuid),
         "time_iso": event.time.isoformat(),
         "time": _time_in_minutes(
+            match_data=match_data,
+            match_part=event.match_part,
+            event_time=event.time,
+            context=context,
+        ),
+        "elapsed_seconds": _elapsed_match_seconds(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.time,
@@ -681,6 +709,12 @@ def _serialize_shot_timeline_event(
 
     if event.match_part is not None and event.time is not None:
         payload["time"] = _time_in_minutes(
+            match_data=match_data,
+            match_part=event.match_part,
+            event_time=event.time,
+            context=context,
+        )
+        payload["elapsed_seconds"] = _elapsed_match_seconds(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.time,

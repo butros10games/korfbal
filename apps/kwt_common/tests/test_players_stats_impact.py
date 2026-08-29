@@ -15,7 +15,13 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, MatchPart, PlayerMatchImpact, Shot
+from apps.game_tracker.models import (
+    GoalType,
+    MatchData,
+    MatchPart,
+    PlayerMatchImpact,
+    Shot,
+)
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 )
@@ -94,11 +100,71 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     assert len(rows) == 1
     assert rows[0]["username"] == "impact_recompute"
     assert rows[0]["impact_score"] == EXPECTED_SINGLE_MISS_IMPACT
+    assert rows[0]["win_probability_added"] == pytest.approx(0.0)
     assert rows[0]["impact_is_stored"] is True
 
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
     assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert float(updated.impact_score) == pytest.approx(EXPECTED_SINGLE_MISS_STORED)
+
+
+@pytest.mark.django_db
+def test_build_player_stats_aggregates_stored_goal_wpa() -> None:
+    """Team-season rows include the persisted sum of event-level WPA."""
+    home_team = Team.objects.create(
+        name="WPA Home Team",
+        club=Club.objects.create(name="WPA Home Club"),
+    )
+    away_team = Team.objects.create(
+        name="WPA Away Team",
+        club=Club.objects.create(name="WPA Away Club"),
+    )
+    today = timezone.now().date()
+    season = Season.objects.create(
+        name="WPA aggregation season",
+        start_date=today,
+        end_date=today + timedelta(days=365),
+    )
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now() - timedelta(hours=2),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.parts = 1
+    match_data.part_length = 3600
+    match_data.save(update_fields=["status", "parts", "part_length"])
+    part_start = timezone.now() - timedelta(hours=1)
+    part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=part_start,
+        active=False,
+    )
+    player = get_user_model().objects.create_user(username="wpa_scorer").player
+    Shot.objects.create(
+        player=player,
+        match_data=match_data,
+        match_part=part,
+        team=home_team,
+        shot_type=GoalType.objects.create(name="Afstand schot"),
+        for_team=True,
+        scored=True,
+        time=part_start + timedelta(seconds=3590),
+    )
+
+    rows = async_to_sync(build_player_stats)(
+        [player],
+        MatchData.objects.filter(id_uuid=match_data.id_uuid),
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["win_probability_added"] is not None
+    assert rows[0]["win_probability_added"] > 0
+    persisted = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
+    assert persisted.win_probability_added > 0
 
 
 @pytest.mark.django_db

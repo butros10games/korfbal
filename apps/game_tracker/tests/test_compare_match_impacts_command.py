@@ -12,7 +12,13 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.game_tracker.models import (
+    GoalType,
+    MatchData,
+    MatchPart,
+    PossessionChange,
+    Shot,
+)
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -67,6 +73,22 @@ def test_compare_match_impacts_reports_multiple_matches_and_players() -> None:
             shot_type=shot_type,
             time=start + timedelta(minutes=2),
         )
+        PossessionChange.objects.create(
+            player=attacker,
+            match_data=match_data,
+            match_part=part,
+            team=home,
+            kind=PossessionChange.BALL_LOSS,
+            time=start + timedelta(minutes=3),
+        )
+        PossessionChange.objects.create(
+            player=defender,
+            match_data=match_data,
+            match_part=part,
+            team=away,
+            kind=PossessionChange.INTERCEPTION,
+            time=start + timedelta(minutes=3),
+        )
 
     stdout = StringIO()
     call_command(
@@ -84,6 +106,12 @@ def test_compare_match_impacts_reports_multiple_matches_and_players() -> None:
 
     assert {row["match_data_id"] for row in payload} == set(match_data_ids)
     assert {row["player"] for row in payload} == {"attacker", "defender"}
+    assert {row["old_version"] for row in payload} == {"v7"}
+    assert {row["new_version"] for row in payload} == {"v8"}
+    assert {row["old_wpa"] for row in payload} == {0.0}
+    assert any(abs(row["new_wpa"]) > 0 for row in payload)
+    assert all(row["wpa_delta"] == row["new_wpa"] for row in payload)
+    attacker_rows = [row for row in payload if row["player"] == "attacker"]
     defender_rows = [row for row in payload if row["player"] == "defender"]
-    assert all(row["v6"] > 0 for row in defender_rows)
-    assert all(row["v7_gax"] < 0 for row in defender_rows)
+    assert all(row["delta"] == pytest.approx(-0.18) for row in attacker_rows)
+    assert all(row["delta"] == pytest.approx(0.18) for row in defender_rows)

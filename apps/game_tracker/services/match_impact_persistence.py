@@ -63,6 +63,7 @@ def _upsert_impact_row(
         defaults={
             "team": teams_by_id.get(row.team_id) if row.team_id else None,
             "impact_score": row.impact_score,
+            "win_probability_added": row.win_probability_added,
             "algorithm_version": algorithm_version,
         },
     )

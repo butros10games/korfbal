@@ -1,4 +1,4 @@
-"""Compare legacy v6 and goals-above-expected v7 impact scores."""
+"""Compare two match-impact algorithm versions without persisting rows."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_impact import (
+    LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     MatchImpactRow,
     compute_match_impact_rows,
 )
@@ -17,12 +18,25 @@ from apps.player.models.player import Player
 
 
 class Command(BaseCommand):
-    """Produce a read-only player-by-player v6/v7 comparison."""
+    """Produce a read-only player-by-player version comparison."""
 
-    help = "Compare legacy v6 impact with v7 goals above expected."
+    help = "Compare player impact between two algorithm versions."
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Register comparison filters and output format."""
+        parser.add_argument(
+            "--old-version",
+            default="v7",
+            help="Baseline algorithm version (default: v7)",
+        )
+        parser.add_argument(
+            "--new-version",
+            default=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+            help=(
+                "Candidate algorithm version "
+                f"(default: {LATEST_MATCH_IMPACT_ALGORITHM_VERSION})"
+            ),
+        )
         parser.add_argument(
             "--match-data-id",
             action="append",
@@ -52,6 +66,10 @@ class Command(BaseCommand):
         limit = cast(int, options["limit"])
         if limit < 1:
             raise CommandError("--limit must be at least 1")
+        old_version = cast(str, options["old_version"])
+        new_version = cast(str, options["new_version"])
+        if old_version == new_version:
+            raise CommandError("--old-version and --new-version must differ")
 
         queryset = MatchData.objects.select_related(
             "match_link__home_team", "match_link__away_team"
@@ -75,13 +93,13 @@ class Command(BaseCommand):
             old_rows = {
                 row.player_id: row
                 for row in compute_match_impact_rows(
-                    match_data=match_data, algorithm_version="v6"
+                    match_data=match_data, algorithm_version=old_version
                 )
             }
             new_rows = {
                 row.player_id: row
                 for row in compute_match_impact_rows(
-                    match_data=match_data, algorithm_version="v7"
+                    match_data=match_data, algorithm_version=new_version
                 )
             }
             all_player_ids.update(old_rows)
@@ -110,16 +128,23 @@ class Command(BaseCommand):
             for player_id in player_ids:
                 old_score = float(old_rows[player_id].impact_score)
                 new_score = float(new_rows[player_id].impact_score)
+                old_wpa = float(old_rows[player_id].win_probability_added)
+                new_wpa = float(new_rows[player_id].win_probability_added)
                 comparison.append({
                     "match_data_id": str(match_data.id_uuid),
                     "match": label,
                     "player_id": player_id,
                     "player": usernames.get(player_id, player_id),
-                    "v6": old_score,
-                    "v7_gax": new_score,
+                    "old_version": old_version,
+                    "new_version": new_version,
+                    "old_score": old_score,
+                    "new_score": new_score,
                     "delta": round(new_score - old_score, 3),
-                    "v6_rank": old_rank[player_id],
-                    "v7_rank": new_rank[player_id],
+                    "old_wpa": old_wpa,
+                    "new_wpa": new_wpa,
+                    "wpa_delta": round(new_wpa - old_wpa, 5),
+                    "old_rank": old_rank[player_id],
+                    "new_rank": new_rank[player_id],
                     "rank_change": old_rank[player_id] - new_rank[player_id],
                 })
 
@@ -127,13 +152,17 @@ class Command(BaseCommand):
             self.stdout.write(json.dumps(comparison, indent=2, sort_keys=True))
             return
 
-        self.stdout.write("Match | Player | v6 | v7 GAX | Delta | Rank v6→v7")
+        self.stdout.write(
+            f"Match | Player | {old_version} | {new_version} | Delta | WPA | "
+            f"Rank {old_version}→{new_version}"
+        )
         self.stdout.write("-" * 88)
         for row in comparison:
             self.stdout.write(
-                f"{row['match']} | {row['player']} | {row['v6']:+.1f} | "
-                f"{row['v7_gax']:+.3f} | {row['delta']:+.3f} | "
-                f"{row['v6_rank']}→{row['v7_rank']}"
+                f"{row['match']} | {row['player']} | {row['old_score']:+.3f} | "
+                f"{row['new_score']:+.3f} | {row['delta']:+.3f} | "
+                f"{float(row['new_wpa']) * 100:+.1f}pp | "
+                f"{row['old_rank']}→{row['new_rank']}"
             )
         self.stdout.write(
             self.style.SUCCESS(

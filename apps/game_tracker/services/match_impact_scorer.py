@@ -16,7 +16,9 @@ from apps.game_tracker.domain.impact_scoring import (
     Side,
     advance_score_state as _advance_score_state,
     aggregate_v7_contributions,
+    aggregate_win_probability_added,
     compute_v7_contributions,
+    compute_v8_contributions,
     conceding_side_for_goal as _conceding_side_for_goal,
     defending_side_for_shot as _defending_side_for_shot,
     doorloop_concede_factor_for_version,
@@ -302,6 +304,14 @@ class MatchImpactRow:
     player_id: str
     team_id: str | None
     impact_score: Decimal
+    win_probability_added: Decimal = Decimal("0.00000")
+
+
+@dataclass(frozen=True)
+class _V8MatchSettings:
+    duration_minutes: float
+    home_team_id: str
+    away_team_id: str
 
 
 class ImpactBreakdownItem(TypedDict):
@@ -317,6 +327,11 @@ PlayerImpactBreakdown = dict[str, dict[str, ImpactBreakdownItem]]
 def _round_v7_score(value: float) -> Decimal:
     """Store enough precision for correct season aggregation; UI rounds to 1dp."""
     return Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
+def _round_wpa(value: float) -> Decimal:
+    """Store WPA precisely enough to aggregate percentage-point changes."""
+    return Decimal(str(value)).quantize(Decimal("0.00001"), rounding=ROUND_HALF_UP)
 
 
 def _compute_v7_rows_and_breakdown(
@@ -343,6 +358,47 @@ def _compute_v7_rows_and_breakdown(
             player_id=player_id,
             team_id=player_team_id.get(player_id),
             impact_score=_round_v7_score(score),
+        )
+        for player_id, score in totals.items()
+    ]
+    return rows, breakdown, contributions
+
+
+def _compute_v8_rows_and_breakdown(
+    *,
+    events: list[dict[str, Any]],
+    shots: list[dict[str, Any]],
+    known_player_ids: list[str],
+    player_team_id: dict[str, str],
+    settings: _V8MatchSettings,
+) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown, list[MatchImpactContribution]]:
+    contributions = compute_v8_contributions(
+        shots,
+        events,
+        match_duration_minutes=settings.duration_minutes,
+        home_team_id=settings.home_team_id,
+        away_team_id=settings.away_team_id,
+    )
+    totals: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
+    totals.update(aggregate_v7_contributions(contributions))
+    wpa_totals: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
+    wpa_totals.update(aggregate_win_probability_added(contributions))
+
+    breakdown: PlayerImpactBreakdown = {}
+    for contribution in contributions:
+        _add_breakdown(
+            breakdown,
+            pid=contribution.player_id,
+            category=contribution.category,
+            delta=contribution.points,
+        )
+
+    rows = [
+        MatchImpactRow(
+            player_id=player_id,
+            team_id=player_team_id.get(player_id),
+            impact_score=_round_v7_score(score),
+            win_probability_added=_round_wpa(wpa_totals.get(player_id, 0.0)),
         )
         for player_id, score in totals.items()
     ]
@@ -429,13 +485,20 @@ def _with_reconciled_v7_responsibilities(
 def compute_match_impact_contributions(
     *, match_data: MatchData
 ) -> list[MatchImpactContribution]:
-    """Return the event-level explanation for the current v7 score."""
-    _events, shots = build_match_timeline_payloads(match_data)
+    """Return the event-level explanation for the current v8 score."""
+    events, shots = build_match_timeline_payloads(match_data)
     shots = _with_reconciled_v7_responsibilities(
         match_data=match_data,
         shots=shots,
     )
-    return compute_v7_contributions(shots)
+    match = match_data.match_link
+    return compute_v8_contributions(
+        shots,
+        events,
+        match_duration_minutes=(match_data.parts * match_data.part_length) / 60,
+        home_team_id=str(match.home_team_id),
+        away_team_id=str(match.away_team_id),
+    )
 
 
 def _add_breakdown(
@@ -494,11 +557,11 @@ def _add_players_from_shots(
         player_team_id[pid] = tid
 
 
-def _add_players_from_goals(
+def _add_players_from_events(
     *, events: list[dict[str, Any]], player_team_id: dict[str, str]
 ) -> None:
     for ev in events:
-        if ev.get("type") != "goal":
+        if ev.get("type") not in {"goal", "possession_change"}:
             continue
         pid = str(ev.get("player_id") or "").strip()
         tid = str(ev.get("team_id") or "").strip()
@@ -522,7 +585,7 @@ def _build_player_team_map(
         home_team_id=home_team_id,
         away_team_id=away_team_id,
     )
-    _add_players_from_goals(events=events, player_team_id=player_team_id)
+    _add_players_from_events(events=events, player_team_id=player_team_id)
     return player_team_id
 
 
@@ -902,7 +965,7 @@ def compute_match_impact_rows(
     away_team_id = str(match.away_team_id)
 
     events, shots = build_match_timeline_payloads(match_data)
-    if algorithm_version == "v7":
+    if algorithm_version in {"v7", "v8"}:
         shots = _with_reconciled_v7_responsibilities(
             match_data=match_data,
             shots=shots,
@@ -926,6 +989,20 @@ def compute_match_impact_rows(
         away_team_id=away_team_id,
     )
     known_player_ids = sorted(player_team_id.keys())
+
+    if algorithm_version == "v8":
+        rows, _breakdown, _contributions = _compute_v8_rows_and_breakdown(
+            events=events,
+            shots=shots,
+            known_player_ids=known_player_ids,
+            player_team_id=player_team_id,
+            settings=_V8MatchSettings(
+                duration_minutes=(match_data.parts * match_data.part_length) / 60,
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+            ),
+        )
+        return rows
 
     if algorithm_version == "v7":
         rows, _breakdown, _contributions = _compute_v7_rows_and_breakdown(
@@ -1019,7 +1096,7 @@ def compute_match_impact_breakdown(
     away_team_id = str(match.away_team_id)
 
     events, shots = build_match_timeline_payloads(match_data)
-    if algorithm_version == "v7":
+    if algorithm_version in {"v7", "v8"}:
         shots = _with_reconciled_v7_responsibilities(
             match_data=match_data,
             shots=shots,
@@ -1043,6 +1120,20 @@ def compute_match_impact_breakdown(
         away_team_id=away_team_id,
     )
     known_player_ids = sorted(player_team_id.keys())
+
+    if algorithm_version == "v8":
+        rows, breakdown, _contributions = _compute_v8_rows_and_breakdown(
+            events=events,
+            shots=shots,
+            known_player_ids=known_player_ids,
+            player_team_id=player_team_id,
+            settings=_V8MatchSettings(
+                duration_minutes=(match_data.parts * match_data.part_length) / 60,
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+            ),
+        )
+        return rows, breakdown
 
     if algorithm_version == "v7":
         rows, breakdown, _contributions = _compute_v7_rows_and_breakdown(

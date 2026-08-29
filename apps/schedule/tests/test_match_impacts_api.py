@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from http import HTTPStatus
 import json
@@ -15,7 +16,12 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, PlayerMatchImpact
+from apps.game_tracker.models import (
+    MatchData,
+    MatchPart,
+    PlayerMatchImpact,
+    PossessionChange,
+)
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 )
@@ -103,6 +109,7 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
         player=home_player,
         team=home_team,
         impact_score=Decimal(str(home_fixture["impact_score"])),
+        win_probability_added=Decimal(str(home_fixture["win_probability_added"])),
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
     PlayerMatchImpact.objects.create(
@@ -110,6 +117,7 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
         player=away_player,
         team=away_team,
         impact_score=Decimal(str(away_fixture["impact_score"])),
+        win_probability_added=Decimal(str(away_fixture["win_probability_added"])),
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
     # Noise row at older version should not be returned.
@@ -159,3 +167,77 @@ def test_match_impacts_returns_empty_when_missing(client: Client) -> None:
     payload = response.json()
     assert payload["algorithm_version"] == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert payload["impacts"] == []
+
+
+@pytest.mark.django_db
+@override_settings(SECURE_SSL_REDIRECT=False)
+def test_match_impacts_exposes_possession_contribution(client: Client) -> None:
+    """The canonical response explains which player's interception added value."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2026", start_date=today, end_date=today)
+    home_team = Team.objects.create(
+        name="Home Team",
+        club=Club.objects.create(name="Home Club"),
+    )
+    away_team = Team.objects.create(
+        name="Away Team",
+        club=Club.objects.create(name="Away Club"),
+    )
+    start = timezone.now() - timedelta(minutes=20)
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=start,
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+    part = MatchPart.objects.create(
+        match_data=match_data,
+        part_number=1,
+        start_time=start,
+        active=False,
+    )
+    player = get_user_model().objects.create_user(username="interceptor").player
+    PossessionChange.objects.create(
+        match_data=match_data,
+        match_part=part,
+        team=home_team,
+        player=player,
+        kind=PossessionChange.INTERCEPTION,
+        time=start + timedelta(minutes=5),
+    )
+
+    response = client.get(f"/api/matches/{match.id_uuid}/impacts/")
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["algorithm_version"] == "v8"
+    assert payload["score_unit"] == "expected_goal_value_added"
+    assert payload["wpa_unit"] == "win_expectancy_added"
+    assert payload["win_probability_model"] == "poisson-possession-v1"
+    impact = next(
+        row
+        for row in payload["impacts"]
+        if row["player_id_uuid"] == str(player.id_uuid)
+    )
+    assert impact["impact_score"] == pytest.approx(0.18)
+    assert impact["win_probability_added"] > 0
+    assert impact["team_id_uuid"] == str(home_team.id_uuid)
+    assert len(impact["contributions"]) == 1
+    contribution = impact["contributions"][0]
+    assert contribution["player_id"] == str(player.id_uuid)
+    assert contribution["time"] == "5"
+    assert contribution["category"] == "possession_gain"
+    assert contribution["points"] == pytest.approx(0.18)
+    assert contribution["source_type"] == "possession_change"
+    assert contribution["possession_kind"] == "interception"
+    assert contribution["base_points"] == pytest.approx(0.18)
+    assert contribution["leverage_multiplier"] == pytest.approx(1.0)
+    assert contribution["transition_bonus"] == pytest.approx(0.0)
+    assert contribution["linked_goal_event_id"] is None
+    assert contribution["source_event_id"]
+    assert contribution["team_id"] == str(home_team.id_uuid)
+    assert contribution["win_probability_added"] > 0
+    assert contribution["win_expectancy_after"] > contribution["win_expectancy_before"]

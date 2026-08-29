@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
 from django.utils import timezone
 import pytest
 
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import MatchPlayer, PossessionChange, Shot
+from apps.game_tracker.models import GoalType, MatchPlayer, PossessionChange, Shot
 from apps.game_tracker.services.event_editor import (
     DeletePossessionChangeEvent,
     apply_event_editor_command,
+)
+from apps.game_tracker.services.match_impact import (
+    compute_match_impact_breakdown,
+    compute_match_impact_contributions,
 )
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
 from apps.game_tracker.services.match_timeline_payload import build_match_events
@@ -71,6 +76,106 @@ def possession_tracker() -> PossessionTracker:
         player=defender,
     )
     return tracker, attacker, defender
+
+
+@pytest.mark.django_db
+def test_possession_changes_contribute_to_player_impact(
+    possession_tracker: PossessionTracker,
+) -> None:
+    """An attributed loss and interception change only their responsible players."""
+    tracker, attacker, defender = possession_tracker
+
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "possession_change_reg",
+            "player_id": str(attacker.id_uuid),
+            "kind": PossessionChange.BALL_LOSS,
+        },
+    )
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "possession_change_reg",
+            "player_id": str(defender.id_uuid),
+            "kind": PossessionChange.INTERCEPTION,
+        },
+    )
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "possession_change_reg",
+            "kind": PossessionChange.BALL_LOSS,
+        },
+    )
+
+    rows, breakdown = compute_match_impact_breakdown(match_data=tracker.match_data)
+    rows_by_player = {row.player_id: row for row in rows}
+    attacker_id = str(attacker.id_uuid)
+    defender_id = str(defender.id_uuid)
+
+    assert rows_by_player[attacker_id].impact_score == Decimal("-0.180")
+    assert rows_by_player[attacker_id].win_probability_added < 0
+    assert rows_by_player[attacker_id].team_id == str(tracker.home_team.id_uuid)
+    assert breakdown[attacker_id]["possession_loss"] == {
+        "points": pytest.approx(-0.18),
+        "count": 1,
+    }
+    assert rows_by_player[defender_id].impact_score == Decimal("0.180")
+    assert rows_by_player[defender_id].win_probability_added > 0
+    assert rows_by_player[defender_id].team_id == str(tracker.home_team.id_uuid)
+    assert breakdown[defender_id]["possession_gain"] == {
+        "points": pytest.approx(0.18),
+        "count": 1,
+    }
+
+
+@pytest.mark.django_db
+def test_fast_goal_after_interception_adds_transition_impact(
+    possession_tracker: PossessionTracker,
+) -> None:
+    """The service links an ordered tracker interception to its quick goal."""
+    tracker, attacker, defender = possession_tracker
+    goal_type = GoalType.objects.create(name="Afstand schot")
+
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "possession_change_reg",
+            "player_id": str(defender.id_uuid),
+            "kind": PossessionChange.INTERCEPTION,
+        },
+    )
+    interception = PossessionChange.objects.get(match_data=tracker.match_data)
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "goal_reg",
+            "player_id": str(attacker.id_uuid),
+            "goal_type": str(goal_type.id_uuid),
+            "for_team": True,
+        },
+    )
+    goal = Shot.objects.get(match_data=tracker.match_data, scored=True)
+    goal.time = interception.time + timedelta(seconds=8)
+    goal.save(update_fields=["time"])
+
+    contributions = compute_match_impact_contributions(match_data=tracker.match_data)
+    interception_contribution = next(
+        contribution
+        for contribution in contributions
+        if contribution.player_id == str(defender.id_uuid)
+    )
+
+    assert interception_contribution.points == pytest.approx(0.27)
+    assert interception_contribution.transition_bonus == pytest.approx(0.09)
+    assert interception_contribution.linked_goal_event_id is not None
+    assert interception_contribution.win_probability_added > 0
 
 
 @pytest.mark.django_db

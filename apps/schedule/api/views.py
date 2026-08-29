@@ -30,6 +30,7 @@ from apps.awards.services.mvp import (
     cast_vote_anon,
 )
 from apps.game_tracker.composition import apply_tracker_command
+from apps.game_tracker.domain.win_probability import WPA_MODEL_VERSION
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
@@ -891,7 +892,9 @@ class MatchViewSet(
                     "match_data_id": None,
                     "status": "unknown",
                     "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-                    "score_unit": "goals_above_expected",
+                    "score_unit": "expected_goal_value_added",
+                    "wpa_unit": "win_expectancy_added",
+                    "win_probability_model": WPA_MODEL_VERSION,
                     "computed_at": None,
                     "impacts": [],
                 },
@@ -933,7 +936,9 @@ class MatchViewSet(
             "match_data_id": str(match_data.id_uuid),
             "status": match_data.status,
             "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            "score_unit": "goals_above_expected",
+            "score_unit": "expected_goal_value_added",
+            "wpa_unit": "win_expectancy_added",
+            "win_probability_model": WPA_MODEL_VERSION,
             "computed_at": computed_at,
             "impacts": [
                 {
@@ -943,6 +948,7 @@ class MatchViewSet(
                         str(impact.team_id) if impact.team_id else None
                     ),
                     "impact_score": float(impact.impact_score),
+                    "win_probability_added": float(impact.win_probability_added),
                     "contributions": contributions_by_player.get(
                         str(impact.player_id), []
                     ),
