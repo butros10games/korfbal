@@ -101,9 +101,17 @@ class EventProjectionQuerySet(models.QuerySet[models.Model]):
         fields: Iterable[str],
         batch_size: int | None = None,
     ) -> int:
-        """Append each replacement before materializing bulk updates."""
+        """Append each replacement before materializing bulk updates.
+
+        Raises:
+            ValueError: When no fields are specified.
+
+        """
         instances = list(objs)
         field_names = list(fields)
+        if not field_names:
+            msg = "Field names must be given to bulk_update()."
+            raise ValueError(msg)
         if match_event_recording_is_suppressed():
             return super().bulk_update(
                 instances,

@@ -53,7 +53,8 @@ def test_player_patch_requires_auth(client: Client) -> None:
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db

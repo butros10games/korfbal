@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.core.exceptions import ValidationError
+
 from apps.game_tracker.domain.match_limits import MAX_SUBSTITUTIONS_PER_TEAM
 from apps.game_tracker.models import MatchEvent, MatchPart, PlayerChange, PlayerGroup
 from apps.game_tracker.services.event_reconciliation import (
@@ -41,6 +43,55 @@ def _part_for_substitution(context: TrackerCommandContext) -> MatchPart | None:
     return match_part
 
 
+def _substitution_players_and_group(
+    *,
+    context: TrackerCommandContext,
+    new_player_id: str,
+    old_player_id: str,
+) -> tuple[Player, Player, PlayerGroup]:
+    """Resolve a reserve-for-active substitution within the reporting roster.
+
+    Raises:
+        TrackerCommandError: If either player or the lineup assignment is invalid.
+
+    """
+    try:
+        player_in = Player.objects.select_related("user").get(id_uuid=new_player_id)
+        player_out = Player.objects.select_related("user").get(id_uuid=old_player_id)
+        active_group = PlayerGroup.objects.exclude(
+            starting_type__name=RESERVE_GROUP_NAME,
+        ).get(
+            team=context.team,
+            match_data=context.match_data,
+            players__in=[player_out],
+        )
+        reserve_group = get_reserve_group(
+            match_data=context.match_data,
+            team=context.team,
+        )
+    except (
+        Player.DoesNotExist,
+        PlayerGroup.DoesNotExist,
+        PlayerGroup.MultipleObjectsReturned,
+        ValidationError,
+        ValueError,
+    ) as exc:
+        raise TrackerCommandError(
+            "Invalid substitution players.",
+            code="bad_request",
+        ) from exc
+
+    if (
+        player_in.pk == player_out.pk
+        or not reserve_group.players.filter(pk=player_in.pk).exists()
+    ):
+        raise TrackerCommandError(
+            "Incoming player is not registered as a reserve for this team.",
+            code="bad_request",
+        )
+    return player_in, player_out, active_group
+
+
 @dataclass(frozen=True, slots=True)
 class GetNonActivePlayersCommand:
     """Preserve the legacy command; reserve players already ship in state."""
@@ -65,18 +116,10 @@ class SubstituteCommand:
 
         """
         match_part = _part_for_substitution(context)
-        player_in = Player.objects.select_related("user").get(
-            id_uuid=self.new_player_id
-        )
-        player_out = Player.objects.select_related("user").get(
-            id_uuid=self.old_player_id
-        )
-        active_group = PlayerGroup.objects.exclude(
-            starting_type__name=RESERVE_GROUP_NAME,
-        ).get(
-            team=context.team,
-            match_data=context.match_data,
-            players__in=[player_out],
+        player_in, player_out, active_group = _substitution_players_and_group(
+            context=context,
+            new_player_id=self.new_player_id,
+            old_player_id=self.old_player_id,
         )
 
         plan = plan_substitution_reconciliation(

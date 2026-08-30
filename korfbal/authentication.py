@@ -54,7 +54,11 @@ class JwtBearerAuthentication(BaseAuthentication):
                 not found, inactive, or otherwise invalid.
 
         """
-        auth_header = get_authorization_header(request).decode("utf-8")
+        try:
+            auth_header = get_authorization_header(request).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise AuthenticationFailed("Invalid access token") from exc
+
         token = self._extract_bearer_token(auth_header)
         if not token:
             return None
@@ -81,6 +85,11 @@ class JwtBearerAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid user")
 
         return user, token
+
+    def authenticate_header(self, request: Any) -> str:
+        """Return the challenge used when bearer authentication fails."""
+        del request
+        return "Bearer"
 
 
 class JwtBearerAuthenticationScheme(OpenApiAuthenticationExtension):

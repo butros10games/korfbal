@@ -44,7 +44,7 @@
             },
             "configurations": {
                 "ci": {
-                    "command": "PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -n 0 apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-report=term --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83"
+                    "command": "PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -n auto --dist loadgroup apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-config=apps/django_projects/korfbal/.coveragerc --cov-report=term:skip-covered --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83"
                 }
             }
         },

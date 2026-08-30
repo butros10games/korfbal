@@ -101,11 +101,11 @@ def require_live_part(
     """
     match_part = current_part(match_data)
     opponent = other_team(match, team)
-    if is_paused(match_data, match_part):
-        raise TrackerCommandError(MATCH_IS_PAUSED_MESSAGE, code="match_paused")
     if match_part is None:
         raise TrackerCommandError(
             NO_ACTIVE_MATCH_PART_MESSAGE,
             code="no_active_part",
         )
+    if is_paused(match_data, match_part):
+        raise TrackerCommandError(MATCH_IS_PAUSED_MESSAGE, code="match_paused")
     return match_part, opponent

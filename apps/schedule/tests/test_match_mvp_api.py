@@ -24,6 +24,7 @@ from apps.player.models.player import Player
 
 
 pytestmark = pytest.mark.django_db
+UNKNOWN_CANDIDATE_ID = "00000000-0000-4000-8000-000000000003"
 
 
 def _match(*, finished: bool = False) -> TrackerMatchContext:
@@ -114,7 +115,7 @@ def test_mvp_vote_returns_conflict_when_match_not_finished(client: Client) -> No
         pytest.param("[]", "Invalid JSON body.", id="non-object-json"),
         pytest.param({}, "Missing 'candidate_id_uuid'.", id="missing-candidate"),
         pytest.param(
-            {"candidate_id_uuid": str(uuid4())},
+            {"candidate_id_uuid": UNKNOWN_CANDIDATE_ID},
             "Unknown candidate.",
             id="unknown-candidate",
         ),

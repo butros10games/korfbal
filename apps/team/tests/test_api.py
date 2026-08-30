@@ -594,9 +594,9 @@ def test_team_goal_song_admin_manage_player_and_fallback(client: Client) -> None
         ),
     )
 
-    # Not authenticated -> forbidden for moderation endpoint.
+    # Not authenticated -> explicit API authentication failure (never a redirect).
     response_forbidden = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
-    assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
+    assert response_forbidden.status_code == HTTPStatus.UNAUTHORIZED
 
     client.force_login(coach_user)
 

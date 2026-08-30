@@ -13,6 +13,7 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData, Shot
+from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
@@ -30,6 +31,7 @@ def test_hub_index_allows_authenticated_spectator(client: Client) -> None:
         username="spectator",
         password=TEST_PASSWORD,
     )
+    Player.objects.filter(user=user).delete()
     client.force_login(user)
 
     response = client.get(reverse("index"), secure=True)
@@ -141,6 +143,14 @@ def test_hub_index_player_with_upcoming_home_match(client: Client) -> None:
     assert payload["match_data"] is not None
     assert payload["home_score"] is None
     assert payload["away_score"] is None
+
+    repeat_response = client.get(reverse("index"), secure=True)
+    assert repeat_response.status_code == HTTP_STATUS_OK
+    assert (
+        repeat_response.json()["match_data"]["id_uuid"]
+        == payload["match_data"]["id_uuid"]
+    )
+    assert MatchData.objects.filter(match_link=match).count() == 1
 
 
 @pytest.mark.django_db

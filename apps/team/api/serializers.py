@@ -7,6 +7,7 @@ from typing import ClassVar
 from rest_framework import serializers
 
 from apps.club.api.serializers import ClubSerializer
+from apps.club.models.club import Club
 from apps.team.models.team import Team
 
 
@@ -14,7 +15,11 @@ class TeamSerializer(serializers.ModelSerializer):
     """Serializer for Team model."""
 
     club = ClubSerializer(read_only=True)
-    club_id = serializers.UUIDField(write_only=True)
+    club_id = serializers.PrimaryKeyRelatedField(
+        source="club",
+        queryset=Club.objects.all(),
+        write_only=True,
+    )
 
     class Meta:
         """Meta class for TeamSerializer."""

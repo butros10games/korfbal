@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
 from django.test.client import Client
+from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
@@ -36,6 +37,7 @@ def test_season_editor_access_reports_staff_capability(client: Client) -> None:
 @pytest.mark.django_db
 def test_season_editor_requires_staff_and_validates_dates(client: Client) -> None:
     """Only staff can manage seasons and inverted ranges are rejected."""
+    today = timezone.localdate()
     user = get_user_model().objects.create_user(
         username="schedule_viewer",
     )
@@ -50,8 +52,8 @@ def test_season_editor_requires_staff_and_validates_dates(client: Client) -> Non
         "/api/seasons/",
         data={
             "name": "2026/2027",
-            "start_date": "2027-06-01",
-            "end_date": "2026-08-01",
+            "start_date": (today + timedelta(days=1)).isoformat(),
+            "end_date": today.isoformat(),
         },
         content_type="application/json",
     )
@@ -62,8 +64,8 @@ def test_season_editor_requires_staff_and_validates_dates(client: Client) -> Non
         "/api/seasons/",
         data={
             "name": "2026/2027",
-            "start_date": "2026-08-01",
-            "end_date": "2027-06-01",
+            "start_date": (today - timedelta(days=30)).isoformat(),
+            "end_date": (today + timedelta(days=30)).isoformat(),
         },
         content_type="application/json",
     )

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from bg_uuidv7 import uuidv7
+from django.conf import settings
 from django.db import models
-from django.urls import reverse
 
 
 class Team(models.Model):
@@ -40,4 +40,4 @@ class Team(models.Model):
             str: The URL to the team detail view.
 
         """
-        return reverse("team_detail", kwargs={"team_id": self.id_uuid})
+        return f"{settings.WEB_APP_ORIGIN}/teams/{self.id_uuid}"

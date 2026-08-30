@@ -56,7 +56,8 @@ def test_spotify_play_requires_auth(client: Client) -> None:
         data=json.dumps({"track_uri": "spotify:track:123"}),
         content_type="application/json",
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db
@@ -325,7 +326,8 @@ def test_spotify_pause_requires_auth(client: Client) -> None:
         data=json.dumps({}),
         content_type="application/json",
     )
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db

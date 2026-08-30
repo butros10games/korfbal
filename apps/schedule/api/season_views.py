@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from apps.schedule.models import Season, SeasonPool
 
 from .serializers import SeasonPoolSerializer, SeasonSerializer
+from .validation import UUID_URL_REGEX, uuid_query_values
 
 
 class SeasonViewSet(viewsets.ModelViewSet):
@@ -20,6 +21,7 @@ class SeasonViewSet(viewsets.ModelViewSet):
     serializer_class = SeasonSerializer
     permission_classes = (permissions.IsAdminUser,)
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
     http_method_names = ("get", "post", "patch", "head", "options")
 
     def get_queryset(self) -> QuerySet[Season]:
@@ -59,6 +61,7 @@ class SeasonPoolViewSet(viewsets.ModelViewSet):
     serializer_class = SeasonPoolSerializer
     permission_classes = (permissions.IsAdminUser,)
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
     http_method_names = ("get", "post", "patch", "head", "options")
 
     def get_queryset(self) -> QuerySet[SeasonPool]:
@@ -74,7 +77,10 @@ class SeasonPoolViewSet(viewsets.ModelViewSet):
             # of allowing one query per team.
             .fetch_mode(models.FETCH_PEERS)
         )
-        season_id = self.request.query_params.get("season")
-        if season_id:
-            queryset = queryset.filter(season_id=season_id)
+        season_ids = uuid_query_values(
+            self.request.query_params.getlist("season"),
+            parameter="season",
+        )
+        if season_ids:
+            queryset = queryset.filter(season_id=season_ids[-1])
         return queryset

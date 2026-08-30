@@ -28,7 +28,8 @@ OnCommitCapture = Callable[
 def test_upload_profile_picture_requires_auth(client: Client) -> None:
     """Upload profile picture endpoint is authenticated."""
     response = client.post("/api/player/api/upload_profile_picture/")
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db
@@ -117,7 +118,8 @@ def test_upload_profile_picture_happy_path_persists_file_and_returns_url(
 def test_upload_goal_song_requires_auth(client: Client) -> None:
     """Upload goal song endpoint is authenticated."""
     response = client.post("/api/player/api/upload_goal_song/")
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db

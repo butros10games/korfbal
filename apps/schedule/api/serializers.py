@@ -282,7 +282,8 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
 
         if "teams" in attrs:
             teams = cast(list[Team], attrs["teams"])
-            if len(teams) < MIN_POOL_TEAMS:
+            selected_ids = {team.id_uuid for team in teams}
+            if len(selected_ids) < MIN_POOL_TEAMS:
                 raise serializers.ValidationError({
                     "team_ids": "Select at least two teams for a pool."
                 })
@@ -297,7 +298,6 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
                     "team_ids": "A team can belong to only one pool per season."
                 })
             if instance:
-                selected_ids = {team.id_uuid for team in teams}
                 used_ids = set(
                     Match.objects.filter(pool=instance).values_list(
                         "home_team_id", flat=True

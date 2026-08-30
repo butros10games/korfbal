@@ -21,7 +21,8 @@ NOT_CONFIGURED_VALUE = ""
 def test_spotify_connect_requires_authentication(client: Client) -> None:
     """Spotify connect endpoint should require authentication."""
     response = client.get("/api/player/spotify/connect/")
-    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.headers["Content-Type"].startswith("application/json")
 
 
 @pytest.mark.django_db

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from django.db import models
 from django.db.models import Q, QuerySet
@@ -65,6 +66,19 @@ _SONG_ID_PARAMETER = OpenApiParameter(
 )
 
 
+def _uuid_query_value(value: str, *, parameter: str) -> UUID:
+    """Parse a UUID query value or raise a controlled API error.
+
+    Raises:
+        ValidationError: If the supplied value is not a UUID.
+
+    """
+    try:
+        return UUID(value)
+    except (AttributeError, ValueError):
+        raise ValidationError({parameter: "Must be a valid UUID."}) from None
+
+
 @extend_schema_view(
     update_player_goal_song_selection=extend_schema(parameters=[_PLAYER_ID_PARAMETER]),
     remove_player_song=extend_schema(
@@ -94,7 +108,11 @@ class TeamViewSet(viewsets.ModelViewSet):
         """Optionally scope the paginated catalog to one club."""
         queryset = super().get_queryset()
         club_id = self.request.query_params.get("club")
-        return queryset.filter(club__id_uuid=club_id) if club_id else queryset
+        if not club_id:
+            return queryset
+        return queryset.filter(
+            club__id_uuid=_uuid_query_value(club_id, parameter="club")
+        )
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(
@@ -185,12 +203,13 @@ class TeamViewSet(viewsets.ModelViewSet):
                 {"detail": "Missing required query param: player"},
                 status=400,
             )
+        player_id = _uuid_query_value(player_param, parameter="player")
 
         player = (
             Player.objects
             .select_related("user")
             .only("id_uuid", "user__username")
-            .filter(id_uuid=player_param)
+            .filter(id_uuid=player_id)
             .first()
         )
         if not player:

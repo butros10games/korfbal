@@ -11,6 +11,7 @@ MVP_TABLES = {"schedule_matchmvp", "schedule_matchmvpvote"}
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow_migration
 def test_removing_legacy_schedule_state_preserves_mvp_tables() -> None:
     """The schedule state cleanup must never delete awards-owned MVP data."""
     executor = MigrationExecutor(connection)

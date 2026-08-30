@@ -13,6 +13,7 @@ class RecordingExpoClient:
     def __init__(self, *, should_fail: bool = False) -> None:
         """Initialize the recording client."""
         self.messages: list[dict[str, Any]] = []
+        self.attempts = 0
         self.should_fail = should_fail
 
     def send_messages(self, messages: list[dict[str, Any]]) -> None:
@@ -22,6 +23,7 @@ class RecordingExpoClient:
             RuntimeError: When provider failure simulation is enabled.
 
         """
+        self.attempts += 1
         if self.should_fail:
             raise RuntimeError("provider unavailable")
         self.messages.extend(messages)
@@ -63,3 +65,6 @@ def test_send_expo_push_tokens_is_best_effort() -> None:
         payload=ExpoPushPayload(title="Goal", body="Scored", url="/matches/1"),
         client=client,
     )
+
+    assert client.attempts == 1
+    assert client.messages == []

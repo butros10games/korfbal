@@ -257,7 +257,9 @@ def _fast_goal_after_interception(
 
     for later_event in events[event_index + 1 :]:
         later_time = _event_timestamp(later_event)
-        if later_time is None:
+        if later_time is None or (later_time.utcoffset() is None) != (
+            interception_time.utcoffset() is None
+        ):
             continue
         elapsed_seconds = (later_time - interception_time).total_seconds()
         if elapsed_seconds < 0:

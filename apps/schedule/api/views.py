@@ -60,6 +60,7 @@ from .constants import (
 from .match_viewset_events import MatchEventsActionsMixin
 from .permissions import IsClubMemberOrCoachOrAdmin
 from .serializers import MatchSerializer, MatchWriteSerializer
+from .validation import UUID_URL_REGEX, uuid_query_values
 
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,7 @@ class MatchViewSet(
     permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
     lookup_url_kwarg = "id"
+    lookup_value_regex = UUID_URL_REGEX
 
     def get_serializer_class(self) -> type[MatchSerializer | MatchWriteSerializer]:
         """Use an explicit flat serializer for staff schedule writes."""
@@ -278,9 +280,15 @@ class MatchViewSet(
             .fetch_mode(models.FETCH_RAISE)
         )
 
-        team_ids = self.request.query_params.getlist("team")
-        club_ids = self.request.query_params.getlist("club")
-        season_id = self.request.query_params.get("season")
+        team_ids = uuid_query_values(
+            self.request.query_params.getlist("team"), parameter="team"
+        )
+        club_ids = uuid_query_values(
+            self.request.query_params.getlist("club"), parameter="club"
+        )
+        season_ids = uuid_query_values(
+            self.request.query_params.getlist("season"), parameter="season"
+        )
 
         if not team_ids and self.request.query_params.get("followed"):
             player = self._get_player()
@@ -298,8 +306,8 @@ class MatchViewSet(
                 | Q(away_team__club__id_uuid__in=club_ids)
             )
 
-        if season_id:
-            queryset = queryset.filter(season__id_uuid=season_id)
+        if season_ids:
+            queryset = queryset.filter(season__id_uuid=season_ids[-1])
 
         return queryset
 
@@ -427,7 +435,11 @@ class MatchViewSet(
         queryset = (
             self
             .get_queryset()
-            .filter(start_time__gte=window)
+            .filter(
+                start_time__gte=window,
+                start_time__lte=timezone.now(),
+                tracker_data__status="finished",
+            )
             .order_by("-start_time")[:5]
         )
         serializer = self.get_serializer(queryset, many=True)
@@ -473,9 +485,15 @@ class MatchViewSet(
         now = timezone.now()
         match_filter = Q(match_link__start_time__lte=now)
 
-        team_ids = request.query_params.getlist("team")
-        club_ids = request.query_params.getlist("club")
-        season_id = request.query_params.get("season")
+        team_ids = uuid_query_values(
+            request.query_params.getlist("team"), parameter="team"
+        )
+        club_ids = uuid_query_values(
+            request.query_params.getlist("club"), parameter="club"
+        )
+        season_ids = uuid_query_values(
+            request.query_params.getlist("season"), parameter="season"
+        )
 
         if not team_ids and request.query_params.get("followed"):
             player = self._get_player()
@@ -492,8 +510,8 @@ class MatchViewSet(
                 match_link__away_team__club__id_uuid__in=club_ids
             )
 
-        if season_id:
-            match_filter &= Q(match_link__season__id_uuid=season_id)
+        if season_ids:
+            match_filter &= Q(match_link__season__id_uuid=season_ids[-1])
 
         match_data_queryset = (
             MatchData.objects
