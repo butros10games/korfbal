@@ -209,6 +209,15 @@ def _uuid_path_parameter(name: str) -> OpenApiParameter:
         parameters=[_uuid_path_parameter("reconciliation_id")]
     ),
     goal_detail=extend_schema(parameters=[_uuid_path_parameter("shot_id")]),
+    possession_change_detail=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "event_id",
+                OpenApiTypes.STR,
+                OpenApiParameter.PATH,
+            )
+        ]
+    ),
     substitute_detail=extend_schema(parameters=[_uuid_path_parameter("change_id")]),
     pause_detail=extend_schema(parameters=[_uuid_path_parameter("pause_id")]),
     timeout_detail=extend_schema(parameters=[_uuid_path_parameter("timeout_id")]),

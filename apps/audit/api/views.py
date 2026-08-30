@@ -63,7 +63,7 @@ def _runtime_ingest_token() -> str:
 def _token_valid(request: Request) -> bool:
     expected_token = _runtime_ingest_token()
     if not expected_token:
-        return True
+        return False
     incoming_token = str(request.headers.get("X-Audit-Token", "")).strip()
     return incoming_token == expected_token
 

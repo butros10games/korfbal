@@ -161,7 +161,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"{row['match']} | {row['player']} | {row['old_score']:+.3f} | "
                 f"{row['new_score']:+.3f} | {row['delta']:+.3f} | "
-                f"{float(row['new_wpa']) * 100:+.1f}pp | "
+                f"{cast(float, row['new_wpa']) * 100:+.1f}pp | "
                 f"{row['old_rank']}→{row['new_rank']}"
             )
         self.stdout.write(

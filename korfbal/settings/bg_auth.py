@@ -18,7 +18,11 @@ BG_AUTH_SUPPORT_EMAIL: str = "butrosgroot@gmail.com"
 BG_AUTH_EMAIL_CODE_VALIDITY_SECONDS: int = 15 * 60
 BG_AUTH_RESEND_CONFIRMATION_MAX_AGE: int = 24 * 60 * 60
 
-BG_AUTH_JWT_SIGNING_KEY = env("BG_AUTH_JWT_SIGNING_KEY", "fill-me-in-with-a-real-key")
+BG_AUTH_JWT_SIGNING_KEY = env(
+    "BG_AUTH_JWT_SIGNING_KEY",
+    "development-only-jwt-signing-key-change-me" if DEBUG else None,
+    required=not DEBUG,
+)
 
 _passkey_default_origin = (
     "https://korfbal.localhost" if DEBUG else "https://korfbal.butrosgroot.com"

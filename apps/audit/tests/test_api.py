@@ -10,11 +10,13 @@ from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
+from pytest_django.fixtures import SettingsWrapper
 
 from apps.audit.models import AuditEvent
 
 
 TEST_PASSWORD = "pass1234"  # nosec
+AUDIT_TOKEN = "top-secret"  # nosec
 EXPECTED_EXTENSION_ROWS = 2
 EXPECTED_BULK_CREATED = 2
 EXPECTED_CURSOR_PAGE_SIZE = 2
@@ -32,57 +34,36 @@ EXPECTED_TRENDS_CURRENT_ERROR_RATE = 25.0
 EXPECTED_HEALTH_WINDOW_HOURS = 6
 
 
+@pytest.mark.parametrize(
+    ("configured_token", "request_token", "expected_status"),
+    [
+        pytest.param("", None, HTTPStatus.FORBIDDEN, id="unconfigured"),
+        pytest.param(AUDIT_TOKEN, None, HTTPStatus.FORBIDDEN, id="missing"),
+        pytest.param(AUDIT_TOKEN, "wrong", HTTPStatus.FORBIDDEN, id="wrong"),
+        pytest.param(AUDIT_TOKEN, AUDIT_TOKEN, HTTPStatus.CREATED, id="matching"),
+    ],
+)
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_audit_ingest_creates_event_without_token(client: Client) -> None:
-    """Ingest endpoint should create an event when token auth is disabled."""
-    payload = {
-        "event_name": "tracker.goal",
-        "source_system": "django",
-        "severity": "info",
-        "message": "Goal scored",
-        "metadata": {"part": 2},
-    }
+def test_audit_ingest_authentication(
+    client: Client,
+    settings: SettingsWrapper,
+    configured_token: str,
+    request_token: str | None,
+    expected_status: HTTPStatus,
+) -> None:
+    """Ingest should fail closed and accept only the configured token."""
+    settings.KORFBAL_AUDIT_INGEST_TOKEN = configured_token
+    headers = {"X-Audit-Token": request_token} if request_token else {}
 
     response = client.post(
         "/api/audit/events/ingest/",
-        data=payload,
+        data={"event_name": "trade.updated", "source_system": "cli"},
         content_type="application/json",
+        headers=headers,
     )
 
-    assert response.status_code == HTTPStatus.CREATED
-    assert AuditEvent.objects.count() == 1
-    event = AuditEvent.objects.get()
-    assert event.event_name == "tracker.goal"
-    assert event.source_system == "django"
-
-
-@pytest.mark.django_db
-@override_settings(
-    SECURE_SSL_REDIRECT=False,
-    KORFBAL_AUDIT_INGEST_TOKEN="top-secret",  # nosec
-)
-def test_audit_ingest_requires_matching_token(client: Client) -> None:
-    """Configured ingest token should be enforced."""
-    payload = {
-        "event_name": "trade.updated",
-        "source_system": "cli",
-    }
-
-    response_forbidden = client.post(
-        "/api/audit/events/ingest/",
-        data=payload,
-        content_type="application/json",
-    )
-    assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
-
-    response_ok = client.post(
-        "/api/audit/events/ingest/",
-        data=payload,
-        content_type="application/json",
-        headers={"X-Audit-Token": "top-secret"},
-    )
-    assert response_ok.status_code == HTTPStatus.CREATED
+    assert response.status_code == expected_status
+    assert AuditEvent.objects.exists() is (expected_status == HTTPStatus.CREATED)
 
 
 @pytest.mark.django_db
@@ -136,7 +117,7 @@ def test_timeline_filters_and_ordering(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
+@override_settings(KORFBAL_AUDIT_INGEST_TOKEN=AUDIT_TOKEN)
 def test_audit_bulk_ingest_creates_multiple_events(client: Client) -> None:
     """Bulk ingest should create all provided events in one call."""
     response = client.post(
@@ -155,6 +136,7 @@ def test_audit_bulk_ingest_creates_multiple_events(client: Client) -> None:
             ]
         },
         content_type="application/json",
+        headers={"X-Audit-Token": AUDIT_TOKEN},
     )
 
     assert response.status_code == HTTPStatus.CREATED
