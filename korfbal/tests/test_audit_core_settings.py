@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from django.conf import settings
+import pytest
 
 from korfbal import celery_app
 from korfbal.celery import app
+from korfbal.settings_test import (
+    _postgres_test_database_name,
+    _sqlite_test_database_name,
+)
 
 
 def test_api_authentication_defaults_are_secure_and_ordered() -> None:
@@ -34,6 +39,18 @@ def test_test_settings_isolate_external_runtime_dependencies() -> None:
     assert settings.CELERY_BROKER_URL == "memory://"
     assert settings.CELERY_RESULT_BACKEND == "cache+memory://"
     assert settings.CELERY_TASK_ALWAYS_EAGER is True
+
+
+def test_parallel_test_lanes_use_distinct_database_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent pytest processes must never share an SQLite database file."""
+    monkeypatch.delenv("KORFBAL_TEST_DB_LANE", raising=False)
+    assert _sqlite_test_database_name() == "test.sqlite3"
+
+    monkeypatch.setenv("KORFBAL_TEST_DB_LANE", "migrations")
+    assert _sqlite_test_database_name() == "test-migrations.sqlite3"
+    assert _postgres_test_database_name("korfbal") == "test_korfbal_migrations"
 
 
 def test_package_exports_the_configured_celery_application() -> None:

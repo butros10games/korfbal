@@ -56,6 +56,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   detail routes so malformed identifiers become 404s instead of leaking ORM validation errors.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
+- Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those
+  against real migrations in an isolated database while ordinary tests use `--nomigrations`.
 - Keep test file storage rooted through `MEDIA_ROOT` rather than a fixed `STORAGES` location so the
   autouse isolation fixture can give every test and xdist worker its own temporary directory.
 - Keep values evaluated inside `pytest.mark.parametrize` deterministic; collection-time randomness

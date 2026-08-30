@@ -11,13 +11,16 @@ import os
 
 from .settings import *
 from .settings.env import BASE_DIR as SETTINGS_BASE_DIR
-from .settings.services import DATABASES
+from .settings.services import DATABASES as SERVICE_DATABASES
 
 
 # Keep ruff happy with explicit bindings for star-imported settings.
 # (We intentionally override these below.)
 STORAGES: dict[str, dict[str, object]] = globals().get("STORAGES", {})
 STATICFILES_STORAGE = globals().get("STATICFILES_STORAGE", "")
+DATABASES: dict[str, dict[str, object]] = {
+    alias: dict(configuration) for alias, configuration in SERVICE_DATABASES.items()
+}
 
 
 # In-memory cache (avoid Valkey/Redis during tests)
@@ -58,10 +61,30 @@ KORFBAL_TEST_FAST_POLL = True
 # ---------------------------------------------------------------------------
 # Database fallback for tests
 # ---------------------------------------------------------------------------
-if os.getenv("DJANGO_TEST_USE_POSTGRES", "").lower() not in {"1", "true", "yes", "on"}:
+def _sqlite_test_database_name() -> str:
+    lane = os.getenv("KORFBAL_TEST_DB_LANE", "")
+    return f"test-{lane}.sqlite3" if lane else "test.sqlite3"
+
+
+def _postgres_test_database_name(database_name: str) -> str:
+    lane = os.getenv("KORFBAL_TEST_DB_LANE", "")
+    return f"test_{database_name}_{lane}"
+
+
+use_postgres = os.getenv("DJANGO_TEST_USE_POSTGRES", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+if not use_postgres:
     DATABASES["default"] = {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(SETTINGS_BASE_DIR / "test.sqlite3"),
+        "NAME": str(SETTINGS_BASE_DIR / _sqlite_test_database_name()),
+    }
+elif os.getenv("KORFBAL_TEST_DB_LANE"):
+    DATABASES["default"]["TEST"] = {
+        "NAME": _postgres_test_database_name(str(DATABASES["default"]["NAME"])),
     }
 
 

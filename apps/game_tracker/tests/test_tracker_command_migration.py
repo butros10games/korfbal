@@ -13,6 +13,7 @@ from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.migration_regression
 @pytest.mark.slow_migration
 def test_global_command_id_migration_rekeys_cross_match_duplicates() -> None:
     """Valid historical composite IDs cannot block the global unique upgrade."""

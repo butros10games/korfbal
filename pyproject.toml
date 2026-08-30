@@ -62,5 +62,6 @@ python_files = ["test_*.py"]
 pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
 markers = [
+    "migration_regression: test that exercises Django's historical migration graph",
     "slow_migration: historical-state migration regression scheduled before faster tests",
 ]

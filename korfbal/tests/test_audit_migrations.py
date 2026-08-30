@@ -17,6 +17,9 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 )
 
 
+pytestmark = pytest.mark.migration_regression
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.slow_migration
 def test_mvp_model_move_preserves_award_and_vote_rows() -> None:
