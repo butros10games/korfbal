@@ -11,7 +11,6 @@ from datetime import timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -25,10 +24,9 @@ from apps.team.models import Team
 
 DEFAULT_UPCOMING_LIMIT = 5
 MINIMUM_LIMIT = 1
+pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_next_scopes_to_followed_teams(client: Client) -> None:
     """The next endpoint should respect ?followed=1 for authenticated players."""
     today = timezone.now().date()
@@ -65,7 +63,6 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # nosec
     )
     user.player.team_follow.add(followed_team)
 
@@ -77,8 +74,6 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
     assert payload["id_uuid"] == str(followed_match.id_uuid)
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -> None:
     """Regression test: followed endpoints should tolerate users without Player rows."""
     today = timezone.now().date()
@@ -101,7 +96,6 @@ def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -
 
     user = get_user_model().objects.create_user(
         username="no_player",
-        password="pass1234",  # nosec
     )
     # Delete the auto-created player row (signal) to mimic a partially-migrated user.
     Player.objects.filter(user=user).delete()
@@ -115,8 +109,6 @@ def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -
     assert payload, "Expected at least one upcoming match"
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_upcoming_filters_by_team_and_limit_parsing(client: Client) -> None:
     """Upcoming should filter by team and handle bad/zero limits safely."""
     today = timezone.now().date()
@@ -174,8 +166,6 @@ def test_match_upcoming_filters_by_team_and_limit_parsing(client: Client) -> Non
     assert len(response_zero_limit.json()) == MINIMUM_LIMIT
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_recent_uses_seven_day_window(client: Client) -> None:
     """Recent should only include matches started in the last 7 days."""
     today = timezone.now().date()
@@ -216,8 +206,6 @@ def test_match_recent_uses_seven_day_window(client: Client) -> None:
     assert str(outside_window.id_uuid) not in ids
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_finished_respects_team_and_season_filters(client: Client) -> None:
     """Finished summaries should respect team + season filtering."""
     today = timezone.now().date()

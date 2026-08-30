@@ -10,7 +10,6 @@ from pathlib import Path
 from uuid import UUID
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -33,6 +32,7 @@ from apps.team.models import Team
 FIXTURES_DIR = (
     Path(__file__).resolve().parents[6] / "fixtures" / "korfbal" / "match-impact"
 )
+pytestmark = pytest.mark.django_db
 
 
 def _read_fixture(name: str) -> dict[str, object]:
@@ -44,8 +44,6 @@ def _set_player_uuid(player: Player, player_id: str) -> Player:
     return Player.objects.get(pk=player_id)
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_impacts_returns_persisted_rows(client: Client) -> None:
     """The endpoint should match the shared stored-impact contract fixture."""
     fixture = _read_fixture("stored-impact-contract.json")
@@ -89,11 +87,9 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
 
     home_user = get_user_model().objects.create_user(
         username="home_player",
-        password="pass1234",  # nosec
     )
     away_user = get_user_model().objects.create_user(
         username="away_player",
-        password="pass1234",  # nosec
     )
     home_player = _set_player_uuid(
         home_user.player,
@@ -123,7 +119,6 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
     # Noise row at older version should not be returned.
     legacy_user = get_user_model().objects.create_user(
         username="legacy_player",
-        password="pass1234",  # nosec
     )
     PlayerMatchImpact.objects.create(
         match_data=match_data,
@@ -142,8 +137,6 @@ def test_match_impacts_returns_persisted_rows(client: Client) -> None:
     assert response.json() == fixture
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_impacts_returns_empty_when_missing(client: Client) -> None:
     """When impacts haven't been computed yet, the endpoint returns an empty list."""
     today = timezone.now().date()
@@ -169,8 +162,6 @@ def test_match_impacts_returns_empty_when_missing(client: Client) -> None:
     assert payload["impacts"] == []
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_impacts_exposes_possession_contribution(client: Client) -> None:
     """The canonical response explains which player's interception added value."""
     today = timezone.now().date()

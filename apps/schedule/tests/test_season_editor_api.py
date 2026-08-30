@@ -6,7 +6,6 @@ from datetime import UTC, date, datetime
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 import pytest
 
@@ -17,7 +16,6 @@ from apps.team.models import Team
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_season_editor_access_reports_staff_capability(client: Client) -> None:
     """The public capability probe reveals no account details."""
     anonymous_response = client.get("/api/seasons/access/")
@@ -26,7 +24,6 @@ def test_season_editor_access_reports_staff_capability(client: Client) -> None:
 
     staff = get_user_model().objects.create_user(
         username="schedule_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
@@ -37,12 +34,10 @@ def test_season_editor_access_reports_staff_capability(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_season_editor_requires_staff_and_validates_dates(client: Client) -> None:
     """Only staff can manage seasons and inverted ranges are rejected."""
     user = get_user_model().objects.create_user(
         username="schedule_viewer",
-        password="pass1234",  # nosec
     )
     client.force_login(user)
     forbidden = client.get("/api/seasons/")
@@ -87,12 +82,10 @@ def test_season_editor_requires_staff_and_validates_dates(client: Client) -> Non
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_staff_can_create_and_quick_edit_matches(client: Client) -> None:
     """Match writes support the exact fields used by the season editor."""
     staff = get_user_model().objects.create_user(
         username="match_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
@@ -160,12 +153,10 @@ def test_staff_can_create_and_quick_edit_matches(client: Client) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_staff_can_delete_match_with_tracker_history(client: Client) -> None:
     """Deleting a tracked match does not recreate live rows during its cascade."""
     staff = get_user_model().objects.create_user(
         username="tracked_match_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
@@ -215,12 +206,10 @@ def test_staff_can_delete_match_with_tracker_history(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_staff_can_manage_season_pools(client: Client) -> None:
     """Staff can create and edit a season pool with its team membership."""
     staff = get_user_model().objects.create_user(
         username="pool_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
@@ -277,12 +266,10 @@ def test_staff_can_manage_season_pools(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_pooled_matches_require_teams_from_the_same_season_pool(client: Client) -> None:
     """Pool assignment constrains both the season and the participating teams."""
     staff = get_user_model().objects.create_user(
         username="pooled_match_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)

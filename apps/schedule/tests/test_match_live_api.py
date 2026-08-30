@@ -3,7 +3,6 @@
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -14,8 +13,9 @@ from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
+pytestmark = pytest.mark.django_db
+
+
 def test_match_live_state_is_public(client: Client) -> None:
     """Live state should be available without authentication."""
     today = timezone.now().date()
@@ -33,8 +33,6 @@ def test_match_live_state_is_public(client: Client) -> None:
     assert response.status_code == HTTPStatus.OK
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_live_state_and_poll_return_payload(client: Client) -> None:
     """Live state should return timer/score and poll should timeout and then change."""
     today = timezone.now().date()
@@ -56,7 +54,6 @@ def test_match_live_state_and_poll_return_payload(client: Client) -> None:
 
     user = get_user_model().objects.create_user(
         username="viewer",
-        password="pass1234",  # nosec
     )
 
     response = client.get(f"/api/matches/{match.id_uuid}/live/")

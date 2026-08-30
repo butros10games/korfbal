@@ -5,7 +5,6 @@ from http import HTTPStatus
 import json
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -26,10 +25,9 @@ from apps.team.models import Team
 
 
 TIMELINE_IDENTITY_VERSION = 3
+pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_events_halftime_substitution_is_serialized_as_rust(
     client: Client,
 ) -> None:
@@ -77,11 +75,9 @@ def test_match_events_halftime_substitution_is_serialized_as_rust(
     user_model = get_user_model()
     player_out_user = user_model.objects.create_user(
         username="player_out",
-        password="pass1234",  # nosec
     )
     player_in_user = user_model.objects.create_user(
         username="player_in",
-        password="pass1234",  # nosec
     )
 
     base = timezone.now()
@@ -136,8 +132,6 @@ def test_match_events_halftime_substitution_is_serialized_as_rust(
     assert "time_iso" in halftime_sub
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_event_during_pause_subtracts_only_elapsed_pause_time(client: Client) -> None:
     """A completed pause must not subtract time that followed the event itself."""
     today = timezone.now().date()
@@ -196,8 +190,6 @@ def test_event_during_pause_subtracts_only_elapsed_pause_time(client: Client) ->
     assert event["time"] == "5"
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_shots_includes_missed_shots_without_time_or_part(
     client: Client,
 ) -> None:
@@ -233,7 +225,6 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     user_model = get_user_model()
     shooter_user = user_model.objects.create_user(
         username="shooter",
-        password="pass1234",  # nosec
     )
 
     missed = Shot.objects.create(
@@ -265,8 +256,6 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     assert "time_iso" not in item
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
     """Timeline refetches transfer only entities changed after the cached revision."""
     today = timezone.now().date()
