@@ -72,7 +72,7 @@ def test_active_member_clubs_respects_inclusive_date_window() -> None:
     }
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_player_club_membership_enforces_history_constraints() -> None:
     player = create_tracker_player(username="membership-constraints")
     club = Club.objects.create(name="Membership Constraints")
@@ -117,7 +117,7 @@ def test_player_club_membership_enforces_history_constraints() -> None:
     )
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_player_song_cached_source_constraint_is_conditional() -> None:
     first = create_tracker_player(username="cached-constraint-first")
     second = create_tracker_player(username="cached-constraint-second")

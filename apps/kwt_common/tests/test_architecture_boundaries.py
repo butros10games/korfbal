@@ -50,44 +50,36 @@ def _is_forbidden_import(*, module: str, relative_level: int) -> bool:
     return is_local_import and bool(FORBIDDEN_LOCAL_LAYERS.intersection(module_parts))
 
 
-def test_inner_layers_do_not_import_adapters_or_http_frameworks() -> None:
-    """Inner layers must not depend on inbound/outbound adapters or HTTP frameworks."""
-    violations: list[str] = []
+def test_layer_import_boundaries_are_enforced() -> None:
+    """Inner and inbound layers must keep their dependency direction."""
+    inner_violations: list[str] = []
+    api_violations: list[str] = []
 
     for path in APPS_DIR.rglob("*.py"):
         if "__pycache__" in path.parts or "tests" in path.parts:
             continue
-        if not _is_boundary_file(path):
+        relative_path = path.relative_to(APPS_DIR)
+        is_inner_boundary = _is_boundary_file(path)
+        is_api_boundary = "api" in relative_path.parts
+        if not is_inner_boundary and not is_api_boundary:
             continue
 
         tree = ast.parse(path.read_text(), filename=str(path))
         for line_number, module, relative_level in _imported_modules(tree):
-            if _is_forbidden_import(module=module, relative_level=relative_level):
-                rel_path = path.relative_to(APPS_DIR)
-                violations.append(f"{rel_path}:{line_number} imports {module}")
+            location = f"{relative_path}:{line_number} imports {module}"
+            if is_inner_boundary and _is_forbidden_import(
+                module=module,
+                relative_level=relative_level,
+            ):
+                inner_violations.append(location)
 
-    assert sorted(violations) == []
-
-
-def test_api_layers_do_not_import_outbound_adapters() -> None:
-    """Inbound HTTP adapters must reach providers through composition and ports."""
-    violations: list[str] = []
-
-    for path in APPS_DIR.rglob("*.py"):
-        if "__pycache__" in path.parts or "tests" in path.parts:
-            continue
-        if "api" not in path.relative_to(APPS_DIR).parts:
-            continue
-
-        tree = ast.parse(path.read_text(), filename=str(path))
-        for line_number, module, relative_level in _imported_modules(tree):
             module_parts = module.split(".")
             is_local_import = relative_level > 0 or module.startswith("apps.")
-            if is_local_import and "adapters" in module_parts:
-                rel_path = path.relative_to(APPS_DIR)
-                violations.append(f"{rel_path}:{line_number} imports {module}")
+            if is_api_boundary and is_local_import and "adapters" in module_parts:
+                api_violations.append(location)
 
-    assert sorted(violations) == []
+    assert sorted(inner_violations) == []
+    assert sorted(api_violations) == []
 
 
 def test_boundary_file_detection_includes_task_and_signal_packages() -> None:

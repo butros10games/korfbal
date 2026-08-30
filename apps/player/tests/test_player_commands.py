@@ -9,7 +9,10 @@ from django.db import transaction
 from django.test import override_settings
 import pytest
 
-from apps.game_tracker.tests.tracker_test_helpers import create_tracker_player
+from apps.game_tracker.tests.tracker_test_helpers import (
+    OnCommitCapture,
+    create_tracker_player,
+)
 from apps.player.application.ports import JobDispatchUnavailableError
 from apps.player.models import Player, PlayerPushSubscription, PlayerSong
 from apps.player.models.cached_song import CachedSongStatus
@@ -117,12 +120,14 @@ def test_owned_song_command_rejects_another_players_song() -> None:
     assert PlayerSong.objects.filter(id_uuid=song.id_uuid).exists()
 
 
-@pytest.mark.django_db(transaction=True)
-def test_song_creation_dispatches_only_after_commit() -> None:
+@pytest.mark.django_db
+def test_song_creation_dispatches_only_after_commit(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="song-command-commit")
     jobs = Mock()
 
-    with transaction.atomic():
+    with django_capture_on_commit_callbacks(execute=True), transaction.atomic():
         creation = create_player_song(
             player=player,
             uploaded_audio=None,
@@ -134,20 +139,30 @@ def test_song_creation_dispatches_only_after_commit() -> None:
     jobs.cached_song.assert_called_once_with(str(creation.song.cached_song_id))
 
 
-@pytest.mark.django_db(transaction=True)
-def test_song_creation_rollback_does_not_dispatch() -> None:
+@pytest.mark.django_db
+def test_song_creation_rollback_does_not_dispatch(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="song-command-rollback")
     jobs = Mock()
 
-    with pytest.raises(RuntimeError, match="rollback"):
+    with (
+        django_capture_on_commit_callbacks(execute=True),
+        pytest.raises(
+            RuntimeError,
+            match="rollback",
+        ),
+    ):
         _create_song_then_rollback(player=player, jobs=jobs)
 
     jobs.cached_song.assert_not_called()
     assert not PlayerSong.objects.filter(player=player).exists()
 
 
-@pytest.mark.django_db(transaction=True)
-def test_song_settings_command_syncs_selected_start_time_after_commit() -> None:
+@pytest.mark.django_db
+def test_song_settings_command_syncs_selected_start_time_after_commit(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     updated_start_seconds = 19
     player = create_tracker_player(username="song-settings-command")
     song = PlayerSong.objects.create(player=player)
@@ -155,7 +170,7 @@ def test_song_settings_command_syncs_selected_start_time_after_commit() -> None:
     player.save(update_fields=["goal_song_song_ids"])
     jobs = Mock()
 
-    with transaction.atomic():
+    with django_capture_on_commit_callbacks(execute=True), transaction.atomic():
         updated = update_owned_player_song_settings(
             player=player,
             song_id=str(song.id_uuid),
@@ -175,7 +190,7 @@ def test_song_settings_command_syncs_selected_start_time_after_commit() -> None:
     assert player.song_start_time == updated_start_seconds
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_playback_only_song_update_does_not_regenerate_audio() -> None:
     player = create_tracker_player(username="song-playback-only-command")
     song = PlayerSong.objects.create(player=player)
@@ -193,18 +208,21 @@ def test_playback_only_song_update_does_not_regenerate_audio() -> None:
     assert updated.playback_speed == pytest.approx(1.3)
 
 
-@pytest.mark.django_db(transaction=True)
-def test_song_creation_marks_failed_when_dispatch_is_unavailable() -> None:
+@pytest.mark.django_db
+def test_song_creation_marks_failed_when_dispatch_is_unavailable(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="song-command-broker-failure")
     jobs = Mock()
     jobs.cached_song.side_effect = JobDispatchUnavailableError
 
-    creation = create_player_song(
-        player=player,
-        uploaded_audio=None,
-        spotify_url="https://open.spotify.com/track/broker-failure",
-        jobs=jobs,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        creation = create_player_song(
+            player=player,
+            uploaded_audio=None,
+            spotify_url="https://open.spotify.com/track/broker-failure",
+            jobs=jobs,
+        )
 
     cached = creation.song.cached_song
     assert cached is not None
@@ -213,8 +231,10 @@ def test_song_creation_marks_failed_when_dispatch_is_unavailable() -> None:
     assert cached.error_message == "Celery broker unavailable"
 
 
-@pytest.mark.django_db(transaction=True)
-def test_retry_command_commits_queued_state_before_dispatch() -> None:
+@pytest.mark.django_db
+def test_retry_command_commits_queued_state_before_dispatch(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="song-retry-command")
     song = PlayerSong.objects.create(
         player=player,
@@ -223,7 +243,7 @@ def test_retry_command_commits_queued_state_before_dispatch() -> None:
     )
     jobs = Mock()
 
-    with transaction.atomic():
+    with django_capture_on_commit_callbacks(execute=True), transaction.atomic():
         retried = retry_owned_player_song_download(
             player=player,
             song_id=str(song.id_uuid),

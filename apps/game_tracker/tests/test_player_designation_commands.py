@@ -16,6 +16,7 @@ from apps.game_tracker.services.player_designation import (
 )
 from apps.game_tracker.tests.fakes import RecordingMatchChangePublisher
 from apps.game_tracker.tests.tracker_test_helpers import (
+    OnCommitCapture,
     create_group_types,
     create_tracker_match,
     create_tracker_player,
@@ -30,8 +31,10 @@ def _staff_actor(*, username: str) -> object:
     return actor
 
 
-@pytest.mark.django_db(transaction=True)
-def test_designation_command_commits_roster_revision_and_publication() -> None:
+@pytest.mark.django_db
+def test_designation_command_commits_roster_revision_and_publication(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     """One command owns the lineup write and its observable side effects."""
     tracker = create_tracker_match(prefix="Designation command")
     create_group_types("Reserve")
@@ -43,15 +46,16 @@ def test_designation_command_commits_roster_revision_and_publication() -> None:
     player = create_tracker_player(username="designation-player")
     publisher = RecordingMatchChangePublisher()
 
-    result = apply_player_designation(
-        actor=_staff_actor(username="designation-editor"),
-        command=DesignatePlayersCommand(
-            players=(PlayerDesignationSelection(player_id=str(player.id_uuid)),),
-            target_group_id=str(reserve.id_uuid),
-            expected_revision=tracker.match_data.live_revision,
-        ),
-        publisher=publisher,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        result = apply_player_designation(
+            actor=_staff_actor(username="designation-editor"),
+            command=DesignatePlayersCommand(
+                players=(PlayerDesignationSelection(player_id=str(player.id_uuid)),),
+                target_group_id=str(reserve.id_uuid),
+                expected_revision=tracker.match_data.live_revision,
+            ),
+            publisher=publisher,
+        )
 
     tracker.match_data.refresh_from_db()
     assert reserve.players.filter(pk=player.pk).exists()
@@ -76,7 +80,7 @@ def test_designation_command_commits_roster_revision_and_publication() -> None:
     }
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_invalid_batch_rolls_back_all_designations() -> None:
     """A later invalid move cannot leave earlier players partially moved."""
     tracker = create_tracker_match(prefix="Designation rollback")
@@ -123,7 +127,7 @@ def test_invalid_batch_rolls_back_all_designations() -> None:
     assert publisher.changes == []
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_capacity_failure_is_revision_free() -> None:
     """Capacity validation runs inside the command without partial side effects."""
     tracker = create_tracker_match(prefix="Designation capacity")

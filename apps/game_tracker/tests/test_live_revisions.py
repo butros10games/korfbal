@@ -23,7 +23,7 @@ UNDO_REVISION = 3
 STALE_WRITERS_REVISION = 2
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_tracker_command_commits_one_durable_revision() -> None:
     """A command with several ORM writes advances the match exactly once."""
     tracker = create_tracker_match(prefix="Live revision")
@@ -39,7 +39,7 @@ def test_tracker_command_commits_one_durable_revision() -> None:
     assert state["live_revision"] == 1
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_undo_advances_revision_after_deleting_last_event() -> None:
     """Undo remains observable even though its newest event is deleted."""
     tracker = create_tracker_match(prefix="Live undo")
@@ -66,7 +66,7 @@ def test_undo_advances_revision_after_deleting_last_event() -> None:
     assert state["last_event"] == {"type": "no_event"}
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_stale_writers_cannot_overwrite_a_newer_revision() -> None:
     """Two writers loaded at the same revision still produce unique revisions."""
     tracker = create_tracker_match(prefix="Live concurrency")
@@ -86,7 +86,7 @@ def test_stale_writers_cannot_overwrite_a_newer_revision() -> None:
     ) == [1, STALE_WRITERS_REVISION]
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_change_summary_preserves_resources_and_entity_ids() -> None:
     """Fallback pollers can invalidate only the changed datasets."""
     tracker = create_tracker_match(prefix="Live resource summary")
@@ -118,7 +118,7 @@ def test_change_summary_preserves_resources_and_entity_ids() -> None:
     assert ahead.resources == set(LiveResource)
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_compact_tracker_poll_reuses_initial_configuration() -> None:
     """Repeated tracker updates omit teams, IDs, and goal type configuration."""
     tracker = create_tracker_match(prefix="Compact tracker")

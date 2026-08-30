@@ -11,7 +11,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import transaction
 import pytest
 
-from apps.game_tracker.tests.tracker_test_helpers import create_tracker_player
+from apps.game_tracker.tests.tracker_test_helpers import (
+    OnCommitCapture,
+    create_tracker_player,
+)
 from apps.player.application.ports import CommandRunOptions, WebPushDeliveryError
 from apps.player.models import CachedSong, PlayerPushSubscription, PlayerSong
 from apps.player.models.cached_song import CachedSongStatus
@@ -239,8 +242,10 @@ def test_invalid_goal_song_selection_does_not_persist_partial_settings() -> None
     assert player.goal_song_song_ids == []
 
 
-@pytest.mark.django_db(transaction=True)
-def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit() -> None:
+@pytest.mark.django_db
+def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="direct-upload-command")
     jobs = Mock()
     uploaded = SimpleUploadedFile(
@@ -249,7 +254,7 @@ def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit() -> N
         content_type="audio/mpeg",
     )
 
-    with transaction.atomic():
+    with django_capture_on_commit_callbacks(execute=True), transaction.atomic():
         creation = create_player_song(
             player=player,
             uploaded_audio=uploaded,
@@ -267,24 +272,27 @@ def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit() -> N
     jobs.player_song.assert_called_once_with(str(song.id_uuid))
 
 
-@pytest.mark.django_db(transaction=True)
-def test_spotify_song_creation_is_idempotent_for_one_player() -> None:
+@pytest.mark.django_db
+def test_spotify_song_creation_is_idempotent_for_one_player(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
     player = create_tracker_player(username="idempotent-song-command")
     jobs = Mock()
     raw_url = "https://www.open.spotify.com/intl-nl/track/track-id?si=tracking"
 
-    first = create_player_song(
-        player=player,
-        uploaded_audio=None,
-        spotify_url=raw_url,
-        jobs=jobs,
-    )
-    second = create_player_song(
-        player=player,
-        uploaded_audio=None,
-        spotify_url=raw_url,
-        jobs=jobs,
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        first = create_player_song(
+            player=player,
+            uploaded_audio=None,
+            spotify_url=raw_url,
+            jobs=jobs,
+        )
+        second = create_player_song(
+            player=player,
+            uploaded_audio=None,
+            spotify_url=raw_url,
+            jobs=jobs,
+        )
 
     assert first.created is True
     assert second.created is False
@@ -294,7 +302,7 @@ def test_spotify_song_creation_is_idempotent_for_one_player() -> None:
     assert jobs.cached_song.call_count == EXPECTED_DISPATCH_COUNT
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 def test_ready_song_cannot_be_retried() -> None:
     player = create_tracker_player(username="ready-retry-command")
     song = PlayerSong.objects.create(

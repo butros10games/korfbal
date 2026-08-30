@@ -53,6 +53,12 @@ def test_slow_requests_endpoint_denies_non_staff(
     """The endpoint is operational/admin-only; non-staff must be denied."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
 
+    anonymous_response = APIClient().get("/api/debug/slow-requests/")
+    assert anonymous_response.status_code in {
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+    }
+
     resp = user_client.get("/api/debug/slow-requests/")
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 

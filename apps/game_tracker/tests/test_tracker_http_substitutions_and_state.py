@@ -168,18 +168,15 @@ def test_substitute_reg_enforces_max_wissels_per_team() -> None:
     pg_attack.players.add(player_a)
     pg_reserve.players.add(player_b)
 
-    for idx in range(MAX_WISSELS):
-        new_player = player_b if idx % 2 == 0 else player_a
-        old_player = player_a if idx % 2 == 0 else player_b
-        apply_tracker_command(
-            match,
-            team=home_team,
-            payload={
-                "command": "substitute_reg",
-                "new_player_id": str(new_player.id_uuid),
-                "old_player_id": str(old_player.id_uuid),
-            },
+    PlayerChange.objects.bulk_create(
+        PlayerChange(
+            player_in=player_b,
+            player_out=player_a,
+            player_group=pg_attack,
+            match_data=match_data,
         )
+        for _ in range(MAX_WISSELS)
+    )
 
     state_after = get_tracker_state(match, team=home_team)
     assert state_after["substitutions"]["for"] == MAX_WISSELS
@@ -288,18 +285,19 @@ def test_substitute_against_reg_enforces_max_wissels_for_opponent() -> None:
     )
 
     group_types = create_group_types("Reserve")
-    create_player_group(
+    opponent_reserve = create_player_group(
         match_data=match_data,
         team=away_team,
         group_type=group_types["Reserve"],
     )
 
-    for _ in range(MAX_WISSELS):
-        apply_tracker_command(
-            match,
-            team=home_team,
-            payload={"command": "substitute_against_reg"},
+    PlayerChange.objects.bulk_create(
+        PlayerChange(
+            player_group=opponent_reserve,
+            match_data=match_data,
         )
+        for _ in range(MAX_WISSELS)
+    )
 
     state_after = get_tracker_state(match, team=home_team)
     assert state_after["substitutions"]["against"] == MAX_WISSELS

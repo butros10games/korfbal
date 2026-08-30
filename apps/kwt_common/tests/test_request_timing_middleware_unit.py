@@ -38,6 +38,14 @@ def _make_middleware(
     return request_timing.RequestTimingMiddleware(get_response)
 
 
+def test_request_timing_middleware_is_enabled(settings: SettingsWrapper) -> None:
+    """The tested middleware must remain wired into the request stack."""
+    middleware_path = (
+        "apps.kwt_common.middleware.request_timing.RequestTimingMiddleware"
+    )
+    assert middleware_path in settings.MIDDLEWARE
+
+
 def test_append_server_timing_appends_comma_separated() -> None:
     """Server-Timing header values should combine using comma separation."""
     assert request_timing._append_server_timing(None, "app;dur=1") == "app;dur=1"

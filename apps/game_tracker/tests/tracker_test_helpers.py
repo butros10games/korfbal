@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -18,6 +20,10 @@ from apps.team.models import Team
 
 
 TEST_PASSWORD = "testpass123"  # nosec B105 - test credential constant
+OnCommitCapture = Callable[
+    ...,
+    AbstractContextManager[list[Callable[[], None]]],
+]
 
 
 @dataclass(frozen=True, slots=True)

@@ -58,6 +58,9 @@ Match tracker issues often require coordinated backend + frontend changes.
   classes cannot detect dependency, field-state, or migration-order regressions.
 - Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those
   against real migrations in an isolated database while ordinary tests use `--nomigrations`.
+- When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
+  `django_db` rollback isolation and use `django_capture_on_commit_callbacks(execute=True)`;
+  reserve `transaction=True` for real transaction visibility, async/SSE, and migration tests.
 - Keep test file storage rooted through `MEDIA_ROOT` rather than a fixed `STORAGES` location so the
   autouse isolation fixture can give every test and xdist worker its own temporary directory.
 - Keep values evaluated inside `pytest.mark.parametrize` deterministic; collection-time randomness
