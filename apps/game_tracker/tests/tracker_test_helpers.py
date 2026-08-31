@@ -10,11 +10,12 @@ from typing import Any, cast
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
+from django.test.client import Client
 from django.utils import timezone
 
 from apps.club.models import Club
 from apps.game_tracker.models import GroupType, MatchData, MatchPart, PlayerGroup
-from apps.player.models import Player
+from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -69,21 +70,60 @@ def create_group_types(*names: str) -> dict[str, GroupType]:
     return {name: GroupType.objects.create(name=name) for name in names}
 
 
-def create_tracker_user(*, username: str) -> AbstractBaseUser:
+def create_tracker_user(*, username: str, email: str = "") -> AbstractBaseUser:
     """Create a tracker test user."""
     user_model = cast(Any, get_user_model())
     return cast(
         AbstractBaseUser,
         user_model.objects.create_user(
             username=username,
-            password=TEST_PASSWORD,
+            email=email,
         ),
     )
 
 
-def create_tracker_player(*, username: str) -> Player:
+def create_tracker_player(*, username: str, email: str = "") -> Player:
     """Create a tracker test player."""
-    return cast(Player, cast(Any, create_tracker_user(username=username)).player)
+    user = create_tracker_user(username=username, email=email)
+    return cast(Player, cast(Any, user).player)
+
+
+def connect_user_to_match_club(
+    user: AbstractBaseUser,
+    club: Club,
+    match: Match,
+) -> None:
+    """Connect a user to a club before the match's local date."""
+    PlayerClubMembership.objects.create(
+        player=cast(Any, user).player,
+        club=club,
+        start_date=timezone.localdate(match.start_time) - timedelta(days=1),
+    )
+
+
+def login_home_club_editor(
+    client: Client,
+    tracker: TrackerMatchContext,
+    username: str,
+) -> AbstractBaseUser:
+    """Create and log in an editor for a tracker's home club."""
+    user = create_tracker_user(username=username)
+    connect_user_to_match_club(user, tracker.home_team.club, tracker.match)
+    client.force_login(user)
+    return user
+
+
+def get_tracker_group(
+    tracker: TrackerMatchContext,
+    name: str,
+    team: Team | None = None,
+) -> PlayerGroup:
+    """Return a named group for the requested tracker team."""
+    return PlayerGroup.objects.get(
+        match_data=tracker.match_data,
+        team=team or tracker.home_team,
+        starting_type__name=name,
+    )
 
 
 def create_player_group(
