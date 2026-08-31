@@ -1,102 +1,180 @@
 """Tests for the team API endpoints."""
 
+from dataclasses import dataclass
 from datetime import timedelta
 from http import HTTPStatus
+from unittest.mock import Mock
 import uuid
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, MatchPart, PlayerMatchImpact, Shot
+from apps.game_tracker.models import (
+    MatchData,
+    MatchPart,
+    MatchPlayer,
+    PlayerMatchImpact,
+    Shot,
+)
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows_with_breakdowns,
 )
+from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_overview_includes_matches_stats_and_roster(
-    client: Client,
-) -> None:
-    """Ensure the overview endpoint returns aggregated data for the new frontend."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-    previous_season = Season.objects.create(
-        name="2024",
-        start_date=today - timedelta(days=400),
-        end_date=today - timedelta(days=35),
+pytestmark = pytest.mark.django_db
+
+
+def _season(
+    name: str = "2025",
+    *,
+    starts_in_days: int = -30,
+    ends_in_days: int = 300,
+) -> Season:
+    today = timezone.localdate()
+    return Season.objects.create(
+        name=name,
+        start_date=today + timedelta(days=starts_in_days),
+        end_date=today + timedelta(days=ends_in_days),
     )
 
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
 
-    user = get_user_model().objects.create_user(
-        username="player",
-        password="pass1234",  # nosec
+def _teams() -> tuple[Team, Team]:
+    team = Team.objects.create(
+        name="Team 1", club=Club.objects.create(name="Team Club")
     )
-    player = user.player
+    opponent = Team.objects.create(
+        name="Opponent 1", club=Club.objects.create(name="Opponent Club")
+    )
+    return team, opponent
 
+
+def _player(username: str) -> Player:
+    user = User.objects.create(username=username)
+    return Player.objects.select_related("user").get(user=user)
+
+
+def _roster(
+    team: Team,
+    season: Season,
+    *players: Player,
+    coach: Player | None = None,
+) -> TeamData:
     team_data = TeamData.objects.create(team=team, season=season)
-    team_data.players.add(player)
-    legacy_team_data = TeamData.objects.create(team=team, season=previous_season)
-    legacy_team_data.players.add(player)
+    team_data.players.add(*players)
+    if coach is not None:
+        team_data.coach.add(coach)
+    return team_data
 
-    future_match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
+
+def _match(
+    home_team: Team,
+    away_team: Team,
+    season: Season,
+    *,
+    starts_in_days: int,
+    status: str,
+) -> MatchData:
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
         season=season,
-        start_time=timezone.now() + timedelta(days=3),
+        start_time=timezone.now() + timedelta(days=starts_in_days),
     )
-    past_match = Match.objects.create(
-        home_team=opponent_team,
-        away_team=team,
-        season=season,
-        start_time=timezone.now() - timedelta(days=5),
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = status
+    match_data.save(update_fields=["status"])
+    return match_data
+
+
+def _ready_song(
+    player: Player,
+    title: str,
+    *,
+    start_time_seconds: int = 0,
+) -> PlayerSong:
+    return PlayerSong.objects.create(
+        player=player,
+        title=title,
+        artists=f"{title} Artist",
+        status=PlayerSongStatus.READY,
+        start_time_seconds=start_time_seconds,
+        audio_file=SimpleUploadedFile(
+            f"{title.lower().replace(' ', '-')}.mp3",
+            b"ID3\x00\x00\x00\x00",
+            content_type="audio/mpeg",
+        ),
     )
 
-    future_match_data = MatchData.objects.get(match_link=future_match)
-    future_match_data.status = "upcoming"
-    future_match_data.save(update_fields=["status"])
 
-    past_match_data = MatchData.objects.get(match_link=past_match)
-    past_match_data.status = "finished"
-    past_match_data.home_score = 21
-    past_match_data.away_score = 18
-    past_match_data.save(update_fields=["status", "home_score", "away_score"])
+@dataclass(frozen=True)
+class _GoalSongSetup:
+    team: Team
+    team_data: TeamData
+    coach: Player
+    player: Player
+    song_a: PlayerSong
+    song_b: PlayerSong
 
-    legacy_match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=previous_season,
-        start_time=timezone.now() - timedelta(days=200),
+
+def _coached_team() -> tuple[Team, TeamData, Player, Player]:
+    season = _season()
+    team, _ = _teams()
+    coach = _player("coach")
+    player = _player("team_player")
+    team_data = _roster(team, season, coach, player, coach=coach)
+    return team, team_data, coach, player
+
+
+def _goal_song_setup() -> _GoalSongSetup:
+    team, team_data, coach, player = _coached_team()
+    return _GoalSongSetup(
+        team=team,
+        team_data=team_data,
+        coach=coach,
+        player=player,
+        song_a=_ready_song(player, "Song A", start_time_seconds=3),
+        song_b=_ready_song(player, "Song B", start_time_seconds=5),
     )
-    legacy_match_data = MatchData.objects.get(match_link=legacy_match)
-    legacy_match_data.status = "finished"
-    legacy_match_data.home_score = 18
-    legacy_match_data.away_score = 16
-    legacy_match_data.save(update_fields=["status", "home_score", "away_score"])
+
+
+def _impact_setup(username: str) -> tuple[Season, Team, Player, MatchData]:
+    season = _season(f"2025 - {username}")
+    team, opponent = _teams()
+    player = _player(username)
+    match_data = _match(team, opponent, season, starts_in_days=-1, status="finished")
+    return season, team, player, match_data
+
+
+def test_team_overview_returns_current_matches_stats_and_roster(client: Client) -> None:
+    """Current overview includes both match buckets, stats, and main roster."""
+    season = _season()
+    team, opponent = _teams()
+    player = _player("player")
+    _roster(team, season, player)
+    _match(team, opponent, season, starts_in_days=3, status="upcoming")
+    recent = _match(
+        opponent,
+        team,
+        season,
+        starts_in_days=-5,
+        status="finished",
+    )
+    MatchData.objects.filter(pk=recent.pk).update(home_score=21, away_score=18)
 
     response = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-
     assert payload["team"]["id_uuid"] == str(team.id_uuid)
     assert payload["matches"]["upcoming"]
     assert payload["matches"]["recent"]
@@ -105,111 +183,82 @@ def test_team_overview_includes_matches_stats_and_roster(
     assert payload["roster"][0]["roster_role"] == "main"
     assert payload["meta"]["season_id"] == str(season.id_uuid)
     assert payload["meta"]["season_name"] == season.name
-    assert len(payload["seasons"]) == 2
     assert any(option["is_current"] for option in payload["seasons"])
 
-    # Guest players who scored should appear in stats and roster
-    guest_user = get_user_model().objects.create_user(
-        username="guest_player",
-        password="pass1234",  # nosec
-    )
-    guest_player = guest_user.player
-    past_match_data.players.create(player=guest_player, team=team)
-    Shot.objects.create(
-        match_data=past_match_data,
-        player=guest_player,
-        team=team,
-        for_team=True,
-        scored=True,
-    )
 
-    # Players that only show up in shot data should still appear in roster/stats
-    shot_only_user = get_user_model().objects.create_user(
-        username="shot_only_player",
-        password="pass1234",  # nosec
-    )
-    shot_only_player = shot_only_user.player
+def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> None:
+    """Events discover reserve players absent from the season roster."""
+    season = _season()
+    team, opponent = _teams()
+    main = _player("main")
+    guest = _player("guest")
+    shot_only = _player("shot_only")
+    _roster(team, season, main)
+    match_data = _match(team, opponent, season, starts_in_days=-1, status="finished")
+    MatchPlayer.objects.create(match_data=match_data, player=guest, team=team)
     Shot.objects.create(
-        match_data=past_match_data,
-        player=shot_only_player,
+        match_data=match_data, player=guest, team=team, for_team=True, scored=True
+    )
+    Shot.objects.create(
+        match_data=match_data,
+        player=shot_only,
         team=team,
         for_team=False,
         scored=False,
     )
 
-    response_with_guest = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
-    assert response_with_guest.status_code == HTTPStatus.OK
-    stats_payload = response_with_guest.json()["stats"]["players"]
-    assert any(line["username"] == guest_player.user.username for line in stats_payload)
-    assert any(
-        line["username"] == shot_only_player.user.username for line in stats_payload
-    )
-    roster_payload = response_with_guest.json()["roster"]
-    assert any(
-        line["username"] == guest_player.user.username for line in roster_payload
-    )
-    assert any(
-        line["username"] == shot_only_player.user.username for line in roster_payload
-    )
+    response = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
 
-    # Main roster players should be listed before reserves/guests.
-    usernames_in_order = [line["username"] for line in roster_payload]
-    assert usernames_in_order[0] == player.user.username
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert [line["username"] for line in payload["stats"]["players"]] == [
+        "guest",
+        "shot_only",
+    ]
+    assert [(line["username"], line["roster_role"]) for line in payload["roster"]] == [
+        ("main", "main"),
+        ("guest", "reserve"),
+        ("shot_only", "reserve"),
+    ]
 
-    roles_by_username = {
-        line["username"]: line.get("roster_role") for line in roster_payload
-    }
-    assert roles_by_username[player.user.username] == "main"
-    assert roles_by_username[guest_player.user.username] == "reserve"
-    assert roles_by_username[shot_only_player.user.username] == "reserve"
 
-    legacy_response = client.get(
+def test_team_overview_selects_historical_season(client: Client) -> None:
+    """An explicit historical season scopes matches and roster."""
+    current = _season()
+    previous = _season("2024", starts_in_days=-400, ends_in_days=-35)
+    team, opponent = _teams()
+    player = _player("player")
+    _roster(team, current, player)
+    _roster(team, previous, player)
+    historical = _match(
+        team,
+        opponent,
+        previous,
+        starts_in_days=-200,
+        status="finished",
+    )
+    MatchData.objects.filter(pk=historical.pk).update(home_score=18, away_score=16)
+
+    response = client.get(
         f"/api/team/teams/{team.id_uuid}/overview/",
-        data={"season": previous_season.id_uuid},
+        data={"season": previous.id_uuid},
     )
 
-    assert legacy_response.status_code == HTTPStatus.OK
-    legacy_payload = legacy_response.json()
-    assert legacy_payload["meta"]["season_id"] == str(previous_season.id_uuid)
-    assert legacy_payload["matches"]["upcoming"] == []
-    assert legacy_payload["matches"]["recent"][0]["competition"] == previous_season.name
-    assert legacy_payload["roster"][0]["username"] == player.user.username
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["meta"]["season_id"] == str(previous.id_uuid)
+    assert payload["matches"]["upcoming"] == []
+    assert payload["matches"]["recent"][0]["competition"] == previous.name
+    assert payload["roster"][0]["username"] == player.user.username
+    assert len(payload["seasons"]) == 2
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
-    """The overview endpoint should support a lightweight mode for faster loads."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
-
-    user = get_user_model().objects.create_user(
-        username="player",
-        password="pass1234",  # nosec
-    )
-    player = user.player
-
-    team_data = TeamData.objects.create(team=team, season=season)
-    team_data.players.add(player)
-
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=season,
-        start_time=timezone.now() + timedelta(days=3),
-    )
-    match_data = MatchData.objects.get(match_link=match)
-    match_data.status = "upcoming"
-    match_data.save(update_fields=["status"])
+    """Lightweight flags omit expensive stats and roster data."""
+    season = _season()
+    team, opponent = _teams()
+    _roster(team, season, _player("player"))
+    _match(team, opponent, season, starts_in_days=3, status="upcoming")
 
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/overview/",
@@ -218,46 +267,79 @@ def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-
-    assert payload["team"]["id_uuid"] == str(team.id_uuid)
     assert payload["matches"]["upcoming"]
-    assert payload["stats"]["general"] is None
-    assert payload["stats"]["players"] == []
+    assert payload["stats"] == {"general": None, "players": []}
     assert payload["roster"] == []
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> None:
-    """The impact-breakdown endpoint should return categories from DB storage."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025 - impact breakdown api",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
+def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
+    """An invalid season falls back without mixing historical matches."""
+    current = _season()
+    previous = _season("2024", starts_in_days=-400, ends_in_days=-35)
+    team, opponent = _teams()
+    _roster(team, current)
+    _roster(team, previous)
+    _match(team, opponent, current, starts_in_days=2, status="upcoming")
+    _match(
+        opponent,
+        team,
+        previous,
+        starts_in_days=-10,
+        status="finished",
     )
 
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
-
-    user = get_user_model().objects.create_user(
-        username="impact_bd_api_player",
-        password="pass1234",  # nosec
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/overview/",
+        data={"season": str(uuid.uuid4())},
     )
-    player = user.player
 
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=season,
-        start_time=timezone.now() - timedelta(days=1),
-    )
-    match_data = MatchData.objects.get(match_link=match)
-    match_data.status = "finished"
-    match_data.save(update_fields=["status"])
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["meta"]["season_id"] == str(current.id_uuid)
+    assert payload["meta"]["season_name"] == current.name
+    assert payload["matches"]["upcoming"]
+    assert payload["matches"]["recent"] == []
 
+
+def test_team_overview_denies_goal_song_management_to_anonymous_viewer(
+    client: Client,
+) -> None:
+    """Anonymous viewers cannot manage team goal songs."""
+    team, _, _, _ = _coached_team()
+
+    response = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["meta"]["viewer_can_manage_goal_songs"] is False
+
+
+def test_team_overview_exposes_ordered_fallback_songs_to_coach(client: Client) -> None:
+    """Coach metadata exposes fallback audio in configured order."""
+    setup = _goal_song_setup()
+    setup.team_data.fallback_goal_song_song_ids = [
+        str(setup.song_b.id_uuid),
+        str(setup.song_a.id_uuid),
+    ]
+    setup.team_data.save(update_fields=["fallback_goal_song_song_ids"])
+    client.force_login(setup.coach.user)
+
+    response = client.get(f"/api/team/teams/{setup.team.id_uuid}/overview/")
+
+    assert response.status_code == HTTPStatus.OK
+    meta = response.json()["meta"]
+    assert meta["viewer_can_manage_goal_songs"] is True
+    assert meta["fallback_goal_song_audio_urls"] == [
+        setup.song_b.audio_file.url,
+        setup.song_a.audio_file.url,
+    ]
+
+
+def test_team_impact_breakdown_returns_persisted_categories(
+    client: Client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stored impact breakdowns are returned without invoking self-heal."""
+    season, team, player, match_data = _impact_setup("impact_player")
     part_start = timezone.now() - timedelta(minutes=10)
     part = MatchPart.objects.create(
         match_data=match_data,
@@ -265,7 +347,6 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
         start_time=part_start,
         active=True,
     )
-
     Shot.objects.create(
         match_data=match_data,
         player=player,
@@ -274,13 +355,18 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
         scored=False,
         time=part_start + timedelta(minutes=1),
     )
-
-    # Persist both impacts and breakdowns once. Endpoint should then read them.
     persist_match_impact_rows_with_breakdowns(
         match_data=match_data,
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
 
+    def fail_self_heal(*args: object, **kwargs: object) -> None:
+        raise AssertionError("persisted breakdown should not trigger self-heal")
+
+    monkeypatch.setattr(
+        "apps.team.api.views.persist_match_impact_rows_with_breakdowns",
+        fail_self_heal,
+    )
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
         data={"season": season.id_uuid, "player": player.id_uuid},
@@ -288,33 +374,21 @@ def test_team_impact_breakdown_uses_persisted_db_breakdowns(client: Client) -> N
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-
     assert payload["team_id"] == str(team.id_uuid)
     assert payload["season_id"] == str(season.id_uuid)
     assert payload["player_id"] == str(player.id_uuid)
     assert payload["algorithm_version"] == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert payload["matches_considered"] == 1
-    assert payload["categories"]
     assert any(
-        cat["key"] == "offense_miss_below_expected" for cat in payload["categories"]
+        category["key"] == "offense_miss_below_expected"
+        for category in payload["categories"]
     )
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_impact_breakdown_missing_player_param_returns_400(
-    client: Client,
-) -> None:
-    """The impact-breakdown endpoint requires the `player` query param."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025 - impact breakdown missing player",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-
-    club = Club.objects.create(name="Team Club")
-    team = Team.objects.create(name="Team 1", club=club)
+def test_team_impact_breakdown_requires_player(client: Client) -> None:
+    """The impact endpoint requires a player query parameter."""
+    season = _season()
+    team, _ = _teams()
 
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
@@ -325,78 +399,26 @@ def test_team_impact_breakdown_missing_player_param_returns_400(
     assert response.json()["detail"] == "Missing required query param: player"
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_impact_breakdown_unknown_player_returns_404(client: Client) -> None:
-    """Unknown player ids should produce a 404 with a clear message."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025 - impact breakdown unknown player",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
+def test_team_impact_breakdown_rejects_unknown_player(client: Client) -> None:
+    """The impact endpoint rejects unknown player identifiers."""
+    season = _season()
+    team, _ = _teams()
 
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
-
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=season,
-        start_time=timezone.now() - timedelta(days=1),
-    )
-    match_data = MatchData.objects.get(match_link=match)
-    match_data.status = "finished"
-    match_data.save(update_fields=["status"])
-
-    unknown_player_id = str(uuid.uuid4())
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
-        data={"season": season.id_uuid, "player": unknown_player_id},
+        data={"season": season.id_uuid, "player": str(uuid.uuid4())},
     )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.json()["detail"] == "Player not found"
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_impact_breakdown_self_heal_failure_returns_empty_categories(
+def test_team_impact_breakdown_tolerates_self_heal_failure(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If breakdown self-heal fails, the endpoint should still respond (best-effort)."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025 - impact breakdown self heal",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
-
-    user = get_user_model().objects.create_user(
-        username="impact_bd_missing_breakdown",
-        password="pass1234",  # nosec
-    )
-    player = user.player
-
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=season,
-        start_time=timezone.now() - timedelta(days=1),
-    )
-    match_data = MatchData.objects.get(match_link=match)
-    match_data.status = "finished"
-    match_data.save(update_fields=["status"])
-
-    # Persist an impact row WITHOUT a breakdown row.
+    """A failed best-effort self-heal leaves stored impact totals usable."""
+    season, team, player, match_data = _impact_setup("missing_breakdown")
     PlayerMatchImpact.objects.create(
         match_data=match_data,
         player=player,
@@ -405,14 +427,10 @@ def test_team_impact_breakdown_self_heal_failure_returns_empty_categories(
         algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
 
-    def _fail_persist(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("boom")
-
+    self_heal = Mock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr(
-        "apps.team.api.views.persist_match_impact_rows_with_breakdowns",
-        _fail_persist,
+        "apps.team.api.views.persist_match_impact_rows_with_breakdowns", self_heal
     )
-
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
         data={"season": season.id_uuid, "player": player.id_uuid},
@@ -420,236 +438,114 @@ def test_team_impact_breakdown_self_heal_failure_returns_empty_categories(
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-
     assert payload["matches_considered"] == 1
     assert payload["impact_total"] == pytest.approx(3.2)
     assert payload["categories"] == []
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
-    """Invalid seasons should fall back to a team season, not broaden to all."""
-    today = timezone.now().date()
-    current_season = Season.objects.create(
-        name="2025",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-    previous_season = Season.objects.create(
-        name="2024",
-        start_date=today - timedelta(days=400),
-        end_date=today - timedelta(days=35),
+    self_heal.assert_called_once_with(
+        match_data=match_data,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     )
 
-    club = Club.objects.create(name="Team Club")
-    opponent_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team 1", club=club)
-    opponent_team = Team.objects.create(name="Opponent 1", club=opponent_club)
 
-    TeamData.objects.create(team=team, season=current_season)
-    TeamData.objects.create(team=team, season=previous_season)
+def test_team_goal_song_admin_requires_authentication(client: Client) -> None:
+    """Goal-song administration rejects anonymous requests."""
+    team, _, _, _ = _coached_team()
 
-    current_match = Match.objects.create(
-        home_team=team,
-        away_team=opponent_team,
-        season=current_season,
-        start_time=timezone.now() + timedelta(days=2),
-    )
-    previous_match = Match.objects.create(
-        home_team=opponent_team,
-        away_team=team,
-        season=previous_season,
-        start_time=timezone.now() - timedelta(days=10),
-    )
+    response = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
 
-    current_data = MatchData.objects.get(match_link=current_match)
-    current_data.status = "upcoming"
-    current_data.save(update_fields=["status"])
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
 
-    previous_data = MatchData.objects.get(match_link=previous_match)
-    previous_data.status = "finished"
-    previous_data.save(update_fields=["status"])
 
-    invalid_season_id = str(uuid.uuid4())
-    response = client.get(
-        f"/api/team/teams/{team.id_uuid}/overview/",
-        data={"season": invalid_season_id},
+def test_team_goal_song_admin_returns_roster_to_coach(client: Client) -> None:
+    """A coach can load the goal-song administration roster."""
+    team, _, coach, _ = _coached_team()
+    client.force_login(coach.user)
+
+    response = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert {entry["username"] for entry in response.json()["players"]} == {
+        "coach",
+        "team_player",
+    }
+
+
+def test_coach_updates_player_goal_song_selection(client: Client) -> None:
+    """A coach can set an ordered ready-song selection for a player."""
+    setup = _goal_song_setup()
+    client.force_login(setup.coach.user)
+    song_ids = [str(setup.song_a.id_uuid), str(setup.song_b.id_uuid)]
+
+    response = client.patch(
+        f"/api/team/teams/{setup.team.id_uuid}/goal-song-admin/player/{setup.player.id_uuid}/",
+        data={"goal_song_song_ids": song_ids},
+        content_type="application/json",
     )
 
     assert response.status_code == HTTPStatus.OK
-    payload = response.json()
-
-    assert payload["meta"]["season_id"] == str(current_season.id_uuid)
-    assert payload["meta"]["season_name"] == current_season.name
-    assert payload["matches"]["upcoming"]
-    assert payload["matches"]["recent"] == []
+    setup.player.refresh_from_db()
+    assert setup.player.goal_song_song_ids == song_ids
+    assert setup.player.song_start_time == setup.song_a.start_time_seconds
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_overview_meta_includes_goal_song_permissions_and_fallback(
-    client: Client,
-) -> None:
-    """Overview exposes goal-song moderation permission and fallback URLs."""
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-    club = Club.objects.create(name="Team Club")
-    team = Team.objects.create(name="Team 1", club=club)
+def test_coach_updates_team_fallback_goal_songs(client: Client) -> None:
+    """A coach can configure the team fallback playlist."""
+    setup = _goal_song_setup()
+    client.force_login(setup.coach.user)
 
-    coach_user = get_user_model().objects.create_user(
-        username="coach_user",
-        password="pass1234",  # nosec
-    )
-    coach_player = coach_user.player
-
-    team_data = TeamData.objects.create(team=team, season=season)
-    team_data.coach.add(coach_player)
-    team_data.players.add(coach_player)
-
-    song = PlayerSong.objects.create(
-        player=coach_player,
-        title="Coach Song",
-        artists="Coach",
-        status=PlayerSongStatus.READY,
-        audio_file=SimpleUploadedFile(
-            "coach-song.mp3",
-            b"ID3\x00\x00\x00\x00",
-            content_type="audio/mpeg",
-        ),
-    )
-    team_data.fallback_goal_song_song_ids = [str(song.id_uuid)]
-    team_data.save(update_fields=["fallback_goal_song_song_ids"])
-
-    response_anon = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
-    assert response_anon.status_code == HTTPStatus.OK
-    assert response_anon.json()["meta"]["viewer_can_manage_goal_songs"] is False
-
-    client.force_login(coach_user)
-    response_coach = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
-    assert response_coach.status_code == HTTPStatus.OK
-    payload = response_coach.json()
-    assert payload["meta"]["viewer_can_manage_goal_songs"] is True
-    assert payload["meta"]["fallback_goal_song_audio_urls"]
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_team_goal_song_admin_manage_player_and_fallback(client: Client) -> None:
-    """Coach can manage player selections, fallback playlist and song settings."""
-    initial_start_seconds = 3
-    updated_start_seconds = 12
-
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="2025",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
-    club = Club.objects.create(name="Team Club")
-    team = Team.objects.create(name="Team 1", club=club)
-
-    coach_user = get_user_model().objects.create_user(
-        username="coach_user_2",
-        password="pass1234",  # nosec
-    )
-    coach_player = coach_user.player
-
-    player_user = get_user_model().objects.create_user(
-        username="player_user_2",
-        password="pass1234",  # nosec
-    )
-    team_player = player_user.player
-
-    team_data = TeamData.objects.create(team=team, season=season)
-    team_data.coach.add(coach_player)
-    team_data.players.add(coach_player, team_player)
-
-    song_a = PlayerSong.objects.create(
-        player=team_player,
-        title="Song A",
-        artists="Artist A",
-        status=PlayerSongStatus.READY,
-        start_time_seconds=initial_start_seconds,
-        audio_file=SimpleUploadedFile(
-            "song-a.mp3",
-            b"ID3\x00\x00\x00\x00",
-            content_type="audio/mpeg",
-        ),
-    )
-    song_b = PlayerSong.objects.create(
-        player=team_player,
-        title="Song B",
-        artists="Artist B",
-        status=PlayerSongStatus.READY,
-        start_time_seconds=5,
-        audio_file=SimpleUploadedFile(
-            "song-b.mp3",
-            b"ID3\x00\x00\x00\x00",
-            content_type="audio/mpeg",
-        ),
-    )
-
-    # Not authenticated -> explicit API authentication failure (never a redirect).
-    response_forbidden = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
-    assert response_forbidden.status_code == HTTPStatus.UNAUTHORIZED
-
-    client.force_login(coach_user)
-
-    response_payload = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
-    assert response_payload.status_code == HTTPStatus.OK
-    assert response_payload.json()["players"]
-
-    response_update_player = client.patch(
-        f"/api/team/teams/{team.id_uuid}/goal-song-admin/player/{team_player.id_uuid}/",
-        data={"goal_song_song_ids": [str(song_a.id_uuid), str(song_b.id_uuid)]},
+    response = client.patch(
+        f"/api/team/teams/{setup.team.id_uuid}/goal-song-admin/fallback/",
+        data={"fallback_goal_song_song_ids": [str(setup.song_b.id_uuid)]},
         content_type="application/json",
     )
-    assert response_update_player.status_code == HTTPStatus.OK
 
-    team_player.refresh_from_db()
-    assert team_player.goal_song_song_ids == [str(song_a.id_uuid), str(song_b.id_uuid)]
-    assert team_player.song_start_time == initial_start_seconds
+    assert response.status_code == HTTPStatus.OK
+    setup.team_data.refresh_from_db()
+    assert setup.team_data.fallback_goal_song_song_ids == [str(setup.song_b.id_uuid)]
 
-    response_update_fallback = client.patch(
-        f"/api/team/teams/{team.id_uuid}/goal-song-admin/fallback/",
-        data={"fallback_goal_song_song_ids": [str(song_b.id_uuid)]},
-        content_type="application/json",
-    )
-    assert response_update_fallback.status_code == HTTPStatus.OK
 
-    response_update_song_settings = client.patch(
+def test_coach_updates_player_song_settings(client: Client) -> None:
+    """Song settings update both the song and selected player timing."""
+    setup = _goal_song_setup()
+    setup.player.goal_song_song_ids = [str(setup.song_a.id_uuid)]
+    setup.player.save(update_fields=["goal_song_song_ids"])
+    client.force_login(setup.coach.user)
+
+    response = client.patch(
         (
-            f"/api/team/teams/{team.id_uuid}/goal-song-admin/"
-            f"player/{team_player.id_uuid}/songs/{song_a.id_uuid}/settings/"
+            f"/api/team/teams/{setup.team.id_uuid}/goal-song-admin/player/"
+            f"{setup.player.id_uuid}/songs/{setup.song_a.id_uuid}/settings/"
         ),
-        data={"start_time_seconds": updated_start_seconds, "playback_speed": 1.1},
+        data={"start_time_seconds": 12, "playback_speed": 1.1},
         content_type="application/json",
     )
-    assert response_update_song_settings.status_code == HTTPStatus.OK
 
-    song_a.refresh_from_db()
-    team_player.refresh_from_db()
-    assert song_a.start_time_seconds == updated_start_seconds
-    assert float(song_a.playback_speed) == pytest.approx(1.1)
-    assert team_player.song_start_time == updated_start_seconds
+    assert response.status_code == HTTPStatus.OK
+    setup.song_a.refresh_from_db()
+    setup.player.refresh_from_db()
+    assert setup.song_a.start_time_seconds == 12
+    assert setup.song_a.playback_speed == pytest.approx(1.1)
+    assert setup.player.song_start_time == 12
 
-    team_data.refresh_from_db()
-    assert team_data.fallback_goal_song_song_ids == [str(song_b.id_uuid)]
 
-    response_delete = client.delete(
-        (
-            f"/api/team/teams/{team.id_uuid}/goal-song-admin/"
-            f"player/{team_player.id_uuid}/songs/{song_b.id_uuid}/"
-        ),
+def test_coach_deletes_song_and_cleans_selections(client: Client) -> None:
+    """Deleting a song removes it from player and fallback selections."""
+    setup = _goal_song_setup()
+    song_id = str(setup.song_b.id_uuid)
+    setup.player.goal_song_song_ids = [str(setup.song_a.id_uuid), song_id]
+    setup.player.save(update_fields=["goal_song_song_ids"])
+    setup.team_data.fallback_goal_song_song_ids = [song_id]
+    setup.team_data.save(update_fields=["fallback_goal_song_song_ids"])
+    client.force_login(setup.coach.user)
+
+    response = client.delete(
+        f"/api/team/teams/{setup.team.id_uuid}/goal-song-admin/player/"
+        f"{setup.player.id_uuid}/songs/{song_id}/"
     )
-    assert response_delete.status_code == HTTPStatus.NO_CONTENT
 
-    team_player.refresh_from_db()
-    team_data.refresh_from_db()
-    assert str(song_b.id_uuid) not in (team_player.goal_song_song_ids or [])
-    assert str(song_b.id_uuid) not in (team_data.fallback_goal_song_song_ids or [])
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    setup.player.refresh_from_db()
+    setup.team_data.refresh_from_db()
+    assert song_id not in setup.player.goal_song_song_ids
+    assert song_id not in setup.team_data.fallback_goal_song_song_ids
+    assert not PlayerSong.objects.filter(id_uuid=song_id).exists()

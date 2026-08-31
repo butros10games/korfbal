@@ -1,12 +1,11 @@
-"""Tests for audit ingestion and timeline APIs."""
+"""Tests for audit ingestion and reporting APIs."""
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 
-from django.contrib.auth import get_user_model
-from django.test import override_settings
+from django.contrib.auth.models import User
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -15,23 +14,82 @@ from pytest_django.fixtures import SettingsWrapper
 from apps.audit.models import AuditEvent
 
 
-TEST_PASSWORD = "pass1234"  # nosec
-AUDIT_TOKEN = "top-secret"  # nosec
-EXPECTED_EXTENSION_ROWS = 2
-EXPECTED_BULK_CREATED = 2
-EXPECTED_CURSOR_PAGE_SIZE = 2
-EXPECTED_SUMMARY_WINDOW_HOURS = 24
-EXPECTED_SUMMARY_TOTAL = 3
-EXPECTED_EXTENSION_SOURCE_COUNT = 2
-EXPECTED_SYNC_STARTED_COUNT = 2
-EXPECTED_NON_STAFF_VISIBLE_TOTAL = 2
-EXPECTED_PRODUCERS_COUNT = 2
-EXPECTED_EXTENSION_PRODUCER_TOTAL = 2
-EXPECTED_EXTENSION_PRODUCER_ERRORS = 1
-EXPECTED_TRENDS_WINDOW_HOURS = 6
-EXPECTED_TRENDS_PREVIOUS_ERROR_RATE = 50.0
-EXPECTED_TRENDS_CURRENT_ERROR_RATE = 25.0
-EXPECTED_HEALTH_WINDOW_HOURS = 6
+AUDIT_TOKEN = "top-secret"
+AUDIT_API = "/api/audit/events"
+pytestmark = pytest.mark.django_db
+
+
+def _login(client: Client, username: str = "viewer", *, staff: bool = False) -> str:
+    """Create and log in a passwordless local user, returning its actor ID."""
+    user = User.objects.create(username=username, is_staff=staff)
+    client.force_login(user)
+    return str(user.pk)
+
+
+def _event(
+    name: str,
+    *,
+    occurred_at: datetime,
+    source: str = "extension",
+    severity: str = "info",
+    visibility: dict[str, str] | None = None,
+) -> AuditEvent:
+    visibility = visibility or {}
+    return AuditEvent.objects.create(
+        event_name=name,
+        source_system=source,
+        occurred_at=occurred_at,
+        severity=severity,
+        actor_id=visibility.get("actor_id", ""),
+        club_id=visibility.get("club_id", ""),
+    )
+
+
+def _event_table(
+    now: datetime,
+    rows: list[tuple[str, str, timedelta, str]],
+) -> None:
+    """Insert name/source/age/severity rows without repeating model setup."""
+    for name, source, age, severity in rows:
+        _event(
+            name,
+            source=source,
+            occurred_at=now - age,
+            severity=severity,
+        )
+
+
+def _visibility_events(*, actor_id: str) -> None:
+    """Create one event for each non-staff visibility branch."""
+    now = timezone.now()
+    _event(
+        "visible.actor.debug",
+        source="actor-source",
+        occurred_at=now - timedelta(hours=4),
+        severity="debug",
+        visibility={"actor_id": actor_id, "club_id": "private-club"},
+    )
+    _event(
+        "visible.blank-club.debug",
+        source="blank-club-source",
+        occurred_at=now - timedelta(hours=3),
+        severity="debug",
+        visibility={"actor_id": "other-user"},
+    )
+    _event(
+        "visible.allowed-severity",
+        source="allowed-source",
+        occurred_at=now - timedelta(hours=2),
+        severity="error",
+        visibility={"actor_id": "other-user", "club_id": "private-club"},
+    )
+    _event(
+        "hidden.private.debug",
+        source="private-source",
+        occurred_at=now - timedelta(hours=1),
+        severity="debug",
+        visibility={"actor_id": "other-user", "club_id": "private-club"},
+    )
 
 
 @pytest.mark.parametrize(
@@ -43,20 +101,18 @@ EXPECTED_HEALTH_WINDOW_HOURS = 6
         pytest.param(AUDIT_TOKEN, AUDIT_TOKEN, HTTPStatus.CREATED, id="matching"),
     ],
 )
-@pytest.mark.django_db
-def test_audit_ingest_authentication(
+def test_ingest_authentication(
     client: Client,
     settings: SettingsWrapper,
     configured_token: str,
     request_token: str | None,
     expected_status: HTTPStatus,
 ) -> None:
-    """Ingest should fail closed and accept only the configured token."""
+    """Fail closed unless the ingest request carries the configured token."""
     settings.KORFBAL_AUDIT_INGEST_TOKEN = configured_token
     headers = {"X-Audit-Token": request_token} if request_token else {}
-
     response = client.post(
-        "/api/audit/events/ingest/",
+        f"{AUDIT_API}/ingest/",
         data={"event_name": "trade.updated", "source_system": "cli"},
         content_type="application/json",
         headers=headers,
@@ -66,71 +122,49 @@ def test_audit_ingest_authentication(
     assert AuditEvent.objects.exists() is (expected_status == HTTPStatus.CREATED)
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_timeline_filters_and_ordering(client: Client) -> None:
-    """Timeline should support source/search filters and newest-first ordering."""
-    now = timezone.now()
-    AuditEvent.objects.create(
-        event_name="sync.started",
-        source_system="extension",
-        occurred_at=now - timedelta(minutes=10),
-        severity="info",
-        message="sync begin",
-    )
-    AuditEvent.objects.create(
-        event_name="sync.completed",
-        source_system="extension",
-        occurred_at=now,
-        severity="info",
-        message="sync end",
-    )
-    AuditEvent.objects.create(
-        event_name="trade.created",
-        source_system="cli",
-        occurred_at=now - timedelta(minutes=5),
-        severity="warning",
-        message="trade opened",
-    )
-
-    user = get_user_model().objects.create_user(
-        username="timeline_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
-    response = client.get(
-        "/api/audit/events/timeline/",
-        {
-            "source": "extension",
-            "search": "sync",
-            "limit": 10,
-        },
-    )
-
-    assert response.status_code == HTTPStatus.OK
-    payload = response.json()
-    assert payload["count"] == EXPECTED_EXTENSION_ROWS
-    assert payload["items"][0]["event_name"] == "sync.completed"
-    assert payload["items"][1]["event_name"] == "sync.started"
-
-
-@pytest.mark.django_db
-@override_settings(KORFBAL_AUDIT_INGEST_TOKEN=AUDIT_TOKEN)
-def test_audit_bulk_ingest_creates_multiple_events(client: Client) -> None:
-    """Bulk ingest should create all provided events in one call."""
+def test_ingest_persists_normalized_event(
+    client: Client,
+    settings: SettingsWrapper,
+) -> None:
+    """Persist the normalized event fields returned by single ingestion."""
+    settings.KORFBAL_AUDIT_INGEST_TOKEN = AUDIT_TOKEN
     response = client.post(
-        "/api/audit/events/ingest/bulk/",
+        f"{AUDIT_API}/ingest/",
+        data={
+            "event_name": "trade.failed",
+            "source_system": "cli",
+            "severity": "error",
+            "message": "rejected",
+        },
+        content_type="application/json",
+        headers={"X-Audit-Token": AUDIT_TOKEN},
+    )
+
+    assert response.status_code == HTTPStatus.CREATED
+    event = AuditEvent.objects.get(id_uuid=response.json()["id_uuid"])
+    assert (event.event_name, event.source_system, event.severity) == (
+        "trade.failed",
+        "cli",
+        "error",
+    )
+    assert event.message == "rejected"
+    assert event.ingested_via == "api"
+
+
+def test_bulk_ingest_persists_every_event(
+    client: Client,
+    settings: SettingsWrapper,
+) -> None:
+    """Persist every normalized event in a bulk request."""
+    settings.KORFBAL_AUDIT_INGEST_TOKEN = AUDIT_TOKEN
+    response = client.post(
+        f"{AUDIT_API}/ingest/bulk/",
         data={
             "events": [
-                {
-                    "event_name": "cli.start",
-                    "source_system": "rolltrader_console",
-                },
+                {"event_name": "cli.start", "source_system": "console"},
                 {
                     "event_name": "cli.finish",
-                    "source_system": "rolltrader_console",
+                    "source_system": "console",
                     "severity": "warning",
                 },
             ]
@@ -140,522 +174,278 @@ def test_audit_bulk_ingest_creates_multiple_events(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.CREATED
-    payload = response.json()
-    assert payload["created"] == EXPECTED_BULK_CREATED
-    assert len(payload["ids"]) == EXPECTED_BULK_CREATED
-    assert AuditEvent.objects.count() == EXPECTED_BULK_CREATED
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_timeline_cursor_pagination(client: Client) -> None:
-    """Timeline should paginate with cursor and preserve descending order."""
-    now = timezone.now()
-    for index in range(5):
-        AuditEvent.objects.create(
-            event_name=f"event.{index}",
-            source_system="extension",
-            occurred_at=now - timedelta(minutes=index),
-            severity="info",
-            message=f"event {index}",
+    stored = list(
+        AuditEvent.objects.order_by("event_name").values(
+            "id_uuid", "event_name", "source_system", "severity"
         )
-
-    user = get_user_model().objects.create_user(
-        username="cursor_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
     )
-    client.force_login(user)
+    expected_rows = [
+        ("cli.finish", "console", "warning"),
+        ("cli.start", "console", "info"),
+    ]
+    assert response.json()["created"] == len(stored) == len(expected_rows)
+    assert len(response.json()["ids"]) == len(expected_rows)
+    assert set(response.json()["ids"]) == {str(row["id_uuid"]) for row in stored}
+    assert [
+        (row["event_name"], row["source_system"], row["severity"]) for row in stored
+    ] == expected_rows
 
-    first_page = client.get(
-        "/api/audit/events/timeline/",
-        {
-            "limit": 2,
-        },
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["timeline", "summary", "producers", "trends", "health"],
+)
+def test_reporting_endpoints_require_authentication(
+    client: Client,
+    endpoint: str,
+) -> None:
+    """Protect every reporting endpoint from unauthenticated reads."""
+    response = client.get(f"{AUDIT_API}/{endpoint}/")
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_timeline_filters_and_orders_newest_first(client: Client) -> None:
+    """Combine source/search filters and return matching events newest first."""
+    now = timezone.now()
+    _event_table(
+        now,
+        [
+            ("sync.started", "extension", timedelta(minutes=10), "info"),
+            ("sync.completed", "extension", timedelta(0), "info"),
+            ("trade.extension", "extension", timedelta(minutes=2), "info"),
+            ("sync.cli", "cli", timedelta(minutes=3), "info"),
+            ("trade.created", "cli", timedelta(minutes=5), "warning"),
+        ],
     )
-    assert first_page.status_code == HTTPStatus.OK
-
-    first_payload = first_page.json()
-    assert first_payload["count"] == EXPECTED_CURSOR_PAGE_SIZE
-    assert first_payload["has_more"] is True
-    assert first_payload["next_cursor"]
-
-    second_page = client.get(
-        "/api/audit/events/timeline/",
-        {
-            "limit": 2,
-            "cursor": first_payload["next_cursor"],
-        },
-    )
-    assert second_page.status_code == HTTPStatus.OK
-
-    second_payload = second_page.json()
-    first_ids = {row["id_uuid"] for row in first_payload["items"]}
-    second_ids = {row["id_uuid"] for row in second_payload["items"]}
-    assert first_ids.isdisjoint(second_ids)
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_timeline_invalid_cursor_returns_400(client: Client) -> None:
-    """Invalid cursor values should return a validation response."""
-    user = get_user_model().objects.create_user(
-        username="invalid_cursor_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
+    _login(client, staff=True)
     response = client.get(
-        "/api/audit/events/timeline/",
-        {
-            "cursor": "not-a-cursor",
-        },
+        f"{AUDIT_API}/timeline/",
+        {"source": "extension", "search": "sync", "limit": 10},
     )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [item["event_name"] for item in response.json()["items"]] == [
+        "sync.completed",
+        "sync.started",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("event_name", "visible"),
+    [
+        pytest.param("visible.actor.debug", True, id="actor-debug"),
+        pytest.param("visible.blank-club.debug", True, id="blank-club-debug"),
+        pytest.param("visible.allowed-severity", True, id="allowed-severity-private"),
+        pytest.param("hidden.private.debug", False, id="private-debug"),
+    ],
+)
+def test_timeline_applies_each_non_staff_visibility_rule(
+    client: Client,
+    event_name: str,
+    visible: bool,
+) -> None:
+    """Exercise one independently named non-staff visibility predicate."""
+    actor_id = _login(client)
+    _visibility_events(actor_id=actor_id)
+    response = client.get(f"{AUDIT_API}/timeline/")
+
+    assert response.status_code == HTTPStatus.OK
+    returned_names = {item["event_name"] for item in response.json()["items"]}
+    assert (event_name in returned_names) is visible
+
+
+def test_timeline_cursor_pages_are_disjoint(client: Client) -> None:
+    """Return a usable cursor whose next page contains no repeated rows."""
+    now = timezone.now()
+    _event_table(
+        now,
+        [
+            (f"event.{index}", "extension", timedelta(minutes=index), "info")
+            for index in range(5)
+        ],
+    )
+    _login(client, staff=True)
+    page_size = 2
+    first = client.get(f"{AUDIT_API}/timeline/", {"limit": page_size})
+    assert first.status_code == HTTPStatus.OK
+    assert first.json()["count"] == page_size
+    assert first.json()["has_more"] is True
+    assert first.json()["next_cursor"]
+
+    second = client.get(
+        f"{AUDIT_API}/timeline/",
+        {"limit": page_size, "cursor": first.json()["next_cursor"]},
+    )
+
+    assert second.status_code == HTTPStatus.OK
+    assert [row["event_name"] for row in first.json()["items"]] == [
+        "event.0",
+        "event.1",
+    ]
+    assert [row["event_name"] for row in second.json()["items"]] == [
+        "event.2",
+        "event.3",
+    ]
+
+
+def test_timeline_rejects_invalid_cursor(client: Client) -> None:
+    """Return a client error for malformed timeline cursors."""
+    _login(client, staff=True)
+    response = client.get(f"{AUDIT_API}/timeline/", {"cursor": "not-a-cursor"})
     assert response.status_code == HTTPStatus.BAD_REQUEST
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_summary_returns_aggregates_for_staff(client: Client) -> None:
-    """Summary endpoint should return grouped counts for staff users."""
+def test_summary_returns_staff_aggregates(client: Client) -> None:
+    """Group a staff-visible window by severity, producer, and event name."""
     now = timezone.now()
-    AuditEvent.objects.create(
-        event_name="sync.started",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=1),
-        severity="info",
+    _event_table(
+        now,
+        [
+            ("sync.started", "extension", timedelta(hours=1), "info"),
+            ("sync.started", "extension", timedelta(minutes=10), "warning"),
+            ("trade.failed", "console", timedelta(minutes=5), "error"),
+        ],
     )
-    AuditEvent.objects.create(
-        event_name="sync.started",
-        source_system="extension",
-        occurred_at=now - timedelta(minutes=10),
-        severity="warning",
-    )
-    AuditEvent.objects.create(
-        event_name="trade.failed",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(minutes=5),
-        severity="error",
-    )
-
-    user = get_user_model().objects.create_user(
-        username="summary_staff_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
-    response = client.get("/api/audit/events/summary/", {"window_hours": 24})
+    _login(client, staff=True)
+    window_hours = 24
+    response = client.get(f"{AUDIT_API}/summary/", {"window_hours": window_hours})
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert payload["window_hours"] == EXPECTED_SUMMARY_WINDOW_HOURS
-    assert payload["total"] == EXPECTED_SUMMARY_TOTAL
-    assert payload["by_severity"]["info"] == 1
-    assert payload["by_severity"]["warning"] == 1
-    assert payload["by_severity"]["error"] == 1
+    expected_severities = {"error": 1, "info": 1, "warning": 1}
+    assert payload["window_hours"] == window_hours
+    assert payload["total"] == sum(expected_severities.values())
+    assert payload["by_severity"] == expected_severities
+    assert {row["source_system"]: row["count"] for row in payload["by_source"]} == {
+        "extension": 2,
+        "console": 1,
+    }
+    assert {row["event_name"]: row["count"] for row in payload["top_events"]} == {
+        "sync.started": 2,
+        "trade.failed": 1,
+    }
 
-    source_counts = {row["source_system"]: row["count"] for row in payload["by_source"]}
-    assert source_counts["extension"] == EXPECTED_EXTENSION_SOURCE_COUNT
-    assert source_counts["rolltrader_console"] == 1
 
-    event_counts = {row["event_name"]: row["count"] for row in payload["top_events"]}
-    assert event_counts["sync.started"] == EXPECTED_SYNC_STARTED_COUNT
-    assert event_counts["trade.failed"] == 1
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_summary_filters_for_non_staff_user(client: Client) -> None:
-    """Non-staff users should only see rows matching timeline visibility rules."""
+def test_producer_stats_group_totals_and_errors(client: Client) -> None:
+    """Group producer totals, severities, and last-seen timestamps."""
     now = timezone.now()
-
-    visible_user = get_user_model().objects.create_user(
-        username="summary_visible_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
+    _event_table(
+        now,
+        [
+            ("a", "extension", timedelta(minutes=20), "info"),
+            ("b", "extension", timedelta(minutes=5), "error"),
+            ("c", "console", timedelta(minutes=2), "warning"),
+        ],
     )
-    hidden_user = get_user_model().objects.create_user(
-        username="summary_hidden_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-
-    AuditEvent.objects.create(
-        event_name="visible.by.actor",
-        source_system="django",
-        occurred_at=now - timedelta(minutes=30),
-        actor_id=str(visible_user.pk),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="visible.by.club",
-        source_system="django",
-        occurred_at=now - timedelta(minutes=20),
-        club_id="",
-        severity="warning",
-    )
-    AuditEvent.objects.create(
-        event_name="hidden.row",
-        source_system="django",
-        occurred_at=now - timedelta(minutes=10),
-        actor_id=str(hidden_user.pk),
-        club_id="club-abc",
-        severity="critical",
-    )
-
-    client.force_login(visible_user)
-    response = client.get("/api/audit/events/summary/", {"window_hours": 24})
+    _login(client, staff=True)
+    response = client.get(f"{AUDIT_API}/producers/", {"window_hours": 24})
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert payload["total"] == EXPECTED_NON_STAFF_VISIBLE_TOTAL
-    by_events = {row["event_name"]: row["count"] for row in payload["top_events"]}
-    assert "visible.by.actor" in by_events
-    assert "visible.by.club" in by_events
-    assert "hidden.row" not in by_events
+    by_source = {row["source_system"]: row for row in payload["items"]}
+    expected_metrics = {"extension": (2, 1, 0), "console": (1, 0, 1)}
+    assert payload["count"] == len(expected_metrics)
+    metrics = {
+        source: tuple(row[key] for key in ("total", "errors", "warnings"))
+        for source, row in by_source.items()
+    }
+    assert metrics == expected_metrics
+    assert all(row["last_seen"] is not None for row in by_source.values())
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_producer_stats_returns_grouped_health_metrics(client: Client) -> None:
-    """Producer stats endpoint should expose per-source totals/error counters."""
-    now = timezone.now()
-    AuditEvent.objects.create(
-        event_name="a",
-        source_system="extension",
-        occurred_at=now - timedelta(minutes=20),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="b",
-        source_system="extension",
-        occurred_at=now - timedelta(minutes=5),
-        severity="error",
-    )
-    AuditEvent.objects.create(
-        event_name="c",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(minutes=2),
-        severity="warning",
-    )
-
-    user = get_user_model().objects.create_user(
-        username="producer_stats_staff",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
-    response = client.get("/api/audit/events/producers/", {"window_hours": 24})
-
-    assert response.status_code == HTTPStatus.OK
-    payload = response.json()
-    assert payload["count"] == EXPECTED_PRODUCERS_COUNT
-
-    items_by_source = {row["source_system"]: row for row in payload["items"]}
-    extension_row = items_by_source["extension"]
-    assert extension_row["total"] == EXPECTED_EXTENSION_PRODUCER_TOTAL
-    assert extension_row["errors"] == EXPECTED_EXTENSION_PRODUCER_ERRORS
-    assert extension_row["warnings"] == 0
-    assert extension_row["last_seen"] is not None
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_producer_stats_applies_non_staff_visibility_filters(client: Client) -> None:
-    """Non-staff producer stats should hide events outside timeline visibility scope."""
-    now = timezone.now()
-    visible_user = get_user_model().objects.create_user(
-        username="producer_visible_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-    hidden_user = get_user_model().objects.create_user(
-        username="producer_hidden_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-
-    AuditEvent.objects.create(
-        event_name="visible",
-        source_system="extension",
-        occurred_at=now - timedelta(minutes=3),
-        actor_id=str(visible_user.pk),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="hidden",
-        source_system="secret_source",
-        occurred_at=now - timedelta(minutes=2),
-        actor_id=str(hidden_user.pk),
-        club_id="club-private",
-        severity="debug",
-    )
-
-    client.force_login(visible_user)
-    response = client.get("/api/audit/events/producers/", {"window_hours": 24})
-
-    assert response.status_code == HTTPStatus.OK
-    payload = response.json()
-    items_by_source = {row["source_system"]: row for row in payload["items"]}
-    assert "extension" in items_by_source
-    assert "secret_source" not in items_by_source
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_trends_returns_hourly_points_and_error_rate_delta(client: Client) -> None:
-    """Trends endpoint should provide hourly buckets and error-rate delta."""
+    """Compare current hourly error rates with the preceding window."""
     now = timezone.now()
-
-    # Current window: 4 events, 1 error => 25%
-    AuditEvent.objects.create(
-        event_name="current.info.1",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=1, minutes=5),
-        severity="info",
+    _event_table(
+        now,
+        [
+            ("current.info.1", "extension", timedelta(hours=1), "info"),
+            ("current.info.2", "extension", timedelta(hours=2), "info"),
+            ("current.warning", "console", timedelta(hours=3), "warning"),
+            ("current.error", "console", timedelta(hours=4), "error"),
+            ("previous.error", "extension", timedelta(hours=7), "error"),
+            ("previous.info", "extension", timedelta(hours=8), "info"),
+        ],
     )
-    AuditEvent.objects.create(
-        event_name="current.info.2",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=2, minutes=15),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="current.warning",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=3, minutes=25),
-        severity="warning",
-    )
-    AuditEvent.objects.create(
-        event_name="current.error",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=4, minutes=10),
-        severity="error",
-    )
-
-    # Previous window: 2 events, 1 error => 50%
-    AuditEvent.objects.create(
-        event_name="previous.error",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=7),
-        severity="error",
-    )
-    AuditEvent.objects.create(
-        event_name="previous.info",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=8),
-        severity="info",
-    )
-
-    user = get_user_model().objects.create_user(
-        username="trends_staff_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
-    response = client.get(
-        "/api/audit/events/trends/",
-        {"window_hours": EXPECTED_TRENDS_WINDOW_HOURS},
-    )
+    _login(client, staff=True)
+    window_hours = 6
+    response = client.get(f"{AUDIT_API}/trends/", {"window_hours": window_hours})
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert payload["window_hours"] == EXPECTED_TRENDS_WINDOW_HOURS
-    assert len(payload["points"]) == EXPECTED_TRENDS_WINDOW_HOURS + 1
-    assert payload["error_rate"]["current"] == EXPECTED_TRENDS_CURRENT_ERROR_RATE
-    assert payload["error_rate"]["previous"] == EXPECTED_TRENDS_PREVIOUS_ERROR_RATE
-    assert payload["error_rate"]["delta"] == (
-        EXPECTED_TRENDS_CURRENT_ERROR_RATE - EXPECTED_TRENDS_PREVIOUS_ERROR_RATE
-    )
+    assert payload["window_hours"] == window_hours
+    assert len(payload["points"]) == window_hours + 1
+    assert payload["error_rate"] == {
+        "current": 25.0,
+        "previous": 50.0,
+        "delta": -25.0,
+    }
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_trends_non_staff_applies_visibility_filter(client: Client) -> None:
-    """Non-staff trends should exclude hidden debug-only producer events."""
+def test_health_ranks_worst_producer_first(client: Client) -> None:
+    """Rank a worsening producer above a healthy producer."""
     now = timezone.now()
-
-    visible_user = get_user_model().objects.create_user(
-        username="trends_visible_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
+    _event_table(
+        now,
+        [
+            ("ext.error.1", "extension", timedelta(hours=1), "error"),
+            ("ext.error.2", "extension", timedelta(hours=2), "error"),
+            ("ext.info", "extension", timedelta(hours=2, minutes=10), "info"),
+            ("ext.warning", "extension", timedelta(hours=3), "warning"),
+            ("ext.previous.1", "extension", timedelta(hours=7), "info"),
+            ("ext.previous.2", "extension", timedelta(hours=8), "info"),
+            ("cli.info.1", "console", timedelta(hours=1), "info"),
+            ("cli.info.2", "console", timedelta(hours=2), "info"),
+            ("cli.info.3", "console", timedelta(hours=3), "info"),
+            ("cli.previous.error", "console", timedelta(hours=7), "error"),
+            ("cli.previous.info", "console", timedelta(hours=8), "info"),
+        ],
     )
-    hidden_user = get_user_model().objects.create_user(
-        username="trends_hidden_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-
-    AuditEvent.objects.create(
-        event_name="visible.info",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=1),
-        actor_id=str(visible_user.pk),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="hidden.debug",
-        source_system="secret_source",
-        occurred_at=now - timedelta(hours=1, minutes=20),
-        actor_id=str(hidden_user.pk),
-        club_id="club-private",
-        severity="debug",
-    )
-
-    client.force_login(visible_user)
-    response = client.get(
-        "/api/audit/events/trends/",
-        {"window_hours": EXPECTED_TRENDS_WINDOW_HOURS},
-    )
+    _login(client, staff=True)
+    window_hours = 6
+    response = client.get(f"{AUDIT_API}/health/", {"window_hours": window_hours})
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    summed_total = sum(point["total"] for point in payload["points"])
-    assert summed_total == 1
-
-
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_health_scores_rank_worst_producer_first(client: Client) -> None:
-    """Health endpoint should rank producers by descending risk score."""
-    now = timezone.now()
-
-    # extension gets worse: higher current error-rate than previous window
-    AuditEvent.objects.create(
-        event_name="ext.current.error.1",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=1),
-        severity="error",
-    )
-    AuditEvent.objects.create(
-        event_name="ext.current.error.2",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=2),
-        severity="error",
-    )
-    AuditEvent.objects.create(
-        event_name="ext.current.info.1",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=2, minutes=10),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="ext.current.warning.1",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=3),
-        severity="warning",
-    )
-
-    AuditEvent.objects.create(
-        event_name="ext.previous.info.1",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=7),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="ext.previous.info.2",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=8),
-        severity="info",
-    )
-
-    # rolltrader stable: no current errors
-    AuditEvent.objects.create(
-        event_name="rt.current.info.1",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=1, minutes=5),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="rt.current.info.2",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=2, minutes=5),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="rt.current.info.3",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=3, minutes=5),
-        severity="info",
-    )
-
-    AuditEvent.objects.create(
-        event_name="rt.previous.error.1",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=7, minutes=10),
-        severity="error",
-    )
-    AuditEvent.objects.create(
-        event_name="rt.previous.info.1",
-        source_system="rolltrader_console",
-        occurred_at=now - timedelta(hours=8, minutes=10),
-        severity="info",
-    )
-
-    user = get_user_model().objects.create_user(
-        username="health_staff_user",
-        password=TEST_PASSWORD,
-        is_staff=True,
-    )
-    client.force_login(user)
-
-    response = client.get(
-        "/api/audit/events/health/",
-        {"window_hours": EXPECTED_HEALTH_WINDOW_HOURS},
-    )
-
-    assert response.status_code == HTTPStatus.OK
-    payload = response.json()
-    assert payload["window_hours"] == EXPECTED_HEALTH_WINDOW_HOURS
-    assert payload["count"] == EXPECTED_PRODUCERS_COUNT
-    assert payload["items"][0]["source_system"] == "extension"
+    expected_sources = [
+        "extension",
+        "console",
+    ]
+    assert payload["window_hours"] == window_hours
+    assert payload["count"] == len(expected_sources)
+    assert [row["source_system"] for row in payload["items"]] == expected_sources
     assert payload["items"][0]["score"] > payload["items"][1]["score"]
 
 
-@pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
-def test_health_scores_non_staff_hides_private_debug_source(client: Client) -> None:
-    """Non-staff health endpoint should not expose private debug-only sources."""
-    now = timezone.now()
-    visible_user = get_user_model().objects.create_user(
-        username="health_visible_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-    hidden_user = get_user_model().objects.create_user(
-        username="health_hidden_user",
-        password=TEST_PASSWORD,
-        is_staff=False,
-    )
-
-    AuditEvent.objects.create(
-        event_name="visible.health.info",
-        source_system="extension",
-        occurred_at=now - timedelta(hours=1),
-        actor_id=str(visible_user.pk),
-        severity="info",
-    )
-    AuditEvent.objects.create(
-        event_name="hidden.health.debug",
-        source_system="secret_source",
-        occurred_at=now - timedelta(hours=1, minutes=30),
-        actor_id=str(hidden_user.pk),
-        club_id="club-private",
-        severity="debug",
-    )
-
-    client.force_login(visible_user)
-    response = client.get(
-        "/api/audit/events/health/",
-        {"window_hours": EXPECTED_HEALTH_WINDOW_HOURS},
-    )
+@pytest.mark.parametrize("endpoint", ["summary", "producers", "trends", "health"])
+def test_aggregate_endpoints_apply_non_staff_visibility(
+    client: Client,
+    endpoint: str,
+) -> None:
+    """Apply the same non-staff visibility boundary to every aggregate."""
+    actor_id = _login(client)
+    _visibility_events(actor_id=actor_id)
+    response = client.get(f"{AUDIT_API}/{endpoint}/", {"window_hours": 24})
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    sources = [item["source_system"] for item in payload["items"]]
-    assert "extension" in sources
-    assert "secret_source" not in sources
+    visible_names = {
+        "visible.actor.debug",
+        "visible.blank-club.debug",
+        "visible.allowed-severity",
+    }
+    visible_sources = {"actor-source", "blank-club-source", "allowed-source"}
+    if endpoint == "summary":
+        assert payload["total"] == len(visible_names)
+        assert {row["event_name"] for row in payload["top_events"]} == visible_names
+    elif endpoint == "trends":
+        assert [
+            point["by_severity"] for point in payload["points"] if point["total"]
+        ] == [
+            {"debug": 1, "info": 0, "warning": 0, "error": 0},
+            {"debug": 1, "info": 0, "warning": 0, "error": 0},
+            {"debug": 0, "info": 0, "warning": 0, "error": 1},
+        ]
+    else:
+        assert payload["count"] == len(visible_sources)
+        assert {row["source_system"] for row in payload["items"]} == visible_sources
