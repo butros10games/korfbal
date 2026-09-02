@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "apps.player",
     "apps.team",
     "apps.schedule",
+    "apps.tournament.apps.TournamentConfig",
     "apps.awards",
     "apps.hub",
     "apps.audit",

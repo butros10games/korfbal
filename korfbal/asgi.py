@@ -19,9 +19,13 @@ django_application = cast(AsgiApplication, get_asgi_application())
 
 # The Django app registry must be initialized before importing the consumer's models.
 from apps.game_tracker.realtime.consumer import MatchEventsSseConsumer  # noqa: E402
+from apps.tournament.realtime import TournamentEventsSseConsumer  # noqa: E402
 
 
 sse_application = cast(AsgiApplication, MatchEventsSseConsumer.as_asgi())
+tournament_sse_application = cast(
+    AsgiApplication, TournamentEventsSseConsumer.as_asgi()
+)
 
 
 async def application(
@@ -32,5 +36,8 @@ async def application(
     """Route the streaming endpoint outside synchronous Django middleware."""
     if scope["type"] == "http" and scope["path"] == "/api/live/events/":
         await sse_application(scope, receive, send)
+        return
+    if scope["type"] == "http" and scope["path"] == "/api/tournament-live/events/":
+        await tournament_sse_application(scope, receive, send)
         return
     await django_application(scope, receive, send)

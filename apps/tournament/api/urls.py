@@ -1,0 +1,170 @@
+"""URL routes for tournament mode."""
+
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    TournamentDisplayConfigView,
+    TournamentFieldDetailView,
+    TournamentFieldListCreateView,
+    TournamentFinalsGenerateView,
+    TournamentGenerationApplyView,
+    TournamentGenerationPreviewView,
+    TournamentMatchDetailView,
+    TournamentMatchesGenerateView,
+    TournamentMatchListCreateView,
+    TournamentMatchResultView,
+    TournamentMemberDetailView,
+    TournamentMemberListCreateView,
+    TournamentPoolDetailView,
+    TournamentPoolListCreateView,
+    TournamentPoolsGenerateView,
+    TournamentPublicView,
+    TournamentPublishView,
+    TournamentRefereeGoalView,
+    TournamentRefereeReadyView,
+    TournamentRefereeTrackerView,
+    TournamentScheduleImportView,
+    TournamentSnapshotView,
+    TournamentStandingAdjustmentDetailView,
+    TournamentStandingAdjustmentListCreateView,
+    TournamentTeamDetailView,
+    TournamentTeamListCreateView,
+    TournamentViewSet,
+)
+
+
+router = DefaultRouter()
+router.register(r"", TournamentViewSet, basename="tournament")
+
+urlpatterns = [
+    path(
+        "public/<slug:slug>/", TournamentPublicView.as_view(), name="tournament-public"
+    ),
+    path(
+        "<uuid:tournament_id>/snapshot/",
+        TournamentSnapshotView.as_view(),
+        name="tournament-snapshot",
+    ),
+    path(
+        "<uuid:tournament_id>/teams/",
+        TournamentTeamListCreateView.as_view(),
+        name="tournament-team-list",
+    ),
+    path(
+        "<uuid:tournament_id>/teams/<uuid:team_id>/",
+        TournamentTeamDetailView.as_view(),
+        name="tournament-team-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/fields/",
+        TournamentFieldListCreateView.as_view(),
+        name="tournament-field-list",
+    ),
+    path(
+        "<uuid:tournament_id>/members/",
+        TournamentMemberListCreateView.as_view(),
+        name="tournament-member-list",
+    ),
+    path(
+        "<uuid:tournament_id>/members/<int:member_id>/",
+        TournamentMemberDetailView.as_view(),
+        name="tournament-member-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/adjustments/",
+        TournamentStandingAdjustmentListCreateView.as_view(),
+        name="tournament-adjustment-list",
+    ),
+    path(
+        "<uuid:tournament_id>/adjustments/<uuid:adjustment_id>/",
+        TournamentStandingAdjustmentDetailView.as_view(),
+        name="tournament-adjustment-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/fields/<uuid:field_id>/",
+        TournamentFieldDetailView.as_view(),
+        name="tournament-field-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/generation/preview/",
+        TournamentGenerationPreviewView.as_view(),
+        name="tournament-generation-preview",
+    ),
+    path(
+        "<uuid:tournament_id>/generation/apply/",
+        TournamentGenerationApplyView.as_view(),
+        name="tournament-generation-apply",
+    ),
+    path(
+        "<uuid:tournament_id>/schedule/import/",
+        TournamentScheduleImportView.as_view(),
+        name="tournament-schedule-import",
+    ),
+    path(
+        "<uuid:tournament_id>/pools/",
+        TournamentPoolListCreateView.as_view(),
+        name="tournament-pool-list",
+    ),
+    path(
+        "<uuid:tournament_id>/pools/generate/",
+        TournamentPoolsGenerateView.as_view(),
+        name="tournament-pools-generate",
+    ),
+    path(
+        "<uuid:tournament_id>/pools/<uuid:pool_id>/",
+        TournamentPoolDetailView.as_view(),
+        name="tournament-pool-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/matches/",
+        TournamentMatchListCreateView.as_view(),
+        name="tournament-match-list",
+    ),
+    path(
+        "<uuid:tournament_id>/matches/generate/",
+        TournamentMatchesGenerateView.as_view(),
+        name="tournament-matches-generate",
+    ),
+    path(
+        "<uuid:tournament_id>/matches/<uuid:match_id>/",
+        TournamentMatchDetailView.as_view(),
+        name="tournament-match-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/publish/",
+        TournamentPublishView.as_view(),
+        name="tournament-publish",
+    ),
+    path(
+        "<uuid:tournament_id>/finals/generate/",
+        TournamentFinalsGenerateView.as_view(),
+        name="tournament-finals-generate",
+    ),
+    path(
+        "<uuid:tournament_id>/display-config/",
+        TournamentDisplayConfigView.as_view(),
+        name="tournament-display-config",
+    ),
+    path(
+        "matches/<uuid:match_id>/result/",
+        TournamentMatchResultView.as_view(),
+        name="tournament-match-result",
+    ),
+    path(
+        "matches/<uuid:match_id>/tracker/",
+        TournamentRefereeTrackerView.as_view(),
+        name="tournament-referee-tracker",
+    ),
+    path(
+        "matches/<uuid:match_id>/tracker/ready/",
+        TournamentRefereeReadyView.as_view(),
+        name="tournament-referee-ready",
+    ),
+    path(
+        "matches/<uuid:match_id>/tracker/goal/",
+        TournamentRefereeGoalView.as_view(),
+        name="tournament-referee-goal",
+    ),
+    path("", include(router.urls)),
+]

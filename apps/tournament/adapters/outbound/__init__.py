@@ -1,0 +1,1 @@
+"""Outbound tournament infrastructure adapters."""
