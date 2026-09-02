@@ -131,6 +131,7 @@ class TournamentField(models.Model):
     active = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
+        assigned_pools: models.Manager[TournamentPool]
         matches: models.Manager[TournamentMatch]
 
     class Meta:
@@ -287,6 +288,14 @@ class TournamentPool(models.Model):
         related_name="pools",
     )
     stage_id: UUID
+    assigned_field = models.ForeignKey(
+        TournamentField,
+        on_delete=models.SET_NULL,
+        related_name="assigned_pools",
+        null=True,
+        blank=True,
+    )
+    assigned_field_id: UUID | None
     name = models.CharField(max_length=80)
     sort_order = models.PositiveSmallIntegerField(default=0)
     teams = models.ManyToManyField(

@@ -53,6 +53,31 @@ def test_anonymous_create_returns_json_auth_error(client: Client) -> None:
     assert "Location" not in response.headers
 
 
+def test_new_tournament_is_saved_as_a_manager_only_draft(client: Client) -> None:
+    """An organizer can leave after creation and resume the persisted draft later."""
+    user = get_user_model().objects.create_user(username="draft-manager")
+    client.force_login(user)
+
+    created = client.post(
+        "/api/tournaments/",
+        data={
+            "name": "Concepttoernooi",
+            "location": "Sporthal",
+            "starts_at": timezone.now().isoformat(),
+            "status": Tournament.Status.PUBLISHED,
+        },
+        content_type="application/json",
+    )
+
+    assert created.status_code == HTTPStatus.CREATED
+    assert created.json()["status"] == Tournament.Status.DRAFT
+    tournament_id = created.json()["id_uuid"]
+    assert client.get("/api/tournaments/").json()[0]["id_uuid"] == tournament_id
+
+    client.logout()
+    assert client.get("/api/tournaments/").json() == []
+
+
 def test_manager_generates_publishes_and_scores_live_tournament(client: Client) -> None:
     """A complete pool workflow publishes, scores, audits, and rejects stale writes."""
     user = get_user_model().objects.create_user(

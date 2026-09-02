@@ -82,6 +82,7 @@ def test_import_creates_missing_entities_and_preserves_supplied_plan(
     assert tournament.teams.count() == len(expected_team_names)
     assert tournament.fields.count() == 1
     assert tournament.pools.count() == 1
+    assert tournament.pools.get().assigned_field == tournament.fields.get()
     assert tournament.matches.count() == len(rows)
     assert TournamentTeam.objects.get(pk=existing_team.pk).name == "Fortuna 1"
     payload = response.json()

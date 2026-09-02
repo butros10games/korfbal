@@ -9,11 +9,19 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 import pytest
 
-from apps.tournament.models import Tournament, TournamentField, TournamentTeam
+from apps.tournament.models import (
+    Tournament,
+    TournamentField,
+    TournamentPool,
+    TournamentPoolEntry,
+    TournamentStage,
+    TournamentTeam,
+)
 from apps.tournament.services.generation import (
     GenerationError,
     GenerationOptions,
     allocate_pools,
+    build_existing_pool_match_plan,
     build_generation_plan,
     round_robin_rounds,
 )
@@ -130,3 +138,45 @@ def test_schedule_uses_fields_without_team_or_field_overlap() -> None:
             left[1] + timedelta(minutes=10) <= right[0]
             for left, right in pairwise(ordered)
         )
+
+
+def test_existing_pool_schedule_uses_its_assigned_field() -> None:
+    """A reviewed pool's fixed field constrains every generated match."""
+    tournament = _tournament()
+    teams = [
+        TournamentTeam.objects.create(
+            tournament=tournament,
+            name=f"Team {index}",
+            seed=index,
+        )
+        for index in range(1, 5)
+    ]
+    TournamentField.objects.create(tournament=tournament, label="Veld 1")
+    assigned_field = TournamentField.objects.create(
+        tournament=tournament,
+        label="Veld 2",
+        sort_order=2,
+    )
+    stage = TournamentStage.objects.create(
+        tournament=tournament,
+        name="Poules",
+        kind=TournamentStage.Kind.POOL,
+    )
+    pool = TournamentPool.objects.create(
+        tournament=tournament,
+        stage=stage,
+        name="Poule A",
+        assigned_field=assigned_field,
+    )
+    TournamentPoolEntry.objects.bulk_create([
+        TournamentPoolEntry(pool=pool, team=team, seed_order=index)
+        for index, team in enumerate(teams, start=1)
+    ])
+
+    matches = build_existing_pool_match_plan(
+        tournament,
+        options=GenerationOptions(pool_count=1),
+    )
+
+    assert len(matches) == len(teams) * (len(teams) - 1) // 2
+    assert {match["field_id"] for match in matches} == {str(assigned_field.id_uuid)}

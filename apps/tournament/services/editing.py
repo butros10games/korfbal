@@ -90,12 +90,27 @@ def _ensure_pools_editable(tournament: Tournament) -> None:
         )
 
 
+def _pool_field(
+    tournament: Tournament,
+    assigned_field_id: UUID | None,
+) -> TournamentField | None:
+    if assigned_field_id is None:
+        return None
+    try:
+        return tournament.fields.get(pk=assigned_field_id, active=True)
+    except TournamentField.DoesNotExist as exc:
+        raise TournamentEditingError(
+            "Select an active field from this tournament."
+        ) from exc
+
+
 @transaction.atomic
 def create_pool(
     tournament: Tournament,
     *,
     name: str,
     team_ids: list[UUID],
+    assigned_field_id: UUID | None = None,
 ) -> TournamentPool:
     """Create one manually composed pool.
 
@@ -108,10 +123,12 @@ def create_pool(
     if tournament.pools.filter(name__iexact=name).exists():
         raise TournamentEditingError("A pool with this name already exists.")
     teams = _pool_teams(tournament, team_ids)
+    assigned_field = _pool_field(tournament, assigned_field_id)
     next_order = (tournament.pools.aggregate(value=Max("sort_order"))["value"] or 0) + 1
     pool = TournamentPool.objects.create(
         tournament=tournament,
         stage=_pool_stage(tournament),
+        assigned_field=assigned_field,
         name=name,
         sort_order=next_order,
     )
@@ -129,6 +146,7 @@ def update_pool(
     *,
     name: str,
     team_ids: list[UUID],
+    assigned_field_id: UUID | None = None,
 ) -> TournamentPool:
     """Replace a draft pool's label and ordered team assignment.
 
@@ -142,8 +160,10 @@ def update_pool(
     if tournament.pools.filter(name__iexact=name).exclude(pk=pool.pk).exists():
         raise TournamentEditingError("A pool with this name already exists.")
     teams = _pool_teams(tournament, team_ids, exclude_pool=pool)
+    assigned_field = _pool_field(tournament, assigned_field_id)
     pool.name = name
-    pool.save(update_fields=["name"])
+    pool.assigned_field = assigned_field
+    pool.save(update_fields=["name", "assigned_field"])
     pool.entries.all().delete()
     TournamentPoolEntry.objects.bulk_create([
         TournamentPoolEntry(pool=pool, team=team, seed_order=index)
@@ -201,6 +221,10 @@ def _match_objects(
     pool_team_ids = set(pool.entries.values_list("team_id", flat=True))
     if home.pk not in pool_team_ids or away.pk not in pool_team_ids:
         raise TournamentEditingError("Both teams must belong to the selected pool.")
+    if pool.assigned_field_id and pool.assigned_field_id != field.pk:
+        raise TournamentEditingError(
+            f'Pool "{pool.name}" is assigned to field "{pool.assigned_field.label}".'
+        )
     return pool, home, away, field
 
 

@@ -203,14 +203,22 @@ def apply_imported_schedule(
         sort_order=1,
     )
     pool_names: dict[str, str] = {}
+    pool_field_keys: dict[str, set[str]] = {}
     for row in prepared:
-        pool_names.setdefault(_key(row.pool_name), row.pool_name)
+        pool_key = _key(row.pool_name)
+        pool_names.setdefault(pool_key, row.pool_name)
+        pool_field_keys.setdefault(pool_key, set()).add(_key(row.field_label))
     pools = {
         key: TournamentPool.objects.create(
             tournament=tournament,
             stage=stage,
             name=name,
             sort_order=index,
+            assigned_field=(
+                fields[next(iter(pool_field_keys[key]))]
+                if len(pool_field_keys[key]) == 1
+                else None
+            ),
         )
         for index, (key, name) in enumerate(pool_names.items())
     }

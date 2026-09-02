@@ -88,6 +88,7 @@ class TournamentSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = [
             "id_uuid",
             "slug",
+            "status",
             "live_revision",
             "can_manage",
             "team_count",
@@ -356,6 +357,7 @@ class TournamentPoolWriteSerializer(serializers.Serializer):
     """Validate one manually composed tournament pool."""
 
     name = serializers.CharField(max_length=80)
+    assigned_field_id = serializers.UUIDField(required=False, allow_null=True)
     team_ids = serializers.ListField(
         child=serializers.UUIDField(),
         allow_empty=False,

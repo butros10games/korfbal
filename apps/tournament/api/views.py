@@ -536,6 +536,9 @@ class TournamentPoolDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         values = {
             "name": serializer.validated_data.get("name", pool.name),
+            "assigned_field_id": serializer.validated_data.get(
+                "assigned_field_id", pool.assigned_field_id
+            ),
             "team_ids": serializer.validated_data.get(
                 "team_ids",
                 list(pool.entries.values_list("team_id", flat=True)),

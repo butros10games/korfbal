@@ -12,6 +12,7 @@ from django.db.models import Q
 
 from apps.tournament.models import (
     Tournament,
+    TournamentField,
     TournamentMatch,
     TournamentPool,
     TournamentPoolEntry,
@@ -143,11 +144,38 @@ def _ordered_pairings(
     return scheduled
 
 
+def _resolved_pool_fields(
+    fields: list[TournamentField],
+    pool_fields: list[TournamentField | None] | None,
+    *,
+    pool_count: int,
+) -> list[TournamentField | None]:
+    if pool_fields is None:
+        return [None] * pool_count
+    if len(pool_fields) != pool_count:
+        raise GenerationError("Every pool must have a corresponding field assignment.")
+
+    active_fields = {field.pk: field for field in fields}
+    resolved: list[TournamentField | None] = []
+    for assigned_field in pool_fields:
+        if assigned_field is None:
+            resolved.append(None)
+            continue
+        field = active_fields.get(assigned_field.pk)
+        if field is None:
+            raise GenerationError(
+                f'Assigned field "{assigned_field.label}" must be active.'
+            )
+        resolved.append(field)
+    return resolved
+
+
 def _scheduled_matches(
     tournament: Tournament,
     *,
     pools: list[list[TournamentTeam]],
     options: GenerationOptions,
+    pool_fields: list[TournamentField | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Assign every pool pairing to an available field and start time.
 
@@ -161,6 +189,11 @@ def _scheduled_matches(
     fields = list(tournament.fields.filter(active=True))
     if not fields:
         raise GenerationError("Add at least one active field before scheduling.")
+    resolved_pool_fields = _resolved_pool_fields(
+        fields,
+        pool_fields,
+        pool_count=len(pools),
+    )
 
     start = options.starts_at or tournament.starts_at
     duration = options.duration_minutes or tournament.match_duration_minutes
@@ -188,7 +221,9 @@ def _scheduled_matches(
         home_id = str(home.id_uuid)
         away_id = str(away.id_uuid)
         candidates = []
-        for field in fields:
+        assigned_field = resolved_pool_fields[pool_index]
+        eligible_fields = [assigned_field] if assigned_field else fields
+        for field in eligible_fields:
             field_id = str(field.id_uuid)
             candidate_start = max(
                 field_available[field_id],
@@ -261,13 +296,19 @@ def build_existing_pool_match_plan(
     pools = list(
         tournament.pools
         .filter(stage__kind=TournamentStage.Kind.POOL)
+        .select_related("assigned_field")
         .prefetch_related("entries__team")
         .order_by("sort_order", "name")
     )
     team_groups = [[entry.team for entry in pool.entries.all()] for pool in pools]
     if not team_groups or any(len(teams) < MIN_TEAMS for teams in team_groups):
         raise GenerationError("Every pool needs at least two teams before scheduling.")
-    return _scheduled_matches(tournament, pools=team_groups, options=options)
+    return _scheduled_matches(
+        tournament,
+        pools=team_groups,
+        options=options,
+        pool_fields=[pool.assigned_field for pool in pools],
+    )
 
 
 def build_generation_plan(

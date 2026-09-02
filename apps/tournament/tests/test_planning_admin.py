@@ -67,18 +67,23 @@ def test_pool_and_match_generation_are_separate_review_steps(client: Client) -> 
 def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -> None:
     """Organizer-created records use the normal snapshot and remain editable."""
     tournament, teams = _setup(client)
+    field_id = str(tournament.fields.get().id_uuid)
     pool_response = client.post(
         f"/api/tournaments/{tournament.id_uuid}/pools/",
         data={
             "name": "Poule Handmatig",
+            "assigned_field_id": field_id,
             "team_ids": [str(teams[0].id_uuid), str(teams[1].id_uuid)],
         },
         content_type="application/json",
     )
 
     assert pool_response.status_code == HTTPStatus.CREATED
+    assert pool_response.json()["pools"][0]["assigned_field"] == {
+        "id_uuid": field_id,
+        "label": "Veld 1",
+    }
     pool_id = pool_response.json()["pools"][0]["id_uuid"]
-    field_id = str(tournament.fields.get().id_uuid)
     create_response = client.post(
         f"/api/tournaments/{tournament.id_uuid}/matches/",
         data={
@@ -117,6 +122,46 @@ def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -
         content_type="application/json",
     )
     assert update_pool_response.status_code == HTTPStatus.OK
+    assert (
+        update_pool_response.json()["pools"][0]["assigned_field"]["id_uuid"] == field_id
+    )
     assert {
         row["team_id"] for row in update_pool_response.json()["pools"][0]["standings"]
     } == {str(teams[0].id_uuid), str(teams[2].id_uuid)}
+
+
+def test_manual_match_must_use_the_pool_assigned_field(client: Client) -> None:
+    """Manual planning cannot silently violate a pool's fixed field."""
+    tournament, teams = _setup(client)
+    assigned_field = tournament.fields.get()
+    other_field = TournamentField.objects.create(
+        tournament=tournament,
+        label="Veld 2",
+    )
+    pool_response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/pools/",
+        data={
+            "name": "Poule A",
+            "assigned_field_id": str(assigned_field.id_uuid),
+            "team_ids": [str(team.id_uuid) for team in teams],
+        },
+        content_type="application/json",
+    )
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/matches/",
+        data={
+            "pool_id": pool_response.json()["pools"][0]["id_uuid"],
+            "home_team_id": str(teams[0].id_uuid),
+            "away_team_id": str(teams[1].id_uuid),
+            "field_id": str(other_field.id_uuid),
+            "date": "2027-06-12",
+            "start_time": "09:00",
+            "duration_minutes": 20,
+            "round_number": 1,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert "assigned to field" in response.json()["detail"]
