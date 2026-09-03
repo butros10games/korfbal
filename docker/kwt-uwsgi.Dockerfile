@@ -1,5 +1,5 @@
 ## ------------------------------- Dependency Stage ------------------------------ ##
-# This stage only installs third-party deps. Libs code changes won't invalidate this cache.
+# Install third-party dependencies before local source so library changes retain that cache.
 FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS deps
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9 /uv /bin/uv
@@ -10,22 +10,27 @@ WORKDIR /build/apps/django_projects/korfbal/deps
 COPY apps/django_projects/korfbal/deps/pyproject.toml ./pyproject.toml
 COPY apps/django_projects/korfbal/deps/uv.lock ./uv.lock
 
-# Copy ONLY build-required files from libs (pyproject.toml, src/, LICENSE, README where needed)
+# Copy local package metadata before source so third-party dependencies stay cached.
 COPY libs/shared_python_packages/bg_audit_events/pyproject.toml libs/shared_python_packages/bg_audit_events/README.md /build/libs/shared_python_packages/bg_audit_events/
-COPY libs/shared_python_packages/bg_audit_events/src/ /build/libs/shared_python_packages/bg_audit_events/src/
 COPY libs/django_packages/bg_auth/pyproject.toml libs/django_packages/bg_auth/LICENSE libs/django_packages/bg_auth/README.md /build/libs/django_packages/bg_auth/
-COPY libs/django_packages/bg_auth/src/ /build/libs/django_packages/bg_auth/src/
 COPY libs/django_packages/bg_django_caching_paginator/pyproject.toml libs/django_packages/bg_django_caching_paginator/LICENSE libs/django_packages/bg_django_caching_paginator/README.md /build/libs/django_packages/bg_django_caching_paginator/
-COPY libs/django_packages/bg_django_caching_paginator/src/ /build/libs/django_packages/bg_django_caching_paginator/src/
 COPY libs/django_packages/bg_django_mobile_detector/pyproject.toml /build/libs/django_packages/bg_django_mobile_detector/
-COPY libs/django_packages/bg_django_mobile_detector/src/ /build/libs/django_packages/bg_django_mobile_detector/src/
 COPY libs/shared_python_packages/bg_uuidv7/pyproject.toml libs/shared_python_packages/bg_uuidv7/LICENSE libs/shared_python_packages/bg_uuidv7/README.md /build/libs/shared_python_packages/bg_uuidv7/
-COPY libs/shared_python_packages/bg_uuidv7/src/ /build/libs/shared_python_packages/bg_uuidv7/src/
 
 ENV UV_PROJECT_ENVIRONMENT=/build/.venv
 ENV UV_LINK_MODE=copy
 
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --group uwsgi --no-dev --no-editable --compile-bytecode
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --group uwsgi --no-dev --no-editable --no-install-local
+
+COPY libs/shared_python_packages/bg_audit_events/src/ /build/libs/shared_python_packages/bg_audit_events/src/
+COPY libs/django_packages/bg_auth/src/ /build/libs/django_packages/bg_auth/src/
+COPY libs/django_packages/bg_django_caching_paginator/src/ /build/libs/django_packages/bg_django_caching_paginator/src/
+COPY libs/django_packages/bg_django_mobile_detector/src/ /build/libs/django_packages/bg_django_mobile_detector/src/
+COPY libs/shared_python_packages/bg_uuidv7/src/ /build/libs/shared_python_packages/bg_uuidv7/src/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --group uwsgi --no-dev --no-editable
 
 ## ------------------------------- Venv Optimizer Stage ------------------------------ ##
 # Separate stage so app source changes don't re-run optimization
@@ -62,7 +67,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     install -d -o appuser -g appuser /app/logs && \
     install -o appuser -g appuser -m 644 /dev/null /app/logs/uwsgi.log
 
-COPY --from=venv-optimizer --chmod=0555 /build/.venv .venv
+COPY --link --from=venv-optimizer --chmod=0555 /build/.venv .venv
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 
