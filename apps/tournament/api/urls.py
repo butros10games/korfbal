@@ -23,7 +23,12 @@ from .views import (
     TournamentPoolsGenerateView,
     TournamentPublicView,
     TournamentPublishView,
+    TournamentRefereeAssignmentView,
+    TournamentRefereeClaimView,
+    TournamentRefereeDutiesView,
     TournamentRefereeGoalView,
+    TournamentRefereeLatestEventView,
+    TournamentRefereeQrView,
     TournamentRefereeReadyView,
     TournamentRefereeTrackerView,
     TournamentScheduleImportView,
@@ -40,6 +45,16 @@ router = DefaultRouter()
 router.register(r"", TournamentViewSet, basename="tournament")
 
 urlpatterns = [
+    path(
+        "referee-duties/<uuid:access_token>/",
+        TournamentRefereeDutiesView.as_view(),
+        name="tournament-referee-duties",
+    ),
+    path(
+        "referee-duties/<uuid:access_token>/matches/<uuid:match_id>/claim/",
+        TournamentRefereeClaimView.as_view(),
+        name="tournament-referee-claim",
+    ),
     path(
         "public/<slug:slug>/", TournamentPublicView.as_view(), name="tournament-public"
     ),
@@ -134,6 +149,16 @@ urlpatterns = [
         name="tournament-match-detail",
     ),
     path(
+        "<uuid:tournament_id>/matches/<uuid:match_id>/referee-duty/",
+        TournamentRefereeAssignmentView.as_view(),
+        name="tournament-referee-assignment",
+    ),
+    path(
+        "<uuid:tournament_id>/referee-teams/<uuid:team_id>/qr/",
+        TournamentRefereeQrView.as_view(),
+        name="tournament-referee-qr",
+    ),
+    path(
         "<uuid:tournament_id>/publish/",
         TournamentPublishView.as_view(),
         name="tournament-publish",
@@ -177,6 +202,11 @@ urlpatterns = [
         "matches/<uuid:match_id>/tracker/goal/",
         TournamentRefereeGoalView.as_view(),
         name="tournament-referee-goal",
+    ),
+    path(
+        "matches/<uuid:match_id>/tracker/events/latest/",
+        TournamentRefereeLatestEventView.as_view(),
+        name="tournament-referee-latest-event",
     ),
     path("", include(router.urls)),
 ]

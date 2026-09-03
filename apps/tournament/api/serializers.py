@@ -509,8 +509,49 @@ class TournamentRefereeReadySerializer(serializers.Serializer):
     expected_revision = serializers.IntegerField(min_value=0)
 
 
+class TournamentRefereeAssignmentSerializer(serializers.Serializer):
+    """Validate a manager's team-duty assignment or claim reset."""
+
+    team_id = serializers.UUIDField(required=False, allow_null=True)
+    reset_claim = serializers.BooleanField(default=False)
+
+
+class TournamentRefereeClaimSerializer(serializers.Serializer):
+    """Validate one account-free referee identity claim."""
+
+    name = serializers.CharField(
+        max_length=150,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=True,
+    )
+    player_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Require exactly one free-form name or roster player.
+
+        Raises:
+            serializers.ValidationError: If both or neither identity is supplied.
+
+        """
+        has_name = bool(attrs.get("name"))
+        has_player = attrs.get("player_id") is not None
+        if has_name == has_player:
+            raise serializers.ValidationError(
+                "Vul je naam in of kies jezelf uit de spelerslijst."
+            )
+        return attrs
+
+
 class TournamentRefereeGoalSerializer(serializers.Serializer):
     """Validate a single referee goal command."""
 
     side = serializers.ChoiceField(choices=("home", "away"))
+    expected_revision = serializers.IntegerField(min_value=0)
+
+
+class TournamentRefereeEventDeleteSerializer(serializers.Serializer):
+    """Validate removal of the exact event still shown to the referee."""
+
+    event_id = serializers.UUIDField()
     expected_revision = serializers.IntegerField(min_value=0)

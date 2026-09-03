@@ -203,6 +203,7 @@ class TournamentTeam(models.Model):
         on_delete=models.CASCADE,
         related_name="teams",
     )
+    tournament_id: UUID
     name = models.CharField(max_length=160)
     short_name = models.CharField(max_length=32, blank=True)
     affiliation = models.CharField(max_length=120, blank=True)
@@ -213,12 +214,22 @@ class TournamentTeam(models.Model):
         blank=True,
         related_name="tournament_entries",
     )
+    linked_team_id: UUID | None
+    referee_access_token = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
     seed = models.PositiveSmallIntegerField(default=1)
     sort_order = models.PositiveSmallIntegerField(default=0)
     color = models.CharField(max_length=16, blank=True)
     checked_in = models.BooleanField(default=False)
     withdrawn = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        referee_matches: models.Manager[TournamentMatch]
 
     class Meta:
         """Keep custom team names unique within a tournament."""
@@ -492,6 +503,31 @@ class TournamentMatch(models.Model):
         related_name="readied_tournament_matches",
     )
     field_ready_by_id: int | None
+    field_ready_by_name = models.CharField(max_length=150, blank=True)
+    referee_team = models.ForeignKey(
+        TournamentTeam,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="referee_matches",
+    )
+    referee_team_id: UUID | None
+    referee_name = models.CharField(max_length=150, blank=True)
+    referee_player = models.ForeignKey(
+        "player.Player",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="claimed_tournament_referee_matches",
+    )
+    referee_player_id: UUID | None
+    referee_claim_token = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
+    referee_claimed_at = models.DateTimeField(null=True, blank=True)
     home_score = models.PositiveSmallIntegerField(null=True, blank=True)
     away_score = models.PositiveSmallIntegerField(null=True, blank=True)
     winner = models.ForeignKey(
@@ -518,6 +554,9 @@ class TournamentMatch(models.Model):
     revision = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    if TYPE_CHECKING:
+        result_audits: models.Manager[TournamentResultAudit]
 
     class Meta:
         """Index live operations and protect match identity."""
@@ -575,6 +614,13 @@ class TournamentStandingAdjustment(models.Model):
 class TournamentResultAudit(models.Model):
     """Append-only history for match result changes."""
 
+    class Source(models.TextChoices):
+        """Identify which scoring surface produced an audited change."""
+
+        DIRECT = "direct", "Direct result edit"
+        REFEREE_GOAL = "referee_goal", "Referee goal"
+        REFEREE_UNDO = "referee_undo", "Referee goal removal"
+
     id_uuid = models.UUIDField(primary_key=True, default=uuidv7, editable=False)
     match = models.ForeignKey(
         TournamentMatch,
@@ -591,7 +637,15 @@ class TournamentResultAudit(models.Model):
     changed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="tournament_result_changes",
+    )
+    changed_by_name = models.CharField(max_length=150, blank=True)
+    source = models.CharField(
+        max_length=24,
+        choices=Source.choices,
+        default=Source.DIRECT,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

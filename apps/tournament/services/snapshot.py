@@ -47,6 +47,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             "home_team",
             "away_team",
             "winner",
+            "referee_team",
         )
     )
     pools_by_id = {str(pool.id_uuid): pool for pool in pools}
@@ -192,6 +193,16 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                 "field_ready_at": (
                     match.field_ready_at.isoformat() if match.field_ready_at else None
                 ),
+                "referee_team": (
+                    {
+                        "id_uuid": str(match.referee_team_id),
+                        "name": match.referee_team.name,
+                        "short_name": match.referee_team.short_name,
+                    }
+                    if match.referee_team
+                    else None
+                ),
+                "referee_claimed": match.referee_claimed_at is not None,
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "winner_id": str(match.winner_id) if match.winner_id else None,

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, time
+from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
+import qrcode
+from qrcode.image.svg import SvgPathImage
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.exceptions import (
     APIException,
@@ -36,6 +41,9 @@ from apps.tournament.api.serializers import (
     TournamentMatchWriteSerializer,
     TournamentMemberSerializer,
     TournamentPoolWriteSerializer,
+    TournamentRefereeAssignmentSerializer,
+    TournamentRefereeClaimSerializer,
+    TournamentRefereeEventDeleteSerializer,
     TournamentRefereeGoalSerializer,
     TournamentRefereeReadySerializer,
     TournamentResultSerializer,
@@ -92,9 +100,15 @@ from apps.tournament.services.importing import (
 )
 from apps.tournament.services.referee_tracker import (
     RefereeTrackerError,
+    assign_referee_team,
+    build_referee_duties_state,
     build_referee_tracker_state,
+    claim_referee_duty,
+    ensure_referee_access_token,
     mark_field_ready,
     record_goal,
+    remove_latest_goal,
+    valid_guest_referee_claim,
 )
 from apps.tournament.services.snapshot import build_tournament_snapshot
 
@@ -1068,6 +1082,8 @@ class TournamentMatchResultView(APIView):
             new_status=data["status"],
             reason=data.get("reason", ""),
             changed_by=request.user,
+            changed_by_name=str(request.user),
+            source=TournamentResultAudit.Source.DIRECT,
         )
         match.home_score = home_score
         match.away_score = away_score
@@ -1104,17 +1120,140 @@ class TournamentMatchResultView(APIView):
         })
 
 
-def _referee_match(request: Request, match_id: str, *, lock: bool) -> TournamentMatch:
-    _require_authentication(request)
+class TournamentRefereeAssignmentView(APIView):
+    """Assign a tournament team to referee one match."""
+
+    @transaction.atomic
+    def patch(self, request: Request, tournament_id: str, match_id: str) -> Response:
+        """Update the duty or release its current guest claim."""
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        serializer = TournamentRefereeAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        match = get_object_or_404(
+            tournament.matches.select_for_update().select_related(
+                "home_team", "away_team", "referee_team"
+            ),
+            id_uuid=match_id,
+        )
+        try:
+            assign_referee_team(
+                match,
+                team_id=serializer.validated_data.get("team_id", match.referee_team_id),
+                reset_claim=serializer.validated_data["reset_claim"],
+            )
+        except RefereeTrackerError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        touch_tournament(tournament)
+        return Response(build_tournament_snapshot(tournament))
+
+
+class TournamentRefereeQrView(APIView):
+    """Generate the team-scoped referee-duty QR for a tournament manager."""
+
+    def get(self, request: Request, tournament_id: str, team_id: str) -> Response:
+        """Return an embeddable QR without persisting generated image files."""
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        team = get_object_or_404(
+            tournament.teams.select_related("tournament"), id_uuid=team_id
+        )
+        if not team.referee_matches.exists():
+            return Response(
+                {"detail": "Wijs dit team eerst een wedstrijd toe."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        access_token = ensure_referee_access_token(team)
+        web_origin = str(settings.WEB_APP_ORIGIN).rstrip("/")
+        access_url = f"{web_origin}/tournaments/referee/{access_token}"
+        image = qrcode.make(access_url, image_factory=SvgPathImage)
+        output = BytesIO()
+        image.save(output)
+        encoded = base64.b64encode(output.getvalue()).decode("ascii")
+        return Response({
+            "team": {"id_uuid": str(team.id_uuid), "name": team.name},
+            "qr_data_url": f"data:image/svg+xml;base64,{encoded}",
+        })
+
+
+class TournamentRefereeDutiesView(APIView):
+    """List one team's referee duties through its QR credential."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request: Request, access_token: str) -> Response:
+        """Return only the assigned matches and selectable roster identities."""
+        team = get_object_or_404(
+            TournamentTeam.objects.select_related("tournament", "linked_team"),
+            referee_access_token=access_token,
+        )
+        return Response(build_referee_duties_state(team))
+
+
+class TournamentRefereeClaimView(APIView):
+    """Claim one team duty without requiring a user account."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    @transaction.atomic
+    def post(self, request: Request, access_token: str, match_id: str) -> Response:
+        """Issue a match-scoped credential after recording the referee's name."""
+        serializer = TournamentRefereeClaimSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        team = get_object_or_404(
+            TournamentTeam.objects.select_related("tournament", "linked_team"),
+            referee_access_token=access_token,
+        )
+        match = get_object_or_404(
+            TournamentMatch.objects.select_for_update().select_related(
+                "tournament", "referee_team"
+            ),
+            id_uuid=match_id,
+            tournament=team.tournament,
+        )
+        try:
+            claim_token = claim_referee_duty(
+                match,
+                team=team,
+                name=serializer.validated_data.get("name", ""),
+                player_id=serializer.validated_data.get("player_id"),
+            )
+        except RefereeTrackerError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        touch_tournament(team.tournament)
+        return Response({
+            "match_id": str(match.id_uuid),
+            "claim_token": str(claim_token),
+        })
+
+
+def _user_display_name(user: object) -> str:
+    full_name_getter = getattr(user, "get_full_name", None)
+    full_name = full_name_getter().strip() if callable(full_name_getter) else ""
+    return full_name or str(getattr(user, "username", "")) or str(user)
+
+
+def _referee_match(
+    request: Request, match_id: str, *, lock: bool
+) -> tuple[TournamentMatch, object | None, str]:
     queryset = TournamentMatch.objects.select_related(
-        "tournament", "field", "home_team", "away_team"
+        "tournament",
+        "field",
+        "home_team",
+        "away_team",
+        "referee_team",
+        "referee_player",
     )
     if lock:
         queryset = queryset.select_for_update(of=("self",))
     match = get_object_or_404(queryset, id_uuid=match_id)
-    if not can_score_match(request.user, match):
-        raise PermissionDenied("You cannot score this match.")
-    return match
+    if can_score_match(request.user, match):
+        return match, request.user, _user_display_name(request.user)
+    if valid_guest_referee_claim(match, request.query_params.get("token")):
+        return match, None, match.referee_name
+    raise PermissionDenied(
+        "Deze scheidsrechtertoegang is ongeldig of de wedstrijd is afgerond."
+    )
 
 
 def _referee_conflict(match: TournamentMatch, detail: str) -> Response:
@@ -1131,21 +1270,25 @@ def _referee_conflict(match: TournamentMatch, detail: str) -> Response:
 class TournamentRefereeTrackerView(APIView):
     """Return the focused state required by a field referee."""
 
+    permission_classes = (permissions.AllowAny,)
+
     def get(self, request: Request, match_id: str) -> Response:
         """Return a match only when the viewer may score its field."""
-        match = _referee_match(request, match_id, lock=False)
+        match, _, _ = _referee_match(request, match_id, lock=False)
         return Response(build_referee_tracker_state(match))
 
 
 class TournamentRefereeReadyView(APIView):
     """Record that one fixture's field is ready for the central start."""
 
+    permission_classes = (permissions.AllowAny,)
+
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Apply an idempotent, revision-checked readiness command."""
         serializer = TournamentRefereeReadySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        match = _referee_match(request, match_id, lock=True)
+        match, actor, actor_name = _referee_match(request, match_id, lock=True)
         if match.field_ready_at is not None:
             return Response(build_referee_tracker_state(match))
         expected_revision = serializer.validated_data["expected_revision"]
@@ -1155,7 +1298,7 @@ class TournamentRefereeReadyView(APIView):
                 REFEREE_REVISION_CONFLICT_DETAIL,
             )
         try:
-            mark_field_ready(match, actor=request.user)
+            mark_field_ready(match, actor=actor, actor_name=actor_name)
         except RefereeTrackerError as exc:
             return _referee_conflict(match, str(exc))
         touch_tournament(match.tournament)
@@ -1165,12 +1308,14 @@ class TournamentRefereeReadyView(APIView):
 class TournamentRefereeGoalView(APIView):
     """Record one home or away goal from the field referee."""
 
+    permission_classes = (permissions.AllowAny,)
+
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Increment exactly one score under the aggregate lock."""
         serializer = TournamentRefereeGoalSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        match = _referee_match(request, match_id, lock=True)
+        match, actor, actor_name = _referee_match(request, match_id, lock=True)
         expected_revision = serializer.validated_data["expected_revision"]
         if expected_revision != match.revision:
             return _referee_conflict(
@@ -1181,7 +1326,34 @@ class TournamentRefereeGoalView(APIView):
             record_goal(
                 match,
                 side=serializer.validated_data["side"],
-                actor=request.user,
+                actor=actor,
+                actor_name=actor_name,
+            )
+        except RefereeTrackerError as exc:
+            return _referee_conflict(match, str(exc))
+        touch_tournament(match.tournament)
+        return Response(build_referee_tracker_state(match))
+
+
+class TournamentRefereeLatestEventView(APIView):
+    """Remove the exact latest goal currently visible to a referee."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    @transaction.atomic
+    def delete(self, request: Request, match_id: str) -> Response:
+        """Undo one goal while preserving an append-only correction audit."""
+        serializer = TournamentRefereeEventDeleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        match, actor, actor_name = _referee_match(request, match_id, lock=True)
+        if serializer.validated_data["expected_revision"] != match.revision:
+            return _referee_conflict(match, REFEREE_REVISION_CONFLICT_DETAIL)
+        try:
+            remove_latest_goal(
+                match,
+                event_id=serializer.validated_data["event_id"],
+                actor=actor,
+                actor_name=actor_name,
             )
         except RefereeTrackerError as exc:
             return _referee_conflict(match, str(exc))

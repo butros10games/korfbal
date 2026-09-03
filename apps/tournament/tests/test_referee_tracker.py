@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from datetime import timedelta
 from http import HTTPStatus
 from unittest.mock import call, patch
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 import pytest
 
+from apps.club.models.club import Club
+from apps.schedule.models import Season
+from apps.team.models import Team, TeamData
 from apps.tournament.composition import change_publisher
 from apps.tournament.models import (
     Tournament,
@@ -27,6 +32,7 @@ from apps.tournament.models import (
 pytestmark = pytest.mark.django_db
 OnCommitCapture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 REVISION_AFTER_HOME_GOAL = 2
+REVISION_AFTER_GOAL_REMOVAL = 4
 EXPECTED_GOAL_AUDITS = 2
 EXPECTED_TOURNAMENT_REVISION = 3
 
@@ -180,6 +186,67 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
     ]
 
 
+def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
+    """A misclick can be rolled back once without overwriting a newer event."""
+    _, referee, _, _, _, match, _ = _match_graph()
+    client.force_login(referee)
+    tracker_url = f"/api/tournaments/matches/{match.id_uuid}/tracker/"
+    ready_url = f"{tracker_url}ready/"
+    goal_url = f"{tracker_url}goal/"
+    latest_url = f"{tracker_url}events/latest/"
+
+    client.post(
+        ready_url,
+        data={"expected_revision": 0},
+        content_type="application/json",
+    )
+    client.post(
+        goal_url,
+        data={"side": "home", "expected_revision": 1},
+        content_type="application/json",
+    )
+    away_goal = client.post(
+        goal_url,
+        data={"side": "away", "expected_revision": 2},
+        content_type="application/json",
+    )
+
+    assert away_goal.status_code == HTTPStatus.OK
+    latest_event = away_goal.json()["latest_event"]
+    assert latest_event["side"] == "away"
+    assert latest_event["team_name"] == "Team 2"
+
+    removed = client.delete(
+        latest_url,
+        data={"event_id": latest_event["id_uuid"], "expected_revision": 3},
+        content_type="application/json",
+    )
+
+    assert removed.status_code == HTTPStatus.OK
+    assert removed.json()["match"]["home_score"] == 1
+    assert removed.json()["match"]["away_score"] == 0
+    assert removed.json()["match"]["revision"] == REVISION_AFTER_GOAL_REMOVAL
+    assert removed.json()["latest_event"]["side"] == "home"
+
+    stale_repeat = client.delete(
+        latest_url,
+        data={"event_id": latest_event["id_uuid"], "expected_revision": 4},
+        content_type="application/json",
+    )
+    assert stale_repeat.status_code == HTTPStatus.CONFLICT
+    assert stale_repeat.json()["state"]["match"]["away_score"] == 0
+    assert list(
+        TournamentResultAudit.objects
+        .filter(match=match)
+        .order_by("created_at")
+        .values_list("source", flat=True)
+    ) == [
+        TournamentResultAudit.Source.REFEREE_GOAL,
+        TournamentResultAudit.Source.REFEREE_GOAL,
+        TournamentResultAudit.Source.REFEREE_UNDO,
+    ]
+
+
 def test_referee_goal_requires_readiness_and_open_match(client: Client) -> None:
     """Goals cannot bypass readiness or alter a finalized result."""
     manager, _, _, _, _, match, _ = _match_graph()
@@ -227,3 +294,160 @@ def test_public_snapshot_includes_operational_readiness_without_actor(
     assert payload["field_ready_at"] is not None
     assert payload["home_team"]["color"] == "#123456"
     assert "field_ready_by" not in payload
+
+
+def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> None:
+    """Managers can display one QR for every duty assigned to a team."""
+    manager, _, tournament, _, _, match, _ = _match_graph()
+    duty_team = tournament.teams.exclude(
+        pk__in=(match.home_team_id, match.away_team_id)
+    ).first()
+    assert duty_team is not None
+    client.force_login(manager)
+
+    assignment = client.patch(
+        f"/api/tournaments/{tournament.id_uuid}/matches/{match.id_uuid}/referee-duty/",
+        data={"team_id": str(duty_team.id_uuid)},
+        content_type="application/json",
+    )
+    qr = client.get(
+        f"/api/tournaments/{tournament.id_uuid}/referee-teams/{duty_team.id_uuid}/qr/"
+    )
+
+    assert assignment.status_code == HTTPStatus.OK
+    assigned_match = next(
+        row
+        for row in assignment.json()["matches"]
+        if row["id_uuid"] == str(match.id_uuid)
+    )
+    assert assigned_match["referee_team"]["id_uuid"] == str(duty_team.id_uuid)
+    assert qr.status_code == HTTPStatus.OK
+    assert qr.json()["qr_data_url"].startswith("data:image/svg+xml;base64,")
+    duty_team.refresh_from_db()
+    assert duty_team.referee_access_token is not None
+
+
+def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None:
+    """A QR claim authorizes one match only until its final result is saved."""
+    _, _, tournament, _, _, match, denied_match = _match_graph()
+    duty_team = tournament.teams.exclude(
+        pk__in=(match.home_team_id, match.away_team_id)
+    ).first()
+    assert duty_team is not None
+    duty_team.referee_access_token = uuid4()
+    duty_team.save(update_fields=["referee_access_token"])
+    match.referee_team = duty_team
+    match.save(update_fields=["referee_team"])
+
+    duties_url = f"/api/tournaments/referee-duties/{duty_team.referee_access_token}/"
+    duties = client.get(duties_url)
+    claim = client.post(
+        f"{duties_url}matches/{match.id_uuid}/claim/",
+        data={"name": "Robin de Boer"},
+        content_type="application/json",
+    )
+
+    assert duties.status_code == HTTPStatus.OK
+    assert duties.json()["team"]["name"] == duty_team.name
+    assert duties.json()["matches"][0]["can_claim"] is True
+    assert claim.status_code == HTTPStatus.OK
+    claim_token = claim.json()["claim_token"]
+
+    tracker_url = (
+        f"/api/tournaments/matches/{match.id_uuid}/tracker/?token={claim_token}"
+    )
+    assert client.get(tracker_url).status_code == HTTPStatus.OK
+    assert (
+        client.get(
+            f"/api/tournaments/matches/{denied_match.id_uuid}/tracker/?token={claim_token}"
+        ).status_code
+        == HTTPStatus.FORBIDDEN
+    )
+    ready = client.post(
+        f"/api/tournaments/matches/{match.id_uuid}/tracker/ready/?token={claim_token}",
+        data={"expected_revision": 1},
+        content_type="application/json",
+    )
+    goal = client.post(
+        f"/api/tournaments/matches/{match.id_uuid}/tracker/goal/?token={claim_token}",
+        data={"side": "home", "expected_revision": 2},
+        content_type="application/json",
+    )
+
+    assert ready.status_code == HTTPStatus.OK
+    assert goal.status_code == HTTPStatus.OK
+    audit = TournamentResultAudit.objects.get(
+        match=match,
+        source=TournamentResultAudit.Source.REFEREE_GOAL,
+    )
+    assert audit.changed_by_id is None
+    assert audit.changed_by_name == "Robin de Boer"
+    match.refresh_from_db()
+    assert match.field_ready_by_id is None
+    assert match.field_ready_by_name == "Robin de Boer"
+
+    removed = client.delete(
+        f"/api/tournaments/matches/{match.id_uuid}/tracker/events/latest/"
+        f"?token={claim_token}",
+        data={
+            "event_id": goal.json()["latest_event"]["id_uuid"],
+            "expected_revision": 3,
+        },
+        content_type="application/json",
+    )
+    assert removed.status_code == HTTPStatus.OK
+    assert removed.json()["match"]["home_score"] is None
+    undo_audit = TournamentResultAudit.objects.get(
+        match=match,
+        source=TournamentResultAudit.Source.REFEREE_UNDO,
+    )
+    assert undo_audit.changed_by_id is None
+    assert undo_audit.changed_by_name == "Robin de Boer"
+
+    match.status = TournamentMatch.Status.FINAL
+    match.save(update_fields=["status"])
+    assert client.get(tracker_url).status_code == HTTPStatus.FORBIDDEN
+
+
+def test_guest_can_claim_as_player_from_linked_team_roster(client: Client) -> None:
+    """The team QR offers roster players active on the tournament date."""
+    _, referee, tournament, _, _, match, _ = _match_graph()
+    referee.first_name = "Noa"
+    referee.last_name = "Jansen"
+    referee.save(update_fields=["first_name", "last_name"])
+    club = Club.objects.create(name="Roster Club")
+    linked_team = Team.objects.create(name="B1", club=club)
+    event_date = timezone.localdate(tournament.starts_at)
+    season = Season.objects.create(
+        name=f"Referee season {uuid4()}",
+        start_date=event_date - timedelta(days=1),
+        end_date=event_date + timedelta(days=1),
+    )
+    roster = TeamData.objects.create(team=linked_team, season=season)
+    roster.players.add(referee.player)
+    duty_team = tournament.teams.exclude(
+        pk__in=(match.home_team_id, match.away_team_id)
+    ).first()
+    assert duty_team is not None
+    duty_team.linked_team = linked_team
+    duty_team.referee_access_token = uuid4()
+    duty_team.save(update_fields=["linked_team", "referee_access_token"])
+    match.referee_team = duty_team
+    match.save(update_fields=["referee_team"])
+    duties_url = f"/api/tournaments/referee-duties/{duty_team.referee_access_token}/"
+
+    duties = client.get(duties_url)
+    claim = client.post(
+        f"{duties_url}matches/{match.id_uuid}/claim/",
+        data={"player_id": str(referee.player.id_uuid)},
+        content_type="application/json",
+    )
+
+    assert duties.status_code == HTTPStatus.OK
+    assert duties.json()["players"] == [
+        {"id_uuid": str(referee.player.id_uuid), "name": "Noa Jansen"}
+    ]
+    assert claim.status_code == HTTPStatus.OK
+    match.refresh_from_db()
+    assert match.referee_player_id == referee.player.id_uuid
+    assert match.referee_name == "Noa Jansen"
