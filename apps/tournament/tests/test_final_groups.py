@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from http import HTTPStatus
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
@@ -270,3 +271,28 @@ def test_unstarted_final_group_can_be_deleted(client: Client) -> None:
     assert (
         tournament.matches.filter(pool__isnull=False).count() == EXPECTED_POOL_MATCHES
     )
+
+
+def test_final_group_creation_locks_only_match_rows(client: Client) -> None:
+    """Nullable team joins must not become PostgreSQL FOR UPDATE targets."""
+    tournament, pools = _tournament_with_pools(client)
+    fields = list(tournament.fields.all())
+
+    with patch.object(
+        TournamentMatch.objects,
+        "select_for_update",
+        wraps=TournamentMatch.objects.select_for_update,
+    ) as select_for_update:
+        created = client.post(
+            f"/api/tournaments/{tournament.id_uuid}/final-groups/",
+            data=_group_payload(
+                "Heren",
+                "two_pool_cross",
+                [pools["C"], pools["D"]],
+                fields[2:4],
+            ),
+            content_type="application/json",
+        )
+
+    assert created.status_code == HTTPStatus.CREATED
+    select_for_update.assert_called_once_with(of=("self",))

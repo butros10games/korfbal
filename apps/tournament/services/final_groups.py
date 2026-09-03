@@ -357,7 +357,7 @@ def resolve_final_group_qualifiers(
 
     """
     tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
-    matches = TournamentMatch.objects.select_for_update().filter(
+    matches = TournamentMatch.objects.select_for_update(of=("self",)).filter(
         tournament=tournament,
         stage__final_group__isnull=False,
     )
