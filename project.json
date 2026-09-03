@@ -83,21 +83,21 @@
             "executor": "nx:run-commands",
             "cache": false,
             "options": {
-                "command": "docker build -t kwt-uwsgi:latest -f apps/django_projects/korfbal/docker/kwt-uwsgi.Dockerfile apps/django_projects/korfbal"
+                "command": "docker build -t kwt-uwsgi:latest -f apps/django_projects/korfbal/docker/kwt-uwsgi.Dockerfile ."
             }
         },
         "docker-collectstatic": {
             "executor": "nx:run-commands",
             "cache": false,
             "options": {
-                "command": "docker build -t kwt-collectstatic:latest -f apps/django_projects/korfbal/docker/kwt-collectstatic.Dockerfile apps/django_projects/korfbal"
+                "command": "docker build -t kwt-collectstatic:latest -f apps/django_projects/korfbal/docker/kwt-collectstatic.Dockerfile ."
             }
         },
         "docker-celery": {
             "executor": "nx:run-commands",
             "cache": false,
             "options": {
-                "command": "docker build -t kwt-celery:latest -f apps/django_projects/korfbal/docker/kwt-celery.Dockerfile apps/django_projects/korfbal"
+                "command": "docker build -t kwt-celery:latest -f apps/django_projects/korfbal/docker/kwt-celery.Dockerfile ."
             }
         }
     }

@@ -17,7 +17,7 @@ COPY libs/django_packages/bg_django_caching_paginator/pyproject.toml libs/django
 COPY libs/django_packages/bg_django_mobile_detector/pyproject.toml /build/libs/django_packages/bg_django_mobile_detector/
 COPY libs/shared_python_packages/bg_uuidv7/pyproject.toml libs/shared_python_packages/bg_uuidv7/LICENSE libs/shared_python_packages/bg_uuidv7/README.md /build/libs/shared_python_packages/bg_uuidv7/
 
-ENV UV_PROJECT_ENVIRONMENT=/build/.venv
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 ENV UV_LINK_MODE=copy
 
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -36,16 +36,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Separate stage so app source changes don't re-run optimization
 FROM deps AS venv-optimizer
 
-RUN find /build/.venv -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
-    find /build/.venv -type d -name "tests" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /build/.venv -type d -name "test" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /build/.venv -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
-    find /build/.venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /build/.venv -name "*.pyc" -delete 2>/dev/null || true && \
-    rm -rf /build/.venv/lib/python3.13/site-packages/pip \
-    /build/.venv/lib/python3.13/site-packages/setuptools \
-    /build/.venv/lib/python3.13/site-packages/wheel && \
-    find /build/.venv/bin -maxdepth 1 -type f -exec sed -i '1s|^#!/build/.venv/bin/python|#!/app/.venv/bin/python|' {} +
+RUN find /app/.venv -type d -name "tests" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "test" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /app/.venv/lib/python3.13/site-packages/pip \
+    /app/.venv/lib/python3.13/site-packages/setuptools \
+    /app/.venv/lib/python3.13/site-packages/wheel
 
 ## ------------------------------- Production Stage ------------------------------ ##
 FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS production
@@ -57,22 +53,22 @@ WORKDIR /app
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install --no-install-recommends -y \
-    ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    ffmpeg
 
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
     && chown appuser:appuser /app \
     && install -d -o appuser -g appuser -m 0755 /app/logs
 
-COPY --link --from=venv-optimizer --chmod=0555 /build/.venv .venv
+COPY --link --from=venv-optimizer /app/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
 
-COPY --chmod=0555 apps/django_projects/korfbal/manage.py /app/
-COPY --chmod=0555 apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY --chmod=0555 apps/django_projects/korfbal/apps/ /app/apps/
+COPY --link apps/django_projects/korfbal/manage.py /app/
+COPY --link apps/django_projects/korfbal/korfbal/ /app/korfbal/
+COPY --link apps/django_projects/korfbal/apps/ /app/apps/
 
 USER appuser
 
