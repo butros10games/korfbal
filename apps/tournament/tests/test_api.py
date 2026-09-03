@@ -21,6 +21,8 @@ from apps.tournament.models import (
 
 pytestmark = pytest.mark.django_db
 EXPECTED_ROUND_ROBIN_MATCHES = 6
+FINAL_MATCH_REVISION = 3
+REOPENED_MATCH_REVISION = 4
 
 
 def _create_tournament(client: Client) -> dict[str, object]:
@@ -262,6 +264,44 @@ def test_manager_starts_every_ready_match_in_a_round_at_one_instant(
     )
     tournament.refresh_from_db()
     assert tournament.status == Tournament.Status.LIVE
+
+
+def test_manager_reopens_final_match_with_score_and_audit_intact(
+    client: Client,
+) -> None:
+    """Resetting definitive returns a match to live without losing its score."""
+    user, _tournament, _stage, matches = _create_ready_round()
+    match = matches[0]
+    match.status = TournamentMatch.Status.FINAL
+    match.home_score = 7
+    match.away_score = 5
+    match.winner = match.home_team
+    match.revision = FINAL_MATCH_REVISION
+    match.save()
+    client.force_login(user)
+
+    response = client.patch(
+        f"/api/tournaments/matches/{match.id_uuid}/result/",
+        data={
+            "home_score": 7,
+            "away_score": 5,
+            "status": TournamentMatch.Status.LIVE,
+            "expected_revision": FINAL_MATCH_REVISION,
+            "reason": "Definitieve uitslag teruggezet door toernooibeheer",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    match.refresh_from_db()
+    assert match.status == TournamentMatch.Status.LIVE
+    assert (match.home_score, match.away_score) == (7, 5)
+    assert match.winner is None
+    assert match.revision == REOPENED_MATCH_REVISION
+    audit = TournamentResultAudit.objects.get(match=match)
+    assert audit.previous_status == TournamentMatch.Status.FINAL
+    assert audit.new_status == TournamentMatch.Status.LIVE
+    assert audit.reason == "Definitieve uitslag teruggezet door toernooibeheer"
 
 
 def test_round_start_waits_until_every_scheduled_field_is_ready(client: Client) -> None:
