@@ -32,6 +32,7 @@ from apps.tournament.api.serializers import (
     PoolGenerationRequestSerializer,
     TournamentDisplayConfigSerializer,
     TournamentFieldSerializer,
+    TournamentFinalGroupWriteSerializer,
     TournamentMatchWriteSerializer,
     TournamentMemberSerializer,
     TournamentPoolWriteSerializer,
@@ -47,6 +48,7 @@ from apps.tournament.composition import touch_tournament
 from apps.tournament.models import (
     Tournament,
     TournamentField,
+    TournamentFinalGroup,
     TournamentMatch,
     TournamentMember,
     TournamentPool,
@@ -63,6 +65,14 @@ from apps.tournament.services.editing import (
     delete_pool,
     save_match,
     update_pool,
+)
+from apps.tournament.services.final_groups import (
+    FinalGroupError,
+    FinalGroupPlan,
+    FinalMatchPlan,
+    create_final_group,
+    delete_final_group,
+    resolve_final_group_qualifiers,
 )
 from apps.tournament.services.finals import generate_finals
 from apps.tournament.services.generation import (
@@ -727,6 +737,85 @@ class TournamentFinalsGenerateView(APIView):
         return Response(build_tournament_snapshot(tournament))
 
 
+def _final_match_plan(
+    tournament: Tournament,
+    values: dict[str, Any],
+) -> FinalMatchPlan:
+    return FinalMatchPlan(
+        field_id=values["field_id"],
+        starts_at=datetime.combine(
+            values["date"],
+            values["start_time"],
+            tzinfo=ZoneInfo(tournament.timezone),
+        ),
+        duration_minutes=values["duration_minutes"],
+    )
+
+
+class TournamentFinalGroupListCreateView(APIView):
+    """Plan an independently qualified four-team finals bracket."""
+
+    def post(self, request: Request, tournament_id: str) -> Response:
+        """Create a reviewable final group before or after pool completion.
+
+        Raises:
+            ValidationError: If the requested group cannot be planned safely.
+
+        """
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        serializer = TournamentFinalGroupWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        plan = FinalGroupPlan(
+            name=values["name"],
+            format=values["format"],
+            pool_ids=tuple(values["pool_ids"]),
+            semifinals=(
+                _final_match_plan(tournament, values["semifinals"][0]),
+                _final_match_plan(tournament, values["semifinals"][1]),
+            ),
+            final=_final_match_plan(tournament, values["final"]),
+        )
+        try:
+            create_final_group(tournament, plan=plan)
+        except FinalGroupError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        touch_tournament(tournament)
+        tournament = Tournament.objects.select_related("display_config").get(
+            pk=tournament.pk
+        )
+        return Response(
+            build_tournament_snapshot(tournament),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TournamentFinalGroupDetailView(APIView):
+    """Remove one unstarted final group without touching pool play."""
+
+    def delete(
+        self,
+        request: Request,
+        tournament_id: str,
+        group_id: str,
+    ) -> Response:
+        """Delete the bracket when none of its matches has live data."""
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        group = get_object_or_404(
+            TournamentFinalGroup,
+            tournament=tournament,
+            id_uuid=group_id,
+        )
+        try:
+            delete_final_group(tournament, group)
+        except FinalGroupError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        touch_tournament(tournament)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class TournamentDisplayConfigView(APIView):
     """Read or update the display rotation configuration."""
 
@@ -997,6 +1086,12 @@ class TournamentMatchResultView(APIView):
         )
 
         _sync_advanced_winner(match)
+
+        if match.stage.kind == TournamentStage.Kind.POOL:
+            try:
+                resolve_final_group_qualifiers(match.tournament)
+            except FinalGroupError as exc:
+                raise Conflict(str(exc)) from exc
 
         touch_tournament(match.tournament)
         return Response({

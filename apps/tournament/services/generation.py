@@ -381,6 +381,7 @@ def apply_pool_plan(
     tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
     ensure_schedule_replaceable(tournament)
     tournament.matches.all().delete()
+    tournament.final_groups.all().delete()
     tournament.stages.all().delete()
     _create_pools(tournament, pool_plan=pool_plan)
 
@@ -407,6 +408,7 @@ def apply_existing_pool_match_plan(
     if not pools:
         raise GenerationError("Create or generate pools before scheduling matches.")
     tournament.matches.all().delete()
+    tournament.final_groups.all().delete()
     tournament.stages.exclude(kind=TournamentStage.Kind.POOL).delete()
     fields = {str(field.id_uuid): field for field in tournament.fields.all()}
     teams = {str(team.id_uuid): team for team in tournament.teams.all()}
@@ -438,6 +440,7 @@ def apply_generation_plan(
     ensure_schedule_replaceable(tournament)
 
     tournament.matches.all().delete()
+    tournament.final_groups.all().delete()
     tournament.stages.all().delete()
     stage, pools = _create_pools(tournament, pool_plan=plan["pools"])
     fields = {str(field.id_uuid): field for field in tournament.fields.all()}

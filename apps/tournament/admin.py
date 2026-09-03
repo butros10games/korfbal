@@ -6,6 +6,7 @@ from apps.tournament.models import (
     Tournament,
     TournamentDisplayConfig,
     TournamentField,
+    TournamentFinalGroup,
     TournamentMatch,
     TournamentMember,
     TournamentPool,
@@ -20,6 +21,7 @@ from apps.tournament.models import (
 admin.site.register(Tournament)
 admin.site.register(TournamentDisplayConfig)
 admin.site.register(TournamentField)
+admin.site.register(TournamentFinalGroup)
 admin.site.register(TournamentMatch)
 admin.site.register(TournamentMember)
 admin.site.register(TournamentPool)

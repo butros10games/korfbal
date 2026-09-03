@@ -195,6 +195,7 @@ def apply_imported_schedule(
             next_field_order += 1
 
     tournament.matches.all().delete()
+    tournament.final_groups.all().delete()
     tournament.stages.all().delete()
     stage = TournamentStage.objects.create(
         tournament=tournament,

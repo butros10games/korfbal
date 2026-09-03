@@ -99,6 +99,7 @@ class Tournament(models.Model):
         member_roles: models.Manager[TournamentMember]
         teams: models.Manager[TournamentTeam]
         stages: models.Manager[TournamentStage]
+        final_groups: models.Manager[TournamentFinalGroup]
         pools: models.Manager[TournamentPool]
         matches: models.Manager[TournamentMatch]
         display_config: TournamentDisplayConfig
@@ -235,6 +236,46 @@ class TournamentTeam(models.Model):
         return self.name
 
 
+class TournamentFinalGroup(models.Model):
+    """One independently qualified four-team bracket within a tournament."""
+
+    class Format(models.TextChoices):
+        """Supported qualification patterns for the first knockout round."""
+
+        THREE_POOL_WILDCARD = "three_pool_wildcard", "Three pool winners + wildcard"
+        TWO_POOL_CROSS = "two_pool_cross", "Two pool crossover"
+
+    id_uuid = models.UUIDField(primary_key=True, default=uuidv7, editable=False)
+    tournament = models.ForeignKey(
+        Tournament,
+        on_delete=models.CASCADE,
+        related_name="final_groups",
+    )
+    tournament_id: UUID
+    name = models.CharField(max_length=90)
+    format = models.CharField(max_length=32, choices=Format.choices)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        stages: models.Manager[TournamentStage]
+
+    class Meta:
+        """Keep final-group names unique and presentation ordered."""
+
+        ordering: ClassVar[list[str]] = ["sort_order", "name"]
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["tournament", "name"],
+                name="uniq_tournament_final_group_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return a tournament-qualified final-group label."""
+        return f"{self.tournament} · {self.name}"
+
+
 class TournamentStage(models.Model):
     """An ordered pool, knockout, placement, or final phase."""
 
@@ -252,6 +293,14 @@ class TournamentStage(models.Model):
         on_delete=models.CASCADE,
         related_name="stages",
     )
+    final_group = models.ForeignKey(
+        TournamentFinalGroup,
+        on_delete=models.CASCADE,
+        related_name="stages",
+        null=True,
+        blank=True,
+    )
+    final_group_id: UUID | None
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=Kind.choices)
     sort_order = models.PositiveSmallIntegerField(default=0)
@@ -415,6 +464,8 @@ class TournamentMatch(models.Model):
         related_name="away_tournament_matches",
     )
     away_team_id: UUID | None
+    home_qualifier = models.JSONField(default=dict, blank=True)
+    away_qualifier = models.JSONField(default=dict, blank=True)
     field = models.ForeignKey(
         TournamentField,
         on_delete=models.SET_NULL,
@@ -458,6 +509,7 @@ class TournamentMatch(models.Model):
         blank=True,
         related_name="source_matches",
     )
+    next_match_id: UUID | None
     winner_to_side = models.CharField(
         max_length=8,
         choices=DestinationSide.choices,

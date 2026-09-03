@@ -7,6 +7,8 @@ from .views import (
     TournamentDisplayConfigView,
     TournamentFieldDetailView,
     TournamentFieldListCreateView,
+    TournamentFinalGroupDetailView,
+    TournamentFinalGroupListCreateView,
     TournamentFinalsGenerateView,
     TournamentGenerationApplyView,
     TournamentGenerationPreviewView,
@@ -140,6 +142,16 @@ urlpatterns = [
         "<uuid:tournament_id>/finals/generate/",
         TournamentFinalsGenerateView.as_view(),
         name="tournament-finals-generate",
+    ),
+    path(
+        "<uuid:tournament_id>/final-groups/",
+        TournamentFinalGroupListCreateView.as_view(),
+        name="tournament-final-group-list",
+    ),
+    path(
+        "<uuid:tournament_id>/final-groups/<uuid:group_id>/",
+        TournamentFinalGroupDetailView.as_view(),
+        name="tournament-final-group-detail",
     ),
     path(
         "<uuid:tournament_id>/display-config/",

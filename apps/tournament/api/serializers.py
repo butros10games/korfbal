@@ -13,6 +13,7 @@ from apps.tournament.models import (
     Tournament,
     TournamentDisplayConfig,
     TournamentField,
+    TournamentFinalGroup,
     TournamentMatch,
     TournamentMember,
     TournamentPoolEntry,
@@ -30,6 +31,7 @@ SUPPORTED_TIEBREAKERS = {
     "name",
 }
 MAX_IMPORTED_MATCHES = 1000
+FINAL_GROUP_SEMIFINAL_COUNT = 2
 
 
 def unique_tournament_slug(name: str) -> str:
@@ -422,6 +424,57 @@ class FinalsGenerationSerializer(serializers.Serializer):
 
     qualifiers_per_pool = serializers.IntegerField(min_value=1, max_value=8)
     starts_at = serializers.DateTimeField(required=False)
+
+
+class FinalGroupMatchPlanSerializer(serializers.Serializer):
+    """Validate the field, local start, and duration of one bracket match."""
+
+    date = serializers.DateField()
+    start_time = serializers.TimeField()
+    field_id = serializers.UUIDField()
+    duration_minutes = serializers.IntegerField(min_value=1, max_value=240)
+
+
+class TournamentFinalGroupWriteSerializer(serializers.Serializer):
+    """Validate one preplanned four-team final group."""
+
+    name = serializers.CharField(max_length=90)
+    format = serializers.ChoiceField(choices=TournamentFinalGroup.Format.choices)
+    pool_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        min_length=2,
+        max_length=3,
+    )
+    semifinals = FinalGroupMatchPlanSerializer(
+        many=True,
+        allow_empty=False,
+    )
+    final = FinalGroupMatchPlanSerializer()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Match the selected format to its required number of pools.
+
+        Raises:
+            serializers.ValidationError: If pool selections do not fit the format.
+
+        """
+        expected = {
+            TournamentFinalGroup.Format.THREE_POOL_WILDCARD: 3,
+            TournamentFinalGroup.Format.TWO_POOL_CROSS: 2,
+        }[attrs["format"]]
+        if len(attrs["pool_ids"]) != expected:
+            raise serializers.ValidationError({
+                "pool_ids": f"Select exactly {expected} pools for this format."
+            })
+        if len(set(attrs["pool_ids"])) != len(attrs["pool_ids"]):
+            raise serializers.ValidationError({
+                "pool_ids": "Select each pool only once."
+            })
+        if len(attrs["semifinals"]) != FINAL_GROUP_SEMIFINAL_COUNT:
+            raise serializers.ValidationError({
+                "semifinals": "Plan exactly two semifinals."
+            })
+        return attrs
 
 
 class TournamentResultSerializer(serializers.Serializer):

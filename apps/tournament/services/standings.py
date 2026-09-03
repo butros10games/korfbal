@@ -184,3 +184,15 @@ def calculate_pool_standings(pool: TournamentPool) -> list[StandingRow]:
     for index, row in enumerate(ordered, start=1):
         row["position"] = index
     return ordered
+
+
+def rank_rows_across_pools(
+    tournament: Tournament,
+    rows: list[StandingRow],
+) -> list[StandingRow]:
+    """Order same-position teams from separate pools without head-to-head data."""
+    allowed = {"points", "goal_difference", "goals_for", "seed", "name"}
+    rules = [rule for rule in tournament.tiebreakers if rule in allowed]
+    if "name" not in rules:
+        rules.append("name")
+    return sorted(rows, key=cmp_to_key(_comparison(rules, {})))
