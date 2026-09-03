@@ -18,6 +18,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.exceptions import (
     APIException,
     NotAuthenticated,
+    NotFound,
     PermissionDenied,
     ValidationError,
 )
@@ -97,6 +98,11 @@ from apps.tournament.services.importing import (
     ImportedScheduleRow,
     ScheduleImportError,
     apply_imported_schedule,
+)
+from apps.tournament.services.match_operations import (
+    TournamentMatchOperationError,
+    reset_field_readiness,
+    start_round,
 )
 from apps.tournament.services.referee_tracker import (
     RefereeTrackerError,
@@ -1118,6 +1124,83 @@ class TournamentMatchResultView(APIView):
             "winner_id": str(match.winner_id) if match.winner_id else None,
             "revision": match.revision,
         })
+
+
+class TournamentMatchReadinessView(APIView):
+    """Let a manager revoke an incorrect field-readiness signal."""
+
+    @transaction.atomic
+    def delete(self, request: Request, match_id: str) -> Response:
+        """Reset readiness while the match is still scheduled.
+
+        Raises:
+            Conflict: If the match changed after the manager loaded it.
+
+        """
+        serializer = TournamentRefereeReadySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        match = get_object_or_404(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
+                "tournament"
+            ),
+            id_uuid=match_id,
+        )
+        _require_manager(request, match.tournament)
+        if match.field_ready_at is None:
+            return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
+        if serializer.validated_data["expected_revision"] != match.revision:
+            raise Conflict()
+        try:
+            changed = reset_field_readiness(match)
+        except TournamentMatchOperationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        if changed:
+            touch_tournament(match.tournament)
+        return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
+
+
+class TournamentRoundStartView(APIView):
+    """Start all ready matches in one tournament round together."""
+
+    @transaction.atomic
+    def post(
+        self,
+        request: Request,
+        tournament_id: str,
+        stage_id: str,
+        round_number: int,
+    ) -> Response:
+        """Move the round's scheduled matches to live in one locked operation.
+
+        Raises:
+            NotFound: If the requested round has no matches.
+
+        """
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        matches = list(
+            TournamentMatch.objects
+            .select_for_update(of=("self",))
+            .filter(
+                tournament=tournament,
+                stage_id=stage_id,
+                round_number=round_number,
+            )
+            .select_related("home_team", "away_team")
+            .order_by("match_number")
+        )
+        if not matches:
+            raise NotFound("Deze ronde bestaat niet.")
+        try:
+            start_round(matches, actor=request.user)
+        except TournamentMatchOperationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        if tournament.status == Tournament.Status.PUBLISHED:
+            tournament.status = Tournament.Status.LIVE
+            tournament.save(update_fields=["status", "updated_at"])
+        touch_tournament(tournament)
+        return Response(build_tournament_snapshot(tournament))
 
 
 class TournamentRefereeAssignmentView(APIView):

@@ -15,6 +15,7 @@ from .views import (
     TournamentMatchDetailView,
     TournamentMatchesGenerateView,
     TournamentMatchListCreateView,
+    TournamentMatchReadinessView,
     TournamentMatchResultView,
     TournamentMemberDetailView,
     TournamentMemberListCreateView,
@@ -31,6 +32,7 @@ from .views import (
     TournamentRefereeQrView,
     TournamentRefereeReadyView,
     TournamentRefereeTrackerView,
+    TournamentRoundStartView,
     TournamentScheduleImportView,
     TournamentSnapshotView,
     TournamentStandingAdjustmentDetailView,
@@ -187,6 +189,16 @@ urlpatterns = [
         "matches/<uuid:match_id>/result/",
         TournamentMatchResultView.as_view(),
         name="tournament-match-result",
+    ),
+    path(
+        "matches/<uuid:match_id>/readiness/",
+        TournamentMatchReadinessView.as_view(),
+        name="tournament-match-readiness",
+    ),
+    path(
+        "<uuid:tournament_id>/stages/<uuid:stage_id>/rounds/<int:round_number>/start/",
+        TournamentRoundStartView.as_view(),
+        name="tournament-round-start",
     ),
     path(
         "matches/<uuid:match_id>/tracker/",

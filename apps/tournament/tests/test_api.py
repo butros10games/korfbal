@@ -40,6 +40,70 @@ def _create_tournament(client: Client) -> dict[str, object]:
     return response.json()
 
 
+def _create_ready_round() -> tuple[
+    object,
+    Tournament,
+    TournamentStage,
+    list[TournamentMatch],
+]:
+    user = get_user_model().objects.create_user(username="round-manager")
+    tournament = Tournament.objects.create(
+        name="Gelijktijdige ronde",
+        slug="gelijktijdige-ronde",
+        owner=user,
+        starts_at=timezone.now(),
+        status=Tournament.Status.PUBLISHED,
+    )
+    stage = TournamentStage.objects.create(
+        tournament=tournament,
+        name="Poulefase",
+        kind=TournamentStage.Kind.POOL,
+    )
+    fields = [
+        TournamentField.objects.create(
+            tournament=tournament,
+            label=f"Veld {index}",
+            sort_order=index,
+        )
+        for index in range(1, 3)
+    ]
+    teams = [
+        TournamentTeam.objects.create(
+            tournament=tournament,
+            name=f"Rondeteam {index}",
+            seed=index,
+        )
+        for index in range(1, 5)
+    ]
+    ready_at = timezone.now()
+    matches = [
+        TournamentMatch.objects.create(
+            tournament=tournament,
+            stage=stage,
+            field=fields[index],
+            home_team=teams[index * 2],
+            away_team=teams[index * 2 + 1],
+            round_number=2,
+            match_number=index + 1,
+            field_ready_at=ready_at,
+            field_ready_by=user,
+            field_ready_by_name=str(user),
+        )
+        for index in range(2)
+    ]
+    TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=stage,
+        field=fields[0],
+        home_team=teams[0],
+        away_team=teams[2],
+        round_number=3,
+        match_number=3,
+        field_ready_at=ready_at,
+    )
+    return user, tournament, stage, matches
+
+
 def test_anonymous_create_returns_json_auth_error(client: Client) -> None:
     """Management APIs never redirect anonymous clients to an HTML login page."""
     response = client.post(
@@ -167,6 +231,103 @@ def test_manager_generates_publishes_and_scores_live_tournament(client: Client) 
     standings = refreshed["pools"][0]["standings"]
     assert standings[0]["played"] == 1
     assert refreshed["tournament"]["live_revision"] > 0
+
+
+def test_manager_starts_every_ready_match_in_a_round_at_one_instant(
+    client: Client,
+) -> None:
+    """One central command starts the whole round and creates an audit per match."""
+    user, tournament, stage, matches = _create_ready_round()
+    client.force_login(user)
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/stages/{stage.id_uuid}/rounds/2/start/"
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    for match in matches:
+        match.refresh_from_db()
+        assert match.status == TournamentMatch.Status.LIVE
+        assert (match.home_score, match.away_score) == (0, 0)
+        assert match.revision == 1
+    assert matches[0].updated_at == matches[1].updated_at
+    assert TournamentResultAudit.objects.filter(
+        match__in=matches,
+        previous_status=TournamentMatch.Status.SCHEDULED,
+        new_status=TournamentMatch.Status.LIVE,
+    ).count() == len(matches)
+    assert (
+        TournamentMatch.objects.get(match_number=3).status
+        == TournamentMatch.Status.SCHEDULED
+    )
+    tournament.refresh_from_db()
+    assert tournament.status == Tournament.Status.LIVE
+
+
+def test_round_start_waits_until_every_scheduled_field_is_ready(client: Client) -> None:
+    """A partial readiness state never starts only part of a round."""
+    user, tournament, stage, matches = _create_ready_round()
+    matches[1].field_ready_at = None
+    matches[1].save(update_fields=["field_ready_at"])
+    client.force_login(user)
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/stages/{stage.id_uuid}/rounds/2/start/"
+    )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert "niet alle velden" in response.json()["detail"]
+    assert set(
+        TournamentMatch.objects.filter(
+            pk__in=[match.pk for match in matches]
+        ).values_list("status", flat=True)
+    ) == {TournamentMatch.Status.SCHEDULED}
+    assert TournamentResultAudit.objects.filter(match__in=matches).count() == 0
+
+
+def test_manager_can_reset_an_incorrect_readiness_signal(client: Client) -> None:
+    """Readiness can be revoked before kickoff without touching the score."""
+    user, tournament, _, matches = _create_ready_round()
+    match = matches[0]
+    client.force_login(user)
+    readiness_url = f"/api/tournaments/matches/{match.id_uuid}/readiness/"
+
+    response = client.delete(
+        readiness_url,
+        data={"expected_revision": match.revision},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["revision"] == 1
+    match.refresh_from_db()
+    assert match.field_ready_at is None
+    assert match.field_ready_by_id is None
+    assert not match.field_ready_by_name
+    assert match.status == TournamentMatch.Status.SCHEDULED
+    assert match.home_score is None
+    assert match.away_score is None
+    tournament.refresh_from_db()
+    assert tournament.live_revision == 1
+
+
+def test_manager_cannot_reset_readiness_after_kickoff(client: Client) -> None:
+    """A live match keeps the readiness history that preceded its start."""
+    user, _, _, matches = _create_ready_round()
+    match = matches[0]
+    match.status = TournamentMatch.Status.LIVE
+    match.save(update_fields=["status"])
+    client.force_login(user)
+
+    response = client.delete(
+        f"/api/tournaments/matches/{match.id_uuid}/readiness/",
+        data={"expected_revision": match.revision},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    match.refresh_from_db()
+    assert match.field_ready_at is not None
 
 
 def test_unlisted_display_requires_token_and_manager_snapshot_exposes_it(
