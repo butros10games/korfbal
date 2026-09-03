@@ -1028,7 +1028,7 @@ class TournamentMatchResultView(APIView):
 
         """
         match = get_object_or_404(
-            TournamentMatch.objects.select_for_update().select_related(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament", "stage", "field", "home_team", "away_team", "next_match"
             ),
             id_uuid=match_id,
@@ -1131,10 +1131,11 @@ class TournamentRefereeAssignmentView(APIView):
         serializer = TournamentRefereeAssignmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         match = get_object_or_404(
-            tournament.matches.select_for_update().select_related(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "home_team", "away_team", "referee_team"
             ),
             id_uuid=match_id,
+            tournament=tournament,
         )
         try:
             assign_referee_team(
@@ -1205,7 +1206,7 @@ class TournamentRefereeClaimView(APIView):
             referee_access_token=access_token,
         )
         match = get_object_or_404(
-            TournamentMatch.objects.select_for_update().select_related(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament", "referee_team"
             ),
             id_uuid=match_id,

@@ -305,11 +305,16 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
     assert duty_team is not None
     client.force_login(manager)
 
-    assignment = client.patch(
-        f"/api/tournaments/{tournament.id_uuid}/matches/{match.id_uuid}/referee-duty/",
-        data={"team_id": str(duty_team.id_uuid)},
-        content_type="application/json",
-    )
+    with patch.object(
+        TournamentMatch.objects,
+        "select_for_update",
+        wraps=TournamentMatch.objects.select_for_update,
+    ) as select_for_update:
+        assignment = client.patch(
+            f"/api/tournaments/{tournament.id_uuid}/matches/{match.id_uuid}/referee-duty/",
+            data={"team_id": str(duty_team.id_uuid)},
+            content_type="application/json",
+        )
     qr = client.get(
         f"/api/tournaments/{tournament.id_uuid}/referee-teams/{duty_team.id_uuid}/qr/"
     )
@@ -323,6 +328,7 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
     assert assigned_match["referee_team"]["id_uuid"] == str(duty_team.id_uuid)
     assert qr.status_code == HTTPStatus.OK
     assert qr.json()["qr_data_url"].startswith("data:image/svg+xml;base64,")
+    select_for_update.assert_called_once_with(of=("self",))
     duty_team.refresh_from_db()
     assert duty_team.referee_access_token is not None
 
