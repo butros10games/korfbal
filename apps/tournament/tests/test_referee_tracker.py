@@ -212,6 +212,10 @@ def test_public_snapshot_includes_operational_readiness_without_actor(
 ) -> None:
     """Displays receive readiness while the referee identity stays private."""
     _, referee, tournament, _, _, match, _ = _match_graph()
+    home_team = match.home_team
+    assert home_team is not None
+    home_team.color = "#123456"
+    home_team.save(update_fields=["color"])
     match.field_ready_at = timezone.now()
     match.field_ready_by = referee
     match.save(update_fields=["field_ready_at", "field_ready_by"])
@@ -221,4 +225,5 @@ def test_public_snapshot_includes_operational_readiness_without_actor(
     assert response.status_code == HTTPStatus.OK
     payload = response.json()["matches"][0]
     assert payload["field_ready_at"] is not None
+    assert payload["home_team"]["color"] == "#123456"
     assert "field_ready_by" not in payload

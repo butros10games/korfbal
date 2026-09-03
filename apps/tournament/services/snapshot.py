@@ -103,6 +103,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                         "id_uuid": str(match.home_team_id),
                         "name": match.home_team.name,
                         "short_name": match.home_team.short_name,
+                        "color": match.home_team.color,
                     }
                     if match.home_team
                     else None
@@ -112,6 +113,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                         "id_uuid": str(match.away_team_id),
                         "name": match.away_team.name,
                         "short_name": match.away_team.short_name,
+                        "color": match.away_team.color,
                     }
                     if match.away_team
                     else None
