@@ -101,8 +101,11 @@ from apps.tournament.services.importing import (
 )
 from apps.tournament.services.match_operations import (
     TournamentMatchOperationError,
+    downstream_result_locked,
     reset_field_readiness,
+    reset_match_state,
     start_round,
+    sync_advanced_winner,
 )
 from apps.tournament.services.referee_tracker import (
     RefereeTrackerError,
@@ -992,34 +995,6 @@ def _result_winner(
     raise ValidationError({"winner_id": "Winner must be a participating team."})
 
 
-def _sync_advanced_winner(match: TournamentMatch) -> None:
-    if not match.next_match or not match.winner_to_side:
-        return
-    destination = match.next_match
-    replacement = match.winner if match.status == TournamentMatch.Status.FINAL else None
-    if match.winner_to_side == TournamentMatch.DestinationSide.HOME:
-        destination.home_team = replacement
-        update_field = "home_team"
-    else:
-        destination.away_team = replacement
-        update_field = "away_team"
-    destination.save(update_fields=[update_field, "updated_at"])
-
-
-def _downstream_result_locked(
-    match: TournamentMatch, winner: TournamentTeam | None
-) -> bool:
-    """Return whether changing an advanced team would invalidate played data."""
-    if not match.next_match or match.winner_id == getattr(winner, "pk", None):
-        return False
-    destination = match.next_match
-    return (
-        destination.status != TournamentMatch.Status.SCHEDULED
-        or destination.home_score is not None
-        or destination.away_score is not None
-    )
-
-
 class TournamentMatchResultView(APIView):
     """Enter, finalize, reopen, or correct one match result."""
 
@@ -1067,7 +1042,7 @@ class TournamentMatchResultView(APIView):
             raise ValidationError({
                 "winner_id": "A knockout result must identify a winner."
             })
-        if _downstream_result_locked(match, target_winner):
+        if downstream_result_locked(match, target_winner):
             return Response(
                 {
                     "detail": (
@@ -1107,7 +1082,7 @@ class TournamentMatchResultView(APIView):
             ]
         )
 
-        _sync_advanced_winner(match)
+        sync_advanced_winner(match)
 
         if match.stage.kind == TournamentStage.Kind.POOL:
             try:
@@ -1127,7 +1102,44 @@ class TournamentMatchResultView(APIView):
 
 
 class TournamentMatchReadinessView(APIView):
-    """Let a manager revoke an incorrect field-readiness signal."""
+    """Let a manager set or revoke a field-readiness signal."""
+
+    @transaction.atomic
+    def post(self, request: Request, match_id: str) -> Response:
+        """Mark a scheduled match ready with optimistic locking.
+
+        Raises:
+            Conflict: If the match changed after the manager loaded it.
+
+        """
+        serializer = TournamentRefereeReadySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        match = get_object_or_404(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
+                "tournament"
+            ),
+            id_uuid=match_id,
+        )
+        _require_manager(request, match.tournament)
+        if match.field_ready_at is not None:
+            return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
+        if serializer.validated_data["expected_revision"] != match.revision:
+            raise Conflict()
+        if match.status != TournamentMatch.Status.SCHEDULED:
+            return Response(
+                {"detail": "Alleen een geplande wedstrijd kan gereed worden gemeld."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            mark_field_ready(
+                match,
+                actor=request.user,
+                actor_name=str(request.user),
+            )
+        except RefereeTrackerError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        touch_tournament(match.tournament)
+        return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
 
     @transaction.atomic
     def delete(self, request: Request, match_id: str) -> Response:
@@ -1157,6 +1169,54 @@ class TournamentMatchReadinessView(APIView):
         if changed:
             touch_tournament(match.tournament)
         return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
+
+
+class TournamentMatchStateResetView(APIView):
+    """Move any tournament match back to its previous lifecycle state."""
+
+    @transaction.atomic
+    def post(self, request: Request, match_id: str) -> Response:
+        """Reset one manager-controlled match with optimistic locking.
+
+        Raises:
+            Conflict: If the match changed or a downstream result blocks reset.
+
+        """
+        serializer = TournamentRefereeReadySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        match = get_object_or_404(
+            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
+                "tournament", "stage"
+            ),
+            id_uuid=match_id,
+        )
+        _require_manager(request, match.tournament)
+        if serializer.validated_data["expected_revision"] != match.revision:
+            raise Conflict()
+        if match.next_match_id:
+            match.next_match = TournamentMatch.objects.select_for_update(
+                of=("self",)
+            ).get(pk=match.next_match_id)
+        try:
+            changed = reset_match_state(match, actor=request.user)
+        except TournamentMatchOperationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        if changed and match.stage.kind == TournamentStage.Kind.POOL:
+            try:
+                resolve_final_group_qualifiers(match.tournament)
+            except FinalGroupError as exc:
+                raise Conflict(str(exc)) from exc
+        if changed:
+            touch_tournament(match.tournament)
+        return Response({
+            "id_uuid": str(match.id_uuid),
+            "home_score": match.home_score,
+            "away_score": match.away_score,
+            "status": match.status,
+            "winner_id": str(match.winner_id) if match.winner_id else None,
+            "revision": match.revision,
+        })
 
 
 class TournamentRoundStartView(APIView):

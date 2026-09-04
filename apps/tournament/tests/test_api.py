@@ -266,6 +266,33 @@ def test_manager_starts_every_ready_match_in_a_round_at_one_instant(
     assert tournament.status == Tournament.Status.LIVE
 
 
+def test_manager_can_mark_one_scheduled_match_ready(client: Client) -> None:
+    """The score-card quick action records readiness with its rendered revision."""
+    user, tournament, _stage, matches = _create_ready_round()
+    match = matches[0]
+    match.field_ready_at = None
+    match.field_ready_by = None
+    match.field_ready_by_name = ""
+    match.revision = FINAL_MATCH_REVISION
+    match.save()
+    client.force_login(user)
+
+    response = client.post(
+        f"/api/tournaments/matches/{match.id_uuid}/readiness/",
+        data={"expected_revision": FINAL_MATCH_REVISION},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["revision"] == REOPENED_MATCH_REVISION
+    match.refresh_from_db()
+    assert match.field_ready_at is not None
+    assert match.field_ready_by == user
+    assert match.field_ready_by_name == str(user)
+    tournament.refresh_from_db()
+    assert tournament.live_revision == 1
+
+
 def test_manager_reopens_final_match_with_score_and_audit_intact(
     client: Client,
 ) -> None:
@@ -302,6 +329,82 @@ def test_manager_reopens_final_match_with_score_and_audit_intact(
     assert audit.previous_status == TournamentMatch.Status.FINAL
     assert audit.new_status == TournamentMatch.Status.LIVE
     assert audit.reason == "Definitieve uitslag teruggezet door toernooibeheer"
+
+
+@pytest.mark.parametrize(
+    ("initial_status", "expected_status", "expected_scores", "creates_audit"),
+    [
+        (
+            TournamentMatch.Status.SCHEDULED,
+            TournamentMatch.Status.SCHEDULED,
+            (None, None),
+            False,
+        ),
+        (
+            TournamentMatch.Status.LIVE,
+            TournamentMatch.Status.SCHEDULED,
+            (None, None),
+            True,
+        ),
+        (
+            TournamentMatch.Status.FINAL,
+            TournamentMatch.Status.LIVE,
+            (7, 5),
+            True,
+        ),
+        (
+            TournamentMatch.Status.CANCELLED,
+            TournamentMatch.Status.SCHEDULED,
+            (None, None),
+            True,
+        ),
+    ],
+)
+def test_manager_can_reset_every_match_state(
+    client: Client,
+    initial_status: str,
+    expected_status: str,
+    expected_scores: tuple[int | None, int | None],
+    creates_audit: bool,
+) -> None:
+    """Every visible lifecycle state has a revision-safe recovery path."""
+    user, tournament, _stage, matches = _create_ready_round()
+    match = matches[0]
+    match.status = initial_status
+    match.home_score = 7 if initial_status != TournamentMatch.Status.SCHEDULED else None
+    match.away_score = 5 if initial_status != TournamentMatch.Status.SCHEDULED else None
+    match.winner = (
+        match.home_team if initial_status == TournamentMatch.Status.FINAL else None
+    )
+    match.revision = FINAL_MATCH_REVISION
+    match.save()
+    client.force_login(user)
+
+    response = client.post(
+        f"/api/tournaments/matches/{match.id_uuid}/state/reset/",
+        data={"expected_revision": FINAL_MATCH_REVISION},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["revision"] == REOPENED_MATCH_REVISION
+    match.refresh_from_db()
+    assert match.status == expected_status
+    assert (match.home_score, match.away_score) == expected_scores
+    assert match.winner is None
+    if initial_status == TournamentMatch.Status.SCHEDULED:
+        assert match.field_ready_at is None
+    else:
+        assert match.field_ready_at is not None
+    audits = TournamentResultAudit.objects.filter(match=match)
+    assert audits.exists() is creates_audit
+    if creates_audit:
+        audit = audits.get()
+        assert audit.previous_status == initial_status
+        assert audit.new_status == expected_status
+        assert audit.reason == "Match state reset by tournament manager"
+    tournament.refresh_from_db()
+    assert tournament.live_revision == 1
 
 
 def test_round_start_waits_until_every_scheduled_field_is_ready(client: Client) -> None:

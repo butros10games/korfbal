@@ -17,6 +17,7 @@ from .views import (
     TournamentMatchListCreateView,
     TournamentMatchReadinessView,
     TournamentMatchResultView,
+    TournamentMatchStateResetView,
     TournamentMemberDetailView,
     TournamentMemberListCreateView,
     TournamentPoolDetailView,
@@ -194,6 +195,11 @@ urlpatterns = [
         "matches/<uuid:match_id>/readiness/",
         TournamentMatchReadinessView.as_view(),
         name="tournament-match-readiness",
+    ),
+    path(
+        "matches/<uuid:match_id>/state/reset/",
+        TournamentMatchStateResetView.as_view(),
+        name="tournament-match-state-reset",
     ),
     path(
         "<uuid:tournament_id>/stages/<uuid:stage_id>/rounds/<int:round_number>/start/",
