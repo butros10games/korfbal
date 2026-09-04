@@ -23,7 +23,9 @@ class TournamentEventsSseConsumer(AsyncConsumer):
     """Stream public revision notifications for a bounded tournament set."""
 
     tournament_ids: tuple[str, ...] = ()
+    revisions: dict[str, int]
     heartbeat_task: asyncio.Task[None] | None = None
+    reconciliation_task: asyncio.Task[None] | None = None
 
     async def http_request(self, event: dict[str, object]) -> None:
         """Validate and open a tournament revision stream."""
@@ -57,8 +59,10 @@ class TournamentEventsSseConsumer(AsyncConsumer):
             "status": 200,
             "headers": headers,
         })
-        await self._send_event("ready", {"revisions": await self._revisions()})
+        self.revisions = await self._revisions()
+        await self._send_event("ready", {"revisions": self.revisions})
         self.heartbeat_task = asyncio.create_task(self._heartbeats())
+        self.reconciliation_task = asyncio.create_task(self._reconcile_revisions())
 
     async def http_disconnect(self, event: dict[str, object]) -> None:
         """Release subscriptions after a receiver or browser disconnects.
@@ -73,11 +77,24 @@ class TournamentEventsSseConsumer(AsyncConsumer):
 
     async def tournament_changed(self, event: dict[str, object]) -> None:
         """Forward a committed tournament invalidation."""
+        tournament_id = str(event["tournament_id"])
+        revision = int(str(event["revision"]))
+        await self._send_changed_if_new(tournament_id, revision)
+
+    async def _send_changed_if_new(
+        self,
+        tournament_id: str,
+        revision: int,
+    ) -> None:
+        """Send only revisions newer than the last one observed by this stream."""
+        if revision <= self.revisions.get(tournament_id, -1):
+            return
+        self.revisions[tournament_id] = revision
         await self._send_event(
             "tournament.changed",
             {
-                "tournament_id": event["tournament_id"],
-                "revision": event["revision"],
+                "tournament_id": tournament_id,
+                "revision": revision,
             },
         )
 
@@ -101,10 +118,23 @@ class TournamentEventsSseConsumer(AsyncConsumer):
         except asyncio.CancelledError:
             return
 
+    async def _reconcile_revisions(self) -> None:
+        """Recover committed changes missed by the best-effort channel layer."""
+        try:
+            while True:
+                await asyncio.sleep(settings.KORFBAL_SSE_RECONCILE_SECONDS)
+                for tournament_id, revision in (await self._revisions()).items():
+                    await self._send_changed_if_new(tournament_id, revision)
+        except asyncio.CancelledError:
+            return
+
     async def _cleanup(self) -> None:
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
             self.heartbeat_task = None
+        if self.reconciliation_task:
+            self.reconciliation_task.cancel()
+            self.reconciliation_task = None
         for tournament_id in self.tournament_ids:
             await self.channel_layer.group_discard(
                 tournament_group_name(tournament_id), self.channel_name
