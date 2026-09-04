@@ -683,8 +683,10 @@ class TournamentDisplayConfig(models.Model):
     show_standings = models.BooleanField(default=True)
     show_upcoming = models.BooleanField(default=True)
     show_recent = models.BooleanField(default=True)
+    show_sponsors = models.BooleanField(default=True)
     accent_color = models.CharField(max_length=16, default="#d6ff00")
     announcement = models.CharField(max_length=240, blank=True)
+    sponsors = models.JSONField(default=list, blank=True)
 
     def __str__(self) -> str:
         """Return the associated tournament label."""

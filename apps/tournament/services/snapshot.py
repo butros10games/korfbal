@@ -179,8 +179,10 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             "show_standings": config.show_standings,
             "show_upcoming": config.show_upcoming,
             "show_recent": config.show_recent,
+            "show_sponsors": config.show_sponsors,
             "accent_color": config.accent_color,
             "announcement": config.announcement,
+            "sponsors": config.sponsors,
         },
         "fields": [
             {

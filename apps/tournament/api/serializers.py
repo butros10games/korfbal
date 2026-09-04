@@ -251,6 +251,13 @@ class TournamentFieldSerializer(serializers.ModelSerializer):
 class TournamentDisplayConfigSerializer(serializers.ModelSerializer):
     """Manage presentation screen rotation and branding."""
 
+    sponsors = serializers.ListField(
+        child=serializers.CharField(max_length=120, trim_whitespace=True),
+        allow_empty=True,
+        max_length=6,
+        required=False,
+    )
+
     class Meta:
         """Expose presentation-only configuration."""
 
@@ -261,8 +268,10 @@ class TournamentDisplayConfigSerializer(serializers.ModelSerializer):
             "show_standings",
             "show_upcoming",
             "show_recent",
+            "show_sponsors",
             "accent_color",
             "announcement",
+            "sponsors",
         ]
 
 

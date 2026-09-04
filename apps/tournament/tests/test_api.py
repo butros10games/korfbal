@@ -548,6 +548,34 @@ def test_unlisted_display_requires_token_and_manager_snapshot_exposes_it(
     assert allowed.status_code == HTTPStatus.OK
 
 
+def test_manager_configures_sponsors_for_the_public_display(client: Client) -> None:
+    """Sponsor names are normalized and included in receiver snapshots."""
+    user = get_user_model().objects.create_user(username="sponsor-manager")
+    client.force_login(user)
+    tournament = _create_tournament(client)
+    tournament_id = tournament["id_uuid"]
+
+    response = client.patch(
+        f"/api/tournaments/{tournament_id}/display-config/",
+        data={
+            "show_sponsors": False,
+            "sponsors": ["  G&B Home Living  ", "Lokale Bakker"],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["show_sponsors"] is False
+    assert response.json()["sponsors"] == ["G&B Home Living", "Lokale Bakker"]
+    snapshot = client.get(f"/api/tournaments/{tournament_id}/snapshot/")
+    assert snapshot.status_code == HTTPStatus.OK
+    assert snapshot.json()["display"]["show_sponsors"] is False
+    assert snapshot.json()["display"]["sponsors"] == [
+        "G&B Home Living",
+        "Lokale Bakker",
+    ]
+
+
 def test_pool_winners_generate_single_elimination_final(client: Client) -> None:
     """Finalized pools can feed an automatically wired knockout bracket."""
     user = get_user_model().objects.create_user(username="finals-manager")
