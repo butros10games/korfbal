@@ -31,6 +31,7 @@ SUPPORTED_TIEBREAKERS = {
     "name",
 }
 MAX_IMPORTED_MATCHES = 1000
+MAX_SUBSTITUTION_MATCHES = 100
 FINAL_GROUP_SEMIFINAL_COUNT = 2
 
 
@@ -379,6 +380,41 @@ class TournamentMatchWriteSerializer(serializers.Serializer):
     start_time = serializers.TimeField()
     duration_minutes = serializers.IntegerField(min_value=1, max_value=240)
     round_number = serializers.IntegerField(min_value=1, max_value=999)
+
+
+class TournamentMatchSubstitutionSerializer(serializers.Serializer):
+    """Select a guest team for one absent team's pool match."""
+
+    match_id = serializers.UUIDField()
+    substitute_team_id = serializers.UUIDField()
+
+
+class TournamentTeamSubstitutionSerializer(serializers.Serializer):
+    """Validate an atomic replacement plan for an absent team."""
+
+    replacements = TournamentMatchSubstitutionSerializer(
+        many=True,
+        allow_empty=False,
+    )
+
+    def validate_replacements(
+        self,
+        value: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Require each affected match exactly once.
+
+        Raises:
+            serializers.ValidationError: If a match occurs more than once.
+
+        """
+        if len(value) > MAX_SUBSTITUTION_MATCHES:
+            raise serializers.ValidationError(
+                f"Select no more than {MAX_SUBSTITUTION_MATCHES} matches."
+            )
+        match_ids = [replacement["match_id"] for replacement in value]
+        if len(set(match_ids)) != len(match_ids):
+            raise serializers.ValidationError("Select each match only once.")
+        return value
 
 
 class TournamentScheduleImportRowSerializer(serializers.Serializer):

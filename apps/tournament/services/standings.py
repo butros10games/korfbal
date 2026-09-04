@@ -166,6 +166,11 @@ def calculate_pool_standings(
             away_score__isnull=False,
         )
     )
+    included_matches = [
+        match
+        for match in included_matches
+        if str(match.home_team_id) in rows and str(match.away_team_id) in rows
+    ]
     for match in included_matches:
         _apply_match(rows, match, tournament)
     for row in rows.values():

@@ -56,6 +56,7 @@ from apps.tournament.api.serializers import (
     TournamentSerializer,
     TournamentStandingAdjustmentSerializer,
     TournamentTeamSerializer,
+    TournamentTeamSubstitutionSerializer,
 )
 from apps.tournament.composition import touch_tournament
 from apps.tournament.models import (
@@ -72,11 +73,13 @@ from apps.tournament.models import (
 )
 from apps.tournament.services.editing import (
     MatchDraft,
+    MatchSubstitution,
     TournamentEditingError,
     create_pool,
     delete_match,
     delete_pool,
     save_match,
+    substitute_absent_team,
     update_pool,
     update_pool_order,
 )
@@ -369,6 +372,33 @@ class TournamentTeamDetailView(APIView):
         team.delete()
         touch_tournament(tournament)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TournamentTeamSubstitutionView(APIView):
+    """Replace an absent team's remaining pool fixtures with guest teams."""
+
+    @transaction.atomic
+    def post(self, request: Request, tournament_id: str, team_id: UUID) -> Response:
+        """Apply a complete, conflict-free last-minute replacement plan."""
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        serializer = TournamentTeamSubstitutionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        substitutions = [
+            MatchSubstitution(**replacement)
+            for replacement in serializer.validated_data["replacements"]
+        ]
+        try:
+            substitute_absent_team(
+                tournament,
+                absent_team_id=team_id,
+                substitutions=substitutions,
+            )
+        except TournamentEditingError as exc:
+            return _editing_error_response(exc)
+        _resolve_qualifiers(tournament)
+        touch_tournament(tournament)
+        return Response(build_tournament_snapshot(tournament))
 
 
 class TournamentFieldListCreateView(APIView):

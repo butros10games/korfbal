@@ -140,6 +140,10 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
         str(pool.id_uuid): calculate_pool_standings(pool, include_live_matches=True)
         for pool in pools
     }
+    team_ids_by_pool_id = {
+        str(pool.id_uuid): {str(entry.team_id) for entry in pool.entries.all()}
+        for pool in pools
+    }
     winner_sources = {
         (str(match.next_match_id), match.winner_to_side): (
             f"Winnaar {match.stage.name} · wedstrijd {match.match_number}"
@@ -266,6 +270,18 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                     }
                     if match.away_team
                     else None
+                ),
+                "home_is_guest": bool(
+                    match.pool_id
+                    and match.home_team_id
+                    and str(match.home_team_id)
+                    not in team_ids_by_pool_id.get(str(match.pool_id), set())
+                ),
+                "away_is_guest": bool(
+                    match.pool_id
+                    and match.away_team_id
+                    and str(match.away_team_id)
+                    not in team_ids_by_pool_id.get(str(match.pool_id), set())
                 ),
                 "home_source_label": _qualifier_label(match.home_qualifier, pools_by_id)
                 or winner_sources.get((

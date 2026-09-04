@@ -47,6 +47,11 @@ class _RuleOutcome(Enum):
     UNKNOWN = "unknown"
 
 
+def _pool_standings_match(pool: TournamentPool, match: TournamentMatch) -> bool:
+    pool_team_ids = {entry.team_id for entry in pool.entries.all()}
+    return match.home_team_id in pool_team_ids and match.away_team_id in pool_team_ids
+
+
 def _valid_final_matches(pool: TournamentPool) -> list[TournamentMatch]:
     return [
         match
@@ -56,6 +61,7 @@ def _valid_final_matches(pool: TournamentPool) -> list[TournamentMatch]:
         and match.away_team_id is not None
         and match.home_score is not None
         and match.away_score is not None
+        and _pool_standings_match(pool, match)
     ]
 
 
@@ -67,6 +73,7 @@ def _remaining_matches(pool: TournamentPool) -> list[TournamentMatch]:
         not in {TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED}
         and match.home_team_id is not None
         and match.away_team_id is not None
+        and _pool_standings_match(pool, match)
     ]
 
 

@@ -229,6 +229,7 @@ class TournamentTeam(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:
+        pool_entries: models.Manager[TournamentPoolEntry]
         referee_matches: models.Manager[TournamentMatch]
 
     class Meta:

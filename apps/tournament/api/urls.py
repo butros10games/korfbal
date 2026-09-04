@@ -41,6 +41,7 @@ from .views import (
     TournamentStandingAdjustmentListCreateView,
     TournamentTeamDetailView,
     TournamentTeamListCreateView,
+    TournamentTeamSubstitutionView,
     TournamentViewSet,
 )
 
@@ -76,6 +77,11 @@ urlpatterns = [
         "<uuid:tournament_id>/teams/<uuid:team_id>/",
         TournamentTeamDetailView.as_view(),
         name="tournament-team-detail",
+    ),
+    path(
+        "<uuid:tournament_id>/teams/<uuid:team_id>/substitutions/",
+        TournamentTeamSubstitutionView.as_view(),
+        name="tournament-team-substitutions",
     ),
     path(
         "<uuid:tournament_id>/fields/",

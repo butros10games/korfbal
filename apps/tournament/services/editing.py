@@ -38,6 +38,14 @@ class MatchDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class MatchSubstitution:
+    """One guest-team assignment for an absent team's match."""
+
+    match_id: UUID
+    substitute_team_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolvedMatchDraft:
     starts_at: datetime
     duration_minutes: int
@@ -238,14 +246,30 @@ def _match_objects(
         raise TournamentEditingError(
             "Select a pool, active teams, and an active field from this tournament."
         ) from exc
-    pool_team_ids = set(pool.entries.values_list("team_id", flat=True))
-    if home.pk not in pool_team_ids or away.pk not in pool_team_ids:
-        raise TournamentEditingError("Both teams must belong to the selected pool.")
     if pool.assigned_field_id and pool.assigned_field_id != field.pk:
         raise TournamentEditingError(
             f'Pool "{pool.name}" is assigned to field "{pool.assigned_field.label}".'
         )
     return pool, home, away, field
+
+
+def _validate_match_teams(
+    pool: TournamentPool,
+    home: TournamentTeam,
+    away: TournamentTeam,
+    *,
+    allow_guest_team: bool,
+) -> None:
+    pool_team_ids = set(pool.entries.values_list("team_id", flat=True))
+    outside_pool = [team for team in (home, away) if team.pk not in pool_team_ids]
+    if outside_pool and not allow_guest_team:
+        raise TournamentEditingError("Both teams must belong to the selected pool.")
+    if len(outside_pool) > 1:
+        raise TournamentEditingError(
+            "At least one team must belong to the selected pool."
+        )
+    if outside_pool and not outside_pool[0].pool_entries.exclude(pool=pool).exists():
+        raise TournamentEditingError("The guest team must belong to another pool.")
 
 
 def _ensure_available(
@@ -295,6 +319,19 @@ def save_match(
         away_team_id=draft.away_team_id,
         field_id=draft.field_id,
     )
+    allow_guest_team = False
+    if match is not None and match.pool_id == pool.pk:
+        pool_team_ids = set(pool.entries.values_list("team_id", flat=True))
+        allow_guest_team = (
+            match.home_team_id not in pool_team_ids
+            or match.away_team_id not in pool_team_ids
+        )
+    _validate_match_teams(
+        pool,
+        home,
+        away,
+        allow_guest_team=allow_guest_team,
+    )
     _ensure_available(
         tournament,
         draft=_ResolvedMatchDraft(
@@ -330,3 +367,140 @@ def delete_match(tournament: Tournament, match: TournamentMatch) -> None:
     match = tournament.matches.select_for_update().get(pk=match.pk)
     _editable_match(match)
     match.delete()
+
+
+@transaction.atomic
+def substitute_absent_team(
+    tournament: Tournament,
+    *,
+    absent_team_id: UUID,
+    substitutions: list[MatchSubstitution],
+) -> list[TournamentMatch]:
+    """Fill every remaining pool match for an absent team with guest teams.
+
+    The actual guest participant is stored on the match while the match keeps its
+    original pool. Standings deliberately ignore matches with a participant from
+    outside that pool.
+
+    Raises:
+        TournamentEditingError: If the plan is incomplete, unsafe, or conflicts.
+
+    """
+    tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
+    try:
+        absent_team = tournament.teams.select_for_update().get(pk=absent_team_id)
+    except TournamentTeam.DoesNotExist as exc:
+        raise TournamentEditingError("Select a team from this tournament.") from exc
+
+    editable_matches = list(
+        tournament.matches
+        .select_for_update()
+        .select_related("stage", "pool", "field", "home_team", "away_team")
+        .filter(
+            stage__kind=TournamentStage.Kind.POOL,
+            pool__isnull=False,
+        )
+        .filter(Q(home_team=absent_team) | Q(away_team=absent_team))
+        .filter(
+            status=TournamentMatch.Status.SCHEDULED,
+            home_score__isnull=True,
+            away_score__isnull=True,
+        )
+    )
+    editable_by_id = {match.id_uuid: match for match in editable_matches}
+    requested_ids = {substitution.match_id for substitution in substitutions}
+    if not editable_by_id:
+        raise TournamentEditingError(
+            "This team has no unstarted pool matches to replace."
+        )
+    if requested_ids != set(editable_by_id):
+        raise TournamentEditingError(
+            "Choose a replacement for every unstarted pool match of the absent team."
+        )
+
+    substitute_ids = {item.substitute_team_id for item in substitutions}
+    substitutes = {
+        team.id_uuid: team
+        for team in tournament.teams.select_for_update().filter(
+            id_uuid__in=substitute_ids,
+            withdrawn=False,
+        )
+    }
+    if len(substitutes) != len(substitute_ids):
+        raise TournamentEditingError("Select active teams from this tournament.")
+
+    updated = [
+        _apply_match_substitution(
+            tournament,
+            absent_team=absent_team,
+            match=editable_by_id[substitution.match_id],
+            substitute=substitutes[substitution.substitute_team_id],
+        )
+        for substitution in substitutions
+    ]
+
+    absent_team.withdrawn = True
+    absent_team.save(update_fields=["withdrawn"])
+    return updated
+
+
+def _apply_match_substitution(
+    tournament: Tournament,
+    *,
+    absent_team: TournamentTeam,
+    match: TournamentMatch,
+    substitute: TournamentTeam,
+) -> TournamentMatch:
+    pool = match.pool
+    if pool is None:
+        raise TournamentEditingError("Only pool matches can use guest teams.")
+    pool_team_ids = set(pool.entries.values_list("team_id", flat=True))
+    if (
+        substitute.pk in pool_team_ids
+        or not substitute.pool_entries.exclude(pool=pool).exists()
+    ):
+        raise TournamentEditingError(
+            f"The replacement for match {match.match_number} must come from "
+            "another pool."
+        )
+    opponent = (
+        match.away_team if match.home_team_id == absent_team.pk else match.home_team
+    )
+    if opponent is None or opponent.pk == substitute.pk:
+        raise TournamentEditingError(
+            f"Choose a different replacement for match {match.match_number}."
+        )
+    home = substitute if match.home_team_id == absent_team.pk else opponent
+    away = substitute if match.away_team_id == absent_team.pk else opponent
+    if match.starts_at is not None and match.field is not None:
+        _ensure_available(
+            tournament,
+            draft=_ResolvedMatchDraft(
+                starts_at=match.starts_at,
+                duration_minutes=match.duration_minutes,
+                field=match.field,
+                home=home,
+                away=away,
+            ),
+            exclude_match=match,
+        )
+    if match.home_team_id == absent_team.pk:
+        match.home_team = substitute
+    else:
+        match.away_team = substitute
+    match.field_ready_at = None
+    match.field_ready_by = None
+    match.field_ready_by_name = ""
+    match.revision += 1
+    match.save(
+        update_fields=[
+            "home_team",
+            "away_team",
+            "field_ready_at",
+            "field_ready_by",
+            "field_ready_by_name",
+            "revision",
+            "updated_at",
+        ]
+    )
+    return match
