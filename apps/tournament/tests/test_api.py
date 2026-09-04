@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from http import HTTPStatus
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client
 from django.utils import timezone
 import pytest
 
+from apps.tournament.composition import change_publisher
 from apps.tournament.models import (
     Tournament,
     TournamentField,
@@ -20,6 +24,7 @@ from apps.tournament.models import (
 
 
 pytestmark = pytest.mark.django_db
+OnCommitCapture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 EXPECTED_ROUND_ROBIN_MATCHES = 6
 FINAL_MATCH_REVISION = 3
 REOPENED_MATCH_REVISION = 4
@@ -237,14 +242,20 @@ def test_manager_generates_publishes_and_scores_live_tournament(client: Client) 
 
 def test_manager_starts_every_ready_match_in_a_round_at_one_instant(
     client: Client,
+    django_capture_on_commit_callbacks: OnCommitCapture,
 ) -> None:
     """One central command starts the whole round and creates an audit per match."""
     user, tournament, stage, matches = _create_ready_round()
     client.force_login(user)
 
-    response = client.post(
-        f"/api/tournaments/{tournament.id_uuid}/stages/{stage.id_uuid}/rounds/2/start/"
-    )
+    with (
+        patch.object(change_publisher, "publish") as publish,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        response = client.post(
+            f"/api/tournaments/{tournament.id_uuid}/stages/"
+            f"{stage.id_uuid}/rounds/2/start/"
+        )
 
     assert response.status_code == HTTPStatus.OK
     for match in matches:
@@ -264,6 +275,11 @@ def test_manager_starts_every_ready_match_in_a_round_at_one_instant(
     )
     tournament.refresh_from_db()
     assert tournament.status == Tournament.Status.LIVE
+    assert tournament.live_revision == 1
+    publish.assert_called_once_with(
+        tournament_id=str(tournament.id_uuid),
+        revision=1,
+    )
 
 
 def test_manager_can_mark_one_scheduled_match_ready(client: Client) -> None:
