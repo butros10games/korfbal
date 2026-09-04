@@ -1,4 +1,4 @@
-"""Pool standings calculated only from finalized tournament results."""
+"""Pool standings calculated from finalized or provisional tournament results."""
 
 from __future__ import annotations
 
@@ -148,20 +148,25 @@ def _comparison(
     return compare
 
 
-def calculate_pool_standings(pool: TournamentPool) -> list[StandingRow]:
-    """Calculate ordered standings for one pool."""
+def calculate_pool_standings(
+    pool: TournamentPool, *, include_live_matches: bool = False
+) -> list[StandingRow]:
+    """Calculate ordered standings for one pool, optionally including live scores."""
     tournament: Tournament = pool.tournament
     rows = _initial_rows(pool)
-    final_matches = list(
+    included_statuses = [TournamentMatch.Status.FINAL]
+    if include_live_matches:
+        included_statuses.append(TournamentMatch.Status.LIVE)
+    included_matches = list(
         pool.matches.filter(
-            status=TournamentMatch.Status.FINAL,
+            status__in=included_statuses,
             home_team__isnull=False,
             away_team__isnull=False,
             home_score__isnull=False,
             away_score__isnull=False,
         )
     )
-    for match in final_matches:
+    for match in included_matches:
         _apply_match(rows, match, tournament)
     for row in rows.values():
         row["goal_difference"] = row["goals_for"] - row["goals_against"]
@@ -179,7 +184,9 @@ def calculate_pool_standings(pool: TournamentPool) -> list[StandingRow]:
         rules.append("name")
     ordered = sorted(
         rows.values(),
-        key=cmp_to_key(_comparison(rules, _direct_results(final_matches, tournament))),
+        key=cmp_to_key(
+            _comparison(rules, _direct_results(included_matches, tournament))
+        ),
     )
     for index, row in enumerate(ordered, start=1):
         row["position"] = index

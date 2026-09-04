@@ -151,7 +151,8 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
     final_groups = list(tournament.final_groups.all())
     pools_by_id = {str(pool.id_uuid): pool for pool in pools}
     standings_by_pool_id = {
-        str(pool.id_uuid): calculate_pool_standings(pool) for pool in pools
+        str(pool.id_uuid): calculate_pool_standings(pool, include_live_matches=True)
+        for pool in pools
     }
     winner_sources = {
         (str(match.next_match_id), match.winner_to_side): (

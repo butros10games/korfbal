@@ -15,15 +15,18 @@ from apps.tournament.models import (
     TournamentStandingAdjustment,
     TournamentTeam,
 )
+from apps.tournament.services.snapshot import build_tournament_snapshot
 from apps.tournament.services.standings import calculate_pool_standings
 
 
 pytestmark = pytest.mark.django_db
 EXPECTED_GOAL_DIFFERENCE = 2
+EXPECTED_PROVISIONAL_PLAYED = 2
+EXPECTED_PROVISIONAL_GOAL_DIFFERENCE = 99
 
 
 def test_standings_apply_configured_points_goal_difference_and_adjustments() -> None:
-    """Only final matches count and manual points remain visible."""
+    """Official results stay final-only while snapshots can project live scores."""
     user = get_user_model().objects.create_user(username="manager")
     tournament = Tournament.objects.create(
         name="Testtoernooi",
@@ -100,3 +103,14 @@ def test_standings_apply_configured_points_goal_difference_and_adjustments() -> 
     assert standings[1]["points"] == 1
     assert standings[2]["points"] == 0
     assert standings[2]["adjustment"] == -1
+
+    provisional = calculate_pool_standings(pool, include_live_matches=True)
+
+    assert [row["team_name"] for row in provisional] == ["Rood", "Blauw", "Groen"]
+    assert provisional[0]["played"] == EXPECTED_PROVISIONAL_PLAYED
+    assert provisional[0]["points"] == tournament.win_points
+    assert provisional[0]["goal_difference"] == EXPECTED_PROVISIONAL_GOAL_DIFFERENCE
+
+    snapshot = build_tournament_snapshot(tournament)
+
+    assert snapshot["pools"][0]["standings"][0]["team_name"] == "Rood"
