@@ -169,6 +169,43 @@ def test_two_final_groups_can_be_preplanned_and_resolve_independently(
     assert bracket_matches[1]["away_source_label"] == (
         "Beste #2 van Poule A, Poule B, Poule E"
     )
+    qualification_rules = {
+        group["name"]: group["qualification_rules"] for group in planned["final_groups"]
+    }
+    assert qualification_rules["Gemengd"] == [
+        {
+            "kind": "pool_rank",
+            "pool_ids": [str(pools["A"].id_uuid)],
+            "rank": 1,
+            "current_team_id": str(pools["A"].entries.get(seed_order=1).team_id),
+            "is_decided": False,
+        },
+        {
+            "kind": "pool_rank",
+            "pool_ids": [str(pools["B"].id_uuid)],
+            "rank": 1,
+            "current_team_id": str(pools["B"].entries.get(seed_order=1).team_id),
+            "is_decided": False,
+        },
+        {
+            "kind": "pool_rank",
+            "pool_ids": [str(pools["E"].id_uuid)],
+            "rank": 1,
+            "current_team_id": str(pools["E"].entries.get(seed_order=1).team_id),
+            "is_decided": False,
+        },
+        {
+            "kind": "best_rank",
+            "pool_ids": [
+                str(pools["A"].id_uuid),
+                str(pools["B"].id_uuid),
+                str(pools["E"].id_uuid),
+            ],
+            "rank": 2,
+            "current_team_id": str(pools["A"].entries.get(seed_order=2).team_id),
+            "is_decided": False,
+        },
+    ]
 
     scores = {"A": (2, 1), "B": (3, 0), "C": (5, 1), "D": (5, 1), "E": (4, 2)}
     for letter, pool in pools.items():
@@ -203,6 +240,16 @@ def test_two_final_groups_can_be_preplanned_and_resolve_independently(
         (match["home_team"]["name"], match["away_team"]["name"])
         for match in by_group["Heren"]
     ] == [("C2", "D1"), ("C1", "D2")]
+    mixed_rules = next(
+        group["qualification_rules"]
+        for group in snapshot["final_groups"]
+        if group["name"] == "Gemengd"
+    )
+    wildcard = next(rule for rule in mixed_rules if rule["kind"] == "best_rank")
+    assert wildcard["current_team_id"] == str(
+        pools["A"].entries.get(seed_order=2).team_id
+    )
+    assert all(rule["is_decided"] for rule in mixed_rules)
 
     heren_semifinals = TournamentMatch.objects.filter(
         stage__final_group__name="Heren",

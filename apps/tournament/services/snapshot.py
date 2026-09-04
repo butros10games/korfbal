@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.tournament.models import Tournament, TournamentMatch, TournamentPool
-from apps.tournament.services.standings import calculate_pool_standings
+from apps.tournament.models import (
+    Tournament,
+    TournamentFinalGroup,
+    TournamentMatch,
+    TournamentPool,
+)
+from apps.tournament.services.standings import (
+    StandingRow,
+    calculate_pool_standings,
+    rank_rows_across_pools,
+)
 
 
 def _qualifier_label(
@@ -26,6 +35,87 @@ def _qualifier_label(
     if source.get("kind") == "best_rank":
         return f"Beste #{rank} van {', '.join(names)}"
     return None
+
+
+def _pool_is_complete(pool: TournamentPool) -> bool:
+    matches = list(pool.matches.all())
+    return bool(matches) and all(
+        match.status in {TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED}
+        for match in matches
+    )
+
+
+def _current_qualifier(
+    tournament: Tournament,
+    source: dict[str, Any],
+    pools_by_id: dict[str, TournamentPool],
+    standings_by_pool_id: dict[str, list[StandingRow]],
+) -> tuple[str | None, bool]:
+    pool_ids = source.get("pool_ids")
+    rank = source.get("rank")
+    if not isinstance(pool_ids, list) or not isinstance(rank, int) or rank < 1:
+        return None, False
+    source_pools = [pools_by_id.get(str(pool_id)) for pool_id in pool_ids]
+    if not source_pools or any(pool is None for pool in source_pools):
+        return None, False
+    pools = [pool for pool in source_pools if pool is not None]
+    candidates = [
+        standings_by_pool_id[str(pool.id_uuid)][rank - 1]
+        for pool in pools
+        if rank <= len(standings_by_pool_id[str(pool.id_uuid)])
+    ]
+    if len(candidates) != len(pools):
+        return None, False
+    if source.get("kind") == "pool_rank" and len(candidates) == 1:
+        selected = candidates[0]
+    elif source.get("kind") == "best_rank" and len(candidates) > 1:
+        selected = rank_rows_across_pools(tournament, candidates)[0]
+    else:
+        return None, False
+    return selected["team_id"], all(_pool_is_complete(pool) for pool in pools)
+
+
+def _qualification_rules(
+    tournament: Tournament,
+    group: TournamentFinalGroup,
+    matches: list[TournamentMatch],
+    pools_by_id: dict[str, TournamentPool],
+    standings_by_pool_id: dict[str, list[StandingRow]],
+) -> list[dict[str, Any]]:
+    rules: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[str, ...], int]] = set()
+    for match in matches:
+        if match.stage.final_group_id != group.id_uuid:
+            continue
+        for source in (match.home_qualifier, match.away_qualifier):
+            pool_ids = source.get("pool_ids") if source else None
+            rank = source.get("rank") if source else None
+            kind = source.get("kind") if source else None
+            if (
+                kind not in {"pool_rank", "best_rank"}
+                or not isinstance(pool_ids, list)
+                or not isinstance(rank, int)
+            ):
+                continue
+            normalized_pool_ids = tuple(str(pool_id) for pool_id in pool_ids)
+            key = (kind, normalized_pool_ids, rank)
+            if key in seen:
+                continue
+            seen.add(key)
+            current_team_id, is_decided = _current_qualifier(
+                tournament,
+                source,
+                pools_by_id,
+                standings_by_pool_id,
+            )
+            rules.append({
+                "kind": kind,
+                "pool_ids": list(normalized_pool_ids),
+                "rank": rank,
+                "current_team_id": current_team_id,
+                "is_decided": is_decided,
+            })
+    return rules
 
 
 def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
@@ -53,7 +143,11 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             "referee_team",
         )
     )
+    final_groups = list(tournament.final_groups.all())
     pools_by_id = {str(pool.id_uuid): pool for pool in pools}
+    standings_by_pool_id = {
+        str(pool.id_uuid): calculate_pool_standings(pool) for pool in pools
+    }
     winner_sources = {
         (str(match.next_match_id), match.winner_to_side): (
             f"Winnaar {match.stage.name} · wedstrijd {match.match_number}"
@@ -125,7 +219,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                     if pool.assigned_field
                     else None
                 ),
-                "standings": calculate_pool_standings(pool),
+                "standings": standings_by_pool_id[str(pool.id_uuid)],
             }
             for pool in pools
         ],
@@ -135,8 +229,15 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                 "name": group.name,
                 "format": group.format,
                 "sort_order": group.sort_order,
+                "qualification_rules": _qualification_rules(
+                    tournament,
+                    group,
+                    matches,
+                    pools_by_id,
+                    standings_by_pool_id,
+                ),
             }
-            for group in tournament.final_groups.all()
+            for group in final_groups
         ],
         "matches": [
             {
