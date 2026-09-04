@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
@@ -22,6 +23,9 @@ pytestmark = pytest.mark.django_db
 MANUAL_POOL_ORDER = 7
 UPDATED_POOL_ORDER = 9
 REORDERED_POOL_ORDER = 10
+GENERATED_DURATION_MINUTES = 12
+GENERATED_CHANGEOVER_MINUTES = 2
+GENERATED_REST_MINUTES = 3
 
 
 def _setup(client: Client) -> tuple[Tournament, list[TournamentTeam]]:
@@ -64,13 +68,22 @@ def test_pool_and_match_generation_are_separate_review_steps(client: Client) -> 
 
     matches_response = client.post(
         f"/api/tournaments/{tournament.id_uuid}/matches/generate/",
-        data={"legs": 1},
+        data={
+            "legs": 1,
+            "duration_minutes": GENERATED_DURATION_MINUTES,
+            "changeover_minutes": GENERATED_CHANGEOVER_MINUTES,
+            "minimum_rest_minutes": GENERATED_REST_MINUTES,
+        },
         content_type="application/json",
     )
 
     assert matches_response.status_code == HTTPStatus.OK
     assert tournament.matches.count() == expected_count
     assert set(tournament.pools.values_list("id_uuid", flat=True)) == pool_ids
+    tournament.refresh_from_db()
+    assert tournament.match_duration_minutes == GENERATED_DURATION_MINUTES
+    assert tournament.changeover_minutes == GENERATED_CHANGEOVER_MINUTES
+    assert tournament.minimum_rest_minutes == GENERATED_REST_MINUTES
 
 
 def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -> None:
@@ -143,6 +156,21 @@ def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -
     assert {
         row["team_id"] for row in update_pool_response.json()["pools"][0]["standings"]
     } == {str(teams[0].id_uuid), str(teams[2].id_uuid)}
+
+
+def test_manual_pool_requires_at_least_two_teams(client: Client) -> None:
+    """A pool cannot be saved in a state the match generator cannot schedule."""
+    tournament, teams = _setup(client)
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/pools/",
+        data={"name": "Poule Alleen", "team_ids": [str(teams[0].id_uuid)]},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "at least 2" in response.json()["team_ids"][0]
+    assert tournament.pools.count() == 0
 
 
 def test_manual_match_must_use_the_pool_assigned_field(client: Client) -> None:
@@ -272,13 +300,95 @@ def _substitution_schedule(
     return tournament, teams, list(tournament.matches.order_by("starts_at"))
 
 
+def _referee_duty_for_absent_team(
+    tournament: Tournament,
+    teams: list[TournamentTeam],
+    matches: list[TournamentMatch],
+) -> TournamentMatch:
+    pool = tournament.pools.get(name="Poule B")
+    assert matches[1].starts_at is not None
+    return TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=pool.stage,
+        pool=pool,
+        home_team=teams[3],
+        away_team=teams[4],
+        referee_team=teams[0],
+        referee_name="Existing claim",
+        field=tournament.fields.get(),
+        starts_at=matches[1].starts_at + timedelta(minutes=30),
+        duration_minutes=20,
+        round_number=1,
+        match_number=3,
+    )
+
+
 def test_absent_team_matches_can_be_filled_from_other_pools(client: Client) -> None:
     """A manager can atomically assign a different guest to every open fixture."""
     tournament, teams, matches = _substitution_schedule(client)
+    referee_duty = _referee_duty_for_absent_team(tournament, teams, matches)
+    referee_revision = referee_duty.revision
     first_revision = matches[0].revision
     matches[0].field_ready_at = timezone.now()
     matches[0].field_ready_by_name = "Ready referee"
     matches[0].save(update_fields=["field_ready_at", "field_ready_by_name"])
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/teams/{teams[0].id_uuid}/substitutions/",
+        data={
+            "replacements": [
+                {
+                    "match_id": str(matches[0].id_uuid),
+                    "substitute_team_id": str(teams[3].id_uuid),
+                },
+                {
+                    "match_id": str(matches[1].id_uuid),
+                    "substitute_team_id": str(teams[4].id_uuid),
+                },
+            ],
+            "referee_replacements": [
+                {
+                    "match_id": str(referee_duty.id_uuid),
+                    "substitute_team_id": str(teams[5].id_uuid),
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    teams[0].refresh_from_db()
+    assert teams[0].withdrawn is True
+    matches[0].refresh_from_db()
+    matches[1].refresh_from_db()
+    assert matches[0].home_team_id == teams[3].id_uuid
+    assert matches[1].away_team_id == teams[4].id_uuid
+    assert matches[0].field_ready_at is None
+    assert not matches[0].field_ready_by_name
+    assert matches[0].revision == first_revision + 1
+    referee_duty.refresh_from_db()
+    assert referee_duty.referee_team_id == teams[5].id_uuid
+    assert not referee_duty.referee_name
+    assert referee_duty.revision == referee_revision + 1
+    response_matches = response.json()["matches"]
+    assert response_matches[0]["home_is_guest"] is True
+    assert response_matches[0]["away_is_guest"] is False
+    assert response_matches[1]["home_is_guest"] is False
+    assert response_matches[1]["away_is_guest"] is True
+
+    tournament.matches.update(
+        status=TournamentMatch.Status.FINAL,
+        home_score=4,
+        away_score=3,
+    )
+    standings = calculate_pool_standings(tournament.pools.get(name="Poule A"))
+    assert all(row["played"] == 0 for row in standings)
+
+
+def test_absent_team_replacement_requires_every_referee_duty(client: Client) -> None:
+    """A referee assignment cannot be left behind when a team is withdrawn."""
+    tournament, teams, matches = _substitution_schedule(client)
+    referee_duty = _referee_duty_for_absent_team(tournament, teams, matches)
 
     response = client.post(
         f"/api/tournaments/{tournament.id_uuid}/teams/{teams[0].id_uuid}/substitutions/",
@@ -297,29 +407,40 @@ def test_absent_team_matches_can_be_filled_from_other_pools(client: Client) -> N
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert "referee duty" in response.json()["detail"]
+    referee_duty.refresh_from_db()
     teams[0].refresh_from_db()
-    assert teams[0].withdrawn is True
-    matches[0].refresh_from_db()
-    matches[1].refresh_from_db()
-    assert matches[0].home_team_id == teams[3].id_uuid
-    assert matches[1].away_team_id == teams[4].id_uuid
-    assert matches[0].field_ready_at is None
-    assert not matches[0].field_ready_by_name
-    assert matches[0].revision == first_revision + 1
-    response_matches = response.json()["matches"]
-    assert response_matches[0]["home_is_guest"] is True
-    assert response_matches[0]["away_is_guest"] is False
-    assert response_matches[1]["home_is_guest"] is False
-    assert response_matches[1]["away_is_guest"] is True
+    assert referee_duty.referee_team_id == teams[0].id_uuid
+    assert teams[0].withdrawn is False
 
-    tournament.matches.update(
-        status=TournamentMatch.Status.FINAL,
-        home_score=4,
-        away_score=3,
+
+def test_team_with_only_a_referee_duty_can_be_replaced(client: Client) -> None:
+    """A team remains selectable when its only remaining task is refereeing."""
+    tournament, teams, matches = _substitution_schedule(client)
+    referee_duty = _referee_duty_for_absent_team(tournament, teams, matches)
+    referee_duty.referee_team = teams[5]
+    referee_duty.save(update_fields=["referee_team"])
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/teams/{teams[5].id_uuid}/substitutions/",
+        data={
+            "replacements": [],
+            "referee_replacements": [
+                {
+                    "match_id": str(referee_duty.id_uuid),
+                    "substitute_team_id": str(teams[2].id_uuid),
+                }
+            ],
+        },
+        content_type="application/json",
     )
-    standings = calculate_pool_standings(tournament.pools.get(name="Poule A"))
-    assert all(row["played"] == 0 for row in standings)
+
+    assert response.status_code == HTTPStatus.OK
+    teams[5].refresh_from_db()
+    referee_duty.refresh_from_db()
+    assert teams[5].withdrawn is True
+    assert referee_duty.referee_team_id == teams[2].id_uuid
 
 
 def test_absent_team_replacement_plan_is_complete_and_cross_pool(
@@ -394,7 +515,7 @@ def test_absent_team_replacement_rejects_schedule_overlap(client: Client) -> Non
     )
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert "overlaps" in response.json()["detail"]
+    assert "already playing or refereeing" in response.json()["detail"]
 
 
 def test_match_editor_only_allows_an_existing_guest_team(client: Client) -> None:

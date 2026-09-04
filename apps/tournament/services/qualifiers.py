@@ -166,13 +166,17 @@ def _head_to_head_value(
             match.home_score,
             match.away_score,
         )
-        direct[str(match.home_team_id)] = (
-            home_points,
-            match.home_score - match.away_score,
+        home_id = str(match.home_team_id)
+        away_id = str(match.away_team_id)
+        previous_home = direct.get(home_id, (0, 0))
+        previous_away = direct.get(away_id, (0, 0))
+        direct[home_id] = (
+            previous_home[0] + home_points,
+            previous_home[1] + match.home_score - match.away_score,
         )
-        direct[str(match.away_team_id)] = (
-            away_points,
-            match.away_score - match.home_score,
+        direct[away_id] = (
+            previous_away[0] + away_points,
+            previous_away[1] + match.away_score - match.home_score,
         )
     return direct.get(left_id, (0, 0)), direct.get(right_id, (0, 0))
 

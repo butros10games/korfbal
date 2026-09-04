@@ -116,29 +116,68 @@ def _objects_for_plan(
     return pools, fields
 
 
-def _validate_schedule(
+def _latest_pool_match_end(pools: list[TournamentPool]) -> datetime | None:
+    ends = [
+        match.starts_at + timedelta(minutes=match.duration_minutes)
+        for pool in pools
+        for match in pool.matches.all()
+        if match.starts_at is not None
+        and match.status != TournamentMatch.Status.CANCELLED
+    ]
+    return max(ends, default=None)
+
+
+def _times_conflict(
+    left_start: datetime,
+    left_end: datetime,
+    right_start: datetime,
+    right_end: datetime,
+    changeover: timedelta,
+) -> bool:
+    return left_start < right_end + changeover and right_start < left_end + changeover
+
+
+def _validate_team_rest(
     tournament: Tournament,
     plan: FinalGroupPlan,
+    pools: list[TournamentPool],
+) -> None:
+    rest = timedelta(minutes=tournament.minimum_rest_minutes)
+    latest_pool_end = _latest_pool_match_end(pools)
+    if latest_pool_end is not None:
+        first_semifinal_start = min(item.starts_at for item in plan.semifinals)
+        if first_semifinal_start < latest_pool_end + rest:
+            raise FinalGroupError(
+                "The semifinals must respect the tournament's minimum team rest "
+                "after pool play."
+            )
+
+    semifinal_end = max(item.ends_at for item in plan.semifinals)
+    if plan.final.starts_at < semifinal_end + rest:
+        raise FinalGroupError(
+            "The final must respect the tournament's minimum team rest after "
+            "both semifinals."
+        )
+
+
+def _validate_field_availability(
+    tournament: Tournament,
+    plans: tuple[FinalMatchPlan, ...],
     fields: dict[UUID, TournamentField],
 ) -> None:
-    all_plans = (*plan.semifinals, plan.final)
-    if any(
-        item.duration_minutes < 1 or item.duration_minutes > MAX_MATCH_DURATION_MINUTES
-        for item in all_plans
-    ):
-        raise FinalGroupError("Match duration must be between 1 and 240 minutes.")
-    semifinal_end = max(item.ends_at for item in plan.semifinals)
-    if plan.final.starts_at < semifinal_end:
-        raise FinalGroupError("The final must start after both semifinals finish.")
-
-    for index, left in enumerate(all_plans):
-        for right in all_plans[index + 1 :]:
-            if (
-                left.field_id == right.field_id
-                and left.starts_at < right.ends_at
-                and right.starts_at < left.ends_at
+    changeover = timedelta(minutes=tournament.changeover_minutes)
+    for index, left in enumerate(plans):
+        for right in plans[index + 1 :]:
+            if left.field_id == right.field_id and _times_conflict(
+                left.starts_at,
+                left.ends_at,
+                right.starts_at,
+                right.ends_at,
+                changeover,
             ):
-                raise FinalGroupError("Two final-group matches overlap on one field.")
+                raise FinalGroupError(
+                    "Two final-group matches do not leave enough field changeover."
+                )
         existing = tournament.matches.filter(
             field=fields[left.field_id],
             starts_at__isnull=False,
@@ -147,11 +186,33 @@ def _validate_schedule(
             if other.starts_at is None:
                 continue
             other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
-            if left.starts_at < other_end and other.starts_at < left.ends_at:
+            if _times_conflict(
+                left.starts_at,
+                left.ends_at,
+                other.starts_at,
+                other_end,
+                changeover,
+            ):
                 raise FinalGroupError(
-                    f"The planned time overlaps with match {other.match_number} "
-                    f'on field "{fields[left.field_id].label}".'
+                    f"The planned time does not leave enough changeover after match "
+                    f'{other.match_number} on field "{fields[left.field_id].label}".'
                 )
+
+
+def _validate_schedule(
+    tournament: Tournament,
+    plan: FinalGroupPlan,
+    pools: list[TournamentPool],
+    fields: dict[UUID, TournamentField],
+) -> None:
+    all_plans = (*plan.semifinals, plan.final)
+    if any(
+        item.duration_minutes < 1 or item.duration_minutes > MAX_MATCH_DURATION_MINUTES
+        for item in all_plans
+    ):
+        raise FinalGroupError("Match duration must be between 1 and 240 minutes.")
+    _validate_team_rest(tournament, plan, pools)
+    _validate_field_availability(tournament, all_plans, fields)
 
 
 def _pool_source(pool: TournamentPool, rank: int) -> dict[str, Any]:
@@ -215,7 +276,7 @@ def create_final_group(
         raise FinalGroupError("A stage with this final-group name already exists.")
 
     pools, fields = _objects_for_plan(tournament, plan)
-    _validate_schedule(tournament, plan, fields)
+    _validate_schedule(tournament, plan, pools, fields)
     next_group_order = (
         tournament.final_groups.aggregate(value=Max("sort_order"))["value"] or 0
     ) + 1

@@ -140,6 +140,9 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
         str(pool.id_uuid): calculate_pool_standings(pool, include_live_matches=True)
         for pool in pools
     }
+    qualification_standings_by_pool_id = {
+        str(pool.id_uuid): calculate_pool_standings(pool) for pool in pools
+    }
     team_ids_by_pool_id = {
         str(pool.id_uuid): {str(entry.team_id) for entry in pool.entries.all()}
         for pool in pools
@@ -230,7 +233,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                     group,
                     matches,
                     pools_by_id,
-                    standings_by_pool_id,
+                    qualification_standings_by_pool_id,
                 ),
             }
             for group in final_groups

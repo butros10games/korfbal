@@ -25,6 +25,58 @@ EXPECTED_PROVISIONAL_PLAYED = 2
 EXPECTED_PROVISIONAL_GOAL_DIFFERENCE = 99
 
 
+def test_two_leg_head_to_head_aggregates_both_results() -> None:
+    """A return leg complements rather than overwrites the first encounter."""
+    user = get_user_model().objects.create_user(username="two-leg-manager")
+    tournament = Tournament.objects.create(
+        name="Two legs",
+        slug="two-legs",
+        owner=user,
+        starts_at=timezone.now(),
+        tiebreakers=["points", "head_to_head", "name"],
+    )
+    stage = TournamentStage.objects.create(
+        tournament=tournament,
+        name="Poule",
+        kind=TournamentStage.Kind.POOL,
+    )
+    pool = TournamentPool.objects.create(
+        tournament=tournament,
+        stage=stage,
+        name="Poule A",
+    )
+    alpha = TournamentTeam.objects.create(tournament=tournament, name="Alpha")
+    beta = TournamentTeam.objects.create(tournament=tournament, name="Beta")
+    TournamentPoolEntry.objects.create(pool=pool, team=alpha, seed_order=1)
+    TournamentPoolEntry.objects.create(pool=pool, team=beta, seed_order=2)
+    TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=stage,
+        pool=pool,
+        home_team=alpha,
+        away_team=beta,
+        match_number=1,
+        status=TournamentMatch.Status.FINAL,
+        home_score=10,
+        away_score=0,
+    )
+    TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=stage,
+        pool=pool,
+        home_team=beta,
+        away_team=alpha,
+        match_number=2,
+        status=TournamentMatch.Status.FINAL,
+        home_score=1,
+        away_score=0,
+    )
+
+    standings = calculate_pool_standings(pool)
+
+    assert [row["team_name"] for row in standings] == ["Alpha", "Beta"]
+
+
 def test_standings_apply_configured_points_goal_difference_and_adjustments() -> None:
     """Official results stay final-only while snapshots can project live scores."""
     user = get_user_model().objects.create_user(username="manager")

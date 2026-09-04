@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from secrets import compare_digest
 from typing import Any, cast
 from uuid import UUID
@@ -9,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from bg_uuidv7 import uuidv7
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.player.models import Player
@@ -104,6 +106,7 @@ def build_referee_duties_state(team: TournamentTeam) -> dict[str, Any]:
             "id_uuid": str(team.tournament_id),
             "name": team.tournament.name,
             "slug": team.tournament.slug,
+            "timezone": team.tournament.timezone,
         },
         "team": {"id_uuid": str(team.id_uuid), "name": team.name},
         "players": [
@@ -124,6 +127,7 @@ def build_direct_referee_duty_state(match: TournamentMatch) -> dict[str, Any]:
             "id_uuid": str(match.tournament_id),
             "name": match.tournament.name,
             "slug": match.tournament.slug,
+            "timezone": match.tournament.timezone,
         },
         "team": ({"id_uuid": str(team.id_uuid), "name": team.name} if team else None),
         "players": [
@@ -185,6 +189,7 @@ def assign_referee_team(
             raise RefereeTrackerError(
                 "Een spelend team kan niet zijn eigen wedstrijd fluiten."
             )
+        _ensure_referee_team_available(match, team)
 
     assignment_changed = match.referee_team_id != getattr(team, "pk", None)
     if not assignment_changed and not reset_claim:
@@ -206,6 +211,38 @@ def assign_referee_team(
             "updated_at",
         ]
     )
+
+
+def _ensure_referee_team_available(
+    match: TournamentMatch,
+    team: TournamentTeam,
+) -> None:
+    """Reject a duty that overlaps another playing or referee assignment.
+
+    Raises:
+        RefereeTrackerError: If the team is already occupied at this time.
+
+    """
+    if match.starts_at is None:
+        return
+    match_end = match.starts_at + timedelta(minutes=match.duration_minutes)
+    other_matches = (
+        match.tournament.matches
+        .filter(starts_at__isnull=False)
+        .exclude(pk=match.pk)
+        .exclude(status=TournamentMatch.Status.CANCELLED)
+        .filter(Q(home_team=team) | Q(away_team=team) | Q(referee_team=team))
+        .order_by("starts_at", "match_number")
+    )
+    for other in other_matches:
+        if other.starts_at is None:
+            continue
+        other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+        if match.starts_at < other_end and other.starts_at < match_end:
+            raise RefereeTrackerError(
+                f"{team.name} speelt of fluit wedstrijd {other.match_number} "
+                "al op dit tijdstip."
+            )
 
 
 def claim_referee_duty(
@@ -372,6 +409,7 @@ def build_referee_tracker_state(match: TournamentMatch) -> dict[str, Any]:
             "id_uuid": str(match.tournament_id),
             "name": match.tournament.name,
             "slug": match.tournament.slug,
+            "timezone": match.tournament.timezone,
         },
         "match": {
             "id_uuid": str(match.id_uuid),

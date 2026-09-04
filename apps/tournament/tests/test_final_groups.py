@@ -122,8 +122,46 @@ def _group_payload(
             _match_plan(fields[0], "20:36"),
             _match_plan(fields[1], "20:36"),
         ],
-        "final": _match_plan(fields[0], "20:48"),
+        "final": _match_plan(fields[0], "20:51"),
     }
+
+
+@pytest.mark.parametrize(
+    ("semifinal_time", "final_time", "message"),
+    [
+        ("19:12", "19:27", "minimum team rest after pool play"),
+        ("20:36", "20:48", "minimum team rest after both semifinals"),
+    ],
+)
+def test_final_group_rejects_schedules_without_minimum_rest(
+    client: Client,
+    semifinal_time: str,
+    final_time: str,
+    message: str,
+) -> None:
+    """Both pool-to-semi and semi-to-final transitions preserve team rest."""
+    tournament, pools = _tournament_with_pools(client)
+    fields = list(tournament.fields.all())
+    payload = _group_payload(
+        "Heren",
+        "two_pool_cross",
+        [pools["A"], pools["B"]],
+        fields[:2],
+    )
+    payload["semifinals"] = [
+        _match_plan(fields[0], semifinal_time),
+        _match_plan(fields[1], semifinal_time),
+    ]
+    payload["final"] = _match_plan(fields[0], final_time)
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/final-groups/",
+        data=payload,
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert message in response.json()["detail"]
 
 
 def _expand_pool_to_four_teams(
@@ -208,6 +246,25 @@ def test_secured_pool_winner_fills_semifinal_before_pool_finishes(
         pools["A"].matches.filter(status=TournamentMatch.Status.SCHEDULED).count()
         == EXPECTED_REMAINING_POOL_MATCHES
     )
+    live_match = (
+        pools["A"]
+        .matches.filter(status=TournamentMatch.Status.SCHEDULED)
+        .order_by("match_number")
+        .first()
+    )
+    assert live_match is not None
+    live = client.patch(
+        f"/api/tournaments/matches/{live_match.id_uuid}/result/",
+        data={
+            "home_score": 1,
+            "away_score": 0,
+            "status": "live",
+            "expected_revision": live_match.revision,
+        },
+        content_type="application/json",
+    )
+    assert live.status_code == HTTPStatus.OK
+
     snapshot = client.get(f"/api/tournaments/{tournament.id_uuid}/snapshot/").json()
     semifinal = next(
         match

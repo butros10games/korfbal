@@ -356,6 +356,77 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
     )
 
 
+def test_manager_cannot_assign_a_team_that_is_playing_at_the_same_time(
+    client: Client,
+) -> None:
+    """A referee duty cannot overlap one of the team's own fixtures."""
+    manager, _, tournament, _, _, match, other_match = _match_graph()
+    duty_team = other_match.home_team
+    assert duty_team is not None
+    starts_at = timezone.now()
+    match.starts_at = starts_at
+    other_match.starts_at = starts_at
+    match.save(update_fields=["starts_at"])
+    other_match.save(update_fields=["starts_at"])
+    client.force_login(manager)
+
+    response = client.patch(
+        f"/api/tournaments/{tournament.id_uuid}/matches/{match.id_uuid}/referee-duty/",
+        data={"team_id": str(duty_team.id_uuid)},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()["detail"] == (
+        f"{duty_team.name} speelt of fluit wedstrijd {other_match.match_number} "
+        "al op dit tijdstip."
+    )
+    match.refresh_from_db()
+    assert match.referee_team_id is None
+
+
+def test_manager_cannot_assign_two_overlapping_duties_to_one_team(
+    client: Client,
+) -> None:
+    """A team cannot be scheduled to referee two simultaneous fixtures."""
+    manager, _, tournament, _, _, match, other_match = _match_graph()
+    duty_team = match.tournament.teams.exclude(
+        pk__in=(
+            match.home_team_id,
+            match.away_team_id,
+            other_match.home_team_id,
+            other_match.away_team_id,
+        )
+    ).first()
+    if duty_team is None:
+        duty_team = TournamentTeam.objects.create(
+            tournament=tournament,
+            name="Team 5",
+        )
+    starts_at = timezone.now()
+    match.starts_at = starts_at
+    other_match.starts_at = starts_at
+    match.referee_team = duty_team
+    match.save(update_fields=["starts_at", "referee_team"])
+    other_match.save(update_fields=["starts_at"])
+    client.force_login(manager)
+
+    response = client.patch(
+        f"/api/tournaments/{tournament.id_uuid}/matches/"
+        f"{other_match.id_uuid}/referee-duty/",
+        data={"team_id": str(duty_team.id_uuid)},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()["detail"] == (
+        f"{duty_team.name} speelt of fluit wedstrijd {match.match_number} "
+        "al op dit tijdstip."
+    )
+    other_match.refresh_from_db()
+    assert other_match.referee_team_id is None
+
+
 @override_settings(
     ALLOWED_HOSTS=["api.korfbal.butrosgroot.com", "testserver"],
     KORFBAL_ORIGIN="https://api.korfbal.butrosgroot.com",

@@ -107,8 +107,16 @@ def _direct_results(
         home_score = int(match.home_score or 0)
         away_score = int(match.away_score or 0)
         home_points, away_points = _match_points(tournament, home_score, away_score)
-        direct[home_id, away_id] = (home_points, home_score - away_score)
-        direct[away_id, home_id] = (away_points, away_score - home_score)
+        previous_home = direct.get((home_id, away_id), (0, 0))
+        previous_away = direct.get((away_id, home_id), (0, 0))
+        direct[home_id, away_id] = (
+            previous_home[0] + home_points,
+            previous_home[1] + home_score - away_score,
+        )
+        direct[away_id, home_id] = (
+            previous_away[0] + away_points,
+            previous_away[1] + away_score - home_score,
+        )
     return direct
 
 

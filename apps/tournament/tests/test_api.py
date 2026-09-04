@@ -29,6 +29,8 @@ EXPECTED_ROUND_ROBIN_MATCHES = 6
 EXPECTED_SEMIFINALS = 2
 FINAL_MATCH_REVISION = 3
 REOPENED_MATCH_REVISION = 4
+GENERATED_DURATION_MINUTES = 15
+GENERATED_BUFFER_MINUTES = 5
 
 
 def _create_tournament(client: Client) -> dict[str, object]:
@@ -150,6 +152,26 @@ def test_new_tournament_is_saved_as_a_manager_only_draft(client: Client) -> None
     assert client.get("/api/tournaments/").json() == []
 
 
+def test_tournament_rejects_an_unknown_timezone(client: Client) -> None:
+    """Invalid timezone data cannot become a later schedule-time server error."""
+    user = get_user_model().objects.create_user(username="timezone-manager")
+    client.force_login(user)
+
+    response = client.post(
+        "/api/tournaments/",
+        data={
+            "name": "Mars Cup",
+            "starts_at": timezone.now().isoformat(),
+            "timezone": "Mars/Olympus",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "valid IANA timezone" in response.json()["timezone"][0]
+    assert not Tournament.objects.filter(name="Mars Cup").exists()
+
+
 def test_manager_generates_publishes_and_scores_live_tournament(client: Client) -> None:
     """A complete pool workflow publishes, scores, audits, and rejects stale writes."""
     user = get_user_model().objects.create_user(
@@ -178,9 +200,9 @@ def test_manager_generates_publishes_and_scores_live_tournament(client: Client) 
         "pool_count": 1,
         "strategy": "snake",
         "legs": 1,
-        "duration_minutes": 15,
-        "changeover_minutes": 5,
-        "minimum_rest_minutes": 5,
+        "duration_minutes": GENERATED_DURATION_MINUTES,
+        "changeover_minutes": GENERATED_BUFFER_MINUTES,
+        "minimum_rest_minutes": GENERATED_BUFFER_MINUTES,
     }
     preview = client.post(
         f"/api/tournaments/{tournament_id}/generation/preview/",
@@ -196,6 +218,10 @@ def test_manager_generates_publishes_and_scores_live_tournament(client: Client) 
     )
     assert applied.status_code == HTTPStatus.OK
     match = applied.json()["matches"][0]
+    applied_tournament = Tournament.objects.get(pk=tournament_id)
+    assert applied_tournament.match_duration_minutes == GENERATED_DURATION_MINUTES
+    assert applied_tournament.changeover_minutes == GENERATED_BUFFER_MINUTES
+    assert applied_tournament.minimum_rest_minutes == GENERATED_BUFFER_MINUTES
 
     published = client.post(f"/api/tournaments/{tournament_id}/publish/")
     assert published.status_code == HTTPStatus.OK
@@ -220,6 +246,7 @@ def test_manager_generates_publishes_and_scores_live_tournament(client: Client) 
     assert result.json()["revision"] == 1
     assert TournamentResultAudit.objects.count() == 1
     assert TournamentMatch.objects.get(pk=match["id_uuid"]).winner_id is not None
+    assert Tournament.objects.get(pk=tournament_id).status == Tournament.Status.LIVE
 
     stale = client.patch(
         result_url,

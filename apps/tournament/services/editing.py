@@ -18,6 +18,10 @@ from apps.tournament.models import (
     TournamentStage,
     TournamentTeam,
 )
+from apps.tournament.services.referee_tracker import (
+    RefereeTrackerError,
+    assign_referee_team,
+)
 
 
 class TournamentEditingError(ValueError):
@@ -375,8 +379,9 @@ def substitute_absent_team(
     *,
     absent_team_id: UUID,
     substitutions: list[MatchSubstitution],
+    referee_substitutions: list[MatchSubstitution],
 ) -> list[TournamentMatch]:
-    """Fill every remaining pool match for an absent team with guest teams.
+    """Fill every remaining match and referee duty for an absent team.
 
     The actual guest participant is stored on the match while the match keeps its
     original pool. Standings deliberately ignore matches with a participant from
@@ -409,16 +414,39 @@ def substitute_absent_team(
     )
     editable_by_id = {match.id_uuid: match for match in editable_matches}
     requested_ids = {substitution.match_id for substitution in substitutions}
-    if not editable_by_id:
-        raise TournamentEditingError(
-            "This team has no unstarted pool matches to replace."
-        )
     if requested_ids != set(editable_by_id):
         raise TournamentEditingError(
             "Choose a replacement for every unstarted pool match of the absent team."
         )
 
-    substitute_ids = {item.substitute_team_id for item in substitutions}
+    referee_matches = list(
+        tournament.matches
+        .select_for_update()
+        .select_related("field", "home_team", "away_team", "referee_team")
+        .filter(referee_team=absent_team)
+        .exclude(
+            status__in=(
+                TournamentMatch.Status.FINAL,
+                TournamentMatch.Status.CANCELLED,
+            )
+        )
+    )
+    referee_by_id = {match.id_uuid: match for match in referee_matches}
+    requested_referee_ids = {
+        substitution.match_id for substitution in referee_substitutions
+    }
+    if requested_referee_ids != set(referee_by_id):
+        raise TournamentEditingError(
+            "Choose a replacement for every open referee duty of the absent team."
+        )
+    if not editable_by_id and not referee_by_id:
+        raise TournamentEditingError(
+            "This team has no unstarted pool matches or open referee duties to replace."
+        )
+
+    substitute_ids = {
+        item.substitute_team_id for item in (*substitutions, *referee_substitutions)
+    }
     substitutes = {
         team.id_uuid: team
         for team in tournament.teams.select_for_update().filter(
@@ -438,6 +466,15 @@ def substitute_absent_team(
         )
         for substitution in substitutions
     ]
+    updated.extend(
+        _apply_referee_substitution(
+            tournament,
+            absent_team=absent_team,
+            match=referee_by_id[substitution.match_id],
+            substitute=substitutes[substitution.substitute_team_id],
+        )
+        for substitution in referee_substitutions
+    )
 
     absent_team.withdrawn = True
     absent_team.save(update_fields=["withdrawn"])
@@ -470,8 +507,13 @@ def _apply_match_substitution(
         raise TournamentEditingError(
             f"Choose a different replacement for match {match.match_number}."
         )
+    if match.referee_team_id == substitute.pk:
+        raise TournamentEditingError(
+            f"The referee for match {match.match_number} cannot also play in it."
+        )
     home = substitute if match.home_team_id == absent_team.pk else opponent
     away = substitute if match.away_team_id == absent_team.pk else opponent
+    _ensure_substitute_available(tournament, match=match, substitute=substitute)
     if match.starts_at is not None and match.field is not None:
         _ensure_available(
             tournament,
@@ -504,3 +546,53 @@ def _apply_match_substitution(
         ]
     )
     return match
+
+
+def _apply_referee_substitution(
+    tournament: Tournament,
+    *,
+    absent_team: TournamentTeam,
+    match: TournamentMatch,
+    substitute: TournamentTeam,
+) -> TournamentMatch:
+    if substitute.pk == absent_team.pk:
+        raise TournamentEditingError(
+            f"Choose a different referee for match {match.match_number}."
+        )
+    _ensure_substitute_available(tournament, match=match, substitute=substitute)
+    try:
+        assign_referee_team(match, team_id=substitute.id_uuid)
+    except RefereeTrackerError as exc:
+        raise TournamentEditingError(str(exc)) from exc
+    return match
+
+
+def _ensure_substitute_available(
+    tournament: Tournament,
+    *,
+    match: TournamentMatch,
+    substitute: TournamentTeam,
+) -> None:
+    if match.starts_at is None:
+        return
+    match_end = match.starts_at + timedelta(minutes=match.duration_minutes)
+    other_matches = (
+        tournament.matches
+        .filter(starts_at__isnull=False)
+        .exclude(pk=match.pk)
+        .exclude(status=TournamentMatch.Status.CANCELLED)
+        .filter(
+            Q(home_team=substitute)
+            | Q(away_team=substitute)
+            | Q(referee_team=substitute)
+        )
+    )
+    for other in other_matches:
+        if other.starts_at is None:
+            continue
+        other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+        if match.starts_at < other_end and other.starts_at < match_end:
+            raise TournamentEditingError(
+                f"Team {substitute.name} is already playing or refereeing "
+                f"match {other.match_number} at that time."
+            )

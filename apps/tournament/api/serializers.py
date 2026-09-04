@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils.text import slugify
 from rest_framework import serializers
@@ -141,6 +142,21 @@ class TournamentSerializer(serializers.ModelSerializer):
                 "Only a club administrator can organize a tournament for this club."
             )
         return attrs
+
+    def validate_timezone(self, value: str) -> str:
+        """Require an installed IANA timezone before schedule operations use it.
+
+        Raises:
+            serializers.ValidationError: If the timezone cannot be loaded.
+
+        """
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise serializers.ValidationError(
+                "Select a valid IANA timezone, such as Europe/Amsterdam."
+            ) from exc
+        return value
 
     def create(self, validated_data: dict[str, Any]) -> Tournament:
         """Create an owned tournament with a collision-safe public slug."""
@@ -364,7 +380,7 @@ class TournamentPoolWriteSerializer(serializers.Serializer):
     assigned_field_id = serializers.UUIDField(required=False, allow_null=True)
     team_ids = serializers.ListField(
         child=serializers.UUIDField(),
-        allow_empty=False,
+        min_length=2,
         max_length=100,
     )
 
@@ -394,27 +410,37 @@ class TournamentTeamSubstitutionSerializer(serializers.Serializer):
 
     replacements = TournamentMatchSubstitutionSerializer(
         many=True,
-        allow_empty=False,
+        required=False,
+        default=list,
+    )
+    referee_replacements = TournamentMatchSubstitutionSerializer(
+        many=True,
+        required=False,
+        default=list,
     )
 
-    def validate_replacements(
+    def validate(
         self,
-        value: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Require each affected match exactly once.
+        attrs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Require unique, reasonably bounded match assignments.
 
         Raises:
-            serializers.ValidationError: If a match occurs more than once.
+            serializers.ValidationError: If an assignment list is invalid.
 
         """
-        if len(value) > MAX_SUBSTITUTION_MATCHES:
-            raise serializers.ValidationError(
-                f"Select no more than {MAX_SUBSTITUTION_MATCHES} matches."
-            )
-        match_ids = [replacement["match_id"] for replacement in value]
-        if len(set(match_ids)) != len(match_ids):
-            raise serializers.ValidationError("Select each match only once.")
-        return value
+        if not attrs["replacements"] and not attrs["referee_replacements"]:
+            raise serializers.ValidationError("Select at least one replacement.")
+        for field in ("replacements", "referee_replacements"):
+            value = attrs[field]
+            if len(value) > MAX_SUBSTITUTION_MATCHES:
+                raise serializers.ValidationError(
+                    f"Select no more than {MAX_SUBSTITUTION_MATCHES} matches."
+                )
+            match_ids = [replacement["match_id"] for replacement in value]
+            if len(set(match_ids)) != len(match_ids):
+                raise serializers.ValidationError("Select each match only once.")
+        return attrs
 
 
 class TournamentScheduleImportRowSerializer(serializers.Serializer):

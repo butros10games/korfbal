@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 import pytest
 
-from apps.tournament.models import Tournament
+from apps.tournament.models import Tournament, TournamentMatch, TournamentStage
 from apps.tournament.services.live import touch_tournament
 
 
@@ -50,3 +50,49 @@ def test_touch_tournament_commits_revision_before_publication(
     assert revision == 1
     assert tournament.live_revision == 1
     assert publisher.changes == [(str(tournament.id_uuid), 1)]
+
+
+def test_touch_tournament_keeps_public_lifecycle_in_sync_with_matches() -> None:
+    """Individual scoring starts, finishes, and can reopen the tournament."""
+    owner = get_user_model().objects.create_user(username="lifecycle-manager")
+    tournament = Tournament.objects.create(
+        name="Lifecycle",
+        slug="lifecycle",
+        owner=owner,
+        starts_at=timezone.now(),
+        status=Tournament.Status.PUBLISHED,
+    )
+    stage = TournamentStage.objects.create(
+        tournament=tournament,
+        name="Poule",
+        kind=TournamentStage.Kind.POOL,
+    )
+    match = TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=stage,
+        match_number=1,
+    )
+    publisher = RecordingPublisher()
+
+    touch_tournament(tournament, publisher=publisher)
+    assert tournament.status == Tournament.Status.PUBLISHED
+
+    match.status = TournamentMatch.Status.LIVE
+    match.home_score = 0
+    match.away_score = 0
+    match.save(update_fields=["status", "home_score", "away_score", "updated_at"])
+    touch_tournament(tournament, publisher=publisher)
+    assert tournament.status == Tournament.Status.LIVE
+
+    match.status = TournamentMatch.Status.FINAL
+    match.save(update_fields=["status", "updated_at"])
+    touch_tournament(tournament, publisher=publisher)
+    assert tournament.status == Tournament.Status.FINISHED
+
+    TournamentMatch.objects.create(
+        tournament=tournament,
+        stage=stage,
+        match_number=2,
+    )
+    touch_tournament(tournament, publisher=publisher)
+    assert tournament.status == Tournament.Status.LIVE

@@ -172,6 +172,30 @@ def _get_tournament(tournament_id: str) -> Tournament:
     )
 
 
+def _lock_tournament_for_match(match_id: str) -> Tournament:
+    """Lock the parent aggregate before any match row in a write transaction."""
+    match = get_object_or_404(
+        TournamentMatch.objects.only("tournament_id"),
+        id_uuid=match_id,
+    )
+    return get_object_or_404(
+        Tournament.objects.select_for_update().select_related(
+            "owner", "organizer_club"
+        ),
+        pk=match.tournament_id,
+    )
+
+
+def _lock_tournament(tournament_id: str) -> Tournament:
+    """Lock a tournament before locking any of its matches."""
+    return get_object_or_404(
+        Tournament.objects.select_for_update().select_related(
+            "owner", "organizer_club"
+        ),
+        id_uuid=tournament_id,
+    )
+
+
 def _resolve_qualifiers(tournament: Tournament) -> None:
     """Refresh every planned bracket slot or abort an unsafe ranking change.
 
@@ -388,11 +412,16 @@ class TournamentTeamSubstitutionView(APIView):
             MatchSubstitution(**replacement)
             for replacement in serializer.validated_data["replacements"]
         ]
+        referee_substitutions = [
+            MatchSubstitution(**replacement)
+            for replacement in serializer.validated_data["referee_replacements"]
+        ]
         try:
             substitute_absent_team(
                 tournament,
                 absent_team_id=team_id,
                 substitutions=substitutions,
+                referee_substitutions=referee_substitutions,
             )
         except TournamentEditingError as exc:
             return _editing_error_response(exc)
@@ -482,6 +511,26 @@ def _validated_generation(
     return params, plan
 
 
+def _persist_generation_defaults(
+    tournament: Tournament,
+    params: dict[str, Any],
+) -> None:
+    """Keep later planning steps aligned with the applied schedule settings."""
+    field_mapping = {
+        "duration_minutes": "match_duration_minutes",
+        "changeover_minutes": "changeover_minutes",
+        "minimum_rest_minutes": "minimum_rest_minutes",
+    }
+    update_fields = []
+    for parameter, model_field in field_mapping.items():
+        if parameter not in params:
+            continue
+        setattr(tournament, model_field, params[parameter])
+        update_fields.append(model_field)
+    if update_fields:
+        tournament.save(update_fields=[*update_fields, "updated_at"])
+
+
 class TournamentGenerationPreviewView(APIView):
     """Preview pool allocation and scheduling without database changes."""
 
@@ -496,11 +545,12 @@ class TournamentGenerationPreviewView(APIView):
 class TournamentGenerationApplyView(APIView):
     """Apply the same server-calculated plan shown in preview."""
 
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Generate and atomically apply the reviewed schedule parameters."""
         tournament = _get_tournament(tournament_id)
         _require_manager(request, tournament)
-        _, plan = _validated_generation(request, tournament)
+        params, plan = _validated_generation(request, tournament)
         try:
             apply_generation_plan(tournament, plan=plan)
         except GenerationError as exc:
@@ -508,6 +558,7 @@ class TournamentGenerationApplyView(APIView):
                 {"detail": str(exc)},
                 status=status.HTTP_409_CONFLICT,
             )
+        _persist_generation_defaults(tournament, params)
         touch_tournament(tournament)
         tournament = Tournament.objects.select_related("display_config").get(
             pk=tournament.pk
@@ -764,6 +815,7 @@ class TournamentMatchDetailView(APIView):
 class TournamentMatchesGenerateView(APIView):
     """Generate editable matches from reviewed pools."""
 
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Replace draft matches while retaining the current pools.
 
@@ -787,6 +839,7 @@ class TournamentMatchesGenerateView(APIView):
             apply_existing_pool_match_plan(tournament, matches=plan)
         except GenerationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        _persist_generation_defaults(tournament, serializer.validated_data)
         touch_tournament(tournament)
         return Response(build_tournament_snapshot(tournament))
 
@@ -1093,11 +1146,13 @@ class TournamentMatchResultView(APIView):
             ValidationError: If scores or a knockout winner are invalid.
 
         """
+        tournament = _lock_tournament_for_match(match_id)
         match = get_object_or_404(
             TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament", "stage", "field", "home_team", "away_team"
             ),
             id_uuid=match_id,
+            tournament=tournament,
         )
         _require_authentication(request)
         if not can_score_match(request.user, match):
@@ -1174,9 +1229,9 @@ class TournamentMatchResultView(APIView):
         sync_advanced_winner(match)
 
         if match.stage.kind == TournamentStage.Kind.POOL:
-            _resolve_qualifiers(match.tournament)
+            _resolve_qualifiers(tournament)
 
-        touch_tournament(match.tournament)
+        touch_tournament(tournament)
         return Response({
             "id_uuid": str(match.id_uuid),
             "home_score": match.home_score,
@@ -1200,11 +1255,13 @@ class TournamentMatchReadinessView(APIView):
         """
         serializer = TournamentRefereeReadySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        tournament = _lock_tournament_for_match(match_id)
         match = get_object_or_404(
             TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament"
             ),
             id_uuid=match_id,
+            tournament=tournament,
         )
         _require_manager(request, match.tournament)
         if match.field_ready_at is not None:
@@ -1224,7 +1281,7 @@ class TournamentMatchReadinessView(APIView):
             )
         except RefereeTrackerError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        touch_tournament(match.tournament)
+        touch_tournament(tournament)
         return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
 
     @transaction.atomic
@@ -1237,11 +1294,13 @@ class TournamentMatchReadinessView(APIView):
         """
         serializer = TournamentRefereeReadySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        tournament = _lock_tournament_for_match(match_id)
         match = get_object_or_404(
             TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament"
             ),
             id_uuid=match_id,
+            tournament=tournament,
         )
         _require_manager(request, match.tournament)
         if match.field_ready_at is None:
@@ -1253,7 +1312,7 @@ class TournamentMatchReadinessView(APIView):
         except TournamentMatchOperationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         if changed:
-            touch_tournament(match.tournament)
+            touch_tournament(tournament)
         return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
 
 
@@ -1270,11 +1329,13 @@ class TournamentMatchStateResetView(APIView):
         """
         serializer = TournamentRefereeReadySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        tournament = _lock_tournament_for_match(match_id)
         match = get_object_or_404(
             TournamentMatch.objects.select_for_update(of=("self",)).select_related(
                 "tournament", "stage"
             ),
             id_uuid=match_id,
+            tournament=tournament,
         )
         _require_manager(request, match.tournament)
         if serializer.validated_data["expected_revision"] != match.revision:
@@ -1289,9 +1350,9 @@ class TournamentMatchStateResetView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
 
         if changed and match.stage.kind == TournamentStage.Kind.POOL:
-            _resolve_qualifiers(match.tournament)
+            _resolve_qualifiers(tournament)
         if changed:
-            touch_tournament(match.tournament)
+            touch_tournament(tournament)
         return Response({
             "id_uuid": str(match.id_uuid),
             "home_score": match.home_score,
@@ -1319,7 +1380,7 @@ class TournamentRoundStartView(APIView):
             NotFound: If the requested round has no matches.
 
         """
-        tournament = _get_tournament(tournament_id)
+        tournament = _lock_tournament(tournament_id)
         _require_manager(request, tournament)
         matches = list(
             TournamentMatch.objects
@@ -1339,9 +1400,6 @@ class TournamentRoundStartView(APIView):
         except TournamentMatchOperationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
 
-        if tournament.status == Tournament.Status.PUBLISHED:
-            tournament.status = Tournament.Status.LIVE
-            tournament.save(update_fields=["status", "updated_at"])
         touch_tournament(tournament)
         return Response(build_tournament_snapshot(tournament))
 
@@ -1352,7 +1410,7 @@ class TournamentRefereeAssignmentView(APIView):
     @transaction.atomic
     def patch(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Update the duty or release its current guest claim."""
-        tournament = _get_tournament(tournament_id)
+        tournament = _lock_tournament(tournament_id)
         _require_manager(request, tournament)
         serializer = TournamentRefereeAssignmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1532,6 +1590,7 @@ class TournamentRefereeClaimView(APIView):
             .filter(referee_access_token=access_token)
             .first()
         )
+        tournament = _lock_tournament_for_match(match_id)
         match_queryset = TournamentMatch.objects.select_for_update(
             of=("self",)
         ).select_related(
@@ -1541,7 +1600,8 @@ class TournamentRefereeClaimView(APIView):
             match = get_object_or_404(
                 match_queryset,
                 id_uuid=match_id,
-                tournament=team.tournament,
+                tournament=tournament,
+                referee_team=team,
             )
         else:
             match = get_object_or_404(
@@ -1552,6 +1612,7 @@ class TournamentRefereeClaimView(APIView):
                     )
                 ),
                 id_uuid=match_id,
+                tournament=tournament,
                 referee_access_token=access_token,
             )
         try:
@@ -1566,7 +1627,7 @@ class TournamentRefereeClaimView(APIView):
             )
         except RefereeTrackerError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        touch_tournament(match.tournament)
+        touch_tournament(tournament)
         return Response({
             "match_id": str(match.id_uuid),
             "claim_token": str(claim_token),
@@ -1591,7 +1652,9 @@ def _referee_match(
         "referee_player",
     )
     if lock:
+        tournament = _lock_tournament_for_match(match_id)
         queryset = queryset.select_for_update(of=("self",))
+        queryset = queryset.filter(tournament=tournament)
     match = get_object_or_404(queryset, id_uuid=match_id)
     if can_score_match(request.user, match):
         return match, request.user, _user_display_name(request.user)
