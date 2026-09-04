@@ -28,12 +28,13 @@ from apps.tournament.models import (
     TournamentStage,
     TournamentTeam,
 )
+from apps.tournament.services.match_operations import start_round
 
 
 pytestmark = pytest.mark.django_db
 OnCommitCapture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
-REVISION_AFTER_HOME_GOAL = 2
-REVISION_AFTER_GOAL_REMOVAL = 4
+REVISION_AFTER_HOME_GOAL = 3
+REVISION_AFTER_GOAL_REMOVAL = 5
 EXPECTED_GOAL_AUDITS = 2
 EXPECTED_TOURNAMENT_REVISION = 3
 EXPECTED_PDF_DUTIES = 2
@@ -119,7 +120,7 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
     django_capture_on_commit_callbacks: OnCommitCapture,
 ) -> None:
     """Readiness and score commands advance revisions without duplicate goals."""
-    _, referee, tournament, _, _, match, _ = _match_graph()
+    manager, referee, tournament, _, _, match, _ = _match_graph()
     client.force_login(referee)
     ready_url = f"/api/tournaments/matches/{match.id_uuid}/tracker/ready/"
     goal_url = f"/api/tournaments/matches/{match.id_uuid}/tracker/goal/"
@@ -139,19 +140,26 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
             data={"expected_revision": 0},
             content_type="application/json",
         )
-        home_goal = client.post(
+        before_round_start = client.post(
             goal_url,
             data={"side": "home", "expected_revision": 1},
+            content_type="application/json",
+        )
+        match.refresh_from_db()
+        start_round([match], actor=manager)
+        home_goal = client.post(
+            goal_url,
+            data={"side": "home", "expected_revision": 2},
             content_type="application/json",
         )
         stale_retry = client.post(
             goal_url,
-            data={"side": "home", "expected_revision": 1},
+            data={"side": "home", "expected_revision": 2},
             content_type="application/json",
         )
         away_goal = client.post(
             goal_url,
-            data={"side": "away", "expected_revision": 2},
+            data={"side": "away", "expected_revision": 3},
             content_type="application/json",
         )
 
@@ -161,6 +169,14 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
     assert ready.json()["match"]["revision"] == 1
     assert repeated_ready.status_code == HTTPStatus.OK
     assert repeated_ready.json()["match"]["revision"] == 1
+    assert before_round_start.status_code == HTTPStatus.CONFLICT
+    assert before_round_start.json()["detail"] == (
+        "Wacht tot de toernooileiding de ronde heeft gestart."
+    )
+    assert before_round_start.json()["state"]["match"]["status"] == (
+        TournamentMatch.Status.SCHEDULED
+    )
+    assert before_round_start.json()["state"]["match"]["home_score"] is None
     assert home_goal.status_code == HTTPStatus.OK
     assert home_goal.json()["match"]["home_score"] == 1
     assert home_goal.json()["match"]["away_score"] == 0
@@ -172,7 +188,10 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
     assert away_goal.json()["match"]["home_score"] == 1
     assert away_goal.json()["match"]["away_score"] == 1
     assert (
-        TournamentResultAudit.objects.filter(match=match).count()
+        TournamentResultAudit.objects.filter(
+            match=match,
+            source=TournamentResultAudit.Source.REFEREE_GOAL,
+        ).count()
         == EXPECTED_GOAL_AUDITS
     )
 
@@ -196,7 +215,7 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
 
 def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
     """A misclick can be rolled back once without overwriting a newer event."""
-    _, referee, _, _, _, match, _ = _match_graph()
+    manager, referee, _, _, _, match, _ = _match_graph()
     client.force_login(referee)
     tracker_url = f"/api/tournaments/matches/{match.id_uuid}/tracker/"
     ready_url = f"{tracker_url}ready/"
@@ -208,14 +227,16 @@ def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
         data={"expected_revision": 0},
         content_type="application/json",
     )
+    match.refresh_from_db()
+    start_round([match], actor=manager)
     client.post(
         goal_url,
-        data={"side": "home", "expected_revision": 1},
+        data={"side": "home", "expected_revision": 2},
         content_type="application/json",
     )
     away_goal = client.post(
         goal_url,
-        data={"side": "away", "expected_revision": 2},
+        data={"side": "away", "expected_revision": 3},
         content_type="application/json",
     )
 
@@ -226,7 +247,7 @@ def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
 
     removed = client.delete(
         latest_url,
-        data={"event_id": latest_event["id_uuid"], "expected_revision": 3},
+        data={"event_id": latest_event["id_uuid"], "expected_revision": 4},
         content_type="application/json",
     )
 
@@ -238,14 +259,20 @@ def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
 
     stale_repeat = client.delete(
         latest_url,
-        data={"event_id": latest_event["id_uuid"], "expected_revision": 4},
+        data={"event_id": latest_event["id_uuid"], "expected_revision": 5},
         content_type="application/json",
     )
     assert stale_repeat.status_code == HTTPStatus.CONFLICT
     assert stale_repeat.json()["state"]["match"]["away_score"] == 0
     assert list(
         TournamentResultAudit.objects
-        .filter(match=match)
+        .filter(
+            match=match,
+            source__in=[
+                TournamentResultAudit.Source.REFEREE_GOAL,
+                TournamentResultAudit.Source.REFEREE_UNDO,
+            ],
+        )
         .order_by("created_at")
         .values_list("source", flat=True)
     ) == [
@@ -578,7 +605,7 @@ def test_direct_match_qr_claims_without_a_referee_team_and_expires(
 
 def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None:
     """A QR claim authorizes one match only until its final result is saved."""
-    _, _, tournament, _, _, match, denied_match = _match_graph()
+    manager, _, tournament, _, _, match, denied_match = _match_graph()
     duty_team = tournament.teams.exclude(
         pk__in=(match.home_team_id, match.away_team_id)
     ).first()
@@ -618,9 +645,11 @@ def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None
         data={"expected_revision": 1},
         content_type="application/json",
     )
+    match.refresh_from_db()
+    start_round([match], actor=manager)
     goal = client.post(
         f"/api/tournaments/matches/{match.id_uuid}/tracker/goal/?token={claim_token}",
-        data={"side": "home", "expected_revision": 2},
+        data={"side": "home", "expected_revision": 3},
         content_type="application/json",
     )
 
@@ -641,12 +670,12 @@ def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None
         f"?token={claim_token}",
         data={
             "event_id": goal.json()["latest_event"]["id_uuid"],
-            "expected_revision": 3,
+            "expected_revision": 4,
         },
         content_type="application/json",
     )
     assert removed.status_code == HTTPStatus.OK
-    assert removed.json()["match"]["home_score"] is None
+    assert removed.json()["match"]["home_score"] == 0
     undo_audit = TournamentResultAudit.objects.get(
         match=match,
         source=TournamentResultAudit.Source.REFEREE_UNDO,

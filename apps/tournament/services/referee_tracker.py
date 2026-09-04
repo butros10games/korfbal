@@ -15,7 +15,6 @@ from django.utils import timezone
 
 from apps.player.models import Player
 from apps.tournament.models import (
-    Tournament,
     TournamentMatch,
     TournamentResultAudit,
     TournamentTeam,
@@ -503,10 +502,11 @@ def record_goal(
         RefereeTrackerError: If the fixture cannot accept the goal.
 
     """
-    if match.status in {
-        TournamentMatch.Status.FINAL,
-        TournamentMatch.Status.CANCELLED,
-    }:
+    if match.status != TournamentMatch.Status.LIVE:
+        if match.status == TournamentMatch.Status.SCHEDULED:
+            raise RefereeTrackerError(
+                "Wacht tot de toernooileiding de ronde heeft gestart."
+            )
         raise RefereeTrackerError("Deze wedstrijd accepteert geen doelpunten meer.")
     if match.field_ready_at is None:
         raise RefereeTrackerError("Meld het veld gereed voordat je doelpunten invoert.")
@@ -531,11 +531,6 @@ def record_goal(
     else:
         raise RefereeTrackerError("Kies het thuis- of uitteam.")
 
-    new_status = (
-        TournamentMatch.Status.LIVE
-        if match.status == TournamentMatch.Status.SCHEDULED
-        else match.status
-    )
     TournamentResultAudit.objects.create(
         match=match,
         previous_home_score=previous_home_score,
@@ -543,7 +538,7 @@ def record_goal(
         new_home_score=home_score,
         new_away_score=away_score,
         previous_status=previous_status,
-        new_status=new_status,
+        new_status=match.status,
         reason="Goal recorded by referee tracker",
         changed_by=actor,
         changed_by_name=actor_name or str(actor or ""),
@@ -551,22 +546,17 @@ def record_goal(
     )
     match.home_score = home_score
     match.away_score = away_score
-    match.status = new_status
     match.winner = None
     match.revision += 1
     match.save(
         update_fields=[
             "home_score",
             "away_score",
-            "status",
             "winner",
             "revision",
             "updated_at",
         ]
     )
-    if match.tournament.status == Tournament.Status.PUBLISHED:
-        match.tournament.status = Tournament.Status.LIVE
-        match.tournament.save(update_fields=["status", "updated_at"])
 
 
 def remove_latest_goal(
