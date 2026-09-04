@@ -86,7 +86,7 @@ from apps.tournament.services.final_groups import (
     FinalMatchPlan,
     create_final_group,
     delete_final_group,
-    resolve_final_group_qualifiers,
+    resolve_tournament_qualifiers,
 )
 from apps.tournament.services.finals import generate_finals
 from apps.tournament.services.generation import (
@@ -169,6 +169,19 @@ def _get_tournament(tournament_id: str) -> Tournament:
     )
 
 
+def _resolve_qualifiers(tournament: Tournament) -> None:
+    """Refresh every planned bracket slot or abort an unsafe ranking change.
+
+    Raises:
+        Conflict: If the ranking change would alter a started bracket match.
+
+    """
+    try:
+        resolve_tournament_qualifiers(tournament)
+    except FinalGroupError as exc:
+        raise Conflict(str(exc)) from exc
+
+
 def _public_access_allowed(request: Request, tournament: Tournament) -> bool:
     if can_manage_tournament(request.user, tournament):
         return True
@@ -219,14 +232,17 @@ class TournamentViewSet(
         _require_authentication(request)
         return super().create(request, *args, **kwargs)
 
+    @transaction.atomic
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Replace editable tournament fields for a manager."""
         tournament = self.get_object()
         _require_manager(request, tournament)
         response = super().update(request, *args, **kwargs)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return response
 
+    @transaction.atomic
     def partial_update(
         self, request: Request, *args: object, **kwargs: object
     ) -> Response:
@@ -234,6 +250,7 @@ class TournamentViewSet(
         tournament = self.get_object()
         _require_manager(request, tournament)
         response = super().partial_update(request, *args, **kwargs)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return response
 
@@ -323,6 +340,7 @@ class TournamentTeamDetailView(APIView):
         team = get_object_or_404(tournament.teams, id_uuid=team_id)
         return tournament, team
 
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str, team_id: str) -> Response:
         """Update a custom team's name, seed, or operational state."""
         tournament, team = self._objects(tournament_id, team_id)
@@ -335,6 +353,7 @@ class TournamentTeamDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(serializer.data)
 
@@ -651,6 +670,7 @@ class TournamentPoolsGenerateView(APIView):
 class TournamentMatchListCreateView(APIView):
     """Create reviewed tournament matches manually."""
 
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create one conflict-free pool match."""
         tournament = _get_tournament(tournament_id)
@@ -664,6 +684,7 @@ class TournamentMatchListCreateView(APIView):
             )
         except TournamentEditingError as exc:
             return _editing_error_response(exc)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(
             build_tournament_snapshot(tournament),
@@ -680,6 +701,7 @@ class TournamentMatchDetailView(APIView):
         tournament = _get_tournament(tournament_id)
         return tournament, get_object_or_404(tournament.matches, id_uuid=match_id)
 
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Replace selected match planning fields."""
         tournament, match = self._objects(tournament_id, match_id)
@@ -691,9 +713,11 @@ class TournamentMatchDetailView(APIView):
             save_match(tournament, match=match, draft=draft)
         except TournamentEditingError as exc:
             return _editing_error_response(exc)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(build_tournament_snapshot(tournament))
 
+    @transaction.atomic
     def delete(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Delete one draft match."""
         tournament, match = self._objects(tournament_id, match_id)
@@ -702,6 +726,7 @@ class TournamentMatchDetailView(APIView):
             delete_match(tournament, match)
         except TournamentEditingError as exc:
             return _editing_error_response(exc)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -762,7 +787,7 @@ class TournamentPublishView(APIView):
 
 
 class TournamentFinalsGenerateView(APIView):
-    """Generate a knockout bracket from finalized pool standings."""
+    """Plan a knockout bracket whose entrants resolve from pool standings."""
 
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create and return a single-elimination finals stage.
@@ -963,6 +988,7 @@ class TournamentStandingAdjustmentListCreateView(APIView):
             TournamentStandingAdjustmentSerializer(adjustments, many=True).data
         )
 
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Apply a reasoned points adjustment to one pool entry."""
         tournament = _get_tournament(tournament_id)
@@ -973,6 +999,7 @@ class TournamentStandingAdjustmentListCreateView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         adjustment = serializer.save(created_by=request.user)
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(
             TournamentStandingAdjustmentSerializer(adjustment).data,
@@ -983,6 +1010,7 @@ class TournamentStandingAdjustmentListCreateView(APIView):
 class TournamentStandingAdjustmentDetailView(APIView):
     """Remove an incorrect standings adjustment."""
 
+    @transaction.atomic
     def delete(
         self, request: Request, tournament_id: str, adjustment_id: str
     ) -> Response:
@@ -995,6 +1023,7 @@ class TournamentStandingAdjustmentDetailView(APIView):
             entry__pool__tournament=tournament,
         )
         adjustment.delete()
+        _resolve_qualifiers(tournament)
         touch_tournament(tournament)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1036,7 +1065,7 @@ class TournamentMatchResultView(APIView):
         """
         match = get_object_or_404(
             TournamentMatch.objects.select_for_update(of=("self",)).select_related(
-                "tournament", "stage", "field", "home_team", "away_team", "next_match"
+                "tournament", "stage", "field", "home_team", "away_team"
             ),
             id_uuid=match_id,
         )
@@ -1053,6 +1082,10 @@ class TournamentMatchResultView(APIView):
                 {"detail": "Both teams must be known before entering a result."},
                 status=status.HTTP_409_CONFLICT,
             )
+        if match.next_match_id:
+            match.next_match = TournamentMatch.objects.select_for_update(
+                of=("self",)
+            ).get(pk=match.next_match_id)
 
         home_score = data["home_score"]
         away_score = data["away_score"]
@@ -1111,10 +1144,7 @@ class TournamentMatchResultView(APIView):
         sync_advanced_winner(match)
 
         if match.stage.kind == TournamentStage.Kind.POOL:
-            try:
-                resolve_final_group_qualifiers(match.tournament)
-            except FinalGroupError as exc:
-                raise Conflict(str(exc)) from exc
+            _resolve_qualifiers(match.tournament)
 
         touch_tournament(match.tournament)
         return Response({
@@ -1229,10 +1259,7 @@ class TournamentMatchStateResetView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
 
         if changed and match.stage.kind == TournamentStage.Kind.POOL:
-            try:
-                resolve_final_group_qualifiers(match.tournament)
-            except FinalGroupError as exc:
-                raise Conflict(str(exc)) from exc
+            _resolve_qualifiers(match.tournament)
         if changed:
             touch_tournament(match.tournament)
         return Response({

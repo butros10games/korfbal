@@ -1,4 +1,4 @@
-"""Generate a single-elimination stage from finalized pool standings."""
+"""Plan a single-elimination stage backed by automatic pool qualifiers."""
 
 from __future__ import annotations
 
@@ -12,10 +12,9 @@ from apps.tournament.models import (
     Tournament,
     TournamentMatch,
     TournamentStage,
-    TournamentTeam,
 )
+from apps.tournament.services.final_groups import resolve_tournament_qualifiers
 from apps.tournament.services.generation import GenerationError
-from apps.tournament.services.standings import calculate_pool_standings
 
 
 MIN_FINALISTS = 2
@@ -25,35 +24,34 @@ def _is_power_of_two(value: int) -> bool:
     return value >= MIN_FINALISTS and value & (value - 1) == 0
 
 
-def _qualified_teams(
+def _qualifier_sources(
     tournament: Tournament, qualifiers_per_pool: int
-) -> list[TournamentTeam]:
-    pools = list(tournament.pools.select_related("stage").order_by("sort_order"))
+) -> list[dict[str, object]]:
+    pools = list(
+        tournament.pools
+        .select_related("stage")
+        .prefetch_related("entries", "matches")
+        .order_by("sort_order")
+    )
     if not pools:
         raise GenerationError("Generate pool play before creating finals.")
-    incomplete = tournament.matches.filter(
-        stage__kind=TournamentStage.Kind.POOL
-    ).exclude(
-        status__in=[TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED]
-    )
-    if incomplete.exists():
-        raise GenerationError("Finalize all pool matches before creating finals.")
+    if any(not list(pool.matches.all()) for pool in pools):
+        raise GenerationError("Schedule every pool before creating finals.")
 
-    ranked_ids: list[str] = []
-    standings = [calculate_pool_standings(pool) for pool in pools]
+    sources: list[dict[str, object]] = []
     for rank in range(qualifiers_per_pool):
-        for pool_rows in standings:
-            if rank < len(pool_rows):
-                ranked_ids.append(pool_rows[rank]["team_id"])
-    if not _is_power_of_two(len(ranked_ids)):
+        for pool in pools:
+            if rank < len(list(pool.entries.all())):
+                sources.append({
+                    "kind": "pool_rank",
+                    "pool_ids": [str(pool.id_uuid)],
+                    "rank": rank + 1,
+                })
+    if not _is_power_of_two(len(sources)):
         raise GenerationError(
             "The qualifier count must produce 2, 4, 8, or 16 finalists."
         )
-    lookup = {
-        str(team.id_uuid): team
-        for team in tournament.teams.filter(id_uuid__in=ranked_ids)
-    }
-    return [lookup[team_id] for team_id in ranked_ids]
+    return sources
 
 
 def _finals_start(tournament: Tournament, requested: datetime | None) -> datetime:
@@ -84,11 +82,12 @@ def generate_finals(
     """Create and wire a power-of-two single-elimination bracket.
 
     Raises:
-        GenerationError: If pool play is incomplete or qualifiers are invalid.
+        GenerationError: If pool play is unscheduled or qualifiers are invalid.
 
     """
     if qualifiers_per_pool < 1:
         raise GenerationError("At least one team per pool must qualify.")
+    tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
     if tournament.stages.filter(
         kind__in=[TournamentStage.Kind.KNOCKOUT, TournamentStage.Kind.FINAL]
     ).exists():
@@ -96,14 +95,14 @@ def generate_finals(
     fields = list(tournament.fields.filter(active=True))
     if not fields:
         raise GenerationError("Add an active field before creating finals.")
-    teams = _qualified_teams(tournament, qualifiers_per_pool)
+    sources = _qualifier_sources(tournament, qualifiers_per_pool)
     next_stage_order = (
         tournament.stages.aggregate(value=Max("sort_order"))["value"] or 0
     ) + 1
     next_number = (
         tournament.matches.aggregate(value=Max("match_number"))["value"] or 0
     ) + 1
-    round_count = int(math.log2(len(teams)))
+    round_count = int(math.log2(len(sources)))
     knockout_stage = None
     if round_count > 1:
         knockout_stage = TournamentStage.objects.create(
@@ -126,21 +125,21 @@ def generate_finals(
 
     for round_index in range(round_count):
         match_stage = final_stage if round_index == round_count - 1 else knockout_stage
-        matches_in_round = len(teams) // (2 ** (round_index + 1))
+        matches_in_round = len(sources) // (2 ** (round_index + 1))
         round_matches: list[TournamentMatch] = []
         for position in range(matches_in_round):
-            home_team = None
-            away_team = None
+            home_qualifier: dict[str, object] = {}
+            away_qualifier: dict[str, object] = {}
             if round_index == 0:
-                home_team = teams[position]
-                away_team = teams[-1 - position]
+                home_qualifier = sources[position]
+                away_qualifier = sources[-1 - position]
             slot = position // len(fields)
             field = fields[position % len(fields)]
             match = TournamentMatch.objects.create(
                 tournament=tournament,
                 stage=match_stage,
-                home_team=home_team,
-                away_team=away_team,
+                home_qualifier=home_qualifier,
+                away_qualifier=away_qualifier,
                 field=field,
                 round_number=round_index + 1,
                 match_number=next_number,
@@ -174,4 +173,5 @@ def generate_finals(
                 else TournamentMatch.DestinationSide.AWAY
             )
             match.save(update_fields=["next_match", "winner_to_side", "updated_at"])
+    resolve_tournament_qualifiers(tournament)
     return final_stage

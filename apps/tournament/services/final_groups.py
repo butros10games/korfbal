@@ -19,10 +19,12 @@ from apps.tournament.models import (
     TournamentStage,
     TournamentTeam,
 )
-from apps.tournament.services.standings import (
-    calculate_pool_standings,
-    rank_rows_across_pools,
+from apps.tournament.services.match_operations import (
+    TournamentMatchOperationError,
+    replace_scheduled_match_teams,
 )
+from apps.tournament.services.qualifiers import evaluate_best_rank, evaluate_pool_rank
+from apps.tournament.services.standings import calculate_pool_standings
 
 
 class FinalGroupError(ValueError):
@@ -276,7 +278,7 @@ def create_final_group(
             else TournamentMatch.DestinationSide.AWAY
         )
         semifinal.save(update_fields=["next_match", "winner_to_side", "updated_at"])
-    resolve_final_group_qualifiers(tournament, group=group)
+    resolve_tournament_qualifiers(tournament, group=group)
     return group
 
 
@@ -290,23 +292,15 @@ def _source_pools(
     lookup = {
         str(pool.id_uuid): pool
         for pool in tournament.pools.filter(id_uuid__in=pool_ids).prefetch_related(
-            "entries__team"
+            "entries__team",
+            "entries__adjustments",
+            "matches",
         )
     }
     try:
         return [lookup[str(pool_id)] for pool_id in pool_ids]
     except KeyError as exc:
         raise FinalGroupError("A final qualifier references a missing pool.") from exc
-
-
-def _pool_is_complete(pool: TournamentPool) -> bool:
-    matches = pool.matches.all()
-    return (
-        matches.exists()
-        and not matches.exclude(
-            status__in=[TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED]
-        ).exists()
-    )
 
 
 def _resolved_team(
@@ -316,24 +310,22 @@ def _resolved_team(
     if not source:
         return None
     pools = _source_pools(tournament, source)
-    if any(not _pool_is_complete(pool) for pool in pools):
-        return None
     rank = source.get("rank")
     if not isinstance(rank, int) or rank < 1:
         raise FinalGroupError("A final qualifier has an invalid pool position.")
-    rows = []
     for pool in pools:
         standings = calculate_pool_standings(pool)
         if rank > len(standings):
             raise FinalGroupError(f'Pool "{pool.name}" has no position {rank}.')
-        rows.append(standings[rank - 1])
-    if source.get("kind") == "pool_rank" and len(rows) == 1:
-        selected = rows[0]
-    elif source.get("kind") == "best_rank" and len(rows) > 1:
-        selected = rank_rows_across_pools(tournament, rows)[0]
+    if source.get("kind") == "pool_rank" and len(pools) == 1:
+        decision = evaluate_pool_rank(pools[0], rank)
+    elif source.get("kind") == "best_rank" and len(pools) > 1:
+        decision = evaluate_best_rank(tournament, pools, rank)
     else:
         raise FinalGroupError("A final qualifier has an invalid source type.")
-    return tournament.teams.get(pk=selected["team_id"])
+    if decision.decided_team_id is None:
+        return None
+    return tournament.teams.get(pk=decision.decided_team_id)
 
 
 def _match_is_locked(match: TournamentMatch) -> bool:
@@ -345,21 +337,25 @@ def _match_is_locked(match: TournamentMatch) -> bool:
 
 
 @transaction.atomic
-def resolve_final_group_qualifiers(
+def resolve_tournament_qualifiers(
     tournament: Tournament,
     *,
     group: TournamentFinalGroup | None = None,
 ) -> None:
-    """Fill or clear planned semifinal entrants from authoritative standings.
+    """Fill or clear planned bracket entrants from authoritative standings.
 
     Raises:
         FinalGroupError: If a source is invalid or a locked entrant would change.
 
     """
     tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
-    matches = TournamentMatch.objects.select_for_update(of=("self",)).filter(
-        tournament=tournament,
-        stage__final_group__isnull=False,
+    matches = (
+        TournamentMatch.objects
+        .select_for_update(of=("self",))
+        .filter(
+            tournament=tournament,
+        )
+        .exclude(stage__kind=TournamentStage.Kind.POOL)
     )
     if group is not None:
         matches = matches.filter(stage__final_group=group)
@@ -385,11 +381,10 @@ def resolve_final_group_qualifiers(
                 f"Match {match.match_number} already started; "
                 "its qualifiers cannot change."
             )
-        for field in changed_fields:
-            setattr(match, field, replacements[field])
-        if match.home_team_id is not None and match.home_team_id == match.away_team_id:
-            raise FinalGroupError("A qualifier would place one team on both sides.")
-        match.save(update_fields=[*changed_fields, "updated_at"])
+        try:
+            replace_scheduled_match_teams(match, replacements)
+        except TournamentMatchOperationError as exc:
+            raise FinalGroupError(str(exc)) from exc
 
 
 def qualifier_label(tournament: Tournament, source: dict[str, Any]) -> str | None:

@@ -10,11 +10,8 @@ from apps.tournament.models import (
     TournamentMatch,
     TournamentPool,
 )
-from apps.tournament.services.standings import (
-    StandingRow,
-    calculate_pool_standings,
-    rank_rows_across_pools,
-)
+from apps.tournament.services.qualifiers import evaluate_best_rank, evaluate_pool_rank
+from apps.tournament.services.standings import StandingRow, calculate_pool_standings
 
 
 def _qualifier_label(
@@ -37,14 +34,6 @@ def _qualifier_label(
     return None
 
 
-def _pool_is_complete(pool: TournamentPool) -> bool:
-    matches = list(pool.matches.all())
-    return bool(matches) and all(
-        match.status in {TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED}
-        for match in matches
-    )
-
-
 def _current_qualifier(
     tournament: Tournament,
     source: dict[str, Any],
@@ -59,25 +48,22 @@ def _current_qualifier(
     if not source_pools or any(pool is None for pool in source_pools):
         return None, False
     pools = [pool for pool in source_pools if pool is not None]
-    if any(
-        not any(row["played"] > 0 for row in standings_by_pool_id[str(pool.id_uuid)])
-        for pool in pools
-    ):
-        return None, False
-    candidates = [
-        standings_by_pool_id[str(pool.id_uuid)][rank - 1]
-        for pool in pools
-        if rank <= len(standings_by_pool_id[str(pool.id_uuid)])
-    ]
-    if len(candidates) != len(pools):
-        return None, False
-    if source.get("kind") == "pool_rank" and len(candidates) == 1:
-        selected = candidates[0]
-    elif source.get("kind") == "best_rank" and len(candidates) > 1:
-        selected = rank_rows_across_pools(tournament, candidates)[0]
+    if source.get("kind") == "pool_rank" and len(pools) == 1:
+        decision = evaluate_pool_rank(
+            pools[0],
+            rank,
+            standings=standings_by_pool_id[str(pools[0].id_uuid)],
+        )
+    elif source.get("kind") == "best_rank" and len(pools) > 1:
+        decision = evaluate_best_rank(
+            tournament,
+            pools,
+            rank,
+            standings_by_pool_id=standings_by_pool_id,
+        )
     else:
         return None, False
-    return selected["team_id"], all(_pool_is_complete(pool) for pool in pools)
+    return decision.current_team_id, decision.is_decided
 
 
 def _qualification_rules(

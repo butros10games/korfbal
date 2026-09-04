@@ -2,15 +2,82 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from django.utils import timezone
 
-from apps.tournament.models import TournamentMatch, TournamentResultAudit
+from apps.tournament.models import (
+    TournamentMatch,
+    TournamentResultAudit,
+    TournamentTeam,
+)
 
 
 class TournamentMatchOperationError(ValueError):
     """Raised when a live-operation command is not valid for the current state."""
+
+
+def replace_scheduled_match_teams(
+    match: TournamentMatch,
+    replacements: Mapping[str, TournamentTeam | None],
+) -> bool:
+    """Replace bracket entrants and invalidate readiness tied to old entrants.
+
+    Raises:
+        TournamentMatchOperationError: If both replacements resolve to one team.
+
+    """
+    changed_fields = [
+        field
+        for field, replacement in replacements.items()
+        if getattr(match, f"{field}_id") != getattr(replacement, "pk", None)
+    ]
+    if not changed_fields:
+        return False
+
+    prospective = {
+        "home_team": replacements.get("home_team", match.home_team),
+        "away_team": replacements.get("away_team", match.away_team),
+    }
+    home_id = getattr(prospective["home_team"], "pk", None)
+    away_id = getattr(prospective["away_team"], "pk", None)
+    if home_id is not None and home_id == away_id:
+        raise TournamentMatchOperationError(
+            "A qualifier would place one team on both sides."
+        )
+
+    for field in changed_fields:
+        setattr(match, field, replacements[field])
+    update_fields = list(changed_fields)
+    if match.field_ready_at is not None:
+        match.field_ready_at = None
+        match.field_ready_by = None
+        match.field_ready_by_name = ""
+        update_fields.extend([
+            "field_ready_at",
+            "field_ready_by",
+            "field_ready_by_name",
+        ])
+    if match.referee_team_id is not None and match.referee_team_id in {
+        home_id,
+        away_id,
+    }:
+        match.referee_team = None
+        match.referee_name = ""
+        match.referee_player = None
+        match.referee_claim_token = None
+        match.referee_claimed_at = None
+        update_fields.extend([
+            "referee_team",
+            "referee_name",
+            "referee_player",
+            "referee_claim_token",
+            "referee_claimed_at",
+        ])
+    match.revision += 1
+    update_fields.extend(["revision", "updated_at"])
+    match.save(update_fields=update_fields)
+    return True
 
 
 def downstream_result_locked(match: TournamentMatch, winner: object | None) -> bool:
@@ -32,12 +99,10 @@ def sync_advanced_winner(match: TournamentMatch) -> None:
     destination = match.next_match
     replacement = match.winner if match.status == TournamentMatch.Status.FINAL else None
     if match.winner_to_side == TournamentMatch.DestinationSide.HOME:
-        destination.home_team = replacement
-        update_field = "home_team"
+        replacements = {"home_team": replacement}
     else:
-        destination.away_team = replacement
-        update_field = "away_team"
-    destination.save(update_fields=[update_field, "updated_at"])
+        replacements = {"away_team": replacement}
+    replace_scheduled_match_teams(destination, replacements)
 
 
 def reset_field_readiness(match: TournamentMatch) -> bool:

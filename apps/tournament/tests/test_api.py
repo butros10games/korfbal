@@ -26,6 +26,7 @@ from apps.tournament.models import (
 pytestmark = pytest.mark.django_db
 OnCommitCapture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 EXPECTED_ROUND_ROBIN_MATCHES = 6
+EXPECTED_SEMIFINALS = 2
 FINAL_MATCH_REVISION = 3
 REOPENED_MATCH_REVISION = 4
 
@@ -569,6 +570,106 @@ def test_pool_winners_generate_single_elimination_final(client: Client) -> None:
     assert len(final_matches) == 1
     assert final_matches[0]["home_team"] is not None
     assert final_matches[0]["away_team"] is not None
+
+
+def test_knockout_can_be_planned_early_and_fills_as_pools_finish(
+    client: Client,
+) -> None:
+    """A general knockout keeps qualifier sources until results secure each slot."""
+    user = get_user_model().objects.create_user(username="early-finals-manager")
+    client.force_login(user)
+    tournament_id = _create_tournament(client)["id_uuid"]
+    for index in range(8):
+        client.post(
+            f"/api/tournaments/{tournament_id}/teams/",
+            data={"name": f"Early finalist {index + 1}", "seed": index + 1},
+            content_type="application/json",
+        )
+    client.post(
+        f"/api/tournaments/{tournament_id}/fields/",
+        data={"label": "Finaleveld"},
+        content_type="application/json",
+    )
+    applied = client.post(
+        f"/api/tournaments/{tournament_id}/generation/apply/",
+        data={"pool_count": 4, "strategy": "snake", "legs": 1},
+        content_type="application/json",
+    )
+    assert applied.status_code == HTTPStatus.OK
+
+    planned = client.post(
+        f"/api/tournaments/{tournament_id}/finals/generate/",
+        data={"qualifiers_per_pool": 1},
+        content_type="application/json",
+    )
+    assert planned.status_code == HTTPStatus.OK
+    semifinals = [
+        match
+        for match in planned.json()["matches"]
+        if match["stage_kind"] == TournamentStage.Kind.KNOCKOUT
+    ]
+    assert len(semifinals) == EXPECTED_SEMIFINALS
+    assert all(
+        match["home_team"] is None and match["away_team"] is None
+        for match in semifinals
+    )
+    assert all(
+        match["home_source_label"] is not None
+        and match["away_source_label"] is not None
+        for match in semifinals
+    )
+
+    pool_matches = [
+        match for match in planned.json()["matches"] if match["pool_id"] is not None
+    ]
+    first_result = client.patch(
+        f"/api/tournaments/matches/{pool_matches[0]['id_uuid']}/result/",
+        data={
+            "home_score": 4,
+            "away_score": 2,
+            "status": "final",
+            "expected_revision": 0,
+        },
+        content_type="application/json",
+    )
+    assert first_result.status_code == HTTPStatus.OK
+    partly_filled = client.get(f"/api/tournaments/{tournament_id}/snapshot/").json()
+    semifinals = [
+        match
+        for match in partly_filled["matches"]
+        if match["stage_kind"] == TournamentStage.Kind.KNOCKOUT
+    ]
+    assert (
+        sum(
+            team is not None
+            for semifinal in semifinals
+            for team in (semifinal["home_team"], semifinal["away_team"])
+        )
+        == 1
+    )
+
+    for pool_match in pool_matches[1:]:
+        result = client.patch(
+            f"/api/tournaments/matches/{pool_match['id_uuid']}/result/",
+            data={
+                "home_score": 5,
+                "away_score": 1,
+                "status": "final",
+                "expected_revision": 0,
+            },
+            content_type="application/json",
+        )
+        assert result.status_code == HTTPStatus.OK
+    filled = client.get(f"/api/tournaments/{tournament_id}/snapshot/").json()
+    semifinals = [
+        match
+        for match in filled["matches"]
+        if match["stage_kind"] == TournamentStage.Kind.KNOCKOUT
+    ]
+    assert all(
+        match["home_team"] is not None and match["away_team"] is not None
+        for match in semifinals
+    )
 
 
 def test_scorekeeper_is_restricted_to_assigned_field(client: Client) -> None:
