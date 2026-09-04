@@ -59,6 +59,11 @@ def _current_qualifier(
     if not source_pools or any(pool is None for pool in source_pools):
         return None, False
     pools = [pool for pool in source_pools if pool is not None]
+    if any(
+        not any(row["played"] > 0 for row in standings_by_pool_id[str(pool.id_uuid)])
+        for pool in pools
+    ):
+        return None, False
     candidates = [
         standings_by_pool_id[str(pool.id_uuid)][rank - 1]
         for pool in pools

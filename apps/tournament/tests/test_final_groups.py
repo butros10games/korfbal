@@ -177,21 +177,21 @@ def test_two_final_groups_can_be_preplanned_and_resolve_independently(
             "kind": "pool_rank",
             "pool_ids": [str(pools["A"].id_uuid)],
             "rank": 1,
-            "current_team_id": str(pools["A"].entries.get(seed_order=1).team_id),
+            "current_team_id": None,
             "is_decided": False,
         },
         {
             "kind": "pool_rank",
             "pool_ids": [str(pools["B"].id_uuid)],
             "rank": 1,
-            "current_team_id": str(pools["B"].entries.get(seed_order=1).team_id),
+            "current_team_id": None,
             "is_decided": False,
         },
         {
             "kind": "pool_rank",
             "pool_ids": [str(pools["E"].id_uuid)],
             "rank": 1,
-            "current_team_id": str(pools["E"].entries.get(seed_order=1).team_id),
+            "current_team_id": None,
             "is_decided": False,
         },
         {
@@ -202,7 +202,7 @@ def test_two_final_groups_can_be_preplanned_and_resolve_independently(
                 str(pools["E"].id_uuid),
             ],
             "rank": 2,
-            "current_team_id": str(pools["A"].entries.get(seed_order=2).team_id),
+            "current_team_id": None,
             "is_decided": False,
         },
     ]
