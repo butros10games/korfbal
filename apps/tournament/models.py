@@ -521,6 +521,12 @@ class TournamentMatch(models.Model):
         related_name="claimed_tournament_referee_matches",
     )
     referee_player_id: UUID | None
+    referee_access_token = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
     referee_claim_token = models.UUIDField(
         null=True,
         blank=True,

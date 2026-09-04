@@ -30,6 +30,7 @@ from .views import (
     TournamentRefereeDutiesView,
     TournamentRefereeGoalView,
     TournamentRefereeLatestEventView,
+    TournamentRefereePdfView,
     TournamentRefereeQrView,
     TournamentRefereeReadyView,
     TournamentRefereeTrackerView,
@@ -160,6 +161,11 @@ urlpatterns = [
         "<uuid:tournament_id>/referee-teams/<uuid:team_id>/qr/",
         TournamentRefereeQrView.as_view(),
         name="tournament-referee-qr",
+    ),
+    path(
+        "<uuid:tournament_id>/referee-duties.pdf",
+        TournamentRefereePdfView.as_view(),
+        name="tournament-referee-pdf",
     ),
     path(
         "<uuid:tournament_id>/publish/",

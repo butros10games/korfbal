@@ -36,6 +36,7 @@ REVISION_AFTER_HOME_GOAL = 2
 REVISION_AFTER_GOAL_REMOVAL = 4
 EXPECTED_GOAL_AUDITS = 2
 EXPECTED_TOURNAMENT_REVISION = 3
+EXPECTED_PDF_DUTIES = 2
 
 
 def _match_graph() -> tuple[
@@ -355,6 +356,147 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
     )
 
 
+@override_settings(
+    ALLOWED_HOSTS=["api.korfbal.butrosgroot.com", "testserver"],
+    KORFBAL_ORIGIN="https://api.korfbal.butrosgroot.com",
+    WEB_APP_ORIGIN="https://korfbal.localhost",
+    WEB_KORFBAL_ORIGIN="https://korfbal.butrosgroot.com",
+)
+def test_referee_pdf_exports_unassigned_matches_with_direct_links(
+    client: Client,
+) -> None:
+    """Unknown knockout referees do not block the printable match QR pack."""
+    manager, _, tournament, _, _, _, _ = _match_graph()
+    client.force_login(manager)
+
+    with patch(
+        "apps.tournament.api.views.build_referee_duties_pdf",
+        return_value=b"%PDF-1.4\n%%EOF\n",
+    ) as build_pdf:
+        response = client.get(
+            f"/api/tournaments/{tournament.id_uuid}/referee-duties.pdf",
+            headers={"host": "api.korfbal.butrosgroot.com"},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    _, duties = build_pdf.call_args.args
+    assert [duty.referee_team_name for duty in duties] == [
+        "Nog niet toegewezen",
+        "Nog niet toegewezen",
+    ]
+    assert len({duty.access_url for duty in duties}) == EXPECTED_PDF_DUTIES
+    assert all(
+        duty.access_url.startswith(
+            "https://korfbal.butrosgroot.com/tournaments/referee/"
+        )
+        for duty in duties
+    )
+    assert not tournament.matches.filter(referee_access_token=None).exists()
+
+
+@override_settings(
+    ALLOWED_HOSTS=["api.korfbal.butrosgroot.com", "testserver"],
+    KORFBAL_ORIGIN="https://api.korfbal.butrosgroot.com",
+    WEB_APP_ORIGIN="https://korfbal.localhost",
+    WEB_KORFBAL_ORIGIN="https://korfbal.butrosgroot.com",
+)
+def test_manager_exports_printable_referee_duties(client: Client) -> None:
+    """The PDF export receives one correctly labelled QR card per match."""
+    manager, _, tournament, _, _, match_one, match_two = _match_graph()
+    duty_team_one = tournament.teams.exclude(
+        pk__in=(match_one.home_team_id, match_one.away_team_id)
+    ).first()
+    assert duty_team_one is not None
+    duty_team_two = match_one.home_team
+    assert duty_team_two is not None
+    match_one.referee_team = duty_team_one
+    match_one.save(update_fields=["referee_team"])
+    match_two.referee_team = duty_team_two
+    match_two.save(update_fields=["referee_team"])
+    client.force_login(manager)
+
+    with patch(
+        "apps.tournament.api.views.build_referee_duties_pdf",
+        return_value=b"%PDF-1.4\n%%EOF\n",
+    ) as build_pdf:
+        response = client.get(
+            f"/api/tournaments/{tournament.id_uuid}/referee-duties.pdf",
+            headers={"host": "api.korfbal.butrosgroot.com"},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response["Content-Type"] == "application/pdf"
+    assert response["Cache-Control"] == "private, no-store"
+    assert response["Content-Disposition"] == (
+        'attachment; filename="referee-cup-scheidsrechter-qr.pdf"'
+    )
+    assert response.content == b"%PDF-1.4\n%%EOF\n"
+    tournament_name, duties = build_pdf.call_args.args
+    assert tournament_name == "Referee Cup"
+    assert [duty.match_number for duty in duties] == [1, 2]
+    assert duties[0].referee_team_name == duty_team_one.name
+    assert duties[0].home_team_name == "Team 1"
+    assert duties[0].away_team_name == "Team 2"
+    assert duties[0].field_label == "Field 1"
+    assert duties[0].starts_at_label == "Tijd nog niet bekend"
+    assert duties[0].access_url.startswith(
+        "https://korfbal.butrosgroot.com/tournaments/referee/"
+    )
+    assert duties[0].access_url != duties[1].access_url
+    match_one.refresh_from_db()
+    match_two.refresh_from_db()
+    assert match_one.referee_access_token is not None
+    assert match_two.referee_access_token is not None
+
+
+def test_direct_match_qr_claims_without_a_referee_team_and_expires(
+    client: Client,
+) -> None:
+    """A match QR opens only its fixture and works before a team is known."""
+    _, _, _, _, _, match, denied_match = _match_graph()
+    match.referee_access_token = uuid4()
+    match.save(update_fields=["referee_access_token"])
+    duties_url = f"/api/tournaments/referee-duties/{match.referee_access_token}/"
+
+    duties = client.get(duties_url)
+    claim = client.post(
+        f"{duties_url}matches/{match.id_uuid}/claim/",
+        data={"name": "Sam de Vrij"},
+        content_type="application/json",
+    )
+
+    assert duties.status_code == HTTPStatus.OK
+    assert duties.json()["access_kind"] == "match"
+    assert duties.json()["team"] is None
+    assert [row["id_uuid"] for row in duties.json()["matches"]] == [str(match.id_uuid)]
+    assert claim.status_code == HTTPStatus.OK
+    claim_token = claim.json()["claim_token"]
+    assert (
+        client.get(
+            f"/api/tournaments/matches/{match.id_uuid}/tracker/?token={claim_token}"
+        ).status_code
+        == HTTPStatus.OK
+    )
+    assert (
+        client.post(
+            f"{duties_url}matches/{denied_match.id_uuid}/claim/",
+            data={"name": "Sam de Vrij"},
+            content_type="application/json",
+        ).status_code
+        == HTTPStatus.NOT_FOUND
+    )
+
+    match.status = TournamentMatch.Status.FINAL
+    match.save(update_fields=["status"])
+    assert client.get(duties_url).status_code == HTTPStatus.NOT_FOUND
+    assert (
+        client.get(
+            f"/api/tournaments/matches/{match.id_uuid}/tracker/?token={claim_token}"
+        ).status_code
+        == HTTPStatus.FORBIDDEN
+    )
+
+
 def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None:
     """A QR claim authorizes one match only until its final result is saved."""
     _, _, tournament, _, _, match, denied_match = _match_graph()
@@ -376,6 +518,7 @@ def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None
     )
 
     assert duties.status_code == HTTPStatus.OK
+    assert duties.json()["access_kind"] == "team"
     assert duties.json()["team"]["name"] == duty_team.name
     assert duties.json()["matches"][0]["can_claim"] is True
     assert claim.status_code == HTTPStatus.OK

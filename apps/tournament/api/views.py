@@ -7,12 +7,15 @@ from datetime import date, datetime, time
 from io import BytesIO
 from typing import Any
 from urllib.parse import urlparse
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q, QuerySet
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils.text import slugify
 import qrcode
 from qrcode.image.svg import SvgPathImage
 from rest_framework import mixins, permissions, status, viewsets
@@ -108,12 +111,19 @@ from apps.tournament.services.match_operations import (
     start_round,
     sync_advanced_winner,
 )
+from apps.tournament.services.referee_pdf import (
+    RefereeDutyCard,
+    build_referee_duties_pdf,
+)
 from apps.tournament.services.referee_tracker import (
     RefereeTrackerError,
     assign_referee_team,
+    build_direct_referee_duty_state,
     build_referee_duties_state,
     build_referee_tracker_state,
+    claim_direct_referee_duty,
     claim_referee_duty,
+    ensure_match_referee_access_token,
     ensure_referee_access_token,
     mark_field_ready,
     record_goal,
@@ -1293,6 +1303,16 @@ class TournamentRefereeAssignmentView(APIView):
         return Response(build_tournament_snapshot(tournament))
 
 
+def _referee_access_url(request: Request, access_token: UUID) -> str:
+    """Build a scannable web URL for the request's deployed environment."""
+    web_origin = str(settings.WEB_APP_ORIGIN).rstrip("/")
+    public_api_host = urlparse(str(settings.KORFBAL_ORIGIN)).hostname
+    request_host = request.get_host().partition(":")[0].lower()
+    if public_api_host and request_host == public_api_host.lower():
+        web_origin = str(settings.WEB_KORFBAL_ORIGIN).rstrip("/")
+    return f"{web_origin}/tournaments/referee/{access_token}"
+
+
 class TournamentRefereeQrView(APIView):
     """Generate the team-scoped referee-duty QR for a tournament manager."""
 
@@ -1309,12 +1329,7 @@ class TournamentRefereeQrView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         access_token = ensure_referee_access_token(team)
-        web_origin = str(settings.WEB_APP_ORIGIN).rstrip("/")
-        public_api_host = urlparse(str(settings.KORFBAL_ORIGIN)).hostname
-        request_host = request.get_host().partition(":")[0].lower()
-        if public_api_host and request_host == public_api_host.lower():
-            web_origin = str(settings.WEB_KORFBAL_ORIGIN).rstrip("/")
-        access_url = f"{web_origin}/tournaments/referee/{access_token}"
+        access_url = _referee_access_url(request, access_token)
         image = qrcode.make(access_url, image_factory=SvgPathImage)
         output = BytesIO()
         image.save(output)
@@ -1325,22 +1340,112 @@ class TournamentRefereeQrView(APIView):
         })
 
 
+class TournamentRefereePdfView(APIView):
+    """Export every active match as a printable direct-access QR card."""
+
+    def get(
+        self,
+        request: Request,
+        tournament_id: str,
+    ) -> Response | HttpResponse:
+        """Return an A4 PDF even when knockout referees are not known yet."""
+        tournament = _get_tournament(tournament_id)
+        _require_manager(request, tournament)
+        matches = list(
+            tournament.matches
+            .exclude(
+                status__in=(
+                    TournamentMatch.Status.FINAL,
+                    TournamentMatch.Status.CANCELLED,
+                )
+            )
+            .select_related("home_team", "away_team", "field", "referee_team")
+            .order_by("starts_at", "match_number")
+        )
+        if not matches:
+            return Response(
+                {"detail": "Maak eerst het wedstrijdschema."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        duties: list[RefereeDutyCard] = []
+        tournament_timezone = ZoneInfo(tournament.timezone)
+        for match in matches:
+            referee_team = match.referee_team
+            access_url = _referee_access_url(
+                request,
+                ensure_match_referee_access_token(match),
+            )
+            starts_at_label = (
+                match.starts_at.astimezone(tournament_timezone).strftime("%H:%M")
+                if match.starts_at
+                else "Tijd nog niet bekend"
+            )
+            duties.append(
+                RefereeDutyCard(
+                    referee_team_name=(
+                        referee_team.name if referee_team else "Nog niet toegewezen"
+                    ),
+                    access_url=access_url,
+                    match_number=match.match_number,
+                    home_team_name=(
+                        match.home_team.name if match.home_team else "Nog te bepalen"
+                    ),
+                    away_team_name=(
+                        match.away_team.name if match.away_team else "Nog te bepalen"
+                    ),
+                    field_label=(
+                        match.field.label if match.field else "Veld nog niet bekend"
+                    ),
+                    starts_at_label=starts_at_label,
+                )
+            )
+
+        document = build_referee_duties_pdf(tournament.name, duties)
+        response = HttpResponse(document, content_type="application/pdf")
+        filename = f"{slugify(tournament.name) or 'toernooi'}-scheidsrechter-qr.pdf"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
 class TournamentRefereeDutiesView(APIView):
-    """List one team's referee duties through its QR credential."""
+    """Open team duties or one exact match through an account-free QR."""
 
     permission_classes = (permissions.AllowAny,)
 
     def get(self, request: Request, access_token: str) -> Response:
-        """Return only the assigned matches and selectable roster identities."""
-        team = get_object_or_404(
-            TournamentTeam.objects.select_related("tournament", "linked_team"),
+        """Return the duties represented by either kind of QR credential."""
+        team = (
+            TournamentTeam.objects
+            .select_related("tournament", "linked_team")
+            .filter(referee_access_token=access_token)
+            .first()
+        )
+        if team is not None:
+            return Response(build_referee_duties_state(team))
+
+        match = get_object_or_404(
+            TournamentMatch.objects.select_related(
+                "tournament",
+                "field",
+                "home_team",
+                "away_team",
+                "referee_team__tournament",
+                "referee_team__linked_team",
+            ).exclude(
+                status__in=(
+                    TournamentMatch.Status.FINAL,
+                    TournamentMatch.Status.CANCELLED,
+                )
+            ),
             referee_access_token=access_token,
         )
-        return Response(build_referee_duties_state(team))
+        return Response(build_direct_referee_duty_state(match))
 
 
 class TournamentRefereeClaimView(APIView):
-    """Claim one team duty without requiring a user account."""
+    """Claim a team duty or a directly linked match without an account."""
 
     permission_classes = (permissions.AllowAny,)
 
@@ -1349,27 +1454,47 @@ class TournamentRefereeClaimView(APIView):
         """Issue a match-scoped credential after recording the referee's name."""
         serializer = TournamentRefereeClaimSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        team = get_object_or_404(
-            TournamentTeam.objects.select_related("tournament", "linked_team"),
-            referee_access_token=access_token,
+        team = (
+            TournamentTeam.objects
+            .select_related("tournament", "linked_team")
+            .filter(referee_access_token=access_token)
+            .first()
         )
-        match = get_object_or_404(
-            TournamentMatch.objects.select_for_update(of=("self",)).select_related(
-                "tournament", "referee_team"
-            ),
-            id_uuid=match_id,
-            tournament=team.tournament,
+        match_queryset = TournamentMatch.objects.select_for_update(
+            of=("self",)
+        ).select_related(
+            "tournament", "referee_team__tournament", "referee_team__linked_team"
         )
+        if team is not None:
+            match = get_object_or_404(
+                match_queryset,
+                id_uuid=match_id,
+                tournament=team.tournament,
+            )
+        else:
+            match = get_object_or_404(
+                match_queryset.exclude(
+                    status__in=(
+                        TournamentMatch.Status.FINAL,
+                        TournamentMatch.Status.CANCELLED,
+                    )
+                ),
+                id_uuid=match_id,
+                referee_access_token=access_token,
+            )
         try:
-            claim_token = claim_referee_duty(
-                match,
-                team=team,
-                name=serializer.validated_data.get("name", ""),
-                player_id=serializer.validated_data.get("player_id"),
+            claim_kwargs = {
+                "name": serializer.validated_data.get("name", ""),
+                "player_id": serializer.validated_data.get("player_id"),
+            }
+            claim_token = (
+                claim_referee_duty(match, team=team, **claim_kwargs)
+                if team is not None
+                else claim_direct_referee_duty(match, **claim_kwargs)
             )
         except RefereeTrackerError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        touch_tournament(team.tournament)
+        touch_tournament(match.tournament)
         return Response({
             "match_id": str(match.id_uuid),
             "claim_token": str(claim_token),

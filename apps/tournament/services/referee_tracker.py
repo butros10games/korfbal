@@ -52,17 +52,54 @@ def referee_team_players(team: TournamentTeam) -> list[Player]:
     )
 
 
+def _referee_match_payload(match: TournamentMatch) -> dict[str, Any]:
+    closed_statuses = {
+        TournamentMatch.Status.FINAL,
+        TournamentMatch.Status.CANCELLED,
+    }
+    return {
+        "id_uuid": str(match.id_uuid),
+        "match_number": match.match_number,
+        "status": match.status,
+        "starts_at": match.starts_at.isoformat() if match.starts_at else None,
+        "field": (
+            {"id_uuid": str(match.field_id), "label": match.field.label}
+            if match.field
+            else None
+        ),
+        "home_team": (
+            {
+                "id_uuid": str(match.home_team_id),
+                "name": match.home_team.name,
+                "short_name": match.home_team.short_name,
+            }
+            if match.home_team
+            else None
+        ),
+        "away_team": (
+            {
+                "id_uuid": str(match.away_team_id),
+                "name": match.away_team.name,
+                "short_name": match.away_team.short_name,
+            }
+            if match.away_team
+            else None
+        ),
+        "claimed_by": match.referee_name or None,
+        "can_claim": (
+            match.status not in closed_statuses and match.referee_claimed_at is None
+        ),
+    }
+
+
 def build_referee_duties_state(team: TournamentTeam) -> dict[str, Any]:
     """Build the guest-facing list of matches assigned to one referee team."""
     matches = team.referee_matches.select_related(
         "field", "home_team", "away_team"
     ).order_by("starts_at", "match_number")
     players = referee_team_players(team)
-    closed_statuses = {
-        TournamentMatch.Status.FINAL,
-        TournamentMatch.Status.CANCELLED,
-    }
     return {
+        "access_kind": "team",
         "tournament": {
             "id_uuid": str(team.tournament_id),
             "name": team.tournament.name,
@@ -73,43 +110,27 @@ def build_referee_duties_state(team: TournamentTeam) -> dict[str, Any]:
             {"id_uuid": str(player.id_uuid), "name": _player_label(player)}
             for player in players
         ],
-        "matches": [
-            {
-                "id_uuid": str(match.id_uuid),
-                "match_number": match.match_number,
-                "status": match.status,
-                "starts_at": match.starts_at.isoformat() if match.starts_at else None,
-                "field": (
-                    {"id_uuid": str(match.field_id), "label": match.field.label}
-                    if match.field
-                    else None
-                ),
-                "home_team": (
-                    {
-                        "id_uuid": str(match.home_team_id),
-                        "name": match.home_team.name,
-                        "short_name": match.home_team.short_name,
-                    }
-                    if match.home_team
-                    else None
-                ),
-                "away_team": (
-                    {
-                        "id_uuid": str(match.away_team_id),
-                        "name": match.away_team.name,
-                        "short_name": match.away_team.short_name,
-                    }
-                    if match.away_team
-                    else None
-                ),
-                "claimed_by": match.referee_name or None,
-                "can_claim": (
-                    match.status not in closed_statuses
-                    and match.referee_claimed_at is None
-                ),
-            }
-            for match in matches
+        "matches": [_referee_match_payload(match) for match in matches],
+    }
+
+
+def build_direct_referee_duty_state(match: TournamentMatch) -> dict[str, Any]:
+    """Build a guest-facing claim screen for exactly one match QR."""
+    team = match.referee_team
+    players = referee_team_players(team) if team else []
+    return {
+        "access_kind": "match",
+        "tournament": {
+            "id_uuid": str(match.tournament_id),
+            "name": match.tournament.name,
+            "slug": match.tournament.slug,
+        },
+        "team": ({"id_uuid": str(team.id_uuid), "name": team.name} if team else None),
+        "players": [
+            {"id_uuid": str(player.id_uuid), "name": _player_label(player)}
+            for player in players
         ],
+        "matches": [_referee_match_payload(match)],
     }
 
 
@@ -121,6 +142,18 @@ def ensure_referee_access_token(team: TournamentTeam) -> UUID:
         locked_team.referee_access_token = uuidv7()
         locked_team.save(update_fields=["referee_access_token"])
     return locked_team.referee_access_token
+
+
+@transaction.atomic
+def ensure_match_referee_access_token(match: TournamentMatch) -> UUID:
+    """Create the stable credential embedded in one match's printable QR."""
+    locked_match = TournamentMatch.objects.select_for_update(of=("self",)).get(
+        pk=match.pk
+    )
+    if locked_match.referee_access_token is None:
+        locked_match.referee_access_token = uuidv7()
+        locked_match.save(update_fields=["referee_access_token"])
+    return locked_match.referee_access_token
 
 
 def assign_referee_team(
@@ -188,13 +221,43 @@ def claim_referee_duty(
         RefereeTrackerError: If the duty is unavailable or identity is invalid.
 
     """
+    if match.referee_team_id != team.pk:
+        raise RefereeTrackerError("Deze wedstrijd is niet aan jouw team toegewezen.")
+    return _claim_referee_identity(
+        match,
+        team=team,
+        name=name,
+        player_id=player_id,
+    )
+
+
+def claim_direct_referee_duty(
+    match: TournamentMatch,
+    *,
+    name: str,
+    player_id: UUID | None,
+) -> UUID:
+    """Claim exactly the unfinished match encoded by a printable match QR."""
+    return _claim_referee_identity(
+        match,
+        team=match.referee_team,
+        name=name,
+        player_id=player_id,
+    )
+
+
+def _claim_referee_identity(
+    match: TournamentMatch,
+    *,
+    team: TournamentTeam | None,
+    name: str,
+    player_id: UUID | None,
+) -> UUID:
     if match.status in {
         TournamentMatch.Status.FINAL,
         TournamentMatch.Status.CANCELLED,
     }:
         raise RefereeTrackerError("Deze wedstrijd is al afgerond.")
-    if match.referee_team_id != team.pk:
-        raise RefereeTrackerError("Deze wedstrijd is niet aan jouw team toegewezen.")
     if match.referee_claimed_at is not None:
         raise RefereeTrackerError(
             f"Deze wedstrijd is al geclaimd door {match.referee_name}."
@@ -203,6 +266,8 @@ def claim_referee_duty(
     player = None
     referee_name = name.strip()
     if player_id is not None:
+        if team is None:
+            raise RefereeTrackerError("Vul je naam in om deze wedstrijd te openen.")
         players = {player.id_uuid: player for player in referee_team_players(team)}
         player = players.get(player_id)
         if player is None:
@@ -236,7 +301,6 @@ def valid_guest_referee_claim(match: TournamentMatch, token: str | None) -> bool
         not token
         or match.referee_claim_token is None
         or match.referee_claimed_at is None
-        or match.referee_team_id is None
         or match.status
         in {TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED}
     ):

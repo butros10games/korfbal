@@ -24,6 +24,7 @@ dependencies = [
     "django-prometheus==2.6.0.dev4",
     "drf-spectacular",
     "qrcode>=8.2,<9",
+    "reportlab>=4.4,<5",
     "pywebpush",
     "requests",
     "spotdl",
