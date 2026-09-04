@@ -32,11 +32,14 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
     """Return one consistent payload for public pages and Cast receivers."""
     config = tournament.display_config
     pools = list(
-        tournament.pools.select_related("stage", "assigned_field").prefetch_related(
+        tournament.pools
+        .select_related("stage", "assigned_field")
+        .prefetch_related(
             "entries__team",
             "entries__adjustments",
             "matches",
         )
+        .order_by("sort_order", "name", "id_uuid")
     )
     matches = list(
         tournament.matches.select_related(
@@ -112,6 +115,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             {
                 "id_uuid": str(pool.id_uuid),
                 "name": pool.name,
+                "sort_order": pool.sort_order,
                 "stage_name": pool.stage.name,
                 "assigned_field": (
                     {

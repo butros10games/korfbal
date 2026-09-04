@@ -111,6 +111,7 @@ def create_pool(
     name: str,
     team_ids: list[UUID],
     assigned_field_id: UUID | None = None,
+    sort_order: int | None = None,
 ) -> TournamentPool:
     """Create one manually composed pool.
 
@@ -124,7 +125,11 @@ def create_pool(
         raise TournamentEditingError("A pool with this name already exists.")
     teams = _pool_teams(tournament, team_ids)
     assigned_field = _pool_field(tournament, assigned_field_id)
-    next_order = (tournament.pools.aggregate(value=Max("sort_order"))["value"] or 0) + 1
+    next_order = (
+        sort_order
+        if sort_order is not None
+        else (tournament.pools.aggregate(value=Max("sort_order"))["value"] or 0) + 1
+    )
     pool = TournamentPool.objects.create(
         tournament=tournament,
         stage=_pool_stage(tournament),
@@ -169,6 +174,21 @@ def update_pool(
         TournamentPoolEntry(pool=pool, team=team, seed_order=index)
         for index, team in enumerate(teams, start=1)
     ])
+    return pool
+
+
+@transaction.atomic
+def update_pool_order(
+    tournament: Tournament,
+    pool: TournamentPool,
+    *,
+    sort_order: int,
+) -> TournamentPool:
+    """Change presentation order without invalidating an existing schedule."""
+    tournament = Tournament.objects.select_for_update().get(pk=tournament.pk)
+    pool = tournament.pools.select_for_update().get(pk=pool.pk)
+    pool.sort_order = sort_order
+    pool.save(update_fields=["sort_order"])
     return pool
 
 

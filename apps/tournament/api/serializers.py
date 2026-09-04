@@ -359,6 +359,7 @@ class TournamentPoolWriteSerializer(serializers.Serializer):
     """Validate one manually composed tournament pool."""
 
     name = serializers.CharField(max_length=80)
+    sort_order = serializers.IntegerField(min_value=0, max_value=32767, required=False)
     assigned_field_id = serializers.UUIDField(required=False, allow_null=True)
     team_ids = serializers.ListField(
         child=serializers.UUIDField(),

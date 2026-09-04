@@ -13,6 +13,9 @@ from apps.tournament.models import Tournament, TournamentField, TournamentTeam
 
 
 pytestmark = pytest.mark.django_db
+MANUAL_POOL_ORDER = 7
+UPDATED_POOL_ORDER = 9
+REORDERED_POOL_ORDER = 10
 
 
 def _setup(client: Client) -> tuple[Tournament, list[TournamentTeam]]:
@@ -72,6 +75,7 @@ def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -
         f"/api/tournaments/{tournament.id_uuid}/pools/",
         data={
             "name": "Poule Handmatig",
+            "sort_order": MANUAL_POOL_ORDER,
             "assigned_field_id": field_id,
             "team_ids": [str(teams[0].id_uuid), str(teams[1].id_uuid)],
         },
@@ -79,6 +83,7 @@ def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -
     )
 
     assert pool_response.status_code == HTTPStatus.CREATED
+    assert pool_response.json()["pools"][0]["sort_order"] == MANUAL_POOL_ORDER
     assert pool_response.json()["pools"][0]["assigned_field"] == {
         "id_uuid": field_id,
         "label": "Veld 1",
@@ -118,13 +123,17 @@ def test_manual_pool_and_match_creation_feed_the_same_snapshot(client: Client) -
 
     update_pool_response = client.patch(
         f"/api/tournaments/{tournament.id_uuid}/pools/{pool_id}/",
-        data={"team_ids": [str(teams[0].id_uuid), str(teams[2].id_uuid)]},
+        data={
+            "sort_order": UPDATED_POOL_ORDER,
+            "team_ids": [str(teams[0].id_uuid), str(teams[2].id_uuid)],
+        },
         content_type="application/json",
     )
     assert update_pool_response.status_code == HTTPStatus.OK
     assert (
         update_pool_response.json()["pools"][0]["assigned_field"]["id_uuid"] == field_id
     )
+    assert update_pool_response.json()["pools"][0]["sort_order"] == UPDATED_POOL_ORDER
     assert {
         row["team_id"] for row in update_pool_response.json()["pools"][0]["standings"]
     } == {str(teams[0].id_uuid), str(teams[2].id_uuid)}
@@ -165,3 +174,42 @@ def test_manual_match_must_use_the_pool_assigned_field(client: Client) -> None:
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert "assigned to field" in response.json()["detail"]
+
+
+def test_pool_order_remains_editable_after_matches_are_generated(
+    client: Client,
+) -> None:
+    """Presentation order can be repaired without rebuilding the schedule."""
+    tournament, _ = _setup(client)
+    generated = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/pools/generate/",
+        data={"pool_count": 2, "strategy": "snake"},
+        content_type="application/json",
+    )
+    pool_a_id = generated.json()["pools"][0]["id_uuid"]
+    matches = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/matches/generate/",
+        data={"legs": 1},
+        content_type="application/json",
+    )
+    match_ids = {match["id_uuid"] for match in matches.json()["matches"]}
+
+    reordered = client.patch(
+        f"/api/tournaments/{tournament.id_uuid}/pools/{pool_a_id}/",
+        data={"sort_order": REORDERED_POOL_ORDER},
+        content_type="application/json",
+    )
+
+    assert reordered.status_code == HTTPStatus.OK
+    assert [pool["name"] for pool in reordered.json()["pools"]] == [
+        "Poule B",
+        "Poule A",
+    ]
+    assert [pool["sort_order"] for pool in reordered.json()["pools"]] == [
+        1,
+        REORDERED_POOL_ORDER,
+    ]
+    assert {
+        str(match_id)
+        for match_id in tournament.matches.values_list("id_uuid", flat=True)
+    } == match_ids

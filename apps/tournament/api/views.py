@@ -78,6 +78,7 @@ from apps.tournament.services.editing import (
     delete_pool,
     save_match,
     update_pool,
+    update_pool_order,
 )
 from apps.tournament.services.final_groups import (
     FinalGroupError,
@@ -573,11 +574,19 @@ class TournamentPoolDetailView(APIView):
         return tournament, get_object_or_404(tournament.pools, id_uuid=pool_id)
 
     def patch(self, request: Request, tournament_id: str, pool_id: str) -> Response:
-        """Replace a pool's label or team assignment."""
+        """Replace a pool's details or presentation order."""
         tournament, pool = self._objects(tournament_id, pool_id)
         _require_manager(request, tournament)
         serializer = TournamentPoolWriteSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        if set(serializer.validated_data) == {"sort_order"}:
+            update_pool_order(
+                tournament,
+                pool,
+                sort_order=serializer.validated_data["sort_order"],
+            )
+            touch_tournament(tournament)
+            return Response(build_tournament_snapshot(tournament))
         values = {
             "name": serializer.validated_data.get("name", pool.name),
             "assigned_field_id": serializer.validated_data.get(
@@ -590,6 +599,12 @@ class TournamentPoolDetailView(APIView):
         }
         try:
             update_pool(tournament, pool, **values)
+            if "sort_order" in serializer.validated_data:
+                update_pool_order(
+                    tournament,
+                    pool,
+                    sort_order=serializer.validated_data["sort_order"],
+                )
         except TournamentEditingError as exc:
             return _editing_error_response(exc)
         touch_tournament(tournament)
