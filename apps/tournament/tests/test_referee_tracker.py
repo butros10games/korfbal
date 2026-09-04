@@ -184,6 +184,12 @@ def test_referee_marks_ready_and_each_goal_is_published_once(
         call(tournament_id=str(tournament.id_uuid), revision=2),
         call(tournament_id=str(tournament.id_uuid), revision=3),
     ]
+    public_match = client.get(f"/api/tournaments/public/{tournament.slug}/").json()[
+        "matches"
+    ][0]
+    assert public_match["home_score"] == 1
+    assert public_match["away_score"] == 1
+    assert public_match["revision"] == away_goal.json()["match"]["revision"]
 
 
 def test_referee_removes_only_the_latest_visible_goal(client: Client) -> None:
