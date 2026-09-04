@@ -6,6 +6,9 @@ services:
             - '1664:1664'
         env_file:
             - .env
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
         restart: unless-stopped
         networks:
             - kwt-net
@@ -36,6 +39,9 @@ services:
         container_name: kwt-collectstatic
         env_file:
             - .env
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
         dns:
             - 8.8.8.8
             - 8.8.4.4
@@ -48,6 +54,9 @@ services:
         command: python manage.py migrate
         env_file:
             - .env
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
         networks:
             - kwt-net
 
@@ -60,6 +69,9 @@ services:
             - 8.8.4.4
         env_file:
             - .env
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
         networks:
             - kwt-net
 
@@ -69,6 +81,9 @@ services:
         restart: unless-stopped
         env_file:
             - .env
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
         command: celery -A korfbal beat --loglevel=info
         networks:
             - kwt-net

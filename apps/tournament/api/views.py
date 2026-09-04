@@ -179,7 +179,7 @@ def _lock_tournament_for_match(match_id: str) -> Tournament:
         id_uuid=match_id,
     )
     return get_object_or_404(
-        Tournament.objects.select_for_update().select_related(
+        Tournament.objects.select_for_update(of=("self",)).select_related(
             "owner", "organizer_club"
         ),
         pk=match.tournament_id,
@@ -189,7 +189,7 @@ def _lock_tournament_for_match(match_id: str) -> Tournament:
 def _lock_tournament(tournament_id: str) -> Tournament:
     """Lock a tournament before locking any of its matches."""
     return get_object_or_404(
-        Tournament.objects.select_for_update().select_related(
+        Tournament.objects.select_for_update(of=("self",)).select_related(
             "owner", "organizer_club"
         ),
         id_uuid=tournament_id,
