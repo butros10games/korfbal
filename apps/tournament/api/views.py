@@ -6,6 +6,7 @@ import base64
 from datetime import date, datetime, time
 from io import BytesIO
 from typing import Any
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -1309,6 +1310,10 @@ class TournamentRefereeQrView(APIView):
             )
         access_token = ensure_referee_access_token(team)
         web_origin = str(settings.WEB_APP_ORIGIN).rstrip("/")
+        public_api_host = urlparse(str(settings.KORFBAL_ORIGIN)).hostname
+        request_host = request.get_host().partition(":")[0].lower()
+        if public_api_host and request_host == public_api_host.lower():
+            web_origin = str(settings.WEB_KORFBAL_ORIGIN).rstrip("/")
         access_url = f"{web_origin}/tournaments/referee/{access_token}"
         image = qrcode.make(access_url, image_factory=SvgPathImage)
         output = BytesIO()

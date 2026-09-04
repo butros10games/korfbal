@@ -10,9 +10,10 @@ from unittest.mock import call, patch
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
-from django.test import Client
+from django.test import Client, override_settings
 from django.utils import timezone
 import pytest
+import qrcode
 
 from apps.club.models.club import Club
 from apps.schedule.models import Season
@@ -302,6 +303,12 @@ def test_public_snapshot_includes_operational_readiness_without_actor(
     assert "field_ready_by" not in payload
 
 
+@override_settings(
+    ALLOWED_HOSTS=["api.korfbal.butrosgroot.com", "testserver"],
+    KORFBAL_ORIGIN="https://api.korfbal.butrosgroot.com",
+    WEB_APP_ORIGIN="https://korfbal.localhost",
+    WEB_KORFBAL_ORIGIN="https://korfbal.butrosgroot.com",
+)
 def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> None:
     """Managers can display one QR for every duty assigned to a team."""
     manager, _, tournament, _, _, match, _ = _match_graph()
@@ -321,9 +328,14 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
             data={"team_id": str(duty_team.id_uuid)},
             content_type="application/json",
         )
-    qr = client.get(
-        f"/api/tournaments/{tournament.id_uuid}/referee-teams/{duty_team.id_uuid}/qr/"
-    )
+    with patch(
+        "apps.tournament.api.views.qrcode.make",
+        wraps=qrcode.make,
+    ) as make_qr:
+        qr = client.get(
+            f"/api/tournaments/{tournament.id_uuid}/referee-teams/{duty_team.id_uuid}/qr/",
+            headers={"host": "api.korfbal.butrosgroot.com"},
+        )
 
     assert assignment.status_code == HTTPStatus.OK
     assigned_match = next(
@@ -337,6 +349,10 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
     select_for_update.assert_called_once_with(of=("self",))
     duty_team.refresh_from_db()
     assert duty_team.referee_access_token is not None
+    assert make_qr.call_args.args[0] == (
+        "https://korfbal.butrosgroot.com/tournaments/referee/"
+        f"{duty_team.referee_access_token}"
+    )
 
 
 def test_guest_claim_scores_match_and_expires_when_final(client: Client) -> None:
