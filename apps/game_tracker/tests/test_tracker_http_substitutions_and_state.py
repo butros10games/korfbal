@@ -1,29 +1,21 @@
 # ruff: noqa: D103
 """Substitution-count and query-count tests for the tracker HTTP service."""
 
-from datetime import UTC, datetime, timedelta
-
-from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import MatchData, MatchPart, PlayerChange
+from apps.game_tracker.models import PlayerChange
 from apps.game_tracker.services.tracker_commands import TrackerCommandError
 from apps.game_tracker.services.tracker_state import get_tracker_state
 from apps.game_tracker.tests.tracker_test_helpers import (
-    TEST_PASSWORD,
     create_group_types,
     create_match_part,
     create_player_group,
     create_tracker_match,
     create_tracker_player,
 )
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
 
 
 MAX_WISSELS = 8
@@ -31,46 +23,18 @@ MAX_WISSELS = 8
 
 @pytest.mark.django_db
 def test_tracker_state_includes_substitutions_total() -> None:
-    home_club = Club.objects.create(name="Sub Home Club")
-    away_club = Club.objects.create(name="Sub Away Club")
-    home_team = Team.objects.create(name="Sub Home Team", club=home_club)
-    away_team = Team.objects.create(name="Sub Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Sub Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Sub")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     group_types = create_group_types("Aanval", "Verdediging", "Reserve")
-    player_out = (
-        get_user_model()
-        .objects.create_user(username="sub_player_out", password=TEST_PASSWORD)
-        .player
-    )
-    player_in = (
-        get_user_model()
-        .objects.create_user(username="sub_player_in", password=TEST_PASSWORD)
-        .player
-    )
+    player_out = create_tracker_player(username="sub_player_out")
+    player_in = create_tracker_player(username="sub_player_in")
 
     pg_attack = create_player_group(
         match_data=match_data,
@@ -113,46 +77,18 @@ def test_tracker_state_includes_substitutions_total() -> None:
 
 @pytest.mark.django_db
 def test_substitute_reg_enforces_max_wissels_per_team() -> None:
-    home_club = Club.objects.create(name="MaxSub Home Club")
-    away_club = Club.objects.create(name="MaxSub Away Club")
-    home_team = Team.objects.create(name="MaxSub Home Team", club=home_club)
-    away_team = Team.objects.create(name="MaxSub Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="MaxSub Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="MaxSub")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     group_types = create_group_types("Aanval", "Reserve")
-    player_a = (
-        get_user_model()
-        .objects.create_user(username="max_sub_a", password=TEST_PASSWORD)
-        .player
-    )
-    player_b = (
-        get_user_model()
-        .objects.create_user(username="max_sub_b", password=TEST_PASSWORD)
-        .player
-    )
+    player_a = create_tracker_player(username="max_sub_a")
+    player_b = create_tracker_player(username="max_sub_b")
 
     pg_attack = create_player_group(
         match_data=match_data,
@@ -195,34 +131,15 @@ def test_substitute_reg_enforces_max_wissels_per_team() -> None:
 
 @pytest.mark.django_db
 def test_substitute_against_reg_registers_opponent_wissel_without_players() -> None:
-    home_club = Club.objects.create(name="OppSub Home Club")
-    away_club = Club.objects.create(name="OppSub Away Club")
-    home_team = Team.objects.create(name="OppSub Home Team", club=home_club)
-    away_team = Team.objects.create(name="OppSub Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="OppSub Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="OppSub")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
+    away_team = tracker.away_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     group_types = create_group_types("Reserve")
     create_player_group(
@@ -255,34 +172,15 @@ def test_substitute_against_reg_registers_opponent_wissel_without_players() -> N
 
 @pytest.mark.django_db
 def test_substitute_against_reg_enforces_max_wissels_for_opponent() -> None:
-    home_club = Club.objects.create(name="OppSubMax Home Club")
-    away_club = Club.objects.create(name="OppSubMax Away Club")
-    home_team = Team.objects.create(name="OppSubMax Home Team", club=home_club)
-    away_team = Team.objects.create(name="OppSubMax Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="OppSubMax Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="OppSubMax")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
+    away_team = tracker.away_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     group_types = create_group_types("Reserve")
     opponent_reserve = create_player_group(

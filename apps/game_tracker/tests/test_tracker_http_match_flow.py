@@ -4,26 +4,23 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from django.contrib.auth import get_user_model
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import MatchData, MatchPart, Pause, Timeout
+from apps.game_tracker.models import MatchPart, Pause, Timeout
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     get_tracker_state,
 )
 from apps.game_tracker.tests.tracker_test_helpers import (
-    TEST_PASSWORD,
     create_group_types,
     create_match_part,
     create_player_group,
     create_tracker_match,
     create_tracker_player,
 )
-from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
@@ -132,25 +129,10 @@ def test_substitute_reg_allowed_between_parts_and_next_part_can_start() -> None:
 
 @pytest.mark.django_db
 def test_substitute_reg_allows_paused_match() -> None:
-    home_club = Club.objects.create(name="Paused Sub Home Club")
-    away_club = Club.objects.create(name="Paused Sub Away Club")
-    home_team = Team.objects.create(name="Paused Sub Home Team", club=home_club)
-    away_team = Team.objects.create(name="Paused Sub Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Paused Sub Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Paused Sub")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "active"
     match_data.parts = 2
     match_data.current_part = 1
@@ -171,16 +153,8 @@ def test_substitute_reg_allows_paused_match() -> None:
     )
 
     group_types = create_group_types("Aanval", "Reserve")
-    player_out = (
-        get_user_model()
-        .objects.create_user(username="paused_player_out", password=TEST_PASSWORD)
-        .player
-    )
-    player_in = (
-        get_user_model()
-        .objects.create_user(username="paused_player_in", password=TEST_PASSWORD)
-        .player
-    )
+    player_out = create_tracker_player(username="paused_player_out")
+    player_in = create_tracker_player(username="paused_player_in")
 
     reserve_group = create_player_group(
         match_data=match_data,
@@ -213,34 +187,14 @@ def test_substitute_reg_allows_paused_match() -> None:
 
 @pytest.mark.django_db
 def test_timeout_command_requires_for_team_flag() -> None:
-    home_club = Club.objects.create(name="Timeout Req Home Club")
-    away_club = Club.objects.create(name="Timeout Req Away Club")
-    home_team = Team.objects.create(name="Timeout Req Home Team", club=home_club)
-    away_team = Team.objects.create(name="Timeout Req Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Timeout Req Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Timeout Req")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     with pytest.raises(TrackerCommandError) as exc:
         apply_tracker_command(match, team=home_team, payload={"command": "timeout"})
@@ -250,34 +204,15 @@ def test_timeout_command_requires_for_team_flag() -> None:
 
 @pytest.mark.django_db
 def test_timeout_command_can_register_opponent_timeout_and_counts_in_state() -> None:
-    home_club = Club.objects.create(name="Timeout Opp Home Club")
-    away_club = Club.objects.create(name="Timeout Opp Away Club")
-    home_team = Team.objects.create(name="Timeout Opp Home Team", club=home_club)
-    away_team = Team.objects.create(name="Timeout Opp Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Timeout Opp Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Timeout Opp")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
+    away_team = tracker.away_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     apply_tracker_command(
         match,

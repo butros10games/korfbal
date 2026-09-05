@@ -3,71 +3,40 @@
 
 from datetime import UTC, datetime, timedelta
 
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.game_tracker.models import GoalType, Shot
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
     get_tracker_state,
 )
 from apps.game_tracker.tests.tracker_test_helpers import (
-    TEST_PASSWORD,
     create_group_types,
+    create_match_part,
     create_player_group,
     create_tracker_match,
+    create_tracker_player,
 )
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
 
 
 @pytest.mark.django_db
 def test_goal_reg_swaps_attack_defense_every_two_goals() -> None:
-    home_club = Club.objects.create(name="Swap Home Club")
-    away_club = Club.objects.create(name="Swap Away Club")
-    home_team = Team.objects.create(name="Swap Home Team", club=home_club)
-    away_team = Team.objects.create(name="Swap Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Swap Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Swap")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
+    away_team = tracker.away_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     goal_type = GoalType.objects.create(name="Doorloop")
     group_types = create_group_types("Aanval", "Verdediging")
 
-    home_scorer = (
-        get_user_model()
-        .objects.create_user(username="home_scorer_swap", password=TEST_PASSWORD)
-        .player
-    )
-    away_scorer = (
-        get_user_model()
-        .objects.create_user(username="away_scorer_swap", password=TEST_PASSWORD)
-        .player
-    )
+    home_scorer = create_tracker_player(username="home_scorer_swap")
+    away_scorer = create_tracker_player(username="away_scorer_swap")
 
     home_pg_attack = create_player_group(
         match_data=match_data,
@@ -138,48 +107,21 @@ def test_goal_reg_swaps_attack_defense_every_two_goals() -> None:
 
 @pytest.mark.django_db
 def test_remove_last_event_reverts_swap_when_goal_removed() -> None:
-    home_club = Club.objects.create(name="Revert Home Club")
-    away_club = Club.objects.create(name="Revert Away Club")
-    home_team = Team.objects.create(name="Revert Home Team", club=home_club)
-    away_team = Team.objects.create(name="Revert Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="Revert Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Revert")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
+    away_team = tracker.away_team
     match_data.status = "active"
     match_data.save(update_fields=["status"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     goal_type = GoalType.objects.create(name="Vrijebal")
     group_types = create_group_types("Aanval", "Verdediging")
 
-    home_scorer = (
-        get_user_model()
-        .objects.create_user(username="home_scorer_revert", password=TEST_PASSWORD)
-        .player
-    )
-    away_scorer = (
-        get_user_model()
-        .objects.create_user(username="away_scorer_revert", password=TEST_PASSWORD)
-        .player
-    )
+    home_scorer = create_tracker_player(username="home_scorer_revert")
+    away_scorer = create_tracker_player(username="away_scorer_revert")
 
     home_pg_attack = create_player_group(
         match_data=match_data,
@@ -236,35 +178,15 @@ def test_remove_last_event_reverts_swap_when_goal_removed() -> None:
 
 @pytest.mark.django_db
 def test_commit_sequence_keeps_last_event_order_stable() -> None:
-    home_club = Club.objects.create(name="ClientTime Home Club")
-    away_club = Club.objects.create(name="ClientTime Away Club")
-    home_team = Team.objects.create(name="ClientTime Home Team", club=home_club)
-    away_team = Team.objects.create(name="ClientTime Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="ClientTime Season",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="ClientTime")
+    match = tracker.match
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "active"
     match_data.current_part = 1
     match_data.save(update_fields=["status", "current_part"])
 
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=datetime.now(UTC),
-        active=True,
-    )
+    create_match_part(match_data=match_data)
 
     base = datetime.now(UTC).replace(microsecond=0)
     late = base + timedelta(seconds=2)
@@ -298,18 +220,9 @@ def test_goal_registration_rejects_player_outside_match_roster() -> None:
     tracker = create_tracker_match(prefix="Roster Boundary")
     tracker.match_data.status = "active"
     tracker.match_data.save(update_fields=["status"])
-    MatchPart.objects.create(
-        match_data=tracker.match_data,
-        part_number=1,
-        start_time=timezone.now(),
-        active=True,
-    )
+    create_match_part(match_data=tracker.match_data)
     goal_type = GoalType.objects.create(name="Roster Boundary Goal")
-    outsider = (
-        get_user_model()
-        .objects.create_user(username="roster_outsider", password=TEST_PASSWORD)
-        .player
-    )
+    outsider = create_tracker_player(username="roster_outsider")
 
     with pytest.raises(TrackerCommandError) as exc:
         apply_tracker_command(
@@ -338,12 +251,7 @@ def test_against_event_accepts_defender_from_tracked_team_roster(
     tracker = create_tracker_match(prefix="Goal Against Roster")
     tracker.match_data.status = "active"
     tracker.match_data.save(update_fields=["status"])
-    MatchPart.objects.create(
-        match_data=tracker.match_data,
-        part_number=1,
-        start_time=timezone.now(),
-        active=True,
-    )
+    create_match_part(match_data=tracker.match_data)
     goal_type = GoalType.objects.create(name="Goal Against Type")
     defense_type = create_group_types("Verdediging")["Verdediging"]
     defense_group = create_player_group(
@@ -351,11 +259,7 @@ def test_against_event_accepts_defender_from_tracked_team_roster(
         team=tracker.home_team,
         group_type=defense_type,
     )
-    defender = (
-        get_user_model()
-        .objects.create_user(username="goal_against_defender", password=TEST_PASSWORD)
-        .player
-    )
+    defender = create_tracker_player(username="goal_against_defender")
     defense_group.players.add(defender)
 
     state = get_tracker_state(tracker.match, team=tracker.home_team)
