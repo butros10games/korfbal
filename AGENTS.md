@@ -48,6 +48,7 @@ Match tracker issues often require coordinated backend + frontend changes.
 - With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.
+- For DRF detail actions that search related entities, disable the parent viewset’s search filter on that action; otherwise `get_object()` applies the related search term to the parent and returns a misleading 404.
 - Don’t add standalone indexes for `ForeignKey` or `OneToOneField` columns; Django already indexes
   them. Add only composite or specialized indexes that serve a measured query shape.
 - Don’t make exception dataclasses frozen. Python context managers attach traceback state while

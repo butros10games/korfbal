@@ -54,9 +54,13 @@ from apps.team.services.overview import (
     TeamOverviewOptions,
     build_team_overview_payload,
 )
+from apps.team.services.roster import change_team_membership
 
-from .serializers import TeamSerializer
+from .serializers import TeamRosterMutationSerializer, TeamSerializer
 
+
+_ROSTER_SEARCH_MIN_LENGTH = 2
+_ROSTER_SEARCH_LIMIT = 20
 
 _PLAYER_ID_PARAMETER = OpenApiParameter(
     "player_id", OpenApiTypes.UUID, OpenApiParameter.PATH
@@ -114,6 +118,106 @@ class TeamViewSet(viewsets.ModelViewSet):
             club__id_uuid=_uuid_query_value(club_id, parameter="club")
         )
 
+    @action(
+        detail=True,
+        methods=("GET", "PATCH"),
+        url_path="roster",
+        permission_classes=[permissions.AllowAny],
+    )
+    def roster(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Read season membership or add/remove one player without replacing the roster.
+
+        Raises:
+            ValidationError: If the season or mutation is invalid.
+            PermissionDenied: If the viewer cannot manage this season's team.
+            NotFound: If the season does not exist.
+
+        """
+        team = self.get_object()
+        season_id = request.query_params.get("season")
+        if not season_id:
+            raise ValidationError({"season": "Select a season."})
+        season = Season.objects.filter(
+            id_uuid=_uuid_query_value(season_id, parameter="season")
+        ).first()
+        if season is None:
+            raise NotFound("Season not found.")
+        can_manage = self._viewer_can_manage_team(
+            request=request, team=team, season=season
+        )
+        if request.method == "PATCH":
+            if not can_manage:
+                raise PermissionDenied("You cannot manage this team's players.")
+            serializer = TeamRosterMutationSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            change_team_membership(
+                team=team, season=season, **serializer.validated_data
+            )
+        players = (
+            Player.objects
+            .filter(team_data_as_player__team=team, team_data_as_player__season=season)
+            .select_related("user")
+            .distinct()
+            .order_by("user__username", "id_uuid")
+        )
+        return Response({
+            "can_manage": can_manage,
+            "players": [
+                {"id_uuid": str(player.id_uuid), "username": player.user.username}
+                for player in players
+            ],
+        })
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="roster-candidates",
+        permission_classes=[permissions.IsAuthenticated],
+        filter_backends=[],
+    )
+    def roster_candidates(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Search existing profiles for managers of the selected season.
+
+        Raises:
+            ValidationError: If no valid season is selected.
+            PermissionDenied: If the viewer cannot manage this season's team.
+            NotFound: If the season does not exist.
+
+        """
+        team = self.get_object()
+        season_id = request.query_params.get("season")
+        if not season_id:
+            raise ValidationError({"season": "Select a season."})
+        season = Season.objects.filter(
+            id_uuid=_uuid_query_value(season_id, parameter="season")
+        ).first()
+        if season is None:
+            raise NotFound("Season not found.")
+        if not self._viewer_can_manage_team(request=request, team=team, season=season):
+            raise PermissionDenied("You cannot manage this team's players.")
+        search = request.query_params.get("search", "").strip()
+        if len(search) < _ROSTER_SEARCH_MIN_LENGTH:
+            return Response({"players": [], "has_more": False})
+        linked_ids = TeamData.players.through.objects.filter(
+            teamdata__team=team, teamdata__season=season
+        ).values_list("player_id", flat=True)
+        candidates = list(
+            Player.objects
+            .select_related("user")
+            .filter(user__username__icontains=search)
+            .exclude(id_uuid__in=linked_ids)
+            .order_by("user__username", "id_uuid")[: _ROSTER_SEARCH_LIMIT + 1]
+        )
+        return Response({
+            "players": [
+                {"id_uuid": str(player.id_uuid), "username": player.user.username}
+                for player in candidates[:_ROSTER_SEARCH_LIMIT]
+            ],
+            "has_more": len(candidates) > _ROSTER_SEARCH_LIMIT,
+        })
+
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(
         self,
@@ -156,7 +260,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 include_stats=include_stats,
                 include_roster=include_roster,
                 viewer_player=viewer_player,
-                viewer_can_manage_goal_songs=self._viewer_can_manage_goal_songs(
+                viewer_can_manage_goal_songs=self._viewer_can_manage_team(
                     request=request,
                     team=team,
                     season=season,
@@ -472,7 +576,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         seasons_qs = list(team_seasons(team))
         season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
-        if not self._viewer_can_manage_goal_songs(
+        if not self._viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -531,7 +635,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         seasons_qs = list(team_seasons(team))
         season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
-        if not self._viewer_can_manage_goal_songs(
+        if not self._viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -593,7 +697,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         team: Team,
         season: Season | None,
     ) -> None:
-        if self._viewer_can_manage_goal_songs(
+        if self._viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -771,7 +875,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             return None
         return Player.objects.filter(user=request.user).first()
 
-    def _viewer_can_manage_goal_songs(
+    def _viewer_can_manage_team(
         self,
         *,
         request: Request,
