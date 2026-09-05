@@ -21,13 +21,6 @@ from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 
 
-def _goal_types_json(goal_types: list[GoalType]) -> list[dict[str, str]]:
-    return [
-        {"id": str(goal_type.id_uuid), "name": goal_type.name}
-        for goal_type in goal_types
-    ]
-
-
 @dataclass(frozen=True)
 class _MatchStatsContext:
     match: Match
@@ -36,84 +29,62 @@ class _MatchStatsContext:
     away_team: Team
 
 
-def _build_team_goal_stats(
-    *,
-    match_data: MatchData,
-    home_team: Team,
-    away_team: Team,
-    goal_types: list[GoalType],
-) -> dict[str, dict[str, int]]:
-    team_goal_stats: dict[str, dict[str, int]] = {}
-    for goal_type in goal_types:
-        goals_home = Shot.objects.filter(
-            match_data=match_data,
-            team=home_team,
-            shot_type=goal_type,
-            scored=True,
-        ).count()
-        goals_away = Shot.objects.filter(
-            match_data=match_data,
-            team=away_team,
-            shot_type=goal_type,
-            scored=True,
-        ).count()
-        team_goal_stats[goal_type.name] = {
-            "goals_by_player": int(goals_home),
-            "goals_against_player": int(goals_away),
-        }
-
-    return team_goal_stats
-
-
 def _build_general_stats(
     *,
     match_data: MatchData,
     home_team: Team,
     away_team: Team,
-    team_goal_stats: dict[str, dict[str, int]],
-    goal_types_json: list[dict[str, str]],
+    goal_types: list[GoalType],
 ) -> dict[str, object]:
+    """Build totals and goal-type breakdowns from two grouped event queries."""
+    teams = (("for", home_team), ("against", away_team))
+    shots = list(
+        Shot.objects
+        .filter(match_data=match_data)
+        .values("team_id", "shot_type_id")
+        .annotate(shots=Count("pk"), goals=Count("pk", filter=Q(scored=True)))
+        .order_by()
+    )
+    goals_by_type = {
+        (row["team_id"], row["shot_type_id"]): row["goals"] for row in shots
+    }
+    possessions = {
+        (row["team_id"], row["kind"]): row["count"]
+        for row in PossessionChange.objects
+        .filter(match_data=match_data)
+        .values("team_id", "kind")
+        .annotate(count=Count("pk"))
+        .order_by()
+    }
     return {
-        "shots_for": Shot.objects.filter(
-            match_data=match_data,
-            team=home_team,
-        ).count(),
-        "shots_against": Shot.objects.filter(
-            match_data=match_data,
-            team=away_team,
-        ).count(),
-        "goals_for": Shot.objects.filter(
-            match_data=match_data,
-            team=home_team,
-            scored=True,
-        ).count(),
-        "goals_against": Shot.objects.filter(
-            match_data=match_data,
-            team=away_team,
-            scored=True,
-        ).count(),
-        "ball_losses_for": PossessionChange.objects.filter(
-            match_data=match_data,
-            team=home_team,
-            kind=PossessionChange.BALL_LOSS,
-        ).count(),
-        "ball_losses_against": PossessionChange.objects.filter(
-            match_data=match_data,
-            team=away_team,
-            kind=PossessionChange.BALL_LOSS,
-        ).count(),
-        "interceptions_for": PossessionChange.objects.filter(
-            match_data=match_data,
-            team=home_team,
-            kind=PossessionChange.INTERCEPTION,
-        ).count(),
-        "interceptions_against": PossessionChange.objects.filter(
-            match_data=match_data,
-            team=away_team,
-            kind=PossessionChange.INTERCEPTION,
-        ).count(),
-        "team_goal_stats": team_goal_stats,
-        "goal_types": goal_types_json,
+        **{
+            f"{metric}_{side}": sum(
+                row[metric] for row in shots if row["team_id"] == team.pk
+            )
+            for side, team in teams
+            for metric in ("shots", "goals")
+        },
+        **{
+            f"{metric}_{side}": possessions.get((team.pk, kind), 0)
+            for side, team in teams
+            for metric, kind in (
+                ("ball_losses", PossessionChange.BALL_LOSS),
+                ("interceptions", PossessionChange.INTERCEPTION),
+            )
+        },
+        "team_goal_stats": {
+            goal_type.name: {
+                "goals_by_player": goals_by_type.get((home_team.pk, goal_type.pk), 0),
+                "goals_against_player": goals_by_type.get(
+                    (away_team.pk, goal_type.pk), 0
+                ),
+            }
+            for goal_type in goal_types
+        },
+        "goal_types": [
+            {"id": str(goal_type.pk), "name": goal_type.name}
+            for goal_type in goal_types
+        ],
     }
 
 
@@ -357,11 +328,12 @@ def _assign_shot_only_players(
             away_player_ids.add(player_id)
 
 
-def _build_match_stats_payload(
+def build_match_stats_payload(
     *,
     match: Match,
     match_data: MatchData,
 ) -> dict[str, Any]:
+    """Build match statistics and resolve players to their tracked side."""
     home_team = match.home_team
     away_team = match.away_team
 
@@ -372,22 +344,11 @@ def _build_match_stats_payload(
         away_team=away_team,
     )
 
-    goal_types = list(GoalType.objects.all())
-    goal_types_json = _goal_types_json(goal_types)
-
-    team_goal_stats = _build_team_goal_stats(
-        match_data=match_data,
-        home_team=home_team,
-        away_team=away_team,
-        goal_types=goal_types,
-    )
-
     general = _build_general_stats(
         match_data=match_data,
         home_team=home_team,
         away_team=away_team,
-        team_goal_stats=team_goal_stats,
-        goal_types_json=goal_types_json,
+        goal_types=list(GoalType.objects.all()),
     )
 
     home_player_ids = _match_roster_player_ids(match_data=match_data, team=home_team)
@@ -427,12 +388,3 @@ def _build_match_stats_payload(
             "away_team_id": str(away_team.id_uuid),
         },
     }
-
-
-def build_match_stats_payload(
-    *,
-    match: Match,
-    match_data: MatchData,
-) -> dict[str, Any]:
-    """Public wrapper for match statistics payloads."""
-    return _build_match_stats_payload(match=match, match_data=match_data)

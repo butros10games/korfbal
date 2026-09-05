@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Literal
 
-from django.contrib.auth.models import User
 from django.test.client import Client
 from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.models import (
     GoalType,
     GroupType,
     MatchData,
     MatchPlayer,
     PlayerGroup,
+    PossessionChange,
     Shot,
+)
+from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_tracker_match,
+    create_tracker_player,
 )
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
@@ -106,28 +113,14 @@ SIDE_RESOLUTION_SCENARIOS = (
 
 
 def _create_match_context() -> MatchContext:
-    today = timezone.localdate()
-    season = Season.objects.create(name="2025", start_date=today, end_date=today)
-    home_team = Team.objects.create(
-        name="Home Team",
-        club=Club.objects.create(name="Home Club"),
-    )
-    away_team = Team.objects.create(
-        name="Away Team",
-        club=Club.objects.create(name="Away Club"),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now(),
-    )
+    tracker = create_tracker_match(prefix="Match stats")
+    assert tracker.match.season is not None
     return MatchContext(
-        match=match,
-        match_data=MatchData.objects.get(match_link=match),
-        season=season,
-        home_team=home_team,
-        away_team=away_team,
+        match=tracker.match,
+        match_data=tracker.match_data,
+        season=tracker.match.season,
+        home_team=tracker.home_team,
+        away_team=tracker.away_team,
         goal_type=GoalType.objects.create(name="Doorloop"),
     )
 
@@ -137,8 +130,7 @@ def _team(context: MatchContext, side: Side) -> Team:
 
 
 def _create_player(username: str) -> Player:
-    user = User.objects.create_user(username=username)
-    return Player.objects.get(user=user)
+    return create_tracker_player(username=username)
 
 
 def _add_shot(
@@ -298,3 +290,93 @@ def test_match_stats_resolves_player_side(
     assert {
         side: {line["username"] for line in players[side]} for side in ("home", "away")
     } == expected_usernames
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("extra_types", [0, 8])
+@pytest.mark.parametrize("populated", [False, True])
+def test_match_stats_query_budget_does_not_grow_with_goal_type_count(
+    django_assert_num_queries: Callable[[int], AbstractContextManager[None]],
+    extra_types: int,
+    populated: bool,
+) -> None:
+    """Count only this match's events, including untyped and unattributed records."""
+    context = _create_match_context()
+    goal_types = [context.goal_type] + [
+        GoalType.objects.create(name=f"Unused {index}") for index in range(extra_types)
+    ]
+    player = _create_player("aggregate_player")
+    if populated:
+        _add_shot(context, player, "home", scored=True)
+        _add_shot(context, player, "home")
+        _add_shot(context, player, "away", scored=True)
+        Shot.objects.create(
+            match_data=context.match_data,
+            team=context.home_team,
+            player=player,
+            scored=True,
+        )
+        # A shot without a team contributes to neither side.
+        Shot.objects.create(match_data=context.match_data, player=player, scored=True)
+        part = create_match_part(match_data=context.match_data)
+        for side, kinds in (
+            ("home", ("ball_loss", "ball_loss", "interception")),
+            ("away", ("ball_loss", "interception", "interception")),
+        ):
+            for kind in kinds:
+                PossessionChange.objects.create(
+                    match_data=context.match_data,
+                    match_part=part,
+                    team=_team(context, side),
+                    kind=kind,
+                    time=timezone.now(),
+                )
+
+    other_match = Match.objects.create(
+        home_team=context.home_team,
+        away_team=context.away_team,
+        season=context.season,
+        start_time=timezone.now(),
+    )
+    other_data = MatchData.objects.get(match_link=other_match)
+    Shot.objects.create(
+        match_data=other_data,
+        team=context.home_team,
+        player=player,
+        scored=True,
+        shot_type=context.goal_type,
+    )
+    PossessionChange.objects.create(
+        match_data=other_data,
+        match_part=create_match_part(match_data=other_data),
+        team=context.home_team,
+        kind="ball_loss",
+        time=timezone.now(),
+    )
+    with django_assert_num_queries(14 if populated else 7):
+        general = build_match_stats_payload(
+            match=context.match, match_data=context.match_data
+        )["general"]
+    assert general == {
+        "shots_for": 3 if populated else 0,
+        "shots_against": 1 if populated else 0,
+        "goals_for": 2 if populated else 0,
+        "goals_against": 1 if populated else 0,
+        "ball_losses_for": 2 if populated else 0,
+        "ball_losses_against": 1 if populated else 0,
+        "interceptions_for": 1 if populated else 0,
+        "interceptions_against": 2 if populated else 0,
+        "team_goal_stats": {
+            goal_type.name: {
+                "goals_by_player": int(populated and goal_type == context.goal_type),
+                "goals_against_player": int(
+                    populated and goal_type == context.goal_type
+                ),
+            }
+            for goal_type in goal_types
+        },
+        "goal_types": [
+            {"id": str(goal_type.pk), "name": goal_type.name}
+            for goal_type in goal_types
+        ],
+    }
