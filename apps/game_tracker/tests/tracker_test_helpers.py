@@ -37,7 +37,9 @@ class TrackerMatchContext:
     away_team: Team
 
 
-def create_tracker_match(*, prefix: str) -> TrackerMatchContext:
+def create_tracker_match(
+    *, prefix: str, start_offset: timedelta = -timedelta(minutes=10)
+) -> TrackerMatchContext:
     """Create a minimal match + MatchData fixture for tracker tests."""
     home_club = Club.objects.create(name=f"{prefix} Home Club")
     away_club = Club.objects.create(name=f"{prefix} Away Club")
@@ -54,7 +56,7 @@ def create_tracker_match(*, prefix: str) -> TrackerMatchContext:
         home_team=home_team,
         away_team=away_team,
         season=season,
-        start_time=timezone.now() - timedelta(minutes=10),
+        start_time=timezone.now() + start_offset,
     )
 
     return TrackerMatchContext(

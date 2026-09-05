@@ -14,7 +14,6 @@ from apps.game_tracker.domain.impact_scoring import (
     MatchImpactContribution,
     ShotImpactWeights,
     Side,
-    advance_score_state as _advance_score_state,
     aggregate_v7_contributions,
     aggregate_win_probability_added,
     compute_v7_contributions,
@@ -901,8 +900,6 @@ def _apply_goal_impacts(
     goal_multiplier_by_scorer: dict[str, float] | None = None,
 ) -> None:
     goal_events = _iter_goal_events(events)
-    home_score = 0
-    away_score = 0
     last_team_id: str | None = None
     streak = 0
 
@@ -942,14 +939,6 @@ def _apply_goal_impacts(
         _apply_scorer_goal_points(ctx=ctx, ev=ev_ctx)
         _apply_doorloop_concede_penalty(ctx=ctx, ev=ev_ctx)
 
-        home_score, away_score = _advance_score_state(
-            home_score=home_score,
-            away_score=away_score,
-            scoring_team_id=scoring_team_id,
-            home_team_id=ctx.home_team_id,
-            away_team_id=ctx.away_team_id,
-        )
-
 
 def compute_match_impact_rows(
     *,
@@ -957,128 +946,9 @@ def compute_match_impact_rows(
     algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 ) -> list[MatchImpactRow]:
     """Compute match impact rows for storage/aggregation."""
-    match = match_data.match_link
-    if not match:
-        return []
-
-    home_team_id = str(match.home_team_id)
-    away_team_id = str(match.away_team_id)
-
-    events, shots = build_match_timeline_payloads(match_data)
-    if algorithm_version in {"v7", "v8"}:
-        shots = _with_reconciled_v7_responsibilities(
-            match_data=match_data,
-            shots=shots,
-        )
-
-    match_end_minutes = _compute_match_end_minutes(events=events, shots=shots)
-    goal_switch_times = _build_goal_switch_times(events)
-
-    groups = list(
-        PlayerGroup.objects
-        .select_related("starting_type", "team")
-        .prefetch_related("players")
-        .filter(match_data=match_data)
+    rows, _breakdown = _compute_match_impact(
+        match_data=match_data, algorithm_version=algorithm_version, with_breakdown=False
     )
-
-    player_team_id = _build_player_team_map(
-        groups=groups,
-        shots=shots,
-        events=events,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-    )
-    known_player_ids = sorted(player_team_id.keys())
-
-    if algorithm_version == "v8":
-        rows, _breakdown, _contributions = _compute_v8_rows_and_breakdown(
-            events=events,
-            shots=shots,
-            known_player_ids=known_player_ids,
-            player_team_id=player_team_id,
-            settings=_V8MatchSettings(
-                duration_minutes=(match_data.parts * match_data.part_length) / 60,
-                home_team_id=home_team_id,
-                away_team_id=away_team_id,
-            ),
-        )
-        return rows
-
-    if algorithm_version == "v7":
-        rows, _breakdown, _contributions = _compute_v7_rows_and_breakdown(
-            shots=shots,
-            known_player_ids=known_player_ids,
-            player_team_id=player_team_id,
-        )
-        return rows
-
-    role_intervals_by_id = build_match_player_role_timeline(
-        known_player_ids=known_player_ids,
-        groups=groups,
-        events=events,
-        match_end_minutes=match_end_minutes,
-        starting_group_id_by_player=(starting_group_ids_by_player(match_data) or None),
-    )
-
-    side_player_ids = _build_side_player_ids(
-        known_player_ids=known_player_ids,
-        player_team_id=player_team_id,
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-    )
-    defenders_at_x = _make_defenders_at_x(
-        side_player_ids=side_player_ids,
-        role_intervals_by_id=role_intervals_by_id,
-        goal_switch_times=goal_switch_times,
-    )
-
-    impact_by_player: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
-    weights = shot_impact_weights_for_version(algorithm_version)
-
-    goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
-        shots=shots,
-        algorithm_version=algorithm_version,
-    )
-
-    shot_ctx = _ShotImpactContext(
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-        defenders_at_x=defenders_at_x,
-        impact_by_player=impact_by_player,
-        breakdown_by_player=None,
-        weights=weights,
-    )
-    _apply_shot_impacts(
-        shots=shots,
-        ctx=shot_ctx,
-        miss_multiplier_by_shooter=miss_mult_by_player,
-    )
-
-    goal_ctx = _GoalImpactContext(
-        home_team_id=home_team_id,
-        away_team_id=away_team_id,
-        defenders_at_x=defenders_at_x,
-        impact_by_player=impact_by_player,
-        breakdown_by_player=None,
-        doorloop_concede_factor=doorloop_concede_factor_for_version(algorithm_version),
-    )
-    _apply_goal_impacts(
-        events=events,
-        ctx=goal_ctx,
-        goal_multiplier_by_scorer=goal_mult_by_player,
-    )
-
-    rows: list[MatchImpactRow] = []
-    for pid, score in impact_by_player.items():
-        team_id = player_team_id.get(pid)
-        rows.append(
-            MatchImpactRow(
-                player_id=pid,
-                team_id=team_id,
-                impact_score=round_js_1dp(score),
-            )
-        )
-
     return rows
 
 
@@ -1088,6 +958,15 @@ def compute_match_impact_breakdown(
     algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 ) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown]:
     """Compute match impact rows and a per-player category breakdown."""
+    return _compute_match_impact(
+        match_data=match_data, algorithm_version=algorithm_version, with_breakdown=True
+    )
+
+
+def _compute_match_impact(
+    *, match_data: MatchData, algorithm_version: str, with_breakdown: bool
+) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown]:
+    """Share score calculation while allowing callers to skip legacy explanations."""
     match = match_data.match_link
     if not match:
         return [], {}
@@ -1164,7 +1043,7 @@ def compute_match_impact_breakdown(
     )
 
     impact_by_player: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
-    breakdown_by_player: PlayerImpactBreakdown = {}
+    breakdown_by_player: PlayerImpactBreakdown | None = {} if with_breakdown else None
     weights = shot_impact_weights_for_version(algorithm_version)
 
     goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
@@ -1211,4 +1090,4 @@ def compute_match_impact_breakdown(
             )
         )
 
-    return rows, breakdown_by_player
+    return rows, breakdown_by_player or {}

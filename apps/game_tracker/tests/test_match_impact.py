@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-from django.contrib.auth import get_user_model
 from django.utils import timezone
 import pytest
 
@@ -27,6 +26,7 @@ from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows_with_breakdowns,
     round_js_1dp,
 )
+from apps.game_tracker.tests.tracker_test_helpers import create_tracker_player
 from apps.player.models.player import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
@@ -110,9 +110,7 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
         active=True,
     )
 
-    user = get_user_model().objects.create_user(username="impact_shooter")
-    # Project auto-creates Player via signals for new users; fall back if needed.
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
+    player = create_tracker_player(username="impact_shooter")
     Player.objects.filter(pk=player.pk).update(
         id_uuid=UUID(str(expected["player_id_uuid"]))
     )
@@ -137,7 +135,23 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
 
 
 @pytest.mark.django_db
-def test_compute_match_impact_breakdown_includes_missed_shot_category() -> None:
+@pytest.mark.parametrize(
+    ("algorithm_version", "expected_score", "category"),
+    [
+        ("v1", Decimal("-0.9"), "shot_miss_for"),
+        ("v2", Decimal("-0.6"), "shot_miss_for"),
+        ("v3", Decimal("-0.6"), "shot_miss_for"),
+        ("v4", Decimal("-0.6"), "shot_miss_for"),
+        ("v5", Decimal("-0.6"), "shot_miss_for"),
+        ("v6", Decimal("-0.2"), "shot_miss_for"),
+        ("v7", Decimal("-0.180"), "offense_miss_below_expected"),
+        ("v8", Decimal("-0.180"), "offense_miss_below_expected"),
+        ("unknown", Decimal("-0.2"), "shot_miss_for"),
+    ],
+)
+def test_compute_match_impact_breakdown_includes_missed_shot_category(
+    algorithm_version: str, expected_score: Decimal, category: str
+) -> None:
     """Breakdown should explain negative impact from missed shots."""
     home_club = Club.objects.create(name="Home Club")
     away_club = Club.objects.create(name="Away Club")
@@ -165,8 +179,7 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category() -> None:
         active=True,
     )
 
-    user = get_user_model().objects.create_user(username="impact_breakdown_shooter")
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
+    player = create_tracker_player(username="impact_breakdown_shooter")
 
     Shot.objects.create(
         player=player,
@@ -177,22 +190,26 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category() -> None:
         time=part_start + timedelta(minutes=1),
     )
 
-    rows, breakdown = compute_match_impact_breakdown(match_data=match_data)
-    by_player = {r.player_id: r for r in rows}
+    rows, breakdown = compute_match_impact_breakdown(
+        match_data=match_data, algorithm_version=algorithm_version
+    )
 
     pid = str(player.id_uuid)
-    assert pid in by_player
-    assert by_player[pid].impact_score == Decimal("-0.180")
+    totals = compute_match_impact_rows(
+        match_data=match_data, algorithm_version=algorithm_version
+    )
+    for result in (rows, totals):
+        assert {row.player_id: row.impact_score for row in result}[
+            pid
+        ] == expected_score
 
     player_breakdown = breakdown.get(pid)
     assert player_breakdown is not None
-    assert player_breakdown["offense_miss_below_expected"]["count"] == 1
-    assert player_breakdown["offense_miss_below_expected"]["points"] == pytest.approx(
-        -0.18
-    )
+    assert player_breakdown[category]["count"] == 1
+    assert player_breakdown[category]["points"] == pytest.approx(float(expected_score))
 
     total_raw = sum(item["points"] for item in player_breakdown.values())
-    assert round_js_1dp(total_raw) == Decimal("-0.2")
+    assert round_js_1dp(total_raw) == expected_score.quantize(Decimal("0.1"))
 
 
 @pytest.mark.django_db
@@ -227,8 +244,7 @@ def test_persist_match_impact_rows_with_breakdowns_creates_db_rows() -> None:
         active=True,
     )
 
-    user = get_user_model().objects.create_user(username="impact_persist_breakdown")
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
+    player = create_tracker_player(username="impact_persist_breakdown")
 
     Shot.objects.create(
         player=player,

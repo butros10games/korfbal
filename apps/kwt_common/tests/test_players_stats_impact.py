@@ -10,25 +10,23 @@ from datetime import timedelta
 from decimal import Decimal
 
 from asgiref.sync import async_to_sync
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.models import (
     GoalType,
     MatchData,
-    MatchPart,
     PlayerMatchImpact,
     Shot,
 )
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 )
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_tracker_match,
+    create_tracker_player,
+)
 from apps.kwt_common.utils.players_stats import build_player_stats
-from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
 
 
 EXPECTED_SINGLE_MISS_IMPACT = -0.2
@@ -39,36 +37,20 @@ EXPECTED_FIVE_MISSES_IMPACT = -0.9
 @pytest.mark.django_db
 def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     """If impacts exist only at an older algorithm version, recompute to latest."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - players_stats",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
+    tracker = create_tracker_match(
+        prefix="Impact recompute", start_offset=-timedelta(minutes=30)
     )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
 
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
+    part = create_match_part(
+        match_data=match_data, start_offset=-timedelta(minutes=10), active=True
     )
+    part_start = part.start_time
 
-    user = get_user_model().objects.create_user(username="impact_recompute")
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
+    player = create_tracker_player(username="impact_recompute")
 
     # The stored -0.18 open-play miss is presented as -0.2 on the Team page.
     Shot.objects.create(
@@ -111,39 +93,20 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
 @pytest.mark.django_db
 def test_build_player_stats_aggregates_stored_goal_wpa() -> None:
     """Team-season rows include the persisted sum of event-level WPA."""
-    home_team = Team.objects.create(
-        name="WPA Home Team",
-        club=Club.objects.create(name="WPA Home Club"),
+    tracker = create_tracker_match(
+        prefix="WPA aggregation", start_offset=-timedelta(hours=2)
     )
-    away_team = Team.objects.create(
-        name="WPA Away Team",
-        club=Club.objects.create(name="WPA Away Club"),
-    )
-    today = timezone.now().date()
-    season = Season.objects.create(
-        name="WPA aggregation season",
-        start_date=today,
-        end_date=today + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(hours=2),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "finished"
     match_data.parts = 1
     match_data.part_length = 3600
     match_data.save(update_fields=["status", "parts", "part_length"])
-    part_start = timezone.now() - timedelta(hours=1)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=False,
+    part = create_match_part(
+        match_data=match_data, start_offset=-timedelta(hours=1), active=False
     )
-    player = get_user_model().objects.create_user(username="wpa_scorer").player
+    part_start = part.start_time
+    player = create_tracker_player(username="wpa_scorer")
     Shot.objects.create(
         player=player,
         match_data=match_data,
@@ -170,36 +133,20 @@ def test_build_player_stats_aggregates_stored_goal_wpa() -> None:
 @pytest.mark.django_db
 def test_build_player_stats_five_misses_uses_latest_weights() -> None:
     """With 5 misses, the latest weights should be applied consistently."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - players_stats v3",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
+    tracker = create_tracker_match(
+        prefix="Five misses", start_offset=-timedelta(minutes=30)
     )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    match_data = tracker.match_data
+    home_team = tracker.home_team
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
 
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
+    part = create_match_part(
+        match_data=match_data, start_offset=-timedelta(minutes=10), active=True
     )
+    part_start = part.start_time
 
-    user = get_user_model().objects.create_user(username="impact_eff_v3")
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
+    player = create_tracker_player(username="impact_eff_v3")
 
     # v7: 5 open-play misses at -0.18 each => -0.9.
     for i in range(5):
