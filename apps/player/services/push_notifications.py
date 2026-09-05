@@ -33,7 +33,7 @@ class TestPushSender(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PushTestConfigurationError(Exception):
     """Raised when the test-push runtime is not configured."""
 

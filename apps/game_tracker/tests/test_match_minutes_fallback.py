@@ -10,71 +10,40 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
-from apps.game_tracker.models import GroupType, MatchData, MatchPart, PlayerGroup
+from apps.game_tracker.models import GroupType
 from apps.game_tracker.services.match_minutes import compute_minutes_by_player_id
-from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_player_group,
+    create_tracker_match,
+    create_tracker_player,
+)
 
 
 @pytest.mark.django_db
 def test_compute_minutes_uses_match_length_fallback_when_no_timeline_times() -> None:
     """If events/shots have no timestamps, minutes should still be match-length."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - minutes fallback",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
+    tracker = create_tracker_match(
+        prefix="Minutes fallback", start_offset=-timedelta(hours=2)
     )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(hours=2),
-    )
+    match_data = tracker.match_data
+    # Two 30-minute parts with a 10-minute intermission.
+    for number, start in enumerate((-80, -40), start=1):
+        create_match_part(
+            match_data=match_data,
+            part_number=number,
+            start_offset=timedelta(minutes=start),
+            end_offset=timedelta(minutes=start + 30),
+            active=False,
+        )
 
-    match_data = MatchData.objects.get(match_link=match)
-
-    # Create two full parts (default: 2 * 1800s = 60 minutes).
-    p1_start = timezone.now() - timedelta(minutes=80)
-    p1_end = p1_start + timedelta(minutes=30)
-    p2_start = p1_end + timedelta(minutes=10)
-    p2_end = p2_start + timedelta(minutes=30)
-
-    MatchPart.objects.create(
+    player = create_tracker_player(username="minutes_fallback_player")
+    group = create_player_group(
         match_data=match_data,
-        part_number=1,
-        start_time=p1_start,
-        end_time=p1_end,
-        active=False,
-    )
-    MatchPart.objects.create(
-        match_data=match_data,
-        part_number=2,
-        start_time=p2_start,
-        end_time=p2_end,
-        active=False,
-    )
-
-    aanval = GroupType.objects.create(name="Aanval", order=1)
-
-    user = get_user_model().objects.create_user(username="minutes_fallback_player")
-    # Project auto-creates Player via signals for new users; fall back if needed.
-    player = getattr(user, "player", None) or Player.objects.create(user=user)
-    group = PlayerGroup.objects.create(
-        team=home_team,
-        match_data=match_data,
-        starting_type=aanval,
-        current_type=aanval,
+        team=tracker.home_team,
+        group_type=GroupType.objects.create(name="Aanval", order=1),
     )
     group.players.add(player)
 

@@ -75,21 +75,21 @@ class SpotifyPauseCommand:
     device_id: object = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SpotifyInputError(Exception):
     """Raised when a playback command is missing required input."""
 
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SpotifyAccessError(Exception):
     """Raised when no usable Spotify access token is available."""
 
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SpotifyPlaybackError(Exception):
     """Provider-neutral playback failure returned to the HTTP adapter."""
 

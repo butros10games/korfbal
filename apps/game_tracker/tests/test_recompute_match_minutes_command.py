@@ -6,14 +6,11 @@ from datetime import timedelta
 import io
 
 from django.core.management import call_command
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.management.commands import recompute_match_minutes
 from apps.game_tracker.models import MatchData
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 
 @pytest.mark.django_db
@@ -21,24 +18,9 @@ def test_recompute_match_minutes_dry_run_computes_without_persisting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dry run should compute rows but not persist any minutes."""
-    season = Season.objects.create(
-        name="2025",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    club = Club.objects.create(name="Test Club")
-    opp_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team", club=club)
-    opponent = Team.objects.create(name="Opponent", club=opp_club)
-
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent,
-        season=season,
-        start_time=timezone.now() - timedelta(hours=2),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    match_data = create_tracker_match(
+        prefix="Recompute minutes", start_offset=-timedelta(hours=2)
+    ).match_data
     match_data.status = "finished"
     match_data.save()
 
@@ -81,24 +63,9 @@ def test_recompute_match_minutes_writes_rows_when_not_dry_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Non-dry-run should persist and report upserted row count."""
-    season = Season.objects.create(
-        name="2025",
-        start_date=timezone.now().date() - timedelta(days=1),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-
-    club = Club.objects.create(name="Test Club")
-    opp_club = Club.objects.create(name="Opponent Club")
-    team = Team.objects.create(name="Team", club=club)
-    opponent = Team.objects.create(name="Opponent", club=opp_club)
-
-    match = Match.objects.create(
-        home_team=team,
-        away_team=opponent,
-        season=season,
-        start_time=timezone.now() - timedelta(hours=2),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    match_data = create_tracker_match(
+        prefix="Recompute minutes", start_offset=-timedelta(hours=2)
+    ).match_data
     match_data.status = "finished"
     match_data.save()
 

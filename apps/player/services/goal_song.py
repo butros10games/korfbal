@@ -24,14 +24,14 @@ class ParsedGoalSongPatchPayload:
     goal_song_song_ids: list[str] | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GoalSongPayloadError(Exception):
     """Raised when the goal-song PATCH payload is malformed."""
 
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GoalSongSelectionError(Exception):
     """Raised when requested goal-song ids are invalid."""
 
