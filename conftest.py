@@ -26,7 +26,9 @@ def _clear_shared_test_backends() -> None:
     cache.clear()
 
     channel_layer = get_channel_layer()
-    if channel_layer is not None and "flush" in channel_layer.extensions:
+    if channel_layer is not None and "flush" in getattr(
+        channel_layer, "extensions", ()
+    ):
         async_to_sync(channel_layer.flush)()
 
 

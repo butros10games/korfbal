@@ -16,6 +16,8 @@ from django.db.models import Count, Q, QuerySet
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 import qrcode
 from qrcode.image.svg import SvgPathImage
 from rest_framework import mixins, permissions, status, viewsets
@@ -35,6 +37,7 @@ from apps.tournament.api.permissions import (
     can_score_match,
     is_authenticated,
 )
+from apps.tournament.api.schema import DeleteBodySchema
 from apps.tournament.api.serializers import (
     FinalsGenerationSerializer,
     GenerationRequestSerializer,
@@ -287,6 +290,10 @@ class TournamentPublicView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     def get(self, request: Request, slug: str) -> Response:
         """Return a published snapshot when visibility permits it.
 
@@ -307,6 +314,10 @@ class TournamentSnapshotView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     def get(self, request: Request, tournament_id: str) -> Response:
         """Return the current snapshot and viewer capabilities.
 
@@ -332,6 +343,7 @@ class TournamentSnapshotView(APIView):
 class TournamentTeamListCreateView(APIView):
     """List and add custom teams within one tournament."""
 
+    @extend_schema(responses={200: TournamentTeamSerializer(many=True)})
     def get(self, request: Request, tournament_id: str) -> Response:
         """List custom teams for a tournament manager."""
         tournament = _get_tournament(tournament_id)
@@ -340,6 +352,9 @@ class TournamentTeamListCreateView(APIView):
             TournamentTeamSerializer(tournament.teams.all(), many=True).data
         )
 
+    @extend_schema(
+        request=TournamentTeamSerializer, responses={201: TournamentTeamSerializer}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Add one custom tournament team."""
         tournament = _get_tournament(tournament_id)
@@ -367,6 +382,9 @@ class TournamentTeamDetailView(APIView):
         team = get_object_or_404(tournament.teams, id_uuid=team_id)
         return tournament, team
 
+    @extend_schema(
+        request=TournamentTeamSerializer, responses={200: TournamentTeamSerializer}
+    )
     @transaction.atomic
     def patch(self, request: Request, tournament_id: str, team_id: str) -> Response:
         """Update a custom team's name, seed, or operational state."""
@@ -384,6 +402,7 @@ class TournamentTeamDetailView(APIView):
         touch_tournament(tournament)
         return Response(serializer.data)
 
+    @extend_schema(request=None, responses={204: None})
     def delete(self, request: Request, tournament_id: str, team_id: str) -> Response:
         """Delete a team only while no schedule references it."""
         tournament, team = self._objects(tournament_id, team_id)
@@ -401,6 +420,10 @@ class TournamentTeamDetailView(APIView):
 class TournamentTeamSubstitutionView(APIView):
     """Replace an absent team's remaining pool fixtures with guest teams."""
 
+    @extend_schema(
+        request=TournamentTeamSubstitutionSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def post(self, request: Request, tournament_id: str, team_id: UUID) -> Response:
         """Apply a complete, conflict-free last-minute replacement plan."""
@@ -433,6 +456,7 @@ class TournamentTeamSubstitutionView(APIView):
 class TournamentFieldListCreateView(APIView):
     """List and add tournament fields."""
 
+    @extend_schema(responses={200: TournamentFieldSerializer(many=True)})
     def get(self, request: Request, tournament_id: str) -> Response:
         """List configured tournament fields."""
         tournament = _get_tournament(tournament_id)
@@ -441,6 +465,9 @@ class TournamentFieldListCreateView(APIView):
             TournamentFieldSerializer(tournament.fields.all(), many=True).data
         )
 
+    @extend_schema(
+        request=TournamentFieldSerializer, responses={201: TournamentFieldSerializer}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Add a labeled tournament field."""
         tournament = _get_tournament(tournament_id)
@@ -468,6 +495,9 @@ class TournamentFieldDetailView(APIView):
         field = get_object_or_404(tournament.fields, id_uuid=field_id)
         return tournament, field
 
+    @extend_schema(
+        request=TournamentFieldSerializer, responses={200: TournamentFieldSerializer}
+    )
     def patch(self, request: Request, tournament_id: str, field_id: str) -> Response:
         """Update a field label, order, or active state."""
         tournament, field = self._objects(tournament_id, field_id)
@@ -483,6 +513,7 @@ class TournamentFieldDetailView(APIView):
         touch_tournament(tournament)
         return Response(serializer.data)
 
+    @extend_schema(request=None, responses={204: None})
     def delete(self, request: Request, tournament_id: str, field_id: str) -> Response:
         """Delete a field only while no scheduled match references it."""
         tournament, field = self._objects(tournament_id, field_id)
@@ -534,6 +565,9 @@ def _persist_generation_defaults(
 class TournamentGenerationPreviewView(APIView):
     """Preview pool allocation and scheduling without database changes."""
 
+    @extend_schema(
+        request=GenerationRequestSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Return a deterministic plan without modifying the tournament."""
         tournament = _get_tournament(tournament_id)
@@ -545,6 +579,9 @@ class TournamentGenerationPreviewView(APIView):
 class TournamentGenerationApplyView(APIView):
     """Apply the same server-calculated plan shown in preview."""
 
+    @extend_schema(
+        request=GenerationRequestSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Generate and atomically apply the reviewed schedule parameters."""
@@ -569,6 +606,9 @@ class TournamentGenerationApplyView(APIView):
 class TournamentScheduleImportView(APIView):
     """Import the pool and fixture plan of an existing tournament."""
 
+    @extend_schema(
+        request=TournamentScheduleImportSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create missing teams and fields and apply the supplied schedule.
 
@@ -647,6 +687,9 @@ def _match_draft(
 class TournamentPoolListCreateView(APIView):
     """Create organizer-reviewed pools manually."""
 
+    @extend_schema(
+        request=TournamentPoolWriteSerializer, responses={201: OpenApiTypes.OBJECT}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create a pool and assign its ordered teams."""
         tournament = _get_tournament(tournament_id)
@@ -673,6 +716,9 @@ class TournamentPoolDetailView(APIView):
         tournament = _get_tournament(tournament_id)
         return tournament, get_object_or_404(tournament.pools, id_uuid=pool_id)
 
+    @extend_schema(
+        request=TournamentPoolWriteSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     def patch(self, request: Request, tournament_id: str, pool_id: str) -> Response:
         """Replace a pool's details or presentation order."""
         tournament, pool = self._objects(tournament_id, pool_id)
@@ -710,6 +756,7 @@ class TournamentPoolDetailView(APIView):
         touch_tournament(tournament)
         return Response(build_tournament_snapshot(tournament))
 
+    @extend_schema(request=None, responses={204: None})
     def delete(self, request: Request, tournament_id: str, pool_id: str) -> Response:
         """Delete a pool while its match schedule is empty."""
         tournament, pool = self._objects(tournament_id, pool_id)
@@ -725,6 +772,9 @@ class TournamentPoolDetailView(APIView):
 class TournamentPoolsGenerateView(APIView):
     """Generate editable pools without also creating matches."""
 
+    @extend_schema(
+        request=PoolGenerationRequestSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Replace draft pools with a generated allocation for review.
 
@@ -751,6 +801,9 @@ class TournamentPoolsGenerateView(APIView):
 class TournamentMatchListCreateView(APIView):
     """Create reviewed tournament matches manually."""
 
+    @extend_schema(
+        request=TournamentMatchWriteSerializer, responses={201: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create one conflict-free pool match."""
@@ -782,6 +835,9 @@ class TournamentMatchDetailView(APIView):
         tournament = _get_tournament(tournament_id)
         return tournament, get_object_or_404(tournament.matches, id_uuid=match_id)
 
+    @extend_schema(
+        request=TournamentMatchWriteSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def patch(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Replace selected match planning fields."""
@@ -798,6 +854,7 @@ class TournamentMatchDetailView(APIView):
         touch_tournament(tournament)
         return Response(build_tournament_snapshot(tournament))
 
+    @extend_schema(request=None, responses={204: None})
     @transaction.atomic
     def delete(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Delete one draft match."""
@@ -815,6 +872,9 @@ class TournamentMatchDetailView(APIView):
 class TournamentMatchesGenerateView(APIView):
     """Generate editable matches from reviewed pools."""
 
+    @extend_schema(
+        request=MatchGenerationRequestSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Replace draft matches while retaining the current pools.
@@ -847,6 +907,7 @@ class TournamentMatchesGenerateView(APIView):
 class TournamentPublishView(APIView):
     """Publish a complete generated tournament."""
 
+    @extend_schema(request=None, responses={200: TournamentSerializer})
     def post(self, request: Request, tournament_id: str) -> Response:
         """Publish a tournament after teams and matches exist."""
         tournament = _get_tournament(tournament_id)
@@ -872,6 +933,9 @@ class TournamentPublishView(APIView):
 class TournamentFinalsGenerateView(APIView):
     """Plan a knockout bracket whose entrants resolve from pool standings."""
 
+    @extend_schema(
+        request=FinalsGenerationSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create and return a single-elimination finals stage.
 
@@ -912,6 +976,10 @@ def _final_match_plan(
 class TournamentFinalGroupListCreateView(APIView):
     """Plan an independently qualified four-team finals bracket."""
 
+    @extend_schema(
+        request=TournamentFinalGroupWriteSerializer,
+        responses={201: OpenApiTypes.OBJECT},
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create a reviewable final group before or after pool completion.
 
@@ -951,6 +1019,7 @@ class TournamentFinalGroupListCreateView(APIView):
 class TournamentFinalGroupDetailView(APIView):
     """Remove one unstarted final group without touching pool play."""
 
+    @extend_schema(request=None, responses={204: None})
     def delete(
         self,
         request: Request,
@@ -976,6 +1045,7 @@ class TournamentFinalGroupDetailView(APIView):
 class TournamentDisplayConfigView(APIView):
     """Read or update the display rotation configuration."""
 
+    @extend_schema(responses={200: TournamentDisplayConfigSerializer})
     def get(self, request: Request, tournament_id: str) -> Response:
         """Return the presentation configuration to a manager."""
         tournament = _get_tournament(tournament_id)
@@ -984,6 +1054,10 @@ class TournamentDisplayConfigView(APIView):
             TournamentDisplayConfigSerializer(tournament.display_config).data
         )
 
+    @extend_schema(
+        request=TournamentDisplayConfigSerializer,
+        responses={200: TournamentDisplayConfigSerializer},
+    )
     def patch(self, request: Request, tournament_id: str) -> Response:
         """Update presentation rotation and branding fields."""
         tournament = _get_tournament(tournament_id)
@@ -1002,6 +1076,7 @@ class TournamentDisplayConfigView(APIView):
 class TournamentMemberListCreateView(APIView):
     """List and grant tournament collaboration roles."""
 
+    @extend_schema(responses={200: TournamentMemberSerializer(many=True)})
     def get(self, request: Request, tournament_id: str) -> Response:
         """List managers and scorekeepers for a tournament."""
         tournament = _get_tournament(tournament_id)
@@ -1009,6 +1084,9 @@ class TournamentMemberListCreateView(APIView):
         members = tournament.member_roles.select_related("user", "field")
         return Response(TournamentMemberSerializer(members, many=True).data)
 
+    @extend_schema(
+        request=TournamentMemberSerializer, responses={201: TournamentMemberSerializer}
+    )
     def post(self, request: Request, tournament_id: str) -> Response:
         """Grant one manager or field-scoped scorekeeper role."""
         tournament = _get_tournament(tournament_id)
@@ -1035,6 +1113,9 @@ class TournamentMemberDetailView(APIView):
         member = get_object_or_404(tournament.member_roles, pk=member_id)
         return tournament, member
 
+    @extend_schema(
+        request=TournamentMemberSerializer, responses={200: TournamentMemberSerializer}
+    )
     def patch(self, request: Request, tournament_id: str, member_id: int) -> Response:
         """Change role or assigned field."""
         tournament, member = self._objects(tournament_id, member_id)
@@ -1049,6 +1130,7 @@ class TournamentMemberDetailView(APIView):
         serializer.save()
         return Response(serializer.data)
 
+    @extend_schema(request=None, responses={204: None})
     def delete(self, request: Request, tournament_id: str, member_id: int) -> Response:
         """Revoke a role without affecting result history."""
         tournament, member = self._objects(tournament_id, member_id)
@@ -1060,6 +1142,7 @@ class TournamentMemberDetailView(APIView):
 class TournamentStandingAdjustmentListCreateView(APIView):
     """List or add audited pool-table bonuses and penalties."""
 
+    @extend_schema(responses={200: TournamentStandingAdjustmentSerializer(many=True)})
     def get(self, request: Request, tournament_id: str) -> Response:
         """List all standings adjustments for managers."""
         tournament = _get_tournament(tournament_id)
@@ -1071,6 +1154,10 @@ class TournamentStandingAdjustmentListCreateView(APIView):
             TournamentStandingAdjustmentSerializer(adjustments, many=True).data
         )
 
+    @extend_schema(
+        request=TournamentStandingAdjustmentSerializer,
+        responses={201: TournamentStandingAdjustmentSerializer},
+    )
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Apply a reasoned points adjustment to one pool entry."""
@@ -1093,6 +1180,7 @@ class TournamentStandingAdjustmentListCreateView(APIView):
 class TournamentStandingAdjustmentDetailView(APIView):
     """Remove an incorrect standings adjustment."""
 
+    @extend_schema(request=None, responses={204: None})
     @transaction.atomic
     def delete(
         self, request: Request, tournament_id: str, adjustment_id: str
@@ -1136,6 +1224,9 @@ def _result_winner(
 class TournamentMatchResultView(APIView):
     """Enter, finalize, reopen, or correct one match result."""
 
+    @extend_schema(
+        request=TournamentResultSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def patch(self, request: Request, match_id: str) -> Response:
         """Apply one optimistic-lock result update and record its history.
@@ -1245,6 +1336,11 @@ class TournamentMatchResultView(APIView):
 class TournamentMatchReadinessView(APIView):
     """Let a manager set or revoke a field-readiness signal."""
 
+    schema = DeleteBodySchema()
+
+    @extend_schema(
+        request=TournamentRefereeReadySerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Mark a scheduled match ready with optimistic locking.
@@ -1284,6 +1380,9 @@ class TournamentMatchReadinessView(APIView):
         touch_tournament(tournament)
         return Response({"id_uuid": str(match.id_uuid), "revision": match.revision})
 
+    @extend_schema(
+        request=TournamentRefereeReadySerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def delete(self, request: Request, match_id: str) -> Response:
         """Reset readiness while the match is still scheduled.
@@ -1319,6 +1418,9 @@ class TournamentMatchReadinessView(APIView):
 class TournamentMatchStateResetView(APIView):
     """Move any tournament match back to its previous lifecycle state."""
 
+    @extend_schema(
+        request=TournamentRefereeReadySerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Reset one manager-controlled match with optimistic locking.
@@ -1366,6 +1468,7 @@ class TournamentMatchStateResetView(APIView):
 class TournamentRoundStartView(APIView):
     """Start all ready matches in one tournament round together."""
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     @transaction.atomic
     def post(
         self,
@@ -1407,6 +1510,10 @@ class TournamentRoundStartView(APIView):
 class TournamentRefereeAssignmentView(APIView):
     """Assign a tournament team to referee one match."""
 
+    @extend_schema(
+        request=TournamentRefereeAssignmentSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def patch(self, request: Request, tournament_id: str, match_id: str) -> Response:
         """Update the duty or release its current guest claim."""
@@ -1446,6 +1553,7 @@ def _referee_access_url(request: Request, access_token: UUID) -> str:
 class TournamentRefereeQrView(APIView):
     """Generate the team-scoped referee-duty QR for a tournament manager."""
 
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request: Request, tournament_id: str, team_id: str) -> Response:
         """Return an embeddable QR without persisting generated image files."""
         tournament = _get_tournament(tournament_id)
@@ -1473,6 +1581,12 @@ class TournamentRefereeQrView(APIView):
 class TournamentRefereePdfView(APIView):
     """Export every active match as a printable direct-access QR card."""
 
+    @extend_schema(
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            409: OpenApiTypes.OBJECT,
+        }
+    )
     def get(
         self,
         request: Request,
@@ -1544,6 +1658,7 @@ class TournamentRefereeDutiesView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
     def get(self, request: Request, access_token: str) -> Response:
         """Return the duties represented by either kind of QR credential."""
         team = (
@@ -1579,6 +1694,9 @@ class TournamentRefereeClaimView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        request=TournamentRefereeClaimSerializer, responses={200: OpenApiTypes.OBJECT}
+    )
     @transaction.atomic
     def post(self, request: Request, access_token: str, match_id: str) -> Response:
         """Issue a match-scoped credential after recording the referee's name."""
@@ -1681,6 +1799,10 @@ class TournamentRefereeTrackerView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     def get(self, request: Request, match_id: str) -> Response:
         """Return a match only when the viewer may score its field."""
         match, _, _ = _referee_match(request, match_id, lock=False)
@@ -1692,6 +1814,11 @@ class TournamentRefereeReadyView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        request=TournamentRefereeReadySerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Apply an idempotent, revision-checked readiness command."""
@@ -1719,6 +1846,11 @@ class TournamentRefereeGoalView(APIView):
 
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        request=TournamentRefereeGoalSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     @transaction.atomic
     def post(self, request: Request, match_id: str) -> Response:
         """Increment exactly one score under the aggregate lock."""
@@ -1747,8 +1879,15 @@ class TournamentRefereeGoalView(APIView):
 class TournamentRefereeLatestEventView(APIView):
     """Remove the exact latest goal currently visible to a referee."""
 
+    schema = DeleteBodySchema()
+
     permission_classes = (permissions.AllowAny,)
 
+    @extend_schema(
+        request=TournamentRefereeEventDeleteSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("token", str, OpenApiParameter.QUERY)],
+    )
     @transaction.atomic
     def delete(self, request: Request, match_id: str) -> Response:
         """Undo one goal while preserving an append-only correction audit."""
