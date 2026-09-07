@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from django.db import connection
+from django.db.models import Q
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 from pytest_django.fixtures import DjangoAssertNumQueries
 
-from apps.game_tracker.models import MatchData, MatchPlayer, Shot
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchImpact, Shot
 from apps.player.models.player_song import PlayerSong
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 from apps.team.queries.overview import (
     main_roster_ids,
+    player_impact_matches,
     team_matches,
     team_players,
     team_seasons,
@@ -171,3 +175,104 @@ def test_team_player_discovery_is_one_query(
         guest.user.username,
         shot_only.user.username,
     }
+
+
+@pytest.mark.parametrize("with_persisted", [False, True])
+def test_player_impact_matches_avoid_event_fanout(with_persisted: bool) -> None:
+    """Dense match histories preserve selection without joining event families."""
+    context = build_team_context(suffix="impact_selection")
+    opponent = Team.objects.create(name="Opponent", club=context.club)
+    players = [context.player] + [
+        create_player(username=f"impact_other_{index}") for index in range(7)
+    ]
+    match_data_rows = []
+    for kind in (
+        "designation",
+        "shot",
+        "unrelated",
+        "unfinished",
+        "other_season",
+        "old_impact",
+    ):
+        season = (
+            create_season(
+                "Historical impact season", starts_in_days=-500, ends_in_days=-100
+            )
+            if kind == "other_season"
+            else context.season
+        )
+        match = Match.objects.create(
+            home_team=context.team,
+            away_team=opponent,
+            season=season,
+            start_time=timezone.now(),
+        )
+        match_data = MatchData.objects.get(match_link=match)
+        match_data.status = "scheduled" if kind == "unfinished" else "finished"
+        match_data.save(update_fields=["status"])
+        match_data_rows.append(match_data)
+        for player in players:
+            if player != context.player or kind in {
+                "designation",
+                "unfinished",
+                "other_season",
+            }:
+                MatchPlayer.objects.create(
+                    match_data=match_data,
+                    player=player,
+                    team=context.team,
+                )
+            if player != context.player or kind == "shot":
+                Shot.objects.bulk_create([
+                    Shot(match_data=match_data, player=player, team=context.team)
+                    for _ in range(10)
+                ])
+            if (
+                player != context.player
+                or kind == "old_impact"
+                or (with_persisted and kind == "designation")
+            ):
+                PlayerMatchImpact.objects.create(
+                    match_data=match_data,
+                    player=player,
+                    team=context.team,
+                    algorithm_version="old" if kind == "old_impact" else "v1",
+                )
+
+    with CaptureQueriesContext(connection) as queries:
+        result = list(
+            player_impact_matches(
+                team=context.team,
+                season=context.season,
+                player=context.player,
+                algorithm_version="v1",
+            )
+        )
+    expected = match_data_rows[:1] if with_persisted else match_data_rows[:2]
+    assert {row.pk for row in result} == {row.pk for row in expected}
+    expected_queries = 2
+    assert len(queries) == expected_queries
+    selection_sql = queries[-1]["sql"].upper()
+    assert "SELECT DISTINCT" not in selection_sql
+    for model in (MatchPlayer, Shot, PlayerMatchImpact):
+        assert f'JOIN "{model._meta.db_table.upper()}"' not in selection_sql
+
+    if not with_persisted:
+        # The old query returns 7 impacts x 70 shots for the one matching
+        # designation, before DISTINCT. EXISTS returns one row directly.
+        previous = (
+            team_matches(context.team, context.season)
+            .filter(
+                status="finished",
+            )
+            .filter(
+                Q(
+                    player_impacts__player=context.player,
+                    player_impacts__algorithm_version="v1",
+                )
+                | Q(players__player=context.player)
+                | Q(shots__player=context.player)
+            )
+        )
+        joined_rows = 7 * 70
+        assert previous.filter(pk=match_data_rows[0].pk).count() == joined_rows

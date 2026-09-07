@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from django.db import models
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 
-from apps.game_tracker.models import MatchData, MatchPlayer, Shot
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchImpact, Shot
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.schedule.queries.seasons import (
@@ -114,3 +114,35 @@ def main_roster_ids(*, team: Team, season: Season | None) -> set[str]:
             .exclude(players__id_uuid__isnull=True)
         )
     }
+
+
+def player_impact_matches(
+    *,
+    team: Team,
+    season: Season | None,
+    player: Player,
+    algorithm_version: str,
+) -> QuerySet[MatchData]:
+    """Prefer persisted impacts, otherwise discover designated or shooting players."""
+    matches = team_matches(team, season).filter(status="finished")
+    has_impact = Exists(
+        PlayerMatchImpact.objects.filter(
+            match_data_id=OuterRef("pk"),
+            player=player,
+            algorithm_version=algorithm_version,
+        )
+    )
+    persisted = matches.filter(has_impact)
+    if persisted.exists():
+        return persisted
+
+    # Match participation is an existence check, not a join of every player's
+    # designation, shot and impact. Those independent event sets can otherwise
+    # multiply into thousands of intermediate rows per match before DISTINCT.
+    return matches.filter(
+        has_impact
+        | Exists(
+            MatchPlayer.objects.filter(match_data_id=OuterRef("pk"), player=player)
+        )
+        | Exists(Shot.objects.filter(match_data_id=OuterRef("pk"), player=player))
+    )

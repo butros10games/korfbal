@@ -113,7 +113,7 @@ def test_player_read_endpoints_keep_bounded_query_counts(client: Client) -> None
         "profile": 9,
         "teams": 7,
         "overview": 8,
-        "stats": 10,
+        "stats": 8,
     }
 
 

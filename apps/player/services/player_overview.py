@@ -192,30 +192,34 @@ def connected_club_recent_results(
     return build_match_summaries(queryset.order_by("-match_link__start_time")[:limit])
 
 
-def goal_type_breakdown(
-    queryset: QuerySet[Shot],
-    *,
-    for_team: bool,
-) -> list[dict[str, str | int | None]]:
-    """Build a scored goal-type breakdown for shots."""
-    breakdown = (
+def _shot_stats(queryset: QuerySet[Shot]) -> dict[str, Any]:
+    """Build totals and goal breakdowns from one grouped scan of player shots."""
+    rows = (
         queryset
-        .filter(for_team=for_team, scored=True)
-        .values("shot_type__id_uuid", "shot_type__name")
-        .annotate(count=Count("id_uuid"))
+        .values("for_team", "shot_type__id_uuid", "shot_type__name")
+        .annotate(shots=Count("pk"), goals=Count("pk", filter=Q(scored=True)))
         .order_by("shot_type__name")
     )
-
-    return [
-        {
-            "id_uuid": str(row.get("shot_type__id_uuid"))
-            if row.get("shot_type__id_uuid")
-            else None,
-            "name": row.get("shot_type__name") or "Onbekend",
-            "count": int(row.get("count", 0)),
-        }
-        for row in breakdown
-    ]
+    totals = dict.fromkeys(
+        ("shots_for", "shots_against", "goals_for", "goals_against"), 0
+    )
+    breakdown: dict[str, list[dict[str, str | int | None]]] = {
+        "for": [],
+        "against": [],
+    }
+    for row in rows:
+        side = "for" if row["for_team"] else "against"
+        totals[f"shots_{side}"] += row["shots"]
+        totals[f"goals_{side}"] += row["goals"]
+        if row["goals"]:
+            breakdown[side].append({
+                "id_uuid": str(row["shot_type__id_uuid"])
+                if row["shot_type__id_uuid"]
+                else None,
+                "name": row["shot_type__name"] or "Onbekend",
+                "count": row["goals"],
+            })
+    return {**totals, "goal_types": breakdown}
 
 
 def build_player_stats_payload(
@@ -260,22 +264,8 @@ def build_player_stats_payload(
     if season is not None:
         shot_queryset = shot_queryset.filter(match_data__match_link__season=season)
 
-    aggregated = shot_queryset.aggregate(
-        shots_for=Count("id_uuid", filter=Q(for_team=True)),
-        shots_against=Count("id_uuid", filter=Q(for_team=False)),
-        goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
-        goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
-    )
-
     return {
-        "shots_for": int(aggregated.get("shots_for", 0)),
-        "shots_against": int(aggregated.get("shots_against", 0)),
-        "goals_for": int(aggregated.get("goals_for", 0)),
-        "goals_against": int(aggregated.get("goals_against", 0)),
+        **_shot_stats(shot_queryset),
         "mvps": len(mvp_match_ids),
         "mvp_matches": mvp_matches,
-        "goal_types": {
-            "for": goal_type_breakdown(shot_queryset, for_team=True),
-            "against": goal_type_breakdown(shot_queryset, for_team=False),
-        },
     }

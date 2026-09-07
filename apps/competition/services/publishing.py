@@ -230,26 +230,45 @@ class Publisher:
         )
         if not rows:
             return
-        teams = dict(Team.objects.values_list("pk", "group__local_team_id"))
-        pools = dict(Pool.objects.values_list("pk", "local_pool_id"))
+        team_ids = {
+            team_id for row in rows for team_id in (row.home_team_id, row.away_team_id)
+        }
+        teams = dict(
+            Team.objects.filter(pk__in=team_ids).values_list(
+                "pk", "group__local_team_id"
+            )
+        )
+        pools = dict(
+            Pool.objects.filter(
+                pk__in={row.pool_id for row in rows if row.pool_id is not None}
+            ).values_list("pk", "local_pool_id")
+        )
+        unlinked = [row for row in rows if row.local_match_id is None]
         candidates: dict[tuple[Any, ...], list[AppMatch]] = defaultdict(list)
-        unlinked = any(row.local_match_id is None for row in rows)
-        for match in AppMatch.objects.all() if unlinked else ():
-            candidates[
-                match.season_id,
-                match.home_team_id,
-                match.away_team_id,
-                match.start_time,
-            ].append(match)
-        claimed = (
-            set(
-                Match.objects.exclude(local_match=None).values_list(
-                    "local_match_id", flat=True
+        claimed: set[UUID] = set()
+        if unlinked:
+            # Linked result refreshes already have their fixture identity. Only
+            # unresolved fixtures need the native catalogue's matching candidates.
+            native = list(
+                AppMatch.objects.filter(
+                    season_id__in={row.season_id for row in unlinked},
+                    home_team_id__in={teams.get(row.home_team_id) for row in unlinked},
+                    away_team_id__in={teams.get(row.away_team_id) for row in unlinked},
+                    start_time__in={row.starts_at for row in unlinked},
                 )
             )
-            if unlinked
-            else set()
-        )
+            for match in native:
+                candidates[
+                    match.season_id,
+                    match.home_team_id,
+                    match.away_team_id,
+                    match.start_time,
+                ].append(match)
+            claimed = set(
+                Match.objects.filter(
+                    local_match_id__in=[match.pk for match in native]
+                ).values_list("local_match_id", flat=True)
+            )
         for row in rows:
             home, away = teams.get(row.home_team_id), teams.get(row.away_team_id)
             if home is None or away is None:

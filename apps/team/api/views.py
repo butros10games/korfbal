@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from django.db import models
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
@@ -44,6 +44,7 @@ from apps.schedule.models import Season
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 from apps.team.queries.overview import (
+    player_impact_matches,
     resolve_team_season,
     team_matches,
     team_players,
@@ -781,29 +782,12 @@ class TeamViewSet(viewsets.ModelViewSet):
         season: Season | None,
         player: Player,
     ) -> QuerySet[MatchData]:
-        match_data_qs = team_matches(team, season).filter(status="finished")
-
-        # When available, prefer stored match-impact rows for the given player.
-        # This keeps the match set tight (only games where the player actually
-        # has stored impact rows) and avoids scanning all team matches.
-        persisted_match_data_qs = match_data_qs.filter(
-            player_impacts__player=player,
-            player_impacts__algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-        ).distinct()
-        if persisted_match_data_qs.exists():
-            return persisted_match_data_qs
-
-        # Important: do NOT rely solely on designated MatchPlayer rows. In real
-        # data, those rows may be missing while shots/events and/or persisted
-        # PlayerMatchImpact rows still exist.
-        return match_data_qs.filter(
-            Q(
-                player_impacts__player=player,
-                player_impacts__algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            )
-            | Q(players__player=player)
-            | Q(shots__player=player)
-        ).distinct()
+        return player_impact_matches(
+            team=team,
+            season=season,
+            player=player,
+            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+        )
 
     @staticmethod
     def _impact_breakdown_for_impact(*, impact: PlayerMatchImpact) -> dict[str, Any]:

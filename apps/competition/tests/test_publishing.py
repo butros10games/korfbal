@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
@@ -338,3 +339,64 @@ def test_linked_score_correction_skips_fixture_candidate_scan(season: Season) ->
     assert not any(
         f'FROM "{AppMatch._meta.db_table}"' in query["sql"] for query in queries
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("duplicate_native", [False, True])
+def test_pending_fixture_lookup_preserves_ambiguity_guards(
+    season: Season, duplicate_native: bool
+) -> None:
+    """A new source cannot claim an owned fixture or choose duplicate candidates."""
+    payload = match_payload()
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    publish_catalogue()
+    native = AppMatch.objects.get()
+    if duplicate_native:
+        AppMatch.objects.create(
+            season=season,
+            home_team_id=native.home_team_id,
+            away_team_id=native.away_team_id,
+            start_time=native.start_time,
+        )
+    payload["PublicMatchId"] = "second-source"
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    source = Match.objects.get(external_id="second-source")
+    publisher = Publisher()
+    publisher.matches()
+    source.refresh_from_db()
+    assert source.local_match_id is None
+    assert publisher.counts == {}
+    assert publisher.blocked == [
+        {"kind": "match", "source_id": source.pk, "reason": "ambiguous_fixture"}
+    ]
+
+
+@pytest.mark.django_db
+def test_pending_fixture_loads_only_relevant_native_candidates(season: Season) -> None:
+    """Resolving one source should not materialize unrelated native fixtures."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    publish_catalogue()
+    native = AppMatch.objects.get()
+    for days in range(1, 11):
+        AppMatch.objects.create(
+            season=season,
+            home_team_id=native.home_team_id,
+            away_team_id=native.away_team_id,
+            start_time=native.start_time + timedelta(days=days),
+        )
+    source = Match.objects.get()
+    Match.objects.filter(pk=source.pk).update(local_match=None, published_at=None)
+    publisher = Publisher()
+    with patch.object(AppMatch, "from_db", wraps=AppMatch.from_db) as load:
+        publisher.matches()
+    assert load.call_count == 1
+    source.refresh_from_db()
+    assert source.local_match_id == native.pk
+    assert not publisher.blocked
+    assert publisher.counts["matches_updated"] == 1

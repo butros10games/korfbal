@@ -1,5 +1,7 @@
 """Tests for player stats API endpoints."""
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from datetime import timedelta
 from http import HTTPStatus
 
@@ -12,6 +14,11 @@ import pytest
 from apps.awards.models import MatchMvp
 from apps.club.models import Club
 from apps.game_tracker.models import GoalType, MatchData, Shot
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_tracker_match,
+    create_tracker_player,
+)
+from apps.player.services.player_overview import build_player_stats_payload
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -208,3 +215,75 @@ def test_player_stats_includes_mvps_and_match_summaries(client: Client) -> None:
     summary = payload["mvp_matches"][0]
     assert summary["id_uuid"] == str(match.id_uuid)
     assert summary["match_data_id"] == str(match_data.id_uuid)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("populated", [False, True])
+def test_player_stats_reuse_one_shot_scan(
+    django_assert_num_queries: Callable[[int], AbstractContextManager[None]],
+    populated: bool,
+) -> None:
+    """One grouped scan preserves misses, unknown types, sides and season scope."""
+    tracker = create_tracker_match(prefix="Grouped player stats")
+    player = create_tracker_player(username="grouped-player")
+    season = tracker.match.season
+    goal_type = GoalType.objects.create(name="Grouped goal")
+    if populated:
+        for for_team, scored, shot_type in (
+            (True, True, goal_type),
+            (True, False, goal_type),
+            (True, True, None),
+            (False, True, goal_type),
+            (False, True, None),
+            (False, False, None),
+        ):
+            Shot.objects.create(
+                match_data=tracker.match_data,
+                team=tracker.home_team if for_team else tracker.away_team,
+                player=player,
+                for_team=for_team,
+                scored=scored,
+                shot_type=shot_type,
+            )
+        history = create_tracker_match(prefix="Other player stats season")
+        Shot.objects.create(
+            match_data=history.match_data,
+            team=history.home_team,
+            player=player,
+            for_team=True,
+            scored=True,
+        )
+        Shot.objects.create(
+            match_data=tracker.match_data,
+            team=tracker.home_team,
+            player=create_tracker_player(username="other-grouped-player"),
+            for_team=True,
+            scored=True,
+        )
+
+    # One MVP-ID read and one grouped shot read, including an empty season.
+    with django_assert_num_queries(2):
+        payload = build_player_stats_payload(player=player, season=season)
+
+    assert {
+        key: payload[key]
+        for key in ("shots_for", "shots_against", "goals_for", "goals_against")
+    } == {
+        "shots_for": 3 if populated else 0,
+        "shots_against": 3 if populated else 0,
+        "goals_for": 2 if populated else 0,
+        "goals_against": 2 if populated else 0,
+    }
+    expected = (
+        {
+            (str(goal_type.pk), goal_type.name, 1),
+            (None, "Onbekend", 1),
+        }
+        if populated
+        else set()
+    )
+    for side in ("for", "against"):
+        assert {
+            (row["id_uuid"], row["name"], row["count"])
+            for row in payload["goal_types"][side]
+        } == expected
