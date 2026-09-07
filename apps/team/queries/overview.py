@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from django.db import models
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet
 
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchImpact, Shot
 from apps.player.models import Player
@@ -75,8 +75,20 @@ def team_players(
             team=team,
             match_data_id__in=match_ids,
         ).values_list("player_id", flat=True),
+        # Conceded shots name the shooting team but retain the opposing
+        # defender as their player. Resolve that player's side of the match.
         Shot.objects.filter(
-            team=team,
+            Q(team=team, for_team=True)
+            | Q(
+                for_team=False,
+                match_data__match_link__home_team=team,
+                team=F("match_data__match_link__away_team"),
+            )
+            | Q(
+                for_team=False,
+                match_data__match_link__away_team=team,
+                team=F("match_data__match_link__home_team"),
+            ),
             match_data_id__in=match_ids,
         ).values_list("player_id", flat=True),
     )

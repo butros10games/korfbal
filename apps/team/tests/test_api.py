@@ -147,7 +147,11 @@ def test_team_overview_returns_current_matches_stats_and_roster(client: Client) 
     assert any(option["is_current"] for option in payload["seasons"])
 
 
-def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> None:
+@pytest.mark.parametrize("is_home", [True, False])
+def test_team_overview_discovers_guest_and_shot_only_players(
+    client: Client,
+    is_home: bool,
+) -> None:
     """Events discover reserve players absent from the season roster."""
     season = create_season()
     team, opponent = _teams()
@@ -155,7 +159,8 @@ def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> 
     guest = create_player(username="guest")
     shot_only = create_player(username="shot_only")
     _roster(team, season, main)
-    match_data = _match(team, opponent, season, starts_in_days=-1, status="finished")
+    home, away = (team, opponent) if is_home else (opponent, team)
+    match_data = _match(home, away, season, starts_in_days=-1, status="finished")
     MatchPlayer.objects.create(match_data=match_data, player=guest, team=team)
     Shot.objects.create(
         match_data=match_data, player=guest, team=team, for_team=True, scored=True
@@ -163,7 +168,7 @@ def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> 
     Shot.objects.create(
         match_data=match_data,
         player=shot_only,
-        team=team,
+        team=opponent,
         for_team=False,
         scored=False,
     )
@@ -181,6 +186,43 @@ def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> 
         ("guest", "reserve"),
         ("shot_only", "reserve"),
     ]
+
+    opponent_attacker = create_player(username="opponent_attacker")
+    opponent_defender = create_player(username="opponent_defender")
+    Shot.objects.create(
+        match_data=match_data,
+        player=opponent_attacker,
+        team=opponent,
+        for_team=True,
+        scored=True,
+    )
+    Shot.objects.create(
+        match_data=match_data,
+        player=opponent_defender,
+        team=team,
+        for_team=False,
+        scored=True,
+    )
+    opponent_response = client.get(f"/api/team/teams/{opponent.id_uuid}/overview/")
+    assert opponent_response.status_code == HTTPStatus.OK
+    opponent_payload = opponent_response.json()
+    assert [
+        (line["username"], line["roster_role"]) for line in opponent_payload["roster"]
+    ] == [
+        ("opponent_attacker", "reserve"),
+        ("opponent_defender", "reserve"),
+    ]
+    assert {line["username"] for line in opponent_payload["stats"]["players"]} == {
+        "opponent_attacker",
+        "opponent_defender",
+    }
+    team_response = client.get(f"/api/team/teams/{team.id_uuid}/overview/")
+    assert team_response.status_code == HTTPStatus.OK
+    assert {line["username"] for line in team_response.json()["roster"]} == {
+        "main",
+        "guest",
+        "shot_only",
+    }
 
 
 def test_team_overview_selects_historical_season(client: Client) -> None:
