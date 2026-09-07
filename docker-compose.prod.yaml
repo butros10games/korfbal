@@ -84,7 +84,7 @@ services:
         environment:
             DJANGO_ENV: production
             DEBUG: 'false'
-        command: celery -A korfbal beat --loglevel=info
+        command: celery -A korfbal beat --loglevel=info --schedule=/tmp/celerybeat-schedule
         networks:
             - kwt-net
 

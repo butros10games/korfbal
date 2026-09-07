@@ -7,7 +7,7 @@ from django.db.models import Q, QuerySet
 
 from apps.game_tracker.models import MatchData, MatchPlayer, Shot
 from apps.player.models import Player
-from apps.schedule.models import Season
+from apps.schedule.models import Match, Season
 from apps.schedule.queries.seasons import (
     current_season,
     most_recent_season,
@@ -29,16 +29,11 @@ def resolve_team_season(
 
 def team_seasons(team: Team) -> QuerySet[Season]:
     """Return seasons with a roster or match connected to the team."""
-    return (
-        Season.objects
-        .filter(
-            Q(team_data__team=team)
-            | Q(matches__home_team=team)
-            | Q(matches__away_team=team)
-        )
-        .distinct()
-        .order_by("-start_date")
-    )
+    return Season.objects.filter(
+        Q(pk__in=TeamData.objects.filter(team=team).values("season_id"))
+        | Q(pk__in=Match.objects.filter(home_team=team).values("season_id"))
+        | Q(pk__in=Match.objects.filter(away_team=team).values("season_id"))
+    ).order_by("-start_date")
 
 
 def team_matches(team: Team, season: Season | None) -> QuerySet[MatchData]:
