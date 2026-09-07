@@ -77,6 +77,7 @@ class PollPlanner:
     def __init__(self, season: Season, now: datetime) -> None:
         """Load one season's compact scheduling snapshot without provider traffic."""
         self.now = now
+        self.season = season
         self.resources = {
             (resource.kind, resource.source_id): resource
             for resource in SyncResource.objects.filter(
@@ -190,6 +191,15 @@ class PollPlanner:
             for pool in self.pools.values():
                 if pool["external_id"] == job.resource.source_id:
                     pool["results_filtered"] = True
+        # Responses can include fixtures outside the job's planned scope. Reuse
+        # only actual observations committed since this batch snapshot; a filtered
+        # or failed response must never imply coverage of absent matches.
+        if job.resource.kind in {"club_results", "pool_results"}:
+            self.checked.update(
+                Match.objects.filter(
+                    season=self.season, result_observed_at__gte=self.now
+                ).values_list("pk", flat=True)
+            )
         if checked:
             self.checked.update(job.matches)
             for resource in self.resources.values():

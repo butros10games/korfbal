@@ -16,6 +16,7 @@ from apps.competition.services.polling import (
     mark_checked,
     next_result_check,
 )
+from apps.competition.services.resources import ENDPOINTS
 from apps.competition.services.sync import sync
 from apps.competition.services.traffic import DAILY_LIMIT, HOURLY_LIMIT, TrafficGate
 from apps.competition.tests.test_importer import match_payload
@@ -150,3 +151,72 @@ def test_oauth_and_get_share_budget(season: Season) -> None:
     assert result["failed"] == 0
     assert SyncResource.objects.get().fetched_at is None
     client.close()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("includes_other_pool", [False, True])
+@pytest.mark.parametrize("audit_due", [False, True])
+def test_club_response_reuses_actual_results_across_pool_scopes(
+    season: Season, includes_other_pool: bool, audit_due: bool
+) -> None:
+    """A club response suppresses another score request only for rows it returned."""
+    now = timezone.now()
+    first = match_payload()
+    first.update(Status="SCHEDULED", HomeResult=None, AwayResult=None)
+    second = {**first, "PublicMatchId": "M2", "Pool": {"PoolId": 20, "PoolName": "B"}}
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [first, second]}
+    )
+    Match.objects.update(starts_at=now - timedelta(hours=2))
+    Pool.objects.update(results_filtered=False)
+    Pool.objects.filter(external_id="10").update(results_filtered=True)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(days=1), next_sync_at=now + timedelta(days=1)
+    )
+    if audit_due:
+        SyncResource.objects.filter(kind="club_results", source_id="CT1").update(
+            next_sync_at=now - timedelta(seconds=1)
+        )
+        SyncResource.objects.filter(kind="pool_results", source_id="20").update(
+            next_sync_at=now
+        )
+    planner = PollPlanner(season, now)
+    job = planner.next_job()
+    assert job is not None
+    assert job.resource.kind == "club_results"
+    payload = [first, second] if includes_other_pool else [first]
+    Importer(season, now + timedelta(seconds=1)).apply(
+        "club_results", job.resource.source_id, {"MatchResult": payload}
+    )
+    assert mark_checked(job, now + timedelta(seconds=1))
+    planner.completed(job, checked=True)
+    following = planner.next_job()
+    if includes_other_pool and not audit_due:
+        assert following is None
+    else:
+        assert following is not None
+        assert following.resource.kind == "pool_results"
+        assert following.resource.source_id == "20"
+
+
+@pytest.mark.django_db
+def test_daily_pool_metadata_does_not_delay_due_scores(season: Season) -> None:
+    """Daily metadata audits remain unchanged while due fixtures can poll sooner."""
+    now = timezone.now()
+    row = match_payload()
+    row.update(Status="SCHEDULED", HomeResult=None, AwayResult=None)
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [row]}
+    )
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(days=1),
+        next_sync_at=now + timedelta(hours=ENDPOINTS["pool_results"][3]),
+    )
+    Match.objects.update(starts_at=now + timedelta(days=1))
+    assert PollPlanner(season, now).next_job() is None
+    Match.objects.update(starts_at=now - timedelta(hours=2))
+    job = PollPlanner(season, now).next_job()
+    assert job is not None
+    assert job.resource.kind == "pool_results"
+    assert timedelta(hours=ENDPOINTS["pool_results"][3]) == timedelta(days=1)

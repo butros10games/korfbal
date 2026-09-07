@@ -161,6 +161,10 @@ values are respected, including rate limits on token renewal.
 
 Club directories, team lists and poule assignments are refreshed weekly; fixture
 programs and poule standing audits daily; club result discovery audits weekly.
+Within a batch, actual results returned by one feed also satisfy score checks
+planned through another feed. This does not suppress a due standings/discovery
+audit or count missing rows in a filtered response as observed. First-time team
+assignment discovery remains necessary: one poule cannot prove all assignments.
 Known matches can request earlier shared result checks: starting 90 minutes after
 kickoff, pending results are checked every 15 minutes for three hours, hourly until
 48 hours, daily thereafter, and weekly after 30 days. Completed results get daily
