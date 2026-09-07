@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.test import override_settings
-from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import MatchData
 from apps.player.models.player_song import PlayerSong
-from apps.schedule.models import Season
 from apps.team.models import TeamData
 from apps.team.queries.overview import main_roster_ids, team_players, team_seasons
 from apps.team.services.goal_songs import delete_team_player_song
 
-from .team_test_support import build_team_context, create_player, create_song
+from .team_test_support import (
+    build_team_context,
+    create_player,
+    create_season,
+    create_song,
+)
 
 
 pytestmark = pytest.mark.django_db
@@ -46,10 +47,8 @@ def test_team_absolute_url_targets_the_spa() -> None:
 def test_team_queries_keep_rosters_scoped_to_the_requested_season() -> None:
     """Players and main-roster ids from another season must not leak into results."""
     context = build_team_context(suffix="query_scope")
-    previous = Season.objects.create(
-        name="Previous query scope",
-        start_date=timezone.localdate() - timedelta(days=400),
-        end_date=timezone.localdate() - timedelta(days=40),
+    previous = create_season(
+        "Previous query scope", starts_in_days=-400, ends_in_days=-40
     )
     previous_player = create_player(username="previous_roster_player")
     previous_data = TeamData.objects.create(team=context.team, season=previous)
@@ -72,11 +71,7 @@ def test_team_queries_keep_rosters_scoped_to_the_requested_season() -> None:
 def test_team_seasons_are_distinct_and_newest_first() -> None:
     """Multiple roster links do not duplicate season filter options."""
     context = build_team_context(suffix="season_options")
-    older = Season.objects.create(
-        name="Older season option",
-        start_date=timezone.localdate() - timedelta(days=500),
-        end_date=timezone.localdate() - timedelta(days=100),
-    )
+    older = create_season("Older season option", starts_in_days=-500, ends_in_days=-100)
     first = TeamData.objects.create(team=context.team, season=older)
     second = TeamData.objects.create(team=context.team, season=older)
     first.players.add(context.player)

@@ -28,14 +28,24 @@ class TeamTestContext:
     player: Player
 
 
+def create_season(
+    name: str = "2025",
+    *,
+    starts_in_days: int = -30,
+    ends_in_days: int = 300,
+) -> Season:
+    """Create a season with explicit offsets from the local date."""
+    today = timezone.localdate()
+    return Season.objects.create(
+        name=name,
+        start_date=today + timedelta(days=starts_in_days),
+        end_date=today + timedelta(days=ends_in_days),
+    )
+
+
 def build_team_context(*, suffix: str = "contract") -> TeamTestContext:
     """Build the minimum persistent graph used by moderation tests."""
-    today = timezone.localdate()
-    season = Season.objects.create(
-        name=f"Current {suffix}",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
+    season = create_season(f"Current {suffix}")
     club = Club.objects.create(name=f"Club {suffix}")
     team = Team.objects.create(name="Team 1", club=club)
     coach = create_player(username=f"coach_{suffix}")
@@ -55,11 +65,8 @@ def build_team_context(*, suffix: str = "contract") -> TeamTestContext:
 
 def create_player(*, username: str) -> Player:
     """Create a user and return its signal-created player profile."""
-    user = User.objects.create_user(
-        username=username,
-        password="pass1234",  # nosec
-    )
-    return Player.objects.get(user=user)
+    user = User.objects.create_user(username=username)
+    return Player.objects.select_related("user").get(user=user)
 
 
 def create_song(
@@ -67,6 +74,7 @@ def create_song(
     player: Player,
     title: str,
     status: str = PlayerSongStatus.READY,
+    start_time_seconds: int = 0,
 ) -> PlayerSong:
     """Create a player song, including audio only for ready songs."""
     audio_file = (
@@ -83,5 +91,6 @@ def create_song(
         title=title,
         artists="Test Artist",
         status=status,
+        start_time_seconds=start_time_seconds,
         audio_file=audio_file,
     )

@@ -6,8 +6,6 @@ from http import HTTPStatus
 from unittest.mock import Mock
 import uuid
 
-from django.contrib.auth.models import User
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -25,27 +23,15 @@ from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows_with_breakdowns,
 )
 from apps.player.models import Player
-from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.models.player_song import PlayerSong
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
 
+from .team_test_support import create_player, create_season, create_song
+
 
 pytestmark = pytest.mark.django_db
-
-
-def _season(
-    name: str = "2025",
-    *,
-    starts_in_days: int = -30,
-    ends_in_days: int = 300,
-) -> Season:
-    today = timezone.localdate()
-    return Season.objects.create(
-        name=name,
-        start_date=today + timedelta(days=starts_in_days),
-        end_date=today + timedelta(days=ends_in_days),
-    )
 
 
 def _teams() -> tuple[Team, Team]:
@@ -56,11 +42,6 @@ def _teams() -> tuple[Team, Team]:
         name="Opponent 1", club=Club.objects.create(name="Opponent Club")
     )
     return team, opponent
-
-
-def _player(username: str) -> Player:
-    user = User.objects.create(username=username)
-    return Player.objects.select_related("user").get(user=user)
 
 
 def _roster(
@@ -96,26 +77,6 @@ def _match(
     return match_data
 
 
-def _ready_song(
-    player: Player,
-    title: str,
-    *,
-    start_time_seconds: int = 0,
-) -> PlayerSong:
-    return PlayerSong.objects.create(
-        player=player,
-        title=title,
-        artists=f"{title} Artist",
-        status=PlayerSongStatus.READY,
-        start_time_seconds=start_time_seconds,
-        audio_file=SimpleUploadedFile(
-            f"{title.lower().replace(' ', '-')}.mp3",
-            b"ID3\x00\x00\x00\x00",
-            content_type="audio/mpeg",
-        ),
-    )
-
-
 @dataclass(frozen=True)
 class _GoalSongSetup:
     team: Team
@@ -127,10 +88,10 @@ class _GoalSongSetup:
 
 
 def _coached_team() -> tuple[Team, TeamData, Player, Player]:
-    season = _season()
+    season = create_season()
     team, _ = _teams()
-    coach = _player("coach")
-    player = _player("team_player")
+    coach = create_player(username="coach")
+    player = create_player(username="team_player")
     team_data = _roster(team, season, coach, player, coach=coach)
     return team, team_data, coach, player
 
@@ -142,24 +103,24 @@ def _goal_song_setup() -> _GoalSongSetup:
         team_data=team_data,
         coach=coach,
         player=player,
-        song_a=_ready_song(player, "Song A", start_time_seconds=3),
-        song_b=_ready_song(player, "Song B", start_time_seconds=5),
+        song_a=create_song(player=player, title="Song A", start_time_seconds=3),
+        song_b=create_song(player=player, title="Song B", start_time_seconds=5),
     )
 
 
 def _impact_setup(username: str) -> tuple[Season, Team, Player, MatchData]:
-    season = _season(f"2025 - {username}")
+    season = create_season(f"2025 - {username}")
     team, opponent = _teams()
-    player = _player(username)
+    player = create_player(username=username)
     match_data = _match(team, opponent, season, starts_in_days=-1, status="finished")
     return season, team, player, match_data
 
 
 def test_team_overview_returns_current_matches_stats_and_roster(client: Client) -> None:
     """Current overview includes both match buckets, stats, and main roster."""
-    season = _season()
+    season = create_season()
     team, opponent = _teams()
-    player = _player("player")
+    player = create_player(username="player")
     _roster(team, season, player)
     _match(team, opponent, season, starts_in_days=3, status="upcoming")
     recent = _match(
@@ -188,11 +149,11 @@ def test_team_overview_returns_current_matches_stats_and_roster(client: Client) 
 
 def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> None:
     """Events discover reserve players absent from the season roster."""
-    season = _season()
+    season = create_season()
     team, opponent = _teams()
-    main = _player("main")
-    guest = _player("guest")
-    shot_only = _player("shot_only")
+    main = create_player(username="main")
+    guest = create_player(username="guest")
+    shot_only = create_player(username="shot_only")
     _roster(team, season, main)
     match_data = _match(team, opponent, season, starts_in_days=-1, status="finished")
     MatchPlayer.objects.create(match_data=match_data, player=guest, team=team)
@@ -224,10 +185,10 @@ def test_team_overview_discovers_guest_and_shot_only_players(client: Client) -> 
 
 def test_team_overview_selects_historical_season(client: Client) -> None:
     """An explicit historical season scopes matches and roster."""
-    current = _season()
-    previous = _season("2024", starts_in_days=-400, ends_in_days=-35)
+    current = create_season()
+    previous = create_season("2024", starts_in_days=-400, ends_in_days=-35)
     team, opponent = _teams()
-    player = _player("player")
+    player = create_player(username="player")
     _roster(team, current, player)
     _roster(team, previous, player)
     historical = _match(
@@ -255,9 +216,9 @@ def test_team_overview_selects_historical_season(client: Client) -> None:
 
 def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
     """Lightweight flags omit expensive stats and roster data."""
-    season = _season()
+    season = create_season()
     team, opponent = _teams()
-    _roster(team, season, _player("player"))
+    _roster(team, season, create_player(username="player"))
     _match(team, opponent, season, starts_in_days=3, status="upcoming")
 
     response = client.get(
@@ -274,8 +235,8 @@ def test_team_overview_can_skip_stats_and_roster(client: Client) -> None:
 
 def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
     """An invalid season falls back without mixing historical matches."""
-    current = _season()
-    previous = _season("2024", starts_in_days=-400, ends_in_days=-35)
+    current = create_season()
+    previous = create_season("2024", starts_in_days=-400, ends_in_days=-35)
     team, opponent = _teams()
     _roster(team, current)
     _roster(team, previous)
@@ -387,7 +348,7 @@ def test_team_impact_breakdown_returns_persisted_categories(
 
 def test_team_impact_breakdown_requires_player(client: Client) -> None:
     """The impact endpoint requires a player query parameter."""
-    season = _season()
+    season = create_season()
     team, _ = _teams()
 
     response = client.get(
@@ -401,7 +362,7 @@ def test_team_impact_breakdown_requires_player(client: Client) -> None:
 
 def test_team_impact_breakdown_rejects_unknown_player(client: Client) -> None:
     """The impact endpoint rejects unknown player identifiers."""
-    season = _season()
+    season = create_season()
     team, _ = _teams()
 
     response = client.get(

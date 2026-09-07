@@ -5,7 +5,6 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 from django.test.client import Client
 import pytest
 
@@ -14,15 +13,11 @@ from apps.team.models import Team
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_team_crud_requires_staff_for_write_operations(client: Client) -> None:
     """Non-staff users should not be able to create/update/delete teams."""
     club = Club.objects.create(name="Club")
 
-    non_staff = get_user_model().objects.create_user(
-        username="non_staff",
-        password="pass1234",  # nosec
-    )
+    non_staff = get_user_model().objects.create_user(username="non_staff")
 
     client.force_login(non_staff)
 
@@ -47,14 +42,12 @@ def test_team_crud_requires_staff_for_write_operations(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_team_crud_allows_staff_user(client: Client) -> None:
     """Staff users can manage teams (admin tooling / data migrations)."""
     club = Club.objects.create(name="Club")
 
     staff = get_user_model().objects.create_user(
         username="staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
 
@@ -82,7 +75,6 @@ def test_team_crud_allows_staff_user(client: Client) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(SECURE_SSL_REDIRECT=False)
 def test_team_list_supports_server_side_club_and_search_filters(client: Client) -> None:
     """Catalog filtering should happen before pagination."""
     selected_club = Club.objects.create(name="Selected Club")

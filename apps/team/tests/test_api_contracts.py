@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 from http import HTTPStatus
-from typing import Protocol
 import uuid
 
 from django.contrib.auth.models import User
@@ -14,26 +13,20 @@ import pytest
 
 from apps.club.models import Club
 from apps.player.models.player_song import PlayerSongStatus
-from apps.schedule.models import Match, Season
+from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
-from .team_test_support import build_team_context, create_player, create_song
+from .team_test_support import (
+    build_team_context,
+    create_player,
+    create_season,
+    create_song,
+)
 
 
 pytestmark = pytest.mark.django_db
 CATALOG_SIZE = 205
 MAX_PAGE_SIZE = 200
-
-
-class _Settings(Protocol):
-    """Settings surface changed by these request tests."""
-
-    SECURE_SSL_REDIRECT: bool
-
-
-@pytest.fixture(autouse=True)
-def _disable_ssl_redirect(settings: _Settings) -> None:
-    settings.SECURE_SSL_REDIRECT = False
 
 
 def test_team_catalog_caps_page_size_and_serializes_nested_club(
@@ -85,7 +78,6 @@ def test_staff_create_rejects_unknown_club_without_writing(client: Client) -> No
     """The write serializer validates the foreign-key identifier."""
     staff = User.objects.create_user(
         username="team_contract_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
@@ -127,11 +119,7 @@ def test_goal_song_admin_honors_season_scoping_and_club_admin_role(
 ) -> None:
     """A coach manages only their season while a club admin manages all seasons."""
     context = build_team_context(suffix="roles")
-    previous = Season.objects.create(
-        name="Previous roles",
-        start_date=timezone.localdate() - timedelta(days=400),
-        end_date=timezone.localdate() - timedelta(days=40),
-    )
+    previous = create_season("Previous roles", starts_in_days=-400, ends_in_days=-40)
     previous_data = TeamData.objects.create(team=context.team, season=previous)
     previous_data.coach.add(context.coach)
     context.team_data.coach.remove(context.coach)
@@ -281,12 +269,7 @@ def test_fallback_update_requires_team_data_for_selected_season(
     client: Client,
 ) -> None:
     """A match-only team season cannot silently create roster configuration."""
-    today = timezone.localdate()
-    season = Season.objects.create(
-        name="Match-only season",
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=300),
-    )
+    season = create_season("Match-only season")
     club = Club.objects.create(name="Match-only Club")
     opponent_club = Club.objects.create(name="Match-only Opponent Club")
     team = Team.objects.create(name="Match-only Team", club=club)
@@ -299,7 +282,6 @@ def test_fallback_update_requires_team_data_for_selected_season(
     )
     staff = User.objects.create_user(
         username="match_only_staff",
-        password="pass1234",  # nosec
         is_staff=True,
     )
     client.force_login(staff)
