@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
+from uuid import UUID
 
 from django.db.models import Count, Q
 
@@ -21,41 +22,49 @@ from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 
 
+class _ShotTotals(TypedDict):
+    team_id: UUID | None
+    player_id: UUID | None
+    shot_type_id: UUID | None
+    shots: int
+    goals: int
+
+
+class _PossessionTotals(TypedDict):
+    team_id: UUID | None
+    player_id: UUID | None
+    kind: str
+    count: int
+
+
 @dataclass(frozen=True)
 class _MatchStatsContext:
     match: Match
     match_data: MatchData
     home_team: Team
     away_team: Team
+    shots: list[_ShotTotals]
+    possessions: list[_PossessionTotals]
 
 
 def _build_general_stats(
     *,
-    match_data: MatchData,
+    shots: list[_ShotTotals],
+    possessions: list[_PossessionTotals],
     home_team: Team,
     away_team: Team,
     goal_types: list[GoalType],
 ) -> dict[str, object]:
     """Build totals and goal-type breakdowns from two grouped event queries."""
     teams = (("for", home_team), ("against", away_team))
-    shots = list(
-        Shot.objects
-        .filter(match_data=match_data)
-        .values("team_id", "shot_type_id")
-        .annotate(shots=Count("pk"), goals=Count("pk", filter=Q(scored=True)))
-        .order_by()
-    )
-    goals_by_type = {
-        (row["team_id"], row["shot_type_id"]): row["goals"] for row in shots
-    }
-    possessions = {
-        (row["team_id"], row["kind"]): row["count"]
-        for row in PossessionChange.objects
-        .filter(match_data=match_data)
-        .values("team_id", "kind")
-        .annotate(count=Count("pk"))
-        .order_by()
-    }
+    goals_by_type: dict[tuple[UUID | None, UUID | None], int] = {}
+    for row in shots:
+        key = (row["team_id"], row["shot_type_id"])
+        goals_by_type[key] = goals_by_type.get(key, 0) + row["goals"]
+    possession_counts: dict[tuple[UUID | None, str], int] = {}
+    for possession in possessions:
+        key = (possession["team_id"], possession["kind"])
+        possession_counts[key] = possession_counts.get(key, 0) + possession["count"]
     return {
         **{
             f"{metric}_{side}": sum(
@@ -65,7 +74,7 @@ def _build_general_stats(
             for metric in ("shots", "goals")
         },
         **{
-            f"{metric}_{side}": possessions.get((team.pk, kind), 0)
+            f"{metric}_{side}": possession_counts.get((team.pk, kind), 0)
             for side, team in teams
             for metric, kind in (
                 ("ball_losses", PossessionChange.BALL_LOSS),
@@ -90,7 +99,7 @@ def _build_general_stats(
 
 def _build_player_lines(
     *,
-    match_data: MatchData,
+    ctx: _MatchStatsContext,
     player_ids: set[str],
     team: Team,
     other_team: Team,
@@ -98,65 +107,50 @@ def _build_player_lines(
     if not player_ids:
         return []
 
+    totals: dict[str, dict[str, int]] = {
+        player_id: dict.fromkeys(
+            (
+                "shots_for",
+                "shots_against",
+                "goals_for",
+                "goals_against",
+                "ball_losses",
+                "interceptions",
+            ),
+            0,
+        )
+        for player_id in player_ids
+    }
+    for shot in ctx.shots:
+        player_totals = totals.get(str(shot["player_id"]))
+        if player_totals is None or shot["team_id"] not in {team.pk, other_team.pk}:
+            continue
+        side = "for" if shot["team_id"] == team.pk else "against"
+        for metric in ("shots", "goals"):
+            player_totals[f"{metric}_{side}"] += shot[metric]
+    for possession in ctx.possessions:
+        player_totals = totals.get(str(possession["player_id"]))
+        if player_totals is None or possession["team_id"] != team.pk:
+            continue
+        metric = {
+            PossessionChange.BALL_LOSS: "ball_losses",
+            PossessionChange.INTERCEPTION: "interceptions",
+        }.get(possession["kind"])
+        if metric:
+            player_totals[metric] += possession["count"]
+
     queryset = (
         Player.objects
         .select_related("user")
         .filter(id_uuid__in=player_ids)
-        .annotate(
-            shots_for=Count(
-                "shots__id_uuid",
-                distinct=True,
-                filter=Q(
-                    shots__match_data=match_data,
-                    shots__team=team,
-                ),
-            ),
-            shots_against=Count(
-                "shots__id_uuid",
-                distinct=True,
-                filter=Q(
-                    shots__match_data=match_data,
-                    shots__team=other_team,
-                ),
-            ),
-            goals_for=Count(
-                "shots__id_uuid",
-                distinct=True,
-                filter=Q(
-                    shots__match_data=match_data,
-                    shots__team=team,
-                    shots__scored=True,
-                ),
-            ),
-            goals_against=Count(
-                "shots__id_uuid",
-                distinct=True,
-                filter=Q(
-                    shots__match_data=match_data,
-                    shots__team=other_team,
-                    shots__scored=True,
-                ),
-            ),
-            ball_losses=Count(
-                "possession_changes__id_uuid",
-                distinct=True,
-                filter=Q(
-                    possession_changes__match_data=match_data,
-                    possession_changes__team=team,
-                    possession_changes__kind=PossessionChange.BALL_LOSS,
-                ),
-            ),
-            interceptions=Count(
-                "possession_changes__id_uuid",
-                distinct=True,
-                filter=Q(
-                    possession_changes__match_data=match_data,
-                    possession_changes__team=team,
-                    possession_changes__kind=PossessionChange.INTERCEPTION,
-                ),
-            ),
-        )
-        .order_by("-goals_for", "-shots_for", "user__username")
+        .order_by("user__username")
+    )
+    players = sorted(
+        queryset,
+        key=lambda player: (
+            -totals[str(player.pk)]["goals_for"],
+            -totals[str(player.pk)]["shots_for"],
+        ),
     )
 
     return [
@@ -166,14 +160,9 @@ def _build_player_lines(
             "username": player.user.username,
             "profile_picture_url": player.get_profile_picture(),
             "profile_url": player.get_absolute_url(),
-            "shots_for": int(getattr(player, "shots_for", 0)),
-            "shots_against": int(getattr(player, "shots_against", 0)),
-            "goals_for": int(getattr(player, "goals_for", 0)),
-            "goals_against": int(getattr(player, "goals_against", 0)),
-            "ball_losses": int(getattr(player, "ball_losses", 0)),
-            "interceptions": int(getattr(player, "interceptions", 0)),
+            **totals[str(player.pk)],
         }
-        for player in queryset
+        for player in players
     ]
 
 
@@ -181,16 +170,6 @@ def _match_roster_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
     return {
         str(player_id)
         for player_id in MatchPlayer.objects
-        .filter(match_data=match_data, team=team)
-        .values_list("player__id_uuid", flat=True)
-        .distinct()
-    }
-
-
-def _match_shot_player_ids(*, match_data: MatchData, team: Team) -> set[str]:
-    return {
-        str(player_id)
-        for player_id in Shot.objects
         .filter(match_data=match_data, team=team)
         .values_list("player__id_uuid", flat=True)
         .distinct()
@@ -229,16 +208,18 @@ def _resolve_shot_only_player_side(
             if in_home_shots != in_away_shots:
                 side = "home" if in_home_shots else "away"
             else:
-                home_count = Shot.objects.filter(
-                    match_data=ctx.match_data,
-                    team=ctx.home_team,
-                    player__id_uuid=player_id,
-                ).count()
-                away_count = Shot.objects.filter(
-                    match_data=ctx.match_data,
-                    team=ctx.away_team,
-                    player__id_uuid=player_id,
-                ).count()
+                home_count = sum(
+                    row["shots"]
+                    for row in ctx.shots
+                    if str(row["player_id"]) == player_id
+                    and row["team_id"] == ctx.home_team.pk
+                )
+                away_count = sum(
+                    row["shots"]
+                    for row in ctx.shots
+                    if str(row["player_id"]) == player_id
+                    and row["team_id"] == ctx.away_team.pk
+                )
 
                 side = "home" if home_count >= away_count else "away"
     return side
@@ -342,10 +323,31 @@ def build_match_stats_payload(
         match_data=match_data,
         home_team=home_team,
         away_team=away_team,
+        shots=cast(
+            list[_ShotTotals],
+            list(
+                Shot.objects
+                .filter(match_data=match_data)
+                .values("team_id", "player_id", "shot_type_id")
+                .annotate(shots=Count("pk"), goals=Count("pk", filter=Q(scored=True)))
+                .order_by()
+            ),
+        ),
+        possessions=cast(
+            list[_PossessionTotals],
+            list(
+                PossessionChange.objects
+                .filter(match_data=match_data)
+                .values("team_id", "player_id", "kind")
+                .annotate(count=Count("pk"))
+                .order_by()
+            ),
+        ),
     )
 
     general = _build_general_stats(
-        match_data=match_data,
+        shots=ctx.shots,
+        possessions=ctx.possessions,
         home_team=home_team,
         away_team=away_team,
         goal_types=list(GoalType.objects.all()),
@@ -354,8 +356,16 @@ def build_match_stats_payload(
     home_player_ids = _match_roster_player_ids(match_data=match_data, team=home_team)
     away_player_ids = _match_roster_player_ids(match_data=match_data, team=away_team)
 
-    shot_home_ids = _match_shot_player_ids(match_data=match_data, team=home_team)
-    shot_away_ids = _match_shot_player_ids(match_data=match_data, team=away_team)
+    shot_home_ids = {
+        str(row["player_id"])
+        for row in ctx.shots
+        if row["team_id"] == home_team.pk and row["player_id"] is not None
+    }
+    shot_away_ids = {
+        str(row["player_id"])
+        for row in ctx.shots
+        if row["team_id"] == away_team.pk and row["player_id"] is not None
+    }
 
     _assign_shot_only_players(
         ctx=ctx,
@@ -367,13 +377,13 @@ def build_match_stats_payload(
 
     players_payload = {
         "home": _build_player_lines(
-            match_data=match_data,
+            ctx=ctx,
             player_ids=home_player_ids,
             team=home_team,
             other_team=away_team,
         ),
         "away": _build_player_lines(
-            match_data=match_data,
+            ctx=ctx,
             player_ids=away_player_ids,
             team=away_team,
             other_team=home_team,

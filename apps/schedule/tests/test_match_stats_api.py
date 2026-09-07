@@ -353,7 +353,7 @@ def test_match_stats_query_budget_does_not_grow_with_goal_type_count(
         kind="ball_loss",
         time=timezone.now(),
     )
-    with django_assert_num_queries(14 if populated else 7):
+    with django_assert_num_queries(10 if populated else 5):
         general = build_match_stats_payload(
             match=context.match, match_data=context.match_data
         )["general"]
@@ -379,4 +379,103 @@ def test_match_stats_query_budget_does_not_grow_with_goal_type_count(
             {"id": str(goal_type.pk), "name": goal_type.name}
             for goal_type in goal_types
         ],
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("player_count", [1, 12])
+def test_match_stats_query_budget_is_constant_for_ambiguous_players(
+    django_assert_num_queries: Callable[[int], AbstractContextManager[None]],
+    player_count: int,
+) -> None:
+    """Mixed-side shooters without roster entries must not trigger per-player reads."""
+    context = _create_match_context()
+    for index in range(player_count):
+        player = _create_player(f"unrostered_{index}")
+        _add_shot(context, player, "home", scored=True)
+        _add_shot(context, player, "away", scored=True)
+        _add_shot(context, player, "away")
+    with django_assert_num_queries(10):
+        payload = build_match_stats_payload(
+            match=context.match, match_data=context.match_data
+        )
+    assert payload["players"]["home"] == []
+    assert len(payload["players"]["away"]) == player_count
+    assert payload["general"]["team_goal_stats"][context.goal_type.name] == {
+        "goals_by_player": player_count,
+        "goals_against_player": player_count,
+    }
+    for line in payload["players"]["away"]:
+        assert (
+            line["shots_for"],
+            line["shots_against"],
+            line["goals_for"],
+            line["goals_against"],
+        ) == (2, 1, 1, 1)
+
+
+@pytest.mark.django_db
+def test_match_player_counts_exclude_history_and_do_not_multiply_events(
+    django_assert_num_queries: Callable[[int], AbstractContextManager[None]],
+) -> None:
+    """Aggregate each event once and exclude other matches and opponent possession."""
+    context = _create_match_context()
+    player = _create_player("current_player")
+    MatchPlayer.objects.create(
+        match_data=context.match_data, team=context.home_team, player=player
+    )
+    _add_shot(context, player, "home", scored=True)
+    _add_shot(context, player, "home")
+    _add_shot(context, player, "away", scored=True)
+    other_match = Match.objects.create(
+        home_team=context.home_team,
+        away_team=context.away_team,
+        season=context.season,
+        start_time=timezone.now(),
+    )
+    other_data = MatchData.objects.get(match_link=other_match)
+    Shot.objects.create(
+        match_data=other_data, team=context.home_team, player=player, scored=True
+    )
+    parts = {
+        data.pk: create_match_part(match_data=data)
+        for data in (context.match_data, other_data)
+    }
+    for match_data, side, kind in (
+        (context.match_data, "home", "ball_loss"),
+        (context.match_data, "home", "ball_loss"),
+        (context.match_data, "home", "interception"),
+        (context.match_data, "away", "interception"),
+        (other_data, "home", "ball_loss"),
+    ):
+        PossessionChange.objects.create(
+            match_data=match_data,
+            match_part=parts[match_data.pk],
+            team=_team(context, side),
+            player=player,
+            kind=kind,
+            time=timezone.now(),
+        )
+    with django_assert_num_queries(6):
+        payload = build_match_stats_payload(
+            match=context.match, match_data=context.match_data
+        )
+    line = payload["players"]["home"][0]
+    assert {
+        key: line[key]
+        for key in (
+            "shots_for",
+            "shots_against",
+            "goals_for",
+            "goals_against",
+            "ball_losses",
+            "interceptions",
+        )
+    } == {
+        "shots_for": 2,
+        "shots_against": 1,
+        "goals_for": 1,
+        "goals_against": 1,
+        "ball_losses": 2,
+        "interceptions": 1,
     }
