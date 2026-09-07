@@ -240,6 +240,12 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
         many=True,
         write_only=True,
     )
+    sport = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=80,
+    )
     match_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
@@ -252,6 +258,7 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
             "name",
             "teams",
             "team_ids",
+            "sport",
             "match_count",
         ]
         read_only_fields: ClassVar[list[str]] = ["id_uuid", "match_count"]
@@ -272,7 +279,10 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
                 "season_id": "A pool cannot be moved to another season."
             })
 
-        duplicate = SeasonPool.objects.filter(season=season, name__iexact=name)
+        sport = attrs.get("sport", getattr(instance, "sport", ""))
+        duplicate = SeasonPool.objects.filter(
+            season=season, name__iexact=name, sport=sport
+        )
         if instance:
             duplicate = duplicate.exclude(pk=instance.pk)
         if duplicate.exists():
@@ -289,13 +299,16 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
                 })
             other_pools = SeasonPool.objects.filter(
                 season=season,
+                sport=sport,
                 teams__in=teams,
             )
             if instance:
                 other_pools = other_pools.exclude(pk=instance.pk)
             if other_pools.exists():
                 raise serializers.ValidationError({
-                    "team_ids": "A team can belong to only one pool per season."
+                    "team_ids": (
+                        "A team can belong to only one pool per season and sport."
+                    )
                 })
             if instance:
                 used_ids = set(

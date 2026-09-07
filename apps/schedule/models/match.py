@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
+from uuid import UUID
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -40,6 +41,7 @@ class Match(models.Model):
         on_delete=models.CASCADE,
         related_name="home_matches",
     )
+    season_id: UUID
     home_team_id: str
     away_team: models.ForeignKey[Any, Any] = models.ForeignKey(
         team_model_string,

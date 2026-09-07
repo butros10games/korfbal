@@ -174,7 +174,9 @@ def rebuild_match_score(match_data: MatchData) -> tuple[int, int]:
         MatchData.objects.filter(pk=locked.pk).update(
             home_score=home_score,
             away_score=away_score,
+            score_source="tracker",
         )
+        match_data.score_source = "tracker"
         match_data.home_score = home_score
         match_data.away_score = away_score
         return home_score, away_score

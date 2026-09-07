@@ -1,12 +1,16 @@
 """Season-scoped Sportlink identities and reproducible competition results."""
 
 from typing import TYPE_CHECKING, ClassVar
+from uuid import UUID
 
 from django.db import models
 
 
 class Club(models.Model):
     """Source club identity; never merge clubs by display name."""
+
+    if TYPE_CHECKING:
+        local_club_id: UUID | None
 
     external_id = models.CharField(max_length=80, unique=True)
     name = models.CharField(max_length=255)
@@ -26,6 +30,9 @@ class Club(models.Model):
 
 class SeasonalIdentity(models.Model):
     """Prevent a reused upstream ID from overwriting an earlier season."""
+
+    if TYPE_CHECKING:
+        season_id: UUID
 
     season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
     external_id = models.CharField(max_length=80)
@@ -48,6 +55,11 @@ class SeasonalIdentity(models.Model):
 class TeamGroup(models.Model):
     """One club team per season, shared by indoor and outdoor source entries."""
 
+    if TYPE_CHECKING:
+        season_id: UUID
+        local_team_id: UUID | None
+        local_team_data_id: int | None
+
     season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
     club = models.ForeignKey(Club, on_delete=models.PROTECT)
     name = models.CharField(max_length=255)
@@ -58,6 +70,14 @@ class TeamGroup(models.Model):
         blank=True,
         on_delete=models.PROTECT,
         related_name="competition_groups",
+    )
+
+    local_team_data = models.OneToOneField(
+        "team.TeamData",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="competition_identity",
     )
 
     class Meta:
@@ -143,6 +163,12 @@ class PoolEntry(models.Model):
 class Match(SeasonalIdentity):
     """One fixture regardless of how many club/poule feeds include it."""
 
+    if TYPE_CHECKING:
+        pool_id: int | None
+        home_team_id: int
+        away_team_id: int
+        local_match_id: UUID | None
+
     pool = models.ForeignKey(Pool, null=True, on_delete=models.PROTECT)
     home_team = models.ForeignKey(
         Team, on_delete=models.PROTECT, related_name="home_matches"
@@ -164,6 +190,9 @@ class Match(SeasonalIdentity):
         on_delete=models.PROTECT,
         related_name="competition_identity",
     )
+    local_created = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_state = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta(SeasonalIdentity.Meta):

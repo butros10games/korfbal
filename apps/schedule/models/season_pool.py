@@ -24,7 +24,8 @@ class SeasonPool(models.Model):
         related_name="pools",
     )
     season_id: str
-    name: models.CharField[str, str] = models.CharField(max_length=120)
+    name: models.CharField[str, str] = models.CharField(max_length=512)
+    sport = models.CharField(max_length=80, blank=True)
     teams: models.ManyToManyField[Any, Any] = models.ManyToManyField(
         team_model_string,
         related_name="season_pools",
@@ -37,8 +38,8 @@ class SeasonPool(models.Model):
         ordering: ClassVar[list[str]] = ["name"]
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
-                fields=["season", "name"],
-                name="unique_pool_name_per_season",
+                fields=["season", "name", "sport"],
+                name="unique_pool_name_per_season_sport",
             ),
         ]
 

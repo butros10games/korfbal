@@ -27,7 +27,7 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.importer import Importer
-from apps.competition.services.reconciliation import reconcile
+from apps.competition.services.reconciliation import joint_team_matches, reconcile
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import (
@@ -297,3 +297,49 @@ def test_duplicate_source_club_names_require_selection(graph: dict[str, Any]) ->
     assert all(row["reason"] == "ambiguous_or_claimed" for row in ambiguous)
     assert not Club.objects.filter(name="Example", local_club__isnull=False).exists()
     assert Match.objects.get().local_match is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("source_name", ["Example/Partner 2", "Partner/Example 2"])
+def test_joint_team_links_without_reassigning_clubs(
+    graph: dict[str, Any], source_name: str
+) -> None:
+    """A partner-registered team can belong to an existing local joint club."""
+    joint = LocalClub.objects.create(name="Example/Partner")
+    local = graph["away"]
+    local.club = joint
+    local.save(update_fields=("club",))
+    source_group = TeamGroup.objects.get(name="Example 2")
+    source_group.name = source_name
+    source_group.save(update_fields=("name",))
+    reconcile(apply=True, overrides=graph["overrides"])
+    source_group.refresh_from_db()
+    assert source_group.local_team == local
+    assert Match.objects.get().local_match == graph["local"]
+    assert source_group.club.name == "Example"
+    local.refresh_from_db()
+    assert local.club == joint
+    assert set(reconcile(apply=True)["counts"]) == {"linked"}
+    client = APIClient()
+    client.force_authenticate(get_user_model().objects.create_user(username="joint"))
+    for endpoint in ("team-groups", "matches"):
+        response = client.get(f"/api/competition/{endpoint}/?local_club={joint.pk}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "club", "local_club", "team", "expected"),
+    [
+        ("Helios/Stormvogels (U) 3", "Helios", "Helios/Stormvogels (U)", "3", True),
+        ("Helios/Stormvogels (U) J3", "Helios", "Helios/Stormvogels (U)", "3", False),
+        ("Helios/Stormvogels (U) 3", "Other", "Helios/Stormvogels (U)", "3", False),
+        ("Helios/Stormvogels (U) 3", "Helios", "Helios/Stormvogels (L)", "3", False),
+        ("Helios 3", "Helios", "Helios/Stormvogels (U)", "3", False),
+    ],
+)
+def test_joint_team_boundaries(
+    source: str, club: str, local_club: str, team: str, expected: bool
+) -> None:
+    """Shared labels cannot bypass team number, age or partner-club boundaries."""
+    assert joint_team_matches(source, club, local_club, team) is expected

@@ -89,16 +89,36 @@ See `apps/django_projects/korfbal/korfbal/settings.py` for the full list of conf
 
 ## Sportlink competition catalogue
 
-The `competition` app imports source clubs, season-specific teams and poules,
-fixtures, final scores, official standings and score revision history. These
-source identities are separate from locally managed clubs/teams. Indoor and
-outdoor teams retain their distinct Sportlink IDs but share a `TeamGroup` when
-club, season and normalized full team name match. Matching ignores case and extra
-spaces; it preserves age groups and team numbers and does not guess at spelling
-variants. Existing imported teams are grouped by migration without provider
-requests. Once linked, imports preserve the group link. This catalogue grouping
-does not merge locally managed rosters. No player profiles or login payloads are
-stored in these tables.
+The importer publishes KNKV data into the normal application models: `club.Club`,
+global `team.Team`, one `team.TeamData` per team/season, `schedule.SeasonPool` and
+`schedule.Match`. Imported records use the existing admin, search and detail pages.
+Indoor and outdoor provider teams share a global team and season roster while
+retaining separate Sportlink IDs and sport-specific poules.
+
+The `competition` tables retain provider identities, official standings, source
+snapshots, request checkpoints and result revisions. They are sync metadata, not a
+second user-facing club/team directory. No player profiles or login payloads are
+stored in these tables. Exact case/whitespace normalization preserves age groups
+and team numbers; uncertain identities remain in the publication report.
+
+Normal `sync_competition` batches publish their saved changes automatically. To
+publish an already downloaded catalogue after deployment, run:
+
+```bash
+uv run python apps/django_projects/korfbal/manage.py publish_competition
+```
+
+This command makes no provider requests and is safe to repeat. Run existing-record
+reconciliation with reviewed aliases first when clubs such as DTS have abbreviated
+local names. A custom import runner that bypasses `sync()` must call
+`publish_catalogue()` after releasing its batch lease. The publisher uses the same
+lease to avoid reading another worker's unfinished batch.
+
+Existing clubs, rosters, permissions, attendance and tracked scores are retained.
+New or untouched scheduled matches can receive official scores in `MatchData` with
+`score_source="knkv"`; no shots or player events are invented. Tracker activity and
+manual score changes stop provider updates to that match's local score. Source
+score corrections remain available in the provider revision history.
 
 After migrating, create/select a `schedule.Season` with the current season dates.
 Run a bounded import from the repository root:
@@ -210,7 +230,11 @@ uv run python apps/django_projects/korfbal/manage.py reconcile_competition > rec
 The JSON report contains source IDs, external IDs, seasons, club cities, candidate
 local UUIDs, decisions and `unlinked_local` records. Unique normalized club names
 produce candidates; team names match within linked clubs (allowing a club prefix
-on the source label). Poules need the same season, name and fully linked member
+on the source label). A joint team can also match a local partnership club when
+the full partner names and team designation match exactly and KNKV registers the
+team under one of those partners. Partner order may differ; age groups, town
+qualifiers and team numbers remain significant. The clubs stay separate and only
+the team/match identities link. Poules need the same season, name and fully linked member
 set. Matches require linked home/away teams in the same order, the same season
 and exact kickoff. Either-side ambiguity prevents automatic linking. Already
 saved links are retained; inconsistent parent links stop the operation for review.

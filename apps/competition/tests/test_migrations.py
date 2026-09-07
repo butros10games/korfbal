@@ -49,3 +49,61 @@ def test_existing_variants_are_backfilled() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_shared_identity_migrations_preserve_native_records() -> None:
+    """Add source links and uniqueness without replacing native primary keys."""
+    executor = MigrationExecutor(connection)
+    old_targets = [
+        (
+            "competition",
+            "0003_club_local_club_match_local_match_pool_local_pool_and_more",
+        ),
+        ("team", "0006_remove_teamdata_team_teamda_team_id_18931e_idx_and_more"),
+        ("schedule", "0008_remove_match_schedule_ma_home_te_5e2ac9_idx_and_more"),
+        ("game_tracker", "0035_player_match_impact_wpa"),
+    ]
+    try:
+        executor.migrate(old_targets)
+        old = executor.loader.project_state(old_targets).apps
+        club = old.get_model("club", "Club").objects.create(
+            name="Shared migration club"
+        )
+        team = old.get_model("team", "Team").objects.create(club=club, name="1")
+        season = old.get_model("schedule", "Season").objects.create(
+            name="shared migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        roster = old.get_model("team", "TeamData").objects.create(
+            team=team, season=season, competition="Keep my competition", team_rank=3
+        )
+        source = old.get_model("competition", "Club").objects.create(
+            external_id="shared-migration",
+            name="Shared migration club",
+            local_club_id=club.pk,
+        )
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        current = executor.loader.project_state(targets).apps
+        native = current.get_model("team", "TeamData").objects.get(pk=roster.pk)
+        assert native.team_id == team.pk
+        assert native.season_id == season.pk
+        assert native.competition == "Keep my competition"
+        assert (
+            current
+            .get_model("competition", "Club")
+            .objects.get(pk=source.pk)
+            .local_club_id
+            == club.pk
+        )
+        assert {
+            constraint.name
+            for constraint in current.get_model("team", "TeamData")._meta.constraints
+        } == {"unique_team_data_per_season"}
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

@@ -20,6 +20,7 @@ from apps.competition.application.ports import (
 from apps.competition.models import SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.polling import PollJob, PollPlanner, mark_checked
+from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.resources import ENDPOINTS
 from apps.competition.services.traffic import TrafficGate
 from apps.schedule.models import Season
@@ -120,6 +121,9 @@ def sync(
             if cooldown:
                 break
         summary["http_requests"] = gate.requests
+        if summary["updated"]:
+            publication = publish_catalogue(lease_owner=owner)
+            summary["publication_blocked"] = len(publication["blocked"])
     finally:
         SyncLease.objects.filter(pk=lease.pk, owner=owner).update(
             owner=None, expires_at=timezone.now() + timedelta(seconds=cooldown)

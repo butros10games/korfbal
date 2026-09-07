@@ -73,9 +73,7 @@ def test_team_seasons_are_distinct_and_newest_first() -> None:
     context = build_team_context(suffix="season_options")
     older = create_season("Older season option", starts_in_days=-500, ends_in_days=-100)
     first = TeamData.objects.create(team=context.team, season=older)
-    second = TeamData.objects.create(team=context.team, season=older)
-    first.players.add(context.player)
-    second.players.add(context.coach)
+    first.players.add(context.player, context.coach)
 
     assert list(team_seasons(context.team)) == [context.season, older]
 

@@ -58,7 +58,8 @@ def _prepare_new_part(match_data: MatchData) -> None:
                 code="invalid_match_state",
             )
         match_data.status = "active"
-        match_data.save(update_fields=["status"])
+        match_data.score_source = "tracker"
+        match_data.save(update_fields=["status", "score_source"])
         return
 
     if match_data.status != "active":

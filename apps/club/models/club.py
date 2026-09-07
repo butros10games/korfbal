@@ -11,6 +11,7 @@ from django.templatetags.static import static
 
 
 if TYPE_CHECKING:
+    from apps.competition.models import Club as CompetitionClub
     from apps.team.models.team import Team
 
 
@@ -35,6 +36,7 @@ class Club(models.Model):
 
     if TYPE_CHECKING:
         teams: models.QuerySet[Team]
+        competition_identity: CompetitionClub
 
     def __str__(self) -> str:
         """Return the name of the club.

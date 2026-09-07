@@ -73,15 +73,29 @@ class TeamViewSet(CatalogueViewSet):
 class TeamGroupViewSet(CatalogueViewSet):
     """Browse one team per club/season with indoor and outdoor variants together."""
 
-    queryset = TeamGroup.objects.prefetch_related("variants").order_by("name", "pk")
+    queryset = (
+        TeamGroup.objects
+        .select_related("club", "season")
+        .prefetch_related("variants")
+        .order_by("name", "pk")
+    )
     serializer_class = CompetitionTeamGroupSerializer
     search_fields = ("name",)
     field_filters: ClassVar = {
         "season": "season_id",
         "club": "club_id",
-        "local_club": "club__local_club_id",
         "local_team": "local_team_id",
     }
+
+    def get_queryset(self) -> QuerySet:
+        """Include joint teams stored locally under a partnership club."""
+        query = super().get_queryset()
+        local_club = self.request.query_params.get("local_club")
+        if local_club:
+            query = query.filter(
+                Q(club__local_club_id=local_club) | Q(local_team__club_id=local_club)
+            )
+        return query
 
 
 class PoolViewSet(CatalogueViewSet):
@@ -94,8 +108,13 @@ class PoolViewSet(CatalogueViewSet):
         "season": "season_id",
         "sport": "sport",
         "team": "entries__team_id",
+        "team_group": "entries__team__group_id",
         "local_pool": "local_pool_id",
     }
+
+    def get_queryset(self) -> QuerySet:
+        """Return each poule once when several variants share its membership."""
+        return super().get_queryset().distinct()
 
     @extend_schema(responses=CompetitionPoolEntrySerializer(many=True))
     @action(detail=True, methods=("get",))
@@ -114,7 +133,9 @@ class PoolViewSet(CatalogueViewSet):
 class MatchViewSet(CatalogueViewSet):
     """Browse fixtures/results for analysis without contacting Sportlink."""
 
-    queryset = Match.objects.order_by("starts_at", "external_id")
+    queryset = Match.objects.select_related("home_team", "away_team").order_by(
+        "starts_at", "external_id"
+    )
     serializer_class = CompetitionMatchSerializer
     field_filters: ClassVar = {
         "season": "season_id",
@@ -138,10 +159,14 @@ class MatchViewSet(CatalogueViewSet):
         ):
             value = self.request.query_params.get(name)
             if value:
-                query = query.filter(
-                    Q(**{f"home_team{relation}_id": value})
-                    | Q(**{f"away_team{relation}_id": value})
-                )
+                sides = Q(**{f"home_team{relation}_id": value}) | Q(**{
+                    f"away_team{relation}_id": value
+                })
+                if name == "local_club":
+                    sides |= Q(home_team__group__local_team__club_id=value) | Q(
+                        away_team__group__local_team__club_id=value
+                    )
+                query = query.filter(sides)
         return query
 
 

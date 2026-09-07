@@ -46,6 +46,25 @@ def team_label(name: str, club_name: str) -> str:
     return name.removeprefix(prefix)
 
 
+def joint_team_matches(
+    source_name: str, source_club: str, local_club: str, local_team: str
+) -> bool:
+    """Recognize an exact joint-team identity registered under either partner."""
+    local_partners = {normalized(part) for part in local_club.split("/")}
+    if len(local_partners) <= 1 or "" in local_partners:
+        return False
+    suffix = " " + normalized(local_team)
+    source_name = normalized(source_name)
+    if not source_name.endswith(suffix):
+        return False
+    source_partners = {
+        normalized(part) for part in source_name.removesuffix(suffix).split("/")
+    }
+    return (
+        source_partners == local_partners and normalized(source_club) in source_partners
+    )
+
+
 @dataclass
 class LinkDecision:
     """Reviewable identity decision; unresolved candidates are never applied."""
@@ -202,15 +221,35 @@ class Reconciler:
         teams_by_club: dict[str, set[str]] = {}
         for pk, local in teams.items():
             teams_by_club.setdefault(str(local["club_id"]), set()).add(pk)
+        joint_teams = {
+            pk: row
+            for pk, row in teams.items()
+            if "/" in clubs[str(row["club_id"])]["name"]
+        }
+        joint_candidates = {
+            row["id"]: {
+                pk
+                for pk, local in joint_teams.items()
+                if joint_team_matches(
+                    row["name"],
+                    source_clubs[row["club_id"]]["name"],
+                    clubs[str(local["club_id"])]["name"],
+                    local["name"],
+                )
+            }
+            for row in self.sources["team"]
+        }
         team_allowed = {
             row["id"]: teams_by_club.get(club_links.get(row["club_id"], ""), set())
+            | joint_candidates[row["id"]]
             for row in self.sources["team"]
         }
         team_candidates = {
             row["id"]: [
                 pk
                 for pk in team_allowed[row["id"]]
-                if team_label(row["name"], source_clubs[row["club_id"]]["name"])
+                if pk in joint_candidates[row["id"]]
+                or team_label(row["name"], source_clubs[row["club_id"]]["name"])
                 == team_label(
                     teams[pk]["name"], clubs[str(teams[pk]["club_id"])]["name"]
                 )

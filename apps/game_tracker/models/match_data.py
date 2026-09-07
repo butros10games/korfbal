@@ -33,6 +33,11 @@ class MatchData(models.Model):
     )
     home_score: models.IntegerField[int, int] = models.IntegerField(default=0)
     away_score: models.IntegerField[int, int] = models.IntegerField(default=0)
+    score_source = models.CharField(
+        max_length=16,
+        default="tracker",
+        choices=(("tracker", "Tracker"), ("knkv", "KNKV")),
+    )
     parts: models.IntegerField[int, int] = models.IntegerField(default=2)
     current_part: models.IntegerField[int, int] = models.IntegerField(default=1)
     part_length: models.IntegerField[int, int] = models.IntegerField(default=1800)

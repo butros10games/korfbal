@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
+from uuid import UUID
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -23,6 +24,17 @@ class Team(models.Model):
         on_delete=models.CASCADE,
         related_name="teams",
     )
+
+    class Meta:
+        """Keep a global team identity unique within its club."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("club", "name"), name="unique_team_name_per_club"
+            )
+        ]
+
+    club_id: UUID
 
     def __str__(self) -> str:
         """Get the string representation of the team.

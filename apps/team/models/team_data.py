@@ -47,6 +47,11 @@ class TeamData(models.Model):
     class Meta:
         """Meta class for TeamData model."""
 
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("team", "season"), name="unique_team_data_per_season"
+            )
+        ]
         indexes: ClassVar[list[Any]] = [
             models.Index(fields=["team", "season"]),
         ]

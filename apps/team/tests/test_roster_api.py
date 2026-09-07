@@ -156,11 +156,9 @@ def test_coach_from_another_season_cannot_edit() -> None:
     assert not TeamData.objects.filter(team=context.team, season=season).exists()
 
 
-def test_invalid_mutations_and_duplicate_legacy_rows() -> None:
-    """Invalid mutations and duplicate legacy rows."""
+def test_invalid_mutations_and_roster_removal() -> None:
+    """Reject invalid mutations and remove membership from the unique season roster."""
     context = build_team_context()
-    duplicate = TeamData.objects.create(team=context.team, season=context.season)
-    duplicate.players.add(context.player)
     client = APIClient()
     client.force_authenticate(context.coach.user)
     for payload in [
@@ -180,7 +178,6 @@ def test_invalid_mutations_and_duplicate_legacy_rows() -> None:
         ).status_code
         == status.HTTP_200_OK
     )
-    assert not duplicate.players.exists()
     assert not context.team_data.players.exists()
 
 

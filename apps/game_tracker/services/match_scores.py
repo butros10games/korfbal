@@ -77,5 +77,6 @@ def persist_matchdata_scores(match_data: MatchData) -> tuple[int, int]:
     )
 
     match_data.home_score, match_data.away_score = computed
-    match_data.save(update_fields=["home_score", "away_score"])
+    match_data.score_source = "tracker"
+    match_data.save(update_fields=["home_score", "away_score", "score_source"])
     return computed
