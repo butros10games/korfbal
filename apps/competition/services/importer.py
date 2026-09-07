@@ -19,6 +19,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.identities import team_group_key
 from apps.competition.services.logos import cache_logo, discover_logo
 from apps.schedule.models import Season
 
@@ -91,7 +92,7 @@ class Importer:
             team.group, _ = TeamGroup.objects.get_or_create(
                 season=self.season,
                 club=team.club,
-                normalized_name=" ".join(team.name.casefold().split()),
+                normalized_name=team_group_key(team.name, team.club.name),
                 defaults={"name": team.name},
             )
             team.save(update_fields=("group",))

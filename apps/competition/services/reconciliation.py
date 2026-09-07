@@ -287,6 +287,7 @@ class Reconciler:
                 normalized(row["name"]),
                 normalized(f"{row['class_name']} {row['name']}"),
             }
+            labels.discard("")
             candidates[row["id"]] = [
                 pk
                 for pk in allowed[row["id"]]

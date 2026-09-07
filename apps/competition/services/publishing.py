@@ -20,6 +20,10 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.identities import (
+    merge_unlinked_joint_groups,
+    unnamed_pool_label,
+)
 from apps.competition.services.logos import publish_logo
 from apps.competition.services.reconciliation import (
     LOCAL_FIELDS,
@@ -179,14 +183,32 @@ class Publisher:
         additions = []
         for row in Pool.objects.select_related("local_pool"):
             local = row.local_pool
+            fallback = unnamed_pool_label(row.external_id)
+            name = f"{row.class_name} {row.name}".strip() or fallback
+            if (
+                local is not None
+                and local.name in {"", fallback}
+                and local.name != name
+                and not SeasonPool.objects
+                .filter(season_id=row.season_id, name=name, sport=local.sport)
+                .exclude(pk=local.pk)
+                .exists()
+            ):
+                local.name = name
+                local.save(update_fields=("name",))
             if local is None:
-                name = f"{row.class_name} {row.name}".strip()
                 local, created = SeasonPool.objects.get_or_create(
                     season_id=row.season_id, name=name, sport=row.sport
                 )
                 if not created and local.pk in claimed:
-                    self.conflict("pool", row.pk, "pool_already_claimed")
-                    continue
+                    suffix = f" [KNKV {row.external_id}]"
+                    name = name[: 512 - len(suffix)] + suffix
+                    local, created = SeasonPool.objects.get_or_create(
+                        season_id=row.season_id, name=name, sport=row.sport
+                    )
+                    if not created and local.pk in claimed:
+                        self.conflict("pool", row.pk, "pool_already_claimed")
+                        continue
                 self.counts["pools_created"] += int(created)
                 row.local_pool = local
                 row.save(update_fields=("local_pool",))
@@ -327,6 +349,7 @@ def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
         and lease.owner != lease_owner
     ):
         raise ValueError("An import is running; publish after its current batch")
+    merged_groups = merge_unlinked_joint_groups()
     decisions = Reconciler({}, lock=True).plan()
     for decision in decisions:
         if decision.reason == "unique":
@@ -334,6 +357,8 @@ def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
                 pk=decision.source_id
             ).update(**{LOCAL_FIELDS[decision.kind] + "_id": decision.local_id})
     publisher = Publisher()
+    if merged_groups:
+        publisher.counts["source_groups_merged"] = merged_groups
     publisher.clubs()
     for source_club in (
         Club.objects

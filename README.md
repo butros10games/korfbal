@@ -290,3 +290,12 @@ Deploy the new importer image as well as the web image before resuming that queu
 the custom production runner must use the updated image to recognize `club_logo`.
 Changed logo hashes are queued again; unchanged cached hashes require no image HTTP
 request. Image failures use the normal retry checkpoints and provider backoff.
+
+Publication repairs reversed joint-club source names when the partner names,
+team designation, source club and season match exactly. It preserves the linked
+team/roster and moves source variants from unlinked duplicate groups; it never
+merges two independently linked native teams. Unnamed poules use `KNKV-poule <id>`
+labels, and different IDs with identical labels receive an ID suffix. This keeps
+incomplete provider metadata from collapsing distinct poules. Run
+`publish_competition` after deployment to repair existing publication conflicts
+without additional provider requests.
