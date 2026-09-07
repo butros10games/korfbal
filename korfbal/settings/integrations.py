@@ -47,3 +47,9 @@ PROMETHEUS_LATENCY_BUCKETS = (
     float("inf"),
 )
 PROMETHEUS_METRIC_NAMESPACE = "kwt"
+
+
+# Historical and current competition imports share one durable provider budget.
+SPORTLINK_HOURLY_LIMIT = max(1, min(3600, int(env("SPORTLINK_HOURLY_LIMIT", "120"))))
+SPORTLINK_DAILY_LIMIT = max(1, min(86400, int(env("SPORTLINK_DAILY_LIMIT", "1000"))))
+SPORTLINK_REQUEST_SPACING = max(1, int(env("SPORTLINK_REQUEST_SPACING", "5")))

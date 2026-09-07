@@ -152,7 +152,7 @@ run. No recurring scheduler is installed by this command: invoke it regularly
 (for example every 15 minutes) in the deployment scheduler to enable polling.
 
 All actual HTTP attempts, including OAuth and authentication retries, share a
-durable provider budget: at most 120 per hour, 1,000 per day, and five seconds
+durable provider budget: by default at most 120 per hour, 1,000 per day, and five seconds
 between requests. `--max-requests` further bounds each run. Exhaustion defers work
 without marking a feed failed. The summary's `requests` counts selected resources;
 `http_requests` counts actual reserved wire attempts. ETags avoid unchanged bodies.
@@ -313,3 +313,135 @@ count remain available for review; sync reports their count as `exhausted`. A
 successful attempt before exhaustion clears the failure streak. After fixing an
 exhausted feed, an operator can explicitly reset its failure count and retry
 deadline. Restarting an importer does not reset the cap.
+
+### Historical competition imports
+
+Historical discovery uses the same source models, global teams, season rosters,
+Django admin and native publication flow. It has its own durable work queue because
+an old match must **not** enqueue today's club/team feeds under an old season.
+Ratings/Elo are not part of this importer.
+
+Create the appropriate `schedule.Season` and its real date boundaries first. Seed
+only identifiers obtained from a provider response, a saved link, or an attributed
+archive. App IDs (`M…`, `T…`) and numeric Dataservice codes are different namespaces;
+the importer never guesses a conversion or scans numeric ID ranges.
+
+```bash
+# A known app match reveals its poule; a known poule can also be seeded directly.
+uv run python apps/django_projects/korfbal/manage.py import_competition_history seed \
+  --season '2025-2026' --provider app --kind match --source-id M123456 \
+  --reference 'saved-match-link'
+
+uv run python apps/django_projects/korfbal/manage.py import_competition_history run \
+  --session-file /private/competition/session.json --max-requests 20
+
+uv run python apps/django_projects/korfbal/manage.py import_competition_history status
+# Recheck a specific checkpoint after correcting access, evidence or a mapping.
+uv run python apps/django_projects/korfbal/manage.py import_competition_history retry \
+  --resource 123
+```
+
+The IDs above are examples. No working previous-season app discovery filter has
+been verified. App date-window seeds are rejected; empty/current-season responses
+are not evidence that a historical competition was fully imported. Direct match
+responses must match the supplied identity, season and interval. A poule must have
+dated results inside the selected season before its standings are imported.
+
+For optional Club.Dataservice access, put **that club's** client ID in a separate
+mode-600 file. App OAuth is never sent to Dataservice. The `source-id` for a club
+window is its Sportlink club relation code, and the results are checked against
+that scope. Use an explicitly verified sport ID; absent club identities or sport
+mappings are held for review instead of guessing them.
+
+```bash
+uv run python apps/django_projects/korfbal/manage.py import_competition_history seed \
+  --season '2025-2026' --provider dataservice --kind window --source-id CLUB_CODE \
+  --start 2026-05-01 --end 2026-05-31 --sport KORFBALL-VE-WK
+uv run python apps/django_projects/korfbal/manage.py import_competition_history run \
+  --dataservice-file /private/competition/dataservice-id --max-requests 20
+```
+
+Dataservice club `uitslagen` documents a 52-week lookback. Older club windows are
+recorded as inaccessible without spending requests. Known poules use the separate
+`pouleuitslagen` endpoint, whose documented week offset has no such stated limit;
+actual historical retention and subscription access still have to be established
+from its responses. The importer follows returned match codes to `poulecode`, then
+prioritizes bulk poule results before remaining match details. Previously imported
+match/poule identities are reused. Dataservice source IDs use the `ds:` prefix to
+avoid collisions with app IDs; ambiguous native links remain publication conflicts.
+
+Seed the next older interval/season using its existing season record. Runs process
+newer seasons first, with bulk poule results ahead of individual match requests
+within each season. Windows longer than 240 days are split into disjoint inclusive
+intervals. Club results split at the documented 500-row cap; poule results use a
+conservative 1,000-row split threshold and independent completeness checks because
+that endpoint has no documented row-limit parameter. See Sportlink's
+[parameter limits](https://sportlinkservices.freshdesk.com/nl/support/solutions/articles/9000211117-lijst-met-parameters-in-club-dataservice)
+and [endpoint contracts](https://sportlinkservices.freshdesk.com/nl/support/solutions/articles/9000062942).
+A saturated single day remains blocked/partial; it is never silently counted as complete.
+Relative week requests include a small alignment margin, which is discarded during
+normalization. Dates outside the actual wire interval block the resource as an
+ignored-filter response. HTTP success, interval exhaustion and complete poule
+coverage are separate facts.
+
+`HistoricalResource` in Django admin shows state, coverage, date bounds, attempts,
+errors and evidence. `HistoricalDiscovery` retains source references and parent
+edges; repeated discovery widens the retained date scope without repeating completed
+requests. Exact duplicate result rows are applied once; conflicting copies of the
+same source identity are rejected atomically. Coverage is `unknown`,
+`partial`, `empty`, `inaccessible` or `complete`. Complete poules require unfiltered
+results with final scores and per-team played counts matching their official
+standings, with unique membership identities and uninterrupted exhausted date
+coverage for Dataservice poules. Missing scores, withdrawals, incomplete membership,
+date gaps or count differences remain partial. Completed resources are cached
+indefinitely; use an explicit retry
+for a targeted correction check. ETags are retained for such rechecks.
+
+For archives without provider access, normalize **actual recorded matches** into
+JSON using the existing app-shaped fields (`PublicMatchId`, `MatchDateTime` with an
+offset, `Status`, `HomeTeam`, `AwayTeam`, optional `Pool`, `HomeResult.Score` and
+`AwayResult.Score`). Each team supplies `PublicTeamId`, `TeamName`, `SportId`, and a
+`Club` with a known `ClubId`. Wrap the rows as:
+
+```json
+{ "namespace": "clubbook", "source": "https://example.org/archive.pdf", "matches": [] }
+```
+
+Run `import_competition_history archive --season '2025-2026' --file archive.json`,
+then `publish_competition`. Archive IDs are namespaced, raw documents/player payloads
+are not stored, missing scores remain missing, and provenance remains accessible.
+Archive publication labels scores `archive` and cannot overwrite an existing native
+match's scores. Final standings alone cannot reconstruct individual matches: there
+is deliberately no automatic score fabrication or general PDF scraper.
+
+Invoke `run` periodically through the existing deployment scheduler (for example,
+every 15 minutes). Credential paths may instead come from
+`SPORTLINK_HISTORY_SESSION_FILE` / `SPORTLINK_HISTORY_DATASERVICE_FILE`. Each run is
+bounded, yields while current-season discovery/refresh work is due, and claims the
+same provider lease **before loading the latest rotated session**. All HTTP attempts,
+including refresh/retry calls, count toward the shared traffic budget. `--no-publish`
+retains source records for inspection before native publication.
+
+App matches with missing scores remain eligible for detail enrichment. Dataservice
+details are used to establish the poule link; numeric detail scores alone do not
+prove a match was played. Recorded result scores retain their regulation/extra-time
+value when a separate shootout score is present in parentheses.
+
+Default limits remain 120/hour, 1,000/day and five-second spacing. Configurable
+`SPORTLINK_HOURLY_LIMIT`, `SPORTLINK_DAILY_LIMIT` and `SPORTLINK_REQUEST_SPACING` are
+capped at 3,600/hour, 86,400/day and at least one second. An actual HTTP 429 (including
+OAuth) persists `TrafficState.rate_limited`, returning both import paths to at most
+the conservative defaults. Other failures get per-resource backoff and at most six
+attempts; they do not switch the global rate policy. Auth/access errors and missing
+historical resources require an explicit retry after the cause is resolved.
+
+These workflows are tested with synthetic historical responses. An end-to-end live
+previous-season fetch remains unverified until an accessible historical seed or
+Dataservice subscription is supplied; the importer reports that limitation rather
+than promising all previous seasons are available.
+
+Rollout: apply migrations before starting these workers. Custom deployment runners
+must use `apps.competition.services.traffic.TrafficGate` for the same persistent
+fallback policy; an external/custom rate-gate module does not automatically adopt
+these settings. Keep historical scheduling disabled until that cutover is complete.
+The PR does not install a production schedule or copy credentials.

@@ -5,6 +5,8 @@ from django.http import HttpRequest
 
 from apps.competition.models import (
     Club,
+    HistoricalDiscovery,
+    HistoricalResource,
     Match,
     Pool,
     ResultRevision,
@@ -151,3 +153,34 @@ class SyncLeaseAdmin(CatalogueAdmin):
     """Show whether an importer lease or cooldown is active."""
 
     list_display = ("key", "owner", "expires_at")
+
+
+@admin.register(HistoricalResource)
+class HistoricalResourceAdmin(CatalogueAdmin):
+    """Inspect transport checkpoints separately from historical completeness."""
+
+    list_display = (
+        "provider",
+        "kind",
+        "source_id",
+        "season",
+        "start_date",
+        "end_date",
+        "state",
+        "coverage",
+        "reason",
+        "attempts",
+        "fetched_at",
+    )
+    list_filter = ("provider", "kind", "season", "state", "coverage")
+    search_fields = ("source_id", "reason")
+    list_select_related = ("season",)
+
+
+@admin.register(HistoricalDiscovery)
+class HistoricalDiscoveryAdmin(CatalogueAdmin):
+    """Keep source attribution and discovery links available for audit."""
+
+    list_display = ("resource", "parent", "reference")
+    list_select_related = ("resource", "parent")
+    search_fields = ("reference", "resource__source_id")

@@ -22,7 +22,7 @@ from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.polling import PollJob, PollPlanner, mark_checked
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.resources import ENDPOINTS, MAX_FEED_FAILURES
-from apps.competition.services.traffic import TrafficGate
+from apps.competition.services.traffic import TrafficGate, observe_rate_limit
 from apps.schedule.models import Season
 
 
@@ -150,6 +150,8 @@ def _fetch_one(
     checked = False
     try:
         result = client.fetch(resource, gate)
+        if result.status == HTTP_RATE_LIMIT:
+            observe_rate_limit()
         if result.status not in {HTTP_OK, HTTP_NOT_MODIFIED}:
             record_failure(resource, f"http_{result.status}", result.retry_after)
             summary["failed"] += 1
@@ -164,6 +166,8 @@ def _fetch_one(
         summary["reauth_required"] += 1
         return 60, False
     except TransportError as exc:
+        if isinstance(exc, ProviderCooldownError):
+            observe_rate_limit()
         delay = exc.seconds if isinstance(exc, ProviderCooldownError) else 60
         code = (
             "provider_cooldown"

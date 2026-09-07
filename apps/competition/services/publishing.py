@@ -326,6 +326,9 @@ class Publisher:
         if row.published_state and current != row.published_state:
             self.conflict("match", row.pk, "local_score_changed")
             return
+        archive = row.external_id.startswith("archive:")
+        if archive and not row.local_created:
+            return
         if tracker.score_source != "knkv" and not row.local_created:
             pristine = tracker.status == "upcoming" and not (
                 tracker.home_score or tracker.away_score
@@ -347,7 +350,7 @@ class Publisher:
             "away": row.away_score if final else 0,
         }
         MatchData.objects.filter(pk=tracker.pk).update(
-            score_source="knkv",
+            score_source="archive" if archive else "knkv",
             status=row.published_state["status"],
             home_score=row.published_state["home"],
             away_score=row.published_state["away"],

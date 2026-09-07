@@ -67,13 +67,17 @@ def enqueue(season: Season, kind: str, source_id: str = "") -> None:
 class Importer:
     """Import one response atomically; repeated discovery is idempotent."""
 
-    def __init__(self, season: Season, observed_at: datetime) -> None:
+    def __init__(
+        self, season: Season, observed_at: datetime, *, discover: bool = True
+    ) -> None:
         """Bind each import to an explicit season and observation time."""
+        self.discover = discover
         self.season = season
         self.observed_at = observed_at
         self._clubs: dict[str, Club] = {}
         self._teams: dict[str, Team] = {}
         self._pools: dict[str, Pool] = {}
+        self._matches: dict[tuple[str, bool], dict[str, Any]] = {}
 
     def club(self, data: dict[str, Any]) -> Club:
         """Upsert club catalogue fields and discover its three collection feeds."""
@@ -85,10 +89,14 @@ class Importer:
             club, _ = Club.objects.select_for_update().get_or_create(
                 external_id=source_id, defaults=values
             )
-            save_changed(club, values)
-        for kind in ("club_teams", "club_program", "club_results"):
+            if self.discover:
+                save_changed(club, values)
+        for kind in (
+            ("club_teams", "club_program", "club_results") if self.discover else ()
+        ):
             enqueue(self.season, kind, club.external_id)
-        discover_logo(club, data.get("ClubLogo"), self.season)
+        if self.discover:
+            discover_logo(club, data.get("ClubLogo"), self.season)
         self._clubs[source_id] = club
         return club
 
@@ -116,7 +124,8 @@ class Importer:
                 defaults={"name": team.name},
             )
             team.save(update_fields=("group",))
-        enqueue(self.season, "team_pools", team.external_id)
+        if self.discover:
+            enqueue(self.season, "team_pools", team.external_id)
         self._teams[source_id] = team
         return team
 
@@ -136,7 +145,8 @@ class Importer:
                 season=self.season, external_id=source_id, defaults=values
             )
             save_changed(pool, values)
-        enqueue(self.season, "pool_results", pool.external_id)
+        if self.discover:
+            enqueue(self.season, "pool_results", pool.external_id)
         self._pools[source_id] = pool
         return pool
 
@@ -150,7 +160,13 @@ class Importer:
         starts_at = parse_datetime(data["MatchDateTime"])
         if starts_at is None or timezone.is_naive(starts_at):
             raise ValueError("MatchDateTime must contain a timezone")
-        if not self.season.start_date <= starts_at.date() <= self.season.end_date:
+        if (
+            not self.season.start_date
+            <= timezone.localdate(starts_at)
+            <= self.season.end_date
+        ):
+            return
+        if self._repeated_match(data, starts_at, result=result):
             return
         home = self.team(data["HomeTeam"])
         away = self.team(data["AwayTeam"])
@@ -178,6 +194,46 @@ class Importer:
             if fields:
                 match.save(update_fields=(*fields, "updated_at"))
 
+    def _repeated_match(
+        self, data: dict[str, Any], starts_at: datetime, *, result: bool
+    ) -> bool:
+        """Skip repeated rows while rejecting contradictory IDs in one response.
+
+        Raises:
+            ValueError: Duplicate provider rows disagree about a fixture or score.
+
+        """
+        key = (str(data["PublicMatchId"]), result)
+        fields = {
+            "starts_at": starts_at,
+            "home": str(data["HomeTeam"]["PublicTeamId"]),
+            "away": str(data["AwayTeam"]["PublicTeamId"]),
+            "home_club": str(data["HomeTeam"]["Club"]["ClubId"]),
+            "away_club": str(data["AwayTeam"]["Club"]["ClubId"]),
+            "home_sport": data["HomeTeam"].get("SportId") or "",
+            "away_sport": data["AwayTeam"].get("SportId") or "",
+            "status": data["Status"],
+        }
+        if result:
+            fields.update(
+                home_score=(data.get("HomeResult") or {}).get("Score"),
+                away_score=(data.get("AwayResult") or {}).get("Score"),
+                automatic_result=data.get("AutoResult") is not None,
+            )
+        pool = str(data["Pool"]["PoolId"]) if data.get("Pool") else None
+        previous = self._matches.get(key)
+        if previous is not None:
+            if any(previous[field] != value for field, value in fields.items()) or (
+                previous["pool"] is not None
+                and pool is not None
+                and previous["pool"] != pool
+            ):
+                raise ValueError("Conflicting duplicate match identity or result")
+            if previous["pool"] is not None or pool is None:
+                return True
+        self._matches[key] = {**fields, "pool": pool}
+        return False
+
     def _result(
         self,
         match: Match,
@@ -186,7 +242,12 @@ class Importer:
         created: bool,
         fixture_values: dict[str, Any],
     ) -> None:
-        """Apply only newer observations, including score removals/cancellations."""
+        """Apply only newer observations, including score removals/cancellations.
+
+        Raises:
+            ValueError: A score is not a nonnegative integer or explicitly unknown.
+
+        """
         if match.result_observed_at and match.result_observed_at > self.observed_at:
             return
         values = {
@@ -195,6 +256,12 @@ class Importer:
             "away_score": (data.get("AwayResult") or {}).get("Score"),
             "automatic_result": data.get("AutoResult") is not None,
         }
+        for field in ("home_score", "away_score"):
+            score = values[field]
+            if score is not None and (
+                not isinstance(score, int) or isinstance(score, bool) or score < 0
+            ):
+                raise ValueError("Match scores must be nonnegative integers or null")
         changed = created or any(
             getattr(match, key) != value for key, value in values.items()
         )
@@ -275,6 +342,7 @@ class Importer:
         self._clubs.clear()
         self._teams.clear()
         self._pools.clear()
+        self._matches.clear()
         if data.get("Error"):
             raise ValueError("Sportlink returned an application error")
         collections = {

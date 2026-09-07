@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from apps.competition.models import SyncResource
+from apps.competition.models import HistoricalResource, SyncResource
 
 
 class TransportError(Exception):
@@ -61,3 +61,15 @@ class CompetitionClient(Protocol):
 
 class AuthenticationRequiredError(Exception):
     """Refresh credentials expired or were revoked; interactive sign-in is needed."""
+
+
+class HistoricalClient(Protocol):
+    """Read known historical resources without coupling services to HTTP adapters."""
+
+    def fetch(self, resource: HistoricalResource, gate: RequestGate) -> FetchResult:
+        """Read one resource within the shared wire request budget."""
+        ...
+
+    def close(self) -> None:
+        """Release provider connections."""
+        ...

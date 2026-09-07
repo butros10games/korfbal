@@ -36,7 +36,7 @@ class MatchData(models.Model):
     score_source = models.CharField(
         max_length=16,
         default="tracker",
-        choices=(("tracker", "Tracker"), ("knkv", "KNKV")),
+        choices=(("tracker", "Tracker"), ("knkv", "KNKV"), ("archive", "Archive")),
     )
     parts: models.IntegerField[int, int] = models.IntegerField(default=2)
     current_part: models.IntegerField[int, int] = models.IntegerField(default=1)

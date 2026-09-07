@@ -96,7 +96,10 @@ def _timer_data(
 
 
 def _score(match_data: MatchData, *, team: Team, opponent: Team) -> tuple[int, int]:
-    if match_data.score_source == "knkv" and match_data.status == "finished":
+    if (
+        match_data.score_source in {"knkv", "archive"}
+        and match_data.status == "finished"
+    ):
         if team.pk == match_data.match_link.home_team_id:
             return match_data.home_score, match_data.away_score
         return match_data.away_score, match_data.home_score

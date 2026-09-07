@@ -74,6 +74,11 @@ OAuth session file and send `X-Navajo-Instance: KNKV` plus the endpoint-specific
 `X-Navajo-Version`; a bearer token and the `v` query parameter alone can return
 misleading provider 500/603 errors.
 
+- Historical Sportlink deduplication must preserve the union of discovered date scopes;
+  test narrow-then-wide discovery and bulk-before-detail request counts. Use each
+  Dataservice endpoint's documented limits, and prove complete coverage separately
+  from HTTP success or a deduplicated source ID.
+
 ## PR-first workflow (required)
 
 - Branch: `opencode/korfbal-<short-slug>`

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, ClassVar
 from uuid import UUID
 
 from django.db import models
+from django.utils import timezone
 
 
 class Club(models.Model):
@@ -269,6 +270,7 @@ class TrafficState(models.Model):
     key = models.CharField(max_length=32, primary_key=True)
     hour_start = models.DateTimeField()
     day_start = models.DateTimeField()
+    rate_limited = models.BooleanField(default=False)
     hour_requests = models.PositiveIntegerField(default=0)
     day_requests = models.PositiveIntegerField(default=0)
     next_request_at = models.DateTimeField()
@@ -276,3 +278,68 @@ class TrafficState(models.Model):
     def __str__(self) -> str:
         """Return the provider budget key."""
         return self.key
+
+
+class HistoricalResource(models.Model):
+    """Immutable discovery identity and resumable historical coverage checkpoint."""
+
+    if TYPE_CHECKING:
+        season_id: UUID
+
+    season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
+    provider = models.CharField(max_length=20)
+    kind = models.CharField(max_length=20)
+    source_id = models.CharField(max_length=80)
+    key = models.CharField(max_length=64, unique=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    sport = models.CharField(max_length=80, blank=True)
+    state = models.CharField(max_length=20, default="pending", db_index=True)
+    coverage = models.CharField(max_length=20, default="unknown")
+    reason = models.CharField(max_length=80, blank=True)
+    evidence = models.JSONField(default=dict)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    fetched_at = models.DateTimeField(null=True)
+    attempts = models.PositiveIntegerField(default=0)
+    etag = models.CharField(max_length=512, blank=True)
+
+    class Meta:
+        """Index bounded workers by ready state and newest historical interval."""
+
+        indexes: ClassVar = [models.Index(fields=("state", "next_attempt_at"))]
+        constraints: ClassVar = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="history_valid_date_interval",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a credential-free provider resource label."""
+        return f"{self.provider}:{self.kind}:{self.source_id}"
+
+
+class HistoricalDiscovery(models.Model):
+    """Retain every discovery edge without duplicating upstream work."""
+
+    resource = models.ForeignKey(
+        HistoricalResource, on_delete=models.CASCADE, related_name="discoveries"
+    )
+    parent = models.ForeignKey(
+        HistoricalResource, null=True, on_delete=models.PROTECT, related_name="children"
+    )
+    reference = models.CharField(max_length=512)
+
+    class Meta:
+        """Deduplicate provenance independently of the request checkpoint."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("resource", "reference"),
+                name="history_discovery_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return the attributed discovery reference."""
+        return self.reference
