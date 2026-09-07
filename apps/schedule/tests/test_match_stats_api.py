@@ -479,3 +479,30 @@ def test_match_player_counts_exclude_history_and_do_not_multiply_events(
         "ball_losses": 2,
         "interceptions": 1,
     }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("player_count", [1, 8])
+def test_ambiguous_shot_players_use_constant_query_budget(
+    django_assert_num_queries: Callable[[int], AbstractContextManager[None]],
+    player_count: int,
+) -> None:
+    """Resolve every mixed-side player from shared aggregates, including ties."""
+    context = _create_match_context()
+    expected = {"home": set(), "away": set()}
+    for index in range(player_count):
+        player = _create_player(f"mixed_{index}")
+        _add_shot(context, player, "home")
+        _add_shot(context, player, "away")
+        if index % 2:
+            _add_shot(context, player, "away")
+        expected["away" if index % 2 else "home"].add(player.user.username)
+
+    with django_assert_num_queries(10 if player_count == 1 else 11):
+        payload = build_match_stats_payload(
+            match=context.match, match_data=context.match_data
+        )
+    assert {
+        side: {line["username"] for line in payload["players"][side]}
+        for side in ("home", "away")
+    } == expected

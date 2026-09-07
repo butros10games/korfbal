@@ -14,7 +14,7 @@ import pytest
 from pytest_django.fixtures import DjangoAssertNumQueries
 
 from apps.club.models import Club
-from apps.club.queries.overview import club_teams
+from apps.club.queries.overview import club_matches, club_teams
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.models.player_match_minutes import (
     LATEST_MATCH_MINUTES_VERSION,
@@ -176,6 +176,43 @@ def test_club_overview_returns_team_and_match_payload(client: Client) -> None:
     assert payload["meta"]["season_name"] == graph.season.name
     assert payload["seasons"]
     assert payload["seasons"][0]["id_uuid"] == str(graph.season.id_uuid)
+
+
+@pytest.mark.parametrize("scoped", [True, False])
+def test_club_match_candidates_cover_both_sides_without_duplicates(
+    django_assert_num_queries: DjangoAssertNumQueries, *, scoped: bool
+) -> None:
+    """Filtering before presentation joins retains away games and intra-club games."""
+    graph = _make_club_graph(club_name="Candidate club")
+    home = Team.objects.create(name="Home", club=graph.club)
+    away = Team.objects.create(name="Away", club=graph.club)
+    other = Team.objects.create(name="Other", club=graph.opponent_team.club)
+    previous = _make_season("Previous", date(2020, 1, 1), date(2020, 12, 31))
+    fixtures = [
+        Match.objects.create(
+            home_team=home_team,
+            away_team=away_team,
+            season=season,
+            start_time=timezone.now() + timedelta(days=index),
+        )
+        for index, (home_team, away_team, season) in enumerate([
+            (home, graph.opponent_team, graph.season),
+            (graph.opponent_team, away, graph.season),
+            (home, away, graph.season),
+            (graph.opponent_team, other, graph.season),
+            (home, graph.opponent_team, previous),
+        ])
+    ]
+    expected = fixtures[:3] if scoped else [*fixtures[:3], fixtures[4]]
+    with django_assert_num_queries(1):
+        rows = list(
+            club_matches(graph.club, graph.season if scoped else None).order_by(
+                "match_link__start_time"
+            )
+        )
+        assert [row.match_link for row in rows] == expected
+        assert all(row.match_link.home_team.club.name for row in rows)
+        assert all(row.match_link.away_team.club.name for row in rows)
 
 
 def test_club_overview_can_filter_by_season(client: Client) -> None:

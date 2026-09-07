@@ -183,6 +183,7 @@ class _ShotOnlySideInputs(TypedDict):
     away_teamdata_ids: set[str]
     shot_home_ids: set[str]
     shot_away_ids: set[str]
+    shot_counts: dict[tuple[str, str], int]
 
 
 def _resolve_shot_only_player_side(
@@ -208,17 +209,11 @@ def _resolve_shot_only_player_side(
             if in_home_shots != in_away_shots:
                 side = "home" if in_home_shots else "away"
             else:
-                home_count = sum(
-                    row["shots"]
-                    for row in ctx.shots
-                    if str(row["player_id"]) == player_id
-                    and row["team_id"] == ctx.home_team.pk
+                home_count = inputs["shot_counts"].get(
+                    (player_id, str(ctx.home_team.pk)), 0
                 )
-                away_count = sum(
-                    row["shots"]
-                    for row in ctx.shots
-                    if str(row["player_id"]) == player_id
-                    and row["team_id"] == ctx.away_team.pk
+                away_count = inputs["shot_counts"].get(
+                    (player_id, str(ctx.away_team.pk)), 0
                 )
 
                 side = "home" if home_count >= away_count else "away"
@@ -288,6 +283,11 @@ def _assign_shot_only_players(
     home_teamdata_ids_str = {str(player_id) for player_id in home_teamdata_ids}
     away_teamdata_ids_str = {str(player_id) for player_id in away_teamdata_ids}
 
+    shot_counts: dict[tuple[str, str], int] = {}
+    for row in ctx.shots:
+        key = (str(row["player_id"]), str(row["team_id"]))
+        shot_counts[key] = shot_counts.get(key, 0) + row["shots"]
+
     side_inputs: _ShotOnlySideInputs = {
         "home_group_ids": home_group_ids_str,
         "away_group_ids": away_group_ids_str,
@@ -295,6 +295,7 @@ def _assign_shot_only_players(
         "away_teamdata_ids": away_teamdata_ids_str,
         "shot_home_ids": shot_home_ids,
         "shot_away_ids": shot_away_ids,
+        "shot_counts": shot_counts,
     }
 
     for player_id in shot_only_ids:

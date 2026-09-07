@@ -133,3 +133,14 @@ def test_sport_change_invalidates_cached_population(season: Season) -> None:
     Team.objects.filter(external_id="T1").update(sport="indoor")
     assert all(team["games"] == 0 for team in team_ratings(season.pk)["results"])
     assert Match.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_unchanged_result_poll_preserves_cached_ratings(season: Season) -> None:
+    """Repeated upstream observations do not rebuild the full season Elo table."""
+    now = timezone.now()
+    payload = {"MatchResult": [match_payload()]}
+    Importer(season, now).apply("club_results", "CT1", payload)
+    initial = team_ratings(season.pk)
+    Importer(season, now + timedelta(seconds=1)).apply("club_results", "CT1", payload)
+    assert team_ratings(season.pk) == initial

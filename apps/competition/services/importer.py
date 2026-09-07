@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -38,6 +38,22 @@ STANDING_FIELDS = (
 )
 
 
+def assign_changed(instance: models.Model, values: dict[str, Any]) -> list[str]:
+    """Assign changed snapshot fields without fetching foreign-key objects."""
+    changed = []
+    for key, value in values.items():
+        if getattr(instance, key) != value:
+            setattr(instance, key, value)
+            changed.append(key)
+    return changed
+
+
+def save_changed(instance: models.Model, values: dict[str, Any]) -> None:
+    """Keep stable catalogue rows read-only and preserve model saves for changes."""
+    if fields := assign_changed(instance, values):
+        instance.save(update_fields=fields)
+
+
 def enqueue(season: Season, kind: str, source_id: str = "") -> None:
     """Discover a resource once without resetting its successful checkpoint."""
     SyncResource.objects.get_or_create(
@@ -64,10 +80,12 @@ class Importer:
         source_id = str(data["ClubId"])
         if source_id in self._clubs:
             return self._clubs[source_id]
-        club, _ = Club.objects.update_or_create(
-            external_id=str(data["ClubId"]),
-            defaults={"name": data["ClubName"], "city": data.get("City") or ""},
-        )
+        values = {"name": data["ClubName"], "city": data.get("City") or ""}
+        with transaction.atomic():
+            club, _ = Club.objects.select_for_update().get_or_create(
+                external_id=source_id, defaults=values
+            )
+            save_changed(club, values)
         for kind in ("club_teams", "club_program", "club_results"):
             enqueue(self.season, kind, club.external_id)
         discover_logo(club, data.get("ClubLogo"), self.season)
@@ -79,20 +97,22 @@ class Importer:
         source_id = str(data["PublicTeamId"])
         if source_id in self._teams:
             return self._teams[source_id]
-        team, _ = Team.objects.update_or_create(
-            season=self.season,
-            external_id=str(data["PublicTeamId"]),
-            defaults={
-                "name": data["TeamName"],
-                "club": self.club(data["Club"]),
-                "sport": data.get("SportId") or "",
-            },
-        )
+        club = self.club(data["Club"])
+        values = {
+            "name": data["TeamName"],
+            "club_id": club.pk,
+            "sport": data.get("SportId") or "",
+        }
+        with transaction.atomic():
+            team, _ = Team.objects.select_for_update().get_or_create(
+                season=self.season, external_id=source_id, defaults=values
+            )
+            save_changed(team, values)
         if team.group_id is None:
             team.group, _ = TeamGroup.objects.get_or_create(
                 season=self.season,
-                club=team.club,
-                normalized_name=team_group_key(team.name, team.club.name),
+                club_id=club.pk,
+                normalized_name=team_group_key(team.name, club.name),
                 defaults={"name": team.name},
             )
             team.save(update_fields=("group",))
@@ -110,11 +130,12 @@ class Importer:
             "class_name": data.get("ClassName"),
             "sport": sport,
         }
-        pool, _ = Pool.objects.update_or_create(
-            season=self.season,
-            external_id=str(data["PoolId"]),
-            defaults={key: value for key, value in values.items() if value},
-        )
+        values = {key: value for key, value in values.items() if value}
+        with transaction.atomic():
+            pool, _ = Pool.objects.select_for_update().get_or_create(
+                season=self.season, external_id=source_id, defaults=values
+            )
+            save_changed(pool, values)
         enqueue(self.season, "pool_results", pool.external_id)
         self._pools[source_id] = pool
         return pool
@@ -135,9 +156,13 @@ class Importer:
         away = self.team(data["AwayTeam"])
         if home == away or home.sport != away.sport:
             raise ValueError("Inconsistent match teams")
-        values = {"home_team": home, "away_team": away, "starts_at": starts_at}
+        values = {
+            "home_team_id": home.pk,
+            "away_team_id": away.pk,
+            "starts_at": starts_at,
+        }
         if data.get("Pool"):
-            values["pool"] = self.pool(data["Pool"], home.sport)
+            values["pool_id"] = self.pool(data["Pool"], home.sport).pk
         match, created = Match.objects.get_or_create(
             season=self.season,
             external_id=str(data["PublicMatchId"]),
@@ -146,15 +171,21 @@ class Importer:
         # Fixture summaries lack scores and must never erase an observed result.
         if not result and match.result_observed_at:
             return
-        for key, value in values.items():
-            setattr(match, key, value)
         if result:
-            self._result(match, data, created=created)
+            self._result(match, data, created=created, fixture_values=values)
         else:
-            match.status = data["Status"]
-            match.save()
+            fields = assign_changed(match, {**values, "status": data["Status"]})
+            if fields:
+                match.save(update_fields=(*fields, "updated_at"))
 
-    def _result(self, match: Match, data: dict[str, Any], *, created: bool) -> None:
+    def _result(
+        self,
+        match: Match,
+        data: dict[str, Any],
+        *,
+        created: bool,
+        fixture_values: dict[str, Any],
+    ) -> None:
         """Apply only newer observations, including score removals/cancellations."""
         if match.result_observed_at and match.result_observed_at > self.observed_at:
             return
@@ -167,11 +198,22 @@ class Importer:
         changed = created or any(
             getattr(match, key) != value for key, value in values.items()
         )
-        for key, value in values.items():
-            setattr(match, key, value)
-        match.result_observed_at = self.observed_at
-        match.results_checked_at = self.observed_at
-        match.save()
+        fields = assign_changed(match, {**fixture_values, **values})
+        if fields:
+            fields.append("updated_at")
+        # Freshness advances even for identical scores, but only changed match
+        # content invalidates publication and the ratings fingerprint.
+        fields.extend(
+            assign_changed(
+                match,
+                {
+                    "result_observed_at": self.observed_at,
+                    "results_checked_at": self.observed_at,
+                },
+            )
+        )
+        if fields:
+            match.save(update_fields=fields)
         if changed:
             ResultRevision.objects.create(
                 match=match, observed_at=self.observed_at, **values

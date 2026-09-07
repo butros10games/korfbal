@@ -5,7 +5,8 @@ from datetime import timedelta
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 import pytest
@@ -255,3 +256,49 @@ def test_pool_editor_retains_imported_sport_when_older_clients_omit_it(
     assert response.status_code == status.HTTP_200_OK
     pool.refresh_from_db()
     assert pool.sport == "KORFBALL-VE-WK"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("result", [False, True])
+def test_unchanged_import_does_not_republish_but_fixture_changes_do(
+    season: Season,
+    result: bool,
+) -> None:
+    """Stable polling leaves native rows untouched; rescheduling still publishes."""
+    now = timezone.now()
+    row = match_payload()
+    kind = "club_results" if result else "club_program"
+    payload = (
+        {"MatchResult": [row]} if result else {"ProgramItemMatchClub": [{"Match": row}]}
+    )
+    Importer(season, now).apply(kind, "CT1", payload)
+    publish_catalogue()
+    original = Match.objects.get()
+    Importer(season, now + timedelta(seconds=1)).apply(kind, "CT1", payload)
+    with CaptureQueriesContext(connection) as queries:
+        publication = publish_catalogue()
+    writes = [
+        query["sql"]
+        for query in queries
+        if query["sql"].split()[0] in {"INSERT", "UPDATE", "DELETE"}
+    ]
+    assert writes == []
+    assert publication["counts"].get("matches_updated", 0) == 0
+    assert Match.objects.get().published_at == original.published_at
+    row["MatchDateTime"] = "2026-09-06T13:30:00+0200"
+    Importer(season, now + timedelta(seconds=2)).apply(kind, "CT1", payload)
+    publication = publish_catalogue()
+    changed = Match.objects.get()
+    assert publication["counts"]["matches_updated"] == 1
+    assert changed.updated_at > original.updated_at
+    assert AppMatch.objects.get().start_time == changed.starts_at
+    assert changed.revisions.count() == int(result)
+    if result:
+        row["MatchDateTime"] = "2026-09-07T13:30:00+0200"
+        row["HomeResult"] = {"Score": 99}
+        Importer(season, now).apply(kind, "CT1", payload)
+        stale = Match.objects.get()
+        assert stale.starts_at == changed.starts_at
+        assert stale.home_score == changed.home_score
+        assert stale.result_observed_at == changed.result_observed_at
+        assert stale.updated_at == changed.updated_at

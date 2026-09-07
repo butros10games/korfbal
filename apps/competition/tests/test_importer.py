@@ -197,3 +197,66 @@ def test_repeated_standings_skip_membership_writes_and_clear_missing_rows(
     assert entries == {
         f"T{index}": ({"Position": 2} if index == 1 else {}) for index in range(1, 7)
     }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("result", [False, True])
+def test_unchanged_import_only_writes_result_freshness(
+    season: Season,
+    result: bool,
+) -> None:
+    """Polling stable snapshots must not dirty publication or rewrite identities."""
+    now = timezone.now()
+    row = match_payload()
+    kind = "club_results" if result else "club_program"
+    payload = (
+        {"MatchResult": [row]} if result else {"ProgramItemMatchClub": [{"Match": row}]}
+    )
+    Importer(season, now).apply(kind, "CT1", payload)
+    before = Match.objects.get()
+    checkpoint = SyncResource.objects.values_list("pk", "next_sync_at", "fetched_at")
+    checkpoints = list(checkpoint)
+    with CaptureQueriesContext(connection) as queries:
+        Importer(season, now + timedelta(seconds=1)).apply(kind, "CT1", payload)
+    writes = [
+        query["sql"]
+        for query in queries
+        if query["sql"].split()[0] in {"INSERT", "UPDATE", "DELETE"}
+    ]
+    assert len(writes) == int(result)
+    after = Match.objects.get()
+    assert after.updated_at == before.updated_at
+    assert list(checkpoint) == checkpoints
+    if result:
+        assert after.result_observed_at == now + timedelta(seconds=1)
+        assert after.results_checked_at == after.result_observed_at
+        assert after.revisions.count() == 1
+
+
+@pytest.mark.django_db
+def test_catalogue_changes_preserve_identity_and_nonblank_pool_metadata(
+    season: Season,
+) -> None:
+    """Changed fields still persist without replacing reviewed identity links."""
+    now = timezone.now()
+    row = match_payload()
+    Importer(season, now).apply("club_results", "CT1", {"MatchResult": [row]})
+    team = Team.objects.get(external_id="T1")
+    pool = Pool.objects.get()
+    changed = deepcopy(row)
+    changed["HomeTeam"]["TeamName"] = "Renamed team"
+    changed["HomeTeam"]["Club"].update(ClubName="Renamed club", City="New city")
+    changed["Pool"] = {"PoolId": 10, "PoolName": "Renamed pool"}
+    Importer(season, now + timedelta(seconds=1)).apply(
+        "club_results", "CT1", {"MatchResult": [changed]}
+    )
+    updated_team = Team.objects.get(external_id="T1")
+    assert (updated_team.pk, updated_team.group_id) == (team.pk, team.group_id)
+    assert updated_team.name == "Renamed team"
+    assert updated_team.club.name == "Renamed club"
+    assert updated_team.club.city == "New city"
+    updated_pool = Pool.objects.get()
+    assert updated_pool.pk == pool.pk
+    assert updated_pool.name == "Renamed pool"
+    assert updated_pool.class_name == pool.class_name
+    assert updated_pool.sport == pool.sport

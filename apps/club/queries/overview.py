@@ -40,6 +40,10 @@ def club_teams(club: Club, season: Season | None) -> QuerySet[Team]:
 
 def club_matches(club: Club, season: Season | None) -> QuerySet[MatchData]:
     """Return tracker match data involving a club."""
+    # Filter match foreign keys before loading the home/away presentation data.
+    # An OR across both joined clubs otherwise performs those joins for every
+    # unrelated fixture encountered by the ordered match scan.
+    team_ids = Team.objects.filter(club=club).order_by().values("pk")
     queryset = (
         MatchData.objects
         .select_related(
@@ -51,7 +55,8 @@ def club_matches(club: Club, season: Season | None) -> QuerySet[MatchData]:
             "match_link__season",
         )
         .filter(
-            Q(match_link__home_team__club=club) | Q(match_link__away_team__club=club),
+            Q(match_link__home_team_id__in=team_ids)
+            | Q(match_link__away_team_id__in=team_ids),
         )
         .fetch_mode(models.FETCH_RAISE)
     )
