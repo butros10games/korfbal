@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Any
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
@@ -158,3 +160,40 @@ def test_cancelled_result_is_removed_from_final_matches(season: Season) -> None:
         "FINAL",
         "CANCELLED",
     ]
+
+
+@pytest.mark.django_db
+def test_repeated_standings_skip_membership_writes_and_clear_missing_rows(
+    season: Season,
+) -> None:
+    """Stable polling skips membership writes while removed standings are cleared."""
+    now = timezone.now()
+    importer = Importer(season, now)
+    importer.pool({"PoolId": 10})
+    rows = [{**team_payload(f"T{index}"), "Position": index} for index in range(1, 7)]
+    payload = {
+        "MatchResult": [],
+        "PoolStanding": {"PoolStandingTeam": rows},
+        "ResultsFiltered": False,
+    }
+    importer.apply("pool_results", "10", payload)
+    with CaptureQueriesContext(connection) as queries:
+        Importer(season, now + timedelta(seconds=1)).apply(
+            "pool_results", "10", payload
+        )
+    membership_writes = [
+        query["sql"]
+        for query in queries
+        if "competition_poolentry" in query["sql"]
+        and query["sql"].split()[0] in {"INSERT", "UPDATE", "DELETE"}
+    ]
+    assert membership_writes == []
+    payload["PoolStanding"] = {"PoolStandingTeam": [{**rows[0], "Position": 2}]}
+    Importer(season, now + timedelta(seconds=2)).apply("pool_results", "10", payload)
+    entries = {
+        entry.team.external_id: entry.standing
+        for entry in PoolEntry.objects.select_related("team")
+    }
+    assert entries == {
+        f"T{index}": ({"Position": 2} if index == 1 else {}) for index in range(1, 7)
+    }

@@ -7,11 +7,12 @@ from typing import Any, cast
 from django.contrib.auth import update_session_auth_hash
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
-from rest_framework import mixins, permissions, status, viewsets
+from rest_framework import filters, mixins, permissions, status, viewsets
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
+from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.player.api.permissions import CanModifyPlayer
 from apps.player.api.serializers import (
     PlayerAccountUpdateSerializer,
@@ -57,6 +58,9 @@ class PlayerViewSet(
 
     queryset = player_detail_queryset()
     serializer_class = PlayerSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ("user__username",)
     permission_classes = (
         permissions.IsAuthenticatedOrReadOnly,
         CanModifyPlayer,

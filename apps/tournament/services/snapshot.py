@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import Prefetch
+
 from apps.tournament.models import (
     Tournament,
     TournamentFinalGroup,
     TournamentMatch,
     TournamentPool,
+    TournamentPoolEntry,
 )
 from apps.tournament.services.qualifiers import evaluate_best_rank, evaluate_pool_rank
 from apps.tournament.services.standings import StandingRow, calculate_pool_standings
@@ -116,8 +119,12 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
         tournament.pools
         .select_related("stage", "assigned_field")
         .prefetch_related(
-            "entries__team",
-            "entries__adjustments",
+            Prefetch(
+                "entries",
+                queryset=TournamentPoolEntry.objects.select_related(
+                    "team"
+                ).prefetch_related("adjustments"),
+            ),
             "matches",
         )
         .order_by("sort_order", "name", "id_uuid")

@@ -6,14 +6,11 @@ from datetime import timedelta
 from typing import Any
 
 from django.db.models import (
-    BooleanField,
     Count,
-    Exists,
-    OuterRef,
+    F,
     Q,
     QuerySet,
     Subquery,
-    Value,
 )
 from django.utils import timezone
 
@@ -82,59 +79,32 @@ def match_queryset_for_player(
         "match_link__season",
     )
 
-    queryset = queryset.annotate(
-        has_player_group=Exists(
-            PlayerGroup.objects.filter(
-                match_data=OuterRef("pk"),
-                players=player,
-            )
-        ),
-        has_shot=Exists(
-            Shot.objects.filter(
-                match_data=OuterRef("pk"),
-                player=player,
-            )
-        ),
+    # Start with the player's indexed participation records instead of probing
+    # every imported match once for each possible kind of participation.
+    match_ids = (
+        PlayerGroup.objects
+        .filter(players=player)
+        .values_list("match_data_id", flat=True)
+        .union(
+            Shot.objects.filter(player=player).values_list("match_data_id", flat=True)
+        )
     )
 
-    filter_q = Q(has_player_group=True) | Q(has_shot=True)
-
     if include_roster:
-        queryset = queryset.annotate(
-            is_match_roster=Exists(
-                MatchPlayer.objects.filter(
-                    match_data=OuterRef("pk"),
-                    player=player,
-                )
+        roster = TeamData.objects.filter(players=player)
+        match_ids = match_ids.union(
+            MatchPlayer.objects.filter(player=player).values_list(
+                "match_data_id", flat=True
             ),
-            is_home_teamdata_roster=Exists(
-                TeamData.objects.filter(
-                    team_id=OuterRef("match_link__home_team_id"),
-                    season_id=OuterRef("match_link__season_id"),
-                    players=player,
-                )
+            roster.filter(team__home_matches__season_id=F("season_id")).values_list(
+                "team__home_matches__tracker_data__pk", flat=True
             ),
-            is_away_teamdata_roster=Exists(
-                TeamData.objects.filter(
-                    team_id=OuterRef("match_link__away_team_id"),
-                    season_id=OuterRef("match_link__season_id"),
-                    players=player,
-                )
+            roster.filter(team__away_matches__season_id=F("season_id")).values_list(
+                "team__away_matches__tracker_data__pk", flat=True
             ),
-        )
-        filter_q |= (
-            Q(is_match_roster=True)
-            | Q(is_home_teamdata_roster=True)
-            | Q(is_away_teamdata_roster=True)
-        )
-    else:
-        queryset = queryset.annotate(
-            is_match_roster=Value(False, output_field=BooleanField()),
-            is_home_teamdata_roster=Value(False, output_field=BooleanField()),
-            is_away_teamdata_roster=Value(False, output_field=BooleanField()),
         )
 
-    queryset = queryset.filter(filter_q)
+    queryset = queryset.filter(pk__in=Subquery(match_ids))
 
     if season is not None:
         queryset = queryset.filter(match_link__season=season)
@@ -302,7 +272,7 @@ def build_player_stats_payload(
         "shots_against": int(aggregated.get("shots_against", 0)),
         "goals_for": int(aggregated.get("goals_for", 0)),
         "goals_against": int(aggregated.get("goals_against", 0)),
-        "mvps": int(mvp_queryset.count()),
+        "mvps": len(mvp_match_ids),
         "mvp_matches": mvp_matches,
         "goal_types": {
             "for": goal_type_breakdown(shot_queryset, for_team=True),

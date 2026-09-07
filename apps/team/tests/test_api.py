@@ -510,3 +510,19 @@ def test_coach_deletes_song_and_cleans_selections(client: Client) -> None:
     assert song_id not in setup.player.goal_song_song_ids
     assert song_id not in setup.team_data.fallback_goal_song_song_ids
     assert not PlayerSong.objects.filter(id_uuid=song_id).exists()
+
+
+@pytest.mark.parametrize("search", ["team club 1", '"Team Club" 1', "CLUB,1"])
+def test_team_catalog_search_preserves_cross_field_terms(
+    client: Client, search: str
+) -> None:
+    """Each term can match either the club or team, including quoted phrases."""
+    team, opponent = _teams()
+    Team.objects.create(name="Team 2", club=team.club)
+    Team.objects.create(name="Unrelated", club=opponent.club)
+    response = client.get(
+        "/api/team/teams/", {"search": search, "club": str(team.club_id)}
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["count"] == 1
+    assert [row["id_uuid"] for row in response.json()["results"]] == [str(team.pk)]

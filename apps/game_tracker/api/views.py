@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from django.db.models import Prefetch, Q
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -33,8 +33,9 @@ from apps.game_tracker.services.player_designation import (
     can_edit_player_groups,
 )
 from apps.game_tracker.services.player_search import player_name_match_score
-from apps.player.models import Player
+from apps.player.models import Player, PlayerClubMembership
 from apps.player.privacy import can_view_by_visibility
+from apps.player.services.player_queries import player_access_queryset
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
 
@@ -48,7 +49,7 @@ def _viewer_player(request: Request) -> Player | None:
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):
         return None
-    return Player.objects.filter(user=user).first()
+    return player_access_queryset().filter(user=user).first()
 
 
 def _profile_picture_for(viewer: Player | None, target: Player) -> str:
@@ -100,7 +101,7 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         .prefetch_related(
             Prefetch(
                 "players",
-                queryset=Player.objects.select_related("user"),
+                queryset=player_access_queryset(),
             ),
         )
         .order_by("starting_type__order")
@@ -147,12 +148,9 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
         return permission_error
 
     match_data = MatchData.objects.get(match_link=match_model)
-    team_data = (
-        TeamData.objects
-        .filter(team=team_model, season=match_model.season)
-        .prefetch_related("players")
-        .first()
-    )
+    team_data = TeamData.objects.filter(
+        team=team_model, season_id=match_model.season_id
+    ).first()
 
     excluded_ids = (
         PlayerGroup.objects
@@ -161,7 +159,9 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
         .distinct()
     )
     players = (
-        team_data.players.exclude(id_uuid__in=excluded_ids).select_related("user")
+        player_access_queryset()
+        .filter(team_data_as_player=team_data)
+        .exclude(id_uuid__in=excluded_ids)
         if team_data is not None
         else Player.objects.none()
     )
@@ -239,30 +239,26 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     # - TeamData is season-scoped (legacy) and historically incomplete.
     #   We therefore consider *any* team of the club in the match season.
     # - club membership is date-scoped (new) and preferred when available.
-    club_roster_filter = Q(
-        team_data_as_player__team__club=team_model.club,
-        team_data_as_player__season=match_model.season,
-    ) | Q(
-        team_data_as_coach__team__club=team_model.club,
-        team_data_as_coach__season=match_model.season,
+    season_rosters = TeamData.objects.filter(
+        team__club_id=team_model.club_id,
+        season_id=match_model.season_id,
     )
+    memberships = PlayerClubMembership.objects.filter(
+        player_id=OuterRef("pk"),
+        club_id=team_model.club_id,
+        start_date__lte=match_date,
+    ).filter(Q(end_date__isnull=True) | Q(end_date__gte=match_date))
 
-    membership_filter = Q(
-        club_membership_links__club=team_model.club,
-        club_membership_links__start_date__lte=match_date,
-    ) & (
-        Q(club_membership_links__end_date__isnull=True)
-        | Q(club_membership_links__end_date__gte=match_date)
-    )
-
-    allowed_filter = club_roster_filter | membership_filter
-
+    # Separate existence checks avoid multiplying playing, coaching, and
+    # membership rows before deduplicating the entire imported club roster.
     roster_players = (
-        Player.objects
-        .filter(allowed_filter)
+        player_access_queryset()
+        .filter(
+            Exists(season_rosters.filter(players=OuterRef("pk")))
+            | Exists(season_rosters.filter(coach=OuterRef("pk")))
+            | Exists(memberships)
+        )
         .exclude(id_uuid__in=excluded_ids)
-        .distinct()
-        .select_related("user")
     )
     ranked_players = [
         (score, player)

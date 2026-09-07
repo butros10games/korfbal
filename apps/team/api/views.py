@@ -9,7 +9,7 @@ from django.db import models
 from django.db.models import Q, QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
-from rest_framework import filters, permissions, status, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.request import Request
@@ -56,6 +56,7 @@ from apps.team.services.overview import (
 )
 from apps.team.services.roster import change_team_membership
 
+from .filters import TeamSearchFilter
 from .serializers import TeamRosterMutationSerializer, TeamSerializer
 
 
@@ -105,12 +106,19 @@ class TeamViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (TeamSearchFilter,)
     search_fields = ("name", "club__name")
 
     def get_queryset(self) -> QuerySet[Team]:
         """Optionally scope the paginated catalog to one club."""
         queryset = super().get_queryset()
+        if (
+            self.action == "list"
+            and self.request.query_params.get("followed") == "true"
+        ):
+            if not self.request.user.is_authenticated:
+                return queryset.none()
+            queryset = queryset.filter(player__user=self.request.user)
         club_id = self.request.query_params.get("club")
         if not club_id:
             return queryset

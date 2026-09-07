@@ -62,6 +62,18 @@ class ClubViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ("name",)
 
+    def get_queryset(self) -> models.QuerySet[Club]:
+        """Scope followed catalogs before pagination, counting, and searching."""
+        queryset = super().get_queryset()
+        if (
+            self.action == "list"
+            and self.request.query_params.get("followed") == "true"
+        ):
+            if not self.request.user.is_authenticated:
+                return queryset.none()
+            queryset = queryset.filter(player__user=self.request.user)
+        return queryset
+
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Return teams and match summaries for a club detail page.

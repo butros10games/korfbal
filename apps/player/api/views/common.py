@@ -12,7 +12,7 @@ from rest_framework.request import Request
 from apps.player.models.player import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_queries import (
-    player_by_id,
+    player_access_queryset,
     player_detail_queryset,
     player_for_user_id,
     viewer_player_for_user_id,
@@ -58,10 +58,12 @@ def _authenticated_user_id(request: Request) -> int | None:
     return user_id if isinstance(user_id, int) else None
 
 
-def get_current_player(request: Request) -> Player | None:
+def get_current_player(request: Request, *, full_profile: bool = True) -> Player | None:
     """Resolve the current player from the request context."""
     user_id = _authenticated_user_id(request)
     if user_id is not None:
+        if not full_profile:
+            return get_viewer_player(request)
         cached = getattr(request, _CURRENT_PLAYER_CACHE_ATTRIBUTE, _CACHE_MISSING)
         if cached is not _CACHE_MISSING:
             return cached if isinstance(cached, Player) else None
@@ -72,12 +74,15 @@ def get_current_player(request: Request) -> Player | None:
         return player
 
     if settings.DEBUG:
+        queryset = (
+            player_detail_queryset() if full_profile else player_access_queryset()
+        )
         player_id = request.query_params.get("player_id")
         if player_id:
-            player = player_by_id(player_id)
+            player = queryset.filter(id_uuid=player_id).first()
             if player:
                 return player
-        return player_detail_queryset().first()
+        return queryset.first()
 
     return None
 
@@ -123,7 +128,11 @@ def resolve_player_access(
     visibility_field: VisibilityField | None = None,
 ) -> PlayerAccessResult:
     """Resolve a current or explicit player and evaluate optional visibility."""
-    player = player_by_id(player_id) if player_id else get_current_player(request)
+    player = (
+        player_access_queryset().filter(id_uuid=player_id).first()
+        if player_id
+        else get_current_player(request, full_profile=False)
+    )
     if player is None:
         return PlayerAccessResult(player=None)
     if not player_id or visibility_field is None:

@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
@@ -222,6 +223,19 @@ def _public_access_allowed(request: Request, tournament: Tournament) -> bool:
     return request.query_params.get("token") == str(tournament.display_token)
 
 
+def _tournament_count(queryset: QuerySet) -> Coalesce:
+    """Count one relation without multiplying teams, fields and matches together."""
+    counts = (
+        queryset
+        .filter(tournament_id=OuterRef("pk"))
+        .order_by()
+        .values("tournament_id")
+        .annotate(total=Count("pk"))
+        .values("total")
+    )
+    return Coalesce(Subquery(counts), 0)
+
+
 class TournamentViewSet(
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
@@ -240,9 +254,9 @@ class TournamentViewSet(
             Tournament.objects
             .select_related("owner", "organizer_club")
             .annotate(
-                team_count=Count("teams", distinct=True),
-                field_count=Count("fields", distinct=True),
-                match_count=Count("matches", distinct=True),
+                team_count=_tournament_count(TournamentTeam.objects.all()),
+                field_count=_tournament_count(TournamentField.objects.all()),
+                match_count=_tournament_count(TournamentMatch.objects.all()),
             )
             .order_by("-starts_at", "name")
         )
@@ -255,7 +269,14 @@ class TournamentViewSet(
             return queryset.filter(public)
         if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
             return queryset
-        return queryset.filter(public | Q(owner=user) | Q(members=user)).distinct()
+        memberships = TournamentMember.objects.filter(
+            tournament_id=OuterRef("pk"), user=user
+        )
+        return queryset.annotate(
+            viewer_is_manager=Exists(
+                memberships.filter(role=TournamentMember.Role.MANAGER)
+            ),
+        ).filter(public | Q(owner=user) | Exists(memberships))
 
     def create(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Create a tournament owned by the authenticated viewer."""

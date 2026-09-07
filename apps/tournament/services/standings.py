@@ -33,7 +33,10 @@ DirectResults = dict[tuple[str, str], tuple[int, int]]
 
 def _initial_rows(pool: TournamentPool) -> dict[str, StandingRow]:
     rows: dict[str, StandingRow] = {}
-    for entry in pool.entries.select_related("team").prefetch_related("adjustments"):
+    entries = pool.entries.all()
+    if "entries" not in getattr(pool, "_prefetched_objects_cache", {}):
+        entries = entries.select_related("team").prefetch_related("adjustments")
+    for entry in entries:
         adjustment = sum(item.points for item in entry.adjustments.all())
         rows[str(entry.team_id)] = {
             "team_id": str(entry.team_id),
@@ -165,19 +168,24 @@ def calculate_pool_standings(
     included_statuses = [TournamentMatch.Status.FINAL]
     if include_live_matches:
         included_statuses.append(TournamentMatch.Status.LIVE)
-    included_matches = list(
-        pool.matches.filter(
+    if "matches" in getattr(pool, "_prefetched_objects_cache", {}):
+        matches = pool.matches.all()
+    else:
+        matches = pool.matches.filter(
             status__in=included_statuses,
             home_team__isnull=False,
             away_team__isnull=False,
             home_score__isnull=False,
             away_score__isnull=False,
         )
-    )
     included_matches = [
         match
-        for match in included_matches
-        if str(match.home_team_id) in rows and str(match.away_team_id) in rows
+        for match in matches
+        if match.status in included_statuses
+        and match.home_score is not None
+        and match.away_score is not None
+        and str(match.home_team_id) in rows
+        and str(match.away_team_id) in rows
     ]
     for match in included_matches:
         _apply_match(rows, match, tournament)

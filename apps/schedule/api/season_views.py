@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from django.db import models
-from django.db.models import Count, QuerySet
+from django.db.models import Count, OuterRef, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.schedule.models import Season, SeasonPool
+from apps.schedule.models import Match, Season, SeasonPool
 
 from .serializers import SeasonPoolSerializer, SeasonSerializer
 from .validation import UUID_URL_REGEX, uuid_query_values
@@ -26,11 +27,29 @@ class SeasonViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self) -> QuerySet[Season]:
         """Return newest seasons first with their match totals."""
+        # Independent aggregates avoid a matches times pools join, which becomes
+        # disproportionately expensive after importing a national schedule.
+        match_counts = (
+            Match.objects
+            .filter(season_id=OuterRef("pk"))
+            .order_by()
+            .values("season_id")
+            .annotate(total=Count("pk"))
+            .values("total")
+        )
+        pool_counts = (
+            SeasonPool.objects
+            .filter(season_id=OuterRef("pk"))
+            .order_by()
+            .values("season_id")
+            .annotate(total=Count("pk"))
+            .values("total")
+        )
         return (
             Season.objects
             .annotate(
-                match_count=Count("matches", distinct=True),
-                pool_count=Count("pools", distinct=True),
+                match_count=Coalesce(Subquery(match_counts), 0),
+                pool_count=Coalesce(Subquery(pool_counts), 0),
             )
             .order_by("-start_date", "-end_date", "id_uuid")
             .fetch_mode(models.FETCH_RAISE)

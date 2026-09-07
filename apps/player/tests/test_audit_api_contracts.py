@@ -30,7 +30,7 @@ def _player_for(user: User) -> Player:
 
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
-def test_public_player_list_minimises_personal_data_and_keeps_list_shape(
+def test_public_player_list_minimises_personal_data_and_is_paginated(
     client: Client,
 ) -> None:
     """Anonymous list responses must not expose private Django user fields."""
@@ -45,9 +45,11 @@ def test_public_player_list_minimises_personal_data_and_keeps_list_shape(
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert isinstance(payload, list)
+    assert isinstance(payload["results"], list)
     serialized_player = next(
-        row for row in payload if row["id_uuid"] == str(_player_for(user).id_uuid)
+        row
+        for row in payload["results"]
+        if row["id_uuid"] == str(_player_for(user).id_uuid)
     )
     assert serialized_player["user"] == {
         "id": user.pk,

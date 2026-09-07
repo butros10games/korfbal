@@ -6,7 +6,9 @@ from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test.client import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
@@ -343,3 +345,55 @@ def test_pooled_matches_require_teams_from_the_same_season_pool(client: Client) 
     )
     assert remove_used_team.status_code == HTTPStatus.BAD_REQUEST
     assert "team_ids" in remove_used_team.json()
+
+
+@pytest.mark.django_db
+def test_season_counts_are_independent_for_dense_imported_schedules(
+    client: Client,
+) -> None:
+    """Pools and matches are counted independently, including empty seasons."""
+    match_total = 120
+    pool_total = 12
+    staff = get_user_model().objects.create(username="counts_staff", is_staff=True)
+    client.force_login(staff)
+    season = Season.objects.create(
+        name="Imported dense season",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 1),
+    )
+    empty = Season.objects.create(
+        name="Empty season", start_date=date(2027, 8, 1), end_date=date(2028, 6, 1)
+    )
+    club = Club.objects.create(name="Count club")
+    home = Team.objects.create(name="Count home", club=club)
+    away = Team.objects.create(name="Count away", club=club)
+    pools = SeasonPool.objects.bulk_create([
+        SeasonPool(name=f"Pool {index}", season=season) for index in range(pool_total)
+    ])
+    Match.objects.bulk_create([
+        Match(
+            home_team=home,
+            away_team=away,
+            season=season,
+            pool=pools[index % len(pools)],
+            start_time=timezone.now() + timedelta(days=index),
+        )
+        for index in range(match_total)
+    ])
+    with CaptureQueriesContext(connection) as queries:
+        response = client.get("/api/seasons/")
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    rows = payload["results"] if isinstance(payload, dict) else payload
+    by_id = {row["id_uuid"]: row for row in rows}
+    assert by_id[str(season.id_uuid)]["match_count"] == match_total
+    assert by_id[str(season.id_uuid)]["pool_count"] == pool_total
+    assert by_id[str(empty.id_uuid)]["match_count"] == 0
+    assert by_id[str(empty.id_uuid)]["pool_count"] == 0
+    # Reintroducing simultaneous outer joins scans matches times pools despite
+    # returning correct DISTINCT totals. Guard the expensive query shape too.
+    count_queries = [
+        query["sql"] for query in queries if 'AS "match_count"' in query["sql"]
+    ]
+    assert count_queries
+    assert all("LEFT OUTER JOIN" not in sql for sql in count_queries)

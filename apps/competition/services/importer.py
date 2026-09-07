@@ -195,16 +195,28 @@ class Importer:
         for row in data["MatchResult"]:
             self.match(row, result=True)
         rows = (data["PoolStanding"] or {}).get("PoolStandingTeam", [])
-        # A complete new table clears stale standings, but retains known membership.
-        PoolEntry.objects.filter(pool=pool).update(standing={})
-        for row in rows:
-            PoolEntry.objects.update_or_create(
-                pool=pool,
-                team=self.team(row),
-                defaults={
-                    "standing": {key: row[key] for key in STANDING_FIELDS if key in row}
-                },
-            )
+        # Compare the complete table once: unchanged polling must not rewrite
+        # every membership, while missing rows still lose their old standings.
+        standings = {
+            self.team(row).pk: {key: row[key] for key in STANDING_FIELDS if key in row}
+            for row in rows
+        }
+        existing = {
+            entry.team_id: entry for entry in PoolEntry.objects.filter(pool=pool)
+        }
+        changed = []
+        for team_id in existing.keys() | standings.keys():
+            standing = standings.get(team_id, {})
+            entry = existing.get(team_id)
+            if entry is not None and entry.standing == standing:
+                continue
+            changed.append(PoolEntry(pool=pool, team_id=team_id, standing=standing))
+        PoolEntry.objects.bulk_create(
+            changed,
+            update_conflicts=True,
+            unique_fields=("pool", "team"),
+            update_fields=("standing",),
+        )
         pool.standings_synced_at = self.observed_at
         pool.results_filtered = data["ResultsFiltered"]
         pool.save(update_fields=("standings_synced_at", "results_filtered"))

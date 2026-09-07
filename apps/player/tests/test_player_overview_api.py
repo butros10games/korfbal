@@ -19,8 +19,15 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.models import (
+    GroupType,
+    MatchData,
+    MatchPlayer,
+    PlayerGroup,
+    Shot,
+)
 from apps.player.models import Player, PlayerClubMembership
+from apps.player.services.player_overview import match_queryset_for_player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team, TeamData
 
@@ -184,3 +191,62 @@ def test_player_overview_respects_visibility_for_other_viewers(client: Client) -
     ok_payload = response_ok.json()
     assert ok_payload["meta"]["season_id"] == str(season.id_uuid)
     assert ok_payload["matches"]["upcoming"], "Expected upcoming matches for target"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("include_roster", [False, True])
+def test_player_match_candidates_preserve_season_rosters_and_participation(
+    include_roster: bool,
+) -> None:
+    """Indexed candidate reads retain both sides, deduplication and season scope."""
+    today = timezone.localdate()
+    current = Season.objects.create(
+        name="Current candidates",
+        start_date=today,
+        end_date=today + timedelta(days=100),
+    )
+    previous = Season.objects.create(
+        name="Previous candidates",
+        start_date=today - timedelta(days=200),
+        end_date=today - timedelta(days=100),
+    )
+    club = Club.objects.create(name="Candidate club")
+    team = Team.objects.create(name="Player team", club=club)
+    other = Team.objects.create(name="Other team", club=club)
+    player = get_user_model().objects.create_user(username="candidate-player").player
+    TeamData.objects.create(team=team, season=current).players.add(player)
+
+    def create_match(home: Team, away: Team, season: Season) -> MatchData:
+        match = Match.objects.create(
+            home_team=home, away_team=away, season=season, start_time=timezone.now()
+        )
+        return MatchData.objects.get(match_link=match)
+
+    home = create_match(team, other, current)
+    away = create_match(other, team, current)
+    wrong_season = create_match(team, other, previous)
+    explicit_roster = create_match(other, other, current)
+    participation = create_match(other, other, current)
+    unrelated = create_match(other, other, current)
+    MatchPlayer.objects.create(match_data=explicit_roster, team=other, player=player)
+    Shot.objects.create(match_data=participation, team=other, player=player)
+    group_type = GroupType.objects.create(name="Candidate attack")
+    group = PlayerGroup.objects.create(
+        match_data=participation,
+        team=other,
+        starting_type=group_type,
+        current_type=group_type,
+    )
+    group.players.add(player)
+
+    rows = list(match_queryset_for_player(player, None, include_roster=include_roster))
+    expected = {participation.pk}
+    if include_roster:
+        expected.update([home.pk, away.pk, explicit_roster.pk])
+    assert {row.pk for row in rows} == expected
+    assert len(rows) == len(expected)
+    assert wrong_season.pk not in expected
+    assert unrelated.pk not in expected
+    assert not match_queryset_for_player(
+        player, previous, include_roster=include_roster
+    ).exists()

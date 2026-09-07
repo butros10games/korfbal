@@ -111,7 +111,33 @@ def test_player_read_endpoints_keep_bounded_query_counts(client: Client) -> None
 
     assert counts == {
         "profile": 9,
-        "teams": 11,
-        "overview": 12,
-        "stats": 15,
+        "teams": 7,
+        "overview": 8,
+        "stats": 10,
     }
+
+
+@pytest.mark.django_db
+def test_player_list_paginates_before_serialization_and_searches_full_catalog(
+    client: Client,
+) -> None:
+    """A later player remains searchable while each response has bounded profiles."""
+    player_count = 5
+    page_size = 2
+    for index in range(player_count):
+        get_user_model().objects.create_user(username=f"catalog-player-{index}")
+
+    first = client.get("/api/player/players/", {"page_size": 2}).json()
+    second = client.get("/api/player/players/", {"page_size": 2, "page": 2}).json()
+    assert first["count"] == second["count"] == player_count
+    assert len(first["results"]) == len(second["results"]) == page_size
+    assert first["next"] is not None
+    assert {row["id_uuid"] for row in first["results"]}.isdisjoint(
+        row["id_uuid"] for row in second["results"]
+    )
+
+    searched = client.get(
+        "/api/player/players/", {"page_size": 2, "search": "catalog-player-4"}
+    ).json()
+    assert searched["count"] == 1
+    assert searched["results"][0]["user"]["username"] == "catalog-player-4"

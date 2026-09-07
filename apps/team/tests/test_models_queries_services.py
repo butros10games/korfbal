@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from django.test import override_settings
+from django.utils import timezone
 import pytest
+from pytest_django.fixtures import DjangoAssertNumQueries
 
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import MatchData, MatchPlayer, Shot
 from apps.player.models.player_song import PlayerSong
-from apps.team.models import TeamData
-from apps.team.queries.overview import main_roster_ids, team_players, team_seasons
+from apps.schedule.models import Match
+from apps.team.models import Team, TeamData
+from apps.team.queries.overview import (
+    main_roster_ids,
+    team_matches,
+    team_players,
+    team_seasons,
+)
 from apps.team.services.goal_songs import delete_team_player_song
 
 from .team_test_support import (
@@ -129,3 +137,37 @@ def test_delete_team_player_song_supports_player_only_cleanup() -> None:
         player=context.player,
         id_uuid=song.id_uuid,
     ).exists()
+
+
+def test_team_player_discovery_is_one_query(
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """Discover roster and event-only players without fetching match IDs first."""
+    context = build_team_context(suffix="one_query")
+    opponent = Team.objects.create(name="Opponent", club=context.club)
+    guest = create_player(username="guest_query")
+    shot_only = create_player(username="shot_query")
+    for _ in range(5):
+        match = Match.objects.create(
+            home_team=context.team,
+            away_team=opponent,
+            season=context.season,
+            start_time=timezone.now(),
+        )
+        match_data = MatchData.objects.get(match_link=match)
+        MatchPlayer.objects.create(
+            match_data=match_data, player=guest, team=context.team
+        )
+        Shot.objects.create(match_data=match_data, player=shot_only, team=context.team)
+    with django_assert_num_queries(1):
+        players = list(
+            team_players(
+                context.team, context.season, team_matches(context.team, context.season)
+            )
+        )
+        usernames = {player.user.username for player in players}
+    assert usernames == {
+        context.player.user.username,
+        guest.user.username,
+        shot_only.user.username,
+    }

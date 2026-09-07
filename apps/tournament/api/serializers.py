@@ -170,6 +170,8 @@ class TournamentSerializer(serializers.ModelSerializer):
     def get_can_manage(self, obj: Tournament) -> bool:
         """Return the current viewer's structural-management capability."""
         request = self.context.get("request")
+        if request and hasattr(obj, "viewer_is_manager"):
+            return obj.owner_id == request.user.pk or bool(obj.viewer_is_manager)
         return bool(request and can_manage_tournament(request.user, obj))
 
 

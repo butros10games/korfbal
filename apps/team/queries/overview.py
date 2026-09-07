@@ -67,18 +67,19 @@ def team_players(
         teamdata_id__in=team_data.values_list("id", flat=True),
     ).values_list("player_id", flat=True)
 
-    match_ids = list(matches.values_list("id_uuid", flat=True))
-    if match_ids:
-        player_ids = player_ids.union(
-            MatchPlayer.objects.filter(
-                team=team,
-                match_data_id__in=match_ids,
-            ).values_list("player_id", flat=True),
-            Shot.objects.filter(
-                team=team,
-                match_data_id__in=match_ids,
-            ).values_list("player_id", flat=True),
-        )
+    # Keep match membership in the database instead of transferring every match
+    # UUID into Python and repeating that growing list in the player query.
+    match_ids = matches.order_by().values("id_uuid")
+    player_ids = player_ids.union(
+        MatchPlayer.objects.filter(
+            team=team,
+            match_data_id__in=match_ids,
+        ).values_list("player_id", flat=True),
+        Shot.objects.filter(
+            team=team,
+            match_data_id__in=match_ids,
+        ).values_list("player_id", flat=True),
+    )
 
     return (
         Player.objects

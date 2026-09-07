@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from django.db import models
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from apps.club.models.club import Club
 from apps.game_tracker.models import MatchData
@@ -31,10 +31,10 @@ def club_teams(club: Club, season: Season | None) -> QuerySet[Team]:
     )
     if season:
         queryset = queryset.filter(
-            Q(team_data__season_id=season.id_uuid)
-            | Q(home_matches__season_id=season.id_uuid)
-            | Q(away_matches__season_id=season.id_uuid)
-        ).distinct()
+            Exists(TeamData.objects.filter(team_id=OuterRef("pk"), season=season))
+            | Exists(Match.objects.filter(home_team_id=OuterRef("pk"), season=season))
+            | Exists(Match.objects.filter(away_team_id=OuterRef("pk"), season=season))
+        )
     return queryset
 
 
