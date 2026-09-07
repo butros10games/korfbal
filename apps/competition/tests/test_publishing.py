@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from apps.club.models import Club as AppClub
 from apps.competition.models import Club, Match, SyncLease, Team, TeamGroup
 from apps.competition.services.importer import Importer
-from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.publishing import Publisher, publish_catalogue
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData, Shot
 from apps.game_tracker.services.tracker_state import get_tracker_state
@@ -34,6 +34,7 @@ from apps.team.tests.team_test_support import build_team_context
 
 MATCH_SIDES = 2
 SOURCE_VARIANTS = 3
+CLEAN_PUBLICATION_QUERIES = 2
 
 
 @pytest.mark.django_db
@@ -302,3 +303,38 @@ def test_unchanged_import_does_not_republish_but_fixture_changes_do(
         assert stale.home_score == changed.home_score
         assert stale.result_observed_at == changed.result_observed_at
         assert stale.updated_at == changed.updated_at
+
+
+@pytest.mark.django_db
+def test_clean_publication_skips_native_catalogue_reads(season: Season) -> None:
+    """Already-published teams and matches require only their two pending queries."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    publish_catalogue()
+    publisher = Publisher()
+    with CaptureQueriesContext(connection) as queries:
+        publisher.teams()
+        publisher.matches()
+    assert len(queries) == CLEAN_PUBLICATION_QUERIES
+    assert not publisher.counts
+    assert not publisher.blocked
+
+
+@pytest.mark.django_db
+def test_linked_score_correction_skips_fixture_candidate_scan(season: Season) -> None:
+    """Updating a linked score cannot require reading every native fixture."""
+    row = match_payload()
+    observed = timezone.now()
+    Importer(season, observed).apply("club_results", "C", {"MatchResult": [row]})
+    publish_catalogue()
+    row["HomeResult"]["Score"] = 12
+    Importer(season, observed + timedelta(seconds=1)).apply(
+        "club_results", "C", {"MatchResult": [row]}
+    )
+    with CaptureQueriesContext(connection) as queries:
+        Publisher().matches()
+    assert MatchData.objects.get().home_score == row["HomeResult"]["Score"]
+    assert not any(
+        f'FROM "{AppMatch._meta.db_table}"' in query["sql"] for query in queries
+    )

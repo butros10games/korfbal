@@ -294,30 +294,39 @@ class Reconciler:
         memberships: dict[int, set[str | None]] = {}
         for pool_id, team_id in PoolEntry.objects.values_list("pool_id", "team_id"):
             memberships.setdefault(pool_id, set()).add(team_links.get(team_id))
-        local_members: dict[str, set[str]] = {}
-        for pool in SeasonPool.objects.prefetch_related("teams"):
-            local_members[str(pool.pk)] = {str(team.pk) for team in pool.teams.all()}
+        local_members: dict[str, set[str]] = defaultdict(set)
+        for pool_id, team_id in SeasonPool.teams.through.objects.values_list(
+            "seasonpool_id", "team_id"
+        ):
+            local_members[str(pool_id)].add(str(team_id))
+        by_season: dict[Any, set[str]] = defaultdict(set)
+        index: dict[tuple[Any, str, frozenset[str]], list[str]] = defaultdict(list)
+        for pk, local in self.locals["pool"].items():
+            by_season[local["season_id"]].add(pk)
+            index[
+                local["season_id"],
+                normalized(local["name"]),
+                frozenset(local_members[pk]),
+            ].append(pk)
         allowed, candidates = {}, {}
         for row in self.sources["pool"]:
-            allowed[row["id"]] = {
-                pk
-                for pk, local in self.locals["pool"].items()
-                if local["season_id"] == row["season_id"]
-            }
+            allowed[row["id"]] = by_season[row["season_id"]]
             members = memberships.get(row["id"], set())
             labels = {
                 normalized(row["name"]),
                 normalized(f"{row['class_name']} {row['name']}"),
             }
             labels.discard("")
-            candidates[row["id"]] = [
-                pk
-                for pk in allowed[row["id"]]
-                if members
-                and None not in members
-                and members == local_members[pk]
-                and normalized(self.locals["pool"][pk]["name"]) in labels
-            ]
+            candidates[row["id"]] = []
+            if members and None not in members:
+                linked_members = frozenset(
+                    member for member in members if member is not None
+                )
+                candidates[row["id"]] = [
+                    pk
+                    for label in labels
+                    for pk in index.get((row["season_id"], label, linked_members), ())
+                ]
         return self.choose("pool", candidates, allowed)
 
     def matches(

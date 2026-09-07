@@ -402,3 +402,28 @@ def test_publication_applies_reviewed_overrides_in_one_pass(
     assert Match.objects.get().local_match == graph["local"]
     assert set(LocalClub.objects.values_list("name", flat=True)) == {"DTS", "Example"}
     assert LocalMatch.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("membership", ["empty", "partial", "ambiguous"])
+def test_pool_index_requires_complete_unique_membership(
+    graph: dict[str, Any], membership: str
+) -> None:
+    """Indexed names must not link incomplete membership or two matching poules."""
+    source = Pool.objects.get()
+    if membership == "empty":
+        PoolEntry.objects.all().delete()
+    elif membership == "partial":
+        PoolEntry.objects.filter(team=graph["source"].away_team).delete()
+    else:
+        other = SeasonPool.objects.create(
+            season=source.season, name=f"{source.class_name} {source.name}"
+        )
+        other.teams.add(graph["home"], graph["away"])
+    result = reconcile(apply=True, overrides=graph["overrides"])
+    source.refresh_from_db()
+    assert source.local_pool_id is None
+    decision = next(row for row in result["decisions"] if row["kind"] == "pool")
+    assert decision["reason"] == (
+        "ambiguous_or_claimed" if membership == "ambiguous" else "unmatched"
+    )

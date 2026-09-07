@@ -115,6 +115,14 @@ class Publisher:
 
     def teams(self) -> None:
         """Use a global Team plus exactly one TeamData per team and season."""
+        sources = list(
+            TeamGroup.objects
+            .filter(local_team_data__isnull=True)
+            .select_related("club")
+            .order_by("pk")
+        )
+        if not sources:
+            return
         index: dict[tuple[str, str], list[AppTeam]] = defaultdict(list)
         joint = JointTeamIndex()
         local_teams: dict[str, AppTeam] = {}
@@ -122,12 +130,6 @@ class Publisher:
             index[str(team.club_id), team_label(team.name, team.club.name)].append(team)
             joint.add(str(team.pk), team.club.name, team.name)
             local_teams[str(team.pk)] = team
-        sources = list(
-            TeamGroup.objects
-            .filter(local_team_data__isnull=True)
-            .select_related("club")
-            .order_by("pk")
-        )
         claimed = {
             (str(row.season_id), str(row.local_team_id)): row.pk
             for row in TeamGroup.objects.exclude(local_team=None)
@@ -219,26 +221,35 @@ class Publisher:
 
     def matches(self) -> None:
         """Publish fixtures and results while keeping tracked history authoritative."""
+        rows = list(
+            Match.objects.filter(
+                Q(local_match=None)
+                | Q(published_at=None)
+                | Q(updated_at__gt=F("published_at"))
+            ).order_by("pk")
+        )
+        if not rows:
+            return
         teams = dict(Team.objects.values_list("pk", "group__local_team_id"))
         pools = dict(Pool.objects.values_list("pk", "local_pool_id"))
         candidates: dict[tuple[Any, ...], list[AppMatch]] = defaultdict(list)
-        for match in AppMatch.objects.all():
+        unlinked = any(row.local_match_id is None for row in rows)
+        for match in AppMatch.objects.all() if unlinked else ():
             candidates[
                 match.season_id,
                 match.home_team_id,
                 match.away_team_id,
                 match.start_time,
             ].append(match)
-        claimed = set(
-            Match.objects.exclude(local_match=None).values_list(
-                "local_match_id", flat=True
+        claimed = (
+            set(
+                Match.objects.exclude(local_match=None).values_list(
+                    "local_match_id", flat=True
+                )
             )
+            if unlinked
+            else set()
         )
-        rows = Match.objects.filter(
-            Q(local_match=None)
-            | Q(published_at=None)
-            | Q(updated_at__gt=F("published_at"))
-        ).order_by("pk")
         for row in rows:
             home, away = teams.get(row.home_team_id), teams.get(row.away_team_id)
             if home is None or away is None:
