@@ -21,6 +21,7 @@ urlpatterns = [
         name="redoc",
     ),
     path("club/", include("apps.club.api.urls")),
+    path("competition/", include("apps.competition.api.urls")),
     path("player/", include("apps.player.api.urls")),
     path("team/", include("apps.team.api.urls")),
     path("seasons/", include("apps.schedule.api.season_urls")),

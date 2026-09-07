@@ -57,6 +57,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   detail routes so malformed identifiers become 404s instead of leaking ORM validation errors.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
+- Add new migration test files to both explicit migration commands in `project.json`; the
+  general test lane excludes `migration_regression` tests.
 - Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those
   against real migrations in an isolated database while ordinary tests use `--nomigrations`.
 - When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
@@ -66,6 +68,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   autouse isolation fixture can give every test and xdist worker its own temporary directory.
 - Keep values evaluated inside `pytest.mark.parametrize` deterministic; collection-time randomness
   gives xdist workers different node IDs and aborts the parallel suite before tests run.
+
+For Sportlink competition imports, preserve the originating User-Agent in the private
+OAuth session file and send `X-Navajo-Instance: KNKV` plus the endpoint-specific
+`X-Navajo-Version`; a bearer token and the `v` query parameter alone can return
+misleading provider 500/603 errors.
 
 ## PR-first workflow (required)
 

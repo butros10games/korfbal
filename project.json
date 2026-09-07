@@ -46,7 +46,7 @@
                         "forwardAllArgs": false
                     },
                     {
-                        "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py",
+                        "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py",
                         "forwardAllArgs": false
                     }
                 ],
@@ -60,7 +60,7 @@
                             "forwardAllArgs": false
                         },
                         {
-                            "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py",
+                            "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py",
                             "forwardAllArgs": false
                         }
                     ]

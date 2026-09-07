@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     "phonenumber_field",
     "django_crontab",
     "apps.club",
+    "apps.competition",
     "apps.player",
     "apps.team",
     "apps.schedule",
