@@ -27,7 +27,12 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.importer import Importer
-from apps.competition.services.reconciliation import joint_team_matches, reconcile
+from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.reconciliation import (
+    JointTeamIndex,
+    joint_team_matches,
+    reconcile,
+)
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import (
@@ -343,3 +348,57 @@ def test_joint_team_boundaries(
 ) -> None:
     """Shared labels cannot bypass team number, age or partner-club boundaries."""
     assert joint_team_matches(source, club, local_club, team) is expected
+    index = JointTeamIndex()
+    index.add("local", local_club, team)
+    assert index.matches(source, club) == ({"local"} if expected else set())
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        " Alpha / Beta Town  J3 ",
+        "Beta Town/Alpha reserves 2",
+        "Alpha/Beta Town 3",
+        "Alpha 3",
+        "Alpha//Beta Town 3",
+        "Alpha/Beta Town Other 3",
+    ],
+)
+@pytest.mark.parametrize("club", ["Alpha", "Beta Town", "Other"])
+def test_joint_index_preserves_all_legacy_candidates(source: str, club: str) -> None:
+    """Index lookup preserves ambiguous candidates and multiword designations."""
+    teams = [
+        ("Alpha/Beta Town", "J3"),
+        ("Beta Town/Alpha", "J3"),
+        ("Alpha/Beta Town", "reserves 2"),
+        ("Alpha/Beta Town", "3"),
+        ("Alpha/Beta Town Other", "3"),
+        ("Alpha/", "3"),
+        ("Alpha", "3"),
+    ]
+    index = JointTeamIndex()
+    for identifier, (partners, name) in enumerate(teams):
+        index.add(str(identifier), partners, name)
+    expected = {
+        str(identifier)
+        for identifier, (partners, name) in enumerate(teams)
+        if joint_team_matches(source, club, partners, name)
+    }
+    assert index.matches(source, club) == expected
+
+
+@pytest.mark.django_db
+def test_publication_applies_reviewed_overrides_in_one_pass(
+    graph: dict[str, Any],
+) -> None:
+    """Publishing can reuse reviewed aliases without a separate reconciliation."""
+    owner = uuid4()
+    SyncLease.objects.create(
+        key="sportlink", owner=owner, expires_at=timezone.now() + timedelta(minutes=1)
+    )
+    result = publish_catalogue(lease_owner=owner, overrides=graph["overrides"])
+    assert result["links"]["explicit"] == 1
+    assert not result["blocked"]
+    assert Match.objects.get().local_match == graph["local"]
+    assert set(LocalClub.objects.values_list("name", flat=True)) == {"DTS", "Example"}
+    assert LocalMatch.objects.count() == 1

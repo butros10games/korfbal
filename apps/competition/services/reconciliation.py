@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -63,6 +63,38 @@ def joint_team_matches(
     return (
         source_partners == local_partners and normalized(source_club) in source_partners
     )
+
+
+class JointTeamIndex:
+    """Look up exact partner sets and designations without pairwise comparisons."""
+
+    def __init__(self) -> None:
+        """Keep all candidates so ambiguous identities remain ambiguous."""
+        self.entries: dict[tuple[frozenset[str], str], set[str]] = defaultdict(set)
+
+    def add(self, identifier: str, club: str, team: str) -> None:
+        """Index the normalized native partner set and full team designation."""
+        partners = frozenset(normalized(part) for part in club.split("/"))
+        if len(partners) > 1 and "" not in partners:
+            self.entries[partners, normalized(team)].add(identifier)
+
+    def matches(self, source_name: str, source_club: str) -> set[str]:
+        """Consider each word boundary, retaining support for multiword designations."""
+        name, club = normalized(source_name), normalized(source_club)
+        if "/" not in name:
+            return set()
+        candidates: set[str] = set()
+        for position, character in enumerate(name):
+            if character != " ":
+                continue
+            partners = frozenset(
+                normalized(part) for part in name[:position].split("/")
+            )
+            if club in partners:
+                candidates.update(
+                    self.entries.get((partners, name[position + 1 :]), ())
+                )
+        return candidates
 
 
 @dataclass
@@ -204,14 +236,13 @@ class Reconciler:
 
         """
         clubs = self.locals["club"]
+        clubs_by_name: dict[str, list[str]] = defaultdict(list)
+        for pk, local in clubs.items():
+            clubs_by_name[normalized(local["name"])].append(pk)
         club_links = self.choose(
             "club",
             {
-                row["id"]: [
-                    pk
-                    for pk, local in clubs.items()
-                    if normalized(row["name"]) == normalized(local["name"])
-                ]
+                row["id"]: clubs_by_name[normalized(row["name"])]
                 for row in self.sources["club"]
             },
             {row["id"]: set(clubs) for row in self.sources["club"]},
@@ -221,22 +252,13 @@ class Reconciler:
         teams_by_club: dict[str, set[str]] = {}
         for pk, local in teams.items():
             teams_by_club.setdefault(str(local["club_id"]), set()).add(pk)
-        joint_teams = {
-            pk: row
-            for pk, row in teams.items()
-            if "/" in clubs[str(row["club_id"])]["name"]
-        }
+        joint_index = JointTeamIndex()
+        for pk, local in teams.items():
+            joint_index.add(pk, clubs[str(local["club_id"])]["name"], local["name"])
         joint_candidates = {
-            row["id"]: {
-                pk
-                for pk, local in joint_teams.items()
-                if joint_team_matches(
-                    row["name"],
-                    source_clubs[row["club_id"]]["name"],
-                    clubs[str(local["club_id"])]["name"],
-                    local["name"],
-                )
-            }
+            row["id"]: joint_index.matches(
+                row["name"], source_clubs[row["club_id"]]["name"]
+            )
             for row in self.sources["team"]
         }
         team_allowed = {

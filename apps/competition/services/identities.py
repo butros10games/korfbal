@@ -23,7 +23,7 @@ def team_group_key(name: str, club_name: str) -> str:
     return value
 
 
-def merge_unlinked_joint_groups() -> int:
+def merge_unlinked_joint_groups(*, protected_ids: set[int] | None = None) -> int:
     """Join source aliases only when they cannot combine distinct native records.
 
     The caller holds the provider lease and transaction. Preserve every source team
@@ -38,7 +38,10 @@ def merge_unlinked_joint_groups() -> int:
         linked = [
             group for group in groups if group.local_team_id or group.local_team_data_id
         ]
-        if len(linked) > 1:
+        if len(linked) > 1 or (
+            len(groups) > 1
+            and any(group.pk in (protected_ids or set()) for group in groups)
+        ):
             continue
         survivor = linked[0] if linked else min(groups, key=lambda group: group.pk)
         for group in groups:

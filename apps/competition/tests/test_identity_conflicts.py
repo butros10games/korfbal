@@ -5,7 +5,10 @@ import pytest
 
 from apps.club.models import Club as AppClub
 from apps.competition.models import Club, Match, Pool, Team, TeamGroup
-from apps.competition.services.identities import team_group_key
+from apps.competition.services.identities import (
+    merge_unlinked_joint_groups,
+    team_group_key,
+)
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
 from apps.schedule.models import Season, SeasonPool
@@ -166,3 +169,20 @@ def test_same_named_source_poules_do_not_merge(season: Season) -> None:
     assert not publish_catalogue()["blocked"]
     assert SeasonPool.objects.count() == DISTINCT_IDENTITIES
     assert not publish_catalogue()["blocked"]
+
+
+@pytest.mark.django_db
+def test_reviewed_override_ids_survive_alias_cleanup(season: Season) -> None:
+    """A reviewed source ID must still exist when publication applies overrides."""
+    source = Club.objects.create(external_id="aurora", name="Aurora")
+    groups = [
+        TeamGroup.objects.create(
+            club=source, season=season, name=name, normalized_name=name.casefold()
+        )
+        for name in ["Aurora/DKV (IJ) 2", "DKV (IJ)/Aurora 2"]
+    ]
+    assert merge_unlinked_joint_groups(protected_ids={groups[-1].pk}) == 0
+    assert set(TeamGroup.objects.values_list("pk", flat=True)) == {
+        group.pk for group in groups
+    }
+    assert merge_unlinked_joint_groups() == 1

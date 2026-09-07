@@ -110,9 +110,12 @@ uv run python apps/django_projects/korfbal/manage.py publish_competition
 
 This command makes no provider requests and is safe to repeat. Run existing-record
 reconciliation with reviewed aliases first when clubs such as DTS have abbreviated
-local names. A custom import runner that bypasses `sync()` must call
-`publish_catalogue()` after releasing its batch lease. The publisher uses the same
-lease to avoid reading another worker's unfinished batch.
+local names. A custom import runner that bypasses `sync()` should call
+`publish_catalogue(lease_owner=owner, overrides=reviewed_links)` before releasing
+its batch lease. Publication applies reviewed aliases and automatic matches in
+one reconciliation pass; an additional `reconcile(apply=True)` is unnecessary.
+The returned `links` counts describe those reconciliation decisions. The publisher
+uses the same lease to avoid reading another worker's unfinished batch.
 
 Existing clubs, rosters, permissions, attendance and tracked scores are retained.
 New or untouched scheduled matches can receive official scores in `MatchData` with

@@ -28,8 +28,8 @@ from apps.competition.services.logos import publish_logo
 from apps.competition.services.reconciliation import (
     LOCAL_FIELDS,
     SOURCE_MODELS,
+    JointTeamIndex,
     Reconciler,
-    joint_team_matches,
     normalized,
     team_label,
 )
@@ -116,11 +116,12 @@ class Publisher:
     def teams(self) -> None:
         """Use a global Team plus exactly one TeamData per team and season."""
         index: dict[tuple[str, str], list[AppTeam]] = defaultdict(list)
-        joint: list[AppTeam] = []
+        joint = JointTeamIndex()
+        local_teams: dict[str, AppTeam] = {}
         for team in AppTeam.objects.select_related("club"):
             index[str(team.club_id), team_label(team.name, team.club.name)].append(team)
-            if "/" in team.club.name:
-                joint.append(team)
+            joint.add(str(team.pk), team.club.name, team.name)
+            local_teams[str(team.pk)] = team
         sources = list(
             TeamGroup.objects
             .filter(local_team_data__isnull=True)
@@ -140,11 +141,7 @@ class Publisher:
                 key = (str(row.club.local_club_id), team_label(row.name, row.club.name))
                 candidates = {str(team.pk): team for team in index[key]}
                 candidates.update({
-                    str(team.pk): team
-                    for team in joint
-                    if joint_team_matches(
-                        row.name, row.club.name, team.club.name, team.name
-                    )
+                    pk: local_teams[pk] for pk in joint.matches(row.name, row.club.name)
                 })
                 if len(candidates) > 1:
                     self.conflict("team", row.pk, "ambiguous_team")
@@ -333,7 +330,11 @@ class Publisher:
 
 
 @transaction.atomic
-def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
+def publish_catalogue(
+    *,
+    lease_owner: UUID | None = None,
+    overrides: dict[tuple[str, int], str] | None = None,
+) -> dict[str, Any]:
     """Materialize snapshots into native models without issuing provider requests.
 
     Raises:
@@ -349,10 +350,12 @@ def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
         and lease.owner != lease_owner
     ):
         raise ValueError("An import is running; publish after its current batch")
-    merged_groups = merge_unlinked_joint_groups()
-    decisions = Reconciler({}, lock=True).plan()
+    merged_groups = merge_unlinked_joint_groups(
+        protected_ids={pk for (kind, pk) in (overrides or {}) if kind == "team"}
+    )
+    decisions = Reconciler(overrides or {}, lock=True).plan()
     for decision in decisions:
-        if decision.reason == "unique":
+        if decision.reason in {"unique", "explicit"}:
             SOURCE_MODELS[decision.kind].objects.filter(
                 pk=decision.source_id
             ).update(**{LOCAL_FIELDS[decision.kind] + "_id": decision.local_id})
@@ -370,4 +373,8 @@ def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
     publisher.teams()
     publisher.pools()
     publisher.matches()
-    return {"counts": dict(publisher.counts), "blocked": publisher.blocked}
+    return {
+        "counts": dict(publisher.counts),
+        "blocked": publisher.blocked,
+        "links": dict(Counter(decision.reason for decision in decisions)),
+    }
