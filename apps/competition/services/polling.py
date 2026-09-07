@@ -9,6 +9,7 @@ from typing import Any
 from django.db.models import Q
 
 from apps.competition.models import Match, Pool, SyncResource
+from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
 
 
@@ -78,9 +79,9 @@ class PollPlanner:
         self.now = now
         self.resources = {
             (resource.kind, resource.source_id): resource
-            for resource in SyncResource.objects.filter(season=season).select_related(
-                "season"
-            )
+            for resource in SyncResource.objects.filter(
+                season=season, failures__lt=MAX_FEED_FAILURES
+            ).select_related("season")
         }
         self.rows = list(
             Match.objects.filter(season=season).values(

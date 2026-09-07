@@ -299,3 +299,10 @@ labels, and different IDs with identical labels receive an ID suffix. This keeps
 incomplete provider metadata from collapsing distinct poules. Run
 `publish_competition` after deployment to repair existing publication conflicts
 without additional provider requests.
+
+Feeds stop being selected automatically after six consecutive failed attempts
+(one initial attempt and five retries). Their `SyncResource` error and failure
+count remain available for review; sync reports their count as `exhausted`. A
+successful attempt before exhaustion clears the failure streak. After fixing an
+exhausted feed, an operator can explicitly reset its failure count and retry
+deadline. Restarting an importer does not reset the cap.

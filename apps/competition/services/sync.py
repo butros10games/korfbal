@@ -21,7 +21,7 @@ from apps.competition.models import SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.polling import PollJob, PollPlanner, mark_checked
 from apps.competition.services.publishing import publish_catalogue
-from apps.competition.services.resources import ENDPOINTS
+from apps.competition.services.resources import ENDPOINTS, MAX_FEED_FAILURES
 from apps.competition.services.traffic import TrafficGate
 from apps.schedule.models import Season
 
@@ -130,10 +130,13 @@ def sync(
         )
     summary["pending"] = (
         SyncResource.objects
-        .filter(season=season)
+        .filter(season=season, failures__lt=MAX_FEED_FAILURES)
         .filter(Q(fetched_at__isnull=True) | Q(next_sync_at__lte=timezone.now()))
         .count()
     )
+    summary["exhausted"] = SyncResource.objects.filter(
+        season=season, failures__gte=MAX_FEED_FAILURES
+    ).count()
     return summary
 
 
@@ -142,6 +145,9 @@ def _fetch_one(
 ) -> tuple[int, bool]:
     """Stop globally on authentication/rate limiting; isolate other feed failures."""
     resource = job.resource
+    if resource.failures >= MAX_FEED_FAILURES:
+        return 0, False
+    checked = False
     try:
         result = client.fetch(resource, gate)
         if result.status not in {HTTP_OK, HTTP_NOT_MODIFIED}:
@@ -170,6 +176,4 @@ def _fetch_one(
     except (ValueError, KeyError, TypeError):
         record_failure(resource, "invalid_response_or_transport")
         summary["failed"] += 1
-    else:
-        return 0, checked
-    return 0, False
+    return 0, checked
