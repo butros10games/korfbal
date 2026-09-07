@@ -192,3 +192,64 @@ five minutes and invalidated when match observations or the team/sport populatio
 change. Team labels are loaded fresh. No extra provider traffic, rating migrations
 or permanent rating-update job is required. History is limited to the imported
 season data, so incomplete imports yield incomplete ratings.
+
+### Link existing clubs, teams, poules and matches
+
+The competition catalogue can link to existing application records without
+creating replacement clubs, moving players or changing recorded scores,
+attendance, permissions or tracker events. The additive linking migration leaves
+all links empty until reconciliation is run. It scans every imported season and
+makes no provider requests.
+
+Preview the proposed links and missing counterparts from the repository root:
+
+```bash
+uv run python apps/django_projects/korfbal/manage.py reconcile_competition > reconciliation.json
+```
+
+The JSON report contains source IDs, external IDs, seasons, club cities, candidate
+local UUIDs, decisions and `unlinked_local` records. Unique normalized club names
+produce candidates; team names match within linked clubs (allowing a club prefix
+on the source label). Poules need the same season, name and fully linked member
+set. Matches require linked home/away teams in the same order, the same season
+and exact kickoff. Either-side ambiguity prevents automatic linking. Already
+saved links are retained; inconsistent parent links stop the operation for review.
+
+For aliases such as local DTS and source DTS Enkhuizen, verify the source city
+and KNKV external ID, then provide a reviewed JSON array in `links.json`:
+
+```json
+[
+    {
+        "kind": "club",
+        "source_id": 123,
+        "local_id": "00000000-0000-0000-0000-000000000001"
+    }
+]
+```
+
+Those IDs are placeholders. `source_id` is the catalogue database ID from the
+report, not the external KNKV ID. Kinds are `club`, `team` (shared team group),
+`pool` and `match`. Explicit selections must still respect existing club/team and
+season relationships; they can resolve name differences, duplicate candidates or
+rescheduled kickoff times. They cannot replace an existing link or assign the
+same local identity twice within its scope.
+
+```bash
+uv run python apps/django_projects/korfbal/manage.py reconcile_competition --links-file links.json
+uv run python apps/django_projects/korfbal/manage.py reconcile_competition --links-file links.json --apply
+```
+
+Review the preview first. `--apply` recalculates decisions under database locks and
+saves mutually unique plus explicit mappings atomically. It refuses to run during
+an active import. Repeat after later import batches to link newly discovered
+counterparts; imports preserve existing links. Local historical games without an
+imported counterpart stay in `unlinked_local`; unavailable historical seasons
+cannot be inferred from current-season KNKV feeds.
+
+Catalogue APIs expose `local_club`, `local_team`, `local_pool` and `local_match`
+on their corresponding records. Query `matches/?local_club=<uuid>`,
+`matches/?local_team=<uuid>` or `matches/?local_match=<uuid>` using existing app
+identifiers; team groups also support `local_club` and `local_team` filters. These
+links are backend support; existing roster/tracker screens retain their current
+behavior.

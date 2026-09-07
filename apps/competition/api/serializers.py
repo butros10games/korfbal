@@ -21,7 +21,7 @@ class CompetitionClubSerializer(serializers.ModelSerializer):
         """Declare storage or serialization metadata."""
 
         model = Club
-        fields = ("id", "external_id", "name", "city")
+        fields = ("id", "external_id", "name", "city", "local_club")
 
 
 class CompetitionTeamSerializer(serializers.ModelSerializer):
@@ -43,7 +43,7 @@ class CompetitionTeamGroupSerializer(serializers.ModelSerializer):
         """Declare the unified team representation."""
 
         model = TeamGroup
-        fields = ("id", "season", "club", "name", "variants")
+        fields = ("id", "season", "club", "name", "local_team", "variants")
 
 
 class CompetitionPoolSerializer(serializers.ModelSerializer):
@@ -60,6 +60,7 @@ class CompetitionPoolSerializer(serializers.ModelSerializer):
             "name",
             "class_name",
             "sport",
+            "local_pool",
             "standings_synced_at",
             "results_filtered",
         )
@@ -86,6 +87,7 @@ class CompetitionMatchSerializer(serializers.ModelSerializer):
             "automatic_result",
             "result_observed_at",
             "results_checked_at",
+            "local_match",
             "updated_at",
         )
 
@@ -134,6 +136,10 @@ class CompetitionSeasonSerializer(serializers.ModelSerializer):
 class CompetitionFilters(serializers.Serializer):
     """Validate filters before passing user input into database lookups."""
 
+    local_club = serializers.UUIDField(required=False)
+    local_team = serializers.UUIDField(required=False)
+    local_pool = serializers.UUIDField(required=False)
+    local_match = serializers.UUIDField(required=False)
     season = serializers.UUIDField(required=False)
     club = serializers.IntegerField(required=False, min_value=1)
     team = serializers.IntegerField(required=False, min_value=1)

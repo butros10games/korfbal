@@ -11,6 +11,13 @@ class Club(models.Model):
     external_id = models.CharField(max_length=80, unique=True)
     name = models.CharField(max_length=255)
     city = models.CharField(max_length=255, blank=True)
+    local_club = models.OneToOneField(
+        "club.Club",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="competition_identity",
+    )
 
     def __str__(self) -> str:
         """Return the source display name."""
@@ -45,6 +52,13 @@ class TeamGroup(models.Model):
     club = models.ForeignKey(Club, on_delete=models.PROTECT)
     name = models.CharField(max_length=255)
     normalized_name = models.CharField(max_length=765)
+    local_team = models.ForeignKey(
+        "team.Team",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="competition_groups",
+    )
 
     class Meta:
         """Keep exact normalized names unique within a club and season."""
@@ -53,7 +67,10 @@ class TeamGroup(models.Model):
             models.UniqueConstraint(
                 fields=("season", "club", "normalized_name"),
                 name="competition_team_group_once",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=("season", "local_team"), name="competition_local_team_once"
+            ),
         ]
 
     def __str__(self) -> str:
@@ -87,6 +104,13 @@ class Pool(SeasonalIdentity):
     sport = models.CharField(max_length=80, blank=True, db_index=True)
     standings_synced_at = models.DateTimeField(null=True)
     results_filtered = models.BooleanField(default=True)
+    local_pool = models.OneToOneField(
+        "schedule.SeasonPool",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="competition_identity",
+    )
 
     def __str__(self) -> str:
         """Return a recognizable poule label."""
@@ -133,6 +157,13 @@ class Match(SeasonalIdentity):
     automatic_result = models.BooleanField(default=False)
     result_observed_at = models.DateTimeField(null=True)
     results_checked_at = models.DateTimeField(null=True)
+    local_match = models.OneToOneField(
+        "schedule.Match",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="competition_identity",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta(SeasonalIdentity.Meta):

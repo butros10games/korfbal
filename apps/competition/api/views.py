@@ -53,6 +53,7 @@ class ClubViewSet(CatalogueViewSet):
     queryset = Club.objects.order_by("name", "pk")
     serializer_class = CompetitionClubSerializer
     search_fields = ("name", "city")
+    field_filters: ClassVar = {"local_club": "local_club_id"}
 
 
 class TeamViewSet(CatalogueViewSet):
@@ -75,7 +76,12 @@ class TeamGroupViewSet(CatalogueViewSet):
     queryset = TeamGroup.objects.prefetch_related("variants").order_by("name", "pk")
     serializer_class = CompetitionTeamGroupSerializer
     search_fields = ("name",)
-    field_filters: ClassVar = {"season": "season_id", "club": "club_id"}
+    field_filters: ClassVar = {
+        "season": "season_id",
+        "club": "club_id",
+        "local_club": "club__local_club_id",
+        "local_team": "local_team_id",
+    }
 
 
 class PoolViewSet(CatalogueViewSet):
@@ -88,6 +94,7 @@ class PoolViewSet(CatalogueViewSet):
         "season": "season_id",
         "sport": "sport",
         "team": "entries__team_id",
+        "local_pool": "local_pool_id",
     }
 
     @extend_schema(responses=CompetitionPoolEntrySerializer(many=True))
@@ -112,6 +119,7 @@ class MatchViewSet(CatalogueViewSet):
     field_filters: ClassVar = {
         "season": "season_id",
         "pool": "pool_id",
+        "local_match": "local_match_id",
         "sport": "home_team__sport",
         "status": "status",
         "date_from": "starts_at__gte",
@@ -125,6 +133,8 @@ class MatchViewSet(CatalogueViewSet):
             ("team", ""),
             ("club", "__club"),
             ("team_group", "__group"),
+            ("local_team", "__group__local_team"),
+            ("local_club", "__club__local_club"),
         ):
             value = self.request.query_params.get(name)
             if value:
