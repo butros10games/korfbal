@@ -18,6 +18,7 @@ from apps.competition.application.ports import (
 from apps.competition.models import SyncResource
 from apps.competition.services.resources import ENDPOINTS
 
+from .logos import fetch_logo
 from .tokens import TokenStore
 
 
@@ -72,6 +73,8 @@ class SportlinkClient:
             AuthenticationRequiredError: The renewed session was rejected.
 
         """
+        if resource.kind == "club_logo":
+            return fetch_logo(resource.source_id, gate, retry_delay)
         if self.store and self.store.needs_refresh():
             self._refresh(gate)
         path, parameter, version, _ = ENDPOINTS[resource.kind]

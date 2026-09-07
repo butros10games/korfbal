@@ -15,6 +15,10 @@ class Club(models.Model):
     external_id = models.CharField(max_length=80, unique=True)
     name = models.CharField(max_length=255)
     city = models.CharField(max_length=255, blank=True)
+    logo_bucket = models.CharField(max_length=80, blank=True)
+    logo_hash = models.CharField(max_length=64, blank=True)
+    cached_logo = models.CharField(max_length=1024, blank=True)
+    published_logo = models.CharField(max_length=1024, blank=True)
     local_club = models.OneToOneField(
         "club.Club",
         null=True,

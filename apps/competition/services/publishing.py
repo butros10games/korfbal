@@ -20,6 +20,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.logos import publish_logo
 from apps.competition.services.reconciliation import (
     LOCAL_FIELDS,
     SOURCE_MODELS,
@@ -334,6 +335,13 @@ def publish_catalogue(*, lease_owner: UUID | None = None) -> dict[str, Any]:
             ).update(**{LOCAL_FIELDS[decision.kind] + "_id": decision.local_id})
     publisher = Publisher()
     publisher.clubs()
+    for source_club in (
+        Club.objects
+        .exclude(local_club=None)
+        .exclude(cached_logo="")
+        .select_related("local_club")
+    ):
+        publish_logo(source_club)
     publisher.teams()
     publisher.pools()
     publisher.matches()

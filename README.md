@@ -277,3 +277,16 @@ on their corresponding records. Query `matches/?local_club=<uuid>`,
 identifiers; team groups also support `local_club` and `local_team` filters. These
 links are backend support; existing roster/tracker screens retain their current
 behavior.
+
+Club logo references are retained from the KNKV club list and fixture responses.
+The `club_logo` queue downloads each new hash through the shared request gate,
+validates and caches a PNG in normal club image storage, and publishes it to the
+existing club logo field. Existing manual uploads are preserved. Requests to the
+public binary host never receive the saved OAuth credentials.
+
+The logo migration requeues only existing `clubs` feeds (clearing their ETags),
+so already-imported clubs gain logo references without restarting the full crawl.
+Deploy the new importer image as well as the web image before resuming that queue;
+the custom production runner must use the updated image to recognize `club_logo`.
+Changed logo hashes are queued again; unchanged cached hashes require no image HTTP
+request. Image failures use the normal retry checkpoints and provider backoff.

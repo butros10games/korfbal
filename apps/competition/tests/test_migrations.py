@@ -4,6 +4,7 @@ from datetime import date
 
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from django.utils import timezone
 import pytest
 
 
@@ -104,6 +105,50 @@ def test_shared_identity_migrations_preserve_native_records() -> None:
             constraint.name
             for constraint in current.get_model("team", "TeamData")._meta.constraints
         } == {"unique_team_data_per_season"}
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_logo_migration_requeues_only_club_lists() -> None:
+    """Discover missing logo metadata without resetting completed match feeds."""
+    executor = MigrationExecutor(connection)
+    try:
+        old_targets = [
+            ("competition", "0004_match_local_created_match_published_at_and_more")
+        ]
+        executor.migrate(old_targets)
+        old = executor.loader.project_state(old_targets).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="logos", start_date=date(2026, 7, 1), end_date=date(2027, 6, 30)
+        )
+        stamp = timezone.now()
+        resource = old.get_model("competition", "SyncResource")
+        for kind in ("clubs", "club_results"):
+            resource.objects.create(
+                season=season,
+                kind=kind,
+                source_id="",
+                fetched_at=stamp,
+                next_sync_at=stamp,
+                etag="old",
+            )
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        resource = executor.loader.project_state(targets).apps.get_model(
+            "competition", "SyncResource"
+        )
+        assert (
+            resource.objects.get(season_id=season.pk, kind="clubs").fetched_at is None
+        )
+        assert not resource.objects.get(season_id=season.pk, kind="clubs").etag
+        assert (
+            resource.objects.get(season_id=season.pk, kind="club_results").fetched_at
+            == stamp
+        )
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())

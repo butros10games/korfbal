@@ -2,6 +2,7 @@
 
 # Paths, parameter names and versions verified against actual app responses.
 ENDPOINTS = {
+    "club_logo": ("", None, 1, 87600),
     "clubs": ("club/Clubs", None, 1, 168),
     "club_teams": ("club/ClubTeams", "ClubId", 1, 168),
     "club_program": ("club/ClubProgram", "ClubId", 3, 24),

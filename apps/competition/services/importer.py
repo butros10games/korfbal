@@ -19,6 +19,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.logos import cache_logo, discover_logo
 from apps.schedule.models import Season
 
 
@@ -68,6 +69,7 @@ class Importer:
         )
         for kind in ("club_teams", "club_program", "club_results"):
             enqueue(self.season, kind, club.external_id)
+        discover_logo(club, data.get("ClubLogo"), self.season)
         self._clubs[source_id] = club
         return club
 
@@ -228,6 +230,8 @@ class Importer:
             field, import_row = collections[kind]
             for row in data[field]:
                 import_row(row)
+        elif kind == "club_logo":
+            cache_logo(source_id, data)
         elif kind == "team_pools":
             self.assignments(data, source_id)
         elif kind == "pool_results":
