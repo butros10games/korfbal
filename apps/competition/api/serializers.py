@@ -15,6 +15,7 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.classification import pool_classification
+from apps.competition.services.seasons import SeasonResolver
 from apps.schedule.models import Season
 
 
@@ -28,7 +29,23 @@ class CompetitionClubSerializer(serializers.ModelSerializer):
         fields = ("id", "external_id", "name", "city", "local_club")
 
 
-class CompetitionTeamSerializer(serializers.ModelSerializer):
+class NativeSeasonSerializer(serializers.ModelSerializer):
+    """Expose the playing season, retaining fetch scope only in source storage."""
+
+    _season_resolver: SeasonResolver | None = None
+    season = serializers.SerializerMethodField()
+
+    def get_season(self, obj: Team | Pool | Match) -> str | None:
+        """Reuse one mapping index for nested catalogue serialization."""
+        if self._season_resolver is None:
+            self._season_resolver = SeasonResolver()
+        resolver = self._season_resolver
+        sport = obj.home_team.sport if isinstance(obj, Match) else obj.sport
+        value = resolver.resolve(obj.season_id, sport)
+        return str(value) if value is not None else None
+
+
+class CompetitionTeamSerializer(NativeSeasonSerializer):
     """Expose season-specific teams and their clubs."""
 
     designation = serializers.SerializerMethodField()
@@ -69,7 +86,7 @@ class CompetitionTeamGroupSerializer(serializers.ModelSerializer):
         fields = ("id", "season", "club", "name", "local_team", "variants")
 
 
-class CompetitionPoolSerializer(serializers.ModelSerializer):
+class CompetitionPoolSerializer(NativeSeasonSerializer):
     """Expose poule labels and source coverage metadata."""
 
     classification = serializers.SerializerMethodField()
@@ -98,7 +115,7 @@ class CompetitionPoolSerializer(serializers.ModelSerializer):
         )
 
 
-class CompetitionMatchSerializer(serializers.ModelSerializer):
+class CompetitionMatchSerializer(NativeSeasonSerializer):
     """Expose normalized fixtures, scores and observation timestamps."""
 
     class Meta:
@@ -106,6 +123,7 @@ class CompetitionMatchSerializer(serializers.ModelSerializer):
 
         model = Match
         fields = (
+            "private_lineup_counts",
             "id",
             "external_id",
             "season",

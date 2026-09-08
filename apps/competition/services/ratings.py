@@ -19,6 +19,7 @@ from apps.competition.domain.elo import (
 )
 from apps.competition.models import Match, RatingConfiguration, Team
 from apps.competition.services.published_ratings import published_ratings
+from apps.competition.services.seasons import native_season_filter
 
 
 CACHE_SECONDS = 300
@@ -36,11 +37,13 @@ def team_ratings(season_id: UUID) -> dict[str, Any]:
     if configuration is not None:
         return published_ratings(configuration)
     teams = list(
-        Team.objects.filter(season_id=season_id).values(
+        Team.objects.filter(native_season_filter(season_id)).values(
             "id", "external_id", "name", "sport", "club_id"
         )
     )
-    matches = Match.objects.filter(season_id=season_id)
+    matches = Match.objects.filter(
+        native_season_filter(season_id, sport_field="home_team__sport")
+    )
     fingerprint = matches.aggregate(count=Count("pk"), changed=Max("updated_at"))
     population = sha256(
         json.dumps(sorted((team["id"], team["sport"]) for team in teams)).encode()

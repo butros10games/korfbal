@@ -10,7 +10,12 @@ from apps.schedule.models import Season
 def current_season() -> Season | None:
     """Return the season containing today's local date."""
     today = timezone.localdate()
-    return Season.objects.filter(start_date__lte=today, end_date__gte=today).first()
+    return (
+        Season.objects
+        .filter(start_date__lte=today, end_date__gte=today)
+        .order_by("-start_date", "end_date", "pk")
+        .first()
+    )
 
 
 def most_recent_season() -> Season | None:
@@ -35,10 +40,25 @@ def default_season(seasons: list[Season]) -> Season | None:
     """Prefer the current scoped season, then the most recent option."""
     if not seasons:
         return None
-    active = current_season()
-    if active and any(season.id_uuid == active.id_uuid for season in seasons):
-        return active
-    return seasons[0]
+    today = timezone.localdate()
+    active = [
+        season for season in seasons if season.start_date <= today <= season.end_date
+    ]
+    if active:
+        return min(
+            active,
+            key=lambda season: (
+                -season.start_date.toordinal(),
+                season.end_date,
+                str(season.pk),
+            ),
+        )
+    previous = [season for season in seasons if season.start_date <= today]
+    return (
+        max(previous, key=lambda season: (season.start_date, str(season.pk)))
+        if previous
+        else min(seasons, key=lambda season: (season.start_date, str(season.pk)))
+    )
 
 
 def requested_or_default_season(
@@ -54,7 +74,10 @@ def season_options_payload(seasons: list[Season]) -> list[dict[str, object]]:
     """Serialize season choices consistently across overview endpoints."""
     if not seasons:
         return []
-    active = current_season()
+    today = timezone.localdate()
+    active = default_season([
+        season for season in seasons if season.start_date <= today <= season.end_date
+    ])
     return [
         {
             "id_uuid": str(season.id_uuid),

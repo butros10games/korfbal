@@ -17,7 +17,7 @@ from apps.competition.application.ports import (
     RequestBudgetError,
     TransportError,
 )
-from apps.competition.models import SyncLease, SyncResource
+from apps.competition.models import Match, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.polling import PollJob, PollPlanner, mark_checked
 from apps.competition.services.publishing import publish_catalogue
@@ -55,6 +55,13 @@ def checkpoint(resource: SyncResource, result: FetchResult, job: PollJob) -> boo
             raise ValueError("Unexpected conditional response")
         resource.fetched_at = now
         resource.next_sync_at = now + timedelta(hours=ENDPOINTS[resource.kind][3])
+        if resource.kind == "match_lineup":
+            fixture = Match.objects.get(
+                season=resource.season, external_id=resource.source_id
+            )
+            finish = fixture.starts_at + timedelta(hours=2)
+            if finish > now:
+                resource.next_sync_at = min(now + timedelta(days=1), finish)
         resource.failures = 0
         resource.last_error = ""
         resource.save()
@@ -160,7 +167,8 @@ def _fetch_one(
                 result.status in AUTH_ERRORS
                 and resource.kind not in {"club_logo", "player_photo"}
                 and not (
-                    resource.kind == "team_roster" and result.status == HTTP_FORBIDDEN
+                    resource.kind in {"team_roster", "match_lineup"}
+                    and result.status == HTTP_FORBIDDEN
                 )
             ):
                 return result.retry_after, False

@@ -95,7 +95,7 @@ class SportlinkClient:
         if parameter:
             params[parameter] = resource.source_id
         headers = {"X-Navajo-Version": str(version)}
-        if resource.etag and resource.kind != "team_roster":
+        if resource.etag and resource.kind not in {"team_roster", "match_lineup"}:
             headers["If-None-Match"] = resource.etag
         response = self._get(
             BASE_URL + path,

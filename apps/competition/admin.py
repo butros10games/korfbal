@@ -10,6 +10,7 @@ from apps.competition.models import (
     Match,
     Pool,
     ResultRevision,
+    SeasonBinding,
     SyncLease,
     SyncResource,
     Team,
@@ -184,3 +185,11 @@ class HistoricalDiscoveryAdmin(CatalogueAdmin):
     list_display = ("resource", "parent", "reference")
     list_select_related = ("resource", "parent")
     search_fields = ("reference", "resource__source_id")
+
+
+@admin.register(SeasonBinding)
+class SeasonBindingAdmin(CatalogueAdmin):
+    """Inspect source scopes and native season mappings."""
+
+    list_display = ("scope", "sport", "season")
+    list_select_related = ("scope", "season")

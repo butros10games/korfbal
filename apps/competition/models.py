@@ -103,9 +103,47 @@ class TeamGroup(models.Model):
         return self.name
 
 
+class SeasonBinding(models.Model):
+    """Map an explicitly configured provider edition to a native playing season."""
+
+    if TYPE_CHECKING:
+        scope_id: UUID
+        season_id: UUID
+
+    scope = models.ForeignKey(
+        "schedule.Season",
+        on_delete=models.PROTECT,
+        related_name="competition_season_bindings",
+    )
+    sport = models.CharField(max_length=80)
+    season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
+
+    class Meta:
+        """One target for each provider scope and discipline."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("scope", "sport"), name="competition_scope_sport_once"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the mapping without loading its related seasons."""
+        return f"{self.scope_id}:{self.sport}"
+
+
 class Team(SeasonalIdentity):
     """Source team, including its indoor/outdoor sport identifier."""
 
+    roster_observed_at = models.DateTimeField(null=True)
+    private_roster_counts = models.JSONField(default=dict)
+
+    local_team_data = models.ForeignKey(
+        "team.TeamData",
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="competition_variants",
+    )
     club = models.ForeignKey(Club, on_delete=models.PROTECT)
     name = models.CharField(max_length=255)
     sport = models.CharField(max_length=80, db_index=True)
@@ -115,6 +153,7 @@ class Team(SeasonalIdentity):
 
     if TYPE_CHECKING:
         group_id: int | None
+        local_team_data_id: int | None
 
     def __str__(self) -> str:
         """Return the full team name."""
@@ -267,6 +306,8 @@ class Match(SeasonalIdentity):
         Team, on_delete=models.PROTECT, related_name="away_matches"
     )
     starts_at = models.DateTimeField(db_index=True)
+    lineup_observed_at = models.DateTimeField(null=True)
+    private_lineup_counts = models.JSONField(default=dict)
     status = models.CharField(max_length=40, db_index=True)
     home_score = models.PositiveIntegerField(null=True)
     away_score = models.PositiveIntegerField(null=True)
@@ -512,6 +553,9 @@ class RosterMembership(models.Model):
     first_seen_at = models.DateTimeField()
     last_seen_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True)
+    roles = models.JSONField(default=list)
+    local_staff_link_created = models.BooleanField(default=False)
+    local_coach_link_created = models.BooleanField(default=False)
     shirt_number = models.CharField(max_length=10, blank=True)
     published_team_data = models.ForeignKey(
         "team.TeamData", null=True, on_delete=models.SET_NULL
@@ -537,6 +581,45 @@ class RosterMembership(models.Model):
     def __str__(self) -> str:
         """Identify the source observation without loading player data."""
         return f"{self.player_id}:{self.team_id}"
+
+
+class MatchMembership(models.Model):
+    """A provider match-selection observation linking existing native people.
+
+    Selection is not a tracked appearance, playing time or team-season membership.
+    """
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="lineup")
+    team = models.ForeignKey(Team, on_delete=models.CASCADE)
+    player = models.ForeignKey("player.Player", on_delete=models.CASCADE)
+    role = models.CharField(
+        max_length=16,
+        choices=[
+            ("selected", "Selected, starting role unknown"),
+            ("starter", "Starter"),
+            ("substitute", "Substitute"),
+            ("staff", "Staff"),
+        ],
+    )
+    roles = models.JSONField(default=list)
+    observed_at = models.DateTimeField()
+
+    if TYPE_CHECKING:
+        player_id: UUID
+        team_id: int
+
+    class Meta:
+        """Keep one current selection per match and native person."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("match", "player"), name="competition_match_person_once"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the observation without loading personal data."""
+        return f"{self.pk}:{self.role}"
 
 
 class RatingConfiguration(models.Model):

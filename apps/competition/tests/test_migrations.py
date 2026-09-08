@@ -236,9 +236,12 @@ def test_native_player_migration_preserves_accounts_and_rosters() -> None:
         assert migrated.user_id == user.pk
         assert migrated.profile_picture.name == "profile_pictures/existing.png"
         assert not migrated.knkv_photo
+        assert not current.get_model("competition", "SeasonBinding").objects.exists()
         imported = players.create(name="Example", knkv_person_id="synthetic-person")
         assert imported.user_id is None
         data = current.get_model("team", "TeamData").objects.get(pk=data.pk)
+        assert not data.staff.exists()
+        assert not current.get_model("competition", "MatchMembership").objects.exists()
         data.players.add(imported)
         assert set(data.players.values_list("pk", flat=True)) == {
             player.pk,

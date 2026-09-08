@@ -65,7 +65,7 @@ def test_membership_intervals_and_private_erasure(season: Season) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize("privacy", ["NORMAL", "LIMITED", "OPEN"])
 def test_only_visible_actual_team_players(season: Season, privacy: str) -> None:
-    """Staff, guests and hidden/unknown privacy entries do not become players."""
+    """Staff get native profiles; unknown memberships and private people do not."""
     importer = Importer(season, timezone.now())
     importer.team(team_payload("T1"))
     rows = [person(privacy=privacy), person("P2", "PRIVATE"), person("P3", "UNKNOWN")]
@@ -74,8 +74,8 @@ def test_only_visible_actual_team_players(season: Season, privacy: str) -> None:
     guest = person("P5")
     guest["TeamPerson"] = False
     importer.apply("team_roster", "T1", {"TeamPersonOverview": [*rows, staff, guest]})
-    assert list(Player.objects.values_list("knkv_person_id", flat=True)) == ["P1"]
-    assert Player.objects.get().display_name == "Example van Player"
+    assert set(Player.objects.values_list("knkv_person_id", flat=True)) == {"P1", "P4"}
+    assert Player.objects.get(knkv_person_id="P1").display_name == "Example van Player"
     assert not get_user_model().objects.exists()
 
 

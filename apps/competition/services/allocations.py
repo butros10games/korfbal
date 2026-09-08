@@ -13,6 +13,7 @@ from apps.competition.domain.classification import classify, level
 from apps.competition.models import Allocation, AllocationSource, PoolEntry
 from apps.competition.services.classification import map_pool, resolve_class
 from apps.competition.services.reconciliation import normalized
+from apps.competition.services.seasons import INDOOR, OUTDOOR, target_season
 from apps.schedule.models import Season
 
 
@@ -152,8 +153,14 @@ def allocation_class(season: Season, values: dict[str, str], classes: dict) -> i
         context, issues = classify("", "", season.start_date.year, values)
         if any(not issue.startswith("missing_") for issue in issues):
             raise ValueError(f"Conflicting allocation classification: {issues}")
+        native_season = target_season(
+            season, {"indoor": INDOOR, "outdoor": OUTDOOR}.get(context.discipline, "")
+        )
+        if native_season is None:
+            raise ValueError("Allocation discipline has no native season mapping")
         classes[key] = resolve_class(
-            season, {"classification": asdict(context), "level": level(context, issues)}
+            native_season,
+            {"classification": asdict(context), "level": level(context, issues)},
         ).pk
     return classes[key]
 

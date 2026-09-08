@@ -20,6 +20,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.seasons import native_season_filter
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.schedule.models import Season
 
@@ -52,7 +53,27 @@ class CatalogueViewSet(viewsets.ReadOnlyModelViewSet):
         validator.is_valid(raise_exception=True)
         for name, field in self.field_filters.items():
             if name in validator.validated_data:
-                query = query.filter(**{field: validator.validated_data[name]})
+                if name == "season" and query.model in {Team, Pool, Match, TeamGroup}:
+                    sport_field = (
+                        "home_team__sport"
+                        if query.model is Match
+                        else "variants__sport"
+                        if query.model is TeamGroup
+                        else "sport"
+                    )
+                    query = query.filter(
+                        native_season_filter(
+                            validator.validated_data[name], sport_field=sport_field
+                        )
+                    ).distinct()
+                elif name == "season" and query.model is Allocation:
+                    query = query.filter(
+                        competition_class__edition__season_id=validator.validated_data[
+                            name
+                        ]
+                    )
+                else:
+                    query = query.filter(**{field: validator.validated_data[name]})
         return query
 
 

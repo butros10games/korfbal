@@ -11,6 +11,7 @@ ENDPOINTS = {
     "club_teams": ("club/ClubTeams", "ClubId", 1, 168),
     "club_program": ("club/ClubProgram", "ClubId", 3, 24),
     "club_results": ("club/ClubMatchResults", "ClubId", 2, 168),
+    "match_lineup": ("match/MatchResultDetails", "PublicMatchId", 8, 168),
     "team_roster": ("team/TeamPersons", "PublicTeamId", 0, 168),
     "team_pools": ("team/TeamPoolAssignments", "PublicTeamId", 2, 168),
     "pool_results": ("pool/PoolCompetitionData", "PoolId", 2, 24),

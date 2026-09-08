@@ -7,8 +7,14 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.competition.models import RosterMembership, SyncResource, Team
+from apps.competition.models import (
+    MatchMembership,
+    RosterMembership,
+    SyncResource,
+    Team,
+)
 from apps.competition.services.player_photos import discover_photo
+from apps.competition.services.seasons import SeasonResolver
 from apps.player.models import Player
 from apps.schedule.models import Season
 from apps.team.models import TeamData
@@ -35,38 +41,12 @@ def import_roster(
     rows = data.get("TeamPersonOverview")
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("Invalid roster collection")
-    if RosterMembership.objects.filter(
-        team=team, last_seen_at__gt=observed_at
-    ).exists():
+    if team.roster_observed_at and team.roster_observed_at > observed_at:
         return
-    visible, hidden = _parse_roster(rows)
-    # A stricter privacy observation wins even if a duplicate row says visible.
-    withdrawn = Player.all_objects.filter(
-        knkv_person_id__in=hidden, knkv_observed_at__lte=observed_at
-    )
-    for player in withdrawn:
-        discover_photo(player, None, season)
-    source_only = withdrawn.filter(user_id=None)
-    TeamData.players.through.objects.filter(
-        player_id__in=source_only.values("pk")
-    ).delete()
-    owned_links = (
-        RosterMembership.objects
-        .filter(player_id__in=withdrawn.values("pk"), local_link_created=True)
-        .exclude(published_team_data=None)
-        .values_list("player_id", "published_team_data_id")
-    )
-    remove_links = Q(pk__in=[])
-    for player_id, team_data_id in owned_links:
-        remove_links |= Q(player_id=player_id, teamdata_id=team_data_id)
-    TeamData.players.through.objects.filter(remove_links).delete()
-    RosterMembership.objects.filter(player_id__in=withdrawn.values("pk")).delete()
-    source_only.update(name="", knkv_privacy="PRIVATE", knkv_observed_at=observed_at)
-    withdrawn.exclude(user_id=None).update(
-        knkv_privacy="PRIVATE", knkv_observed_at=observed_at
-    )
+    visible, hidden = parse_people(rows)
+    withdraw_people(hidden, season, observed_at)
     current = []
-    for person_id, (name, shirt, privacy) in visible.items():
+    for person_id, (name, shirt, privacy, roles) in visible.items():
         if person_id in hidden:
             continue
         player, _ = Player.all_objects.get_or_create(
@@ -87,19 +67,51 @@ def import_roster(
             defaults={"first_seen_at": observed_at, "last_seen_at": observed_at},
         )
         RosterMembership.objects.filter(pk=membership.pk).update(
-            last_seen_at=observed_at, shirt_number=shirt
+            last_seen_at=observed_at, shirt_number=shirt, roles=roles
         )
         current.append(membership.pk)
     RosterMembership.objects.filter(team=team, ended_at=None).exclude(
         pk__in=current
     ).update(ended_at=observed_at)
     _discover_photos(rows, set(visible) - hidden, season, observed_at)
+    team.private_roster_counts = count_private_people(rows, hidden)
+    team.roster_observed_at = observed_at
+    team.save(update_fields=("private_roster_counts", "roster_observed_at"))
     publish_roster(team)
 
 
-def _parse_roster(
+def withdraw_people(hidden: set[str], season: Season, observed_at: datetime) -> None:
+    """Erase provider observations when a newer response withdraws visibility."""
+    withdrawn = Player.all_objects.filter(
+        knkv_person_id__in=hidden, knkv_observed_at__lte=observed_at
+    )
+    for player in withdrawn:
+        discover_photo(player, None, season)
+    source_only = withdrawn.filter(user_id=None)
+    for relation, flag in ROSTER_RELATIONS.items():
+        through = getattr(TeamData, relation).through
+        through.objects.filter(player_id__in=source_only.values("pk")).delete()
+        owned_links = (
+            RosterMembership.objects
+            .filter(player_id__in=withdrawn.values("pk"), **{flag: True})
+            .exclude(published_team_data=None)
+            .values_list("player_id", "published_team_data_id")
+        )
+        remove_links = Q(pk__in=[])
+        for player_id, team_data_id in owned_links:
+            remove_links |= Q(player_id=player_id, teamdata_id=team_data_id)
+        through.objects.filter(remove_links).delete()
+    RosterMembership.objects.filter(player_id__in=withdrawn.values("pk")).delete()
+    MatchMembership.objects.filter(player_id__in=withdrawn.values("pk")).delete()
+    source_only.update(name="", knkv_privacy="PRIVATE", knkv_observed_at=observed_at)
+    withdrawn.exclude(user_id=None).update(
+        knkv_privacy="PRIVATE", knkv_observed_at=observed_at
+    )
+
+
+def parse_people(
     rows: list[dict[str, Any]],
-) -> tuple[dict[str, tuple[str, str, str]], set[str]]:
+) -> tuple[dict[str, tuple[str, str, str, list[str]]], set[str]]:
     """Whitelist visible players and minimal fields before applying any writes.
 
     Raises:
@@ -107,7 +119,7 @@ def _parse_roster(
         TypeError: The provider role is not an object.
 
     """
-    visible: dict[str, tuple[str, str, str]] = {}
+    visible: dict[str, tuple[str, str, str, list[str]]] = {}
     hidden = set()
     for row in rows:
         person_id = row.get("PersonId")
@@ -123,7 +135,13 @@ def _parse_roster(
         role = row.get("TeamPersonFunction") or {}
         if not isinstance(role, dict):
             raise TypeError("Invalid roster role")
-        if row.get("TeamPerson") is not True or role.get("RoleId") != "PLAYER_DEFAULT":
+        role_id = role.get("RoleId")
+        if row.get("TeamPerson") is not True or role_id not in {
+            "PLAYER_DEFAULT",
+            "COACHING_STAFF",
+            "MEDICAL_STAFF",
+            "OTHER_STAFF",
+        }:
             continue
         parts = [row.get(key) or "" for key in ("FirstName", "Infix", "LastName")]
         if any(not isinstance(part, str) for part in parts):
@@ -134,7 +152,13 @@ def _parse_roster(
         shirt = str(row.get("ShirtNumber") or "")
         if len(shirt) > SHIRT_LIMIT:
             raise ValueError("Invalid shirt number")
-        visible[person_id] = (name, shirt, row["PrivacyLevel"])
+        previous_roles = visible[person_id][3] if person_id in visible else []
+        visible[person_id] = (
+            name,
+            shirt,
+            row["PrivacyLevel"],
+            sorted({*previous_roles, role_id}),
+        )
     return visible, hidden
 
 
@@ -166,56 +190,106 @@ def queue_rosters(season: Season) -> int:
     )
 
 
+ROSTER_RELATIONS = {
+    "players": "local_link_created",
+    "staff": "local_staff_link_created",
+    "coach": "local_coach_link_created",
+}
+
+
+def _belongs(observation: RosterMembership, relation: str) -> bool:
+    roles = observation.roles or ["PLAYER_DEFAULT"]
+    if relation == "players":
+        return "PLAYER_DEFAULT" in roles
+    if relation == "coach":
+        return "COACHING_STAFF" in roles
+    return any(role != "PLAYER_DEFAULT" for role in roles)
+
+
 @transaction.atomic
 def publish_roster(team: Team) -> None:
-    """Publish source observations into the ordinary season-specific team roster."""
-    group = team.group
-    if group is None or group.local_team_data_id is None:
+    """Reconcile importer-owned links independently for each native team season."""
+    if team.group is None:
         return
-    team_data = TeamData.objects.select_for_update().get(pk=group.local_team_data_id)
-    observations = RosterMembership.objects.filter(team__group=group)
-    observations.filter(published_team_data=None).update(published_team_data=team_data)
-    desired = set(
-        observations.filter(
-            ended_at=None,
-            last_seen_at__gte=timezone.now() - ROSTER_FRESHNESS,
-            player_id__in=Player.objects.values("pk"),
-        ).values_list("player_id", flat=True)
+    observations = list(
+        RosterMembership.objects.filter(team__group=team.group).select_related("team")
     )
-    through = TeamData.players.through
-    present = set(
-        through.objects.filter(teamdata_id=team_data.pk).values_list(
-            "player_id", flat=True
-        )
+    resolver = SeasonResolver()
+    fallback = (
+        team.group.local_team_data_id if team.season_id not in resolver.scopes else None
     )
-    for player_id in desired - present:
-        through.objects.create(teamdata_id=team_data.pk, player_id=player_id)
-        observation = (
-            observations
-            .filter(player_id=player_id, ended_at=None)
-            .order_by("pk")
-            .first()
-        )
-        if observation:
-            observation.local_link_created = True
-            observation.save(update_fields=("local_link_created",))
-    owned = set(
-        observations.filter(local_link_created=True).values_list("player_id", flat=True)
+    targets = {row.team.local_team_data_id or fallback for row in observations}
+    targets.update(row.published_team_data_id for row in observations)
+    targets.discard(None)
+    visible = set(
+        Player.objects.filter(
+            pk__in=[row.player_id for row in observations]
+        ).values_list("pk", flat=True)
     )
-    through.objects.filter(
-        teamdata_id=team_data.pk, player_id__in=owned - desired
-    ).delete()
+    new_ownership = {
+        row.pk: dict.fromkeys(ROSTER_RELATIONS.values(), False) for row in observations
+    }
+    cutoff = timezone.now() - ROSTER_FRESHNESS
+    for data in (
+        TeamData.objects.select_for_update().filter(pk__in=targets).order_by("pk")
+    ):
+        desired_rows = [
+            row
+            for row in observations
+            if (row.team.local_team_data_id or fallback) == data.pk
+            and row.ended_at is None
+            and row.last_seen_at >= cutoff
+            and row.player_id in visible
+        ]
+        for relation, flag in ROSTER_RELATIONS.items():
+            wanted = {row.player_id for row in desired_rows if _belongs(row, relation)}
+            owned = {
+                row.player_id
+                for row in observations
+                if row.published_team_data_id == data.pk and getattr(row, flag)
+            }
+            through = getattr(TeamData, relation).through
+            present = set(
+                through.objects.filter(teamdata_id=data.pk).values_list(
+                    "player_id", flat=True
+                )
+            )
+            through.objects.filter(
+                teamdata_id=data.pk, player_id__in=owned - wanted
+            ).delete()
+            through.objects.bulk_create(
+                [through(teamdata_id=data.pk, player_id=pk) for pk in wanted - present],
+                ignore_conflicts=True,
+            )
+            for pk in wanted & (owned | (wanted - present)):
+                owner = next(
+                    row
+                    for row in desired_rows
+                    if row.player_id == pk and _belongs(row, relation)
+                )
+                new_ownership[owner.pk][flag] = True
+    for row in observations:
+        for flag, value in new_ownership[row.pk].items():
+            setattr(row, flag, value)
+        row.published_team_data_id = row.team.local_team_data_id or fallback
+    RosterMembership.objects.bulk_update(
+        observations, ["published_team_data", *ROSTER_RELATIONS.values()]
+    )
 
 
 def publish_pending_rosters() -> None:
-    """Finish roster links once native team publication has resolved the season."""
-    teams = Team.objects.filter(
-        roster_memberships__published_team_data=None,
-        roster_memberships__isnull=False,
-        group__local_team_data__isnull=False,
-    ).distinct()
-    for team in teams:
-        publish_roster(team)
+    """Publish new or season-remapped observations once per global source group."""
+    groups = set(
+        RosterMembership.objects.filter(published_team_data=None).values_list(
+            "team__group_id", flat=True
+        )
+    )
+    for group_id in groups:
+        team = Team.objects.filter(
+            group_id=group_id, group__local_team__isnull=False
+        ).first()
+        if team:
+            publish_roster(team)
 
 
 def _discover_photos(
@@ -235,3 +309,21 @@ def _discover_photos(
         if any(row.get("PrivacyLevel") not in {"OPEN", "NORMAL"} for row in matches):
             reference = None
         discover_photo(player, reference, season)
+
+
+def count_private_people(rows: list[dict], hidden: set[str]) -> dict[str, int]:
+    """Retain only aggregate counts, deduplicating IDs transiently within a feed."""
+    players: set[str] = set()
+    staff: set[str] = set()
+    for row in rows:
+        person_id = row.get("PersonId")
+        if person_id not in hidden or row.get("TeamPerson") is not True:
+            continue
+        role = row.get("TeamPersonFunction")
+        if not isinstance(role, dict):
+            continue
+        if role.get("RoleId") == "PLAYER_DEFAULT":
+            players.add(person_id)
+        elif role.get("RoleId") in {"COACHING_STAFF", "MEDICAL_STAFF", "OTHER_STAFF"}:
+            staff.add(person_id)
+    return {"players": len(players), "staff": len(staff)}

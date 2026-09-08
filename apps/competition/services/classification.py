@@ -14,6 +14,7 @@ from apps.competition.models import (
     CompetitionEdition,
     Pool,
 )
+from apps.competition.services.seasons import target_season
 from apps.schedule.models import Season
 
 
@@ -108,7 +109,9 @@ def map_pool(pool: Pool) -> dict[str, Any]:
     decision = plan_pool(pool)
     class_id = None
     if decision["status"] not in {"unresolved", "conflict"}:
-        class_id = resolve_class(pool.season, decision).pk
+        native_season = target_season(pool.season, pool.sport)
+        if native_season is not None:
+            class_id = resolve_class(native_season, decision).pk
     updates = {
         "competition_class_id": class_id,
         "mapping_status": decision["status"],

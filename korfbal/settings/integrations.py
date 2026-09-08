@@ -55,3 +55,8 @@ SPORTLINK_DAILY_LIMIT = max(1, min(86400, int(env("SPORTLINK_DAILY_LIMIT", "1000
 SPORTLINK_REQUEST_SPACING = max(1, int(env("SPORTLINK_REQUEST_SPACING", "5")))
 
 SPORTLINK_IMPORT_ROSTERS = env("SPORTLINK_IMPORT_ROSTERS", "false").lower() == "true"
+
+# Enable after repairing existing publication links; new import scopes bind once.
+SPORTLINK_SPLIT_SEASONS = env("SPORTLINK_SPLIT_SEASONS", "false").lower() == "true"
+
+SPORTLINK_IMPORT_LINEUPS = env("SPORTLINK_IMPORT_LINEUPS", "false").lower() == "true"

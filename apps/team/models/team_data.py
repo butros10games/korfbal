@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
+from uuid import UUID
 
 from django.db import models
 
@@ -11,6 +12,10 @@ from .constants import player_model_string
 
 class TeamData(models.Model):
     """Model for the team data."""
+
+    if TYPE_CHECKING:
+        team_id: UUID
+        season_id: UUID
 
     team: models.ForeignKey[Any, Any] = models.ForeignKey(
         "Team", on_delete=models.CASCADE, related_name="team_data"
@@ -24,6 +29,9 @@ class TeamData(models.Model):
         player_model_string,
         related_name="team_data_as_player",
         blank=True,
+    )
+    staff = models.ManyToManyField(
+        player_model_string, blank=True, related_name="team_data_as_staff"
     )
     season: models.ForeignKey[Any, Any] = models.ForeignKey(
         "schedule.Season",

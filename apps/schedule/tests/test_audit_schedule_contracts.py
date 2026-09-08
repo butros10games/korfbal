@@ -346,7 +346,7 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
         requested_or_default_season(str(completed.id_uuid), [future, current])
         == current
     )
-    assert requested_or_default_season(None, [future, completed]) == future
+    assert requested_or_default_season(None, [future, completed]) == completed
     assert requested_or_default_season(None, []) is None
     assert season_options_payload([completed, current]) == [
         {

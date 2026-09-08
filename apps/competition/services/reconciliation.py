@@ -19,6 +19,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.seasons import SeasonResolver
 from apps.schedule.models import (
     Match as LocalMatch,
     SeasonPool,
@@ -154,6 +155,17 @@ class Reconciler:
             if lock:
                 query = query.select_for_update()
             self.locals[kind] = {str(row["id_uuid"]): row for row in query.values()}
+        resolver = SeasonResolver()
+        sports = (
+            dict(Team.objects.values_list("pk", "sport")) if resolver.scopes else {}
+        )
+        for kind in ("pool", "match"):
+            for row in self.sources[kind]:
+                sport = row.get("sport", sports.get(row.get("home_team_id"), ""))
+                target = resolver.resolve(row["season_id"], sport)
+                local = self.locals[kind].get(str(row[LOCAL_FIELDS[kind] + "_id"]))
+                if target is not None and (not local or local["season_id"] == target):
+                    row["season_id"] = target
 
     def choose(
         self, kind: str, candidates: dict[int, list[str]], allowed: dict[int, set[str]]

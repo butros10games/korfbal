@@ -34,9 +34,11 @@ from apps.competition.services.reconciliation import (
     team_label,
 )
 from apps.competition.services.rosters import publish_pending_rosters
+from apps.competition.services.seasons import SeasonResolver
 from apps.game_tracker.models import MatchData, MatchPart, Shot
 from apps.schedule.models import (
     Match as AppMatch,
+    Season,
     SeasonPool,
 )
 from apps.team.models import (
@@ -118,7 +120,11 @@ class Publisher:
         """Use a global Team plus exactly one TeamData per team and season."""
         sources = list(
             TeamGroup.objects
-            .filter(local_team_data__isnull=True)
+            .filter(
+                Q(local_team_data__isnull=True)
+                | Q(variants__local_team_data__isnull=True)
+            )
+            .distinct()
             .select_related("club")
             .order_by("pk")
         )
@@ -170,8 +176,43 @@ class Publisher:
                 row.local_team_data = team_data
                 row.save(update_fields=("local_team", "local_team_data"))
 
+        self.team_variants()
+
+    def team_variants(
+        self, *, force: bool = False, scope: Season | None = None
+    ) -> None:
+        """Bind each source variant to its native team and playing season."""
+        variants = Team.objects.select_related("group", "local_team_data")
+        if scope is not None:
+            variants = variants.filter(season=scope)
+        if not force:
+            variants = variants.filter(local_team_data=None)
+        resolver = SeasonResolver()
+        existing = {(row.team_id, row.season_id): row for row in TeamData.objects.all()}
+        changed = []
+        for variant in variants:
+            if not variant.group or not variant.group.local_team_id:
+                continue
+            season_id = resolver.resolve(variant.season_id, variant.sport)
+            if season_id is None:
+                self.conflict("team", variant.pk, "season_discipline_unresolved")
+                continue
+            key = (variant.group.local_team_id, season_id)
+            data = existing.get(key)
+            if data is None:
+                data, created = TeamData.objects.get_or_create(
+                    team_id=key[0], season_id=key[1]
+                )
+                existing[key] = data
+                self.counts["team_seasons_created"] += int(created)
+            if variant.local_team_data_id != data.pk:
+                variant.local_team_data = data
+                changed.append(variant)
+        Team.objects.bulk_update(changed, ["local_team_data"], batch_size=1000)
+
     def pools(self) -> None:
         """Publish poules once and share membership through global teams."""
+        resolver = SeasonResolver()
         members = pool_memberships()
         claimed = set(
             Pool.objects.exclude(local_pool=None).values_list(
@@ -182,7 +223,14 @@ class Publisher:
         existing_members = set(through.objects.values_list("seasonpool_id", "team_id"))
         additions = []
         for row in Pool.objects.select_related("local_pool"):
+            season_id = resolver.resolve(row.season_id, row.sport)
+            if season_id is None:
+                self.conflict("pool", row.pk, "season_discipline_unresolved")
+                continue
             local = row.local_pool
+            if local and local.season_id != season_id:
+                self.conflict("pool", row.pk, "season_repair_required")
+                continue
             fallback = unnamed_pool_label(row.external_id)
             name = f"{row.class_name} {row.name}".strip() or fallback
             if (
@@ -190,7 +238,7 @@ class Publisher:
                 and local.name in {"", fallback}
                 and local.name != name
                 and not SeasonPool.objects
-                .filter(season_id=row.season_id, name=name, sport=local.sport)
+                .filter(season_id=season_id, name=name, sport=local.sport)
                 .exclude(pk=local.pk)
                 .exists()
             ):
@@ -198,13 +246,13 @@ class Publisher:
                 local.save(update_fields=("name",))
             if local is None:
                 local, created = SeasonPool.objects.get_or_create(
-                    season_id=row.season_id, name=name, sport=row.sport
+                    season_id=season_id, name=name, sport=row.sport
                 )
                 if not created and local.pk in claimed:
                     suffix = f" [KNKV {row.external_id}]"
                     name = name[: 512 - len(suffix)] + suffix
                     local, created = SeasonPool.objects.get_or_create(
-                        season_id=row.season_id, name=name, sport=row.sport
+                        season_id=season_id, name=name, sport=row.sport
                     )
                     if not created and local.pk in claimed:
                         self.conflict("pool", row.pk, "pool_already_claimed")
@@ -220,17 +268,42 @@ class Publisher:
                     existing_members.add(pair)
         through.objects.bulk_create(additions, ignore_conflicts=True, batch_size=1000)
 
+    def match_seasons(self, rows: list[Match]) -> list[Match]:
+        """Resolve discipline before matching native fixture identities."""
+        resolver = SeasonResolver()
+        source_sports = dict(Team.objects.values_list("pk", "sport"))
+        eligible = []
+        for row in rows:
+            home_sport, away_sport = (
+                source_sports[row.home_team_id],
+                source_sports[row.away_team_id],
+            )
+            season_id = resolver.resolve(row.season_id, home_sport)
+            if season_id is None or home_sport != away_sport:
+                self.conflict("match", row.pk, "season_discipline_unresolved")
+                continue
+            if row.local_match_id and row.local_match.season_id != season_id:
+                self.conflict("match", row.pk, "season_repair_required")
+                continue
+            row.season_id = season_id
+            eligible.append(row)
+        return eligible
+
     def matches(self) -> None:
         """Publish fixtures and results while keeping tracked history authoritative."""
         rows = list(
-            Match.objects.filter(
+            Match.objects
+            .filter(
                 Q(local_match=None)
                 | Q(published_at=None)
                 | Q(updated_at__gt=F("published_at"))
-            ).order_by("pk")
+            )
+            .select_related("local_match")
+            .order_by("pk")
         )
         if not rows:
             return
+        rows = self.match_seasons(rows)
         team_ids = {
             team_id for row in rows for team_id in (row.home_team_id, row.away_team_id)
         }

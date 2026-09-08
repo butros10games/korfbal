@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from django.conf import settings
@@ -22,9 +22,11 @@ from apps.competition.models import (
 )
 from apps.competition.services.classification import map_pool
 from apps.competition.services.identities import team_group_key
+from apps.competition.services.lineups import import_lineup
 from apps.competition.services.logos import cache_logo, discover_logo
 from apps.competition.services.player_photos import cache_photo
 from apps.competition.services.rosters import import_roster
+from apps.competition.services.seasons import configure_seasons
 from apps.schedule.models import Season
 
 
@@ -78,6 +80,7 @@ class Importer:
         self.discover = discover
         self.season = season
         self.observed_at = observed_at
+        self._seasons_configured = False
         self._clubs: dict[str, Club] = {}
         self._teams: dict[str, Team] = {}
         self._pools: dict[str, Pool] = {}
@@ -107,6 +110,9 @@ class Importer:
     def team(self, data: dict[str, Any]) -> Team:
         """Preserve source team identity, sport and season."""
         source_id = str(data["PublicTeamId"])
+        if settings.SPORTLINK_SPLIT_SEASONS and not self._seasons_configured:
+            configure_seasons(self.season, self.season.start_date.year)
+            self._seasons_configured = True
         if source_id in self._teams:
             return self._teams[source_id]
         club = self.club(data["Club"])
@@ -119,6 +125,9 @@ class Importer:
             team, _ = Team.objects.select_for_update().get_or_create(
                 season=self.season, external_id=source_id, defaults=values
             )
+            if team.sport != values["sport"]:
+                team.local_team_data = None
+                team.save(update_fields=("local_team_data",))
             save_changed(team, values)
         if team.group_id is None:
             team.group, _ = TeamGroup.objects.get_or_create(
@@ -196,6 +205,7 @@ class Importer:
             external_id=str(data["PublicMatchId"]),
             defaults={**values, "status": data["Status"]},
         )
+        self.discover_lineup(match)
         # Fixture summaries lack scores and must never erase an observed result.
         if not result and match.result_observed_at:
             return
@@ -205,6 +215,20 @@ class Importer:
             fields = assign_changed(match, {**values, "status": data["Status"]})
             if fields:
                 match.save(update_fields=(*fields, "updated_at"))
+
+    def discover_lineup(self, match: Match) -> None:
+        """Enable one shared match-selection feed only for opted-in discovery."""
+        if self.discover and settings.SPORTLINK_IMPORT_LINEUPS:
+            SyncResource.objects.get_or_create(
+                season=self.season,
+                kind="match_lineup",
+                source_id=match.external_id,
+                defaults={
+                    "next_sync_at": max(
+                        timezone.now(), match.starts_at - timedelta(days=1)
+                    )
+                },
+            )
 
     def _repeated_match(
         self, data: dict[str, Any], starts_at: datetime, *, result: bool
@@ -369,8 +393,10 @@ class Importer:
             cache_photo(source_id, data)
         elif kind == "club_logo":
             cache_logo(source_id, data)
-        elif kind == "team_roster":
-            import_roster(self.season, source_id, data, self.observed_at)
+        elif kind in {"match_lineup", "team_roster"}:
+            {"match_lineup": import_lineup, "team_roster": import_roster}[kind](
+                self.season, source_id, data, self.observed_at
+            )
         elif kind == "team_pools":
             self.assignments(data, source_id)
         elif kind == "pool_results":

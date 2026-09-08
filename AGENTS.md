@@ -96,3 +96,10 @@ misleading provider 500/603 errors.
   worksheet names. Require explicit file gender/context, preserve section-specific
   four/eight-player formats and the `Midweek zaal` exception, and keep missing
   average ages/points distinct from zero. Never infer age from a J-number.
+
+- Keep KNKV fetch scopes separate from native indoor/outdoor seasons. Resolve all
+  publication through the same season bindings, and keep team membership roles
+  separate from match starting/substitute assignments.
+
+- Preserve private KNKV roster sizes as anonymous per-feed counts. Do not create
+  placeholder Player records or sum anonymous counts across feeds as distinct people.
