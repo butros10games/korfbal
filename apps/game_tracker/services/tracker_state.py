@@ -189,7 +189,7 @@ def _player_groups_payload(
             "players": [
                 {
                     "id": str(player.id_uuid),
-                    "name": player.user.username,
+                    "name": player.display_name,
                     **player_stats.get(str(player.id_uuid), _EMPTY_PLAYER_STATS),
                 }
                 for player in group.players.all()
@@ -218,7 +218,7 @@ def _reserve_players_payload(
     if reserve_group is None:
         return []
     return [
-        {"id": str(player.id_uuid), "name": player.user.username}
+        {"id": str(player.id_uuid), "name": player.display_name}
         for player in reserve_group.players.all()
     ]
 
@@ -271,7 +271,7 @@ def _serialize_last_event_shot(
     team_id = cast(Any, event).team_id
     common: dict[str, Any] = {
         "id": str(event.id_uuid),
-        "player": event.player.user.username,
+        "player": event.player.display_name,
         "player_id": str(event.player.id_uuid),
         "for_team": bool(team_id == team.id_uuid),
         "team_id": str(team_id) if team_id else None,
@@ -313,9 +313,9 @@ def _serialize_last_event_player_change(event: PlayerChange) -> dict[str, Any]:
     return {
         **common,
         "name": "Wissel",
-        "player_in": event.player_in.user.username,
+        "player_in": event.player_in.display_name,
         "player_in_id": str(event.player_in.id_uuid),
-        "player_out": event.player_out.user.username,
+        "player_out": event.player_out.display_name,
         "player_out_id": str(event.player_out.id_uuid),
     }
 
@@ -334,7 +334,7 @@ def _serialize_last_event_possession_change(
             else "Onderschepping"
         ),
         "kind": event.kind,
-        "player": event.player.user.username if event.player else None,
+        "player": event.player.display_name if event.player else None,
         "player_id": str(event.player_id) if event.player_id else None,
         "for_team": event.team_id == team.id_uuid,
         "team_id": str(event.team_id),

@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 class PlayerStatRow(TypedDict):
     """Structured representation of player statistics."""
 
+    id_uuid: str
+    display_name: str
     username: str
     shots_for: int
     shots_against: int
@@ -69,7 +71,7 @@ def _impact_autorecompute_limit() -> int:
     return max(0, min(int(configured), 200))
 
 
-def _persisted_minutes_by_username(
+def _persisted_minutes_by_player_id(
     *,
     players: list[Any],
     match_qs: QuerySet[MatchData],
@@ -81,17 +83,17 @@ def _persisted_minutes_by_username(
             player__in=players,
             algorithm_version=LATEST_MATCH_MINUTES_VERSION,
         )
-        .values("player__user__username")
+        .values("player_id")
         .annotate(total=Sum("minutes_played"))
     )
 
     out: dict[str, float] = {}
     for row in rows:
-        username = str(row.get("player__user__username") or "").strip()
+        player_key = str(row.get("player_id") or "").strip()
         total = row.get("total")
-        if not username or total is None:
+        if not player_key or total is None:
             continue
-        out[username] = round(float(total), 2)
+        out[player_key] = round(float(total), 2)
     return out
 
 
@@ -272,7 +274,7 @@ def _resolve_match_queryset(match_dataset: Iterable[Any]) -> QuerySet[MatchData]
         return None
 
 
-def _minutes_played_by_username(
+def _minutes_played_by_player_id(
     *, players: list[Any], match_dataset: Iterable[Any]
 ) -> dict[str, float]:
     match_qs = _resolve_match_queryset(match_dataset)
@@ -281,7 +283,7 @@ def _minutes_played_by_username(
 
     # Minutes-played should be computed only by the background task that
     # persists `PlayerMatchMinutes`. Request handlers should never recompute.
-    return _persisted_minutes_by_username(players=players, match_qs=match_qs)
+    return _persisted_minutes_by_player_id(players=players, match_qs=match_qs)
 
 
 def build_player_stats_sync(
@@ -300,7 +302,7 @@ def build_player_stats_sync(
     dataset_has_full_impacts = _dataset_has_complete_latest_impacts(
         match_dataset=match_dataset,
     )
-    minutes_by_username = _minutes_played_by_username(
+    minutes_by_player_id = _minutes_played_by_player_id(
         players=players,
         match_dataset=match_dataset,
     )
@@ -311,14 +313,14 @@ def build_player_stats_sync(
             match_data__in=match_dataset,
             player__in=players,
         )
-        .values("player__user__username")
+        .values("player_id")
         .annotate(
             shots_for=Count("id_uuid", filter=Q(for_team=True)),
             shots_against=Count("id_uuid", filter=Q(for_team=False)),
             goals_for=Count("id_uuid", filter=Q(for_team=True, scored=True)),
             goals_against=Count("id_uuid", filter=Q(for_team=False, scored=True)),
         )
-        .order_by("-goals_for", "player__user__username")
+        .order_by("-goals_for", "player_id")
     )
 
     impact_rows = (
@@ -328,51 +330,56 @@ def build_player_stats_sync(
             player__in=players,
             algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
         )
-        .values("player__user__username")
+        .values("player_id")
         .annotate(
             total=Sum("impact_score"),
             total_wpa=Sum("win_probability_added"),
         )
     )
-    impact_by_username: dict[str, float] = {}
-    wpa_by_username: dict[str, float] = {}
+    impact_by_player_id: dict[str, float] = {}
+    wpa_by_player_id: dict[str, float] = {}
     for row in impact_rows:
-        username = str(row.get("player__user__username") or "").strip()
+        player_key = str(row.get("player_id") or "").strip()
         total = row.get("total")
-        if not username or total is None:
+        if not player_key or total is None:
             continue
-        impact_by_username[username] = round(float(total), 1)
+        impact_by_player_id[player_key] = round(float(total), 1)
         total_wpa = row.get("total_wpa")
         if total_wpa is not None:
-            wpa_by_username[username] = round(float(total_wpa), 5)
+            wpa_by_player_id[player_key] = round(float(total_wpa), 5)
 
+    names = {str(player.pk): player.display_name for player in players}
     player_rows: list[PlayerStatRow] = [
         {
-            "username": (username := str(row.get("player__user__username") or "")),
+            "id_uuid": (player_key := str(row["player_id"])),
+            "username": names[player_key],
+            "display_name": names[player_key],
             "shots_for": (sf := int(cast(int, row.get("shots_for") or 0))),
             "shots_against": (sa := int(cast(int, row.get("shots_against") or 0))),
             "goals_for": (gf := int(cast(int, row.get("goals_for") or 0))),
             "goals_against": (ga := int(cast(int, row.get("goals_against") or 0))),
             "impact_score": (
-                round(float(impact_by_username.get(username, 0.0)), 1)
+                round(float(impact_by_player_id.get(player_key, 0.0)), 1)
                 if dataset_has_full_impacts
                 else _compute_impact_score(gf=gf, ga=ga, sf=sf, sa=sa)
             ),
             "impact_is_stored": bool(dataset_has_full_impacts),
             "win_probability_added": (
-                wpa_by_username.get(username, 0.0) if dataset_has_full_impacts else None
+                wpa_by_player_id.get(player_key, 0.0)
+                if dataset_has_full_impacts
+                else None
             ),
             # Minutes-played are persisted asynchronously (Celery) into
             # PlayerMatchMinutes. When minutes are unavailable or missing for a
             # specific player, return null to avoid implying "0 minutes".
             "minutes_played": (
-                float(minutes_by_username[username])
-                if minutes_by_username and username in minutes_by_username
+                float(minutes_by_player_id[player_key])
+                if minutes_by_player_id and player_key in minutes_by_player_id
                 else None
             ),
         }
         for row in rows
-        if row.get("player__user__username")
+        if row.get("player_id")
     ]
 
     return sorted(player_rows, key=operator.itemgetter("goals_for"), reverse=True)

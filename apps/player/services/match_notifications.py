@@ -290,9 +290,10 @@ def publish_mvp(
 
     winner_name = None
     if after.mvp_player is not None:
+        winner = after.mvp_player
         winner_name = (
-            after.mvp_player.user.get_full_name() or after.mvp_player.user.username
-        )
+            winner.user.get_full_name() if winner.user_id else ""
+        ) or winner.display_name
     title = _match_title(match)
     body = (
         f"MVP voor {title}: {winner_name}"

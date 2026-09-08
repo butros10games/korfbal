@@ -196,3 +196,54 @@ def test_classification_migration_preserves_pool_identity() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_native_player_migration_preserves_accounts_and_rosters() -> None:
+    """Existing player UUIDs and memberships survive making the login optional."""
+    executor = MigrationExecutor(connection)
+    old_targets = [
+        ("competition", "0006_trafficstate_rate_limited_historicalresource_and_more"),
+        ("player", "0021_remove_playerclubmembership_pcm_player_idx_and_more"),
+    ]
+    try:
+        executor.migrate(old_targets)
+        old = executor.loader.project_state(old_targets).apps
+        user = old.get_model("auth", "User").objects.create(username="migration-player")
+        player = old.get_model("player", "Player").objects.create(
+            user=user, profile_picture="profile_pictures/existing.png"
+        )
+        season = old.get_model("schedule", "Season").objects.create(
+            name="native-roster-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        club = old.get_model("club", "Club").objects.create(name="Migration club")
+        team = old.get_model("team", "Team").objects.create(
+            name="Migration 1", club=club
+        )
+        data = old.get_model("team", "TeamData").objects.create(
+            team=team, season=season
+        )
+        data.players.add(player)
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        current = executor.loader.project_state(targets).apps
+        players = current.get_model("player", "Player").objects
+        migrated = players.get(pk=player.pk)
+        assert migrated.user_id == user.pk
+        assert migrated.profile_picture.name == "profile_pictures/existing.png"
+        assert not migrated.knkv_photo
+        imported = players.create(name="Example", knkv_person_id="synthetic-person")
+        assert imported.user_id is None
+        data = current.get_model("team", "TeamData").objects.get(pk=data.pk)
+        data.players.add(imported)
+        assert set(data.players.values_list("pk", flat=True)) == {
+            player.pk,
+            imported.pk,
+        }
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

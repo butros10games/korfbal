@@ -105,9 +105,13 @@ def team_players(
             "song_start_time",
             "goal_song_song_ids",
             "user__username",
+            "name",
+            "knkv_person_id",
+            "knkv_privacy",
+            "knkv_observed_at",
         )
         .filter(id_uuid__in=player_ids)
-        .order_by("user__username", "id_uuid")
+        .order_by("user__username", "name", "id_uuid")
         .fetch_mode(models.FETCH_RAISE)
     )
 

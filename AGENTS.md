@@ -88,6 +88,10 @@ misleading provider 500/603 errors.
     - How to test locally (exact commands)
     - Risks/rollout notes
 
+- Publish KNKV people into native `Player` and `TeamData.players` records and reuse
+  the existing profile/roster UI. Keep provider identifiers and observation history
+  as metadata; do not create parallel player entities or login accounts for imports.
+
 - KNKV allocation CSVs have two independent side-by-side poule columns and lose
   worksheet names. Require explicit file gender/context, preserve section-specific
   four/eight-player formats and the `Midweek zaal` exception, and keep missing

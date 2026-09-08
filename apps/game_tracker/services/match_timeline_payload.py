@@ -330,12 +330,16 @@ def _build_match_events(
             "for_team",
             "player__id_uuid",
             "player__user__username",
+            "player__name",
             "shot_type__id_uuid",
             "shot_type__name",
             "match_part__id_uuid",
             "match_part__start_time",
             "match_part__part_number",
             "team__id_uuid",
+            "player__knkv_person_id",
+            "player__knkv_privacy",
+            "player__knkv_observed_at",
         )
         .filter(match_data=match_data, scored=True)
         .order_by("time")
@@ -358,13 +362,21 @@ def _build_match_events(
             "time",
             "player_in__id_uuid",
             "player_in__user__username",
+            "player_in__name",
             "player_out__id_uuid",
             "player_out__user__username",
+            "player_out__name",
             "player_group__id_uuid",
             "player_group__team__id_uuid",
             "match_part__id_uuid",
             "match_part__start_time",
             "match_part__part_number",
+            "player_in__knkv_person_id",
+            "player_in__knkv_privacy",
+            "player_in__knkv_observed_at",
+            "player_out__knkv_person_id",
+            "player_out__knkv_privacy",
+            "player_out__knkv_observed_at",
         )
         .filter(player_group__match_data=match_data)
         .order_by("time")
@@ -380,10 +392,14 @@ def _build_match_events(
             "time",
             "player__id_uuid",
             "player__user__username",
+            "player__name",
             "team__id_uuid",
             "match_part__id_uuid",
             "match_part__start_time",
             "match_part__part_number",
+            "player__knkv_person_id",
+            "player__knkv_privacy",
+            "player__knkv_observed_at",
         )
         .filter(match_data=match_data)
         .order_by("time")
@@ -454,12 +470,16 @@ def _build_match_shots(
             "for_team",
             "player__id_uuid",
             "player__user__username",
+            "player__name",
             "shot_type__id_uuid",
             "shot_type__name",
             "match_part__id_uuid",
             "match_part__start_time",
             "match_part__part_number",
             "team__id_uuid",
+            "player__knkv_person_id",
+            "player__knkv_privacy",
+            "player__knkv_observed_at",
         )
         .filter(match_data=match_data)
         .order_by("time")
@@ -587,7 +607,7 @@ def _serialize_possession_change_event(
             context=context,
         ),
         "player_id": str(event.player_id) if event.player_id else None,
-        "player": event.player.user.username if event.player else None,
+        "player": event.player.display_name if event.player else None,
         "team_id": str(event.team_id),
         "for_team": event.team_id == match_data.match_link.home_team_id,
     }
@@ -646,7 +666,7 @@ def _serialize_goal_event(
             context=context,
         ),
         "player_id": str(event.player.id_uuid),
-        "player": event.player.user.username,
+        "player": event.player.display_name,
         "shot_type_id": str(event.shot_type.id_uuid),
         "goal_type": event.shot_type.name,
         # This flag describes the selected player's role, not the match side:
@@ -693,7 +713,7 @@ def _serialize_shot_timeline_event(
         "source_id": str(event.id_uuid),
         "time": "?",
         "player_id": str(event.player.id_uuid),
-        "player": event.player.user.username,
+        "player": event.player.display_name,
         "shot_type_id": str(event.shot_type.id_uuid) if event.shot_type else None,
         "shot_type": event.shot_type.name if event.shot_type else None,
         "scored": bool(event.scored),
@@ -746,9 +766,9 @@ def _serialize_substitute_event(
         "name": name,
         "time_iso": event.time.isoformat(),
         "player_in_id": str(event.player_in.id_uuid) if event.player_in else None,
-        "player_in": event.player_in.user.username if event.player_in else None,
+        "player_in": event.player_in.display_name if event.player_in else None,
         "player_out_id": str(event.player_out.id_uuid) if event.player_out else None,
-        "player_out": event.player_out.user.username if event.player_out else None,
+        "player_out": event.player_out.display_name if event.player_out else None,
         "player_group_id": str(event.player_group.id_uuid),
         "team_id": str(event.player_group.team.id_uuid),
     }

@@ -27,6 +27,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
 )
 from apps.kwt_common.utils.players_stats import build_player_stats
+from apps.player.models import Player
 
 
 EXPECTED_SINGLE_MISS_IMPACT = -0.2
@@ -183,3 +184,30 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
     updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
     assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert float(updated.impact_score) == pytest.approx(EXPECTED_FIVE_MISSES_IMPACT)
+
+
+@pytest.mark.django_db
+def test_same_named_accountless_players_have_separate_statistics() -> None:
+    """Aggregate native player IDs so equal names do not combine shot counts."""
+    tracker = create_tracker_match(prefix="Same names")
+    part = create_match_part(
+        match_data=tracker.match_data, start_offset=-timedelta(minutes=10), active=True
+    )
+    first = Player.objects.create(name="Example Player")
+    second = Player.objects.create(name="Example Player")
+    for player, scored in ((first, True), (second, False)):
+        Shot.objects.create(
+            player=player,
+            match_data=tracker.match_data,
+            match_part=part,
+            team=tracker.home_team,
+            scored=scored,
+            time=part.start_time + timedelta(minutes=1),
+        )
+    rows = async_to_sync(build_player_stats)(
+        [first, second], MatchData.objects.filter(pk=tracker.match_data.pk)
+    )
+    by_id = {row["id_uuid"]: row for row in rows}
+    assert set(by_id) == {str(first.pk), str(second.pk)}
+    assert by_id[str(first.pk)]["goals_for"] == 1
+    assert by_id[str(second.pk)]["goals_for"] == 0

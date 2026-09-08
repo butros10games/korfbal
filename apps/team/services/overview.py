@@ -68,13 +68,14 @@ def build_team_overview_payload(
         main_roster_ids=roster_ids,
     )
 
-    roster: list[dict[str, str]] = []
+    roster: list[dict[str, Any]] = []
     if options.include_roster:
         roster = [
             {
                 "id_uuid": str(player.id_uuid),
-                "display_name": player.user.username,
-                "username": player.user.username,
+                "display_name": player.display_name,
+                "username": player.display_name,
+                "has_account": player.user_id is not None,
                 "roster_role": (
                     "main" if str(player.id_uuid) in roster_ids else "reserve"
                 ),
@@ -127,6 +128,6 @@ def _order_roster_players(
         roster_players,
         key=lambda player: (
             str(player.id_uuid) not in main_roster_ids,
-            player.user.username.lower(),
+            player.display_name.lower(),
         ),
     )

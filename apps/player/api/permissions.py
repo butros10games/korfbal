@@ -30,4 +30,4 @@ class CanModifyPlayer(permissions.BasePermission):
         user = request.user
         if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
             return True
-        return obj.user_id == getattr(user, "id", None)
+        return obj.user_id is not None and obj.user_id == getattr(user, "id", None)

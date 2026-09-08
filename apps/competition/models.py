@@ -498,3 +498,42 @@ class Allocation(models.Model):
     def __str__(self) -> str:
         """Return a recognizable source context."""
         return f"{self.pool_name}: {self.team_name}"
+
+
+class RosterMembership(models.Model):
+    """Provider observation metadata for native players, not a second roster model."""
+
+    player = models.ForeignKey(
+        "player.Player", on_delete=models.CASCADE, related_name="knkv_memberships"
+    )
+    team = models.ForeignKey(
+        Team, on_delete=models.CASCADE, related_name="roster_memberships"
+    )
+    first_seen_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True)
+    shirt_number = models.CharField(max_length=10, blank=True)
+    published_team_data = models.ForeignKey(
+        "team.TeamData", null=True, on_delete=models.SET_NULL
+    )
+    local_link_created = models.BooleanField(default=False)
+
+    if TYPE_CHECKING:
+        player_id: UUID
+        team_id: int
+        published_team_data_id: int | None
+
+    class Meta:
+        """Retain prior observations when a player leaves and later returns."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("player", "team"),
+                condition=models.Q(ended_at__isnull=True),
+                name="competition_active_roster_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the source observation without loading player data."""
+        return f"{self.player_id}:{self.team_id}"

@@ -129,8 +129,10 @@ def build_mvp_candidates(match: Match, match_data: MatchData) -> list[MvpCandida
         return None
 
     def candidate_from_player(player: Player, *, team_id: str | None) -> MvpCandidate:
-        username = player.user.username
-        display_name = player.user.get_full_name() or username
+        username = player.display_name
+        display_name = (
+            player.user.get_full_name() if player.user_id else player.display_name
+        ) or username
         return MvpCandidate(
             id_uuid=str(player.id_uuid),
             username=username,
@@ -183,8 +185,10 @@ def _add_candidates_from_events(
         pid = str(player.id_uuid)
         if pid in acc:
             return
-        username = player.user.username
-        display_name = player.user.get_full_name() or username
+        username = player.display_name
+        display_name = (
+            player.user.get_full_name() if player.user_id else player.display_name
+        ) or username
         acc[pid] = MvpCandidate(
             id_uuid=pid,
             username=username,
@@ -315,8 +319,10 @@ def _candidate_payload(
     *,
     team_side: str | None = None,
 ) -> dict[str, str | None]:
-    username = player.user.username
-    display_name = player.user.get_full_name() or username
+    username = player.display_name
+    display_name = (
+        player.user.get_full_name() if player.user_id else player.display_name
+    ) or username
     return {
         "id_uuid": str(player.id_uuid),
         "username": username,

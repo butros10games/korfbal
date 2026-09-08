@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from django.core.files.base import ContentFile
+from django.core.files.storage import Storage
 from django.utils import timezone
 from PIL import Image
 
@@ -73,20 +74,7 @@ def cache_logo(source_id: str, data: dict[str, Any]) -> None:
     if data.get("name") != name:
         raise ValueError("Stale club logo response")
     storage = AppClub().logo.storage
-    if not storage.exists(name):
-        raw = base64.b64decode(data["image"], validate=True)
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise ValueError("Club logo exceeds size limit")
-        try:
-            with Image.open(BytesIO(raw)) as image:
-                if max(image.size) > MAX_IMAGE_SIDE:
-                    raise ValueError("Club logo exceeds dimension limit")
-                image.thumbnail((512, 512))
-                output = BytesIO()
-                image.convert("RGBA").save(output, format="PNG")
-        except (OSError, Image.DecompressionBombError) as exc:
-            raise ValueError("Invalid club logo image") from exc
-        name = storage.save(name, ContentFile(output.getvalue()))
+    name = store_image(storage, name, data)
     club.cached_logo = name
     club.save(update_fields=("cached_logo",))
     if club.local_club_id:
@@ -108,3 +96,27 @@ def publish_logo(club: Club) -> None:
     if club.published_logo != club.cached_logo:
         club.published_logo = club.cached_logo
         club.save(update_fields=("published_logo",))
+
+
+def store_image(storage: Storage, name: str, data: dict[str, Any]) -> str:
+    """Store a bounded, resized PNG with source metadata removed.
+
+    Raises:
+        ValueError: The image is oversized or malformed.
+
+    """
+    if not storage.exists(name):
+        raw = base64.b64decode(data["image"], validate=True)
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise ValueError("Club logo exceeds size limit")
+        try:
+            with Image.open(BytesIO(raw)) as image:
+                if max(image.size) > MAX_IMAGE_SIDE:
+                    raise ValueError("Club logo exceeds dimension limit")
+                image.thumbnail((512, 512))
+                output = BytesIO()
+                image.convert("RGBA").save(output, format="PNG")
+        except (OSError, Image.DecompressionBombError) as exc:
+            raise ValueError("Invalid club logo image") from exc
+        name = storage.save(name, ContentFile(output.getvalue()))
+    return name

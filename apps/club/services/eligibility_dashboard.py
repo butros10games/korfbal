@@ -242,7 +242,7 @@ def _can_lowest_a_play_b(
 def _as_player_payload(player: Player) -> dict[str, str]:
     return {
         "id_uuid": str(player.id_uuid),
-        "username": player.user.username,
+        "username": player.display_name,
         "profile_url": player.get_absolute_url(),
     }
 
@@ -516,7 +516,7 @@ def _build_player_payloads(
     players_payload: list[dict[str, Any]] = []
     for player_id, state in sorted(
         player_states.items(),
-        key=lambda item: item[1].player.user.username.lower(),
+        key=lambda item: item[1].player.display_name.lower(),
     ):
         own_team = (
             team_context_by_id.get(state.own_team_id)

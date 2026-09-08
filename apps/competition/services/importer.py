@@ -1,10 +1,11 @@
-"""Normalize observed Sportlink catalogue endpoints without storing player data."""
+"""Normalize competition collections and explicitly enabled visible rosters."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
+from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -22,6 +23,8 @@ from apps.competition.models import (
 from apps.competition.services.classification import map_pool
 from apps.competition.services.identities import team_group_key
 from apps.competition.services.logos import cache_logo, discover_logo
+from apps.competition.services.player_photos import cache_photo
+from apps.competition.services.rosters import import_roster
 from apps.schedule.models import Season
 
 
@@ -127,6 +130,8 @@ class Importer:
             team.save(update_fields=("group",))
         if self.discover:
             enqueue(self.season, "team_pools", team.external_id)
+            if getattr(settings, "SPORTLINK_IMPORT_ROSTERS", False):
+                enqueue(self.season, "team_roster", team.external_id)
         self._teams[source_id] = team
         return team
 
@@ -360,8 +365,12 @@ class Importer:
             field, import_row = collections[kind]
             for row in data[field]:
                 import_row(row)
+        elif kind == "player_photo":
+            cache_photo(source_id, data)
         elif kind == "club_logo":
             cache_logo(source_id, data)
+        elif kind == "team_roster":
+            import_roster(self.season, source_id, data, self.observed_at)
         elif kind == "team_pools":
             self.assignments(data, source_id)
         elif kind == "pool_results":

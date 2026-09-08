@@ -31,6 +31,7 @@ MAX_REQUESTS = 10000
 LEASE_SECONDS = 120
 HTTP_NOT_MODIFIED = 304
 HTTP_RATE_LIMIT = 429
+HTTP_FORBIDDEN = 403
 AUTH_ERRORS = {401, 403}
 
 
@@ -156,7 +157,11 @@ def _fetch_one(
             record_failure(resource, f"http_{result.status}", result.retry_after)
             summary["failed"] += 1
             if result.status == HTTP_RATE_LIMIT or (
-                result.status in AUTH_ERRORS and resource.kind != "club_logo"
+                result.status in AUTH_ERRORS
+                and resource.kind not in {"club_logo", "player_photo"}
+                and not (
+                    resource.kind == "team_roster" and result.status == HTTP_FORBIDDEN
+                )
             ):
                 return result.retry_after, False
             return 0, False

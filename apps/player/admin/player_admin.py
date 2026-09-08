@@ -74,9 +74,10 @@ class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
 class PlayerAdmin(PlayerModelAdminBase):
     """Player admin configuration."""
 
-    list_display = ("id_uuid", "user")
+    list_display = ("display_name", "user", "knkv_observed_at")
     search_fields = (
         "id_uuid",
+        "name",
         "user__username",
         "user__email",
         "user__first_name",

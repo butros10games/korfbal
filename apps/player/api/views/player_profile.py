@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.contrib.auth import update_session_auth_hash
+from django.db.models import QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, mixins, permissions, status, viewsets
@@ -60,12 +61,16 @@ class PlayerViewSet(
     serializer_class = PlayerSerializer
     pagination_class = StandardResultsSetPagination
     filter_backends = (filters.SearchFilter,)
-    search_fields = ("user__username",)
+    search_fields = ("user__username", "name")
     permission_classes = (
         permissions.IsAuthenticatedOrReadOnly,
         CanModifyPlayer,
     )
     lookup_field = "id_uuid"
+
+    def get_queryset(self) -> QuerySet[Player]:
+        """Evaluate source privacy freshness at request time, not process startup."""
+        return player_detail_queryset()
 
     def get_object(self) -> Player:
         """Resolve the target and reuse it when it is also the viewer."""

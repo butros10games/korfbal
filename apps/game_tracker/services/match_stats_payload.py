@@ -156,8 +156,11 @@ def _build_player_lines(
     return [
         {
             "id_uuid": str(player.id_uuid),
-            "display_name": player.user.get_full_name() or player.user.username,
-            "username": player.user.username,
+            "display_name": (
+                player.user.get_full_name() if player.user_id else player.display_name
+            )
+            or player.display_name,
+            "username": player.display_name,
             "profile_picture_url": player.get_profile_picture(),
             "profile_url": player.get_absolute_url(),
             **totals[str(player.pk)],

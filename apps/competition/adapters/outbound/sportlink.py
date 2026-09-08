@@ -19,6 +19,7 @@ from apps.competition.models import SyncResource
 from apps.competition.services.resources import ENDPOINTS
 
 from .logos import fetch_logo
+from .player_photos import fetch_photo
 from .tokens import TokenStore
 
 
@@ -73,6 +74,13 @@ class SportlinkClient:
             AuthenticationRequiredError: The renewed session was rejected.
 
         """
+        if resource.kind == "player_photo":
+            return fetch_photo(
+                resource.source_id,
+                gate,
+                retry_delay,
+                request=lambda url: self._logo_get(url, gate),
+            )
         if resource.kind == "club_logo":
             return fetch_logo(
                 resource.source_id,
@@ -87,7 +95,7 @@ class SportlinkClient:
         if parameter:
             params[parameter] = resource.source_id
         headers = {"X-Navajo-Version": str(version)}
-        if resource.etag:
+        if resource.etag and resource.kind != "team_roster":
             headers["If-None-Match"] = resource.etag
         response = self._get(
             BASE_URL + path,

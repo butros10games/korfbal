@@ -33,6 +33,7 @@ from apps.competition.services.reconciliation import (
     normalized,
     team_label,
 )
+from apps.competition.services.rosters import publish_pending_rosters
 from apps.game_tracker.models import MatchData, MatchPart, Shot
 from apps.schedule.models import (
     Match as AppMatch,
@@ -406,6 +407,7 @@ def publish_catalogue(
     publisher.teams()
     publisher.pools()
     publisher.matches()
+    publish_pending_rosters()
     return {
         "counts": dict(publisher.counts),
         "blocked": publisher.blocked,

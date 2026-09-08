@@ -113,7 +113,7 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         players_data = [
             {
                 "id_uuid": str(player.id_uuid),
-                "user": {"username": player.user.username},
+                "user": {"username": player.display_name},
                 "get_profile_picture": _profile_picture_for(viewer, player),
             }
             for player in player_group.players.all()
@@ -173,7 +173,7 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
             "players": [
                 {
                     "id_uuid": str(player.id_uuid),
-                    "user": {"username": player.user.username},
+                    "user": {"username": player.display_name},
                     "get_profile_picture": _profile_picture_for(viewer, player),
                 }
                 for player in players
@@ -266,9 +266,9 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         if (
             score := player_name_match_score(
                 search_query,
-                username=player.user.username,
-                first_name=player.user.first_name,
-                last_name=player.user.last_name,
+                username=player.display_name,
+                first_name=player.user.first_name if player.user_id else "",
+                last_name=player.user.last_name if player.user_id else "",
             )
         )
         is not None
@@ -277,7 +277,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         player
         for _, player in sorted(
             ranked_players,
-            key=lambda item: (item[0], item[1].user.username.casefold()),
+            key=lambda item: (item[0], item[1].display_name.casefold()),
         )
     ]
 
@@ -288,7 +288,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
             "players": [
                 {
                     "id_uuid": str(player.id_uuid),
-                    "user": {"username": player.user.username},
+                    "user": {"username": player.display_name},
                     "get_profile_picture": _profile_picture_for(viewer, player),
                 }
                 for player in players

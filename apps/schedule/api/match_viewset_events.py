@@ -785,7 +785,7 @@ class MatchEventsActionsMixin:
             for player in group.players.all():
                 players_by_id[str(player.id_uuid)] = {
                     "id_uuid": str(player.id_uuid),
-                    "username": player.user.username,
+                    "username": player.display_name,
                 }
 
         home_label = f"{match.home_team.club.name} {match.home_team.name}".strip()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from bg_uuidv7 import uuidv7
@@ -20,6 +21,25 @@ if TYPE_CHECKING:
     from django.db.models import QuerySet
 
     from apps.club.models.club import Club
+
+
+class VisiblePlayerManager(models.Manager):
+    """Keep withdrawn or stale source-only identities out of ordinary app queries."""
+
+    def get_queryset(self) -> models.QuerySet:
+        """Retain the existing account privacy rules for registered players."""
+        return (
+            super()
+            .get_queryset()
+            .filter(
+                Q(user_id__isnull=False)
+                | Q(knkv_person_id__isnull=True)
+                | Q(
+                    knkv_privacy__in=("OPEN", "NORMAL", "LIMITED"),
+                    knkv_observed_at__gte=timezone.now() - timedelta(days=8),
+                )
+            )
+        )
 
 
 class Player(models.Model):
@@ -41,8 +61,16 @@ class Player(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="player",
+        blank=True,
+        null=True,
     )
-    user_id: int
+    user_id: int | None
+    name = models.CharField(max_length=255, blank=True)
+    knkv_person_id = models.CharField(max_length=80, blank=True, null=True, unique=True)
+    knkv_photo = models.CharField(max_length=255, blank=True)
+    knkv_privacy = models.CharField(max_length=16, blank=True)
+    knkv_observed_at = models.DateTimeField(null=True, blank=True)
+
     date_of_birth: models.DateField[date, date | None] = models.DateField(
         blank=True,
         null=True,
@@ -104,6 +132,15 @@ class Player(models.Model):
         blank=True,
     )
 
+    all_objects = models.Manager()
+    objects = VisiblePlayerManager()
+
+    class Meta:
+        """Keep normal reads filtered and relation integrity unfiltered."""
+
+        default_manager_name = "objects"
+        base_manager_name = "all_objects"
+
     def __str__(self) -> str:
         """Get the string representation of the player.
 
@@ -111,7 +148,7 @@ class Player(models.Model):
             str: The username of the player.
 
         """
-        return str(self.user.username)
+        return self.display_name
 
     def get_absolute_url(self) -> str:
         """Get the absolute URL for the player's profile detail view.
@@ -123,6 +160,19 @@ class Player(models.Model):
         # The legacy Django-rendered `profile_detail` route was removed when the
         # project migrated to a React SPA. Profile links should point into the SPA.
         return f"{settings.WEB_APP_ORIGIN}/players/{self.id_uuid}"
+
+    @property
+    def display_name(self) -> str:
+        """Display a player independently of whether they have a login account."""
+        if self.user_id:
+            return self.name or str(self.user.username)
+        if self.knkv_person_id and (
+            self.knkv_privacy not in {"OPEN", "NORMAL", "LIMITED"}
+            or self.knkv_observed_at is None
+            or self.knkv_observed_at < timezone.now() - timedelta(days=8)
+        ):
+            return "Afgeschermd"
+        return self.name or "Afgeschermd"
 
     def active_member_clubs(self, *, on: date | None = None) -> QuerySet[Club]:
         """Return clubs this player is a member of at the given date."""

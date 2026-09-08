@@ -29,8 +29,10 @@ class RefereeTrackerError(Exception):
 
 
 def _player_label(player: Player) -> str:
-    full_name = player.user.get_full_name().strip()
-    return full_name or player.user.username
+    full_name = (
+        player.user.get_full_name() if player.user_id else player.display_name
+    ).strip()
+    return full_name or player.display_name
 
 
 def referee_team_players(team: TournamentTeam) -> list[Player]:

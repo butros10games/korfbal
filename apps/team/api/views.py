@@ -167,12 +167,12 @@ class TeamViewSet(viewsets.ModelViewSet):
             .filter(team_data_as_player__team=team, team_data_as_player__season=season)
             .select_related("user")
             .distinct()
-            .order_by("user__username", "id_uuid")
+            .order_by("user__username", "name", "id_uuid")
         )
         return Response({
             "can_manage": can_manage,
             "players": [
-                {"id_uuid": str(player.id_uuid), "username": player.user.username}
+                {"id_uuid": str(player.id_uuid), "username": player.display_name}
                 for player in players
             ],
         })
@@ -215,13 +215,16 @@ class TeamViewSet(viewsets.ModelViewSet):
         candidates = list(
             Player.objects
             .select_related("user")
-            .filter(user__username__icontains=search)
+            .filter(
+                models.Q(user__username__icontains=search)
+                | models.Q(name__icontains=search)
+            )
             .exclude(id_uuid__in=linked_ids)
-            .order_by("user__username", "id_uuid")[: _ROSTER_SEARCH_LIMIT + 1]
+            .order_by("user__username", "name", "id_uuid")[: _ROSTER_SEARCH_LIMIT + 1]
         )
         return Response({
             "players": [
-                {"id_uuid": str(player.id_uuid), "username": player.user.username}
+                {"id_uuid": str(player.id_uuid), "username": player.display_name}
                 for player in candidates[:_ROSTER_SEARCH_LIMIT]
             ],
             "has_more": len(candidates) > _ROSTER_SEARCH_LIMIT,
@@ -321,7 +324,14 @@ class TeamViewSet(viewsets.ModelViewSet):
         player = (
             Player.objects
             .select_related("user")
-            .only("id_uuid", "user__username")
+            .only(
+                "id_uuid",
+                "name",
+                "user__username",
+                "knkv_person_id",
+                "knkv_privacy",
+                "knkv_observed_at",
+            )
             .filter(id_uuid=player_id)
             .first()
         )
@@ -356,7 +366,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             "team_id": str(team.id_uuid),
             "season_id": str(season.id_uuid) if season else None,
             "player_id": str(player.id_uuid),
-            "player_username": player.user.username,
+            "player_username": player.display_name,
             "algorithm_version": LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
             "matches_considered": matches_considered,
             "impact_total": float(round_js_1dp(impact_total_raw)),
@@ -408,8 +418,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             player_song_rows = songs_by_player.get(player_id, [])
             players_payload.append({
                 "id_uuid": player_id,
-                "username": player.user.username,
-                "display_name": player.user.username,
+                "username": player.display_name,
+                "display_name": player.display_name,
                 "goal_song_song_ids": [
                     song_id for song_id in (player.goal_song_song_ids or []) if song_id
                 ],

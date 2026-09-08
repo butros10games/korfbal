@@ -103,7 +103,8 @@ class PlayerPasswordChangeSerializer(serializers.Serializer):
 class PlayerSerializer(serializers.ModelSerializer):
     """Serializer for Player model."""
 
-    user = UserSerializer(read_only=True)
+    user = UserSerializer(read_only=True, allow_null=True)
+    display_name = serializers.CharField(read_only=True)
     viewer_is_superuser = serializers.SerializerMethodField()
     profile_picture_url = serializers.SerializerMethodField()
     goal_song_songs = serializers.SerializerMethodField()
@@ -130,6 +131,7 @@ class PlayerSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "user",
+            "display_name",
             "viewer_is_superuser",
             "profile_picture",
             "profile_picture_url",
@@ -152,6 +154,7 @@ class PlayerSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = [
             "id_uuid",
             "user",
+            "display_name",
             "viewer_is_superuser",
             "can_view_profile_picture",
             "can_view_stats",

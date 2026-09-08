@@ -3,6 +3,7 @@
 import base64
 from collections.abc import Callable
 
+from django.core.files.storage import Storage
 import requests
 
 from apps.club.models import Club as AppClub
@@ -18,20 +19,39 @@ def fetch_logo(
     *,
     request: Callable[[str], requests.Response] | None = None,
 ) -> FetchResult:
-    """Fetch one bounded image, or reuse the immutable storage cache.
+    """Fetch one bounded image, or reuse the immutable storage cache."""
+    club = Club.objects.get(external_id=source_id)
+    name = logo_name(club.logo_bucket, club.logo_hash)
+    return fetch_image(
+        (club.logo_bucket, club.logo_hash, name),
+        AppClub().logo.storage,
+        gate,
+        retry_delay,
+        request=request,
+    )
+
+
+def fetch_image(
+    reference: tuple[str, str, str],
+    storage: Storage,
+    gate: RequestGate | None,
+    retry_delay: Callable[[str], int],
+    *,
+    request: Callable[[str], requests.Response] | None = None,
+) -> FetchResult:
+    """Read a bounded binary through the shared authorized transport and cache.
 
     Raises:
         TransportError: The image transfer failed or exceeded the size limit.
 
     """
-    club = Club.objects.get(external_id=source_id)
-    name = logo_name(club.logo_bucket, club.logo_hash)
-    if AppClub().logo.storage.exists(name):
+    bucket, digest, name = reference
+    if storage.exists(name):
         return FetchResult(200, {"name": name})
     if gate and request is None:
         gate.before_request()
     try:
-        url = f"https://binaries.sportlink.com/{club.logo_bucket}/{club.logo_hash}"
+        url = f"https://binaries.sportlink.com/{bucket}/{digest}"
         response = (
             request(url)
             if request

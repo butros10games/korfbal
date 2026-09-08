@@ -43,7 +43,7 @@ class ClubAdminPlayerSerializer(serializers.Serializer):
         """Return a minimal player payload for club admin tooling."""
         return {
             "id_uuid": str(instance.id_uuid),
-            "username": instance.user.username,
+            "username": instance.display_name,
         }
 
 
