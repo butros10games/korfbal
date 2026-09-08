@@ -71,8 +71,7 @@ def test_invalid_parameters_are_rejected(parameters: dict) -> None:
         calculate({1: "B"}, [], **parameters)
 
 
-@pytest.fixture
-def baseline(season: Season) -> AllocationSource:
+def create_baseline(season: Season) -> AllocationSource:
     """Create an exact mapped poule with two independently seeded teams."""
     row = match_payload()
     row["HomeTeam"]["TeamName"] = "Example J1"
@@ -101,6 +100,12 @@ def baseline(season: Season) -> AllocationSource:
     )
     import_allocations(csv, season, apply=True, label="Synthetic", gender="mixed")
     return AllocationSource.objects.get()
+
+
+@pytest.fixture
+def baseline(season: Season) -> AllocationSource:
+    """Reuse the allocation builder across preview and match-prediction tests."""
+    return create_baseline(season)
 
 
 @pytest.mark.django_db

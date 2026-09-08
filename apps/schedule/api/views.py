@@ -29,6 +29,7 @@ from apps.awards.services.mvp import (
     cast_vote,
     cast_vote_anon,
 )
+from apps.competition.services.match_prediction import match_prediction
 from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.domain.win_probability import WPA_MODEL_VERSION
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
@@ -853,6 +854,7 @@ class MatchViewSet(
             return Response(None, status=status.HTTP_200_OK)
 
         summary = build_match_summaries([match_data])[0]
+        summary["prediction"] = match_prediction(match)
         return Response(summary)
 
     @action(detail=True, methods=("GET",), url_path="stats")

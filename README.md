@@ -592,3 +592,30 @@ uv run python manage.py publish_allocation_ratings --season '2026-2027' --disabl
 ```
 
 This restores `elo-v1` while retaining the configuration and original snapshots.
+
+### Match win probabilities from seeded ratings
+
+The single-match summary now includes a `prediction` when its native/provider
+team identities and allocated class agree and the season has active baselines.
+Starting strength is replayed from the selected baseline through the earlier of
+kickoff and now. Only results observed before that instant can contribute. The
+latest `ResultRevision` at that time takes precedence over today's corrected
+score; without revision history, a current score is usable only if its observation
+predates kickoff. The target match and simultaneous/later starts are excluded.
+Late-imported historical results are not fabricated as previously known scores.
+
+The existing match graph converts Elo's expected result (win plus half a draw)
+into a Poisson scoring split and retains separate win/draw/loss outcomes. It uses
+the mapped indoor/outdoor format and falls back to equal team strength when a
+compatible prior is unavailable or a different format is selected manually.
+A/top priors remain within-class, with no fabricated class gaps. The existing
+public-data pace model is retained; player impact attribution is a separate model.
+
+The fixed B-category starting model was evaluated on 553 held-out matches from
+287 whole poules, without tuning on their labels: three-way Brier error 0.53595
+versus neutral 0.55880, and log loss 0.86826 versus 0.88908. These are kickoff
+checks on the supplied autumn 2026 data, not calibration of live event times,
+every youth group, A-category matches, or the final seconds. Reproduce the fixed
+comparison with `scripts/python/korfbal_seeded_prediction_evaluation.py`; its
+input contract and source provenance are in the module docstring. Source data
+and production exports are not committed.
