@@ -17,7 +17,15 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [(VALKEY_HOST, VALKEY_PORT)],
+            "hosts": [
+                {
+                    "host": VALKEY_HOST,
+                    "port": VALKEY_PORT,
+                    # Channels blocks for 5s; Redis 8's default read timeout races it.
+                    "socket_timeout": None,
+                    "socket_connect_timeout": 5,
+                }
+            ],
             "capacity": 1500,
             "expiry": 10,
         },
