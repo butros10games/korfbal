@@ -537,3 +537,22 @@ class RosterMembership(models.Model):
     def __str__(self) -> str:
         """Identify the source observation without loading player data."""
         return f"{self.player_id}:{self.team_id}"
+
+
+class RatingConfiguration(models.Model):
+    """Explicit season opt-in to reviewed allocation baselines and Elo parameters."""
+
+    season = models.OneToOneField("schedule.Season", on_delete=models.PROTECT)
+    source_ids = models.JSONField(default=list)
+    effective_at = models.DateTimeField()
+    b_scale = models.FloatField()
+    b_k_factor = models.FloatField()
+    active = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    if TYPE_CHECKING:
+        season_id: UUID
+
+    def __str__(self) -> str:
+        """Identify the configured season without loading its relation."""
+        return f"{self.season_id}: allocation Elo"

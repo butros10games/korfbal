@@ -548,3 +548,47 @@ promotion/relegation and results connecting those classes; one opening round
 cannot establish those gaps. Club-level comparisons should retain separate
 senior/youth, standard/reserve and mixed/dames contexts rather than averaging
 these incompatible scores into one number. No new screens are introduced.
+
+### Activate KNKV baselines in the live ratings API
+
+After deploying and applying migrations, use `publish_allocation_ratings` to select
+which imported allocation snapshots should drive a season's existing
+`/api/competition/ratings/?season=<season UUID>` endpoint. Deployment alone leaves
+existing ratings unchanged. Use the exact season name and source IDs from the
+target database; they need not match a local preview database.
+
+```sh
+uv run python manage.py migrate
+uv run python manage.py publish_allocation_ratings --season '2026-2027' \
+    --source 1 --source 2 --source 3 --source 4 \
+    --effective-at 2026-09-01T00:00:00+02:00 \
+    --b-scale 20 --b-k-factor 1.2 --output /path/to/publication.json
+```
+
+Review the dry-run report, then repeat with `--apply` to persist the configuration.
+The API immediately selects `knkv-seeded-elo-v1` for that season. Ratings include
+baseline, change, original points and competition context alongside the existing
+team identifiers, sport, club, sample size and comparison group. Pagination and
+club/sport filtering remain supported. Response metadata includes selected sources,
+parameters and exclusion counts. Teams without a usable selected allocation are
+excluded; their default Elo is not blended into the seeded population.
+
+New results and score corrections trigger chronological replay on the next API
+read. Source, classification, team and parameter changes also invalidate the cache;
+unchanged provider polling does not. B ratings retain original KNKV point units;
+A/top use 1500/400/24 within their own class. All seeded ratings remain provisional
+and the scale remains uncalibrated, as described above. The configured effective
+instant must represent the start of the supplied baseline, independently of the
+file's publication date. There is no frozen cutoff for live ratings.
+
+Repeating the same activation makes no database change. Invalid source selections,
+empty usable populations or invalid parameters fail before activation. A failed
+command report write rolls back its configuration change. For rollback, preview
+and then apply:
+
+```sh
+uv run python manage.py publish_allocation_ratings --season '2026-2027' --disable
+uv run python manage.py publish_allocation_ratings --season '2026-2027' --disable --apply
+```
+
+This restores `elo-v1` while retaining the configuration and original snapshots.

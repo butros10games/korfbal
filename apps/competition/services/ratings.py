@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from django.core.cache import cache
-from django.db.models import Count, Max
+from django.db.models import FETCH_RAISE, Count, Max
 from django.utils import timezone
 
 from apps.competition.domain.elo import (
@@ -17,7 +17,8 @@ from apps.competition.domain.elo import (
     RatedResult,
     calculate,
 )
-from apps.competition.models import Match, Team
+from apps.competition.models import Match, RatingConfiguration, Team
+from apps.competition.services.published_ratings import published_ratings
 
 
 CACHE_SECONDS = 300
@@ -25,6 +26,15 @@ CACHE_SECONDS = 300
 
 def team_ratings(season_id: UUID) -> dict[str, Any]:
     """Return a provisional Elo view, invalidating cached scores on result changes."""
+    configuration = (
+        RatingConfiguration.objects
+        .filter(season_id=season_id, active=True)
+        .select_related("season")
+        .fetch_mode(FETCH_RAISE)
+        .first()
+    )
+    if configuration is not None:
+        return published_ratings(configuration)
     teams = list(
         Team.objects.filter(season_id=season_id).values(
             "id", "external_id", "name", "sport", "club_id"

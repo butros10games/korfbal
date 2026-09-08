@@ -32,6 +32,16 @@ class TeamRatingSerializer(serializers.Serializer):
     games = serializers.IntegerField()
     provisional = serializers.BooleanField()
     comparison_group = serializers.CharField()
+    baseline = serializers.FloatField(required=False)
+    change = serializers.FloatField(required=False)
+    original_knkv_points = serializers.CharField(required=False, allow_null=True)
+    allocation = serializers.IntegerField(required=False)
+    category = serializers.CharField(required=False)
+    class_code = serializers.CharField(required=False)
+    class_level = serializers.IntegerField(required=False, allow_null=True)
+    discipline = serializers.CharField(required=False)
+    phase = serializers.CharField(required=False)
+    gender = serializers.CharField(required=False)
 
 
 class RatingPageSerializer(serializers.Serializer):
@@ -42,6 +52,7 @@ class RatingPageSerializer(serializers.Serializer):
     previous = serializers.URLField(allow_null=True)
     model = serializers.CharField()
     computed_at = serializers.DateTimeField()
+    metadata = serializers.JSONField(required=False)
     results = TeamRatingSerializer(many=True)
 
 
@@ -65,4 +76,6 @@ class RatingsView(APIView):
         page = paginator.paginate_queryset(rows, request, view=self)
         response = paginator.get_paginated_response(page)
         response.data.update(model=result["model"], computed_at=result["computed_at"])
+        if "metadata" in result:
+            response.data["metadata"] = result["metadata"]
         return response

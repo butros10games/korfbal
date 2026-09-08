@@ -247,3 +247,42 @@ def test_native_player_migration_preserves_accounts_and_rosters() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_rating_configuration_migration_does_not_activate_existing_seasons() -> None:
+    """Installing the schema preserves snapshots and requires explicit activation."""
+    executor = MigrationExecutor(connection)
+    try:
+        old_targets = [("competition", "0010_merge_rosters_and_allocations")]
+        executor.migrate(old_targets)
+        old = executor.loader.project_state(old_targets).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="rating-publication-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        source = old.get_model("competition", "AllocationSource").objects.create(
+            season=season,
+            digest="migration",
+            label="Synthetic",
+            published_on=date(2026, 9, 3),
+        )
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        current = executor.loader.project_state(targets).apps
+        assert not current.get_model(
+            "competition", "RatingConfiguration"
+        ).objects.exists()
+        assert (
+            current
+            .get_model("competition", "AllocationSource")
+            .objects.get(pk=source.pk)
+            .digest
+            == "migration"
+        )
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

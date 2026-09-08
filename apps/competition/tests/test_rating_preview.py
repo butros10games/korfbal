@@ -2,8 +2,15 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import json
+from pathlib import Path
+from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
+from django.core.management import CommandError, call_command
 import pytest
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.competition.domain.elo import INITIAL_RATING, K_FACTOR, RatedResult, calculate
 from apps.competition.models import (
@@ -12,10 +19,17 @@ from apps.competition.models import (
     CompetitionEdition,
     Match,
     Pool,
+    RatingConfiguration,
+    Team,
 )
 from apps.competition.services.allocations import import_allocations
 from apps.competition.services.importer import Importer
+from apps.competition.services.published_ratings import (
+    configure_ratings,
+    disable_ratings,
+)
 from apps.competition.services.rating_preview import PreviewParameters, preview_ratings
+from apps.competition.services.ratings import team_ratings
 from apps.competition.tests.test_importer import match_payload
 from apps.schedule.models import Season
 
@@ -233,3 +247,172 @@ def test_class_contexts_do_not_share_ratings(
     report = preview_ratings(season, [baseline.pk], PARAMETERS)
     assert report["used_results"] == 0
     assert len({row["comparison_group"] for row in report["results"]}) == TEAM_COUNT
+
+
+@pytest.mark.django_db
+def test_publication_switches_existing_api_and_is_idempotent(
+    season: Season,
+    baseline: AllocationSource,
+) -> None:
+    """The existing endpoint serves seeded rows only after explicit activation."""
+    assert not RatingConfiguration.objects.exists()
+    report = configure_ratings(season, [baseline.pk], PARAMETERS, apply=False)
+    assert report["changed"]
+    assert not RatingConfiguration.objects.exists()
+    assert team_ratings(season.pk)["model"] == "elo-v1"
+    configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
+    configuration = RatingConfiguration.objects.get()
+    assert not configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)[
+        "changed"
+    ]
+    assert RatingConfiguration.objects.get().updated_at == configuration.updated_at
+    result = team_ratings(season.pk)
+    assert result["model"] == "knkv-seeded-elo-v1"
+    row = next(row for row in result["results"] if row["external_id"] == "T1")
+    assert row["original_knkv_points"] == "40.00"
+    assert row["rating"] == pytest.approx(40 + 1.2 * 10 / 11, abs=0.0001)
+    assert row["id"] == Match.objects.get().home_team_id
+    assert result == team_ratings(season.pk)
+    client = APIClient()
+    client.force_authenticate(get_user_model().objects.create_user(username="seeded"))
+    response = client.get(f"/api/competition/ratings/?season={season.pk}&page_size=1")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["model"] == result["model"]
+    assert response.data["results"] == result["results"][:1]
+    assert response.data["metadata"]["sources"][0]["id"] == baseline.pk
+    assert response.data["next"]
+    club_response = client.get(
+        f"/api/competition/ratings/?season={season.pk}&club={row['club_id']}"
+    )
+    assert club_response.data["results"] == [row]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change", ["correction", "awarded", "mapping", "baseline", "parameters", "rename"]
+)
+def test_published_cache_observes_changed_inputs(
+    season: Season,
+    baseline: AllocationSource,
+    change: str,
+) -> None:
+    """No stale seeded scores after changes, even updates bypassing save timestamps."""
+    configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
+    first = team_ratings(season.pk)
+    if change == "correction":
+        Match.objects.update(home_score=0, away_score=10)
+    elif change == "awarded":
+        Match.objects.update(automatic_result=True)
+    elif change == "mapping":
+        Pool.objects.update(mapping_status="conflict")
+    elif change == "baseline":
+        Allocation.objects.filter(team_name="Example J1").update(knkv_points=0)
+    elif change == "parameters":
+        configure_ratings(
+            season, [baseline.pk], PreviewParameters(START, END, 20, 2.4), apply=True
+        )
+    else:
+        Team.objects.filter(external_id="T1").update(name="Renamed")
+    second = team_ratings(season.pk)
+    assert first["results"] != second["results"]
+    assert all(row["games"] <= 1 for row in second["results"])
+    if change == "mapping":
+        assert second["results"] == []
+        assert second["metadata"]["excluded"] == {"unresolved_context": TEAM_COUNT}
+    if change == "awarded":
+        assert all(row["change"] == 0 for row in second["results"])
+
+
+@pytest.mark.django_db
+def test_result_freshness_does_not_rebuild_seeded_cache(
+    season: Season,
+    baseline: AllocationSource,
+) -> None:
+    """Provider polling alone must not trigger a season recalculation."""
+    configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
+    first = team_ratings(season.pk)
+    Match.objects.update(results_checked_at=END, result_observed_at=END)
+    assert team_ratings(season.pk) == first
+
+
+@pytest.mark.django_db
+def test_new_results_and_elapsed_fixtures_rebuild_from_baseline(
+    season: Season,
+    baseline: AllocationSource,
+) -> None:
+    """A previously future final fixture becomes eligible when its start passes."""
+    configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
+    match = Match.objects.get()
+    match.pk = None
+    match.external_id = "new-result"
+    match.starts_at = END + timedelta(hours=1)
+    match.local_match = None
+    match.save()
+    with patch(
+        "apps.competition.services.published_ratings.timezone.now", return_value=END
+    ):
+        first = team_ratings(season.pk)
+    with patch(
+        "apps.competition.services.published_ratings.timezone.now",
+        return_value=END + timedelta(hours=2),
+    ):
+        second = team_ratings(season.pk)
+    assert all(row["games"] == 1 for row in first["results"])
+    assert all(row["games"] == TEAM_COUNT for row in second["results"])
+
+
+@pytest.mark.django_db
+def test_disable_restores_legacy_without_removing_baselines(
+    season: Season,
+    baseline: AllocationSource,
+) -> None:
+    """Activation is reversible, and failed reconfiguration leaves it intact."""
+    configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
+    with pytest.raises(ValueError, match="Select existing"):
+        configure_ratings(season, [baseline.pk + 1], PARAMETERS, apply=True)
+    assert RatingConfiguration.objects.get().active
+    disable_ratings(season, apply=False)
+    assert team_ratings(season.pk)["model"] == "knkv-seeded-elo-v1"
+    disable_ratings(season, apply=True)
+    assert team_ratings(season.pk)["model"] == "elo-v1"
+    assert Allocation.objects.count() == TEAM_COUNT
+
+
+@pytest.mark.django_db
+def test_publication_command_and_output_failure_are_atomic(
+    season: Season,
+    baseline: AllocationSource,
+    tmp_path: Path,
+) -> None:
+    """A failed report write must not leave a seemingly failed activation committed."""
+    args = [
+        "--season",
+        season.name,
+        "--source",
+        str(baseline.pk),
+        "--effective-at",
+        START.isoformat(),
+        "--b-scale",
+        "20",
+        "--b-k-factor",
+        "1.2",
+    ]
+    with pytest.raises(CommandError, match="Require"):
+        call_command("publish_allocation_ratings", "--season", season.name, "--apply")
+    with pytest.raises(CommandError, match="No such file"):
+        call_command(
+            "publish_allocation_ratings",
+            *args,
+            "--apply",
+            "--output",
+            str(tmp_path / "missing" / "report.json"),
+        )
+    assert not RatingConfiguration.objects.exists()
+    output = tmp_path / "report.json"
+    call_command("publish_allocation_ratings", *args, "--output", str(output))
+    assert not RatingConfiguration.objects.exists()
+    call_command(
+        "publish_allocation_ratings", *args, "--apply", "--output", str(output)
+    )
+    assert json.loads(output.read_text())["applied"]
+    assert team_ratings(season.pk)["model"] == "knkv-seeded-elo-v1"
