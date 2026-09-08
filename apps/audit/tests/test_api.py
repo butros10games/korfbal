@@ -9,7 +9,7 @@ from django.contrib.auth.models import User
 from django.test.client import Client
 from django.utils import timezone
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.audit.models import AuditEvent
 
@@ -103,7 +103,7 @@ def _visibility_events(*, actor_id: str) -> None:
 )
 def test_ingest_authentication(
     client: Client,
-    settings: SettingsWrapper,
+    settings: Settings,
     configured_token: str,
     request_token: str | None,
     expected_status: HTTPStatus,
@@ -124,7 +124,7 @@ def test_ingest_authentication(
 
 def test_ingest_persists_normalized_event(
     client: Client,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Persist the normalized event fields returned by single ingestion."""
     settings.KORFBAL_AUDIT_INGEST_TOKEN = AUDIT_TOKEN
@@ -153,7 +153,7 @@ def test_ingest_persists_normalized_event(
 
 def test_bulk_ingest_persists_every_event(
     client: Client,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Persist every normalized event in a bulk request."""
     settings.KORFBAL_AUDIT_INGEST_TOKEN = AUDIT_TOKEN

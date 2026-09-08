@@ -19,6 +19,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.classification import map_pool
 from apps.competition.services.identities import team_group_key
 from apps.competition.services.logos import cache_logo, discover_logo
 from apps.schedule.models import Season
@@ -132,19 +133,23 @@ class Importer:
     def pool(self, data: dict[str, Any], sport: str = "") -> Pool:
         """Upsert a poule without blank summary fields erasing known metadata."""
         source_id = str(data["PoolId"])
-        if source_id in self._pools:
-            return self._pools[source_id]
         values = {
             "name": data.get("PoolName"),
             "class_name": data.get("ClassName"),
             "sport": sport,
         }
         values = {key: value for key, value in values.items() if value}
+        cached = self._pools.get(source_id)
+        if cached is not None and all(
+            getattr(cached, key) == value for key, value in values.items()
+        ):
+            return cached
         with transaction.atomic():
             pool, _ = Pool.objects.select_for_update().get_or_create(
                 season=self.season, external_id=source_id, defaults=values
             )
             save_changed(pool, values)
+            map_pool(pool)
         if self.discover:
             enqueue(self.season, "pool_results", pool.external_id)
         self._pools[source_id] = pool
@@ -179,6 +184,8 @@ class Importer:
         }
         if data.get("Pool"):
             values["pool_id"] = self.pool(data["Pool"], home.sport).pk
+            for member in (home, away):
+                PoolEntry.objects.get_or_create(pool_id=values["pool_id"], team=member)
         match, created = Match.objects.get_or_create(
             season=self.season,
             external_id=str(data["PublicMatchId"]),

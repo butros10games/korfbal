@@ -12,7 +12,7 @@ from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 from django.utils import timezone
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.hub.models import PageConnectRegistration
 from apps.kwt_common.context_processors.standard_imports import standard_imports
@@ -51,7 +51,7 @@ def test_standard_imports_returns_empty_profile_when_user_has_no_player() -> Non
 
 @pytest.mark.django_db
 def test_standard_imports_exposes_existing_player_links(
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Existing players receive their SPA and profile-image links."""
     settings.WEB_APP_ORIGIN = "https://web.example.test"

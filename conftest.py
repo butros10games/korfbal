@@ -18,7 +18,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.core.cache import cache
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 
 def _clear_shared_test_backends() -> None:
@@ -41,7 +41,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_test_state(
-    settings: SettingsWrapper,
+    settings: Settings,
     tmp_path: Path,
 ) -> Iterator[None]:
     settings.SECURE_SSL_REDIRECT = False

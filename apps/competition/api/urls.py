@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 
 from .ratings import RatingsView
 from .views import (
+    AllocationViewSet,
     ClubViewSet,
     MatchViewSet,
     PoolViewSet,
@@ -16,6 +17,7 @@ from .views import (
 
 
 router = DefaultRouter()
+router.register("allocations", AllocationViewSet, basename="competition-allocation")
 router.register("clubs", ClubViewSet, basename="competition-club")
 router.register("team-groups", TeamGroupViewSet, basename="competition-team-group")
 router.register("teams", TeamViewSet, basename="competition-team")

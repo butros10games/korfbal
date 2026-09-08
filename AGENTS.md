@@ -87,3 +87,8 @@ misleading provider 500/603 errors.
     - Summary
     - How to test locally (exact commands)
     - Risks/rollout notes
+
+- KNKV allocation CSVs have two independent side-by-side poule columns and lose
+  worksheet names. Require explicit file gender/context, preserve section-specific
+  four/eight-player formats and the `Midweek zaal` exception, and keep missing
+  average ages/points distinct from zero. Never infer age from a J-number.

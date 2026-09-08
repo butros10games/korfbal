@@ -13,7 +13,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.kwt_common.middleware import request_timing
 
@@ -38,7 +38,7 @@ def _make_middleware(
     return request_timing.RequestTimingMiddleware(get_response)
 
 
-def test_request_timing_middleware_is_enabled(settings: SettingsWrapper) -> None:
+def test_request_timing_middleware_is_enabled(settings: Settings) -> None:
     """The tested middleware must remain wired into the request stack."""
     middleware_path = (
         "apps.kwt_common.middleware.request_timing.RequestTimingMiddleware"
@@ -54,7 +54,7 @@ def test_append_server_timing_appends_comma_separated() -> None:
 
 def test_request_timing_adds_headers_even_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Even when slow-request logging is disabled, timing headers are always set."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = False
@@ -81,7 +81,7 @@ def test_request_timing_adds_headers_even_when_disabled(
 
 def test_request_timing_records_privacy_safe_response_size(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Payload telemetry records bytes without paths, users, or response content."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = False
@@ -103,7 +103,7 @@ def test_request_timing_records_privacy_safe_response_size(
 
 def test_request_timing_marks_slow_and_buffers_when_threshold_met(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """When duration exceeds the threshold, the middleware should buffer an entry."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
@@ -157,7 +157,7 @@ def test_request_timing_marks_slow_and_buffers_when_threshold_met(
 
 def test_request_timing_buffer_truncates_to_size(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """The rolling buffer should be capped to the configured size."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
@@ -196,7 +196,7 @@ def test_request_timing_buffer_truncates_to_size(
 
 def test_request_timing_buffer_size_zero_skips_cache(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """A buffer size of 0 should disable buffering without disabling the header."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
@@ -221,7 +221,7 @@ def test_request_timing_buffer_size_zero_skips_cache(
 
 def test_request_timing_cache_corruption_is_handled(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Non-list cache values should be treated as an empty buffer."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
@@ -254,7 +254,7 @@ def test_request_timing_cache_corruption_is_handled(
 
 def test_request_timing_includes_slow_db_signal_in_headers_and_entry(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """When slow DB query info is present, it should be surfaced in headers/buffer."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True
@@ -301,7 +301,7 @@ def test_request_timing_includes_slow_db_signal_in_headers_and_entry(
 
 def test_request_timing_cache_exceptions_are_swallowed(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Cache backend failures must not break user requests."""
     settings.KORFBAL_LOG_SLOW_REQUESTS = True

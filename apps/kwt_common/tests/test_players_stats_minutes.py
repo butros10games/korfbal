@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from asgiref.sync import async_to_sync
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.game_tracker.models import MatchData, PlayerMatchMinutes, Shot
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
@@ -26,7 +26,7 @@ from apps.kwt_common.utils.players_stats import build_player_stats
 
 @pytest.mark.django_db
 def test_build_player_stats_minutes_missing_returns_null(
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """If minutes are missing (no persisted row), the API returns null, not 0.0."""
     settings.KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE = False

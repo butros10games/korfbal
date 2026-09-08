@@ -15,7 +15,7 @@ from django.contrib.auth.models import User
 from django.test import Client, override_settings
 from django.utils import timezone
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.player.models.spotify_token import SpotifyToken
 
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture(autouse=True)
-def configured_spotify(settings: SettingsWrapper) -> None:
+def configured_spotify(settings: Settings) -> None:
     """Configure synthetic Spotify credentials for this module."""
     settings.SPOTIFY_CLIENT_ID = SPOTIFY_CLIENT_ID
     settings.SPOTIFY_CLIENT_SECRET = SPOTIFY_CLIENT_SECRET

@@ -121,12 +121,92 @@ class Team(SeasonalIdentity):
         return self.name
 
 
+class CompetitionEdition(models.Model):
+    """Season and playing context; unknown phases are not inferred from dates."""
+
+    if TYPE_CHECKING:
+        season_id: UUID
+
+    season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
+    discipline = models.CharField(max_length=20)
+    phase = models.CharField(max_length=20)
+    gender = models.CharField(max_length=20)
+
+    class Meta:
+        """Keep context identities unique."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("season", "discipline", "phase", "gender"),
+                name="competition_edition_context_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a recognizable source context."""
+        return f"{self.season_id}:{self.discipline}:{self.phase}:{self.gender}"
+
+
+class CompetitionClass(models.Model):
+    """An official class within one edition, independent of poule numbering."""
+
+    if TYPE_CHECKING:
+        edition_id: int
+
+    edition = models.ForeignKey(CompetitionEdition, on_delete=models.PROTECT)
+    code = models.CharField(max_length=40)
+    category = models.CharField(max_length=20)
+    age_group = models.CharField(max_length=20)
+    team_kind = models.CharField(max_length=20)
+    colour = models.CharField(max_length=20)
+    playing_format = models.CharField(max_length=20)
+    level = models.PositiveSmallIntegerField(null=True)
+
+    class Meta:
+        """Keep context identities unique."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=(
+                    "edition",
+                    "code",
+                    "category",
+                    "age_group",
+                    "team_kind",
+                    "colour",
+                    "playing_format",
+                ),
+                name="competition_class_context_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a recognizable source context."""
+        return f"{self.edition_id}:{self.code}:{self.age_group}"
+
+
 class Pool(SeasonalIdentity):
     """Poule metadata and freshness of its official standings."""
 
     name = models.CharField(max_length=255, blank=True)
     class_name = models.CharField(max_length=255, blank=True)
     sport = models.CharField(max_length=80, blank=True, db_index=True)
+    if TYPE_CHECKING:
+        competition_class_id: int | None
+        entries: models.Manager["PoolEntry"]
+
+    competition_class = models.ForeignKey(
+        CompetitionClass,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pools",
+    )
+    mapping_status = models.CharField(max_length=20, default="unresolved")
+    mapping_version = models.CharField(max_length=40, blank=True)
+    mapping_issues = models.JSONField(default=list)
+    mapping_override = models.JSONField(default=dict)
+    mapping_evidence = models.JSONField(default=dict)
     standings_synced_at = models.DateTimeField(null=True)
     results_filtered = models.BooleanField(default=True)
     local_pool = models.OneToOneField(
@@ -140,6 +220,11 @@ class Pool(SeasonalIdentity):
     def __str__(self) -> str:
         """Return a recognizable poule label."""
         return f"{self.class_name} {self.name}".strip() or self.external_id
+
+    @property
+    def member_teams(self) -> list[Team]:
+        """Reuse prefetched memberships for bounded catalogue responses."""
+        return [entry.team for entry in self.entries.all()]
 
 
 class PoolEntry(models.Model):
@@ -343,3 +428,73 @@ class HistoricalDiscovery(models.Model):
     def __str__(self) -> str:
         """Return the attributed discovery reference."""
         return self.reference
+
+
+class AllocationSource(models.Model):
+    """Immutable allocation-file provenance; never store a machine-specific path."""
+
+    season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
+    digest = models.CharField(max_length=64)
+    label = models.CharField(max_length=255)
+    published_on = models.DateField()
+
+    class Meta:
+        """Keep context identities unique."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("season", "digest"), name="competition_allocation_source_once"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a recognizable source context."""
+        return f"{self.label} ({self.published_on})"
+
+
+class Allocation(models.Model):
+    """A published team allocation, including aggregate age and original KNKV points."""
+
+    if TYPE_CHECKING:
+        entry_id: int | None
+        competition_class_id: int | None
+
+    competition_class = models.ForeignKey(
+        CompetitionClass,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="allocations",
+    )
+    source = models.ForeignKey(AllocationSource, on_delete=models.PROTECT)
+    row_number = models.PositiveIntegerField()
+    column = models.PositiveSmallIntegerField()
+    section = models.CharField(max_length=255)
+    pool_name = models.CharField(max_length=255)
+    team_name = models.CharField(max_length=255)
+    city = models.CharField(max_length=255)
+    match_day = models.CharField(max_length=20)
+    average_age = models.DecimalField(max_digits=4, decimal_places=1, null=True)
+    knkv_points = models.DecimalField(max_digits=7, decimal_places=2, null=True)
+    classification = models.JSONField(default=dict)
+    entry = models.ForeignKey(
+        PoolEntry,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="allocations",
+    )
+    link_status = models.CharField(max_length=30, default="unmatched")
+
+    class Meta:
+        """Keep context identities unique."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("source", "row_number", "column"),
+                name="competition_allocation_row_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a recognizable source context."""
+        return f"{self.pool_name}: {self.team_name}"

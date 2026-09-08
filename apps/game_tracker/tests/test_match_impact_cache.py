@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.utils import timezone
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData
@@ -55,7 +55,7 @@ def test_compute_match_impact_breakdown_cached_returns_cached_dict(
 @pytest.mark.django_db
 def test_compute_match_impact_breakdown_cached_handles_cache_errors(
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Cache backend failures must not prevent computing/returning breakdowns."""
     _ = settings

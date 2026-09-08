@@ -23,10 +23,10 @@ dependencies = [
     "channels-redis",
     "drf-spectacular",
     "qrcode>=8.2,<9",
-    "reportlab>=4.4,<5",
+    "reportlab>=5.0.1,<6",
     "pywebpush",
     "requests",
-    "spotdl",
+    "spotdl>=4.5.2",
 ]
 
 [dependency-groups]

@@ -18,7 +18,7 @@ from django.contrib.auth import get_user_model
 from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.kwt_common.middleware.slow_queries import SlowQueryLoggingMiddleware
 
@@ -32,7 +32,7 @@ def _make_middleware(
 
 @pytest.mark.django_db
 def test_slow_query_logging_disabled_does_not_add_request_state(
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """When disabled, the middleware should not attach _korfbal_slow_queries."""
     settings.KORFBAL_LOG_SLOW_DB_QUERIES = False
@@ -50,7 +50,7 @@ def test_slow_query_logging_disabled_does_not_add_request_state(
 
 @pytest.mark.django_db
 def test_slow_query_logging_collects_queries_when_enabled(
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """When enabled and threshold is 0ms, at least one query should be captured."""
     settings.KORFBAL_LOG_SLOW_DB_QUERIES = True
@@ -79,7 +79,7 @@ def test_slow_query_logging_collects_queries_when_enabled(
 
 @pytest.mark.django_db
 def test_slow_query_logging_includes_sql_when_enabled(
-    settings: SettingsWrapper,
+    settings: Settings,
 ) -> None:
     """Including SQL should enrich payload entries with sql/params."""
     settings.KORFBAL_LOG_SLOW_DB_QUERIES = True

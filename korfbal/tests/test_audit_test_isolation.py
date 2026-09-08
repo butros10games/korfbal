@@ -10,14 +10,14 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage, storages
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 
 pytestmark = pytest.mark.xdist_group(name="test-isolation-regression")
 
 
 def test_media_storage_uses_each_tests_temporary_media_root(
-    settings: SettingsWrapper,
+    settings: Settings,
     tmp_path: Path,
 ) -> None:
     """The autouse fixture gives default storage a unique location per test."""

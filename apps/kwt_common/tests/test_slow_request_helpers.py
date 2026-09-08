@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import cast
 
 from django.http import HttpResponse, StreamingHttpResponse
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 
 from apps.kwt_common.middleware import request_timing
 from apps.kwt_common.utils.slow_requests import slow_request_buffer_ttl_s
@@ -35,7 +35,7 @@ def test_response_size_falls_back_for_malformed_header_without_stream_consumptio
     assert request_timing._response_size_bytes(cast(HttpResponse, streaming)) is None
 
 
-def test_slow_request_ttl_has_a_safe_minimum(settings: SettingsWrapper) -> None:
+def test_slow_request_ttl_has_a_safe_minimum(settings: Settings) -> None:
     """Invalidly small configuration cannot request backend-specific zero TTL."""
     safe_minimum_seconds = 60
     settings.KORFBAL_SLOW_REQUEST_BUFFER_TTL_S = -1

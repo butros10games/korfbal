@@ -445,3 +445,58 @@ must use `apps.competition.services.traffic.TrafficGate` for the same persistent
 fallback policy; an external/custom rate-gate module does not automatically adopt
 these settings. Keep historical scheduling disabled until that cutover is complete.
 The PR does not install a production schedule or copy credentials.
+
+### Official competition classification and KNKV allocation files
+
+Competition editions belong to an annual season and separately record zaal/veld,
+phase and mixed/dames. Classes retain category, standard/reserve/youth context,
+colour and playing format. Poule codes are identifiers, not strength ranks.
+J-numbers express average-age order within a club; they do not encode a fixed age.
+Historical A/B/C youth names remain season-specific.
+
+The two-column KNKV autumn CSV exports can be staged without creating duplicate
+clubs or teams. A-category exports contain class headings; B-category exports also
+contain aggregate ages and original KNKV points. Points are retained as source data;
+this import does not calculate ratings. UTF-8 and Windows-1252, decimal commas,
+both independent columns, zero values and empty values are supported. The explicit
+`Midweek zaal` heading retains its indoor context within an otherwise outdoor file.
+
+Run against an isolated local database first (normal `manage.py` settings may point
+to another database). Select the actual file scope explicitly; CSV exports lose
+worksheet names:
+
+```sh
+uv run python manage.py import_knkv_allocations --season 2026-2027 \
+    --edition outdoor-autumn --file /path/to/allocations.csv \
+    --label 'KNKV veld najaar 2026 B-cat gemengd' --gender mixed \
+    --output /path/to/review.json
+```
+
+Add `--apply` after reviewing the report. Use `--gender women` for dames files.
+Imports retain file digests, publication dates and row/column provenance. Unique
+season, poule, team-name and discipline matches link provider memberships; town
+resolves remaining duplicates. Verified code punctuation/zero-padding and the
+M/MW midweek aliases are normalized without fuzzy team-name matching;
+unmatched or ambiguous allocations remain staged and can be inspected through
+`/api/competition/allocations/`. Rerun after catalogue discovery to resolve newly
+available identities. No fuzzy matching or upstream requests occur.
+
+Audit/backfill already imported poules with:
+
+```sh
+uv run python manage.py map_competition --season 2026-2027 --output /path/to/review.json
+```
+
+Add `--apply` to persist decisions, and repeat `--pool <source-id>` to narrow scope.
+Optional `--overrides /path/to/reviewed.json` accepts a map of source pool IDs to
+`{"values": {"gender": "mixed", "phase": "autumn", "age_group": "senior",
+"team_kind": "standard"}, "reason": "Reviewed official worksheet"}`.
+Overrides retain source evidence and survive imports; changed evidence marks the
+mapping conflicted until reviewed again. Missing context remains explicit. Coverage
+reports describe discovered local records, not completeness of the national feed.
+
+The existing competition APIs expose classifications and support season, entity,
+class/category, phase, discipline, gender and age-group filters with pagination.
+Native season-pool responses expose the same linked classification. Annual-season
+catalogue responses include the separate competition editions. No additional web
+screens are required.

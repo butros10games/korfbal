@@ -152,3 +152,47 @@ def test_logo_migration_requeues_only_club_lists() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_classification_migration_preserves_pool_identity() -> None:
+    """Schema expansion preserves existing native/source IDs and membership."""
+    executor = MigrationExecutor(connection)
+    old_targets = [
+        ("competition", "0006_trafficstate_rate_limited_historicalresource_and_more")
+    ]
+    try:
+        executor.migrate(old_targets)
+        old = executor.loader.project_state(old_targets).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="mapping-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        native = old.get_model("schedule", "SeasonPool").objects.create(
+            season=season, name="Original pool", sport="KORFBALL-VE-WK"
+        )
+        source = old.get_model("competition", "Pool").objects.create(
+            season=season,
+            external_id="preserved",
+            name="01",
+            class_name="Hoofdklasse",
+            local_pool=native,
+        )
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        current = executor.loader.project_state(targets).apps
+        pool = current.get_model("competition", "Pool").objects.get(pk=source.pk)
+        assert pool.local_pool_id == native.pk
+        assert pool.class_name == "Hoofdklasse"
+        assert pool.mapping_status == "unresolved"
+        assert pool.competition_class_id is None
+        assert (
+            current.get_model("schedule", "SeasonPool").objects.get(pk=native.pk).name
+            == "Original pool"
+        )
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

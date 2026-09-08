@@ -87,7 +87,9 @@ class SeasonPoolViewSet(viewsets.ModelViewSet):
         """Return pools for an optional season filter with teams and match totals."""
         queryset = (
             SeasonPool.objects
-            .select_related("season")
+            .select_related(
+                "season", "competition_identity__competition_class__edition"
+            )
             .prefetch_related("teams__club")
             .annotate(match_count=Count("matches", distinct=True))
             .order_by("name", "id_uuid")

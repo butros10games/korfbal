@@ -127,7 +127,8 @@ def test_official_standings_and_filtered_coverage(season: Season) -> None:
             "ResultsFiltered": True,
         },
     )
-    entry = PoolEntry.objects.get()
+    entry = PoolEntry.objects.get(team__external_id="T1")
+    assert PoolEntry.objects.get(team__external_id="T2").standing == {}
     assert entry.standing == {"Position": 1, "TotalPoints": -1, "PenaltyPoints": 3}
     assert Pool.objects.get().results_filtered
     assert Pool.objects.get().sport == "KORFBALL-VE-WK"

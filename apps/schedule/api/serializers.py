@@ -8,6 +8,7 @@ from typing import ClassVar, cast
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.competition.services.classification import pool_classification
 from apps.game_tracker.services.event_editor import (
     UNSET,
     CreateGoalEvent,
@@ -229,6 +230,12 @@ class SeasonSerializer(serializers.ModelSerializer):
 class SeasonPoolSerializer(serializers.ModelSerializer):
     """Serialize a season pool and its editable team membership."""
 
+    classification = serializers.SerializerMethodField()
+
+    def get_classification(self, obj: SeasonPool) -> dict | None:
+        """Read the linked official class without changing native pool ownership."""
+        return pool_classification(getattr(obj, "competition_identity", None))
+
     season_id = serializers.PrimaryKeyRelatedField(
         source="season",
         queryset=Season.objects.all(),
@@ -260,6 +267,7 @@ class SeasonPoolSerializer(serializers.ModelSerializer):
             "team_ids",
             "sport",
             "match_count",
+            "classification",
         ]
         read_only_fields: ClassVar[list[str]] = ["id_uuid", "match_count"]
 

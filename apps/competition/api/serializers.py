@@ -2,8 +2,11 @@
 
 from rest_framework import serializers
 
+from apps.competition.domain.classification import designation
 from apps.competition.models import (
+    Allocation,
     Club,
+    CompetitionEdition,
     Match,
     Pool,
     PoolEntry,
@@ -11,6 +14,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.classification import pool_classification
 from apps.schedule.models import Season
 
 
@@ -27,11 +31,30 @@ class CompetitionClubSerializer(serializers.ModelSerializer):
 class CompetitionTeamSerializer(serializers.ModelSerializer):
     """Expose season-specific teams and their clubs."""
 
+    designation = serializers.SerializerMethodField()
+    local_team = serializers.UUIDField(
+        source="group.local_team_id", read_only=True, allow_null=True
+    )
+
+    def get_designation(self, obj: Team) -> dict:
+        """Keep J numbering independent of age."""
+        return designation(obj.name, obj.season.start_date.year)
+
     class Meta:
         """Declare storage or serialization metadata."""
 
         model = Team
-        fields = ("id", "external_id", "season", "club", "name", "sport", "group")
+        fields = (
+            "id",
+            "external_id",
+            "season",
+            "club",
+            "name",
+            "sport",
+            "group",
+            "designation",
+            "local_team",
+        )
 
 
 class CompetitionTeamGroupSerializer(serializers.ModelSerializer):
@@ -49,6 +72,13 @@ class CompetitionTeamGroupSerializer(serializers.ModelSerializer):
 class CompetitionPoolSerializer(serializers.ModelSerializer):
     """Expose poule labels and source coverage metadata."""
 
+    classification = serializers.SerializerMethodField()
+    teams = CompetitionTeamSerializer(source="member_teams", many=True, read_only=True)
+
+    def get_classification(self, obj: Pool) -> dict | None:
+        """Use the same official classification as native views."""
+        return pool_classification(obj)
+
     class Meta:
         """Declare storage or serialization metadata."""
 
@@ -59,6 +89,8 @@ class CompetitionPoolSerializer(serializers.ModelSerializer):
             "season",
             "name",
             "class_name",
+            "classification",
+            "teams",
             "sport",
             "local_pool",
             "standings_synced_at",
@@ -123,14 +155,28 @@ class CompetitionResourceSerializer(serializers.ModelSerializer):
         )
 
 
+class CompetitionEditionSerializer(serializers.ModelSerializer):
+    """Expose the playing context underneath the annual season."""
+
+    class Meta:
+        """Keep season and competition edition separate."""
+
+        model = CompetitionEdition
+        fields = ("id", "discipline", "phase", "gender")
+
+
 class CompetitionSeasonSerializer(serializers.ModelSerializer):
     """Expose season IDs and date boundaries for filter controls."""
+
+    editions = CompetitionEditionSerializer(
+        source="competitionedition_set", many=True, read_only=True
+    )
 
     class Meta:
         """Declare storage or serialization metadata."""
 
         model = Season
-        fields = ("id_uuid", "name", "start_date", "end_date")
+        fields = ("id_uuid", "name", "start_date", "end_date", "editions")
 
 
 class CompetitionFilters(serializers.Serializer):
@@ -146,6 +192,50 @@ class CompetitionFilters(serializers.Serializer):
     team_group = serializers.IntegerField(required=False, min_value=1)
     pool = serializers.IntegerField(required=False, min_value=1)
     sport = serializers.CharField(required=False, max_length=80)
+    discipline = serializers.ChoiceField(
+        choices=("indoor", "outdoor", "unknown"), required=False
+    )
+    phase = serializers.ChoiceField(
+        choices=("autumn", "spring", "indoor", "full_season", "unknown"), required=False
+    )
+    category = serializers.ChoiceField(
+        choices=("top", "a", "b", "unknown"), required=False
+    )
+    gender = serializers.ChoiceField(
+        choices=("mixed", "women", "unknown"), required=False
+    )
+    age_group = serializers.CharField(required=False, max_length=20)
+    class_code = serializers.CharField(required=False, max_length=40)
+    mapping_status = serializers.ChoiceField(
+        choices=("mapped", "partial", "unresolved", "conflict"), required=False
+    )
     status = serializers.CharField(required=False, max_length=40)
     date_from = serializers.DateTimeField(required=False)
     date_to = serializers.DateTimeField(required=False)
+
+
+class AllocationSerializer(serializers.ModelSerializer):
+    """Read original published aggregate metadata, not inferred ages or ratings."""
+
+    published_on = serializers.DateField(source="source.published_on")
+    source_label = serializers.CharField(source="source.label")
+
+    class Meta:
+        """Expose aggregate source values and link coverage."""
+
+        model = Allocation
+        fields = (
+            "id",
+            "source_label",
+            "published_on",
+            "section",
+            "pool_name",
+            "team_name",
+            "city",
+            "match_day",
+            "average_age",
+            "knkv_points",
+            "classification",
+            "entry",
+            "link_status",
+        )

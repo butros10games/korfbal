@@ -4,18 +4,27 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from django.db.models import Q, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.competition.models import Club, Match, Pool, SyncResource, Team, TeamGroup
+from apps.competition.models import (
+    Allocation,
+    Club,
+    Match,
+    Pool,
+    SyncResource,
+    Team,
+    TeamGroup,
+)
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.schedule.models import Season
 
 from .serializers import (
+    AllocationSerializer,
     CompetitionClubSerializer,
     CompetitionFilters,
     CompetitionMatchSerializer,
@@ -59,7 +68,7 @@ class ClubViewSet(CatalogueViewSet):
 class TeamViewSet(CatalogueViewSet):
     """Browse teams by season, club and sport."""
 
-    queryset = Team.objects.order_by("name", "pk")
+    queryset = Team.objects.select_related("season", "group").order_by("name", "pk")
     serializer_class = CompetitionTeamSerializer
     search_fields = ("name",)
     field_filters: ClassVar = {
@@ -76,7 +85,11 @@ class TeamGroupViewSet(CatalogueViewSet):
     queryset = (
         TeamGroup.objects
         .select_related("club", "season")
-        .prefetch_related("variants")
+        .prefetch_related(
+            Prefetch(
+                "variants", queryset=Team.objects.select_related("season", "group")
+            )
+        )
         .order_by("name", "pk")
     )
     serializer_class = CompetitionTeamGroupSerializer
@@ -101,7 +114,16 @@ class TeamGroupViewSet(CatalogueViewSet):
 class PoolViewSet(CatalogueViewSet):
     """Browse poules and their official standings."""
 
-    queryset = Pool.objects.order_by("class_name", "name", "pk")
+    queryset = (
+        Pool.objects
+        .select_related("competition_class__edition")
+        .prefetch_related(
+            Prefetch(
+                "entries__team", queryset=Team.objects.select_related("season", "group")
+            ),
+        )
+        .order_by("class_name", "name", "pk")
+    )
     serializer_class = CompetitionPoolSerializer
     search_fields = ("name", "class_name")
     field_filters: ClassVar = {
@@ -110,18 +132,33 @@ class PoolViewSet(CatalogueViewSet):
         "team": "entries__team_id",
         "team_group": "entries__team__group_id",
         "local_pool": "local_pool_id",
+        "local_team": "entries__team__group__local_team_id",
+        "category": "competition_class__category",
+        "class_code": "competition_class__code",
+        "age_group": "competition_class__age_group",
+        "discipline": "competition_class__edition__discipline",
+        "phase": "competition_class__edition__phase",
+        "gender": "competition_class__edition__gender",
+        "mapping_status": "mapping_status",
     }
 
     def get_queryset(self) -> QuerySet:
         """Return each poule once when several variants share its membership."""
-        return super().get_queryset().distinct()
+        query = super().get_queryset()
+        local_club = self.request.query_params.get("local_club")
+        if local_club:
+            query = query.filter(
+                Q(entries__team__club__local_club_id=local_club)
+                | Q(entries__team__group__local_team__club_id=local_club)
+            )
+        return query.distinct()
 
     @extend_schema(responses=CompetitionPoolEntrySerializer(many=True))
     @action(detail=True, methods=("get",))
     def standings(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Return official positions, retaining missing values."""
         pool = self.get_object()
-        rows = pool.entries.select_related("team").order_by(
+        rows = pool.entries.select_related("team__season", "team__group").order_by(
             "standing__Position", "team_id"
         )
         page = self.paginate_queryset(rows)
@@ -181,5 +218,39 @@ class ResourceViewSet(CatalogueViewSet):
 class SeasonViewSet(CatalogueViewSet):
     """List the seasons available to query."""
 
-    queryset = Season.objects.order_by("-start_date", "pk")
+    queryset = Season.objects.prefetch_related("competitionedition_set").order_by(
+        "-start_date", "pk"
+    )
     serializer_class = CompetitionSeasonSerializer
+
+
+class AllocationViewSet(CatalogueViewSet):
+    """Browse staged allocations even while their provider identities are unresolved."""
+
+    queryset = Allocation.objects.select_related("source").order_by(
+        "pool_name", "team_name", "pk"
+    )
+    serializer_class = AllocationSerializer
+    search_fields = ("team_name", "pool_name", "city")
+    field_filters: ClassVar = {
+        "season": "source__season_id",
+        "local_team": "entry__team__group__local_team_id",
+        "pool": "entry__pool_id",
+        "gender": "classification__gender",
+        "discipline": "classification__discipline",
+        "phase": "classification__phase",
+        "category": "classification__category",
+        "age_group": "classification__age_group",
+        "class_code": "classification__code",
+    }
+
+    def get_queryset(self) -> QuerySet:
+        """Include allocations of native partnership teams under either club link."""
+        query = super().get_queryset()
+        local_club = self.request.query_params.get("local_club")
+        if local_club:
+            query = query.filter(
+                Q(entry__team__club__local_club_id=local_club)
+                | Q(entry__team__group__local_team__club_id=local_club)
+            )
+        return query

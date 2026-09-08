@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 import pytest
-from pytest_django.fixtures import SettingsWrapper
+from pytest_django.fixtures import Settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -47,7 +47,7 @@ def user_client(db: None) -> APIClient:
 
 @pytest.mark.django_db
 def test_slow_requests_endpoint_denies_non_staff(
-    settings: SettingsWrapper,
+    settings: Settings,
     user_client: APIClient,
 ) -> None:
     """The endpoint is operational/admin-only; non-staff must be denied."""
@@ -65,7 +65,7 @@ def test_slow_requests_endpoint_denies_non_staff(
 
 @pytest.mark.django_db
 def test_slow_requests_endpoint_limit_parsing_and_bounds(
-    settings: SettingsWrapper,
+    settings: Settings,
     admin_client: APIClient,
 ) -> None:
     """Regression: limit should be parsed safely and clamped to sane bounds."""
@@ -101,7 +101,7 @@ def test_slow_requests_endpoint_limit_parsing_and_bounds(
 
 @pytest.mark.django_db
 def test_slow_requests_endpoint_handles_cache_corruption(
-    settings: SettingsWrapper,
+    settings: Settings,
     admin_client: APIClient,
 ) -> None:
     """Corrupted cache values should not break the endpoint."""
@@ -118,7 +118,7 @@ def test_slow_requests_endpoint_handles_cache_corruption(
 
 @pytest.mark.django_db
 def test_slow_requests_endpoint_delete_clears_buffer(
-    settings: SettingsWrapper,
+    settings: Settings,
     admin_client: APIClient,
 ) -> None:
     """DELETE should clear the buffer (useful during debugging)."""

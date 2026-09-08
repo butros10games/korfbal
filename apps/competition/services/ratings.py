@@ -71,7 +71,7 @@ def team_ratings(season_id: UUID) -> dict[str, Any]:
         cached = (scores, timezone.now().isoformat())
         cache.set(key, cached, CACHE_SECONDS)
     scores, computed_at = cached
-    rows = [
+    rows: list[dict[str, Any]] = [
         {
             **team,
             "rating": round(scores[team["id"]].value, 2),
