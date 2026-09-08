@@ -74,7 +74,12 @@ class SportlinkClient:
 
         """
         if resource.kind == "club_logo":
-            return fetch_logo(resource.source_id, gate, retry_delay)
+            return fetch_logo(
+                resource.source_id,
+                gate,
+                retry_delay,
+                request=lambda url: self._logo_get(url, gate),
+            )
         if self.store and self.store.needs_refresh():
             self._refresh(gate)
         path, parameter, version, _ = ENDPOINTS[resource.kind]
@@ -109,6 +114,21 @@ class SportlinkClient:
                 raise ValueError("Expected a competition collection object")
         return result
 
+    def _logo_get(self, url: str, gate: RequestGate | None) -> requests.Response:
+        """Authenticate only the fixed, validated logo URL; bound renewal to once."""
+        if self.store and self.store.needs_refresh():
+            self._refresh(gate)
+        response = self._get(
+            url, params={}, headers={"Accept": "image/*"}, gate=gate, stream=True
+        )
+        if response.status_code == requests.codes.unauthorized and self.store:
+            response.close()
+            self._refresh(gate)
+            response = self._get(
+                url, params={}, headers={"Accept": "image/*"}, gate=gate, stream=True
+            )
+        return response
+
     def close(self) -> None:
         """Release pooled network connections."""
         self.session.close()
@@ -120,6 +140,7 @@ class SportlinkClient:
         params: dict[str, str],
         headers: dict[str, str],
         gate: RequestGate | None = None,
+        stream: bool = False,
     ) -> requests.Response:
         """Translate provider exceptions to a credential-free application error.
 
@@ -136,6 +157,7 @@ class SportlinkClient:
                 headers=headers,
                 timeout=(10, 30),
                 allow_redirects=False,
+                stream=stream,
             )
         except requests.RequestException:
             raise TransportError("Sportlink connection failed") from None

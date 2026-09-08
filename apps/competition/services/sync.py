@@ -155,7 +155,9 @@ def _fetch_one(
         if result.status not in {HTTP_OK, HTTP_NOT_MODIFIED}:
             record_failure(resource, f"http_{result.status}", result.retry_after)
             summary["failed"] += 1
-            if result.status in AUTH_ERRORS or result.status == HTTP_RATE_LIMIT:
+            if result.status == HTTP_RATE_LIMIT or (
+                result.status in AUTH_ERRORS and resource.kind != "club_logo"
+            ):
                 return result.retry_after, False
             return 0, False
         checked = checkpoint(resource, result, job)

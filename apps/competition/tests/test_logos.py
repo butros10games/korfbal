@@ -1,6 +1,8 @@
 """Provider badges reuse native image storage without repeated HTTP or lost uploads."""
 
 import base64
+from datetime import timedelta
+from http import HTTPStatus
 from io import BytesIO
 from unittest.mock import Mock, patch
 
@@ -10,11 +12,13 @@ import pytest
 
 from apps.club.models import Club as AppClub
 from apps.competition.adapters.outbound.logos import fetch_logo
-from apps.competition.adapters.outbound.sportlink import retry_delay
-from apps.competition.models import Club, SyncResource
+from apps.competition.adapters.outbound.sportlink import SportlinkClient, retry_delay
+from apps.competition.application.ports import FetchResult
+from apps.competition.models import Club, SyncLease, SyncResource
 from apps.competition.services.importer import Importer
 from apps.competition.services.logos import cache_logo, logo_name, publish_logo
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.sync import sync
 from apps.schedule.models import Season
 
 
@@ -164,3 +168,106 @@ def test_changed_logo_download_updates_previous_import(season: Season) -> None:
         AppClub.objects.get().logo.name == source.cached_logo == source.published_logo
     )
     gate.before_request.assert_called_once()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("response_status", [200, 401])
+def test_authenticated_logo_refresh_is_bounded_and_paced(
+    season: Season, response_status: int
+) -> None:
+    """Use the app session on the verified binary host and renew at most once."""
+    Importer(season, timezone.now()).apply("clubs", "", {"Club": [payload()]})
+    resource = SyncResource.objects.get(kind="club_logo")
+    store = Mock()
+    store.data = {"user_agent": "synthetic-app"}
+    store.needs_refresh.return_value = False
+    store.access_token = "renewed-synthetic"
+    client = SportlinkClient("original-synthetic", store=store)
+    gate = Mock()
+    rejected = Mock(status_code=401)
+    response = Mock(status_code=response_status, headers={})
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    response.iter_content.return_value = [base64.b64decode(image_payload()["image"])]
+    with (
+        patch.object(client.session, "get", side_effect=[rejected, response]) as get,
+        patch.object(
+            client.session, "post", return_value=Mock(status_code=200)
+        ) as post,
+    ):
+        result = client.fetch(resource, gate)
+    assert result.status == response_status
+    assert get.call_count == len([rejected, response])
+    assert gate.before_request.call_count == len([rejected, post, response])
+    post.assert_called_once()
+    rejected.close.assert_called_once()
+    assert client.session.headers["Authorization"] == "Bearer renewed-synthetic"
+    assert get.call_args.args[0] == f"https://binaries.sportlink.com/{BUCKET}/{DIGEST}"
+    assert get.call_args.kwargs["stream"] is True
+    assert get.call_args.kwargs["allow_redirects"] is False
+    client.close()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status_code", [401, 403, 429])
+def test_logo_auth_rejection_is_local_but_rate_limit_is_global(
+    season: Season, status_code: int
+) -> None:
+    """A rejected badge cannot delay unrelated discovery; 429 still stops all work."""
+    Importer(season, timezone.now()).apply("clubs", "", {"Club": [payload()]})
+    resource = SyncResource.objects.get(kind="club_logo")
+    now = timezone.now()
+    SyncResource.objects.exclude(pk=resource.pk).update(
+        fetched_at=now, next_sync_at=now + timedelta(days=1)
+    )
+    SyncResource.objects.get_or_create(
+        season=season,
+        kind="clubs",
+        source_id="",
+        defaults={"fetched_at": now, "next_sync_at": now + timedelta(days=1)},
+    )
+    client = Mock()
+    client.fetch.return_value = FetchResult(status_code, retry_after=RETRY_SECONDS)
+    result = sync(season, client, budget=1)
+    assert result["failed"] == 1
+    lease = SyncLease.objects.get(key="sportlink")
+    if status_code == HTTPStatus.TOO_MANY_REQUESTS:
+        assert lease.expires_at >= now + timedelta(seconds=RETRY_SECONDS)
+    else:
+        assert lease.expires_at <= timezone.now()
+    resource.refresh_from_db()
+    assert resource.failures == 1
+    assert resource.last_error == f"http_{status_code}"
+
+
+@pytest.mark.django_db
+def test_cached_logo_skips_even_expired_session_refresh(season: Season) -> None:
+    """A cached immutable badge needs neither OAuth nor another image request."""
+    Importer(season, timezone.now()).apply("clubs", "", {"Club": [payload()]})
+    cache_logo("logo-club", image_payload())
+    store = Mock()
+    store.data = {"user_agent": "synthetic"}
+    store.needs_refresh.return_value = True
+    client = SportlinkClient("synthetic", store=store)
+    with (
+        patch.object(client.session, "get") as get,
+        patch.object(client.session, "post") as post,
+    ):
+        result = client.fetch(SyncResource.objects.get(kind="club_logo"), Mock())
+    assert result.status == HTTPStatus.OK
+    get.assert_not_called()
+    post.assert_not_called()
+    client.close()
+
+
+@pytest.mark.django_db
+def test_untrusted_binary_reference_never_reaches_authenticated_transport(
+    season: Season,
+) -> None:
+    """Reject a malformed stored bucket before invoking the authorized callback."""
+    Importer(season, timezone.now()).apply("clubs", "", {"Club": [payload()]})
+    Club.objects.update(logo_bucket="../../other-host")
+    request = Mock()
+    with pytest.raises(ValueError, match="Invalid club logo reference"):
+        fetch_logo("logo-club", Mock(), retry_delay, request=request)
+    request.assert_not_called()

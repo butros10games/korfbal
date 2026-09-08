@@ -1,4 +1,4 @@
-"""Read observed public club badges without forwarding login credentials."""
+"""Read observed club badges through the authorized provider image transport."""
 
 import base64
 from collections.abc import Callable
@@ -12,7 +12,11 @@ from apps.competition.services.logos import MAX_IMAGE_BYTES, logo_name
 
 
 def fetch_logo(
-    source_id: str, gate: RequestGate | None, retry_delay: Callable[[str], int]
+    source_id: str,
+    gate: RequestGate | None,
+    retry_delay: Callable[[str], int],
+    *,
+    request: Callable[[str], requests.Response] | None = None,
 ) -> FetchResult:
     """Fetch one bounded image, or reuse the immutable storage cache.
 
@@ -24,22 +28,25 @@ def fetch_logo(
     name = logo_name(club.logo_bucket, club.logo_hash)
     if AppClub().logo.storage.exists(name):
         return FetchResult(200, {"name": name})
-    if gate:
+    if gate and request is None:
         gate.before_request()
     try:
-        with requests.get(
-            f"https://binaries.sportlink.com/{club.logo_bucket}/{club.logo_hash}",
-            timeout=30,
-            stream=True,
-            allow_redirects=False,
-        ) as response:
-            if response.status_code != requests.codes.ok:
+        url = f"https://binaries.sportlink.com/{club.logo_bucket}/{club.logo_hash}"
+        response = (
+            request(url)
+            if request
+            else requests.get(url, timeout=30, stream=True, allow_redirects=False)
+        )
+        with response as image_response:
+            if image_response.status_code != requests.codes.ok:
                 return FetchResult(
-                    response.status_code,
-                    retry_after=retry_delay(response.headers.get("Retry-After", "60")),
+                    image_response.status_code,
+                    retry_after=retry_delay(
+                        image_response.headers.get("Retry-After", "60")
+                    ),
                 )
             raw = bytearray()
-            for chunk in response.iter_content(65536):
+            for chunk in image_response.iter_content(65536):
                 raw.extend(chunk)
                 if len(raw) > MAX_IMAGE_BYTES:
                     raise TransportError("Club logo exceeds size limit")
