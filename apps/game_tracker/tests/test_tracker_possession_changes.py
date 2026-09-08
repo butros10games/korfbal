@@ -79,6 +79,84 @@ def possession_tracker() -> PossessionTracker:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("side", ["home", "away"])
+@pytest.mark.parametrize(
+    "kind", [PossessionChange.BALL_LOSS, PossessionChange.INTERCEPTION]
+)
+@pytest.mark.parametrize("attributed", [False, True])
+def test_one_possession_event_counts_for_both_teams_and_undo_removes_both(
+    possession_tracker: PossessionTracker,
+    side: str,
+    kind: str,
+    attributed: bool,
+) -> None:
+    """Historical and new events transfer possession without inventing a player."""
+    tracker, attacker, defender = possession_tracker
+    team = tracker.home_team if side == "home" else tracker.away_team
+    player = attacker if kind == PossessionChange.BALL_LOSS else defender
+    if side == "away":
+        MatchPlayer.objects.filter(match_data=tracker.match_data, player=player).update(
+            team=team
+        )
+    PossessionChange.objects.create(
+        match_data=tracker.match_data,
+        match_part=tracker.match_data.match_parts.get(active=True),
+        team=team,
+        player=player if attributed else None,
+        kind=kind,
+        time=timezone.now(),
+    )
+    stats = build_match_stats_payload(
+        match=tracker.match, match_data=tracker.match_data
+    )
+    home_loses = (side == "home") == (kind == PossessionChange.BALL_LOSS)
+    assert {
+        key: stats["general"][key]
+        for key in (
+            "ball_losses_for",
+            "ball_losses_against",
+            "interceptions_for",
+            "interceptions_against",
+        )
+    } == {
+        "ball_losses_for": int(home_loses),
+        "ball_losses_against": int(not home_loses),
+        "interceptions_for": int(not home_loses),
+        "interceptions_against": int(home_loses),
+    }
+    for lines in stats["players"].values():
+        for line in lines:
+            credited = attributed and line["id_uuid"] == str(player.pk)
+            assert line["ball_losses"] == int(
+                credited and kind == PossessionChange.BALL_LOSS
+            )
+            assert line["interceptions"] == int(
+                credited and kind == PossessionChange.INTERCEPTION
+            )
+    assert PossessionChange.objects.filter(match_data=tracker.match_data).count() == 1
+    assert (
+        len([
+            event
+            for event in build_match_events(tracker.match_data)
+            if event["type"] == "possession_change"
+        ])
+        == 1
+    )
+
+    apply_tracker_command(
+        tracker.match, team=team, payload={"command": "remove_last_event"}
+    )
+    general = build_match_stats_payload(
+        match=tracker.match, match_data=tracker.match_data
+    )["general"]
+    assert all(
+        general[f"{metric}_{suffix}"] == 0
+        for metric in ("ball_losses", "interceptions")
+        for suffix in ("for", "against")
+    )
+
+
+@pytest.mark.django_db
 def test_possession_changes_contribute_to_player_impact(
     possession_tracker: PossessionTracker,
 ) -> None:

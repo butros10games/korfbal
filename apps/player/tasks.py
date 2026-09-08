@@ -8,11 +8,13 @@ from typing import Any
 from celery import shared_task
 from django.core.cache import cache
 
+from apps.competition.services.schedule_notifications import notify_schedule_change
 from apps.player.composition import (
     download_spotify_track,
     prepare_player_song_clip,
     send_expo_push,
     send_web_push,
+    send_web_push_batch,
 )
 from apps.player.services.match_notifications import (
     FinishedMatchJobs,
@@ -103,4 +105,28 @@ def download_player_song(self: Any, song_id: str) -> None:
         dispatch_cached_song=_dispatch_cached_song,
         download_track=download_spotify_track,
         prepare_clip=prepare_player_song_clip,
+    )
+
+
+def _send_schedule_payload(*, user_ids: list[int], payload: WebPushPayload) -> None:
+    send_payload_to_users(
+        user_ids=user_ids,
+        payload=payload,
+        send_web_push=send_web_push,
+        send_expo_push=send_expo_push,
+        send_web_push_batch=send_web_push_batch,
+    )
+
+
+@shared_task
+def notify_official_schedule_change(
+    *, notification_id: str, match_id: str, starts_at: str, cancelled: bool
+) -> None:
+    """Deliver a committed KNKV schedule change through existing push transports."""
+    notify_schedule_change(
+        notification_id=notification_id,
+        match_id=match_id,
+        starts_at=starts_at,
+        cancelled=cancelled,
+        send_payload=_send_schedule_payload,
     )

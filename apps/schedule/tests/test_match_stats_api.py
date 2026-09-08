@@ -362,10 +362,10 @@ def test_match_stats_query_budget_does_not_grow_with_goal_type_count(
         "shots_against": 1 if populated else 0,
         "goals_for": 2 if populated else 0,
         "goals_against": 1 if populated else 0,
-        "ball_losses_for": 2 if populated else 0,
-        "ball_losses_against": 1 if populated else 0,
-        "interceptions_for": 1 if populated else 0,
-        "interceptions_against": 2 if populated else 0,
+        "ball_losses_for": 4 if populated else 0,
+        "ball_losses_against": 2 if populated else 0,
+        "interceptions_for": 2 if populated else 0,
+        "interceptions_against": 4 if populated else 0,
         "team_goal_stats": {
             goal_type.name: {
                 "goals_by_player": int(populated and goal_type == context.goal_type),

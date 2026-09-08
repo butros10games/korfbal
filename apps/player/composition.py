@@ -12,6 +12,9 @@ from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
 from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
 from apps.player.adapters.outbound.storage import DjangoAudioStorage
 from apps.player.adapters.outbound.web_push import PyWebPushClient
+from apps.player.adapters.outbound.web_push_batch import (
+    send_web_push_batch as _send_web_push_batch,
+)
 from apps.player.application.ports import AudioRuntime
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.expo_push import send_expo_push_tokens
@@ -99,6 +102,20 @@ def send_web_push(*, sub: PlayerPushSubscription, payload: WebPushPayload) -> No
         return
     send_to_model_subscription(
         sub=sub,
+        payload=payload,
+        client=web_push_client,
+        ttl_seconds=_web_push_ttl_seconds(),
+    )
+
+
+def send_web_push_batch(
+    *, subs: list[PlayerPushSubscription], payload: WebPushPayload
+) -> None:
+    """Deliver audience pushes with bounded network concurrency."""
+    if missing_webpush_settings():
+        return
+    _send_web_push_batch(
+        subs=subs,
         payload=payload,
         client=web_push_client,
         ttl_seconds=_web_push_ttl_seconds(),

@@ -21,6 +21,7 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.seasons import native_season_filter
+from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_entries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.schedule.models import Season
 
@@ -31,10 +32,12 @@ from .serializers import (
     CompetitionMatchSerializer,
     CompetitionPoolEntrySerializer,
     CompetitionPoolSerializer,
+    CompetitionPoolStandingsSerializer,
     CompetitionResourceSerializer,
     CompetitionSeasonSerializer,
     CompetitionTeamGroupSerializer,
     CompetitionTeamSerializer,
+    TeamStandingsFilters,
 )
 
 
@@ -166,6 +169,8 @@ class PoolViewSet(CatalogueViewSet):
     def get_queryset(self) -> QuerySet:
         """Return each poule once when several variants share its membership."""
         query = super().get_queryset()
+        if self.action in {"standings", "team_standings"}:
+            query = query.prefetch_related(None)
         local_club = self.request.query_params.get("local_club")
         if local_club:
             query = query.filter(
@@ -174,14 +179,36 @@ class PoolViewSet(CatalogueViewSet):
             )
         return query.distinct()
 
+    @extend_schema(responses=CompetitionPoolStandingsSerializer(many=True))
+    @action(
+        detail=False, methods=("get",), url_path="team-standings", filter_backends=()
+    )
+    def team_standings(self, request: Request) -> Response:
+        """Return one page of a team's pools with bounded first standings pages."""
+        validator = TeamStandingsFilters(data=request.query_params)
+        validator.is_valid(raise_exception=True)
+        rows = self.get_queryset().prefetch_related(
+            Prefetch(
+                "entries",
+                queryset=standing_entries().filter(pool__results_filtered=False)[
+                    : STANDINGS_PAGE_SIZE + 1
+                ],
+                to_attr="standing_rows",
+            )
+        )
+        page = self.paginate_queryset(rows)
+        return self.get_paginated_response(
+            CompetitionPoolStandingsSerializer(page, many=True).data
+        )
+
     @extend_schema(responses=CompetitionPoolEntrySerializer(many=True))
-    @action(detail=True, methods=("get",))
+    @action(detail=True, methods=("get",), filter_backends=())
     def standings(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Return official positions, retaining missing values."""
         pool = self.get_object()
-        rows = pool.entries.select_related("team__season", "team__group").order_by(
-            "standing__Position", "team_id"
-        )
+        rows = standing_entries().filter(pool=pool)
+        if pool.results_filtered:
+            rows = rows.none()
         page = self.paginate_queryset(rows)
         return self.get_paginated_response(
             CompetitionPoolEntrySerializer(page, many=True).data

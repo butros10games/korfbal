@@ -260,6 +260,8 @@ class Pool(SeasonalIdentity):
         """Return a recognizable poule label."""
         return f"{self.class_name} {self.name}".strip() or self.external_id
 
+    standing_rows: list["PoolEntry"]
+
     @property
     def member_teams(self) -> list[Team]:
         """Reuse prefetched memberships for bounded catalogue responses."""
@@ -324,6 +326,8 @@ class Match(SeasonalIdentity):
     local_created = models.BooleanField(default=False)
     published_at = models.DateTimeField(null=True, blank=True)
     published_state = models.JSONField(default=dict, blank=True)
+    published_schedule = models.JSONField(default=dict, blank=True)
+    schedule_notification_id = models.UUIDField(null=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta(SeasonalIdentity.Meta):

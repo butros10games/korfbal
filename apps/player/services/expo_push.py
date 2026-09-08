@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import batched
 import logging
 from typing import Any
 
@@ -56,7 +57,8 @@ def send_expo_push_tokens(
     if not messages:
         return
 
-    try:
-        client.send_messages(messages)
-    except Exception:
-        logger.warning("Failed sending Expo push tokens", exc_info=True)
+    for batch in batched(messages, 100):
+        try:
+            client.send_messages(list(batch))
+        except Exception:
+            logger.warning("Failed sending Expo push batch", exc_info=True)

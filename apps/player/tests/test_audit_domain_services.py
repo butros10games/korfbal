@@ -94,7 +94,10 @@ def test_retryable_web_push_failure_propagates_without_deactivation() -> None:
 
 
 @pytest.mark.django_db
-def test_match_notification_routes_active_web_and_expo_destinations() -> None:
+@pytest.mark.parametrize("batched", [False, True])
+def test_match_notification_routes_active_web_and_expo_destinations(
+    batched: bool,
+) -> None:
     recipient = create_tracker_player(username="notification-recipient")
     ignored = create_tracker_player(username="notification-ignored")
     web = PlayerPushSubscription.objects.create(
@@ -120,6 +123,7 @@ def test_match_notification_routes_active_web_and_expo_destinations() -> None:
         subscription={"endpoint": "https://push.example.invalid/other-user"},
     )
     send_web = Mock()
+    send_batch = Mock() if batched else None
     send_expo = Mock()
     payload = WebPushPayload(title="Final", body="12 - 10", url="/matches/1")
 
@@ -128,9 +132,14 @@ def test_match_notification_routes_active_web_and_expo_destinations() -> None:
         payload=payload,
         send_web_push=send_web,
         send_expo_push=send_expo,
+        send_web_push_batch=send_batch,
     )
 
-    send_web.assert_called_once_with(sub=web, payload=payload)
+    if send_batch is not None:
+        send_batch.assert_called_once_with(subs=[web], payload=payload)
+        send_web.assert_not_called()
+    else:
+        send_web.assert_called_once_with(sub=web, payload=payload)
     send_expo.assert_called_once()
     assert send_expo.call_args.kwargs["tokens"] == ["ExponentPushToken[recipient]"]
     expo_payload = send_expo.call_args.kwargs["payload"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import Mock
 
 from apps.player.services.expo_push import ExpoPushPayload, send_expo_push_tokens
 
@@ -68,3 +69,22 @@ def test_send_expo_push_tokens_is_best_effort() -> None:
 
     assert client.attempts == 1
     assert client.messages == []
+
+
+def test_large_audience_is_batched_and_later_batches_survive_failure() -> None:
+    """Every device is attempted within Expo's limit, even if an earlier batch fails."""
+    client = Mock()
+    client.send_messages.side_effect = [
+        RuntimeError("provider unavailable"),
+        None,
+        None,
+    ]
+    tokens = [f"synthetic-{index}" for index in range(201)]
+    send_expo_push_tokens(
+        tokens=tokens,
+        payload=ExpoPushPayload(title="Schedule", body="Changed", url="/matches/1"),
+        client=client,
+    )
+    batches = [call.args[0] for call in client.send_messages.call_args_list]
+    assert [len(batch) for batch in batches] == [100, 100, 1]
+    assert [message["to"] for batch in batches for message in batch] == tokens

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.club.models import Club as AppClub
+from apps.competition.composition import schedule_change_dispatcher
 from apps.competition.models import (
     Club,
     Match,
@@ -34,6 +35,7 @@ from apps.competition.services.reconciliation import (
     team_label,
 )
 from apps.competition.services.rosters import publish_pending_rosters
+from apps.competition.services.schedule_notifications import schedule_changed
 from apps.competition.services.seasons import SeasonResolver
 from apps.game_tracker.models import MatchData, MatchPart, Shot
 from apps.schedule.models import (
@@ -372,7 +374,8 @@ class Publisher:
             tracker = MatchData.objects.select_for_update().get(
                 match_link_id=row.local_match_id
             )
-            self.result(row, tracker, pools.get(row.pool_id))
+            accepted = self.result(row, tracker, pools.get(row.pool_id))
+            schedule_fields = self.schedule(row, accepted=accepted)
             row.published_at = timezone.now()
             row.save(
                 update_fields=(
@@ -380,10 +383,32 @@ class Publisher:
                     "local_created",
                     "published_at",
                     "published_state",
+                    *schedule_fields,
                 )
             )
 
-    def result(self, row: Match, tracker: MatchData, pool_id: UUID | None) -> None:
+    def schedule(self, row: Match, *, accepted: bool) -> tuple[str, ...]:
+        """Version changed schedules without rearming a concurrently claimed event."""
+        schedule = {"starts_at": row.starts_at.isoformat(), "status": row.status}
+        if schedule == row.published_schedule:
+            return ()
+        row.schedule_notification_id = None
+        if (
+            accepted
+            and row.local_created
+            and schedule_changed(row.published_schedule, schedule)
+        ):
+            row.schedule_notification_id = uuid4()
+            schedule_change_dispatcher()(
+                notification_id=str(row.schedule_notification_id),
+                match_id=str(row.local_match_id),
+                starts_at=schedule["starts_at"],
+                cancelled=row.status == "CANCELLED",
+            )
+        row.published_schedule = schedule
+        return ("published_schedule", "schedule_notification_id")
+
+    def result(self, row: Match, tracker: MatchData, pool_id: UUID | None) -> bool:
         """Adopt untouched fixtures and stop on local tracking or manual edits."""
         if (
             tracker.live_revision
@@ -391,7 +416,7 @@ class Publisher:
             or tracker.event_sequence
             or tracker.status == "active"
         ):
-            return
+            return False
         current = {
             "status": tracker.status,
             "home": tracker.home_score,
@@ -399,10 +424,10 @@ class Publisher:
         }
         if row.published_state and current != row.published_state:
             self.conflict("match", row.pk, "local_score_changed")
-            return
+            return False
         archive = row.external_id.startswith("archive:")
         if archive and not row.local_created:
-            return
+            return False
         if tracker.score_source != "knkv" and not row.local_created:
             pristine = tracker.status == "upcoming" and not (
                 tracker.home_score or tracker.away_score
@@ -412,7 +437,7 @@ class Publisher:
                 or Shot.objects.filter(match_data=tracker).exists()
                 or MatchPart.objects.filter(match_data=tracker).exists()
             ):
-                return
+                return False
         final = (
             row.status == "FINAL"
             and row.home_score is not None
@@ -434,6 +459,8 @@ class Publisher:
                 start_time=row.starts_at, pool_id=pool_id
             )
         self.counts["matches_updated"] += 1
+
+        return True
 
 
 @transaction.atomic

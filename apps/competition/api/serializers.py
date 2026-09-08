@@ -1,5 +1,7 @@
 """Public competition fields only; no upstream session or player records."""
 
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import serializers
 
 from apps.competition.domain.classification import designation
@@ -16,7 +18,11 @@ from apps.competition.models import (
 )
 from apps.competition.services.classification import pool_classification
 from apps.competition.services.seasons import SeasonResolver
+from apps.competition.services.standings import STANDINGS_PAGE_SIZE
 from apps.schedule.models import Season
+
+
+MAX_SAFE_INTEGER = 9007199254740991
 
 
 class CompetitionClubSerializer(serializers.ModelSerializer):
@@ -146,12 +152,103 @@ class CompetitionPoolEntrySerializer(serializers.ModelSerializer):
     """Return official standing values with the team label in one query."""
 
     team = CompetitionTeamSerializer()
+    values = serializers.SerializerMethodField()
+
+    def get_values(self, obj: PoolEntry) -> dict[str, int | None]:
+        """Keep absent/unusable values unknown, and preserve zero and penalties."""
+        fields = {
+            "position": "Position",
+            "played": "TotalMatches",
+            "won": "Won",
+            "drawn": "Draw",
+            "lost": "Lost",
+            "points": "TotalPoints",
+            "goals_for": "GoalsFor",
+            "goals_against": "GoalsAgainst",
+        }
+        values: dict[str, int | None] = {}
+        for name, source in fields.items():
+            raw = obj.standing.get(source)
+            try:
+                number = Decimal(str(raw))
+                values[name] = (
+                    int(number)
+                    if number.is_finite()
+                    and abs(number) <= MAX_SAFE_INTEGER
+                    and number == number.to_integral_value()
+                    else None
+                )
+            except (InvalidOperation, ValueError, OverflowError):
+                values[name] = None
+        return values
 
     class Meta:
         """Declare storage or serialization metadata."""
 
         model = PoolEntry
-        fields = ("team", "standing")
+        fields = ("team", "standing", "values")
+
+
+class StandingTeamSerializer(serializers.ModelSerializer):
+    """Only the identity used by the standings table, with no season lookup."""
+
+    local_team = serializers.UUIDField(
+        source="group.local_team_id", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        """Declare the public response fields."""
+
+        model = Team
+        fields = ("name", "local_team")
+
+
+class StandingRowSerializer(CompetitionPoolEntrySerializer):
+    """Compact standings without duplicate raw provider fields."""
+
+    team = StandingTeamSerializer()
+
+    class Meta:
+        """Declare the public response fields."""
+
+        model = PoolEntry
+        fields = ("team", "values")
+
+
+class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
+    """Pool metadata and a prefetched first page, without a duplicate team list."""
+
+    teams = None
+    standings = serializers.SerializerMethodField()
+
+    def get_standings(self, obj: Pool) -> dict:
+        """Detect the next page with one extra prefetched row, without a count query."""
+        return {
+            "results": StandingRowSerializer(
+                obj.standing_rows[:STANDINGS_PAGE_SIZE], many=True
+            ).data,
+            "has_more": len(obj.standing_rows) > STANDINGS_PAGE_SIZE,
+        }
+
+    class Meta:
+        """Declare the public response fields."""
+
+        model = Pool
+        fields = (
+            *(
+                field
+                for field in CompetitionPoolSerializer.Meta.fields
+                if field != "teams"
+            ),
+            "standings",
+        )
+
+
+class TeamStandingsFilters(serializers.Serializer):
+    """Do not permit an unscoped catalogue-wide standings download."""
+
+    local_team = serializers.UUIDField()
+    season = serializers.UUIDField()
 
 
 class CompetitionResourceSerializer(serializers.ModelSerializer):

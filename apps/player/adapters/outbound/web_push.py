@@ -56,6 +56,7 @@ class PyWebPushClient:
                 vapid_private_key=str(settings.WEBPUSH_VAPID_PRIVATE_KEY),
                 vapid_claims={"sub": str(settings.WEBPUSH_VAPID_SUBJECT)},
                 ttl=ttl_seconds,
+                timeout=10,
             )
         except Exception as exc:
             if web_push_exception_type is None or not isinstance(

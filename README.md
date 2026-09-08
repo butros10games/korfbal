@@ -619,3 +619,32 @@ every youth group, A-category matches, or the final seconds. Reproduce the fixed
 comparison with `scripts/python/korfbal_seeded_prediction_evaluation.py`; its
 input contract and source provenance are in the module docstring. Source data
 and production exports are not committed.
+
+### Team standings and schedule alerts
+
+The web team's **Stand** tab reads official poules and standings from the local
+catalogue for the selected team and playing season. It shows the last standings
+refresh, preserves unknown values, and hides standings when the provider suppresses
+results. It does not derive official points from locally tracked goals. The tab
+loads only while active: one paginated team/season request embeds up to 100 standings
+rows per pool, with subsequent team pages fetched on demand.
+
+After migration, publication keeps a separate schedule baseline. Subsequent changes
+to future `SCHEDULED`/`CANCELLED` provider-created fixtures notify active accounts
+following either team or club through the existing Web Push/Expo transports. Initial
+imports and historical corrections stay silent; local tracking/manual score changes
+retain the existing publication protection. Existing fully published snapshots are
+baselined during migration, while pending snapshots establish a silent baseline on
+the next publication.
+
+Migration 0017 adds a publication event ID claimed with a conditional update before
+delivery. Repeated schedule values and duplicate jobs cannot replay a claimed event.
+Expo messages are batched in groups of at most 100; browser delivery uses four
+concurrent requests with ten-second HTTP timeouts and batches expired-subscription
+updates. A failing destination does not prevent attempts to the remaining devices.
+
+Delivery is best effort after the database commit through the existing Celery worker.
+A worker crash after claiming an event may lose delivery; claimed events are not retried.
+A broker outage is logged without rolling back imported data; this change does not
+add a durable notification outbox or replay missed alerts. The importer still needs
+its deployment-owned recurring invocation; this PR does not install a new scheduler.

@@ -289,3 +289,72 @@ def test_rating_configuration_migration_does_not_activate_existing_seasons() -> 
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_schedule_baseline_migration_seeds_only_published_snapshots() -> None:
+    """Existing fixtures retain identity and a baseline without replaying imports."""
+    executor = MigrationExecutor(connection)
+    before = [("competition", "0015_merge_rating_configuration_and_roster_counts")]
+    after = [("competition", "0017_schedule_notification_id")]
+    try:
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="baseline-season",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        club = old.get_model("competition", "Club").objects.create(
+            external_id="baseline-club", name="Example"
+        )
+        local_club = old.get_model("club", "Club").objects.create(name="Example")
+        native_team = old.get_model("team", "Team")
+        home = native_team.objects.create(club=local_club, name="1")
+        away = native_team.objects.create(club=local_club, name="2")
+        source_team = old.get_model("competition", "Team")
+        source_home = source_team.objects.create(
+            season=season, club=club, external_id="home", name="1", sport="VE"
+        )
+        source_away = source_team.objects.create(
+            season=season, club=club, external_id="away", name="2", sport="VE"
+        )
+        stamp = timezone.now()
+        local = old.get_model("schedule", "Match").objects.create(
+            season=season, home_team=home, away_team=away, start_time=stamp
+        )
+        source = old.get_model("competition", "Match")
+        published = source.objects.create(
+            season=season,
+            external_id="published",
+            home_team=source_home,
+            away_team=source_away,
+            starts_at=stamp,
+            status="SCHEDULED",
+            local_match=local,
+        )
+        source.objects.filter(pk=published.pk).update(published_at=timezone.now())
+        pending = source.objects.create(
+            season=season,
+            external_id="pending",
+            home_team=source_home,
+            away_team=source_away,
+            starts_at=stamp,
+            status="SCHEDULED",
+        )
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        updated = executor.loader.project_state(after).apps.get_model(
+            "competition", "Match"
+        )
+        assert updated.objects.get(pk=published.pk).published_schedule == {
+            "starts_at": stamp.isoformat(),
+            "status": "SCHEDULED",
+        }
+        assert updated.objects.get(pk=published.pk).local_match_id == local.pk
+        assert updated.objects.get(pk=published.pk).schedule_notification_id is None
+        assert updated.objects.get(pk=pending.pk).published_schedule == {}
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

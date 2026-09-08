@@ -64,6 +64,16 @@ class WebPushSender(Protocol):
         ...
 
 
+class WebPushBatchSender(Protocol):
+    """Deliver a bounded batch of browser notifications."""
+
+    def __call__(
+        self, *, subs: list[PlayerPushSubscription], payload: WebPushPayload
+    ) -> None:
+        """Attempt each subscription independently."""
+        ...
+
+
 class ExpoPushSender(Protocol):
     """Deliver one Expo notification to a token batch."""
 
@@ -121,6 +131,7 @@ def send_payload_to_users(
     payload: WebPushPayload,
     send_web_push: WebPushSender,
     send_expo_push: ExpoPushSender,
+    send_web_push_batch: WebPushBatchSender | None = None,
 ) -> None:
     """Fan a notification out to active web and Expo subscriptions."""
     if not user_ids:
@@ -131,12 +142,18 @@ def send_payload_to_users(
         is_active=True,
     )
     expo_tokens: list[str] = []
+    web_subscriptions: list[PlayerPushSubscription] = []
 
     for subscription in subscriptions:
         if subscription.platform == "expo":
             expo_tokens.append(subscription.endpoint)
+        elif send_web_push_batch is not None:
+            web_subscriptions.append(subscription)
         else:
             send_web_push(sub=subscription, payload=payload)
+
+    if web_subscriptions and send_web_push_batch is not None:
+        send_web_push_batch(subs=web_subscriptions, payload=payload)
 
     if expo_tokens:
         send_expo_push(

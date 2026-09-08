@@ -53,6 +53,7 @@ Match tracker issues often require coordinated backend + frontend changes.
   them. Add only composite or specialized indexes that serve a measured query shape.
 - Don’t make exception dataclasses frozen. Python context managers attach traceback state while
   unwinding, and frozen exceptions can mask the original domain error with a `TypeError`.
+- Document new APIView methods with explicit drf-spectacular request, response and parameter schemas; the full OpenAPI regression test rejects serializer-inference warnings and errors.
 - Parse UUID query parameters at the API boundary and return a controlled 400; constrain UUID
   detail routes so malformed identifiers become 404s instead of leaking ORM validation errors.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model

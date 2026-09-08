@@ -62,9 +62,19 @@ def _build_general_stats(
         key = (row["team_id"], row["shot_type_id"])
         goals_by_type[key] = goals_by_type.get(key, 0) + row["goals"]
     possession_counts: dict[tuple[UUID | None, str], int] = {}
+    opposite_kinds = {
+        PossessionChange.BALL_LOSS: PossessionChange.INTERCEPTION,
+        PossessionChange.INTERCEPTION: PossessionChange.BALL_LOSS,
+    }
+    opponents = {home_team.pk: away_team.pk, away_team.pk: home_team.pk}
     for possession in possessions:
-        key = (possession["team_id"], possession["kind"])
-        possession_counts[key] = possession_counts.get(key, 0) + possession["count"]
+        team_id, kind = possession["team_id"], possession["kind"]
+        if team_id not in opponents or kind not in opposite_kinds:
+            continue
+        # One event describes both sides of the transfer. Keep player attribution
+        # on the recorded side; the opposing player is not known.
+        for key in ((team_id, kind), (opponents[team_id], opposite_kinds[kind])):
+            possession_counts[key] = possession_counts.get(key, 0) + possession["count"]
     return {
         **{
             f"{metric}_{side}": sum(

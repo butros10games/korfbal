@@ -219,6 +219,7 @@ def test_pywebpush_adapter_maps_provider_error_and_preserves_status() -> None:
         vapid_private_key="private-key",
         vapid_claims={"sub": "mailto:push@example.invalid"},
         ttl=90,
+        timeout=10,
     )
 
 
