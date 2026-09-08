@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
@@ -393,7 +393,9 @@ def test_pending_fixture_loads_only_relevant_native_candidates(season: Season) -
     source = Match.objects.get()
     Match.objects.filter(pk=source.pk).update(local_match=None, published_at=None)
     publisher = Publisher()
-    with patch.object(AppMatch, "from_db", wraps=AppMatch.from_db) as load:
+    # Preserve the classmethod descriptor for Django's signature inspection.
+    load = Mock(wraps=AppMatch.from_db.__func__)
+    with patch.object(AppMatch, "from_db", classmethod(load)):
         publisher.matches()
     assert load.call_count == 1
     source.refresh_from_db()

@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import groupby
+from math import isfinite
 
 
 INITIAL_RATING = 1500.0
@@ -36,14 +37,35 @@ class Rating:
     comparison_group: int = 0
 
 
-def calculate(sports: dict[int, str], matches: list[RatedResult]) -> dict[int, Rating]:
+def calculate(
+    sports: dict[int, str],
+    matches: list[RatedResult],
+    *,
+    initial: dict[int, float] | None = None,
+    scale: float = RATING_SCALE,
+    k_factor: float = K_FACTOR,
+) -> dict[int, Rating]:
     """Rebuild scores chronologically so corrections cannot be double counted.
 
     Matches sharing a timestamp use the ratings at the start of that timestamp,
     eliminating arbitrary provider-ID order effects. No uncalibrated home bonus
     or goal-margin multiplier is applied.
+
+    Raises:
+        ValueError: Seeds or update parameters are invalid.
+
     """
-    ratings = {team: Rating(comparison_group=team) for team in sports}
+    seeds = initial or {}
+    if (
+        any(not isfinite(value) or value <= 0 for value in (scale, k_factor))
+        or set(seeds) - sports.keys()
+        or any(not isfinite(value) for value in seeds.values())
+    ):
+        raise ValueError("Ratings require finite seeds and positive finite scale/K")
+    ratings = {
+        team: Rating(value=seeds.get(team, INITIAL_RATING), comparison_group=team)
+        for team in sports
+    }
     parents = {team: team for team in sports}
     ordered = sorted(matches, key=lambda match: (match.starts_at, match.source_id))
     for _, simultaneous in groupby(ordered, key=lambda match: match.starts_at):
@@ -53,14 +75,14 @@ def calculate(sports: dict[int, str], matches: list[RatedResult]) -> dict[int, R
                 continue
             home = ratings[match.home]
             away = ratings[match.away]
-            gap = (away.value - home.value) / RATING_SCALE
+            gap = (away.value - home.value) / scale
             expected = 1 / (1 + 10 ** max(-100, min(100, gap)))
             outcome = (
                 0.5
                 if match.home_score == match.away_score
                 else float(match.home_score > match.away_score)
             )
-            change = K_FACTOR * (outcome - expected)
+            change = k_factor * (outcome - expected)
             changes[match.home] += change
             changes[match.away] -= change
             home.games += 1

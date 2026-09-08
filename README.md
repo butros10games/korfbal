@@ -500,3 +500,51 @@ class/category, phase, discipline, gender and age-group filters with pagination.
 Native season-pool responses expose the same linked classification. Annual-season
 catalogue responses include the separate competition editions. No additional web
 screens are required.
+
+### Local KNKV baseline rating experiments
+
+After mapping, `preview_allocation_ratings` exports a read-only report. It does not
+change the existing ratings API, club records, source points or match results.
+Choose source IDs explicitly from `AllocationSource` in the isolated database;
+multiple snapshots for the same team/class are rejected instead of silently reseeding.
+
+```sh
+uv run python manage.py preview_allocation_ratings --season 2026-2027 \
+    --source 1 --source 2 --source 3 --source 4 \
+    --effective-at 2026-09-01T00:00:00+02:00 \
+    --through 2026-09-08T00:00:00+02:00 \
+    --b-scale 20 --b-k-factor 1.2 --output /path/to/rating-preview.json
+```
+
+Source IDs in this example are placeholders for the selected local snapshots.
+The effective date is an explicit assertion that their points represent the start
+of competition. The 3 September publication date does not prove which results the
+baseline already contains. The supplied files were described as starting scores;
+the example includes early 2 September fixtures on that assumption. If that is
+incorrect, select an earlier baseline or a later effective date before publication.
+
+B-category teams start at their exact KNKV points. Missing scores remain excluded;
+zero is valid. The report retains the original points, aggregate age, baseline,
+updated score, change, games, source digests, window and result fingerprint. It
+replays only completed, observed, non-awarded fixtures from the allocated poule.
+Corrections rebuild from the original baseline. Edition, gender, age/colour,
+playing format and class remain separate; connected schedules define comparison
+scope. Unknown or conflicting mappings remain excluded and are reported.
+
+The example parameters are experimental, not KNKV rules or a calibrated prediction
+model. A 20-point difference gives a 10:1 expected-result ratio, and an update is
+bounded by 1.2 points per match (the existing 400/24 Elo parameters divided by 20).
+Validate that scale and update rate on separate historical competitions before
+using predictions or publishing rankings. No goal-margin or home bonus is added.
+KNKV's own end-of-competition formula differs from this Elo experiment; see the
+[official strength-indication explanation](https://www.knkv.nl/kennisbank/sterkte-indicatie/).
+Their scores describe relative strength in one competition, not an absolute scale
+that can be carried unchanged across indoor/outdoor editions or seasons.
+
+A/top-category teams use a provisional 1500 start within their official class,
+with the existing 400 scale and 24 update factor. The report also carries the
+ordinal class level. Calibrating Elo gaps between classes requires historical
+promotion/relegation and results connecting those classes; one opening round
+cannot establish those gaps. Club-level comparisons should retain separate
+senior/youth, standard/reserve and mixed/dames contexts rather than averaging
+these incompatible scores into one number. No new screens are introduced.
