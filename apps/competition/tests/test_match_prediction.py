@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.competition.models import Allocation, Match, Pool, ResultRevision
+from apps.competition.services import context_prediction as service
 from apps.competition.services.match_prediction import match_prediction
 from apps.competition.services.published_ratings import configure_ratings
 from apps.competition.services.publishing import publish_catalogue
@@ -131,3 +132,65 @@ def test_missing_points_and_prebaseline_dates_are_neutral(
     assert match_prediction(native)["reason"] == "missing_baseline"
     native.start_time = START - timedelta(seconds=1)
     assert match_prediction(native)["reason"] == "before_baseline"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("rating_slope", [0, 2])
+def test_context_outcomes_are_exposed_by_the_existing_summary(
+    predicted_match: Match,
+    monkeypatch: pytest.MonkeyPatch,
+    rating_slope: int,
+) -> None:
+    """Serve additive context probabilities without another client endpoint."""
+    source = Match.objects.select_related(
+        "pool__competition_class__edition", "season"
+    ).get(pk=predicted_match.pk)
+    assert source.pool is not None
+    context = source.pool.competition_class
+    assert context is not None
+    key = (
+        f"{context.edition.discipline}|{context.category}|{context.code}|"
+        f"{context.age_group}|{context.colour}|{context.playing_format}"
+    )
+    monkeypatch.setattr(
+        service,
+        "model",
+        lambda: {
+            "version": "synthetic-context",
+            "season": source.season.name,
+            "available_from": START.isoformat(),
+            "rating_scale": 20,
+            "contexts": {
+                key: {"home_bias": 0, "rating_slope": rating_slope, "draw_logit": 0}
+            },
+        },
+    )
+    native = predicted_match.local_match
+    assert native is not None
+    response = APIClient().get(f"/api/matches/{native.pk}/summary/")
+    assert response.status_code == status.HTTP_200_OK
+    calibration = response.data["prediction"]["outcome_calibration"]
+    assert calibration["model"] == "synthetic-context"
+    if rating_slope == 0:
+        for outcome in ("home", "draw", "away"):
+            assert calibration[outcome] == pytest.approx(1 / 3)
+    else:
+        assert calibration["home"] < calibration["away"]
+
+    # A known earlier result updates Elo, but must not change the preseason
+    # feature values used by the independently fitted context model.
+    before = response.data["prediction"]
+    earlier = Match.objects.get(pk=predicted_match.pk)
+    earlier.pk = None
+    earlier.external_id = "earlier-calibration"
+    earlier.local_match = None
+    earlier.starts_at = START + timedelta(hours=1)
+    earlier.result_observed_at = START + timedelta(hours=2)
+    earlier.home_score, earlier.away_score = 10, 0
+    earlier.save()
+    response = APIClient().get(f"/api/matches/{native.pk}/summary/")
+    assert response.status_code == status.HTTP_200_OK
+    after = response.data["prediction"]
+    assert after["home_games"] == after["away_games"] == 1
+    assert after["home_expected_result"] > before["home_expected_result"]
+    assert after["outcome_calibration"] == calibration

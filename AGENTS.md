@@ -107,3 +107,9 @@ misleading provider 500/603 errors.
 
 - KNKV uses the literal `PersonId: "PRIVATE"` for multiple anonymous people in one
   response. Count those rows individually; deduplicate only genuine person IDs.
+
+- Version fitted forecast artifacts with their availability time and season/context
+  scope. Never apply learned coefficients to historical matches before that cutoff;
+  keep fitting offline and coefficient serving free of database queries. Serve the
+  same features used in fitting and evaluation; preseason KNKV points and
+  result-updated Elo ratings are not interchangeable inputs.

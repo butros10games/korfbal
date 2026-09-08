@@ -13,6 +13,7 @@ from apps.competition.models import (
     RatingConfiguration,
     ResultRevision,
 )
+from apps.competition.services.context_prediction import context_prediction
 from apps.competition.services.rating_preview import exclusion, rate_class
 from apps.schedule.models import Match as NativeMatch
 
@@ -115,7 +116,19 @@ def predict_allocations(
         + 10
         ** max(-100, min(100, (away_rating["rating"] - home_rating["rating"]) / scale))
     )
+    calibration = context_prediction(
+        context=(
+            f"{context.edition.discipline}|{context.category}|{context.code}|"
+            f"{context.age_group}|{context.colour}|{context.playing_format}"
+        ),
+        # The frozen model was fitted on preseason KNKV points, not Elo replay.
+        ratings=(home_rating["baseline"], away_rating["baseline"]),
+        as_of=cutoff,
+        season=match.season.name if match.season else "",
+        rating_scale=scale,
+    )
     return {
+        **({"outcome_calibration": calibration} if calibration else {}),
         "status": "seeded",
         "model": "knkv-prematch-v1",
         "as_of": cutoff.isoformat(),
