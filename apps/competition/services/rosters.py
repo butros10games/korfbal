@@ -162,8 +162,8 @@ def parse_people(
     return visible, hidden
 
 
-def queue_rosters(season: Season) -> int:
-    """Discover one weekly feed per source variant without resetting checkpoints.
+def queue_rosters(season: Season, *, refresh_private: bool = False) -> int:
+    """Discover feeds, optionally refreshing successful private-roster snapshots.
 
     Raises:
         ValueError: Live rosters cannot be assigned to historical seasons.
@@ -185,8 +185,25 @@ def queue_rosters(season: Season) -> int:
         ignore_conflicts=True,
         batch_size=1000,
     )
+    refreshed = 0
+    if refresh_private:
+        affected = Team.objects.filter(season=season).filter(
+            Q(private_roster_counts__players__gt=0)
+            | Q(private_roster_counts__staff__gt=0)
+        )
+        # Preserve active/pending requests and retry ceilings. Only successful
+        # snapshots need a fresh body to repair their anonymous counts.
+        refreshed = SyncResource.objects.filter(
+            season=season,
+            kind="team_roster",
+            source_id__in=affected.values("external_id"),
+            fetched_at__isnull=False,
+            failures=0,
+        ).update(fetched_at=None, etag="", next_sync_at=now)
     return (
-        SyncResource.objects.filter(season=season, kind="team_roster").count() - before
+        SyncResource.objects.filter(season=season, kind="team_roster").count()
+        - before
+        + refreshed
     )
 
 
@@ -312,9 +329,12 @@ def _discover_photos(
 
 
 def count_private_people(rows: list[dict], hidden: set[str]) -> dict[str, int]:
-    """Retain only aggregate counts, deduplicating IDs transiently within a feed."""
+    """Count anonymous rows; deduplicate only genuine IDs within a feed."""
     players: set[str] = set()
     staff: set[str] = set()
+    # KNKV masks distinct people with the same literal ID; those rows are not
+    # evidence of a shared identity, even if the complete rows are identical.
+    anonymous = {"players": 0, "staff": 0}
     for row in rows:
         person_id = row.get("PersonId")
         if person_id not in hidden or row.get("TeamPerson") is not True:
@@ -323,7 +343,16 @@ def count_private_people(rows: list[dict], hidden: set[str]) -> dict[str, int]:
         if not isinstance(role, dict):
             continue
         if role.get("RoleId") == "PLAYER_DEFAULT":
-            players.add(person_id)
+            if person_id == "PRIVATE":
+                anonymous["players"] += 1
+            else:
+                players.add(person_id)
         elif role.get("RoleId") in {"COACHING_STAFF", "MEDICAL_STAFF", "OTHER_STAFF"}:
-            staff.add(person_id)
-    return {"players": len(players), "staff": len(staff)}
+            if person_id == "PRIVATE":
+                anonymous["staff"] += 1
+            else:
+                staff.add(person_id)
+    return {
+        "players": len(players) + anonymous["players"],
+        "staff": len(staff) + anonymous["staff"],
+    }

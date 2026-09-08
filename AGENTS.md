@@ -103,3 +103,6 @@ misleading provider 500/603 errors.
 
 - Preserve private KNKV roster sizes as anonymous per-feed counts. Do not create
   placeholder Player records or sum anonymous counts across feeds as distinct people.
+
+- KNKV uses the literal `PersonId: "PRIVATE"` for multiple anonymous people in one
+  response. Count those rows individually; deduplicate only genuine person IDs.

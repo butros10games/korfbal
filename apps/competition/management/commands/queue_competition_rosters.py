@@ -14,6 +14,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Require an explicit existing season."""
         parser.add_argument("--season", required=True)
+        parser.add_argument(
+            "--refresh-private",
+            action="store_true",
+            help="Refresh successful rosters containing private people",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Queue feeds with the existing budgets, checkpoint and retry policy.
@@ -24,7 +29,9 @@ class Command(BaseCommand):
         """
         try:
             season = Season.objects.get(name=options["season"])
-            count = queue_rosters(season)
+            count = queue_rosters(
+                season, refresh_private=bool(options["refresh_private"])
+            )
         except (Season.DoesNotExist, ValueError) as exc:
             raise CommandError("An existing current season is required") from exc
         self.stdout.write(f"Queued {count} roster feeds")

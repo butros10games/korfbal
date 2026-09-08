@@ -6,9 +6,10 @@ from django.utils import timezone
 import pytest
 from rest_framework.test import APIClient
 
-from apps.competition.models import Match, Team
+from apps.competition.models import Match, SyncResource, Team
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.rosters import queue_rosters
 from apps.competition.services.season_repair import repair
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_lineups import lineup
@@ -143,3 +144,100 @@ def test_multiple_variant_counts_are_flagged_instead_of_summed(season: Season) -
         "staff": 0,
         "is_estimate": True,
     }
+
+
+@pytest.mark.django_db
+def test_shared_private_sentinel_counts_each_roster_row(season: Season) -> None:
+    """Show every anonymous player/staff row despite KNKV's shared PRIVATE ID."""
+    importer, outdoor, indoor = setup_variants(season)
+    repair(season, season.start_date.year)
+    anonymous = person("PRIVATE", "PRIVATE")
+    staff = {**anonymous, "TeamPersonFunction": {"RoleId": "COACHING_STAFF"}}
+    known_private = person("REAL-HIDDEN-ID", "PRIVATE")
+    importer.apply(
+        "team_roster",
+        "OUT",
+        {
+            "TeamPersonOverview": [
+                anonymous,
+                anonymous,
+                anonymous,
+                staff,
+                staff,
+                known_private,
+                known_private,
+                {**anonymous, "TeamPerson": False},
+            ]
+        },
+    )
+    outdoor.refresh_from_db()
+    indoor.refresh_from_db()
+    assert outdoor.private_roster_counts == {"players": 4, "staff": 2}
+    assert not Player.all_objects.exists()
+    url = f"/api/team/teams/{outdoor.local_team_data.team_id}/overview/"
+    response = APIClient().get(url, {"season": str(season.pk)}).data
+    assert response["private_roster"] == {
+        "players": 4,
+        "staff": 2,
+        "is_estimate": False,
+    }
+    assert response["meta"]["roster_count"] == response["private_roster"]["players"]
+    assert (
+        APIClient()
+        .get(url, {"season": str(indoor.local_team_data.season_id)})
+        .data["private_roster"]["players"]
+        == 0
+    )
+
+
+@pytest.mark.django_db
+def test_shared_private_sentinel_counts_each_match_side(season: Season) -> None:
+    """Never collapse anonymous selections into one person or across sides."""
+    importer = Importer(season, timezone.now())
+    importer.match(match_payload(), result=True)
+    publish_catalogue()
+    data = lineup()
+    anonymous = person("PRIVATE", "PRIVATE")
+    data["HomeTeamPerson"] = [anonymous, anonymous, anonymous]
+    data["AwayTeamPerson"] = [anonymous, anonymous]
+    importer.apply("match_lineup", "M1", data)
+    assert Match.objects.get().private_lineup_counts == {
+        "home": {"players": 3, "staff": 0},
+        "away": {"players": 2, "staff": 0},
+    }
+    assert not Player.all_objects.exists()
+
+
+@pytest.mark.django_db
+def test_targeted_private_refresh_preserves_checkpoints_and_retries(
+    season: Season,
+) -> None:
+    """Refetch successful private snapshots once, preserving failed and public feeds."""
+    _, outdoor, indoor = setup_variants(season)
+    Team.objects.filter(pk__in=[outdoor.pk, indoor.pk]).update(
+        private_roster_counts={"players": 1, "staff": 0}
+    )
+    queue_rosters(season)
+    now = timezone.now()
+    SyncResource.objects.filter(kind="team_roster").update(fetched_at=now, etag="old")
+    SyncResource.objects.filter(kind="team_roster", source_id="IN").update(failures=6)
+    public = SyncResource.objects.create(
+        season=season,
+        kind="team_roster",
+        source_id="PUBLIC",
+        fetched_at=now,
+        etag="keep",
+        next_sync_at=now + timedelta(days=7),
+    )
+    assert queue_rosters(season, refresh_private=True) == 1
+    refreshed = SyncResource.objects.get(kind="team_roster", source_id="OUT")
+    assert refreshed.fetched_at is None
+    assert not refreshed.etag
+    failed = SyncResource.objects.get(kind="team_roster", source_id="IN")
+    max_failures = 6
+    assert failed.failures == max_failures
+    assert failed.fetched_at == now
+    public.refresh_from_db()
+    assert public.fetched_at == now
+    assert public.etag == "keep"
+    assert queue_rosters(season, refresh_private=True) == 0
