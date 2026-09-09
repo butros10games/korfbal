@@ -137,3 +137,7 @@ misleading provider 500/603 errors.
 - Sportlink `EventTimeResolution=NONE` can still accompany minute-based Duration and
   MatchPeriod.PlayTime. Accept the observed NONE contract only when validated period
   minutes sum to Duration; do not confuse event timestamp precision with match length.
+
+- Drain Sportlink metadata from a due-component queue; do not rebuild the match
+  polling graph for each component. During catch-up, preserve due result/schedule
+  priority and periodically recheck it without scanning the entire metadata backlog.

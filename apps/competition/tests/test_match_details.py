@@ -1,6 +1,7 @@
 """Captured endpoint contracts and resumable metadata backfills with synthetic data."""
 
 from datetime import timedelta
+from http import HTTPStatus
 from io import StringIO
 import json
 from pathlib import Path
@@ -21,8 +22,8 @@ from apps.competition.services.match_details import (
     preview_details,
     queue_missing_details,
 )
-from apps.competition.services.polling import PollPlanner
-from apps.competition.services.sync import backfill_spacing
+from apps.competition.services.polling import MetadataPlanner, PollJob, PollPlanner
+from apps.competition.services.sync import backfill_spacing, sync_details
 from apps.competition.services.traffic import TrafficGate
 from apps.competition.tests.test_feed_coverage import seed
 from apps.competition.tests.test_importer import match_payload
@@ -260,3 +261,139 @@ def test_none_event_resolution_requires_consistent_period_minutes(
         with pytest.raises(ValueError, match="Missing or unsupported"):
             Importer(season, now).apply("match_timing", "M1", payload)
         assert Match.objects.get().playing_time_observed_at is None
+
+
+@pytest.mark.django_db
+def test_metadata_queue_filters_once_and_selects_without_queries(
+    season: Season,
+) -> None:
+    """Completed, backed-off, exhausted and unknown components never enter the batch."""
+    seed(season, 4)
+    now = timezone.now()
+    Match.objects.update(facility_observed_at=None)
+    SyncResource.objects.filter(kind="match_facility").update(next_sync_at=now)
+    SyncResource.objects.filter(kind="match_facility", source_id="M1").update(
+        failures=1, next_sync_at=now + timedelta(hours=1)
+    )
+    SyncResource.objects.filter(kind="match_facility", source_id="M2").update(
+        failures=10
+    )
+    Match.objects.filter(external_id="M3").update(facility_observed_at=now)
+    SyncResource.objects.create(
+        season=season, kind="match_facility", source_id="missing", next_sync_at=now
+    )
+    with CaptureQueriesContext(connection) as queries:
+        planner = MetadataPlanner(season, now)
+    assert len(queries) == 1
+    with CaptureQueriesContext(connection) as selections:
+        job = planner.next_job()
+        assert job is not None
+        assert (job.resource.kind, job.resource.source_id) == ("match_facility", "M0")
+        planner.completed(job, checked=True)
+        assert planner.next_job() is None
+        assert planner.result_metrics()["results_observed"] == 0
+    assert not selections
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", [200, 429])
+def test_details_run_never_builds_match_planner(season: Season, status: int) -> None:
+    """The fast path retains shared quota/cooldown accounting and durable resume."""
+    seed(season, 3)
+    Match.objects.update(facility_observed_at=None)
+    SyncResource.objects.filter(kind="match_facility").update(
+        next_sync_at=timezone.now()
+    )
+    client = Mock()
+
+    def fetch(resource: SyncResource, gate: TrafficGate) -> FetchResult:
+        gate.before_request()
+        return FetchResult(status, details(resource.kind), retry_after=120)
+
+    client.fetch.side_effect = fetch
+    with (
+        patch("apps.competition.services.sync.PollPlanner", side_effect=AssertionError),
+        patch("apps.competition.services.sync.backfill_spacing", return_value=0),
+    ):
+        summary = sync_details(season, lambda: client, budget=3)
+    expected_requests = 3 if status == HTTPStatus.OK else 1
+    assert summary["http_requests"] == expected_requests
+    assert summary["updated"] == (3 if status == HTTPStatus.OK else 0)
+    assert summary["failed"] == (0 if status == HTTPStatus.OK else 1)
+    client.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_regular_sync_defers_audits_and_rechecks_due_work(season: Season) -> None:
+    """Preempt metadata when an upcoming schedule check becomes due."""
+    seed(season, 4)
+    now = timezone.now()
+    Match.objects.update(
+        starts_at=now + timedelta(hours=1),
+        schedule_checked_at=now - timedelta(minutes=15) + timedelta(seconds=30),
+        facility_observed_at=None,
+    )
+    SyncResource.objects.filter(kind="match_facility").update(next_sync_at=now)
+    SyncResource.objects.filter(kind="clubs").update(next_sync_at=now)
+    SyncResource.objects.filter(kind="club_program").update(
+        fetched_at=now - timedelta(hours=1)
+    )
+    planner = PollPlanner(season, now)
+    with patch("apps.competition.services.polling.timezone.now", return_value=now):
+        job = planner.next_job()
+        assert job is not None
+        assert job.resource.kind == "match_facility"
+        # The second selection does not rebuild the result/schedule candidates.
+        with patch.object(planner, "candidate_jobs", side_effect=AssertionError):
+            job = planner.next_job()
+            assert job is not None
+            assert job.resource.kind == "match_facility"
+    with patch(
+        "apps.competition.services.polling.timezone.now",
+        return_value=now + timedelta(seconds=31),
+    ):
+        job = planner.next_job()
+    assert job is not None
+    assert job.resource.kind == "club_program"
+
+
+@pytest.mark.django_db
+def test_urgent_results_keep_discovery_slot_during_catchup(season: Season) -> None:
+    """The fifth selection must not spend urgent-result capacity on a routine audit."""
+    seed(season, 3)
+    now = timezone.now()
+    Match.objects.update(facility_observed_at=None)
+    SyncResource.objects.filter(kind="match_facility").update(next_sync_at=now)
+    SyncResource.objects.filter(kind="clubs").update(
+        next_sync_at=now - timedelta(days=1)
+    )
+    planner = PollPlanner(season, now)
+    planner.attempted.update({-1, -2, -3, -4})
+    job = planner.next_job()
+    assert job is not None
+    assert job.resource.kind in {"pool_results", "club_results"}
+    assert job.urgent_matches
+
+
+@pytest.mark.django_db
+def test_regular_sync_skips_newly_observed_metadata_and_restores_audits(
+    season: Season,
+) -> None:
+    """A lineup can satisfy a queued component; draining it restores routine sync."""
+    seed(season, 1)
+    now = timezone.now()
+    Match.objects.update(
+        starts_at=now + timedelta(days=3), playing_time_observed_at=None
+    )
+    SyncResource.objects.filter(kind="match_timing").update(next_sync_at=now)
+    SyncResource.objects.filter(kind="clubs").update(next_sync_at=now)
+    planner = PollPlanner(season, now)
+    Match.objects.update(playing_time_observed_at=now)
+    lineup = SyncResource(
+        season=season, kind="match_lineup", source_id="M0", next_sync_at=now
+    )
+    planner.completed(PollJob(lineup, set(), 2), checked=True)
+    job = planner.next_job()
+    assert job is not None
+    assert job.resource.kind == "clubs"
+    assert not planner.metadata.jobs

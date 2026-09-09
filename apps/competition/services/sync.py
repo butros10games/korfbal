@@ -26,6 +26,7 @@ from apps.competition.models import Match, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.match_details import DETAIL_FIELDS
 from apps.competition.services.polling import (
+    MetadataPlanner,
     PollJob,
     PollPlanner,
     mark_checked,
@@ -274,13 +275,11 @@ def _sync(
         assert client is not None
         if not options.details_only:
             enqueue(season, "clubs")
-        planner = PollPlanner(season, timezone.now())
-        if options.details_only:
-            planner.resources = {
-                key: resource
-                for key, resource in planner.resources.items()
-                if resource.kind in DETAIL_FIELDS
-            }
+        planner = (
+            MetadataPlanner(season, timezone.now())
+            if options.details_only
+            else PollPlanner(season, timezone.now())
+        )
         gate = TrafficGate(
             budget,
             owner,
@@ -313,19 +312,18 @@ def _sync(
     return summary
 
 
-def backfill_spacing(planner: PollPlanner) -> int:
+def backfill_spacing(planner: PollPlanner | MetadataPlanner) -> int:
     """Boost only batches with eligible metadata; restore normal spacing afterward."""
     normal = settings.SPORTLINK_REQUEST_SPACING
     boost = settings.SPORTLINK_BACKFILL_REQUEST_SPACING
-    if boost is not None and any(
-        job.resource.kind in DETAIL_FIELDS for job in planner.candidate_jobs()
-    ):
+    metadata = planner.metadata if isinstance(planner, PollPlanner) else planner
+    if boost is not None and metadata.jobs:
         return min(normal, boost)
     return normal
 
 
 def _drain(
-    planner: PollPlanner,
+    planner: PollPlanner | MetadataPlanner,
     client: CompetitionClient,
     gate: TrafficGate,
     budget: int | None,

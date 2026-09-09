@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -11,7 +12,7 @@ from django.utils import timezone
 
 from apps.competition.domain.timing import expected_finish
 from apps.competition.models import Match, Pool, SyncResource
-from apps.competition.services.match_details import DETAIL_FIELDS
+from apps.competition.services.match_details import DETAIL_FIELDS, source_matches
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
 
@@ -106,6 +107,59 @@ class PollJob:
     urgent_matches: set[int] = field(default_factory=set)
 
 
+class MetadataPlanner:
+    """Drain a due metadata snapshot without loading the match polling graph."""
+
+    def __init__(self, season: Season, now: datetime) -> None:
+        """Filter missing components in SQL and order the queue once per run."""
+        missing = Q(pk__in=[])
+        for kind, stamp in DETAIL_FIELDS.items():
+            missing |= Q(
+                kind=kind,
+                source_id__in=source_matches(season)
+                .filter(**{stamp + "__isnull": True})
+                .values("external_id"),
+            )
+        self.jobs = deque(
+            PollJob(resource, set(), 2)
+            for resource in SyncResource.objects
+            .filter(
+                missing,
+                season=season,
+                failures__lt=MAX_FEED_FAILURES,
+                next_sync_at__lte=now,
+            )
+            .select_related("season")
+            .order_by("next_sync_at", "pk")
+        )
+        self.checked: set[int] = set()
+        self.schedule_checked: set[int] = set()
+
+    def candidate_jobs(self) -> list[PollJob]:
+        """Expose remaining work for previews and budget reporting."""
+        return list(self.jobs)
+
+    def next_job(self) -> PollJob | None:
+        """Select the next component in constant time without database reads."""
+        return self.jobs.popleft() if self.jobs else None
+
+    def completed(self, job: PollJob, *, checked: bool) -> None:
+        """Checkpoints already persist completion; no match graph needs refreshing."""
+
+    def result_metrics(self) -> dict[str, int]:
+        """Metadata endpoints do not observe scores or teach reporting delays."""
+        return dict.fromkeys(
+            (
+                "reporting_samples_added",
+                "results_observed",
+                "new_final_results",
+                "result_delay_seconds_total",
+                "result_delay_seconds_max",
+            ),
+            0,
+        )
+
+
 class PollPlanner:
     """Plan a batch from one local snapshot and coalesce overlapping result feeds.
 
@@ -123,11 +177,12 @@ class PollPlanner:
             (resource.kind, resource.source_id): resource
             for resource in SyncResource.objects
             .filter(season=season, failures__lt=MAX_FEED_FAILURES)
-            .exclude(
-                kind__in=DETAIL_FIELDS, fetched_at__isnull=False, next_sync_at__gt=now
-            )
+            .exclude(kind__in=DETAIL_FIELDS)
             .select_related("season")
         }
+        self.metadata = MetadataPlanner(season, now)
+        self.metadata_only_until = now
+        self.metadata_changed: set[int] = set()
         self.rows = list(Match.objects.filter(season=season).values(*MATCH_FIELDS))
         pools = Pool.objects.filter(season=season).values(
             "id", "external_id", "results_filtered"
@@ -249,7 +304,7 @@ class PollPlanner:
                     job.priority = min(job.priority, 1)
                     job.schedule_matches.add(row["id"])
 
-    def candidate_jobs(self) -> list[PollJob]:
+    def candidate_jobs(self, *, include_metadata: bool = True) -> list[PollJob]:
         """Collect eligible feeds in one pass without selecting or marking work."""
         jobs = {
             resource.pk: PollJob(
@@ -274,12 +329,30 @@ class PollPlanner:
                 job.priority = min(job.priority, 0 if recent_pending else 1)
                 if recent_pending:
                     job.urgent_matches.add(row["id"])
-        return list(jobs.values())
+        return list(jobs.values()) + (
+            [job for job in self.metadata.jobs if self._available(job.resource)]
+            if include_metadata
+            else []
+        )
 
     def next_job(self) -> PollJob | None:
         """Prefer shared checks while reserving periodic slots for discovery."""
         self.now = max(self.now, timezone.now())
-        jobs = self.candidate_jobs()
+        catching_up = bool(self.metadata.jobs)
+        if catching_up and self.now < self.metadata_only_until:
+            return self._next_metadata()
+        if self.metadata_changed:
+            self._refresh_matches(self.metadata_changed)
+            self.metadata_changed.clear()
+            self._apply_class_durations()
+        jobs = self.candidate_jobs(include_metadata=False)
+        if catching_up:
+            # Due results and schedule checks keep priority, including the slots
+            # otherwise reserved for routine discovery/audits.
+            jobs = [job for job in jobs if job.matches or job.schedule_matches]
+            if not jobs:
+                self.metadata_only_until = self.now + timedelta(seconds=30)
+                return self._next_metadata()
         if not jobs:
             return None
         # Reserve one in five selections for discovery or overdue audits.
@@ -294,6 +367,7 @@ class PollPlanner:
             if len(self.attempted) % DISCOVERY_SLOT_INTERVAL
             == DISCOVERY_SLOT_INTERVAL - 1
             and bootstrap
+            and not catching_up
             else jobs
         )
         job = min(
@@ -311,6 +385,15 @@ class PollPlanner:
         )
         self.attempted.add(job.resource.pk)
         return job
+
+    def _next_metadata(self) -> PollJob | None:
+        """Skip components observed by another feed since the queue was loaded."""
+        while (job := self.metadata.next_job()) is not None:
+            if self._available(job.resource):
+                self.attempted.add(job.resource.pk)
+                return job
+        self.metadata_only_until = self.now
+        return self.next_job()
 
     def _likely_coverage(self, job: PollJob, candidates: set[int]) -> set[int]:
         """Use recent membership to rank feeds, never to remove due work.
@@ -411,6 +494,15 @@ class PollPlanner:
 
     def completed(self, job: PollJob, *, checked: bool) -> None:
         """Avoid opponent-feed duplicates within the batch after a successful check."""
+        if job.resource.kind in DETAIL_FIELDS:
+            if checked and (row := self.current_by_source.get(job.resource.source_id)):
+                self.metadata_changed.add(row["id"])
+            return
+        self.metadata_only_until = self.now
+        self._completed_feed(job, checked=checked)
+
+    def _completed_feed(self, job: PollJob, *, checked: bool) -> None:
+        """Refresh only observed feed membership before planning overlapping checks."""
         if job.resource.kind == "pool_results" and not checked:
             for pool in self.pools.values():
                 if pool["external_id"] == job.resource.source_id:
@@ -430,13 +522,9 @@ class PollPlanner:
             self.checked.update(job.covered_matches)
         if checked and job.covered_matches:
             self._refresh_matches(job.covered_matches)
-        if checked and job.resource.kind in {*DETAIL_FIELDS, "match_lineup"}:
-            ids = {
-                row["id"]
-                for row in self.rows
-                if row["external_id"] == job.resource.source_id
-            }
-            self._refresh_matches(ids)
+        if checked and job.resource.kind == "match_lineup":
+            row = self.current_by_source.get(job.resource.source_id)
+            self._refresh_matches({row["id"]} if row else set())
             self._apply_class_durations()
 
     def _refresh_matches(self, match_ids: set[int]) -> None:
