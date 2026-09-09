@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.loader import MigrationLoader
+from django.test import override_settings
 from django.utils import timezone
 import pytest
 
@@ -15,6 +17,20 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+
+
+@override_settings(MIGRATION_MODULES={})
+def test_migration_graph_has_no_conflicting_leaves() -> None:
+    """Deployment must resolve independent migration branches before migrating."""
+    loader = MigrationLoader(None)
+
+    assert loader.detect_conflicts() == {}
+    state = loader.project_state()
+    assert "source_revision" in state.models["game_tracker", "playermatchimpact"].fields
+    assert (
+        "source_revision" in state.models["game_tracker", "playermatchminutes"].fields
+    )
+    assert ("game_tracker", "trackeraccesslink") in state.models
 
 
 @pytest.mark.django_db(transaction=True)
