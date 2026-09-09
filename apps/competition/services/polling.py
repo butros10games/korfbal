@@ -13,18 +13,20 @@ from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
 
 
-EXPECTED_DURATION = timedelta(minutes=90)
-RESULT_INTERVAL = timedelta(minutes=15)
+EXPECTED_DURATION = timedelta(minutes=75)
+RESULT_INTERVAL = timedelta(minutes=5)
 RECENT_RESULT_WINDOW = timedelta(hours=3)
 PENDING_HOURLY_WINDOW = timedelta(hours=48)
 CORRECTION_DAILY_WINDOW = timedelta(days=7)
 CORRECTION_WEEKLY_WINDOW = timedelta(days=28)
 DISCOVERY_SLOT_INTERVAL = 5
-MINIMUM_FEED_INTERVAL = timedelta(minutes=15)
+MINIMUM_FEED_INTERVAL = RESULT_INTERVAL
+UPCOMING_SCHEDULE_WINDOW = timedelta(days=2)
+UPCOMING_SCHEDULE_INTERVAL = timedelta(hours=1)
 
 
 def next_result_check(row: dict[str, Any], now: datetime) -> datetime:
-    """Return the next useful check; kickoff plus 90 minutes is a heuristic."""
+    """Return the next useful check; kickoff plus 75 minutes is a heuristic."""
     finish = row["starts_at"] + EXPECTED_DURATION
     checked = row["results_checked_at"] or row["result_observed_at"]
     if row["status"] in {"CANCELLED", "WITHDRAWN", "POSTPONED"}:
@@ -140,8 +142,34 @@ class PollPlanner:
             if (resource := self.resources.get(("club_results", club))) is not None
         ]
 
-    def next_job(self) -> PollJob | None:
-        """Prefer shared checks while reserving periodic slots for discovery."""
+    def _add_program_jobs(self, row: dict[str, Any], jobs: dict[int, PollJob]) -> None:
+        """Refresh shared schedules hourly around upcoming/unresolved fixtures."""
+        if (
+            row["status"] not in {"FINAL", "WITHDRAWN", "CANCELLED"}
+            and row["home_score"] is None
+            and row["away_score"] is None
+            and self.now - timedelta(days=1)
+            <= row["starts_at"]
+            <= self.now + UPCOMING_SCHEDULE_WINDOW
+        ):
+            for club in {
+                row["home_team__club__external_id"],
+                row["away_team__club__external_id"],
+            }:
+                program = self.resources.get(("club_program", club))
+                if (
+                    program
+                    and self._available(program)
+                    and (
+                        program.fetched_at is None
+                        or program.fetched_at + UPCOMING_SCHEDULE_INTERVAL <= self.now
+                    )
+                ):
+                    job = jobs.setdefault(program.pk, PollJob(program, set(), 1))
+                    job.priority = min(job.priority, 1)
+
+    def candidate_jobs(self) -> list[PollJob]:
+        """Collect eligible feeds in one pass without selecting or marking work."""
         jobs = {
             resource.pk: PollJob(
                 resource, set(), 2 if resource.fetched_at is None else 3
@@ -150,6 +178,7 @@ class PollPlanner:
             if self._available(resource) and resource.next_sync_at <= self.now
         }
         for row in self.rows:
+            self._add_program_jobs(row, jobs)
             if row["id"] in self.checked or next_result_check(row, self.now) > self.now:
                 continue
             for resource in self._owners(row):
@@ -162,16 +191,21 @@ class PollPlanner:
                     and self.now - row["starts_at"] <= PENDING_HOURLY_WINDOW
                 )
                 job.priority = min(job.priority, 0 if recent_pending else 1)
+        return list(jobs.values())
+
+    def next_job(self) -> PollJob | None:
+        """Prefer shared checks while reserving periodic slots for discovery."""
+        jobs = self.candidate_jobs()
         if not jobs:
             return None
         # Reserve one in five selections for first-time collection discovery.
-        bootstrap = [job for job in jobs.values() if job.resource.fetched_at is None]
+        bootstrap = [job for job in jobs if job.resource.fetched_at is None]
         candidates = (
             bootstrap
             if len(self.attempted) % DISCOVERY_SLOT_INTERVAL
             == DISCOVERY_SLOT_INTERVAL - 1
             and bootstrap
-            else list(jobs.values())
+            else jobs
         )
         job = min(
             candidates,
@@ -184,6 +218,50 @@ class PollPlanner:
         )
         self.attempted.add(job.resource.pk)
         return job
+
+    def result_metrics(self) -> dict[str, int]:
+        """Measure observed coverage and first final-score delay for this batch."""
+        previous_finals = {
+            row["id"]
+            for row in self.rows
+            if row["status"] == "FINAL"
+            and row["home_score"] is not None
+            and row["away_score"] is not None
+        }
+        observed = list(
+            Match.objects.filter(
+                season=self.season,
+                result_observed_at__gte=self.now,
+            ).values(
+                "id",
+                "status",
+                "home_score",
+                "away_score",
+                "starts_at",
+                "result_observed_at",
+            )
+        )
+        delays = [
+            max(
+                0,
+                int(
+                    (
+                        row["result_observed_at"] - row["starts_at"] - EXPECTED_DURATION
+                    ).total_seconds()
+                ),
+            )
+            for row in observed
+            if row["id"] not in previous_finals
+            and row["status"] == "FINAL"
+            and row["home_score"] is not None
+            and row["away_score"] is not None
+        ]
+        return {
+            "results_observed": len(observed),
+            "new_final_results": len(delays),
+            "result_delay_seconds_total": sum(delays),
+            "result_delay_seconds_max": max(delays, default=0),
+        }
 
     def completed(self, job: PollJob, *, checked: bool) -> None:
         """Avoid opponent-feed duplicates within the batch after a successful check."""

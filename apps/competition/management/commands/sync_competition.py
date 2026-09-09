@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
 from apps.competition.composition import competition_client
-from apps.competition.services.sync import sync
+from apps.competition.services.sync import preview_sync, sync
 from apps.schedule.models import Season
 
 
@@ -38,6 +38,11 @@ class Command(BaseCommand):
             help="File containing only the access token (mode 600)",
         )
         parser.add_argument("--max-requests", type=int, default=100)
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Estimate eligible feed requests without credentials or HTTP",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Sync a bounded batch without exposing credentials.
@@ -58,6 +63,13 @@ class Command(BaseCommand):
                 "Live feeds only support the current season; "
                 "historical pagination is unverified"
             )
+        if options["dry_run"]:
+            try:
+                preview = preview_sync(season, budget=int(str(options["max_requests"])))
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+            self.stdout.write(json.dumps(preview, sort_keys=True))
+            return
         client = self._client(options)
         try:
             summary = sync(season, client, budget=int(str(options["max_requests"])))

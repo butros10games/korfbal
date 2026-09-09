@@ -74,6 +74,8 @@ services:
         environment:
             DJANGO_ENV: production
             DEBUG: 'false'
+        volumes:
+            - sportlink-sessions:/run/sportlink
         networks:
             - kwt-net
 
@@ -93,3 +95,6 @@ services:
 networks:
     kwt-net:
         driver: bridge
+
+volumes:
+    sportlink-sessions:

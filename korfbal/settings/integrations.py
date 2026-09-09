@@ -50,8 +50,8 @@ PROMETHEUS_METRIC_NAMESPACE = "kwt"
 
 
 # Historical and current competition imports share one durable provider budget.
-SPORTLINK_HOURLY_LIMIT = max(1, min(3600, int(env("SPORTLINK_HOURLY_LIMIT", "120"))))
-SPORTLINK_DAILY_LIMIT = max(1, min(86400, int(env("SPORTLINK_DAILY_LIMIT", "1000"))))
+SPORTLINK_HOURLY_LIMIT = max(0, int(env("SPORTLINK_HOURLY_LIMIT", "0")))
+SPORTLINK_DAILY_LIMIT = max(0, int(env("SPORTLINK_DAILY_LIMIT", "0")))
 SPORTLINK_REQUEST_SPACING = max(1, int(env("SPORTLINK_REQUEST_SPACING", "5")))
 
 SPORTLINK_IMPORT_ROSTERS = env("SPORTLINK_IMPORT_ROSTERS", "false").lower() == "true"
@@ -60,3 +60,16 @@ SPORTLINK_IMPORT_ROSTERS = env("SPORTLINK_IMPORT_ROSTERS", "false").lower() == "
 SPORTLINK_SPLIT_SEASONS = env("SPORTLINK_SPLIT_SEASONS", "false").lower() == "true"
 
 SPORTLINK_IMPORT_LINEUPS = env("SPORTLINK_IMPORT_LINEUPS", "false").lower() == "true"
+
+# One automatic batch every five minutes; all importers share the limits above.
+SPORTLINK_SYNC_ENABLED = env("SPORTLINK_SYNC_ENABLED", "false").lower() == "true"
+SPORTLINK_SYNC_SEASON = env("SPORTLINK_SYNC_SEASON", "")
+SPORTLINK_SYNC_SESSION_FILE = env("SPORTLINK_SYNC_SESSION_FILE", "")
+SPORTLINK_SYNC_MAX_REQUESTS = max(
+    0, min(10000, int(env("SPORTLINK_SYNC_MAX_REQUESTS", "0")))
+)
+
+# Leave time before the next five-minute tick; requests in progress may finish.
+SPORTLINK_SYNC_MAX_SECONDS = max(
+    1, min(240, int(env("SPORTLINK_SYNC_MAX_SECONDS", "240")))
+)

@@ -119,3 +119,11 @@ misleading provider 500/603 errors.
   keep fitting offline and coefficient serving free of database queries. Serve the
   same features used in fitting and evaluation; preseason KNKV points and
   result-updated Elo ratings are not interchangeable inputs.
+
+- Sportlink result feeds also contain unscored scheduled/postponed fixtures. Do not
+  treat `result_observed_at` alone as a final result when accepting newer program
+  rescheduling; preserve actual scores and finished statuses.
+
+- Sportlink hourly/daily quotas are operator choices, not verified provider limits.
+  Keep zero-as-disabled semantics explicit and honor provider Retry-After without
+  silently replacing configured quotas after a rate-limit observation.

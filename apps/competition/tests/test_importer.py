@@ -261,3 +261,63 @@ def test_catalogue_changes_preserve_identity_and_nonblank_pool_metadata(
     assert updated_pool.name == "Renamed pool"
     assert updated_pool.class_name == pool.class_name
     assert updated_pool.sport == pool.sport
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["SCHEDULED", "POSTPONED", "CANCELLED"])
+def test_program_reschedules_unscored_result_observation(
+    season: Season, status: str
+) -> None:
+    """A result-feed placeholder must not freeze later program changes."""
+    now = timezone.now()
+    row = match_payload()
+    row.update(Status=status, HomeResult=None, AwayResult=None)
+    Importer(season, now).apply("club_results", "CT1", {"MatchResult": [row]})
+    original = Match.objects.get()
+    row.update(Status="SCHEDULED", MatchDateTime="2026-09-12T15:00:00+0200")
+    program = {"ProgramItemMatchClub": [{"Match": row}]}
+    Importer(season, now - timedelta(seconds=1)).apply("club_program", "CT1", program)
+    assert Match.objects.get().starts_at == original.starts_at
+    Importer(season, now + timedelta(seconds=1)).apply("club_program", "CT1", program)
+    moved = Match.objects.get()
+    assert moved.starts_at.isoformat() == "2026-09-12T13:00:00+00:00"
+    assert moved.status == "SCHEDULED"
+    assert moved.home_score is None
+    assert moved.result_observed_at == original.result_observed_at
+    assert moved.revisions.count() == 1
+    Importer(season, now + timedelta(seconds=2)).apply("club_program", "CT1", program)
+    assert Match.objects.get().updated_at == moved.updated_at
+    row.update(Status="FINAL", HomeResult={"Score": 0}, AwayResult={"Score": 12})
+    Importer(season, now + timedelta(days=7)).apply(
+        "club_results", "CT1", {"MatchResult": [row]}
+    )
+    finished = Match.objects.get()
+    assert (finished.status, finished.home_score, finished.away_score) == (
+        "FINAL",
+        0,
+        12,
+    )
+    assert finished.starts_at == moved.starts_at
+    assert list(finished.revisions.values_list("status", flat=True)) == [
+        status,
+        "FINAL",
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("status", "score"), [("FINAL", None), ("SCHEDULED", 0)])
+def test_program_preserves_finished_or_scored_matches(
+    season: Season, status: str, score: int | None
+) -> None:
+    """Scoreless finals and partial scores also outrank program summaries."""
+    now = timezone.now()
+    row = match_payload()
+    row.update(Status=status, HomeResult={"Score": score}, AwayResult=None)
+    Importer(season, now).apply("club_results", "CT1", {"MatchResult": [row]})
+    original = Match.objects.get()
+    row.update(Status="SCHEDULED", MatchDateTime="2026-09-12T15:00:00+0200")
+    Importer(season, now + timedelta(seconds=1)).apply(
+        "club_program", "CT1", {"ProgramItemMatchClub": [{"Match": row}]}
+    )
+    assert Match.objects.get().starts_at == original.starts_at
+    assert Match.objects.get().updated_at == original.updated_at

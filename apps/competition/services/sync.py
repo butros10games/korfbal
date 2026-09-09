@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import timedelta
+import time
 import uuid
 
 from django.db import transaction
@@ -19,7 +21,13 @@ from apps.competition.application.ports import (
 )
 from apps.competition.models import Match, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
-from apps.competition.services.polling import PollJob, PollPlanner, mark_checked
+from apps.competition.services.polling import (
+    EXPECTED_DURATION,
+    PollJob,
+    PollPlanner,
+    mark_checked,
+    next_result_check,
+)
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.resources import ENDPOINTS, MAX_FEED_FAILURES
 from apps.competition.services.traffic import TrafficGate, observe_rate_limit
@@ -33,6 +41,63 @@ HTTP_NOT_MODIFIED = 304
 HTTP_RATE_LIMIT = 429
 HTTP_FORBIDDEN = 403
 AUTH_ERRORS = {401, 403}
+
+
+class SyncUnavailableError(ValueError):
+    """Another importer owns the provider lease, or a cooldown is active."""
+
+
+def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, object]:
+    """Count eligible feeds without HTTP, credentials, leases or checkpoint writes.
+
+    This snapshot is conservative: overlapping successful responses can remove
+    requests, while failures, OAuth and newly discovered resources are unknown.
+
+    Raises:
+        ValueError: The request budget is invalid.
+
+    """
+    if budget is not None and not 1 <= budget <= MAX_REQUESTS:
+        raise ValueError("Request budget must be between 1 and 10000")
+    planner = PollPlanner(season, timezone.now())
+    counts: dict[str, int] = {}
+    if ("clubs", "") not in planner.resources and not SyncResource.objects.filter(
+        season=season, kind="clubs"
+    ).exists():
+        counts["clubs"] = 1
+    for job in planner.candidate_jobs():
+        kind = job.resource.kind
+        counts[kind] = counts.get(kind, 0) + 1
+    total = sum(counts.values())
+    overdue = [
+        next_result_check(row, planner.now)
+        for row in planner.rows
+        if row["starts_at"] + EXPECTED_DURATION <= planner.now
+        and row["status"] not in {"CANCELLED", "WITHDRAWN", "POSTPONED"}
+        and not (
+            row["status"] == "FINAL"
+            and row["home_score"] is not None
+            and row["away_score"] is not None
+        )
+        and next_result_check(row, planner.now) <= planner.now
+    ]
+    return {
+        "dry_run": True,
+        "candidate_feed_requests": total,
+        "batch_feed_requests_upper_bound": min(budget, total) if budget else total,
+        "by_kind": counts,
+        "overdue_pending_matches": len(overdue),
+        "oldest_result_check_overdue_seconds": max(
+            (int((planner.now - due).total_seconds()) for due in overdue),
+            default=0,
+        ),
+        "max_http_requests": budget,
+        "note": (
+            "Local snapshot before response deduplication; excludes OAuth, retries "
+            "and newly discovered feeds; assumes no failure fallback. "
+            "Shared quotas/cooldowns may defer work."
+        ),
+    }
 
 
 def checkpoint(resource: SyncResource, result: FetchResult, job: PollJob) -> bool:
@@ -78,16 +143,27 @@ def record_failure(resource: SyncResource, code: str, delay: int = 60) -> None:
 
 
 def sync(
-    season: Season, client: CompetitionClient, *, budget: int = 100
+    season: Season,
+    client: CompetitionClient | None = None,
+    *,
+    client_factory: Callable[[], CompetitionClient] | None = None,
+    budget: int | None = 100,
+    max_seconds: int | None = None,
 ) -> dict[str, int]:
     """Drain a bounded slice of due work; repeat the command to resume discovery.
 
     Raises:
-        ValueError: The budget is invalid or the provider lease is unavailable.
+        ValueError: A budget is invalid.
+        SyncUnavailableError: The provider lease is unavailable.
 
     """
-    if not 1 <= budget <= MAX_REQUESTS:
+    if budget is not None and not 1 <= budget <= MAX_REQUESTS:
         raise ValueError("Request budget must be between 1 and 10000")
+    if max_seconds is not None and max_seconds <= 0:
+        raise ValueError("Run duration must be positive")
+    if (client is None) == (client_factory is None):
+        raise ValueError("Provide exactly one client or client factory")
+    started = time.monotonic()
     now = timezone.now()
     owner = uuid.uuid4()
     lease, _ = SyncLease.objects.get_or_create(
@@ -97,7 +173,9 @@ def sync(
         owner=owner, expires_at=now + timedelta(seconds=LEASE_SECONDS)
     )
     if not claimed:
-        raise ValueError("Another import is running or provider cooldown is active")
+        raise SyncUnavailableError(
+            "Another import is running or provider cooldown is active"
+        )
     summary = {
         "requests": 0,
         "updated": 0,
@@ -106,36 +184,32 @@ def sync(
         "reauth_required": 0,
         "http_requests": 0,
         "deferred": 0,
+        "matches_checked": 0,
     }
     cooldown = 0
     try:
+        if client_factory is not None:
+            client = client_factory()
+        assert client is not None
         enqueue(season, "clubs")
         planner = PollPlanner(season, timezone.now())
-        gate = TrafficGate(budget, owner)
-        for _ in range(budget):
-            job = planner.next_job()
-            if job is None:
-                break
-            summary["requests"] += 1
-            try:
-                cooldown, checked = _fetch_one(job, client, summary, gate)
-            except RequestBudgetError as exc:
-                summary["deferred"] = 1
-                cooldown = max(
-                    0, int((exc.retry_at - timezone.now()).total_seconds()) + 1
-                )
-                break
-            planner.completed(job, checked=checked)
-            if cooldown:
-                break
-        summary["http_requests"] = gate.requests
+        gate = TrafficGate(
+            budget,
+            owner,
+            deadline=started + max_seconds if max_seconds else None,
+        )
+        cooldown = _drain(planner, client, gate, budget, summary)
         if summary["updated"]:
             publication = publish_catalogue(lease_owner=owner)
             summary["publication_blocked"] = len(publication["blocked"])
     finally:
-        SyncLease.objects.filter(pk=lease.pk, owner=owner).update(
-            owner=None, expires_at=timezone.now() + timedelta(seconds=cooldown)
-        )
+        try:
+            if client_factory is not None and client is not None:
+                client.close()
+        finally:
+            SyncLease.objects.filter(pk=lease.pk, owner=owner).update(
+                owner=None, expires_at=timezone.now() + timedelta(seconds=cooldown)
+            )
     summary["pending"] = (
         SyncResource.objects
         .filter(season=season, failures__lt=MAX_FEED_FAILURES)
@@ -145,7 +219,43 @@ def sync(
     summary["exhausted"] = SyncResource.objects.filter(
         season=season, failures__gte=MAX_FEED_FAILURES
     ).count()
+    summary["elapsed_ms"] = round((time.monotonic() - started) * 1000)
     return summary
+
+
+def _drain(
+    planner: PollPlanner,
+    client: CompetitionClient,
+    gate: TrafficGate,
+    budget: int | None,
+    summary: dict[str, int],
+) -> int:
+    """Fetch due shared feeds until the snapshot, worker window or quota is spent."""
+    cooldown = 0
+    while budget is None or summary["requests"] < budget:
+        job = planner.next_job()
+        if job is None:
+            break
+        summary["requests"] += 1
+        before_requests = gate.requests
+        try:
+            cooldown, checked = _fetch_one(job, client, summary, gate)
+        except RequestBudgetError as exc:
+            summary["deferred"] = 1
+            cooldown = max(0, int((exc.retry_at - timezone.now()).total_seconds()) + 1)
+            break
+        finally:
+            key = f"http_requests_{job.resource.kind}"
+            summary[key] = summary.get(key, 0) + gate.requests - before_requests
+        planner.completed(job, checked=checked)
+        if cooldown:
+            break
+    if budget is not None and gate.requests >= budget and planner.candidate_jobs():
+        summary["deferred"] = 1
+    summary["http_requests"] = gate.requests
+    summary["matches_checked"] = len(planner.checked)
+    summary.update(planner.result_metrics())
+    return cooldown
 
 
 def _fetch_one(

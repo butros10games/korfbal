@@ -146,27 +146,92 @@ run with `reauth_required`; sign in again and replace the session file to resume
 Keep credentials outside Git and avoid sharing one refresh session with other
 processes/devices because refresh-token rotation can invalidate older copies.
 
-Rerun the command to resume; a database lease prevents overlapping importers.
-Each batch plans from a local snapshot; newly discovered feeds enter the next
-run. No recurring scheduler is installed by this command: invoke it regularly
-(for example every 15 minutes) in the deployment scheduler to enable polling.
+Preview the current local request workload without credentials, HTTP, or checkpoint
+writes by adding `--dry-run` (omit `--session-file`). The JSON reports eligible
+feeds in `by_kind`, their total `candidate_feed_requests`, and the budget-capped
+`batch_feed_requests_upper_bound`. These are snapshot estimates before successful
+response deduplication; OAuth, retries, fallback after failures, and newly discovered
+feeds can change the actual workload. Shared quotas and cooldowns can defer it.
 
-All actual HTTP attempts, including OAuth and authentication retries, share a
-durable provider budget: by default at most 120 per hour, 1,000 per day, and five seconds
-between requests. `--max-requests` further bounds each run. Exhaustion defers work
-without marking a feed failed. The summary's `requests` counts selected resources;
-`http_requests` counts actual reserved wire attempts. ETags avoid unchanged bodies.
-Provider 401/403 and 429 stop the batch globally; numeric and HTTP-date Retry-After
-values are respected, including rate limits on token renewal.
+A schedule refresh costs one GET per due club program, covering all matches in that
+response. Result checks cost one GET per due healthy poule, with shared club-result
+fallback when poule coverage is unavailable. For example, twelve due matches in one
+healthy poule plus one due club program need two feed GETs, rather than twelve match
+GETs. Directory, team, roster, and standings discovery/audits add their own requests.
+A 304 still consumes a request; OAuth renewal and retries also consume the batch cap.
+Newer programs can reschedule unscored result-feed placeholders, including postponed
+matches; scored and finished records remain protected from scoreless summaries.
+
+The application's existing Celery Beat dispatches an automatic sync every five
+minutes. Enable it once with `SPORTLINK_SYNC_ENABLED=true`, set
+`SPORTLINK_SYNC_SEASON` to the active source season (for example `2026-2027`), and
+set `SPORTLINK_SYNC_SESSION_FILE` to the private OAuth JSON session. Automatic runs
+need the worker and Beat services running; they do not depend on page views or CLI
+invocations. The CLI remains available for manual imports and previews.
+
+The checked-in production Compose mounts the persistent `sportlink-sessions`
+volume at `/run/sportlink` in the worker. Provision `session.json` there with mode
+`600`, owned by the worker user (default UID/GID 1000), and make the directory
+writable by that user. OAuth rotation atomically replaces the file, so mount a
+writable directory rather than an individual read-only secret file. Custom
+production Compose installations need the equivalent persistent directory mount.
+Never commit the session. The scheduler defaults to disabled until configured and
+skips an expired source season; update the scope at season rollover.
+
+Automatic runs drain due shared feeds until the snapshot is complete or their
+worker window expires. `SPORTLINK_SYNC_MAX_SECONDS` defaults to 240 seconds (at
+most four minutes), leaving room before the next five-minute tick. HTTP already
+in progress and final publication may finish afterward. There is no default
+numeric cap on automatic requests and no two-feed maintenance allowance.
+`SPORTLINK_SYNC_MAX_REQUESTS=0` disables that optional cap; positive values up to
+10,000 impose an operator-selected cap. Remaining work resumes on a later tick.
+Recently ended matches across the whole catalogue retain priority; discovery and
+older corrections continue whenever due work and time permit.
+
+All import paths share a database lease and serial, durable request pacing.
+`SPORTLINK_REQUEST_SPACING` defaults to five seconds and is configurable down to
+one second. At five-second spacing, a four-minute window has room for roughly
+48 HTTP attempts before network and processing overhead; it may send zero when
+nothing is due. This is a throughput estimate, not a batch quota or a guarantee
+that the entire catalogue is refreshed every five minutes.
+
+`SPORTLINK_HOURLY_LIMIT=0` and `SPORTLINK_DAILY_LIMIT=0` disable optional operator
+quotas by default. Positive values remain enforced across automatic, manual and
+historical imports, including OAuth and retries. Existing deployments with explicit
+120/1,000 values retain those settings until the operator changes them. Those
+numbers are not established provider allowances. Provider HTTP 429 and OAuth
+cooldowns still stop the shared importer for `Retry-After`; a rate-limit observation
+does not silently impose different permanent hourly/daily quotas.
+
+Automatic sync acquires the provider lease before reading the latest rotated
+session and closes its client afterward. Overlapping ticks skip, and queued ticks
+expire after five minutes. Each batch plans from a local snapshot; newly discovered
+feeds enter the next run. Manual CLI imports still have an explicit `--max-requests`
+budget (default 100), and the credentials-free preview remains available.
+
+Task summaries include HTTP counts by feed kind, elapsed milliseconds, distinct
+matches checked, actual result observations, newly observed final results, and
+result-delay totals/maxima in seconds measured from kickoff +75 minutes. Delay is
+when this importer saw the score, not a claim about when the provider first
+published it. Already-final corrections are excluded from new-final delay metrics.
+The backlog reports eligible feeds by kind, overdue pending matches, and the oldest
+overdue result check. Each HTTP reservation logs its scheduled timestamp and shared
+hour/day counters, allowing daily volume and peak minute demand to be measured
+without credentials or match identifiers. Reservations are conservative: a worker
+interrupted after reserving capacity may send fewer actual requests. ETags save
+response bodies but still consume HTTP attempts.
 
 Club directories, team lists and poule assignments are refreshed weekly; fixture
 programs and poule standing audits daily; club result discovery audits weekly.
+For unscored fixtures in the next 48 hours (or unresolved in the previous 24 hours),
+club programs are eligible hourly to catch rescheduling. Failed feeds keep their
+retry deadline, and these program checks never advance result-check timestamps.
 Within a batch, actual results returned by one feed also satisfy score checks
 planned through another feed. This does not suppress a due standings/discovery
 audit or count missing rows in a filtered response as observed. First-time team
 assignment discovery remains necessary: one poule cannot prove all assignments.
-Known matches can request earlier shared result checks: starting 90 minutes after
-kickoff, pending results are checked every 15 minutes for three hours, hourly until
+Known matches can request earlier shared result checks: starting 75 minutes after
+kickoff, pending results are checked every five minutes for three hours, hourly until
 48 hours, daily thereafter, and weekly after 30 days. Completed results get daily
 correction checks for seven days, weekly until day 28 and monthly thereafter.
 These are priorities subject to the global budget and collection audit schedule,
@@ -177,7 +242,8 @@ the batch. `results_checked_at` distinguishes a scope check from an actual resul
 observation; absence never fabricates a score or deletes a fixture.
 
 All discovered feeds are queued once per season. National discovery takes multiple
-batches and can span multiple days under the conservative provider budget.
+batches; completion depends on catalogue size, pacing, provider responses and any
+operator-selected quotas.
 The source exposes currently published collections: historical pagination,
 withdrawn fixtures, unpublished poules and completeness beyond those collections
 are not established. An absent row does not delete existing history.
@@ -427,13 +493,13 @@ details are used to establish the poule link; numeric detail scores alone do not
 prove a match was played. Recorded result scores retain their regulation/extra-time
 value when a separate shootout score is present in parentheses.
 
-Default limits remain 120/hour, 1,000/day and five-second spacing. Configurable
-`SPORTLINK_HOURLY_LIMIT`, `SPORTLINK_DAILY_LIMIT` and `SPORTLINK_REQUEST_SPACING` are
-capped at 3,600/hour, 86,400/day and at least one second. An actual HTTP 429 (including
-OAuth) persists `TrafficState.rate_limited`, returning both import paths to at most
-the conservative defaults. Other failures get per-resource backoff and at most six
-attempts; they do not switch the global rate policy. Auth/access errors and missing
-historical resources require an explicit retry after the cause is resolved.
+Historical imports share the same configurable request spacing and optional
+hour/day quotas as live sync. Zero disables an operator quota; a provider HTTP 429
+(including OAuth) persists `TrafficState.rate_limited` for diagnostics and applies
+its cooldown without imposing hidden numeric ceilings. Historical commands retain
+explicit per-batch budgets. Other failures get per-resource backoff and at most six
+attempts. Auth/access errors and missing historical resources require an explicit
+retry after the cause is resolved.
 
 These workflows are tested with synthetic historical responses. An end-to-end live
 previous-season fetch remains unverified until an accessible historical seed or

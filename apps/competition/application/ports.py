@@ -58,6 +58,10 @@ class CompetitionClient(Protocol):
         """Fetch one known catalogue resource."""
         ...
 
+    def close(self) -> None:
+        """Release provider connections."""
+        ...
+
 
 class AuthenticationRequiredError(Exception):
     """Refresh credentials expired or were revoked; interactive sign-in is needed."""

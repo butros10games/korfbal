@@ -206,8 +206,18 @@ class Importer:
             defaults={**values, "status": data["Status"]},
         )
         self.discover_lineup(match)
-        # Fixture summaries lack scores and must never erase an observed result.
-        if not result and match.result_observed_at:
+        # A results-feed observation can still be an unplayed fixture. Allow
+        # newer programs to reschedule it, but preserve scored/finished results.
+        stale_program = (
+            match.result_observed_at is not None
+            and match.result_observed_at >= self.observed_at
+        )
+        protected_result = (
+            (match.status == "FINAL" and match.result_observed_at is not None)
+            or match.home_score is not None
+            or match.away_score is not None
+        )
+        if not result and (protected_result or stale_program):
             return
         if result:
             self._result(match, data, created=created, fixture_values=values)

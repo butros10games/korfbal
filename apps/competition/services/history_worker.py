@@ -267,10 +267,14 @@ class HistoryBatch:
 
     def drain(self, *, publish: bool, owner: uuid.UUID) -> None:
         """Limit CPU-only discoveries too; publication runs once after the batch."""
+        budget = self.gate.budget
+        assert (
+            budget is not None
+        )  # Historical imports always have an explicit batch cap.
         next_result_check = time.monotonic() + RESULT_PRIORITY_CHECK_SECONDS
-        for _ in range(self.gate.budget * 4):
+        for _ in range(budget * 4):
             include_results = time.monotonic() >= next_result_check
-            if self.gate.requests >= self.gate.budget or current_work_due(
+            if self.gate.requests >= budget or current_work_due(
                 include_results=include_results
             ):
                 break

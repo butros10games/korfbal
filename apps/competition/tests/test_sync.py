@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from io import StringIO
+import json
 from unittest.mock import Mock, patch
 
+from django.core.management import call_command
 from django.utils import timezone
 import pytest
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
 from apps.competition.application.ports import FetchResult
-from apps.competition.models import Club, SyncLease, SyncResource
-from apps.competition.services.importer import enqueue
-from apps.competition.services.sync import sync
-from apps.schedule.models import Season
+from apps.competition.models import Club, Match, Pool, SyncLease, SyncResource
+from apps.competition.services.importer import Importer, enqueue
+from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.sync import preview_sync, sync
+from apps.competition.services.traffic import TrafficGate
+from apps.competition.tests.test_importer import match_payload
+from apps.game_tracker.models import MatchData
+from apps.schedule.models import (
+    Match as AppMatch,
+    Season,
+)
 
 
 @pytest.fixture
@@ -101,3 +111,128 @@ def test_transport_uses_only_verified_get_and_etag(season: Season) -> None:
     assert client.session.headers["X-Navajo-Instance"] == "KNKV"
     assert get.call_args.args[0].endswith("/club/Clubs")
     client.close()
+
+
+@pytest.mark.django_db
+def test_request_preview_requires_no_credentials_or_writes(season: Season) -> None:
+    """An empty catalogue previews its bootstrap GET without creating a queue."""
+    output = StringIO()
+    with (
+        patch(
+            "apps.competition.management.commands.sync_competition.Command._client"
+        ) as client,
+        patch(
+            "apps.competition.management.commands.sync_competition.timezone.localdate",
+            return_value=date(2026, 9, 9),
+        ),
+    ):
+        call_command(
+            "sync_competition", season=season.name, dry_run=True, stdout=output
+        )
+    summary = json.loads(output.getvalue())
+    assert summary["by_kind"] == {"clubs": 1}
+    assert summary["candidate_feed_requests"] == 1
+    client.assert_not_called()
+    assert not SyncResource.objects.exists()
+    assert not SyncLease.objects.exists()
+
+
+@pytest.mark.django_db
+def test_request_preview_counts_shared_feeds_and_budget(season: Season) -> None:
+    """Many due matches share a single poule request plus the daily program."""
+    now = timezone.now()
+    rows = [dict(match_payload(), PublicMatchId=f"M{index}") for index in range(12)]
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": rows}
+    )
+    enqueue(season, "clubs")
+    Match.objects.update(starts_at=now - timedelta(hours=2))
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(days=1), next_sync_at=now + timedelta(days=1)
+    )
+    SyncResource.objects.filter(kind="club_program", source_id="CT1").update(
+        next_sync_at=now - timedelta(seconds=1)
+    )
+    before = list(SyncResource.objects.values())
+    summary = preview_sync(season, budget=1)
+    assert summary["by_kind"] == {"pool_results": 1, "club_program": 1}
+    assert summary["candidate_feed_requests"] == len({"pool_results", "club_program"})
+    assert summary["batch_feed_requests_upper_bound"] == 1
+    assert list(SyncResource.objects.values()) == before
+    assert not SyncLease.objects.exists()
+
+
+@pytest.mark.django_db
+def test_sync_publishes_reschedule_then_final_score(
+    season: Season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two shared feed GETs move the native match, then finish its tracker score."""
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    monkeypatch.setattr(timezone, "now", lambda: now)
+    row = match_payload()
+    row.update(Status="POSTPONED", HomeResult=None, AwayResult=None)
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [row]}
+    )
+    publish_catalogue()
+    native = AppMatch.objects.get()
+    native_id = native.pk
+    now += timedelta(seconds=1)
+    enqueue(season, "clubs")
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(fetched_at=now, next_sync_at=now + timedelta(days=7))
+    SyncResource.objects.filter(kind="club_program", source_id="CT1").update(
+        next_sync_at=now - timedelta(seconds=1)
+    )
+    kickoff = now + timedelta(days=2)
+    row.update(Status="SCHEDULED", MatchDateTime=kickoff.isoformat())
+    client = Mock(spec=SportlinkClient)
+
+    def fetch(resource: SyncResource, gate: TrafficGate) -> FetchResult:
+        gate.before_request()
+        if resource.kind == "club_program":
+            return FetchResult(200, {"ProgramItemMatchClub": [{"Match": row}]})
+        assert resource.kind == "pool_results"
+        return FetchResult(
+            200,
+            {
+                "MatchResult": [row],
+                "PoolStanding": None,
+                "ResultsFiltered": False,
+            },
+        )
+
+    client.fetch.side_effect = fetch
+    with patch("apps.competition.services.traffic.time.sleep"):
+        moved = sync(season, client, budget=1)
+    assert moved["http_requests"] == 1
+    native.refresh_from_db()
+    assert native.start_time == kickoff
+    row.update(Status="FINAL", HomeResult={"Score": 0}, AwayResult={"Score": 12})
+    # Make only the result poll due, after the rescheduled kickoff.
+    SyncResource.objects.filter(kind="club_program").update(
+        next_sync_at=kickoff + timedelta(days=1)
+    )
+    with (
+        patch(
+            "apps.competition.services.sync.timezone.now",
+            return_value=kickoff + timedelta(hours=2),
+        ),
+        patch("apps.competition.services.traffic.time.sleep"),
+    ):
+        finished = sync(season, client, budget=1)
+    assert finished["http_requests"] == 1
+    assert finished["failed"] == 0
+    assert finished["new_final_results"] == 1
+    assert finished["results_observed"] == 1
+    assert finished["matches_checked"] == 1
+    assert finished["result_delay_seconds_total"] == int(
+        timedelta(minutes=45).total_seconds()
+    )
+    assert finished["http_requests_pool_results"] == 1
+    assert AppMatch.objects.get().pk == native_id
+    tracker = MatchData.objects.get(match_link=native)
+    assert tracker.status == "finished"
+    assert tracker.score_source == "knkv"
+    assert (tracker.home_score, tracker.away_score) == (0, 12)

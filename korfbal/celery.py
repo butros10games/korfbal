@@ -19,4 +19,10 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 # Celery Beat schedule for periodic tasks.
-app.conf.beat_schedule = {}
+app.conf.beat_schedule = {
+    "sync-current-competition": {
+        "task": "apps.competition.tasks.sync_current_competition",
+        "schedule": 300.0,
+        "options": {"expires": 300},
+    },
+}

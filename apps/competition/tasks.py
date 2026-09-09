@@ -1,0 +1,77 @@
+"""Scheduled competition sync through the existing Celery runtime."""
+
+import logging
+from pathlib import Path
+
+from celery import shared_task
+from django.conf import settings
+from django.utils import timezone
+
+from apps.competition.application.ports import CompetitionClient
+from apps.competition.composition import competition_client
+from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
+from apps.schedule.models import Season
+
+
+logger = logging.getLogger(__name__)
+
+
+class SessionUnavailableError(Exception):
+    """The configured session cannot be loaded safely."""
+
+
+def _scheduled_client() -> CompetitionClient:
+    """Read the latest rotated credentials only after acquiring the provider lease.
+
+    Raises:
+        SessionUnavailableError: Credentials are missing, insecure or malformed.
+
+    """
+    try:
+        return competition_client(
+            session_file=Path(settings.SPORTLINK_SYNC_SESSION_FILE)
+        )
+    except (OSError, ValueError, TypeError):
+        raise SessionUnavailableError from None
+
+
+@shared_task(ignore_result=True)
+def sync_current_competition() -> dict[str, object]:
+    """Run one bounded batch using the shared provider pacing and lease."""
+    if not settings.SPORTLINK_SYNC_ENABLED:
+        return {"status": "disabled", "http_requests": 0}
+    if not settings.SPORTLINK_SYNC_SEASON or not settings.SPORTLINK_SYNC_SESSION_FILE:
+        logger.warning("Competition sync requires a season and private session file")
+        return {"status": "configuration_required", "http_requests": 0}
+    today = timezone.localdate()
+    season = Season.objects.filter(
+        name=settings.SPORTLINK_SYNC_SEASON,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).first()
+    if season is None:
+        logger.warning("Competition sync configured season is not active")
+        return {"status": "inactive_season", "http_requests": 0}
+    try:
+        summary = sync(
+            season,
+            client_factory=_scheduled_client,
+            budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None,
+            max_seconds=settings.SPORTLINK_SYNC_MAX_SECONDS,
+        )
+    except SyncUnavailableError:
+        return {"status": "busy_or_cooldown", "http_requests": 0}
+    except SessionUnavailableError:
+        logger.warning("Competition sync cannot load its private OAuth session")
+        return {"status": "session_unavailable", "http_requests": 0}
+    backlog = preview_sync(season, budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None)
+    logger.info(
+        "Competition sync summary: %s; remaining feed candidates: %s", summary, backlog
+    )
+    if summary["deferred"]:
+        logger.warning(
+            "Competition sync deferred work at a configured limit or run deadline"
+        )
+    if summary["reauth_required"]:
+        logger.warning("Competition sync requires a renewed login session")
+    return {"status": "completed", **summary, "backlog": backlog}

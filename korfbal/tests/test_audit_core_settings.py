@@ -57,4 +57,10 @@ def test_package_exports_the_configured_celery_application() -> None:
     """Shared tasks must bind to the Django-configured project application."""
     assert celery_app is app
     assert app.main == "korfbal"
-    assert app.conf.beat_schedule == {}
+    assert app.conf.beat_schedule == {
+        "sync-current-competition": {
+            "task": "apps.competition.tasks.sync_current_competition",
+            "schedule": 300.0,
+            "options": {"expires": 300},
+        },
+    }

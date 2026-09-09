@@ -1,6 +1,7 @@
 """Durable provider-wide limits count every HTTP attempt, including OAuth."""
 
 from datetime import timedelta
+import logging
 import time
 import uuid
 
@@ -12,8 +13,7 @@ from apps.competition.application.ports import RequestBudgetError
 from apps.competition.models import SyncLease, TrafficState
 
 
-HOURLY_LIMIT = 120
-DAILY_LIMIT = 1000
+logger = logging.getLogger(__name__)
 MAX_WAIT_SECONDS = 60
 
 
@@ -22,13 +22,29 @@ class LeaseLostError(RuntimeError):
 
 
 class TrafficGate:
-    """Limit one provider to 120 requests/hour, 1000/day and five-second spacing."""
+    """Serialize paced traffic with optional operator quotas and a run deadline."""
 
-    def __init__(self, budget: int, owner: uuid.UUID) -> None:
+    def __init__(
+        self, budget: int | None, owner: uuid.UUID, *, deadline: float | None = None
+    ) -> None:
         """Bind the per-run budget to the already claimed global provider lease."""
         self.budget = budget
         self.owner = owner
         self.requests = 0
+        self.deadline = deadline
+
+    def _check_deadline(self, wait_seconds: float = 0) -> None:
+        """Do not start another HTTP request beyond the worker's time window.
+
+        Raises:
+            RequestBudgetError: Pacing or elapsed work has consumed the run window.
+
+        """
+        if (
+            self.deadline is not None
+            and time.monotonic() + wait_seconds >= self.deadline
+        ):
+            raise RequestBudgetError(timezone.now())
 
     def before_request(self) -> None:
         """Reserve a wire request before sending it, never waiting out a quota.
@@ -39,8 +55,9 @@ class TrafficGate:
 
         """
         now = timezone.now()
-        if self.requests >= self.budget:
+        if self.budget is not None and self.requests >= self.budget:
             raise RequestBudgetError(now)
+        self._check_deadline()
         with transaction.atomic():
             state, _ = TrafficState.objects.select_for_update().get_or_create(
                 key="sportlink",
@@ -51,26 +68,19 @@ class TrafficGate:
             if now >= state.day_start + timedelta(days=1):
                 state.day_start, state.day_requests = now, 0
             deadlines = []
-            hourly = min(
-                HOURLY_LIMIT if state.rate_limited else 3600,
-                getattr(settings, "SPORTLINK_HOURLY_LIMIT", HOURLY_LIMIT),
-            )
-            daily = min(
-                DAILY_LIMIT if state.rate_limited else 86400,
-                getattr(settings, "SPORTLINK_DAILY_LIMIT", DAILY_LIMIT),
-            )
-            spacing = max(
-                5 if state.rate_limited else 1,
-                getattr(settings, "SPORTLINK_REQUEST_SPACING", 5),
-            )
-            if state.hour_requests >= hourly:
+            hourly = settings.SPORTLINK_HOURLY_LIMIT
+            daily = settings.SPORTLINK_DAILY_LIMIT
+            spacing = max(1, settings.SPORTLINK_REQUEST_SPACING)
+            if hourly and state.hour_requests >= hourly:
                 deadlines.append(state.hour_start + timedelta(hours=1))
-            if state.day_requests >= daily:
+            if daily and state.day_requests >= daily:
                 deadlines.append(state.day_start + timedelta(days=1))
             if deadlines:
                 raise RequestBudgetError(max(deadlines))
             scheduled = max(now, state.next_request_at)
-            if (scheduled - now).total_seconds() > MAX_WAIT_SECONDS:
+            wait_seconds = max(0, (scheduled - now).total_seconds())
+            self._check_deadline(wait_seconds)
+            if wait_seconds > MAX_WAIT_SECONDS:
                 raise RequestBudgetError(scheduled)
             if not SyncLease.objects.filter(key="sportlink", owner=self.owner).update(
                 expires_at=scheduled + timedelta(seconds=120)
@@ -81,7 +91,14 @@ class TrafficGate:
             state.next_request_at = scheduled + timedelta(seconds=spacing)
             state.save()
         self.requests += 1
+        logger.info(
+            "Competition HTTP reservation at=%s hour=%s day=%s",
+            scheduled.isoformat(),
+            state.hour_requests,
+            state.day_requests,
+        )
         time.sleep(max(0, (scheduled - timezone.now()).total_seconds()))
+        self._check_deadline()
         # A suspended process may wake after another worker has taken its lease.
         # Reservations remain conservative, but the stale worker must not send.
         now = timezone.now()
@@ -92,5 +109,5 @@ class TrafficGate:
 
 
 def observe_rate_limit() -> None:
-    """Persist conservative pacing only after an actual provider rate-limit response."""
+    """Record a provider rate-limit observation without inventing permanent quotas."""
     TrafficState.objects.filter(key="sportlink").update(rate_limited=True)
