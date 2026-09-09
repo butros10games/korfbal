@@ -351,3 +351,167 @@ def test_finished_task_is_enqueued_after_match_commit() -> None:
         match_id=str(tracker.match.id_uuid),
         match_data_id=str(match_data.id_uuid),
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("part_number", [1, 2])
+def test_undo_part_start_restores_pre_start_state(part_number: int) -> None:
+    tracker = create_tracker_match(prefix=f"UndoStart{part_number}")
+    data = tracker.match_data
+    data.parts = 2
+    data.current_part = part_number
+    data.status = "upcoming" if part_number == 1 else "active"
+    data.save(update_fields=["parts", "current_part", "status"])
+    if part_number > 1:
+        create_match_part(
+            match_data=data,
+            part_number=1,
+            active=False,
+            start_offset=-timedelta(minutes=30),
+            end_offset=-timedelta(minutes=5),
+        )
+    apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload={"command": "start/pause"}
+    )
+    part = MatchPart.objects.get(match_data=data, part_number=part_number)
+    result = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "undo_part_transition",
+            "part_id": str(part.pk),
+            "transition": "start",
+        },
+    )
+    data.refresh_from_db()
+    assert data.status == ("upcoming" if part_number == 1 else "active")
+    assert data.current_part == part_number
+    assert not MatchPart.objects.filter(pk=part.pk).exists()
+    assert result["timer"]["type"] == "deactivated"
+    # A corrected start can be recorded normally again.
+    apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload={"command": "start/pause"}
+    )
+    assert MatchPart.objects.filter(
+        match_data=data, part_number=part_number, active=True
+    ).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("final_part", [False, True])
+@pytest.mark.parametrize("paused", [False, True])
+def test_undo_part_end_reopens_clock_without_counting_break(
+    final_part: bool, paused: bool
+) -> None:
+    tracker = create_tracker_match(prefix=f"UndoEnd{final_part}{paused}")
+    data = tracker.match_data
+    data.parts = 1 if final_part else 2
+    data.status = "active"
+    data.save(update_fields=["parts", "status"])
+    part = create_match_part(
+        match_data=data, part_number=1, active=True, start_offset=-timedelta(minutes=10)
+    )
+    if paused:
+        Pause.objects.create(
+            match_data=data,
+            match_part=part,
+            active=True,
+            start_time=timezone.now() - timedelta(minutes=1),
+        )
+    apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload={"command": "part_end"}
+    )
+    part.refresh_from_db()
+    ended_at = part.end_time
+    result = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "undo_part_transition",
+            "part_id": str(part.pk),
+            "transition": "end",
+        },
+    )
+    part.refresh_from_db()
+    data.refresh_from_db()
+    assert data.status == "active"
+    assert data.current_part == 1
+    assert part.active
+    assert part.end_time is None
+    active_pause = Pause.objects.get(match_data=data, active=True)
+    assert active_pause.start_time <= ended_at
+    assert result["paused"] is True
+    assert result["timer"]["type"] == "pause"
+    assert result["timer"]["calc_to"] == active_pause.start_time.isoformat()
+
+
+@pytest.mark.django_db
+def test_undo_start_rejects_dependent_events_and_foreign_part() -> None:
+    tracker = create_tracker_match(prefix="UndoGuard")
+    data = tracker.match_data
+    data.status = "active"
+    data.save(update_fields=["status"])
+    part = create_match_part(match_data=data, part_number=1, active=True)
+    pause = Pause.objects.create(
+        match_data=data, match_part=part, active=True, start_time=timezone.now()
+    )
+    with pytest.raises(TrackerCommandError, match="Verwijder eerst"):
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={
+                "command": "undo_part_transition",
+                "part_id": str(part.pk),
+                "transition": "start",
+            },
+        )
+    assert Pause.objects.filter(pk=pause.pk).exists()
+    other = create_tracker_match(prefix="UndoForeign")
+    with pytest.raises(TrackerCommandError, match="bestaat niet"):
+        apply_tracker_command(
+            other.match,
+            team=other.home_team,
+            payload={
+                "command": "undo_part_transition",
+                "part_id": str(part.pk),
+                "transition": "start",
+            },
+        )
+
+
+@pytest.mark.django_db
+def test_undo_end_rejects_later_part_and_duplicate_undo() -> None:
+    tracker = create_tracker_match(prefix="UndoOrder")
+    data = tracker.match_data
+    data.status = "active"
+    data.parts = 2
+    data.current_part = 2
+    data.save(update_fields=["status", "parts", "current_part"])
+    first = create_match_part(
+        match_data=data,
+        part_number=1,
+        active=False,
+        start_offset=-timedelta(minutes=30),
+        end_offset=-timedelta(minutes=5),
+    )
+    second = create_match_part(match_data=data, part_number=2, active=True)
+    payload = {
+        "command": "undo_part_transition",
+        "part_id": str(first.pk),
+        "transition": "end",
+    }
+    with pytest.raises(TrackerCommandError, match="volgende periode"):
+        apply_tracker_command(tracker.match, team=tracker.home_team, payload=payload)
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "undo_part_transition",
+            "part_id": str(second.pk),
+            "transition": "start",
+        },
+    )
+    apply_tracker_command(tracker.match, team=tracker.home_team, payload=payload)
+    with pytest.raises(TrackerCommandError, match="niet beëindigd"):
+        apply_tracker_command(tracker.match, team=tracker.home_team, payload=payload)
+    assert Pause.objects.filter(match_data=data, active=True).count() == 1

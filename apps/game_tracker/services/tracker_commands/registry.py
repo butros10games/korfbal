@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from apps.game_tracker.models import PossessionChange
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
@@ -23,7 +24,7 @@ from .substitutions import (
     OpponentSubstitutionCommand,
     SubstituteCommand,
 )
-from .undo import RemoveLastEventCommand
+from .undo import RemoveLastEventCommand, UndoPartTransitionCommand
 
 
 CommandParser = Callable[[dict[str, Any]], TrackerCommand]
@@ -42,6 +43,17 @@ class CommandDefinition:
 
 def _constant(command: TrackerCommand) -> CommandParser:
     return lambda _payload: command
+
+
+def _parse_undo_part_transition(payload: dict[str, Any]) -> TrackerCommand:
+    try:
+        part_id = str(UUID(str(payload.get("part_id", ""))))
+    except ValueError as exc:
+        raise TrackerCommandError("Invalid period id.", code="bad_request") from exc
+    transition = payload.get("transition")
+    if not isinstance(transition, str) or transition not in {"start", "end"}:
+        raise TrackerCommandError("Invalid transition.", code="bad_request")
+    return UndoPartTransitionCommand(part_id=part_id, transition=transition)
 
 
 def _parse_timeout(payload: dict[str, Any]) -> TrackerCommand:
@@ -207,6 +219,11 @@ COMMAND_DEFINITIONS = (
             LiveResource.STATS,
             LiveResource.IMPACTS,
         }),
+    ),
+    CommandDefinition(
+        name="undo_part_transition",
+        parse=_parse_undo_part_transition,
+        resources=frozenset(ALL_LIVE_RESOURCES),
     ),
     CommandDefinition(
         name="remove_last_event",

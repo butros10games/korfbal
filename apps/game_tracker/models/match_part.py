@@ -28,8 +28,8 @@ class MatchPart(EventProjectionModel):
     )
     part_number: models.IntegerField[int, int] = models.IntegerField()
     start_time: models.DateTimeField[datetime, datetime] = models.DateTimeField()
-    end_time: models.DateTimeField[datetime, datetime | None] = models.DateTimeField(
-        blank=True, null=True
+    end_time: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(blank=True, null=True)
     )
     active: models.BooleanField[bool, bool] = models.BooleanField(default=False)
 

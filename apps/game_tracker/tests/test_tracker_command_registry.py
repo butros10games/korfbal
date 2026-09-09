@@ -10,6 +10,7 @@ EXPECTED_COMMANDS = {
     "goal_reg",
     "new_attack",
     "part_end",
+    "undo_part_transition",
     "possession_change_reg",
     "remove_last_event",
     "shot_reg",
