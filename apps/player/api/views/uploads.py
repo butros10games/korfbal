@@ -13,6 +13,7 @@ from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import PlayerSerializer
 from apps.player.composition import song_jobs
 from apps.player.services.player_uploads import (
+    InvalidProfilePictureError,
     goal_song_content_type_allowed,
     save_goal_song_upload,
     save_profile_picture_upload,
@@ -60,9 +61,11 @@ class UploadProfilePictureAPIView(KorfbalAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return Response({
-            "url": save_profile_picture_upload(player=player, uploaded=uploaded)
-        })
+        try:
+            url = save_profile_picture_upload(player=player, uploaded=uploaded)
+        except InvalidProfilePictureError as error:
+            return Response({"error": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"url": url})
 
 
 class UploadGoalSongAPIView(KorfbalAPIView):

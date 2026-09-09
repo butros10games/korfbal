@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from io import BytesIO
+from pathlib import Path
 from typing import cast
+import warnings
 
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from apps.player.application.ports import SongDownloadDispatcher
 from apps.player.models.player import Player
@@ -13,6 +18,9 @@ from apps.player.services.goal_song import (
     sanitize_uploaded_filename,
 )
 from apps.player.services.player_songs import create_player_song
+
+
+MAX_AVATAR_DIMENSION = 4096
 
 
 ALLOWED_GOAL_SONG_CONTENT_TYPES = {
@@ -39,10 +47,52 @@ def goal_song_content_type_allowed(uploaded: UploadedFile) -> bool:
     return not content_type or content_type in ALLOWED_GOAL_SONG_CONTENT_TYPES
 
 
+class InvalidProfilePictureError(ValueError):
+    """The upload is not a bounded, decodable image."""
+
+
 def save_profile_picture_upload(*, player: Player, uploaded: UploadedFile) -> str:
-    """Persist a profile picture upload and return its public URL."""
-    filename = getattr(uploaded, "name", "profile_picture")
-    player.profile_picture.save(filename, uploaded)
+    """Validate and re-encode an avatar, discarding metadata and active content.
+
+    Raises:
+        InvalidProfilePictureError: The file exceeds limits or is not an image.
+
+    """
+    if uploaded.size is None or uploaded.size > 5 * 1024 * 1024:
+        raise InvalidProfilePictureError("Profile pictures must be at most 5 MB.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(uploaded) as original:
+                if (
+                    original.width > MAX_AVATAR_DIMENSION
+                    or original.height > MAX_AVATAR_DIMENSION
+                ):
+                    raise InvalidProfilePictureError(
+                        "Profile pictures must be at most 4096 pixels per side."
+                    )
+                original.load()
+                decoded = ImageOps.exif_transpose(original).convert("RGBA")
+                decoded.thumbnail((1024, 1024))
+                # A fresh image intentionally drops EXIF, text chunks, and profiles.
+                clean = Image.new("RGBA", decoded.size)
+                clean.paste(decoded)
+                output = BytesIO()
+                clean.save(output, format="PNG")
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as error:
+        raise InvalidProfilePictureError(
+            "Upload a valid image no larger than 4096 pixels per side."
+        ) from error
+    stem = sanitize_uploaded_filename(
+        Path(uploaded.name or "avatar").stem, fallback="avatar"
+    )
+    player.profile_picture.save(f"{stem}.png", ContentFile(output.getvalue()))
     return player.get_profile_picture()
 
 

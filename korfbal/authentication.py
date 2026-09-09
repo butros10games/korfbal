@@ -6,6 +6,7 @@ from typing import Any
 
 from bg_auth.jwt import (
     JwtError,
+    credentials_are_current,
     decode as decode_jwt,
 )
 from django.contrib.auth import get_user_model
@@ -83,6 +84,9 @@ class JwtBearerAuthentication(BaseAuthentication):
 
         if not isinstance(user, AbstractBaseUser):
             raise AuthenticationFailed("Invalid user")
+
+        if not credentials_are_current(payload, user):
+            raise AuthenticationFailed("Invalid access token")
 
         return user, token
 

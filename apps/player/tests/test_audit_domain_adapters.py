@@ -6,7 +6,7 @@ from __future__ import annotations
 import base64
 import subprocess  # nosec B404
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from django.core.management import call_command
 from django.test import override_settings
@@ -17,7 +17,7 @@ from apps.player.adapters.outbound.command_runner import SubprocessCommandRunner
 from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
 from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
 from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
-from apps.player.adapters.outbound.web_push import PyWebPushClient
+from apps.player.adapters.outbound.web_push import PushSession, PyWebPushClient
 from apps.player.application.ports import (
     CommandRunOptions,
     JobDispatchUnavailableError,
@@ -206,7 +206,7 @@ def test_pywebpush_adapter_maps_provider_error_and_preserves_status() -> None:
         pytest.raises(WebPushDeliveryError) as error,
     ):
         PyWebPushClient().send(
-            subscription={"endpoint": "https://push.example.invalid/sub"},
+            subscription={"endpoint": "https://fcm.googleapis.com/sub"},
             data='{"title": "Goal"}',
             ttl_seconds=90,
         )
@@ -214,12 +214,13 @@ def test_pywebpush_adapter_maps_provider_error_and_preserves_status() -> None:
     assert error.value.status_code == GONE_STATUS_CODE
     assert error.value.__cause__ is provider_error
     provider.assert_called_once_with(
-        subscription_info={"endpoint": "https://push.example.invalid/sub"},
+        subscription_info={"endpoint": "https://fcm.googleapis.com/sub"},
         data='{"title": "Goal"}',
         vapid_private_key="private-key",
         vapid_claims={"sub": "mailto:push@example.invalid"},
         ttl=90,
         timeout=10,
+        requests_session=ANY,
     )
 
 
@@ -261,3 +262,23 @@ def test_generate_vapid_keys_command_prints_configurable_subject(
     assert "WEBPUSH_VAPID_PRIVATE_KEY=private" in output
     assert "WEBPUSH_VAPID_SUBJECT=https://push.example.invalid" in output
     assert "WEBPUSH_TTL_SECONDS=3600" in output
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["http://127.0.0.1/internal", "https://example.invalid/private"]
+)
+def test_webpush_revalidates_previously_stored_destinations(endpoint: str) -> None:
+    """Unsafe legacy subscriptions are rejected before the provider is called."""
+    with patch("apps.player.adapters.outbound.web_push.web_push_provider") as provider:
+        with pytest.raises(WebPushDeliveryError):
+            PyWebPushClient().send(
+                subscription={"endpoint": endpoint}, data="{}", ttl_seconds=1
+            )
+        provider.assert_not_called()
+
+
+def test_push_transport_never_follows_redirects() -> None:
+    """Provider redirects cannot escape the allowlist."""
+    with patch("requests.Session.send") as request:
+        PushSession().post("https://fcm.googleapis.com/push", allow_redirects=True)
+    assert request.call_args.kwargs["allow_redirects"] is False

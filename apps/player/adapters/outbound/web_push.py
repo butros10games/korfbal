@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from http import HTTPStatus
+from typing import Any, cast
 
 from django.conf import settings
+import requests
 
 from apps.player.application.ports import WebPushDeliveryError
+from apps.player.services.push_endpoints import validate_web_push_endpoint
 
 
 try:
@@ -20,6 +23,18 @@ except ImportError:  # pragma: no cover - deployment diagnostic path
 else:
     web_push_exception_type = _WebPushException
     web_push_provider = _webpush
+
+
+class PushSession(requests.Session):
+    """Never follow a push provider redirect to another destination."""
+
+    def send(
+        self, request: requests.PreparedRequest, **kwargs: object
+    ) -> requests.Response:
+        """Validate each request and disable redirects."""
+        validate_web_push_endpoint(request.url or "")
+        kwargs["allow_redirects"] = False
+        return super().send(request, **cast(dict[str, Any], kwargs))
 
 
 class PyWebPushClient:
@@ -50,14 +65,29 @@ class PyWebPushClient:
             )
 
         try:
-            web_push_provider(
-                subscription_info=subscription,
-                data=data,
-                vapid_private_key=str(settings.WEBPUSH_VAPID_PRIVATE_KEY),
-                vapid_claims={"sub": str(settings.WEBPUSH_VAPID_SUBJECT)},
-                ttl=ttl_seconds,
-                timeout=10,
-            )
+            validate_web_push_endpoint(str(subscription.get("endpoint", "")))
+        except ValueError as exc:
+            raise WebPushDeliveryError(str(exc), status_code=410) from exc
+
+        try:
+            with PushSession() as session:
+                response = web_push_provider(
+                    subscription_info=subscription,
+                    data=data,
+                    vapid_private_key=str(settings.WEBPUSH_VAPID_PRIVATE_KEY),
+                    vapid_claims={"sub": str(settings.WEBPUSH_VAPID_SUBJECT)},
+                    ttl=ttl_seconds,
+                    timeout=10,
+                    requests_session=session,
+                )
+                if (
+                    HTTPStatus.MULTIPLE_CHOICES
+                    <= getattr(response, "status_code", HTTPStatus.CREATED)
+                    < HTTPStatus.BAD_REQUEST
+                ):
+                    raise WebPushDeliveryError(
+                        "Push redirects are not allowed.", status_code=410
+                    )
         except Exception as exc:
             if web_push_exception_type is None or not isinstance(
                 exc, web_push_exception_type

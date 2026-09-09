@@ -118,3 +118,14 @@ def test_openapi_scheme_identifies_jwt_bearer_authentication() -> None:
         "scheme": "bearer",
         "bearerFormat": "JWT",
     }
+
+
+@pytest.mark.django_db
+def test_password_change_revokes_existing_access_token() -> None:
+    """Access credentials are bound to the current password too."""
+    user = User.objects.create_user(username="revoked-access")
+    token, _ = issue_access_token(user)
+    user.set_password("New synthetic password 123!")
+    user.save(update_fields=["password"])
+    with pytest.raises(AuthenticationFailed, match="Invalid access token"):
+        JwtBearerAuthentication().authenticate(_request(f"Bearer {token}"))

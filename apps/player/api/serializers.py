@@ -17,6 +17,7 @@ from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.privacy import can_view_by_visibility
+from apps.player.services.push_endpoints import validate_web_push_endpoint
 
 
 class PlayerGoalSongSelectionSerializer(serializers.Serializer):
@@ -589,6 +590,11 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
         # Expo push tokens only provide an endpoint.
         if endpoint.startswith("ExponentPushToken["):
             return payload
+
+        try:
+            validate_web_push_endpoint(endpoint)
+        except ValueError as error:
+            raise serializers.ValidationError(str(error)) from error
 
         keys = payload.get("keys")
         if not isinstance(keys, dict):

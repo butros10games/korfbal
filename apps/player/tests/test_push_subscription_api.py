@@ -42,7 +42,7 @@ def test_push_subscriptions_register_list_and_deactivate(client: Client) -> None
 
     payload = {
         "subscription": {
-            "endpoint": "https://example.com/push/endpoint-1",
+            "endpoint": "https://fcm.googleapis.com/push/endpoint-1",
             "keys": {"p256dh": "abc", "auth": "def"},
         },
         "user_agent": "pytest",
@@ -262,3 +262,34 @@ def test_push_test_endpoint_truncates_error_payloads(client: Client) -> None:
     assert payload["failed"] == TRUNCATED_ERROR_COUNT
     assert payload["errors_truncated"] is True
     assert len(payload["errors"]) == ERROR_PAYLOAD_LIMIT
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://127.0.0.1/internal",
+        "https://127.0.0.1/internal",
+        "https://fcm.googleapis.com.evil.invalid/push",
+        "https://fcm.googleapis.com@evil.invalid/push",
+        "https://fcm.googleapis.com:8443/push",
+        "https://evil.invalid/push",
+    ],
+)
+def test_push_subscription_rejects_non_provider_destinations(
+    client: Client, endpoint: str
+) -> None:
+    """Authenticated users cannot turn notifications into arbitrary HTTP requests."""
+    client.force_login(get_user_model().objects.create_user(username="push-scope"))
+    response = client.post(
+        "/api/player/me/push-subscriptions/",
+        data=json.dumps({
+            "subscription": {
+                "endpoint": endpoint,
+                "keys": {"p256dh": "abc", "auth": "def"},
+            },
+        }),
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert not PlayerPushSubscription.objects.exists()
