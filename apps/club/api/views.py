@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from django.db import models
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import filters, permissions, status, viewsets
@@ -61,6 +63,30 @@ class ClubViewSet(viewsets.ModelViewSet):
     lookup_field = "id_uuid"
     filter_backends = (filters.SearchFilter,)
     search_fields = ("name",)
+
+    @action(detail=True, methods=("GET",), url_path="match-day", filter_backends=[])
+    def match_day(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Public, complete club programme for one local calendar day."""
+        club = self.get_object()
+        raw_date = request.query_params.get("date")
+        try:
+            day = date.fromisoformat(raw_date) if raw_date else timezone.localdate()
+            start = timezone.make_aware(datetime.combine(day, time.min))
+            end = timezone.make_aware(
+                datetime.combine(day + timedelta(days=1), time.min)
+            )
+        except (ValueError, OverflowError):
+            return Response({"detail": "Invalid date. Use YYYY-MM-DD."}, status=400)
+        matches = (
+            club_matches(club, None)
+            .filter(match_link__start_time__gte=start, match_link__start_time__lt=end)
+            .order_by("match_link__start_time", "match_link_id")
+        )
+        return Response({
+            "club": self.get_serializer(club).data,
+            "date": day.isoformat(),
+            "matches": build_match_summaries(matches),
+        })
 
     def get_queryset(self) -> models.QuerySet[Club]:
         """Scope followed catalogs before pagination, counting, and searching."""
