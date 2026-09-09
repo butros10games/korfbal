@@ -59,8 +59,9 @@ from .constants import (
     MVP_VOTE_COOKIE_SALT,
 )
 from .match_viewset_events import MatchEventsActionsMixin
-from .permissions import IsClubMemberOrCoachOrAdmin
+from .permissions import HasTrackerAccess
 from .serializers import MatchSerializer, MatchWriteSerializer
+from .tracker_access import TrackerAccessActionsMixin
 from .validation import UUID_URL_REGEX, uuid_query_values
 
 
@@ -223,11 +224,14 @@ def _uuid_path_parameter(name: str) -> OpenApiParameter:
     substitute_detail=extend_schema(parameters=[_uuid_path_parameter("change_id")]),
     pause_detail=extend_schema(parameters=[_uuid_path_parameter("pause_id")]),
     timeout_detail=extend_schema(parameters=[_uuid_path_parameter("timeout_id")]),
+    tracker_access=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
+    tracker_access_redeem=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
     tracker_state=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
     tracker_command=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
     tracker_poll=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
 )
 class MatchViewSet(
+    TrackerAccessActionsMixin,
     MatchEventsActionsMixin,
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
@@ -534,8 +538,8 @@ class MatchViewSet(
     @action(
         detail=True,
         methods=("GET",),
-        url_path=r"tracker/(?P<team_id>[^/.]+)/state",
-        permission_classes=[IsClubMemberOrCoachOrAdmin],
+        url_path=rf"tracker/(?P<team_id>{UUID_URL_REGEX})/state",
+        permission_classes=[HasTrackerAccess],
     )
     def tracker_state(
         self,
@@ -564,8 +568,8 @@ class MatchViewSet(
     @action(
         detail=True,
         methods=("POST",),
-        url_path=r"tracker/(?P<team_id>[^/.]+)/commands",
-        permission_classes=[IsClubMemberOrCoachOrAdmin],
+        url_path=rf"tracker/(?P<team_id>{UUID_URL_REGEX})/commands",
+        permission_classes=[HasTrackerAccess],
     )
     def tracker_command(
         self,
@@ -617,8 +621,8 @@ class MatchViewSet(
     @action(
         detail=True,
         methods=("GET",),
-        url_path=r"tracker/(?P<team_id>[^/.]+)/poll",
-        permission_classes=[IsClubMemberOrCoachOrAdmin],
+        url_path=rf"tracker/(?P<team_id>{UUID_URL_REGEX})/poll",
+        permission_classes=[HasTrackerAccess],
     )
     def tracker_poll(
         self,

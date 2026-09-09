@@ -28,6 +28,7 @@ from .possession_change import PossessionChange
 from .shot import Shot
 from .starting_player_assignment import StartingPlayerAssignment
 from .timeout import Timeout
+from .tracker_access_link import TrackerAccessLink
 from .tracker_command import TrackerCommand
 
 
@@ -56,5 +57,6 @@ __all__ = [
     "StartingPlayerAssignment",
     "SubstitutionEventDetail",
     "Timeout",
+    "TrackerAccessLink",
     "TrackerCommand",
 ]
