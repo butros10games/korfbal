@@ -163,3 +163,11 @@ def player_impact_matches(
         )
         | Exists(Shot.objects.filter(match_data_id=OuterRef("pk"), player=player))
     )
+
+
+def team_data_for_season(*, team: Team, season: Season | None) -> TeamData | None:
+    """Return the selected season roster, or the latest roster when no season is set."""
+    queryset = TeamData.objects.filter(team=team)
+    if season is not None:
+        queryset = queryset.filter(season=season)
+    return queryset.order_by("-season__start_date").first()

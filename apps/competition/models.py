@@ -316,6 +316,15 @@ class Match(SeasonalIdentity):
     automatic_result = models.BooleanField(default=False)
     result_observed_at = models.DateTimeField(null=True)
     results_checked_at = models.DateTimeField(null=True)
+    schedule_checked_at = models.DateTimeField(null=True)
+    playing_time_minutes = models.PositiveSmallIntegerField(null=True)
+    playing_time_observed_at = models.DateTimeField(null=True)
+    match_periods = models.JSONField(default=list)
+    facility_details = models.JSONField(default=dict)
+    facility_observed_at = models.DateTimeField(null=True)
+    match_rules = models.JSONField(default=dict)
+    rules_observed_at = models.DateTimeField(null=True)
+    reporting_delay_seconds = models.PositiveIntegerField(null=True)
     local_match = models.OneToOneField(
         "schedule.Match",
         null=True,
@@ -365,6 +374,8 @@ class SyncResource(models.Model):
     next_sync_at = models.DateTimeField(db_index=True)
     fetched_at = models.DateTimeField(null=True)
     etag = models.CharField(max_length=512, blank=True)
+    # Exact membership of the last successful response, also used for HTTP 304.
+    match_ids = models.JSONField(default=list)
     failures = models.PositiveIntegerField(default=0)
     last_error = models.CharField(max_length=80, blank=True)
 

@@ -15,14 +15,8 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.models import (
-    MatchData,
-    PlayerMatchImpact,
-    PlayerMatchImpactBreakdown,
-)
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-    persist_match_impact_rows_with_breakdowns,
     round_js_1dp,
 )
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
@@ -30,7 +24,11 @@ from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.player.api.serializers import PlayerSongSerializer, PlayerSongUpdateSerializer
 from apps.player.composition import update_owned_player_song_settings
 from apps.player.models import Player
-from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.models.player_song import PlayerSong
+from apps.player.services.goal_song import (
+    GoalSongSelectionError,
+    validate_ready_goal_songs,
+)
 from apps.player.services.player_song_queries import (
     owned_player_song_or_none,
     player_songs_by_ids,
@@ -41,16 +39,29 @@ from apps.player.services.player_songs import (
     PlayerSongSettingsPatch,
 )
 from apps.schedule.models import Season
+from apps.team.api.permissions import (
+    viewer_can_manage_roster,
+    viewer_can_manage_team,
+    viewer_player,
+)
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 from apps.team.queries.overview import (
+    main_roster_ids,
     player_impact_matches,
     resolve_team_season,
+    team_data_for_season,
     team_matches,
     team_players,
     team_seasons,
 )
+from apps.team.services.goal_song_reads import (
+    fallback_goal_song_audio_urls,
+    fallback_goal_song_song_ids,
+    song_entries_for_ids,
+)
 from apps.team.services.goal_songs import delete_team_player_song
+from apps.team.services.impact_breakdowns import aggregate_player_impact_breakdowns
 from apps.team.services.overview import (
     TeamOverviewOptions,
     build_team_overview_payload,
@@ -151,9 +162,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         ).first()
         if season is None:
             raise NotFound("Season not found.")
-        can_manage = self._viewer_can_manage_roster(
-            request=request, team=team, season=season
-        )
+        can_manage = viewer_can_manage_roster(request=request, team=team, season=season)
         if request.method == "PATCH":
             if not can_manage:
                 raise PermissionDenied("You cannot manage this team's players.")
@@ -204,9 +213,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         ).first()
         if season is None:
             raise NotFound("Season not found.")
-        if not self._viewer_can_manage_roster(
-            request=request, team=team, season=season
-        ):
+        if not viewer_can_manage_roster(request=request, team=team, season=season):
             raise PermissionDenied("You cannot manage this team's players.")
         search = request.query_params.get("search", "").strip()
         if len(search) < _ROSTER_SEARCH_MIN_LENGTH:
@@ -260,12 +267,6 @@ class TeamViewSet(viewsets.ModelViewSet):
             default=True,
         )
 
-        viewer_player = (
-            Player.objects.filter(user=request.user).first()
-            if request.user.is_authenticated
-            else None
-        )
-
         payload = build_team_overview_payload(
             team=team,
             season=season,
@@ -273,13 +274,13 @@ class TeamViewSet(viewsets.ModelViewSet):
             options=TeamOverviewOptions(
                 include_stats=include_stats,
                 include_roster=include_roster,
-                viewer_player=viewer_player,
-                viewer_can_manage_goal_songs=self._viewer_can_manage_team(
+                viewer_player=viewer_player(request),
+                viewer_can_manage_goal_songs=viewer_can_manage_team(
                     request=request,
                     team=team,
                     season=season,
                 ),
-                fallback_goal_song_audio_urls=self._fallback_goal_song_audio_urls(
+                fallback_goal_song_audio_urls=fallback_goal_song_audio_urls(
                     team=team,
                     season=season,
                 ),
@@ -341,14 +342,15 @@ class TeamViewSet(viewsets.ModelViewSet):
         if not player:
             return Response({"detail": "Player not found"}, status=404)
 
-        match_data_qs = self._impact_breakdown_match_queryset(
+        match_data_qs = player_impact_matches(
             team=team,
             season=season,
             player=player,
+            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
         )
 
         matches_considered, impact_total_raw, aggregated = (
-            self._aggregate_player_impact_breakdowns(
+            aggregate_player_impact_breakdowns(
                 team=team,
                 player=player,
                 match_data_qs=match_data_qs,
@@ -409,8 +411,8 @@ class TeamViewSet(viewsets.ModelViewSet):
             player_id = str(song.player_id)
             songs_by_player.setdefault(player_id, []).append(song)
 
-        fallback_ids = self._fallback_goal_song_song_ids(team=team, season=season)
-        fallback_songs = self._song_entries_for_ids(
+        fallback_ids = fallback_goal_song_song_ids(team=team, season=season)
+        fallback_songs = song_entries_for_ids(
             songs=songs,
             ids=fallback_ids,
         )
@@ -426,7 +428,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 "goal_song_song_ids": [
                     song_id for song_id in (player.goal_song_song_ids or []) if song_id
                 ],
-                "goal_song_songs": self._song_entries_for_ids(
+                "goal_song_songs": song_entries_for_ids(
                     songs=player_song_rows,
                     ids=[
                         song_id
@@ -484,7 +486,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             payload=request.data,
             field_name="fallback_goal_song_song_ids",
         )
-        roster_player_ids = self._team_roster_player_ids(team=team, season=season)
+        roster_player_ids = main_roster_ids(team=team, season=season)
         valid_songs = self._validated_ready_songs(
             ids=ids,
             songs_qs=player_songs_by_ids(song_ids=ids).filter(
@@ -492,7 +494,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             ),
         )
 
-        team_data = self._team_data_for_season(team=team, season=season)
+        team_data = team_data_for_season(team=team, season=season)
         if team_data is None:
             raise ValidationError({"detail": "No TeamData found for this season."})
 
@@ -501,7 +503,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         return Response({
             "fallback_goal_song_song_ids": ids,
-            "fallback_goal_song_songs": self._song_entries_for_ids(
+            "fallback_goal_song_songs": song_entries_for_ids(
                 songs=valid_songs,
                 ids=ids,
             ),
@@ -541,7 +543,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             payload=request.data,
             field_name="goal_song_song_ids",
         )
-        roster_player_ids = self._team_roster_player_ids(team=team, season=season)
+        roster_player_ids = main_roster_ids(team=team, season=season)
         if player_id not in roster_player_ids:
             raise ValidationError({"detail": "Player is not in this team roster."})
 
@@ -573,7 +575,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         return Response({
             "player_id": str(player.id_uuid),
             "goal_song_song_ids": ids,
-            "goal_song_songs": self._song_entries_for_ids(songs=songs, ids=ids),
+            "goal_song_songs": song_entries_for_ids(songs=songs, ids=ids),
         })
 
     @action(
@@ -598,7 +600,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         seasons_qs = list(team_seasons(team))
         season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
-        if not self._viewer_can_manage_team(
+        if not viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -608,7 +610,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        roster_player_ids = self._team_roster_player_ids(team=team, season=season)
+        roster_player_ids = main_roster_ids(team=team, season=season)
         if player_id not in roster_player_ids:
             return Response(
                 {"detail": "Player is not in this team roster."},
@@ -626,7 +628,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             delete_team_player_song(
                 player=player,
                 song_id=song_id,
-                team_data=self._team_data_for_season(team=team, season=season),
+                team_data=team_data_for_season(team=team, season=season),
             )
         except PlayerSongNotFoundError:
             return Response(
@@ -657,7 +659,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         seasons_qs = list(team_seasons(team))
         season = resolve_team_season(request.query_params.get("season"), seasons_qs)
 
-        if not self._viewer_can_manage_team(
+        if not viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -667,12 +669,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        roster_player_ids = {
-            str(player_id_value)
-            for player_id_value in self._team_roster_player_ids(
-                team=team, season=season
-            )
-        }
+        roster_player_ids = main_roster_ids(team=team, season=season)
         if player_id not in roster_player_ids:
             return Response(
                 {"detail": "Player is not in this team roster."},
@@ -719,7 +716,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         team: Team,
         season: Season | None,
     ) -> None:
-        if self._viewer_can_manage_team(
+        if viewer_can_manage_team(
             request=request,
             team=team,
             season=season,
@@ -764,259 +761,15 @@ class TeamViewSet(viewsets.ModelViewSet):
         ids: list[str],
         songs_qs: QuerySet[PlayerSong],
     ) -> list[PlayerSong]:
-        songs = list(songs_qs)
-        by_id = {str(song.id_uuid): song for song in songs}
-
-        missing = [song_id for song_id in ids if song_id not in by_id]
-        if missing:
-            raise ValidationError({"detail": "Unknown song id(s)", "missing": missing})
-
-        not_ready: list[str] = []
-        for song_id in ids:
-            song = by_id[song_id]
-            cached = song.cached_song
-            status_value = cached.status if cached is not None else song.status
-            audio_file = cached.audio_file if cached is not None else song.audio_file
-            if status_value != PlayerSongStatus.READY or not audio_file:
-                not_ready.append(str(song.id_uuid))
-
-        if not_ready:
-            raise ValidationError({
-                "detail": "Song(s) not ready",
-                "not_ready": not_ready,
-            })
-
-        return [by_id[song_id] for song_id in ids]
-
-    def _impact_breakdown_match_queryset(
-        self,
-        *,
-        team: Team,
-        season: Season | None,
-        player: Player,
-    ) -> QuerySet[MatchData]:
-        return player_impact_matches(
-            team=team,
-            season=season,
-            player=player,
-            algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-        )
-
-    @staticmethod
-    def _impact_breakdown_for_impact(*, impact: PlayerMatchImpact) -> dict[str, Any]:
-        breakdown_obj = getattr(impact, "breakdown", None)
-        if (
-            breakdown_obj is not None
-            and breakdown_obj.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
-            and isinstance(breakdown_obj.breakdown, dict)
-        ):
-            return breakdown_obj.breakdown
-
-        # Best-effort: compute+persist breakdowns so next request is fast.
         try:
-            persist_match_impact_rows_with_breakdowns(
-                match_data=impact.match_data,
-                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            )
-        except Exception:
-            return {}
-
-        refreshed = (
-            PlayerMatchImpactBreakdown.objects
-            .filter(
-                impact=impact,
-                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            )
-            .only("breakdown")
-            .first()
-        )
-        if refreshed is None or not isinstance(refreshed.breakdown, dict):
-            return {}
-        return refreshed.breakdown
-
-    def _aggregate_player_impact_breakdowns(
-        self,
-        *,
-        team: Team,
-        player: Player,
-        match_data_qs: QuerySet[MatchData],
-    ) -> tuple[int, float, dict[str, dict[str, float | int]]]:
-        aggregated: dict[str, dict[str, float | int]] = {}
-        matches_considered = 0
-        impact_total_raw = 0.0
-
-        impacts_qs = (
-            PlayerMatchImpact.objects
-            .filter(
-                match_data__in=match_data_qs,
-                player=player,
-                team=team,
-                algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
-            )
-            .select_related("match_data")
-            .select_related("breakdown")
-        )
-
-        for impact in impacts_qs.iterator():
-            matches_considered += 1
-            impact_total_raw += float(impact.impact_score)
-
-            per_player = self._impact_breakdown_for_impact(impact=impact)
-            for key, item in per_player.items():
-                if key not in aggregated:
-                    aggregated[key] = {"points": 0.0, "count": 0}
-                aggregated[key]["points"] = float(aggregated[key]["points"]) + float(
-                    item["points"]
-                )
-                aggregated[key]["count"] = int(aggregated[key]["count"]) + int(
-                    item["count"]
-                )
-
-        return matches_considered, impact_total_raw, aggregated
-
-    @staticmethod
-    def _viewer_player(request: Request) -> Player | None:
-        if not request.user.is_authenticated:
-            return None
-        return Player.objects.filter(user=request.user).first()
-
-    def _viewer_can_manage_team(
-        self,
-        *,
-        request: Request,
-        team: Team,
-        season: Season | None,
-    ) -> bool:
-        user = request.user
-        if not user.is_authenticated:
-            return False
-        if bool(
-            getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
-        ):
-            return True
-        return self._viewer_can_manage_roster(
-            request=request,
-            team=team,
-            season=season,
-        )
-
-    def _viewer_can_manage_roster(
-        self,
-        *,
-        request: Request,
-        team: Team,
-        season: Season | None,
-    ) -> bool:
-        """Limit roster management to managers associated with the club."""
-        if not request.user.is_authenticated:
-            return False
-
-        viewer = self._viewer_player(request)
-        if viewer is None:
-            return False
-
-        if team.club.admin.filter(id_uuid=viewer.id_uuid).exists():
-            return True
-
-        team_data_qs = TeamData.objects.filter(team=team, coach=viewer)
-        if season is not None:
-            team_data_qs = team_data_qs.filter(season=season)
-        return team_data_qs.exists()
-
-    @staticmethod
-    def _team_data_for_season(*, team: Team, season: Season | None) -> TeamData | None:
-        queryset = TeamData.objects.filter(team=team)
-        if season is not None:
-            queryset = queryset.filter(season=season)
-        return queryset.order_by("-season__start_date").first()
-
-    @staticmethod
-    def _team_roster_player_ids(*, team: Team, season: Season | None) -> set[str]:
-        team_data_qs = TeamData.objects.filter(team=team)
-        if season is not None:
-            team_data_qs = team_data_qs.filter(season=season)
-        return {
-            str(player_id)
-            for player_id in TeamData.players.through.objects.filter(
-                teamdata_id__in=team_data_qs.values_list("id", flat=True)
-            ).values_list("player_id", flat=True)
-        }
-
-    def _fallback_goal_song_song_ids(
-        self,
-        *,
-        team: Team,
-        season: Season | None,
-    ) -> list[str]:
-        team_data = self._team_data_for_season(team=team, season=season)
-        if team_data is None:
-            return []
-        seen: set[str] = set()
-        normalized: list[str] = []
-        for entry in team_data.fallback_goal_song_song_ids or []:
-            if not isinstance(entry, str):
-                continue
-            song_id = entry.strip()
-            if not song_id or song_id in seen:
-                continue
-            seen.add(song_id)
-            normalized.append(song_id)
-        return normalized
-
-    @staticmethod
-    def _song_entry(song: PlayerSong) -> dict[str, object] | None:
-        audio_file = song.effective_audio_file
-        if song.effective_status != PlayerSongStatus.READY or not audio_file:
-            return None
-        return {
-            "id_uuid": str(song.id_uuid),
-            "audio_url": audio_file.url,
-            "start_time_seconds": int(song.start_time_seconds or 0),
-            "playback_speed": float(song.playback_speed or 1.0),
-            "title": song.effective_title,
-            "artists": song.effective_artists,
-            "player_id": str(song.player_id),
-        }
-
-    def _song_entries_for_ids(
-        self,
-        *,
-        songs: list[PlayerSong],
-        ids: list[str],
-    ) -> list[dict[str, object]]:
-        by_id = {str(song.id_uuid): song for song in songs}
-        ordered: list[dict[str, object]] = []
-        for song_id in ids:
-            song = by_id.get(song_id)
-            if song is None:
-                continue
-            entry = self._song_entry(song)
-            if entry is None:
-                continue
-            ordered.append(entry)
-        return ordered
-
-    def _fallback_goal_song_audio_urls(
-        self,
-        *,
-        team: Team,
-        season: Season | None,
-    ) -> list[str]:
-        ids = self._fallback_goal_song_song_ids(team=team, season=season)
-        if not ids:
-            return []
-
-        roster_player_ids = self._team_roster_player_ids(team=team, season=season)
-        songs = list(
-            player_songs_by_ids(song_ids=ids).filter(player_id__in=roster_player_ids)
-        )
-        entries = self._song_entries_for_ids(songs=songs, ids=ids)
-        audio_urls: list[str] = []
-        for entry in entries:
-            audio_url = entry.get("audio_url")
-            if isinstance(audio_url, str):
-                audio_urls.append(audio_url)
-        return audio_urls
+            return validate_ready_goal_songs(ids=ids, songs=songs_qs)
+        except GoalSongSelectionError as exc:
+            detail: dict[str, object] = {"detail": exc.detail}
+            if exc.missing is not None:
+                detail["missing"] = exc.missing
+            if exc.not_ready is not None:
+                detail["not_ready"] = exc.not_ready
+            raise ValidationError(detail) from exc
 
     @staticmethod
     def _parse_bool_query_param(

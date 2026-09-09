@@ -156,8 +156,12 @@ def test_request_preview_counts_shared_feeds_and_budget(season: Season) -> None:
     )
     before = list(SyncResource.objects.values())
     summary = preview_sync(season, budget=1)
-    assert summary["by_kind"] == {"pool_results": 1, "club_program": 1}
-    assert summary["candidate_feed_requests"] == len({"pool_results", "club_program"})
+    assert summary["by_kind"] == {
+        "pool_results": 1,
+        "club_program": 1,
+        "club_results": 2,
+    }
+    assert summary["candidate_feed_requests"] == sum(summary["by_kind"].values())
     assert summary["batch_feed_requests_upper_bound"] == 1
     assert list(SyncResource.objects.values()) == before
     assert not SyncLease.objects.exists()

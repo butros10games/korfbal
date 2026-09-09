@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.competition.models import Match, MatchMembership, SyncResource
+from apps.competition.services.match_timing import import_playing_time
 from apps.competition.services.player_photos import discover_photo
 from apps.competition.services.rosters import (
     count_private_people,
@@ -67,6 +68,7 @@ def import_lineup(
     existing = MatchMembership.objects.filter(match=match)
     if match.lineup_observed_at and match.lineup_observed_at > observed_at:
         return
+    import_playing_time(match, data, observed_at)
     selections, hidden = _parse_selections(match, data, allows)
     withdraw_people(hidden, season, observed_at)
     current = []

@@ -115,6 +115,11 @@ def test_mvp_vote_returns_conflict_when_match_not_finished(client: Client) -> No
         pytest.param("[]", "Invalid JSON body.", id="non-object-json"),
         pytest.param({}, "Missing 'candidate_id_uuid'.", id="missing-candidate"),
         pytest.param(
+            {"candidate_id_uuid": "not-a-uuid"},
+            "Unknown candidate.",
+            id="malformed-candidate",
+        ),
+        pytest.param(
             {"candidate_id_uuid": UNKNOWN_CANDIDATE_ID},
             "Unknown candidate.",
             id="unknown-candidate",

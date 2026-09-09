@@ -364,7 +364,7 @@ def test_manager_assigns_team_and_generates_shared_duty_qr(client: Client) -> No
             content_type="application/json",
         )
     with patch(
-        "apps.tournament.api.views.qrcode.make",
+        "apps.tournament.api.views.referee_access.qrcode.make",
         wraps=qrcode.make,
     ) as make_qr:
         qr = client.get(
@@ -476,7 +476,7 @@ def test_referee_pdf_exports_unassigned_matches_with_direct_links(
     client.force_login(manager)
 
     with patch(
-        "apps.tournament.api.views.build_referee_duties_pdf",
+        "apps.tournament.api.views.referee_access.build_referee_duties_pdf",
         return_value=b"%PDF-1.4\n%%EOF\n",
     ) as build_pdf:
         response = client.get(
@@ -522,7 +522,7 @@ def test_manager_exports_printable_referee_duties(client: Client) -> None:
     client.force_login(manager)
 
     with patch(
-        "apps.tournament.api.views.build_referee_duties_pdf",
+        "apps.tournament.api.views.referee_access.build_referee_duties_pdf",
         return_value=b"%PDF-1.4\n%%EOF\n",
     ) as build_pdf:
         response = client.get(

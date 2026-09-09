@@ -50,6 +50,42 @@ def _create_tournament(client: Client) -> dict[str, object]:
     return response.json()
 
 
+def test_tournament_patch_publishes_one_revision(
+    client: Client,
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
+    """DRF partial updates must run the update publication envelope only once."""
+    owner = get_user_model().objects.create_user(username="tournament-editor")
+    client.force_login(owner)
+    tournament = Tournament.objects.create(
+        name="Original name",
+        slug="single-update",
+        owner=owner,
+        starts_at=timezone.now(),
+    )
+    previous_revision = tournament.live_revision
+
+    with (
+        patch.object(change_publisher, "publish") as publish,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        response = client.patch(
+            f"/api/tournaments/{tournament.id_uuid}/",
+            data={"name": "Updated name"},
+            content_type="application/json",
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["name"] == "Updated name"
+    tournament.refresh_from_db()
+    assert tournament.name == "Updated name"
+    assert tournament.live_revision == previous_revision + 1
+    publish.assert_called_once_with(
+        tournament_id=str(tournament.id_uuid),
+        revision=tournament.live_revision,
+    )
+
+
 def _create_ready_round() -> tuple[
     object,
     Tournament,

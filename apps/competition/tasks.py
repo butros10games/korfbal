@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient
 from apps.competition.composition import competition_client
+from apps.competition.models import SyncLease
 from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
 from apps.schedule.models import Season
 
@@ -52,6 +53,18 @@ def sync_current_competition() -> dict[str, object]:
     if season is None:
         logger.warning("Competition sync configured season is not active")
         return {"status": "inactive_season", "http_requests": 0}
+    return _run_scheduled(season)
+
+
+def _run_scheduled(season: Season) -> dict[str, object]:
+    """Avoid opening credentials or loading catalogue snapshots while idle/busy."""
+    if SyncLease.objects.filter(
+        key="sportlink", expires_at__gt=timezone.now()
+    ).exists():
+        return {"status": "busy_or_cooldown", "http_requests": 0}
+    backlog = preview_sync(season, budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None)
+    if not backlog["candidate_feed_requests"]:
+        return {"status": "idle", "http_requests": 0, "backlog": backlog}
     try:
         summary = sync(
             season,

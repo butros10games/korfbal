@@ -10,6 +10,46 @@ import pytest
 
 @pytest.mark.migration_regression
 @pytest.mark.django_db(transaction=True)
+def test_polling_upgrade_refills_only_collection_membership() -> None:
+    """Legacy ETags cannot certify unknown membership after the schema upgrade."""
+    executor = MigrationExecutor(connection)
+    before = [("competition", "0017_schedule_notification_id")]
+    after = [("competition", "0018_match_polling_coverage")]
+    try:
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="coverage-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        resources = old.get_model("competition", "SyncResource").objects
+        now = timezone.now()
+        for kind in ("club_program", "club_results", "pool_results", "clubs"):
+            resources.create(
+                season=season,
+                kind=kind,
+                etag="synthetic-validator",
+                next_sync_at=now,
+                fetched_at=now,
+            )
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        current = executor.loader.project_state(after).apps
+        resources = current.get_model("competition", "SyncResource").objects
+        assert resources.get(kind="clubs").etag == "synthetic-validator"
+        assert not resources.exclude(kind="clubs").exclude(etag="").exists()
+        assert all(
+            row.match_ids == [] and row.fetched_at == now and row.next_sync_at == now
+            for row in resources.all()
+        )
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
 def test_existing_variants_are_backfilled() -> None:
     """Historical models exercise schema order and preserve source IDs."""
     executor = MigrationExecutor(connection)

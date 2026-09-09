@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 import time
 import uuid
@@ -19,10 +20,11 @@ from apps.competition.application.ports import (
     RequestBudgetError,
     TransportError,
 )
+from apps.competition.domain.timing import expected_finish
 from apps.competition.models import Match, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
+from apps.competition.services.match_details import DETAIL_FIELDS
 from apps.competition.services.polling import (
-    EXPECTED_DURATION,
     PollJob,
     PollPlanner,
     mark_checked,
@@ -65,14 +67,15 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
         season=season, kind="clubs"
     ).exists():
         counts["clubs"] = 1
-    for job in planner.candidate_jobs():
+    jobs = planner.candidate_jobs()
+    for job in jobs:
         kind = job.resource.kind
         counts[kind] = counts.get(kind, 0) + 1
     total = sum(counts.values())
     overdue = [
         next_result_check(row, planner.now)
         for row in planner.rows
-        if row["starts_at"] + EXPECTED_DURATION <= planner.now
+        if expected_finish(row) <= planner.now
         and row["status"] not in {"CANCELLED", "WITHDRAWN", "POSTPONED"}
         and not (
             row["status"] == "FINAL"
@@ -81,9 +84,26 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
         )
         and next_result_check(row, planner.now) <= planner.now
     ]
+    schedules = [
+        row for row in planner.rows if row["status"] not in {"FINAL", "WITHDRAWN"}
+    ]
     return {
         "dry_run": True,
+        "schedules_never_checked": sum(
+            row["schedule_checked_at"] is None for row in schedules
+        ),
+        "oldest_schedule_check_age_seconds": max(
+            (
+                max(0, int((planner.now - row["schedule_checked_at"]).total_seconds()))
+                for row in schedules
+                if row["schedule_checked_at"]
+            ),
+            default=0,
+        ),
         "candidate_feed_requests": total,
+        "due_match_feed_estimate": estimate_due_coverage(jobs),
+        "due_results": len(set().union(*(job.matches for job in jobs))),
+        "due_schedules": len(set().union(*(job.schedule_matches for job in jobs))),
         "batch_feed_requests_upper_bound": min(budget, total) if budget else total,
         "by_kind": counts,
         "overdue_pending_matches": len(overdue),
@@ -93,11 +113,38 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
         ),
         "max_http_requests": budget,
         "note": (
-            "Local snapshot before response deduplication; excludes OAuth, retries "
+            "Candidate count is before deduplication; due-match estimate assumes "
+            "complete "
+            "responses and excludes routine audits, OAuth, retries "
             "and newly discovered feeds; assumes no failure fallback. "
             "Shared quotas/cooldowns may defer work."
         ),
     }
+
+
+def estimate_due_coverage(jobs: list[PollJob]) -> int:
+    """Estimate greedy request coverage without claiming unobserved completeness."""
+    coverage = [
+        {
+            (kind, pk)
+            for kind, ids in (
+                ("result", job.matches),
+                ("schedule", job.schedule_matches),
+            )
+            for pk in ids
+        }
+        for job in jobs
+    ]
+    covered: set[tuple[str, int]] = set()
+    requests = 0
+    while coverage:
+        best = max(coverage, key=lambda ids: len(ids - covered))
+        if not best - covered:
+            break
+        covered.update(best)
+        coverage.remove(best)
+        requests += 1
+    return requests
 
 
 def checkpoint(resource: SyncResource, result: FetchResult, job: PollJob) -> bool:
@@ -112,9 +159,10 @@ def checkpoint(resource: SyncResource, result: FetchResult, job: PollJob) -> boo
         if result.status == HTTP_OK:
             if result.data is None:
                 raise ValueError("Missing collection body")
-            Importer(resource.season, now).apply(
-                resource.kind, resource.source_id, result.data
-            )
+            importer = Importer(resource.season, now)
+            importer.apply(resource.kind, resource.source_id, result.data)
+            if resource.kind in {"club_program", "club_results", "pool_results"}:
+                resource.match_ids = sorted(importer.observed_match_ids)
             resource.etag = result.etag
         elif result.status != HTTP_NOT_MODIFIED or resource.fetched_at is None:
             raise ValueError("Unexpected conditional response")
@@ -150,13 +198,45 @@ def sync(
     budget: int | None = 100,
     max_seconds: int | None = None,
 ) -> dict[str, int]:
-    """Drain a bounded slice of due work; repeat the command to resume discovery.
+    """Drain due competition feeds with shared pacing and a bounded worker turn."""
+    return _sync(season, client, client_factory, RunOptions(budget, max_seconds))
+
+
+@dataclass(frozen=True)
+class RunOptions:
+    """Bound a run and optionally restrict it to missing match metadata."""
+
+    budget: int | None = 100
+    max_seconds: int | None = None
+    details_only: bool = False
+
+
+def sync_details(
+    season: Season,
+    client_factory: Callable[[], CompetitionClient],
+    *,
+    budget: int = 100,
+) -> dict[str, int]:
+    """Backfill through the same lease, authentication, pacing and accounting."""
+    return _sync(
+        season, None, client_factory, RunOptions(budget=budget, details_only=True)
+    )
+
+
+def _sync(
+    season: Season,
+    client: CompetitionClient | None,
+    client_factory: Callable[[], CompetitionClient] | None,
+    options: RunOptions,
+) -> dict[str, int]:
+    """Execute a leased batch with a client opened after the lease is acquired.
 
     Raises:
-        ValueError: A budget is invalid.
-        SyncUnavailableError: The provider lease is unavailable.
+        ValueError: Client configuration or run bounds are invalid.
+        SyncUnavailableError: Another importer or cooldown holds the lease.
 
     """
+    budget, max_seconds = options.budget, options.max_seconds
     if budget is not None and not 1 <= budget <= MAX_REQUESTS:
         raise ValueError("Request budget must be between 1 and 10000")
     if max_seconds is not None and max_seconds <= 0:
@@ -191,15 +271,22 @@ def sync(
         if client_factory is not None:
             client = client_factory()
         assert client is not None
-        enqueue(season, "clubs")
+        if not options.details_only:
+            enqueue(season, "clubs")
         planner = PollPlanner(season, timezone.now())
+        if options.details_only:
+            planner.resources = {
+                key: resource
+                for key, resource in planner.resources.items()
+                if resource.kind in DETAIL_FIELDS
+            }
         gate = TrafficGate(
             budget,
             owner,
             deadline=started + max_seconds if max_seconds else None,
         )
         cooldown = _drain(planner, client, gate, budget, summary)
-        if summary["updated"]:
+        if summary["updated"] and not options.details_only:
             publication = publish_catalogue(lease_owner=owner)
             summary["publication_blocked"] = len(publication["blocked"])
     finally:
@@ -254,6 +341,7 @@ def _drain(
         summary["deferred"] = 1
     summary["http_requests"] = gate.requests
     summary["matches_checked"] = len(planner.checked)
+    summary["schedules_checked"] = len(planner.schedule_checked)
     summary.update(planner.result_metrics())
     return cooldown
 
@@ -277,7 +365,7 @@ def _fetch_one(
                 result.status in AUTH_ERRORS
                 and resource.kind not in {"club_logo", "player_photo"}
                 and not (
-                    resource.kind in {"team_roster", "match_lineup"}
+                    resource.kind in {"team_roster", "match_lineup", *DETAIL_FIELDS}
                     and result.status == HTTP_FORBIDDEN
                 )
             ):

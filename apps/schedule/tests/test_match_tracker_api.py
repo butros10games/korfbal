@@ -19,9 +19,9 @@ from .match_api_test_support import MatchGraph, create_match_graph, create_user
 
 
 pytestmark = pytest.mark.django_db
-STATE_SERVICE = "apps.schedule.api.views.get_tracker_state"
-COMMAND_SERVICE = "apps.schedule.api.views.apply_tracker_command"
-POLL_SERVICE = "apps.schedule.api.views.poll_tracker_state"
+STATE_SERVICE = "apps.schedule.api.match_viewset_live.get_tracker_state"
+COMMAND_SERVICE = "apps.schedule.api.match_viewset_live.apply_tracker_command"
+POLL_SERVICE = "apps.schedule.api.match_viewset_live.poll_tracker_state"
 JSON = "application/json"
 
 

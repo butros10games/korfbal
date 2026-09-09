@@ -367,7 +367,7 @@ def test_team_impact_breakdown_returns_persisted_categories(
         raise AssertionError("persisted breakdown should not trigger self-heal")
 
     monkeypatch.setattr(
-        "apps.team.api.views.persist_match_impact_rows_with_breakdowns",
+        "apps.team.services.impact_breakdowns.persist_match_impact_rows_with_breakdowns",
         fail_self_heal,
     )
     response = client.get(
@@ -432,7 +432,8 @@ def test_team_impact_breakdown_tolerates_self_heal_failure(
 
     self_heal = Mock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr(
-        "apps.team.api.views.persist_match_impact_rows_with_breakdowns", self_heal
+        "apps.team.services.impact_breakdowns.persist_match_impact_rows_with_breakdowns",
+        self_heal,
     )
     response = client.get(
         f"/api/team/teams/{team.id_uuid}/impact-breakdown/",

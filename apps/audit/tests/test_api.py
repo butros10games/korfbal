@@ -418,6 +418,27 @@ def test_health_ranks_worst_producer_first(client: Client) -> None:
 
 
 @pytest.mark.parametrize("endpoint", ["summary", "producers", "trends", "health"])
+@pytest.mark.parametrize(
+    ("raw_window", "expected_hours"),
+    [(None, 24), ("", 24), ("invalid", 24), ("-4", 1), ("999", 168), ("6", 6)],
+)
+def test_aggregate_endpoints_normalize_reporting_window(
+    client: Client,
+    endpoint: str,
+    raw_window: str | None,
+    expected_hours: int,
+) -> None:
+    """Every reporting endpoint preserves the same defaults and window bounds."""
+    _login(client, staff=True)
+    params = {} if raw_window is None else {"window_hours": raw_window}
+
+    response = client.get(f"{AUDIT_API}/{endpoint}/", params)
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["window_hours"] == expected_hours
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "producers", "trends", "health"])
 def test_aggregate_endpoints_apply_non_staff_visibility(
     client: Client,
     endpoint: str,

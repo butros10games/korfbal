@@ -154,16 +154,16 @@ response deduplication; OAuth, retries, fallback after failures, and newly disco
 feeds can change the actual workload. Shared quotas and cooldowns can defer it.
 
 A schedule refresh costs one GET per due club program, covering all matches in that
-response. Result checks cost one GET per due healthy poule, with shared club-result
-fallback when poule coverage is unavailable. For example, twelve due matches in one
+response. Result checks choose between healthy poule and club feeds by how many
+still-due matches they can cover, with a healthy poule winning ties. For example, twelve due matches in one
 healthy poule plus one due club program need two feed GETs, rather than twelve match
 GETs. Directory, team, roster, and standings discovery/audits add their own requests.
 A 304 still consumes a request; OAuth renewal and retries also consume the batch cap.
 Newer programs can reschedule unscored result-feed placeholders, including postponed
 matches; scored and finished records remain protected from scoreless summaries.
 
-The application's existing Celery Beat dispatches an automatic sync every five
-minutes. Enable it once with `SPORTLINK_SYNC_ENABLED=true`, set
+The application's existing Celery Beat checks for due work every 30 seconds.
+Idle heartbeats do not open the OAuth session or make provider requests. Enable it once with `SPORTLINK_SYNC_ENABLED=true`, set
 `SPORTLINK_SYNC_SEASON` to the active source season (for example `2026-2027`), and
 set `SPORTLINK_SYNC_SESSION_FILE` to the private OAuth JSON session. Automatic runs
 need the worker and Beat services running; they do not depend on page views or CLI
@@ -180,8 +180,8 @@ skips an expired source season; update the scope at season rollover.
 
 Automatic runs drain due shared feeds until the snapshot is complete or their
 worker window expires. `SPORTLINK_SYNC_MAX_SECONDS` defaults to 240 seconds (at
-most four minutes), leaving room before the next five-minute tick. HTTP already
-in progress and final publication may finish afterward. There is no default
+most four minutes). Overlapping heartbeats skip while the shared lease is held.
+HTTP already in progress and final publication may finish afterward. There is no default
 numeric cap on automatic requests and no two-feed maintenance allowance.
 `SPORTLINK_SYNC_MAX_REQUESTS=0` disables that optional cap; positive values up to
 10,000 impose an operator-selected cap. Remaining work resumes on a later tick.
@@ -205,13 +205,13 @@ does not silently impose different permanent hourly/daily quotas.
 
 Automatic sync acquires the provider lease before reading the latest rotated
 session and closes its client afterward. Overlapping ticks skip, and queued ticks
-expire after five minutes. Each batch plans from a local snapshot; newly discovered
+expire after 30 seconds. Each batch updates known fixtures after responses; newly discovered
 feeds enter the next run. Manual CLI imports still have an explicit `--max-requests`
 budget (default 100), and the credentials-free preview remains available.
 
 Task summaries include HTTP counts by feed kind, elapsed milliseconds, distinct
 matches checked, actual result observations, newly observed final results, and
-result-delay totals/maxima in seconds measured from kickoff +75 minutes. Delay is
+result-delay totals/maxima in seconds measured from the estimated finish. Delay is
 when this importer saw the score, not a claim about when the provider first
 published it. Already-final corrections are excluded from new-final delay metrics.
 The backlog reports eligible feeds by kind, overdue pending matches, and the oldest
@@ -224,22 +224,92 @@ response bodies but still consume HTTP attempts.
 Club directories, team lists and poule assignments are refreshed weekly; fixture
 programs and poule standing audits daily; club result discovery audits weekly.
 For unscored fixtures in the next 48 hours (or unresolved in the previous 24 hours),
-club programs are eligible hourly to catch rescheduling. Failed feeds keep their
+club programs are eligible hourly, or every 15 minutes within six hours of kickoff.
+Per-match schedule freshness survives worker turns and suppresses opponent checks;
+every club still receives its daily discovery audit. Failed feeds keep their
 retry deadline, and these program checks never advance result-check timestamps.
 Within a batch, actual results returned by one feed also satisfy score checks
 planned through another feed. This does not suppress a due standings/discovery
 audit or count missing rows in a filtered response as observed. First-time team
 assignment discovery remains necessary: one poule cannot prove all assignments.
-Known matches can request earlier shared result checks: starting 75 minutes after
-kickoff, pending results are checked every five minutes for three hours, hourly until
+Known matches request shared result checks from their estimated finish. Pending
+results are checked every three minutes for three hours, hourly until
 48 hours, daily thereafter, and weekly after 30 days. Completed results get daily
 correction checks for seven days, weekly until day 28 and monthly thereafter.
 These are priorities subject to the global budget and collection audit schedule,
-not freshness guarantees. A complete healthy poule feed covers its matches;
-filtered or failing poules fall back to club feeds, preferring the club that covers
-the most due matches. Successful checks suppress overlapping opponent checks in
-the batch. `results_checked_at` distinguishes a scope check from an actual result
-observation; absence never fabricates a score or deletes a fixture.
+not freshness guarantees. Recent nonempty response membership also guides feed selection: feeds that
+omitted due matches receive less coverage credit for up to one day, without
+removing those matches from the queue. Unknown and older scopes remain eligible.
+Exact response membership is persisted for HTTP 304 reuse;
+a successful empty/partial response never certifies an absent match. The migration
+clears only collection ETags so existing checkpoints refill their membership once.
+One in five selections is reserved for discovery or audits overdue by six hours,
+when such work exists; very small optional batch caps may still delay maintenance.
+
+Finish estimates prefer each match’s imported `playing_time_minutes`, adding a 15-minute
+heuristic allowance for breaks and reporting. Otherwise, the versioned 2026/27
+[KNKV rules](https://www.knkv.nl/kennisbank/wedstrijdinformatie/) distinguish known
+40-, 50- and 60-minute formats using mapped classes, colours and playing formats.
+Unknown/stopped-clock formats retain the 75-minute elapsed-time fallback; J-team
+numbers never imply age. Estimates do not establish that a match has finished,
+and extra time/penalties can delay its final score.
+
+New match discovery queues missing metadata in bulk per response, preserving
+existing retry deadlines. It queues three one-time metadata components using the captured
+KNKV app requests:
+
+| Component    | GET endpoint                                   | Stored fields                                                                            |
+| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Playing time | `match/MatchResultDetails?PublicMatchId=…&v=8` | `Duration`, `EventTimeResolution=MINUTE`, and `MatchPeriod` descriptions/playing minutes |
+| Venue        | `match/MatchFacility?PublicMatchId=…&v=3`      | Facility, address, pitch/surface and dressing-room metadata                              |
+| Rules        | `match/MatchInfo?PublicMatchId=…&v=1`          | The provider's structured match rules                                                    |
+
+Both `v` and `X-Navajo-Version` use the endpoint's version. All calls retain the
+session's originating User-Agent and `X-Navajo-Instance: KNKV`. Venue data comes
+from `MatchFacility`, not nullable `MatchResultDetails.Location`. Timing-only
+requests discard private lineup fields and do not enable roster imports.
+When lineup importing is enabled, its existing v8 response also imports timing.
+The competition match API exposes playing minutes, periods, venue and rules.
+Each component has a separate observed timestamp; completed components do not
+need another detail GET during routine score/schedule polling. Recent unambiguous
+class observations can inform a temporary timing estimate while a fixture's own
+details are still missing, but are never copied into that fixture's imported data.
+
+Backfill existing matches with the same pacing, lease, OAuth renewal and resumable
+checkpoints. This only fills missing metadata; it does not overwrite scores or
+change native tracker state. Known archive/Dataservice identifiers are excluded
+because these endpoints use Sportlink app identities.
+
+```bash
+# From apps/django_projects/korfbal: no credentials, HTTP or checkpoint writes.
+uv run python manage.py update_competition_match_details --season 2026-2027 --dry-run
+
+# At most 100 HTTP attempts (including OAuth/retries); rerun to resume.
+uv run python manage.py update_competition_match_details --season 2026-2027 \
+    --session-file /secure/location/sportlink-session.json --max-requests 100
+```
+
+For **N matches missing all three components**, the base backfill cost is **3 × N
+GETs**. If duration is already imported, that match needs only venue and rules
+(two GETs). Fully enriched matches need zero. The command prints exact local
+`missing_by_kind` counts before a dry-run and `remaining_detail_requests` after
+execution. OAuth and retries add attempts; source permission failures retain their
+backoff and exhausted checkpoints are not silently reset. Missing or malformed
+metadata is not reported as successfully imported.
+
+After at least 12 tightly bracketed final observations in a mapped class, polling
+can learn a reporting allowance from the lower decile, capped at 15 minutes.
+Only a final within three minutes of an actual unscored observation is eligible;
+backlog-delayed first observations, rescheduled matches, and changes to playing
+time or competition class between observations cannot train it.
+This is an observed reporting estimate, not a provider publication timestamp.
+
+The dry-run also reports `due_match_feed_estimate`, `due_results`, `due_schedules`,
+`schedules_never_checked` and `oldest_schedule_check_age_seconds`. The greedy feed
+estimate assumes complete responses and excludes independent discovery/audits,
+OAuth and retries; actual HTTP counts remain authoritative. A synthetic regression
+checks 12 enriched due matches in 12 pools through four club requests (67% fewer), with no
+claim that production has the same overlap.
 
 All discovered feeds are queued once per season. National discovery takes multiple
 batches; completion depends on catalogue size, pacing, provider responses and any

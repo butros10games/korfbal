@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict
 
 from django.db import models
 
@@ -280,34 +280,39 @@ def _elapsed_match_seconds(
     )
 
 
-def _time_in_minutes(
+class _EventTimingPayload(TypedDict):
+    time: str
+    elapsed_seconds: float
+
+
+def _event_timing_payload(
     *,
     match_data: MatchData,
     match_part: MatchPart,
     event_time: datetime,
     context: MatchTimelineContext | None = None,
-) -> str:
-    time_in_minutes_value = round(
-        _elapsed_match_seconds(
-            match_data=match_data,
-            match_part=match_part,
-            event_time=event_time,
-            context=context,
-        )
-        / 60,
+) -> _EventTimingPayload:
+    elapsed_seconds = _elapsed_match_seconds(
+        match_data=match_data,
+        match_part=match_part,
+        event_time=event_time,
+        context=context,
     )
+    time_in_minutes_value = round(elapsed_seconds / 60)
     match_part_number = match_part.part_number
 
     left_over = time_in_minutes_value - (
         (match_part_number * match_data.part_length) / 60
     )
     if left_over > 0:
-        return (
+        label = (
             str(time_in_minutes_value - left_over).split(".")[0]
             + "+"
             + str(left_over).split(".")[0]
         )
-    return str(time_in_minutes_value)
+    else:
+        label = str(time_in_minutes_value)
+    return {"time": label, "elapsed_seconds": elapsed_seconds}
 
 
 def _build_match_events(
@@ -599,13 +604,7 @@ def _serialize_possession_change_event(
         "kind": event.kind,
         "match_part_id": str(event.match_part_id),
         "time_iso": event.time.isoformat(),
-        "time": _time_in_minutes(
-            match_data=match_data,
-            match_part=event.match_part,
-            event_time=event.time,
-            context=context,
-        ),
-        "elapsed_seconds": _elapsed_match_seconds(
+        **_event_timing_payload(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.time,
@@ -658,13 +657,7 @@ def _serialize_goal_event(
         "name": "Gescoord",
         "match_part_id": str(event.match_part.id_uuid),
         "time_iso": event.time.isoformat(),
-        "time": _time_in_minutes(
-            match_data=match_data,
-            match_part=event.match_part,
-            event_time=event.time,
-            context=context,
-        ),
-        "elapsed_seconds": _elapsed_match_seconds(
+        **_event_timing_payload(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.time,
@@ -733,17 +726,13 @@ def _serialize_shot_timeline_event(
         payload["match_part_id"] = str(event.match_part.id_uuid)
 
     if event.match_part is not None and event.time is not None:
-        payload["time"] = _time_in_minutes(
-            match_data=match_data,
-            match_part=event.match_part,
-            event_time=event.time,
-            context=context,
-        )
-        payload["elapsed_seconds"] = _elapsed_match_seconds(
-            match_data=match_data,
-            match_part=event.match_part,
-            event_time=event.time,
-            context=context,
+        payload.update(
+            _event_timing_payload(
+                match_data=match_data,
+                match_part=event.match_part,
+                event_time=event.time,
+                context=context,
+            )
         )
 
     return payload
@@ -780,12 +769,12 @@ def _serialize_substitute_event(
 
     if event.match_part:
         payload["match_part_id"] = str(event.match_part.id_uuid)
-        payload["time"] = _time_in_minutes(
+        payload["time"] = _event_timing_payload(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.time,
             context=context,
-        )
+        )["time"]
     else:
         payload["time"] = _intermission_label_for_time(
             match_data,
@@ -851,12 +840,12 @@ def _serialize_pause_event(
         "name": "Time-out" if timeout_id else "Pauze",
         "match_part_id": str(event.match_part.id_uuid),
         "team_id": timeout_team_id,
-        "time": _time_in_minutes(
+        "time": _event_timing_payload(
             match_data=match_data,
             match_part=event.match_part,
             event_time=event.start_time,
             context=context,
-        ),
+        )["time"],
         "length": event.length().total_seconds(),
         "start_time": (event.start_time.isoformat() if event.start_time else None),
         "end_time": event.end_time.isoformat() if event.end_time else None,

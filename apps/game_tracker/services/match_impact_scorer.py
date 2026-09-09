@@ -4,20 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
 import logging
 from operator import itemgetter
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 from django.db.models import Prefetch
 
+from apps.game_tracker.domain.impact_results import (
+    MatchImpactRow,
+    PlayerImpactBreakdown,
+    add_breakdown,
+    build_impact_results,
+)
 from apps.game_tracker.domain.impact_scoring import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     MatchImpactContribution,
     ShotImpactWeights,
     Side,
-    aggregate_v7_contributions,
-    aggregate_win_probability_added,
     compute_v7_contributions,
     compute_v8_contributions,
     conceding_side_for_goal as _conceding_side_for_goal,
@@ -299,114 +302,6 @@ def _compute_shooting_efficiency_multipliers(
     return goal_mult_by_player, miss_mult_by_player
 
 
-@dataclass(frozen=True)
-class MatchImpactRow:
-    """Computed persisted impact score for a single player in a match."""
-
-    player_id: str
-    team_id: str | None
-    impact_score: Decimal
-    win_probability_added: Decimal = Decimal("0.00000")
-
-
-@dataclass(frozen=True)
-class _V8MatchSettings:
-    duration_minutes: float
-    home_team_id: str
-    away_team_id: str
-
-
-class ImpactBreakdownItem(TypedDict):
-    """Aggregated contribution for a single impact category."""
-
-    points: float
-    count: int
-
-
-PlayerImpactBreakdown = dict[str, dict[str, ImpactBreakdownItem]]
-
-
-def _round_v7_score(value: float) -> Decimal:
-    """Store enough precision for correct season aggregation; UI rounds to 1dp."""
-    return Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-
-
-def _round_wpa(value: float) -> Decimal:
-    """Store WPA precisely enough to aggregate percentage-point changes."""
-    return Decimal(str(value)).quantize(Decimal("0.00001"), rounding=ROUND_HALF_UP)
-
-
-def _compute_v7_rows_and_breakdown(
-    *,
-    shots: list[dict[str, Any]],
-    known_player_ids: list[str],
-    player_team_id: dict[str, str],
-) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown, list[MatchImpactContribution]]:
-    contributions = compute_v7_contributions(shots)
-    totals: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
-    totals.update(aggregate_v7_contributions(contributions))
-
-    breakdown: PlayerImpactBreakdown = {}
-    for contribution in contributions:
-        _add_breakdown(
-            breakdown,
-            pid=contribution.player_id,
-            category=contribution.category,
-            delta=contribution.points,
-        )
-
-    rows = [
-        MatchImpactRow(
-            player_id=player_id,
-            team_id=player_team_id.get(player_id),
-            impact_score=_round_v7_score(score),
-        )
-        for player_id, score in totals.items()
-    ]
-    return rows, breakdown, contributions
-
-
-def _compute_v8_rows_and_breakdown(
-    *,
-    events: list[dict[str, Any]],
-    shots: list[dict[str, Any]],
-    known_player_ids: list[str],
-    player_team_id: dict[str, str],
-    settings: _V8MatchSettings,
-) -> tuple[list[MatchImpactRow], PlayerImpactBreakdown, list[MatchImpactContribution]]:
-    contributions = compute_v8_contributions(
-        shots,
-        events,
-        match_duration_minutes=settings.duration_minutes,
-        home_team_id=settings.home_team_id,
-        away_team_id=settings.away_team_id,
-    )
-    totals: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
-    totals.update(aggregate_v7_contributions(contributions))
-    wpa_totals: dict[str, float] = dict.fromkeys(known_player_ids, 0.0)
-    wpa_totals.update(aggregate_win_probability_added(contributions))
-
-    breakdown: PlayerImpactBreakdown = {}
-    for contribution in contributions:
-        _add_breakdown(
-            breakdown,
-            pid=contribution.player_id,
-            category=contribution.category,
-            delta=contribution.points,
-        )
-
-    rows = [
-        MatchImpactRow(
-            player_id=player_id,
-            team_id=player_team_id.get(player_id),
-            impact_score=_round_v7_score(score),
-            win_probability_added=_round_wpa(wpa_totals.get(player_id, 0.0)),
-        )
-        for player_id, score in totals.items()
-    ]
-    return rows, breakdown, contributions
-
-
 def _observation_responsibility(payload: object) -> tuple[str, bool] | None:
     """Extract one player role from a matched or merged shot observation."""
     if not isinstance(payload, Mapping):
@@ -501,30 +396,6 @@ def compute_match_impact_contributions(
         home_team_id=str(match.home_team_id),
         away_team_id=str(match.away_team_id),
     )
-
-
-def _add_breakdown(
-    breakdown_by_player: PlayerImpactBreakdown,
-    *,
-    pid: str,
-    category: str,
-    delta: float,
-) -> None:
-    if not pid:
-        return
-
-    per_player = breakdown_by_player.setdefault(
-        pid, cast(dict[str, ImpactBreakdownItem], {})
-    )
-    if category not in per_player:
-        per_player[category] = cast(
-            ImpactBreakdownItem,
-            {"points": delta, "count": 1},
-        )
-        return
-
-    per_player[category]["points"] += delta
-    per_player[category]["count"] += 1
 
 
 def _add_players_from_groups(
@@ -674,7 +545,7 @@ def _add_impact(
     impact_by_player[pid] = (impact_by_player.get(pid) or 0.0) + delta
 
     if breakdown_by_player is not None and category:
-        _add_breakdown(
+        add_breakdown(
             breakdown_by_player,
             pid=pid,
             category=category,
@@ -1003,27 +874,23 @@ def _compute_match_impact(
     )
     known_player_ids = sorted(player_team_id.keys())
 
-    if algorithm_version == "v8":
-        rows, breakdown, _contributions = _compute_v8_rows_and_breakdown(
-            events=events,
-            shots=shots,
-            known_player_ids=known_player_ids,
-            player_team_id=player_team_id,
-            settings=_V8MatchSettings(
-                duration_minutes=(match_data.parts * match_data.part_length) / 60,
+    if algorithm_version in {"v7", "v8"}:
+        contributions = (
+            compute_v7_contributions(shots)
+            if algorithm_version == "v7"
+            else compute_v8_contributions(
+                shots,
+                events,
+                match_duration_minutes=(match_data.parts * match_data.part_length) / 60,
                 home_team_id=home_team_id,
                 away_team_id=away_team_id,
-            ),
+            )
         )
-        return rows, breakdown
-
-    if algorithm_version == "v7":
-        rows, breakdown, _contributions = _compute_v7_rows_and_breakdown(
-            shots=shots,
+        return build_impact_results(
+            contributions,
             known_player_ids=known_player_ids,
             player_team_id=player_team_id,
         )
-        return rows, breakdown
 
     role_intervals_by_id = build_match_player_role_timeline(
         known_player_ids=known_player_ids,

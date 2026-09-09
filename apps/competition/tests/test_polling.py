@@ -44,6 +44,7 @@ def test_shared_feed_covers_both_opponents(season: Season, filtered: bool) -> No
     job = planner.next_job()
     assert job is not None
     assert job.resource.kind == ("club_results" if filtered else "pool_results")
+    job.resource.match_ids = list(Match.objects.values_list("pk", flat=True))
     assert mark_checked(job, now)
     planner.completed(job, checked=True)
     assert planner.next_job() is None
@@ -82,7 +83,7 @@ def test_filtered_pool_falls_back_to_club(season: Season) -> None:
 @pytest.mark.parametrize(
     ("age", "final", "interval"),
     [
-        (2, False, 5 / 60),
+        (2, False, 3 / 60),
         (8, False, 1),
         (72, False, 24),
         (72, True, 24),
@@ -229,7 +230,7 @@ def test_daily_pool_metadata_does_not_delay_due_scores(season: Season) -> None:
 
 
 @pytest.mark.django_db
-def test_first_result_poll_at_75_minutes_and_five_minute_rechecks(
+def test_first_result_poll_at_75_minutes_and_three_minute_rechecks(
     season: Season,
 ) -> None:
     """Fresh daily metadata cannot delay the end-of-match polling window."""
@@ -251,12 +252,13 @@ def test_first_result_poll_at_75_minutes_and_five_minute_rechecks(
     job = planner.next_job()
     assert job is not None
     assert job.resource.kind == "pool_results"
+    job.resource.match_ids = list(Match.objects.values_list("pk", flat=True))
     assert mark_checked(job, now)
     SyncResource.objects.filter(pk=job.resource.pk).update(fetched_at=now)
     assert (
-        PollPlanner(season, now + timedelta(minutes=4, seconds=59)).next_job() is None
+        PollPlanner(season, now + timedelta(minutes=2, seconds=59)).next_job() is None
     )
-    assert PollPlanner(season, now + timedelta(minutes=5)).next_job() is not None
+    assert PollPlanner(season, now + timedelta(minutes=3)).next_job() is not None
 
 
 @pytest.mark.django_db
@@ -329,7 +331,7 @@ def test_upcoming_schedules_refresh_hourly_without_score_checks(
     assert {job.resource.kind for job in jobs} == (
         {"club_program"} if days_until_match == 1 else set()
     )
-    assert all(not job.matches for job in jobs)
+    assert all(job.schedule_matches and not job.matches for job in jobs)
 
 
 @pytest.mark.django_db

@@ -22,6 +22,7 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.services import timeline_reads
+from apps.game_tracker.services.match_timeline_payload import serialize_goal_event
 from apps.game_tracker.services.timeline_reads import (
     consistent_timeline_read,
     read_match_event_history,
@@ -271,3 +272,48 @@ def test_timeline_read_boundary_never_requests_a_write_lock(
         current_identity=False,
     )
     read_match_event_history(match_data_id=tracker.match_data.pk)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("part_number", "offset_seconds", "label", "elapsed_seconds"),
+    [
+        (1, 300, "5", 300),
+        (1, 330, "5", 300),
+        (1, 420, "6", 360),
+        (1, 1290, "20", 1230),
+        (1, 1350, "20+2", 1290),
+        (2, 420, "26", 1560),
+        (2, 1350, "40+2", 2490),
+    ],
+)
+def test_editor_goal_timing_reads_pauses_once(
+    part_number: int, offset_seconds: int, label: str, elapsed_seconds: int
+) -> None:
+    """Editor labels and precise clocks share one pause-adjusted calculation."""
+    tracker, fixture = _create_timeline()
+    tracker.match_data.part_length = 1200
+    part = fixture["match_part"]
+    part.part_number = part_number
+    part.save(update_fields=["part_number"])
+    Pause.objects.filter(match_data=tracker.match_data).update(
+        start_time=part.start_time + timedelta(minutes=5),
+        end_time=part.start_time + timedelta(minutes=6),
+    )
+    shot = Shot.objects.select_related(
+        "match_part", "player__user", "team", "shot_type"
+    ).get(match_data=tracker.match_data)
+    shot.time = part.start_time + timedelta(seconds=offset_seconds)
+
+    with CaptureQueriesContext(connection) as captured:
+        payload = serialize_goal_event(tracker.match_data, shot)
+
+    assert payload is not None
+    assert payload["time"] == label
+    assert payload["elapsed_seconds"] == elapsed_seconds
+    pause_queries = [
+        query["sql"]
+        for query in captured.captured_queries
+        if f'FROM "{Pause._meta.db_table}"' in query["sql"]
+    ]
+    assert len(pause_queries) == 1

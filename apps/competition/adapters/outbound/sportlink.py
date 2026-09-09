@@ -95,7 +95,11 @@ class SportlinkClient:
         if parameter:
             params[parameter] = resource.source_id
         headers = {"X-Navajo-Version": str(version)}
-        if resource.etag and resource.kind not in {"team_roster", "match_lineup"}:
+        if resource.etag and resource.kind not in {
+            "team_roster",
+            "match_lineup",
+            "match_timing",
+        }:
             headers["If-None-Match"] = resource.etag
         response = self._get(
             BASE_URL + path,
@@ -120,7 +124,25 @@ class SportlinkClient:
             result.data = response.json()
             if not isinstance(result.data, dict):
                 raise ValueError("Expected a competition collection object")
+            result.data = self._metadata_body(resource.kind, result.data)
         return result
+
+    @staticmethod
+    def _metadata_body(kind: str, data: dict) -> dict:
+        """Drop private lineup fields from duration-only requests."""
+        if kind != "match_timing":
+            return data
+        return {
+            key: data[key]
+            for key in (
+                "PublicMatchId",
+                "Duration",
+                "EventTimeResolution",
+                "MatchPeriod",
+                "Error",
+            )
+            if key in data
+        }
 
     def _logo_get(self, url: str, gate: RequestGate | None) -> requests.Response:
         """Authenticate only the fixed, validated logo URL; bound renewal to once."""

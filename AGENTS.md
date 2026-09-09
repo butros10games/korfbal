@@ -55,6 +55,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.
 - For DRF detail actions that search related entities, disable the parent viewset’s search filter on that action; otherwise `get_object()` applies the related search term to the parent and returns a misleading 404.
+- DRF `partial_update()` delegates to `update()`. Keep qualifier refreshes and revision
+  publication in one update override so a tournament PATCH does not publish twice.
 - Don’t add standalone indexes for `ForeignKey` or `OneToOneField` columns; Django already indexes
   them. Add only composite or specialized indexes that serve a measured query shape.
 - Don’t make exception dataclasses frozen. Python context managers attach traceback state while
@@ -127,3 +129,7 @@ misleading provider 500/603 errors.
 - Sportlink hourly/daily quotas are operator choices, not verified provider limits.
   Keep zero-as-disabled semantics explicit and honor provider Retry-After without
   silently replacing configured quotas after a rate-limit observation.
+
+- Persist exact match membership for Sportlink conditional feed checks; HTTP 200/304
+  success must not mark absent matches fresh. Clear legacy collection validators
+  when introducing membership tracking, so old ETags cannot certify unknown scope.

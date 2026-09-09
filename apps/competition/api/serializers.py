@@ -143,6 +143,10 @@ class CompetitionMatchSerializer(NativeSeasonSerializer):
             "automatic_result",
             "result_observed_at",
             "results_checked_at",
+            "playing_time_minutes",
+            "match_periods",
+            "facility_details",
+            "match_rules",
             "local_match",
             "updated_at",
         )

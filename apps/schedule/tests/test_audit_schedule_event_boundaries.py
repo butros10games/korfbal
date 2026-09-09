@@ -64,9 +64,13 @@ def test_public_live_endpoints_strip_team_tracker_details(client: Client) -> Non
     graph = create_match_graph(prefix="Public live allowlist")
     state = _private_tracker_state()
 
-    with patch("apps.schedule.api.views.get_tracker_state", return_value=state):
+    with patch(
+        "apps.schedule.api.match_viewset_live.get_tracker_state", return_value=state
+    ):
         full_response = client.get(f"/api/matches/{graph.match.id_uuid}/live/")
-    with patch("apps.schedule.api.views.poll_tracker_state", return_value=state):
+    with patch(
+        "apps.schedule.api.match_viewset_live.poll_tracker_state", return_value=state
+    ):
         changed_response = client.get(
             f"/api/matches/{graph.match.id_uuid}/live/poll/",
             {"since_revision": "0", "timeout": "1"},
@@ -89,7 +93,7 @@ def test_authorized_tracker_poll_forwards_parsed_transport_options(
     expected = {"changed": False, "live_revision": 7}
 
     with patch(
-        "apps.schedule.api.views.poll_tracker_state",
+        "apps.schedule.api.match_viewset_live.poll_tracker_state",
         return_value=expected,
     ) as poll_state:
         response = client.get(
@@ -123,7 +127,7 @@ def test_timeline_reads_reject_invalid_revision_before_querying(
     service_name = "read_match_events" if endpoint == "events" else "read_match_shots"
 
     with patch(
-        f"apps.schedule.api.match_viewset_events.{service_name}"
+        f"apps.schedule.api.match_viewset_event_reads.{service_name}"
     ) as read_timeline:
         response = client.get(
             f"/api/matches/{graph.match.id_uuid}/{endpoint}/",

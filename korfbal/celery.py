@@ -22,7 +22,7 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     "sync-current-competition": {
         "task": "apps.competition.tasks.sync_current_competition",
-        "schedule": 300.0,
-        "options": {"expires": 300},
+        "schedule": 30.0,
+        "options": {"expires": 30},
     },
 }

@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
 from django.db.models import Q
+from django.utils import timezone
 
+from apps.competition.domain.timing import expected_finish
 from apps.competition.models import Match, Pool, SyncResource
+from apps.competition.services.match_details import DETAIL_FIELDS
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
 
 
-EXPECTED_DURATION = timedelta(minutes=75)
-RESULT_INTERVAL = timedelta(minutes=5)
+RESULT_INTERVAL = timedelta(minutes=3)
 RECENT_RESULT_WINDOW = timedelta(hours=3)
 PENDING_HOURLY_WINDOW = timedelta(hours=48)
 CORRECTION_DAILY_WINDOW = timedelta(days=7)
@@ -23,11 +25,44 @@ DISCOVERY_SLOT_INTERVAL = 5
 MINIMUM_FEED_INTERVAL = RESULT_INTERVAL
 UPCOMING_SCHEDULE_WINDOW = timedelta(days=2)
 UPCOMING_SCHEDULE_INTERVAL = timedelta(hours=1)
+IMMINENT_SCHEDULE_INTERVAL = timedelta(minutes=15)
+MINIMUM_REPORTING_SAMPLES = 12
+
+
+MATCH_FIELDS = (
+    "id",
+    "pool_id",
+    "season__start_date",
+    "playing_time_minutes",
+    "playing_time_observed_at",
+    "facility_observed_at",
+    "rules_observed_at",
+    "external_id",
+    "reporting_delay_seconds",
+    "schedule_checked_at",
+    "pool__mapping_status",
+    "pool__competition_class_id",
+    "pool__competition_class__category",
+    "pool__competition_class__age_group",
+    "pool__competition_class__colour",
+    "pool__competition_class__playing_format",
+    "pool__competition_class__edition__discipline",
+    "home_team__club__external_id",
+    "away_team__club__external_id",
+    "starts_at",
+    "status",
+    "home_score",
+    "away_score",
+    "results_checked_at",
+    "result_observed_at",
+)
 
 
 def next_result_check(row: dict[str, Any], now: datetime) -> datetime:
-    """Return the next useful check; kickoff plus 75 minutes is a heuristic."""
-    finish = row["starts_at"] + EXPECTED_DURATION
+    """Use playing format and bounded learned reporting delay for due times."""
+    finish = expected_finish(row) + timedelta(
+        seconds=row.get("learned_delay_seconds", 0)
+    )
     checked = row["results_checked_at"] or row["result_observed_at"]
     if row["status"] in {"CANCELLED", "WITHDRAWN", "POSTPONED"}:
         return (checked or finish) + timedelta(days=7)
@@ -66,58 +101,92 @@ class PollJob:
     resource: SyncResource
     matches: set[int]
     priority: int
+    schedule_matches: set[int] = field(default_factory=set)
+    covered_matches: set[int] = field(default_factory=set)
+    urgent_matches: set[int] = field(default_factory=set)
 
 
 class PollPlanner:
     """Plan a batch from one local snapshot and coalesce overlapping result feeds.
 
-    Complete, healthy poule feeds own their matches. Club feeds provide fallback
-    for unpooled/filtered/unavailable poules, choosing the club covering most due
-    matches first. New resources discovered during a batch enter the next run.
+    Compete healthy poule and club feeds by marginal due-match coverage.
+    Only observed response membership suppresses overlapping checks; routine
+    discovery still audits every feed. New resources enter the next run.
     """
 
     def __init__(self, season: Season, now: datetime) -> None:
         """Load one season's compact scheduling snapshot without provider traffic."""
         self.now = now
+        self.snapshot_at = now
         self.season = season
         self.resources = {
             (resource.kind, resource.source_id): resource
-            for resource in SyncResource.objects.filter(
-                season=season, failures__lt=MAX_FEED_FAILURES
-            ).select_related("season")
-        }
-        self.rows = list(
-            Match.objects.filter(season=season).values(
-                "id",
-                "pool_id",
-                "home_team__club__external_id",
-                "away_team__club__external_id",
-                "starts_at",
-                "status",
-                "home_score",
-                "away_score",
-                "results_checked_at",
-                "result_observed_at",
+            for resource in SyncResource.objects
+            .filter(season=season, failures__lt=MAX_FEED_FAILURES)
+            .exclude(
+                kind__in=DETAIL_FIELDS, fetched_at__isnull=False, next_sync_at__gt=now
             )
-        )
+            .select_related("season")
+        }
+        self.rows = list(Match.objects.filter(season=season).values(*MATCH_FIELDS))
         pools = Pool.objects.filter(season=season).values(
             "id", "external_id", "results_filtered"
         )
         self.pools = {pool["id"]: pool for pool in pools}
-        self.club_matches: dict[str, set[int]] = {}
-        for row in self.rows:
-            for club in {
-                row["home_team__club__external_id"],
-                row["away_team__club__external_id"],
-            }:
-                self.club_matches.setdefault(club, set()).add(row["id"])
         self.attempted: set[int] = set()
         self.checked: set[int] = set()
+        self.schedule_checked: set[int] = set()
+        self.row_by_id = {row["id"]: dict(row) for row in self.rows}
+        self.current_by_source = {row["external_id"]: row for row in self.rows}
+        self._apply_class_durations()
+        self._learn_reporting_delays()
+
+    def _apply_class_durations(self) -> None:
+        """Reuse unambiguous recent details within the same mapped class."""
+        values: dict[int, set[int]] = {}
+        for row in self.rows:
+            context = row["pool__competition_class_id"]
+            observed = row["playing_time_observed_at"]
+            if (
+                context
+                and observed
+                and observed + timedelta(days=30) > self.now
+                and row["playing_time_minutes"]
+            ):
+                values.setdefault(context, set()).add(row["playing_time_minutes"])
+        for row in self.rows:
+            durations = values.get(row["pool__competition_class_id"], set())
+            row.pop("class_playing_time_minutes", None)
+            if len(durations) == 1:
+                row["class_playing_time_minutes"] = next(iter(durations))
+
+    def _learn_reporting_delays(self) -> None:
+        """Use a lower decile of well-observed finals; never delay by over 15 min."""
+        samples: dict[int, list[int]] = {}
+        for row in self.rows:
+            context = row["pool__competition_class_id"]
+            delay = row["reporting_delay_seconds"]
+            if context and delay is not None and row["status"] == "FINAL":
+                samples.setdefault(context, []).append(delay)
+        learned = {
+            context: min(900, sorted(values)[len(values) // 10])
+            for context, values in samples.items()
+            if len(values) >= MINIMUM_REPORTING_SAMPLES
+        }
+        for row in self.rows:
+            if row["pool__competition_class_id"] in learned:
+                row["learned_delay_seconds"] = learned[
+                    row["pool__competition_class_id"]
+                ]
 
     def _available(self, resource: SyncResource) -> bool:
         """Respect feed pacing and retry deadlines, even for urgent matches."""
         if resource.pk in self.attempted:
             return False
+        if resource.kind in DETAIL_FIELDS:
+            fixture = self.current_by_source.get(resource.source_id)
+            if fixture and fixture[DETAIL_FIELDS[resource.kind]]:
+                return False
         if resource.failures and resource.next_sync_at > self.now:
             return False
         return (
@@ -127,13 +196,14 @@ class PollPlanner:
         )
 
     def _owners(self, row: dict[str, Any]) -> list[SyncResource]:
-        """Use one complete poule feed where possible, otherwise a club fallback."""
+        """Offer all plausible feeds; healthy pools win equal-coverage ties."""
+        owners = []
         pool = self.pools.get(row["pool_id"])
         if pool and not pool["results_filtered"]:
             resource = self.resources.get(("pool_results", pool["external_id"]))
             if resource and resource.fetched_at and not resource.failures:
-                return [resource]
-        return [
+                owners.append(resource)
+        return owners + [
             resource
             for club in {
                 row["home_team__club__external_id"],
@@ -144,8 +214,18 @@ class PollPlanner:
 
     def _add_program_jobs(self, row: dict[str, Any], jobs: dict[int, PollJob]) -> None:
         """Refresh shared schedules hourly around upcoming/unresolved fixtures."""
+        interval = (
+            IMMINENT_SCHEDULE_INTERVAL
+            if abs((row["starts_at"] - self.now).total_seconds()) <= 6 * 3600
+            else UPCOMING_SCHEDULE_INTERVAL
+        )
+        if row["id"] in self.schedule_checked or (
+            row["schedule_checked_at"]
+            and row["schedule_checked_at"] + interval > self.now
+        ):
+            return
         if (
-            row["status"] not in {"FINAL", "WITHDRAWN", "CANCELLED"}
+            row["status"] not in {"FINAL", "WITHDRAWN"}
             and row["home_score"] is None
             and row["away_score"] is None
             and self.now - timedelta(days=1)
@@ -162,11 +242,12 @@ class PollPlanner:
                     and self._available(program)
                     and (
                         program.fetched_at is None
-                        or program.fetched_at + UPCOMING_SCHEDULE_INTERVAL <= self.now
+                        or program.fetched_at + interval <= self.now
                     )
                 ):
                     job = jobs.setdefault(program.pk, PollJob(program, set(), 1))
                     job.priority = min(job.priority, 1)
+                    job.schedule_matches.add(row["id"])
 
     def candidate_jobs(self) -> list[PollJob]:
         """Collect eligible feeds in one pass without selecting or marking work."""
@@ -191,15 +272,23 @@ class PollPlanner:
                     and self.now - row["starts_at"] <= PENDING_HOURLY_WINDOW
                 )
                 job.priority = min(job.priority, 0 if recent_pending else 1)
+                if recent_pending:
+                    job.urgent_matches.add(row["id"])
         return list(jobs.values())
 
     def next_job(self) -> PollJob | None:
         """Prefer shared checks while reserving periodic slots for discovery."""
+        self.now = max(self.now, timezone.now())
         jobs = self.candidate_jobs()
         if not jobs:
             return None
-        # Reserve one in five selections for first-time collection discovery.
-        bootstrap = [job for job in jobs if job.resource.fetched_at is None]
+        # Reserve one in five selections for discovery or overdue audits.
+        bootstrap = [
+            job
+            for job in jobs
+            if job.resource.fetched_at is None
+            or job.resource.next_sync_at + timedelta(hours=6) <= self.now
+        ]
         candidates = (
             bootstrap
             if len(self.attempted) % DISCOVERY_SLOT_INTERVAL
@@ -211,7 +300,11 @@ class PollPlanner:
             candidates,
             key=lambda item: (
                 item.priority,
-                -len(item.matches),
+                -len(self._likely_coverage(item, item.urgent_matches)),
+                -len(self._likely_coverage(item, item.matches | item.schedule_matches)),
+                -len(item.urgent_matches),
+                -len(item.matches | item.schedule_matches),
+                0 if item.resource.kind == "pool_results" else 1,
                 item.resource.next_sync_at,
                 item.resource.pk,
             ),
@@ -219,11 +312,26 @@ class PollPlanner:
         self.attempted.add(job.resource.pk)
         return job
 
+    def _likely_coverage(self, job: PollJob, candidates: set[int]) -> set[int]:
+        """Use recent membership to rank feeds, never to remove due work.
+
+        Empty membership is also used by legacy/unknown checkpoints, so it cannot
+        prove an empty scope. Daily audits and unknown feeds remain eligible.
+        """
+        resource = job.resource
+        if (
+            resource.match_ids
+            and resource.fetched_at
+            and resource.fetched_at + timedelta(days=1) > self.now
+        ):
+            return candidates.intersection(resource.match_ids)
+        return candidates
+
     def result_metrics(self) -> dict[str, int]:
         """Measure observed coverage and first final-score delay for this batch."""
         previous_finals = {
             row["id"]
-            for row in self.rows
+            for row in self.row_by_id.values()
             if row["status"] == "FINAL"
             and row["home_score"] is not None
             and row["away_score"] is not None
@@ -231,24 +339,13 @@ class PollPlanner:
         observed = list(
             Match.objects.filter(
                 season=self.season,
-                result_observed_at__gte=self.now,
-            ).values(
-                "id",
-                "status",
-                "home_score",
-                "away_score",
-                "starts_at",
-                "result_observed_at",
-            )
+                result_observed_at__gte=self.snapshot_at,
+            ).values(*MATCH_FIELDS)
         )
         delays = [
             max(
                 0,
-                int(
-                    (
-                        row["result_observed_at"] - row["starts_at"] - EXPECTED_DURATION
-                    ).total_seconds()
-                ),
+                int((row["result_observed_at"] - expected_finish(row)).total_seconds()),
             )
             for row in observed
             if row["id"] not in previous_finals
@@ -256,12 +353,61 @@ class PollPlanner:
             and row["home_score"] is not None
             and row["away_score"] is not None
         ]
+        samples = []
+        for result in observed:
+            previous = self.row_by_id.get(result["id"])
+            if not self._usable_reporting_sample(previous, result):
+                continue
+            assert previous is not None
+            # Subtract the observation uncertainty: a delayed polling worker
+            # must not teach future workers to wait longer.
+            delay = max(
+                0,
+                int(
+                    (
+                        previous["result_observed_at"] - expected_finish(previous)
+                    ).total_seconds()
+                ),
+            )
+            samples.append(Match(pk=result["id"], reporting_delay_seconds=delay))
+        if samples:
+            Match.objects.bulk_update(samples, ["reporting_delay_seconds"])
         return {
+            "reporting_samples_added": len(samples),
             "results_observed": len(observed),
             "new_final_results": len(delays),
             "result_delay_seconds_total": sum(delays),
             "result_delay_seconds_max": max(delays, default=0),
         }
+
+    @staticmethod
+    def _usable_reporting_sample(
+        previous: dict[str, Any] | None, result: dict[str, Any]
+    ) -> bool:
+        """Only tightly bracketed first finals can teach future polling times."""
+        if previous is None or previous["reporting_delay_seconds"] is not None:
+            return False
+        if previous["status"] != "SCHEDULED" or result["status"] != "FINAL":
+            return False
+        if any(
+            result[key] is None or previous[key] is not None
+            for key in ("home_score", "away_score")
+        ):
+            return False
+        if (
+            previous["result_observed_at"] is None
+            or previous["starts_at"] != result["starts_at"]
+            or previous.get("playing_time_minutes")
+            != result.get("playing_time_minutes")
+            or previous.get("pool__competition_class_id")
+            != result.get("pool__competition_class_id")
+        ):
+            return False
+        return (
+            timedelta(0)
+            < result["result_observed_at"] - previous["result_observed_at"]
+            <= RESULT_INTERVAL
+        )
 
     def completed(self, job: PollJob, *, checked: bool) -> None:
         """Avoid opponent-feed duplicates within the batch after a successful check."""
@@ -275,17 +421,40 @@ class PollPlanner:
         if job.resource.kind in {"club_results", "pool_results"}:
             self.checked.update(
                 Match.objects.filter(
-                    season=self.season, result_observed_at__gte=self.now
+                    season=self.season, result_observed_at__gte=self.snapshot_at
                 ).values_list("pk", flat=True)
             )
-        if checked:
-            self.checked.update(job.matches)
-            for resource in self.resources.values():
-                if resource.kind != "club_results" or resource.fetched_at is None:
-                    continue
-                related = self.club_matches.get(resource.source_id, set())
-                if related and related <= self.checked:
-                    self.attempted.add(resource.pk)
+        if checked and job.resource.kind == "club_program":
+            self.schedule_checked.update(job.covered_matches)
+        if checked and job.resource.kind in {"club_results", "pool_results"}:
+            self.checked.update(job.covered_matches)
+        if checked and job.covered_matches:
+            self._refresh_matches(job.covered_matches)
+        if checked and job.resource.kind in {*DETAIL_FIELDS, "match_lineup"}:
+            ids = {
+                row["id"]
+                for row in self.rows
+                if row["external_id"] == job.resource.source_id
+            }
+            self._refresh_matches(ids)
+            self._apply_class_durations()
+
+    def _refresh_matches(self, match_ids: set[int]) -> None:
+        """Apply rescheduling before choosing the next feed."""
+        fresh = {
+            row["id"]: row
+            for row in Match.objects.filter(
+                season=self.season, pk__in=match_ids
+            ).values(*MATCH_FIELDS)
+        }
+        for row in self.rows:
+            if row["id"] in fresh:
+                if (
+                    row["pool__competition_class_id"]
+                    != fresh[row["id"]]["pool__competition_class_id"]
+                ):
+                    row.pop("learned_delay_seconds", None)
+                row.update(fresh[row["id"]])
 
 
 def mark_checked(job: PollJob, now: datetime) -> bool:
@@ -299,7 +468,15 @@ def mark_checked(job: PollJob, now: datetime) -> bool:
         ).exists()
     ):
         return False
-    Match.objects.filter(season=job.resource.season, pk__in=job.matches).filter(
-        Q(results_checked_at__isnull=True) | Q(results_checked_at__lt=now)
-    ).update(results_checked_at=now)
+    if job.resource.kind not in {"club_program", "club_results", "pool_results"}:
+        return True
+    field_name = (
+        "schedule_checked_at"
+        if job.resource.kind == "club_program"
+        else "results_checked_at"
+    )
+    job.covered_matches = set(job.resource.match_ids)
+    Match.objects.filter(season=job.resource.season, pk__in=job.covered_matches).filter(
+        Q(**{field_name + "__isnull": True}) | Q(**{field_name + "__lt": now})
+    ).update(**{field_name: now})
     return True

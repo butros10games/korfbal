@@ -61,7 +61,7 @@ SPORTLINK_SPLIT_SEASONS = env("SPORTLINK_SPLIT_SEASONS", "false").lower() == "tr
 
 SPORTLINK_IMPORT_LINEUPS = env("SPORTLINK_IMPORT_LINEUPS", "false").lower() == "true"
 
-# One automatic batch every five minutes; all importers share the limits above.
+# Local scheduler heartbeat; provider traffic still follows per-feed deadlines.
 SPORTLINK_SYNC_ENABLED = env("SPORTLINK_SYNC_ENABLED", "false").lower() == "true"
 SPORTLINK_SYNC_SEASON = env("SPORTLINK_SYNC_SEASON", "")
 SPORTLINK_SYNC_SESSION_FILE = env("SPORTLINK_SYNC_SESSION_FILE", "")
@@ -69,7 +69,7 @@ SPORTLINK_SYNC_MAX_REQUESTS = max(
     0, min(10000, int(env("SPORTLINK_SYNC_MAX_REQUESTS", "0")))
 )
 
-# Leave time before the next five-minute tick; requests in progress may finish.
+# Bound each worker turn; the shared lease skips overlapping heartbeats.
 SPORTLINK_SYNC_MAX_SECONDS = max(
     1, min(240, int(env("SPORTLINK_SYNC_MAX_SECONDS", "240")))
 )

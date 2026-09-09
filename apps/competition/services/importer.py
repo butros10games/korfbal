@@ -24,6 +24,15 @@ from apps.competition.services.classification import map_pool
 from apps.competition.services.identities import team_group_key
 from apps.competition.services.lineups import import_lineup
 from apps.competition.services.logos import cache_logo, discover_logo
+from apps.competition.services.match_details import (
+    import_facility,
+    import_rules,
+    queue_missing_details,
+)
+from apps.competition.services.match_timing import (
+    import_playing_time,
+    import_timing_details,
+)
 from apps.competition.services.player_photos import cache_photo
 from apps.competition.services.rosters import import_roster
 from apps.competition.services.seasons import configure_seasons
@@ -80,6 +89,8 @@ class Importer:
         self.discover = discover
         self.season = season
         self.observed_at = observed_at
+        self.observed_match_ids: set[int] = set()
+        self._detail_match_ids: set[int] = set()
         self._seasons_configured = False
         self._clubs: dict[str, Club] = {}
         self._teams: dict[str, Team] = {}
@@ -205,6 +216,7 @@ class Importer:
             external_id=str(data["PublicMatchId"]),
             defaults={**values, "status": data["Status"]},
         )
+        self.observed_match_ids.add(match.pk)
         self.discover_lineup(match)
         # A results-feed observation can still be an unplayed fixture. Allow
         # newer programs to reschedule it, but preserve scored/finished results.
@@ -219,12 +231,19 @@ class Importer:
         )
         if not result and (protected_result or stale_program):
             return
+        import_playing_time(match, data, self.observed_at)
         if result:
             self._result(match, data, created=created, fixture_values=values)
         else:
             fields = assign_changed(match, {**values, "status": data["Status"]})
             if fields:
                 match.save(update_fields=(*fields, "updated_at"))
+        self.discover_details(match)
+
+    def discover_details(self, match: Match) -> None:
+        """Enrich live source matches, reusing opted-in lineup detail requests."""
+        if self.discover:
+            self._detail_match_ids.add(match.pk)
 
     def discover_lineup(self, match: Match) -> None:
         """Enable one shared match-selection feed only for opted-in discovery."""
@@ -389,6 +408,8 @@ class Importer:
         self._teams.clear()
         self._pools.clear()
         self._matches.clear()
+        self.observed_match_ids.clear()
+        self._detail_match_ids.clear()
         if data.get("Error"):
             raise ValueError("Sportlink returned an application error")
         collections = {
@@ -403,10 +424,20 @@ class Importer:
             cache_photo(source_id, data)
         elif kind == "club_logo":
             cache_logo(source_id, data)
-        elif kind in {"match_lineup", "team_roster"}:
-            {"match_lineup": import_lineup, "team_roster": import_roster}[kind](
-                self.season, source_id, data, self.observed_at
-            )
+        elif kind in {
+            "match_lineup",
+            "team_roster",
+            "match_timing",
+            "match_facility",
+            "match_rules",
+        }:
+            {
+                "match_lineup": import_lineup,
+                "team_roster": import_roster,
+                "match_timing": import_timing_details,
+                "match_facility": import_facility,
+                "match_rules": import_rules,
+            }[kind](self.season, source_id, data, self.observed_at)
         elif kind == "team_pools":
             self.assignments(data, source_id)
         elif kind == "pool_results":
@@ -415,6 +446,16 @@ class Importer:
             self.match_collection(kind, data)
         else:
             raise ValueError("Unsupported competition resource")
+        self._queue_details()
+
+    def _queue_details(self) -> None:
+        """Queue one response's missing metadata with bounded checkpoint queries."""
+        if self._detail_match_ids:
+            queue_missing_details(
+                self.season,
+                match_ids=self._detail_match_ids,
+                include_timing=not settings.SPORTLINK_IMPORT_LINEUPS,
+            )
 
     def match_collection(self, kind: str, data: dict[str, Any]) -> None:
         """Import the provider's fixture or result envelope."""

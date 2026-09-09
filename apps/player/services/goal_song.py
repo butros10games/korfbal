@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from django.db import transaction
@@ -171,16 +171,27 @@ def validate_goal_song_ids(
     player: Player,
     ids: list[str],
 ) -> list[PlayerSong]:
-    """Validate that goal-song ids belong to the player and are ready.
+    """Validate that goal-song ids belong to the player and are ready."""
+    if not ids:
+        return []
+
+    return validate_ready_goal_songs(
+        ids=ids,
+        songs=player_songs_by_ids(song_ids=ids, player=player),
+    )
+
+
+def validate_ready_goal_songs(
+    *,
+    ids: list[str],
+    songs: Iterable[PlayerSong],
+) -> list[PlayerSong]:
+    """Validate an ordered selection against caller-scoped available songs.
 
     Raises:
         GoalSongSelectionError: When ids are missing or refer to unready songs.
 
     """
-    if not ids:
-        return []
-
-    songs = list(player_songs_by_ids(song_ids=ids, player=player))
     by_id = {str(song.id_uuid): song for song in songs}
 
     missing = [song_id for song_id in ids if song_id not in by_id]

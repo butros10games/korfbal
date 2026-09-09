@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from django.test import override_settings
 from django.utils import timezone
+from korfbal.celery import app
 import pytest
 
 from apps.competition.application.ports import FetchResult
@@ -166,3 +167,28 @@ def test_scheduler_resumes_after_worker_window_expires(configured_sync: Mock) ->
     assert summary["http_requests"] == 0
     assert summary["backlog"]["candidate_feed_requests"] == 1
     assert SyncResource.objects.get().fetched_at is None
+
+
+@pytest.mark.django_db
+def test_idle_heartbeat_does_not_open_oauth_session(
+    configured_sync: Mock, season: Season
+) -> None:
+    """More frequent local scheduling must not turn idle heartbeats into OAuth calls."""
+    SyncResource.objects.create(
+        season=season,
+        kind="clubs",
+        fetched_at=timezone.now(),
+        next_sync_at=timezone.now() + timedelta(days=1),
+    )
+    with patch("apps.competition.tasks.competition_client") as factory:
+        assert sync_current_competition()["status"] == "idle"
+    factory.assert_not_called()
+    configured_sync.fetch.assert_not_called()
+
+
+def test_heartbeat_expires_before_another_tick() -> None:
+    """Keep delayed jobs from replaying a burst of obsolete scheduler ticks."""
+    heartbeat = app.conf.beat_schedule["sync-current-competition"]
+    interval = 30
+    assert heartbeat["schedule"] == interval
+    assert heartbeat["options"]["expires"] == interval
