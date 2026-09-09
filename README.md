@@ -246,11 +246,11 @@ clears only collection ETags so existing checkpoints refill their membership onc
 One in five selections is reserved for discovery or audits overdue by six hours,
 when such work exists; very small optional batch caps may still delay maintenance.
 
-Finish estimates prefer each match’s imported `playing_time_minutes`, adding a 15-minute
+Finish estimates prefer each match’s imported `playing_time_minutes`, adding a 30-minute
 heuristic allowance for breaks and reporting. Otherwise, the versioned 2026/27
 [KNKV rules](https://www.knkv.nl/kennisbank/wedstrijdinformatie/) distinguish known
 40-, 50- and 60-minute formats using mapped classes, colours and playing formats.
-Unknown/stopped-clock formats retain the 75-minute elapsed-time fallback; J-team
+Unknown/stopped-clock formats retain the 90-minute elapsed-time fallback; J-team
 numbers never imply age. Estimates do not establish that a match has finished,
 and extra time/penalties can delay its final score.
 

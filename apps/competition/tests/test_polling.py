@@ -95,7 +95,7 @@ def test_polling_windows(age: int, final: bool, interval: float) -> None:
     """Recent pending scores get priority; settled or missing results back off."""
     now = timezone.now()
     row = {
-        "starts_at": now - timedelta(hours=age, minutes=75),
+        "starts_at": now - timedelta(hours=age, minutes=90),
         "status": "FINAL" if final else "SCHEDULED",
         "home_score": 1 if final else None,
         "away_score": 1 if final else None,
@@ -105,7 +105,7 @@ def test_polling_windows(age: int, final: bool, interval: float) -> None:
     assert next_result_check(row, now) == now + timedelta(hours=interval)
     row["starts_at"] = now + timedelta(days=1)
     row["status"] = "SCHEDULED"
-    assert next_result_check(row, now) == now + timedelta(days=1, minutes=75)
+    assert next_result_check(row, now) == now + timedelta(days=1, minutes=90)
 
 
 @pytest.mark.django_db
@@ -230,7 +230,7 @@ def test_daily_pool_metadata_does_not_delay_due_scores(season: Season) -> None:
 
 
 @pytest.mark.django_db
-def test_first_result_poll_at_75_minutes_and_three_minute_rechecks(
+def test_first_result_poll_at_90_minutes_and_three_minute_rechecks(
     season: Season,
 ) -> None:
     """Fresh daily metadata cannot delay the end-of-match polling window."""
@@ -244,9 +244,9 @@ def test_first_result_poll_at_75_minutes_and_three_minute_rechecks(
     SyncResource.objects.update(
         fetched_at=now - timedelta(minutes=5), next_sync_at=now + timedelta(days=1)
     )
-    Match.objects.update(starts_at=now - timedelta(minutes=74))
+    Match.objects.update(starts_at=now - timedelta(minutes=89))
     assert PollPlanner(season, now).next_job() is None
-    Match.objects.update(starts_at=now - timedelta(minutes=75))
+    Match.objects.update(starts_at=now - timedelta(minutes=90))
     SyncResource.objects.filter(kind="club_program").update(fetched_at=now)
     planner = PollPlanner(season, now)
     job = planner.next_job()

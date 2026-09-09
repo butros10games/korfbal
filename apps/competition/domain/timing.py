@@ -1,7 +1,7 @@
 """Finish estimates, separate from official playing time and final status.
 
 2026/27 reference: https://www.knkv.nl/kennisbank/wedstrijdinformatie/
-Unknown/stopped-clock formats retain the 75-minute elapsed-time heuristic.
+Unknown/stopped-clock formats retain the 90-minute elapsed-time heuristic.
 """
 
 from datetime import datetime, timedelta
@@ -9,8 +9,8 @@ from typing import Any
 
 
 RULE_YEAR = 2026
-FALLBACK_MINUTES = 75
-BREAK_AND_REPORTING_MINUTES = 15
+FALLBACK_MINUTES = 90
+BREAK_AND_REPORTING_MINUTES = 30
 
 
 def expected_finish(row: dict[str, Any]) -> datetime:

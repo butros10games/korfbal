@@ -232,7 +232,7 @@ def test_sync_publishes_reschedule_then_final_score(
     assert finished["results_observed"] == 1
     assert finished["matches_checked"] == 1
     assert finished["result_delay_seconds_total"] == int(
-        timedelta(minutes=45).total_seconds()
+        timedelta(minutes=30).total_seconds()
     )
     assert finished["http_requests_pool_results"] == 1
     assert AppMatch.objects.get().pk == native_id

@@ -21,15 +21,15 @@ from apps.schedule.models import Season
 @pytest.mark.parametrize(
     ("context", "colour", "form", "discipline", "elapsed"),
     [
-        (("b", "youth"), "blue", "four", "indoor", 55),
-        (("b", "youth"), "red", "four", "outdoor", 55),
-        (("b", "youth"), "orange", "eight", "indoor", 65),
-        (("b", "youth"), "yellow", "eight", "outdoor", 65),
-        (("b", "youth"), "red", "eight", "outdoor", 75),
-        (("a", "U15"), "unknown", "eight", "indoor", 65),
-        (("a", "U17"), "unknown", "eight", "outdoor", 75),
-        (("a", "U17"), "unknown", "eight", "indoor", 75),
-        (("unknown", "youth"), "unknown", "unknown", "indoor", 75),
+        (("b", "youth"), "blue", "four", "indoor", 70),
+        (("b", "youth"), "red", "four", "outdoor", 70),
+        (("b", "youth"), "orange", "eight", "indoor", 80),
+        (("b", "youth"), "yellow", "eight", "outdoor", 80),
+        (("b", "youth"), "red", "eight", "outdoor", 90),
+        (("a", "U15"), "unknown", "eight", "indoor", 80),
+        (("a", "U17"), "unknown", "eight", "outdoor", 90),
+        (("a", "U17"), "unknown", "eight", "indoor", 90),
+        (("unknown", "youth"), "unknown", "unknown", "indoor", 90),
     ],
 )
 def test_class_duration_and_stopped_clock_fallback(
@@ -49,9 +49,9 @@ def test_class_duration_and_stopped_clock_fallback(
     }
     assert expected_finish(row) == now + timedelta(minutes=elapsed)
     row["season__start_date"] = date(2024, 7, 1)
-    assert expected_finish(row) == now + timedelta(minutes=75)
+    assert expected_finish(row) == now + timedelta(minutes=90)
     row["playing_time_minutes"] = 50
-    assert expected_finish(row) == now + timedelta(minutes=65)
+    assert expected_finish(row) == now + timedelta(minutes=80)
 
 
 @pytest.mark.django_db
@@ -103,7 +103,7 @@ def test_first_check_tracks_imported_playing_time(minutes: int) -> None:
         "home_score": None,
         "away_score": None,
     }
-    assert next_result_check(row, now) == now + timedelta(minutes=minutes + 15)
+    assert next_result_check(row, now) == now + timedelta(minutes=minutes + 30)
 
 
 @pytest.mark.parametrize(
