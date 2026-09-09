@@ -63,7 +63,9 @@ def test_undo_advances_revision_after_deleting_last_event() -> None:
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.live_revision == UNDO_REVISION
     assert state["live_revision"] == UNDO_REVISION
-    assert state["last_event"] == {"type": "no_event"}
+    assert state["last_event"]["type"] == "match_part"
+    assert state["last_event"]["transition"] == "start"
+    assert state["last_event"]["part_number"] == 1
 
 
 @pytest.mark.django_db

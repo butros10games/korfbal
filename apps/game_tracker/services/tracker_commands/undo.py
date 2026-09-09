@@ -64,7 +64,12 @@ class RemoveLastEventCommand:
         """Undo the event when one exists."""
         other_team(context.match, context.team)
         event = last_event_model(context.match_data)
-        if isinstance(event, Shot):
+        if isinstance(event, MatchPart):
+            UndoPartTransitionCommand(
+                part_id=str(event.pk),
+                transition="end" if event.end_time is not None else "start",
+            ).apply(context)
+        elif isinstance(event, Shot):
             _remove_shot(event, context=context)
         elif isinstance(event, PlayerChange):
             _remove_player_change(event, context=context)

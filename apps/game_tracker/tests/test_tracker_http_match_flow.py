@@ -515,3 +515,56 @@ def test_undo_end_rejects_later_part_and_duplicate_undo() -> None:
     with pytest.raises(TrackerCommandError, match="niet beëindigd"):
         apply_tracker_command(tracker.match, team=tracker.home_team, payload=payload)
     assert Pause.objects.filter(match_data=data, active=True).count() == 1
+
+
+@pytest.mark.django_db
+def test_last_event_tracks_and_undoes_period_transitions() -> None:
+    tracker = create_tracker_match(prefix="LastPeriod")
+    data = tracker.match_data
+    data.status = "upcoming"
+    data.parts = 2
+    data.save(update_fields=["status", "parts"])
+
+    def command(name: str) -> dict:
+        return apply_tracker_command(
+            tracker.match, team=tracker.home_team, payload={"command": name}
+        )
+
+    started = command("start/pause")
+    assert started["last_event"]["type"] == "match_part"
+    assert started["last_event"]["transition"] == "start"
+    assert started["last_event"]["part_number"] == 1
+    undone = command("remove_last_event")
+    assert undone["status"] == "upcoming"
+    assert undone["last_event"] == {"type": "no_event"}
+    command("start/pause")
+    ended = command("part_end")
+    assert ended["last_event"]["transition"] == "end"
+    command("start/pause")
+    second = get_tracker_state(tracker.match, team=tracker.home_team)
+    assert second["last_event"]["transition"] == "start"
+    assert second["last_event"]["part_number"] == data.parts
+    back = command("remove_last_event")
+    assert back["last_event"]["transition"] == "end"
+    reopened = command("remove_last_event")
+    assert reopened["current_part"] == 1
+    assert reopened["paused"] is True
+
+
+@pytest.mark.django_db
+def test_reopening_part_does_not_promote_its_original_start_above_play() -> None:
+    tracker = create_tracker_match(prefix="LastPartOrder")
+    data = tracker.match_data
+    data.status = "upcoming"
+    data.save(update_fields=["status"])
+    for name in (
+        "start/pause",
+        "new_attack",
+        "part_end",
+        "remove_last_event",
+        "remove_last_event",
+    ):
+        result = apply_tracker_command(
+            tracker.match, team=tracker.home_team, payload={"command": name}
+        )
+    assert result["last_event"]["type"] == "attack"

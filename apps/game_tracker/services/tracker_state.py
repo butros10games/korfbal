@@ -253,6 +253,15 @@ def _last_event_payload(
         payload = _serialize_last_event_pause(event)
     elif isinstance(event, Attack):
         payload = _serialize_last_event_attack(event)
+    elif isinstance(event, MatchPart):
+        ended = event.end_time is not None
+        payload = {
+            "type": "match_part",
+            "part_id": str(event.pk),
+            "part_number": event.part_number,
+            "transition": "end" if ended else "start",
+            "time_iso": (event.end_time or event.start_time).isoformat(),
+        }
     else:
         payload = {"type": "no_event"}
     return payload

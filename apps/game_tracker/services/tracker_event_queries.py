@@ -7,6 +7,8 @@ from typing import cast
 from apps.game_tracker.models import (
     Attack,
     MatchData,
+    MatchEvent,
+    MatchPart,
     Pause,
     PlayerChange,
     PossessionChange,
@@ -15,7 +17,7 @@ from apps.game_tracker.models import (
 from apps.game_tracker.services.match_events import active_match_events
 
 
-UndoableMatchEvent = Shot | PlayerChange | PossessionChange | Pause | Attack
+UndoableMatchEvent = Shot | PlayerChange | PossessionChange | Pause | Attack | MatchPart
 
 
 def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
@@ -29,12 +31,29 @@ def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
                 "possession_change",
                 "pause",
                 "attack",
+                "match_part",
             },
         )
         .order_by("-sequence")
-        .values_list("source_type", "source_id")
+        .values_list("source_type", "source_id", "sequence", "kind")
     )
-    for source_type, source_id in events:
+    # Reopening a part corrects its end; it does not create a new start.
+    # Keep that original start behind any play already recorded in the part.
+    start_sequences = dict(
+        MatchEvent.objects.filter(
+            match_data=match_data, kind="match_part.started"
+        ).values_list("source_id", "sequence")
+    )
+    ordered = sorted(
+        events,
+        key=lambda row: (
+            start_sequences.get(row[1], row[2])
+            if row[0] == "match_part" and row[3] != "match_part.ended"
+            else row[2]
+        ),
+        reverse=True,
+    )
+    for source_type, source_id, _sequence, _kind in ordered:
         event: UndoableMatchEvent | None
         if source_type == "shot":
             event = (
@@ -63,6 +82,10 @@ def last_event_model(match_data: MatchData) -> UndoableMatchEvent | None:
                 .filter(match_data=match_data, pk=source_id)
                 .first()
             )
+        elif source_type == "match_part":
+            event = MatchPart.objects.filter(
+                match_data=match_data, pk=source_id
+            ).first()
         elif source_type == "pause":
             event = (
                 Pause.objects
