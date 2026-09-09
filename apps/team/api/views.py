@@ -151,7 +151,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         ).first()
         if season is None:
             raise NotFound("Season not found.")
-        can_manage = self._viewer_can_manage_team(
+        can_manage = self._viewer_can_manage_roster(
             request=request, team=team, season=season
         )
         if request.method == "PATCH":
@@ -204,7 +204,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         ).first()
         if season is None:
             raise NotFound("Season not found.")
-        if not self._viewer_can_manage_team(request=request, team=team, season=season):
+        if not self._viewer_can_manage_roster(
+            request=request, team=team, season=season
+        ):
             raise PermissionDenied("You cannot manage this team's players.")
         search = request.query_params.get("search", "").strip()
         if len(search) < _ROSTER_SEARCH_MIN_LENGTH:
@@ -891,6 +893,22 @@ class TeamViewSet(viewsets.ModelViewSet):
             getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
         ):
             return True
+        return self._viewer_can_manage_roster(
+            request=request,
+            team=team,
+            season=season,
+        )
+
+    def _viewer_can_manage_roster(
+        self,
+        *,
+        request: Request,
+        team: Team,
+        season: Season | None,
+    ) -> bool:
+        """Limit roster management to managers associated with the club."""
+        if not request.user.is_authenticated:
+            return False
 
         viewer = self._viewer_player(request)
         if viewer is None:

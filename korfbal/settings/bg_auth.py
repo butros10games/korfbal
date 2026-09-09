@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from .env import env
 from .runtime import DEBUG
+from .security import WEB_APP_ORIGIN
 
 
 SITE = "Korfbal Web Tool"
@@ -24,17 +27,14 @@ BG_AUTH_JWT_SIGNING_KEY = env(
     required=not DEBUG,
 )
 
-_passkey_default_origin = (
-    "https://korfbal.localhost" if DEBUG else "https://korfbal.butrosgroot.com"
-)
 BG_AUTH_PASSKEY_RP_ID = env(
     "BG_AUTH_PASSKEY_RP_ID",
-    "korfbal.localhost" if DEBUG else "korfbal.butrosgroot.com",
+    urlparse(WEB_APP_ORIGIN).hostname or "",
 )
 BG_AUTH_PASSKEY_RP_NAME = env("BG_AUTH_PASSKEY_RP_NAME", SITE)
 BG_AUTH_PASSKEY_ORIGINS = env(
     "BG_AUTH_PASSKEY_ORIGINS",
-    env("WEB_APP_ORIGIN", _passkey_default_origin),
+    WEB_APP_ORIGIN,
 )
 
 LOGIN_REDIRECT_URL = "index"

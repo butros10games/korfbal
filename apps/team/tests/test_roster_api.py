@@ -27,16 +27,13 @@ def roster_url(context: TeamTestContext, suffix: str = "roster") -> str:
     )
 
 
-@pytest.mark.parametrize("role", ["coach", "club_admin", "staff"])
+@pytest.mark.parametrize("role", ["coach", "club_admin"])
 def test_managers_can_add_and_remove_without_touching_other_seasons(role: str) -> None:
     """Managers can add and remove without touching other seasons."""
     context = build_team_context()
     manager = context.coach if role == "coach" else create_player(username=role)
     if role == "club_admin":
         context.club.admin.add(manager)
-    if role == "staff":
-        manager.user.is_staff = True
-        manager.user.save(update_fields=["is_staff"])
     other_season = Season.objects.create(
         name="Other",
         start_date=context.season.start_date - timedelta(days=365),
@@ -181,14 +178,14 @@ def test_invalid_mutations_and_roster_removal() -> None:
     assert not context.team_data.players.exists()
 
 
-def test_staff_can_initialize_roster_and_search_is_bounded() -> None:
+def test_club_admin_can_initialize_roster_and_search_is_bounded() -> None:
     """An empty season roster can be created and searches ask for refinement."""
     context = build_team_context()
     context.team_data.delete()
-    context.coach.user.is_staff = True
-    context.coach.user.save(update_fields=["is_staff"])
+    manager = create_player(username="club.admin")
+    context.club.admin.add(manager)
     client = APIClient()
-    client.force_authenticate(context.coach.user)
+    client.force_authenticate(manager.user)
     response = client.patch(
         roster_url(context),
         {
@@ -213,6 +210,31 @@ def test_staff_can_initialize_roster_and_search_is_bounded() -> None:
     assert [player["username"] for player in result["players"]] == [
         f"candidate{index:02d}" for index in range(20)
     ]
+
+
+def test_platform_staff_cannot_manage_an_unrelated_club_roster() -> None:
+    """Platform privileges do not grant roster access outside the viewer's clubs."""
+    context = build_team_context()
+    viewer = create_player(username="platform.staff")
+    viewer.user.is_staff = True
+    viewer.user.is_superuser = True
+    viewer.user.save(update_fields=["is_staff", "is_superuser"])
+    client = APIClient()
+    client.force_authenticate(viewer.user)
+
+    response = client.get(roster_url(context))
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["can_manage"] is False
+    assert (
+        client.patch(
+            roster_url(context),
+            {"player": str(context.player.pk), "operation": "remove"},
+            format="json",
+        ).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+    assert context.team_data.players.filter(pk=context.player.pk).exists()
 
 
 def test_session_mutation_requires_csrf() -> None:

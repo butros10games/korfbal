@@ -9,6 +9,8 @@ services:
         environment:
             DJANGO_ENV: production
             DEBUG: 'false'
+            BG_AUTH_PASSKEY_RP_ID: korfbal.butrosgroot.com
+            BG_AUTH_PASSKEY_ORIGINS: https://korfbal.butrosgroot.com
         restart: unless-stopped
         networks:
             - kwt-net
