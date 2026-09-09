@@ -397,3 +397,65 @@ def test_season_counts_are_independent_for_dense_imported_schedules(
     ]
     assert count_queries
     assert all("LEFT OUTER JOIN" not in sql for sql in count_queries)
+
+
+@pytest.mark.django_db
+def test_editor_pages_filter_before_slicing(client: Client) -> None:
+    """Large schedules stay bounded and searches reach beyond the first page."""
+    client.force_login(
+        get_user_model().objects.create_user(username="paged_staff", is_staff=True)
+    )
+    season = Season.objects.create(
+        name="Large season", start_date=date(2026, 8, 1), end_date=date(2027, 6, 1)
+    )
+    club = Club.objects.create(name="Paging club")
+    home = Team.objects.create(name="Home", club=club)
+    away = Team.objects.create(name="Away", club=club)
+    pools = [
+        SeasonPool.objects.create(season=season, name=f"Pool {index:03}")
+        for index in range(55)
+    ]
+    for pool in pools:
+        pool.teams.add(home, away)
+    Match.objects.bulk_create([
+        Match(
+            season=season,
+            pool=pool,
+            home_team=home,
+            away_team=away,
+            start_time=datetime(2026, 9, 12, tzinfo=UTC),
+        )
+        for pool in pools
+    ])
+    params = {"season": str(season.id_uuid), "page": 1, "page_size": 20}
+    first = client.get("/api/seasons/pools/", params).json()
+    assert first["count"] == len(pools)
+    assert len(first["results"]) == params["page_size"]
+    second = client.get("/api/seasons/pools/", {**params, "page": 2}).json()
+    assert {row["id_uuid"] for row in first["results"]}.isdisjoint(
+        row["id_uuid"] for row in second["results"]
+    )
+    searched = client.get(
+        "/api/seasons/pools/", {**params, "search": "Pool 054"}
+    ).json()
+    assert searched["count"] == 1
+    assert searched["results"][0]["id_uuid"] == str(pools[-1].id_uuid)
+    matches = client.get("/api/matches/", params).json()
+    assert matches["count"] == len(pools)
+    assert len(matches["results"]) == params["page_size"]
+    filtered = client.get(
+        "/api/matches/", {**params, "pool": str(pools[-1].id_uuid), "search": "Paging"}
+    ).json()
+    assert filtered["count"] == 1
+    assert filtered["results"][0]["pool_id"] == str(pools[-1].id_uuid)
+    assert (
+        client.get("/api/matches/", {**params, "pool": "unassigned"}).json()["count"]
+        == 0
+    )
+    assert (
+        client.get("/api/matches/", {**params, "pool": "invalid"}).status_code
+        == HTTPStatus.BAD_REQUEST
+    )
+    assert len(
+        client.get("/api/matches/", {"season": str(season.id_uuid)}).json()
+    ) == len(pools)

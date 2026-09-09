@@ -5,11 +5,12 @@ from __future__ import annotations
 from django.db import models
 from django.db.models import Count, OuterRef, QuerySet, Subquery
 from django.db.models.functions import Coalesce
-from rest_framework import permissions, viewsets
+from rest_framework import filters, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.kwt_common.api.pagination import ScheduleEditorPagination
 from apps.schedule.models import Match, Season, SeasonPool
 
 from .serializers import SeasonPoolSerializer, SeasonSerializer
@@ -77,6 +78,9 @@ class SeasonViewSet(viewsets.ModelViewSet):
 class SeasonPoolViewSet(viewsets.ModelViewSet):
     """List and edit team pools inside a season."""
 
+    pagination_class = ScheduleEditorPagination
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ("name", "teams__name", "teams__club__name")
     serializer_class = SeasonPoolSerializer
     permission_classes = (permissions.IsAdminUser,)
     lookup_field = "id_uuid"

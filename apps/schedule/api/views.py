@@ -47,6 +47,7 @@ from apps.game_tracker.services.tracker_state import (
     get_tracker_state,
     poll_tracker_state,
 )
+from apps.kwt_common.api.pagination import ScheduleEditorPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
@@ -240,6 +241,7 @@ class MatchViewSet(
 ):
     """Expose match data for the mobile frontend."""
 
+    pagination_class = ScheduleEditorPagination
     serializer_class = MatchSerializer
     permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
@@ -314,6 +316,22 @@ class MatchViewSet(
         if season_ids:
             queryset = queryset.filter(season__id_uuid=season_ids[-1])
 
+        if self.action == "list":
+            pool = self.request.query_params.get("pool")
+            if pool == "unassigned":
+                queryset = queryset.filter(pool__isnull=True)
+            elif pool:
+                pool_ids = uuid_query_values([pool], parameter="pool")
+                queryset = queryset.filter(pool_id=pool_ids[-1])
+            search = self.request.query_params.get("search", "").strip()
+            if search:
+                queryset = queryset.filter(
+                    Q(home_team__name__icontains=search)
+                    | Q(home_team__club__name__icontains=search)
+                    | Q(away_team__name__icontains=search)
+                    | Q(away_team__club__name__icontains=search)
+                    | Q(pool__name__icontains=search)
+                )
         return queryset
 
     def _get_player(self) -> Player | None:

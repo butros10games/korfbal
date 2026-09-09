@@ -59,3 +59,13 @@ class StandardResultsSetPagination(PageNumberPagination):
         if isinstance(queryset, QuerySet):
             queryset = ensure_totally_ordered(queryset)
         return super().paginate_queryset(queryset, request, view)
+
+
+class ScheduleEditorPagination(StandardResultsSetPagination):
+    """Opt existing schedule clients into bounded pages with a page parameter."""
+
+    def get_page_size(self, request: Request) -> int | None:
+        """Preserve legacy list responses until the caller requests pagination."""
+        if "page" not in request.query_params:
+            return None
+        return super().get_page_size(request)
