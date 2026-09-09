@@ -53,6 +53,11 @@ PROMETHEUS_METRIC_NAMESPACE = "kwt"
 SPORTLINK_HOURLY_LIMIT = max(0, int(env("SPORTLINK_HOURLY_LIMIT", "0")))
 SPORTLINK_DAILY_LIMIT = max(0, int(env("SPORTLINK_DAILY_LIMIT", "0")))
 SPORTLINK_REQUEST_SPACING = max(1, int(env("SPORTLINK_REQUEST_SPACING", "5")))
+# Blank disables the override; zero removes artificial delay during backfill.
+_backfill_spacing = env("SPORTLINK_BACKFILL_REQUEST_SPACING", "").strip()
+SPORTLINK_BACKFILL_REQUEST_SPACING = (
+    max(0, int(_backfill_spacing)) if _backfill_spacing else None
+)
 
 SPORTLINK_IMPORT_ROSTERS = env("SPORTLINK_IMPORT_ROSTERS", "false").lower() == "true"
 

@@ -25,13 +25,23 @@ class TrafficGate:
     """Serialize paced traffic with optional operator quotas and a run deadline."""
 
     def __init__(
-        self, budget: int | None, owner: uuid.UUID, *, deadline: float | None = None
+        self,
+        budget: int | None,
+        owner: uuid.UUID,
+        *,
+        deadline: float | None = None,
+        spacing: int | None = None,
     ) -> None:
         """Bind the per-run budget to the already claimed global provider lease."""
         self.budget = budget
         self.owner = owner
         self.requests = 0
         self.deadline = deadline
+        self.spacing = (
+            max(1, settings.SPORTLINK_REQUEST_SPACING)
+            if spacing is None
+            else max(0, spacing)
+        )
 
     def _check_deadline(self, wait_seconds: float = 0) -> None:
         """Do not start another HTTP request beyond the worker's time window.
@@ -70,7 +80,7 @@ class TrafficGate:
             deadlines = []
             hourly = settings.SPORTLINK_HOURLY_LIMIT
             daily = settings.SPORTLINK_DAILY_LIMIT
-            spacing = max(1, settings.SPORTLINK_REQUEST_SPACING)
+            spacing = self.spacing
             if hourly and state.hour_requests >= hourly:
                 deadlines.append(state.hour_start + timedelta(hours=1))
             if daily and state.day_requests >= daily:

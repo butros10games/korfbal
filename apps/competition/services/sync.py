@@ -8,6 +8,7 @@ from datetime import timedelta
 import time
 import uuid
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -284,7 +285,9 @@ def _sync(
             budget,
             owner,
             deadline=started + max_seconds if max_seconds else None,
+            spacing=backfill_spacing(planner),
         )
+        summary["request_spacing_seconds"] = gate.spacing
         cooldown = _drain(planner, client, gate, budget, summary)
         if summary["updated"] and not options.details_only:
             publication = publish_catalogue(lease_owner=owner)
@@ -308,6 +311,17 @@ def _sync(
     ).count()
     summary["elapsed_ms"] = round((time.monotonic() - started) * 1000)
     return summary
+
+
+def backfill_spacing(planner: PollPlanner) -> int:
+    """Boost only batches with eligible metadata; restore normal spacing afterward."""
+    normal = settings.SPORTLINK_REQUEST_SPACING
+    boost = settings.SPORTLINK_BACKFILL_REQUEST_SPACING
+    if boost is not None and any(
+        job.resource.kind in DETAIL_FIELDS for job in planner.candidate_jobs()
+    ):
+        return min(normal, boost)
+    return normal
 
 
 def _drain(

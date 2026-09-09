@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from django.core.management import call_command
 from django.db import connection
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.utils import timezone
 import pytest
 
@@ -21,6 +21,8 @@ from apps.competition.services.match_details import (
     preview_details,
     queue_missing_details,
 )
+from apps.competition.services.polling import PollPlanner
+from apps.competition.services.sync import backfill_spacing
 from apps.competition.services.traffic import TrafficGate
 from apps.competition.tests.test_feed_coverage import seed
 from apps.competition.tests.test_importer import match_payload
@@ -142,6 +144,9 @@ def test_backfill_dry_run_and_resume_do_not_repeat_imported_components(
 
     client.fetch.side_effect = fetch
     with (
+        override_settings(
+            SPORTLINK_REQUEST_SPACING=5, SPORTLINK_BACKFILL_REQUEST_SPACING=0
+        ),
         patch(
             "apps.competition.management.commands.sync_competition.competition_client",
             return_value=client,
@@ -159,7 +164,10 @@ def test_backfill_dry_run_and_resume_do_not_repeat_imported_components(
             )
             result = json.loads(output.getvalue())
             assert result["http_requests"] == 1
+            assert result["request_spacing_seconds"] == 0
             assert result["remaining_detail_requests"] == remaining
+        normal_spacing = 5
+        assert backfill_spacing(PollPlanner(season, timezone.now())) == normal_spacing
         initial_factory_calls = factory.call_count
         call_command(
             "update_competition_match_details", season=season.name, stdout=StringIO()
@@ -223,3 +231,32 @@ def test_bulk_metadata_queue_has_bounded_queries(season: Season) -> None:
     with CaptureQueriesContext(connection) as repeated:
         assert queue_missing_details(season, match_ids=ids) == 0
     assert len(repeated) <= max_repeat_queries
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("total", [50, 60])
+def test_none_event_resolution_requires_consistent_period_minutes(
+    season: Season, total: int
+) -> None:
+    """NONE resolution carries minutes only when period totals agree."""
+    now = timezone.now()
+    Importer(season, now, discover=False).apply(
+        "club_results", "CT1", {"MatchResult": [match_payload()]}
+    )
+    payload = timing()
+    payload.update(
+        Duration=total,
+        EventTimeResolution="NONE",
+        MatchPeriod=[
+            {"Description": "1e helft", "PlayTime": 25},
+            {"Description": "2e helft", "PlayTime": 25},
+        ],
+    )
+    valid_minutes = 50
+    if total == valid_minutes:
+        Importer(season, now).apply("match_timing", "M1", payload)
+        assert Match.objects.get().playing_time_minutes == valid_minutes
+    else:
+        with pytest.raises(ValueError, match="Missing or unsupported"):
+            Importer(season, now).apply("match_timing", "M1", payload)
+        assert Match.objects.get().playing_time_observed_at is None

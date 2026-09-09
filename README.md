@@ -254,15 +254,25 @@ Unknown/stopped-clock formats retain the 75-minute elapsed-time fallback; J-team
 numbers never imply age. Estimates do not establish that a match has finished,
 and extra time/penalties can delay its final score.
 
+Set `SPORTLINK_BACKFILL_REQUEST_SPACING=0` to temporarily remove artificial spacing
+while eligible metadata is queued. Requests remain serial and provider cooldowns
+still apply. A blank value (the default) disables this override. Once metadata
+is completed or deferred, the next batch uses normal `SPORTLINK_REQUEST_SPACING`
+again. Provider cooldowns and configured quotas still apply; batch summaries report
+`request_spacing_seconds`.
+
 New match discovery queues missing metadata in bulk per response, preserving
 existing retry deadlines. It queues three one-time metadata components using the captured
 KNKV app requests:
 
-| Component    | GET endpoint                                   | Stored fields                                                                            |
-| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Playing time | `match/MatchResultDetails?PublicMatchId=…&v=8` | `Duration`, `EventTimeResolution=MINUTE`, and `MatchPeriod` descriptions/playing minutes |
-| Venue        | `match/MatchFacility?PublicMatchId=…&v=3`      | Facility, address, pitch/surface and dressing-room metadata                              |
-| Rules        | `match/MatchInfo?PublicMatchId=…&v=1`          | The provider's structured match rules                                                    |
+| Component    | GET endpoint                                   | Stored fields                                                                                 |
+| ------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Playing time | `match/MatchResultDetails?PublicMatchId=…&v=8` | `Duration`, `EventTimeResolution=MINUTE/NONE`, and `MatchPeriod` descriptions/playing minutes |
+| Venue        | `match/MatchFacility?PublicMatchId=…&v=3`      | Facility, address, pitch/surface and dressing-room metadata                                   |
+| Rules        | `match/MatchInfo?PublicMatchId=…&v=1`          | The provider's structured match rules                                                         |
+
+Live `NONE` event resolution is accepted only when the supplied period minutes
+sum to `Duration`; it does not mean that playing time is absent.
 
 Both `v` and `X-Navajo-Version` use the endpoint's version. All calls retain the
 session's originating User-Agent and `X-Navajo-Instance: KNKV`. Venue data comes

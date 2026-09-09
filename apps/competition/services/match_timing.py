@@ -11,8 +11,8 @@ MAX_PLAYING_MINUTES = 180
 
 
 def playing_minutes(data: dict[str, Any]) -> int | None:
-    """Accept the captured Duration/MINUTE contract without guessing other units."""
-    if data.get("EventTimeResolution") != "MINUTE":
+    """Accept observed event resolutions; NONE also requires matching period totals."""
+    if data.get("EventTimeResolution") not in {"MINUTE", "NONE"}:
         return None
     value = data.get("Duration")
     if type(value) is int and 0 < value <= MAX_PLAYING_MINUTES:
@@ -36,6 +36,11 @@ def import_playing_time(
         or not 0 < period["PlayTime"] <= MAX_PLAYING_MINUTES
         or not isinstance(period.get("Description"), str)
         for period in periods
+    ):
+        return
+    if (
+        data.get("EventTimeResolution") == "NONE"
+        and sum(period["PlayTime"] for period in periods) != value
     ):
         return
     match.playing_time_minutes = value

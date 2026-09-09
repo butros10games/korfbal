@@ -133,3 +133,7 @@ misleading provider 500/603 errors.
 - Persist exact match membership for Sportlink conditional feed checks; HTTP 200/304
   success must not mark absent matches fresh. Clear legacy collection validators
   when introducing membership tracking, so old ETags cannot certify unknown scope.
+
+- Sportlink `EventTimeResolution=NONE` can still accompany minute-based Duration and
+  MatchPeriod.PlayTime. Accept the observed NONE contract only when validated period
+  minutes sum to Duration; do not confuse event timestamp precision with match length.
