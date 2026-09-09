@@ -66,10 +66,10 @@ def build_goal_song_manifest(
     """Return player and team-fallback clips in deterministic selection order."""
     normalized_player_ids = list(dict.fromkeys(str(value) for value in player_ids))
     player_selections = {
-        str(player_id): _normalized_ids(song_ids)
-        for player_id, song_ids in Player.objects.filter(
+        str(player.pk): _normalized_ids(player.goal_song_song_ids)
+        for player in Player.objects.filter(
             id_uuid__in=normalized_player_ids
-        ).values_list("id_uuid", "goal_song_song_ids")
+        ).prefetch_related("goal_song_selections")
     }
 
     team_data_query = TeamData.objects.filter(team=team)

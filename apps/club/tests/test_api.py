@@ -736,7 +736,9 @@ def test_club_match_day_is_public_complete_and_scoped(client: Client) -> None:
         )
     Match.objects.create(
         home_team=graph.opponent_team,
-        away_team=graph.opponent_team,
+        away_team=Team.objects.create(
+            name="Other opponent", club=graph.opponent_team.club
+        ),
         season=graph.season,
         start_time=midnight,
     )

@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 
 from django.core.cache import cache
-from django.db import transaction
 
 from apps.game_tracker.models import (
     MatchData,
@@ -23,6 +22,7 @@ from .match_impact_scorer import (
     compute_match_impact_breakdown,
     compute_match_impact_rows,
 )
+from .statistics_revision import load_statistics_match, publish_statistics_revision
 
 
 def _load_impact_dependencies(
@@ -31,7 +31,7 @@ def _load_impact_dependencies(
     """Load the player and team records shared by both persistence paths."""
     players_by_id = {
         str(player.id_uuid): player
-        for player in Player.objects.filter(
+        for player in Player.all_objects.filter(
             id_uuid__in={row.player_id for row in rows},
         ).only("id_uuid")
     }
@@ -60,21 +60,24 @@ def _upsert_impact_row(
     impact, _created = PlayerMatchImpact.objects.update_or_create(
         match_data=match_data,
         player=player,
+        algorithm_version=algorithm_version,
         defaults={
             "team": teams_by_id.get(row.team_id) if row.team_id else None,
             "impact_score": row.impact_score,
             "win_probability_added": row.win_probability_added,
-            "algorithm_version": algorithm_version,
+            "source_revision": match_data.live_revision,
         },
     )
     return impact
 
 
 def _delete_stale_impact_rows(
-    *, match_data: MatchData, retained_player_ids: set[str]
+    *, match_data: MatchData, retained_player_ids: set[str], algorithm_version: str
 ) -> None:
     """Remove rows for players no longer represented by the match tracker."""
-    stale = PlayerMatchImpact.objects.filter(match_data=match_data)
+    stale = PlayerMatchImpact.objects.filter(
+        match_data=match_data, algorithm_version=algorithm_version
+    )
     if retained_player_ids:
         stale = stale.exclude(player_id__in=retained_player_ids)
     stale.delete()
@@ -87,10 +90,11 @@ def compute_match_impact_breakdown_cached(
     timeout_seconds: int = 60 * 60 * 24,
 ) -> PlayerImpactBreakdown:
     """Return cached per-match breakdown (diagnostics)."""
+    match_data = load_statistics_match(match_data)
     cache_key = (
         "match-impact-breakdown:"
         f"v{MATCH_IMPACT_BREAKDOWN_CACHE_VERSION}:"
-        f"{algorithm_version}:{match_data.id_uuid}"
+        f"{algorithm_version}:{match_data.id_uuid}:{match_data.live_revision}"
     )
 
     try:
@@ -106,7 +110,7 @@ def compute_match_impact_breakdown_cached(
         algorithm_version=algorithm_version,
     )
 
-    with contextlib.suppress(Exception):
+    with publish_statistics_revision(match_data), contextlib.suppress(Exception):
         cache.set(cache_key, breakdown, timeout=timeout_seconds)
     return breakdown
 
@@ -117,6 +121,7 @@ def persist_match_impact_rows(
     algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 ) -> int:
     """Compute + upsert rows for a match."""
+    match_data = load_statistics_match(match_data)
     rows = compute_match_impact_rows(
         match_data=match_data,
         algorithm_version=algorithm_version,
@@ -124,10 +129,11 @@ def persist_match_impact_rows(
     players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
-    with transaction.atomic():
+    with publish_statistics_revision(match_data):
         _delete_stale_impact_rows(
             match_data=match_data,
             retained_player_ids=set(players_by_id),
+            algorithm_version=algorithm_version,
         )
         for row in rows:
             impact = _upsert_impact_row(
@@ -149,6 +155,7 @@ def persist_match_impact_rows_with_breakdowns(
     algorithm_version: str = LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 ) -> int:
     """Compute + upsert impact rows and per-player breakdown rows for a match."""
+    match_data = load_statistics_match(match_data)
     rows, breakdown_by_player = compute_match_impact_breakdown(
         match_data=match_data,
         algorithm_version=algorithm_version,
@@ -156,10 +163,11 @@ def persist_match_impact_rows_with_breakdowns(
     players_by_id, teams_by_id = _load_impact_dependencies(rows)
 
     upserted = 0
-    with transaction.atomic():
+    with publish_statistics_revision(match_data):
         _delete_stale_impact_rows(
             match_data=match_data,
             retained_player_ids=set(players_by_id),
+            algorithm_version=algorithm_version,
         )
         for row in rows:
             impact_obj = _upsert_impact_row(

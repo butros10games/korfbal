@@ -34,7 +34,7 @@ class MatchPlayer(models.Model):
     team_id: str
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="match_players",
     )
     player_id: str

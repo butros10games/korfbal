@@ -9,6 +9,8 @@ import logging
 from operator import itemgetter
 from typing import Any, TypedDict, cast
 
+from django.db.models import Prefetch
+
 from apps.game_tracker.domain.impact_scoring import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     MatchImpactContribution,
@@ -39,6 +41,7 @@ from apps.game_tracker.services.match_events import active_match_events
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_timeline_payloads,
 )
+from apps.player.models import Player
 
 from .match_impact_timeline import (
     EPS,
@@ -89,7 +92,7 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
     groups = list(
         PlayerGroup.objects
         .select_related("starting_type", "team")
-        .prefetch_related("players")
+        .prefetch_related(Prefetch("players", queryset=Player.all_objects.all()))
         .filter(match_data=match_data)
     )
 
@@ -987,7 +990,7 @@ def _compute_match_impact(
     groups = list(
         PlayerGroup.objects
         .select_related("starting_type", "team")
-        .prefetch_related("players")
+        .prefetch_related(Prefetch("players", queryset=Player.all_objects.all()))
         .filter(match_data=match_data)
     )
 

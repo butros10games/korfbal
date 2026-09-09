@@ -38,7 +38,7 @@ class PlayerChange(EventProjectionModel):
     )
     player_in: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="player_changes",
         blank=True,
         null=True,
@@ -46,7 +46,7 @@ class PlayerChange(EventProjectionModel):
     player_in_id: str | None
     player_out: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         blank=True,
         null=True,
     )

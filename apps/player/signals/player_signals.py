@@ -1,10 +1,11 @@
 """File contains signals for the Player model."""
 
 from django.contrib.auth.models import User
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
 from apps.player.models import Player
+from apps.player.services.player_settings import delete_player_profile
 
 
 @receiver(post_save, sender=User)
@@ -26,3 +27,13 @@ def create_player_for_new_user(
     if created:
         # If the user is just created, create a Player instance
         Player.objects.create(user=instance)
+
+
+@receiver(pre_delete, sender=User)
+def retain_sporting_history_on_account_deletion(
+    sender: type[User], instance: User, **kwargs: object
+) -> None:
+    """Apply the same profile lifecycle to direct/admin account deletions."""
+    player = Player.all_objects.filter(user_id=instance.pk).first()
+    if player is not None:
+        delete_player_profile(player)

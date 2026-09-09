@@ -18,6 +18,7 @@ from apps.competition.services.seasons import SeasonResolver
 from apps.player.models import Player
 from apps.schedule.models import Season
 from apps.team.models import TeamData
+from apps.team.services.roster_history import reconcile_roster_history
 
 
 SOURCE_ID_LIMIT = 80
@@ -55,6 +56,8 @@ def import_roster(
         )
         if player.knkv_observed_at and player.knkv_observed_at > observed_at:
             continue
+        if player.archived_at is not None:
+            continue
         Player.all_objects.filter(pk=player.pk).update(
             knkv_observed_at=observed_at,
             knkv_privacy=privacy,
@@ -80,6 +83,7 @@ def import_roster(
     publish_roster(team)
 
 
+@transaction.atomic
 def withdraw_people(hidden: set[str], season: Season, observed_at: datetime) -> None:
     """Erase provider observations when a newer response withdraws visibility."""
     withdrawn = Player.all_objects.filter(
@@ -88,19 +92,31 @@ def withdraw_people(hidden: set[str], season: Season, observed_at: datetime) -> 
     for player in withdrawn:
         discover_photo(player, None, season)
     source_only = withdrawn.filter(user_id=None)
+    removals = {}
+    affected_ids = set()
     for relation, flag in ROSTER_RELATIONS.items():
         through = getattr(TeamData, relation).through
-        through.objects.filter(player_id__in=source_only.values("pk")).delete()
         owned_links = (
             RosterMembership.objects
             .filter(player_id__in=withdrawn.values("pk"), **{flag: True})
             .exclude(published_team_data=None)
             .values_list("player_id", "published_team_data_id")
         )
-        remove_links = Q(pk__in=[])
+        remove_links = Q(player_id__in=source_only.values("pk"))
         for player_id, team_data_id in owned_links:
             remove_links |= Q(player_id=player_id, teamdata_id=team_data_id)
+        removals[relation] = remove_links
+        affected_ids.update(
+            through.objects.filter(remove_links).values_list("teamdata_id", flat=True)
+        )
+    affected_teams = list(
+        TeamData.objects.select_for_update().filter(pk__in=affected_ids).order_by("pk")
+    )
+    for relation, remove_links in removals.items():
+        through = getattr(TeamData, relation).through
         through.objects.filter(remove_links).delete()
+        for team_data in affected_teams:
+            reconcile_roster_history(team_data=team_data, role=relation, source="knkv")
     RosterMembership.objects.filter(player_id__in=withdrawn.values("pk")).delete()
     MatchMembership.objects.filter(player_id__in=withdrawn.values("pk")).delete()
     source_only.update(name="", knkv_privacy="PRIVATE", knkv_observed_at=observed_at)
@@ -278,6 +294,7 @@ def publish_roster(team: Team) -> None:
                 [through(teamdata_id=data.pk, player_id=pk) for pk in wanted - present],
                 ignore_conflicts=True,
             )
+            reconcile_roster_history(team_data=data, role=relation, source="knkv")
             for pk in wanted & (owned | (wanted - present)):
                 owner = next(
                     row

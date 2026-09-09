@@ -24,7 +24,7 @@ class Shot(EventProjectionModel):
     )
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="shots",
     )
     player_id: str

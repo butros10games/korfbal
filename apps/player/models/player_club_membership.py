@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from uuid import UUID
 
 from bg_uuidv7 import uuidv7
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -40,6 +42,9 @@ class PlayerClubMembership(models.Model):
         related_name="player_membership_links",
     )
 
+    player_id: UUID
+    club_id: UUID
+
     start_date: models.DateField = models.DateField(default=timezone.localdate)
     end_date: models.DateField | None = models.DateField(blank=True, null=True)
 
@@ -73,3 +78,26 @@ class PlayerClubMembership(models.Model):
         """Return a friendly label for admin/debugging."""
         end = self.end_date.isoformat() if self.end_date else "present"
         return f"{self.player} @ {self.club} ({self.start_date.isoformat()} - {end})"
+
+    def clean(self) -> None:
+        """Reject overlapping observations for the same player and club.
+
+        Raises:
+            ValidationError: The proposed inclusive interval overlaps another row.
+
+        """
+        super().clean()
+        overlaps = (
+            type(self)
+            .objects.filter(player_id=self.player_id, club_id=self.club_id)
+            .exclude(pk=self.pk)
+        )
+        if self.end_date is not None:
+            overlaps = overlaps.filter(start_date__lte=self.end_date)
+        overlaps = overlaps.filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=self.start_date)
+        )
+        if overlaps.exists():
+            raise ValidationError({
+                "start_date": "Membership overlaps an existing interval."
+            })

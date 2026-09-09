@@ -199,7 +199,8 @@ def test_goal_song_can_clear_selection_and_fields(client: Client) -> None:
         password="pass1234",  # nosec
     )
     player: Player = user.player
-    player.goal_song_song_ids = ["x"]
+    prior_song = PlayerSong.objects.create(player=player)
+    player.goal_song_song_ids = [str(prior_song.pk)]
     player.goal_song_uri = "https://example.invalid/old.mp3"
     player.song_start_time = 10
     player.save(

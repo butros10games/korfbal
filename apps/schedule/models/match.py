@@ -67,6 +67,12 @@ class Match(models.Model):
     class Meta:
         """Meta class for Match model."""
 
+        constraints: ClassVar = [
+            models.CheckConstraint(
+                condition=~Q(home_team=models.F("away_team")),
+                name="schedule_match_distinct_teams",
+            )
+        ]
         indexes: ClassVar[list[Any]] = [
             models.Index(fields=["start_time"]),
             models.Index(fields=["season", "start_time"]),

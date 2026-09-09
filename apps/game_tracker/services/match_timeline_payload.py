@@ -339,6 +339,7 @@ def _build_match_events(
             "team__id_uuid",
             "player__knkv_person_id",
             "player__knkv_privacy",
+            "player__archived_at",
             "player__knkv_observed_at",
         )
         .filter(match_data=match_data, scored=True)
@@ -373,9 +374,11 @@ def _build_match_events(
             "match_part__part_number",
             "player_in__knkv_person_id",
             "player_in__knkv_privacy",
+            "player_in__archived_at",
             "player_in__knkv_observed_at",
             "player_out__knkv_person_id",
             "player_out__knkv_privacy",
+            "player_out__archived_at",
             "player_out__knkv_observed_at",
         )
         .filter(player_group__match_data=match_data)
@@ -399,6 +402,7 @@ def _build_match_events(
             "match_part__part_number",
             "player__knkv_person_id",
             "player__knkv_privacy",
+            "player__archived_at",
             "player__knkv_observed_at",
         )
         .filter(match_data=match_data)
@@ -479,6 +483,7 @@ def _build_match_shots(
             "team__id_uuid",
             "player__knkv_person_id",
             "player__knkv_privacy",
+            "player__archived_at",
             "player__knkv_observed_at",
         )
         .filter(match_data=match_data)

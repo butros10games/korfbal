@@ -60,6 +60,7 @@ def player_detail_queryset() -> QuerySet[Player]:
     return (
         player_access_queryset()
         .prefetch_related(
+            "goal_song_selections",
             "team_follow",
             "club_follow",
             "member_clubs",

@@ -13,11 +13,11 @@ from apps.club.models import Club as LocalClub
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
 from apps.competition.models import RosterMembership, SyncResource
 from apps.competition.services.importer import Importer
-from apps.competition.services.rosters import queue_rosters
+from apps.competition.services.rosters import queue_rosters, withdraw_people
 from apps.competition.tests.test_importer import team_payload
 from apps.player.models import Player
 from apps.schedule.models import Season
-from apps.team.models import TeamData
+from apps.team.models import TeamData, TeamRosterMembership
 from apps.team.models.team import Team as LocalTeam
 
 
@@ -205,3 +205,78 @@ def test_native_roster_retirement_keeps_other_variant(season: Season) -> None:
     assert group.local_team_data.players.count() == 1
     importer.apply("team_roster", "T2", {"TeamPersonOverview": []})
     assert group.local_team_data.players.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("linked", [False, True])
+def test_privacy_withdrawal_closes_all_removed_native_intervals(
+    season: Season, linked: bool
+) -> None:
+    """Withdrawal closes every removed role before deleting its provider metadata."""
+    now = timezone.now()
+    importer = Importer(season, now)
+    player = Player.all_objects.create(
+        name="Synthetic person",
+        knkv_person_id="P1",
+        knkv_privacy="NORMAL",
+        knkv_observed_at=now,
+    )
+    if linked:
+        user = get_user_model().objects.create_user(username="withdrawal_account")
+        user.player.delete()
+        player.user = user
+        player.save(update_fields=["user"])
+    club = LocalClub.objects.create(name="Withdrawal club")
+    rosters = []
+    for source in ("T1", "T2"):
+        provider_team = importer.team(team_payload(source))
+        local = LocalTeam.objects.create(name=source, club=club)
+        roster = TeamData.objects.create(team=local, season=season)
+        for role in ("players", "coach", "staff"):
+            getattr(roster, role).add(player)
+        RosterMembership.objects.create(
+            player=player,
+            team=provider_team,
+            first_seen_at=now,
+            last_seen_at=now,
+            published_team_data=roster,
+            local_link_created=True,
+            local_coach_link_created=True,
+            local_staff_link_created=True,
+        )
+        rosters.append(roster)
+    native = TeamData.objects.create(
+        team=LocalTeam.objects.create(name="Native", club=club), season=season
+    )
+    native.players.add(player)
+
+    withdraw_people({"P1"}, season, now + timedelta(seconds=1))
+
+    assert not RosterMembership.objects.filter(player=player).exists()
+    for roster in rosters:
+        for role in ("players", "coach", "staff"):
+            assert (
+                not getattr(TeamData, role)
+                .through.objects.filter(teamdata_id=roster.pk, player_id=player.pk)
+                .exists()
+            )
+        assert not TeamRosterMembership.objects.filter(
+            team_data=roster, player=player, ended_at=None
+        ).exists()
+    assert (
+        TeamRosterMembership.objects.filter(
+            team_data=native, player=player, ended_at=None
+        ).exists()
+        is linked
+    )
+
+    player.knkv_privacy = "NORMAL"
+    player.knkv_observed_at = timezone.now()
+    player.save(update_fields=["knkv_privacy", "knkv_observed_at"])
+    rosters[0].players.add(player)
+    intervals = TeamRosterMembership.objects.filter(
+        team_data=rosters[0], player=player, role="players"
+    )
+    expected_intervals = 2
+    assert intervals.count() == expected_intervals
+    assert intervals.filter(ended_at=None).count() == 1

@@ -42,7 +42,7 @@ class PlayerMatchImpact(models.Model):
 
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="match_impacts",
     )
     player_id: str
@@ -74,6 +74,8 @@ class PlayerMatchImpact(models.Model):
         default="v1",
     )
 
+    source_revision = models.PositiveBigIntegerField(null=True, editable=False)
+
     computed_at: models.DateTimeField = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -81,7 +83,7 @@ class PlayerMatchImpact(models.Model):
 
         constraints: ClassVar[tuple[models.BaseConstraint, ...]] = (
             models.UniqueConstraint(
-                fields=["match_data", "player"],
+                fields=["match_data", "player", "algorithm_version"],
                 name="uniq_player_match_impact",
             ),
         )

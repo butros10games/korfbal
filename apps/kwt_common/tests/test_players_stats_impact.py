@@ -86,7 +86,11 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     assert rows[0]["win_probability_added"] == pytest.approx(0.0)
     assert rows[0]["impact_is_stored"] is True
 
-    updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
+    updated = PlayerMatchImpact.objects.get(
+        match_data=match_data,
+        player=player,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    )
     assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert float(updated.impact_score) == pytest.approx(EXPECTED_SINGLE_MISS_STORED)
 
@@ -127,7 +131,11 @@ def test_build_player_stats_aggregates_stored_goal_wpa() -> None:
     assert len(rows) == 1
     assert rows[0]["win_probability_added"] is not None
     assert rows[0]["win_probability_added"] > 0
-    persisted = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
+    persisted = PlayerMatchImpact.objects.get(
+        match_data=match_data,
+        player=player,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    )
     assert persisted.win_probability_added > 0
 
 
@@ -181,7 +189,11 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
     assert rows[0]["impact_score"] == EXPECTED_FIVE_MISSES_IMPACT
     assert rows[0]["impact_is_stored"] is True
 
-    updated = PlayerMatchImpact.objects.get(match_data=match_data, player=player)
+    updated = PlayerMatchImpact.objects.get(
+        match_data=match_data,
+        player=player,
+        algorithm_version=LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
+    )
     assert updated.algorithm_version == LATEST_MATCH_IMPACT_ALGORITHM_VERSION
     assert float(updated.impact_score) == pytest.approx(EXPECTED_FIVE_MISSES_IMPACT)
 

@@ -332,6 +332,7 @@ class TeamViewSet(viewsets.ModelViewSet):
                 "user__username",
                 "knkv_person_id",
                 "knkv_privacy",
+                "archived_at",
                 "knkv_observed_at",
             )
             .filter(id_uuid=player_id)

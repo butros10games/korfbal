@@ -7,10 +7,12 @@ from uuid import UUID
 
 from django.db import models
 
+from apps.player.models.ordered_song_selection import OrderedSongSelectionModel
+
 from .constants import player_model_string
 
 
-class TeamData(models.Model):
+class TeamData(OrderedSongSelectionModel):
     """Model for the team data."""
 
     if TYPE_CHECKING:
@@ -47,10 +49,18 @@ class TeamData(models.Model):
     team_rank: models.PositiveIntegerField[int, int] = models.PositiveIntegerField(
         default=1
     )
-    fallback_goal_song_song_ids: models.JSONField[list[str]] = models.JSONField(
-        default=list,
-        blank=True,
-    )
+    selection_field = "fallback_goal_song_song_ids"
+    selection_owner = "team_data"
+
+    @property
+    def fallback_goal_song_song_ids(self) -> list[str]:
+        """Expose the existing ordered list contract from relational selections."""
+        return self.selected_song_ids()
+
+    @fallback_goal_song_song_ids.setter
+    def fallback_goal_song_song_ids(self, values: list[str]) -> None:
+        """Stage an ordered selection for the next save."""
+        self.set_selected_song_ids(values)
 
     class Meta:
         """Meta class for TeamData model."""
@@ -59,9 +69,6 @@ class TeamData(models.Model):
             models.UniqueConstraint(
                 fields=("team", "season"), name="unique_team_data_per_season"
             )
-        ]
-        indexes: ClassVar[list[Any]] = [
-            models.Index(fields=["team", "season"]),
         ]
 
     def __str__(self) -> str:

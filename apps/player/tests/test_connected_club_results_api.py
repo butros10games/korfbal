@@ -80,7 +80,7 @@ def test_connected_club_recent_results_returns_latest_three_within_days(
     # A recent finished match not involving the followed club (should be excluded).
     non_followed_match = Match.objects.create(
         home_team=other_team,
-        away_team=other_team,
+        away_team=Team.objects.create(name="Other opponent", club=other_club),
         season=season,
         start_time=now - timedelta(days=1),
     )

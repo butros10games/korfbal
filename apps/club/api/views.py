@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import models
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -230,11 +231,14 @@ class ClubViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        membership, created = create_active_membership(
-            club=club,
-            player=player,
-            start_date=data.get("start_date"),
-        )
+        try:
+            membership, created = create_active_membership(
+                club=club,
+                player=player,
+                start_date=data.get("start_date"),
+            )
+        except ModelValidationError as exc:
+            return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
         if not created:
             return Response(
                 {"detail": "Player is already an active member of this club."},

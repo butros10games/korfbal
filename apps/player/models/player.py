@@ -12,6 +12,8 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.player.models.ordered_song_selection import OrderedSongSelectionModel
+
 from .constants import club_model_string, team_model_string
 
 
@@ -31,6 +33,7 @@ class VisiblePlayerManager(models.Manager):
         return (
             super()
             .get_queryset()
+            .filter(archived_at__isnull=True)
             .filter(
                 Q(user_id__isnull=False)
                 | Q(knkv_person_id__isnull=True)
@@ -42,7 +45,7 @@ class VisiblePlayerManager(models.Manager):
         )
 
 
-class Player(models.Model):
+class Player(OrderedSongSelectionModel):
     """Model for Player."""
 
     class Visibility(models.TextChoices):
@@ -59,12 +62,13 @@ class Player(models.Model):
     )
     user: models.OneToOneField[Any, Any] = models.OneToOneField(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="player",
         blank=True,
         null=True,
     )
     user_id: int | None
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
     name = models.CharField(max_length=255, blank=True)
     knkv_person_id = models.CharField(max_length=80, blank=True, null=True, unique=True)
     knkv_photo = models.CharField(max_length=255, blank=True)
@@ -127,10 +131,18 @@ class Player(models.Model):
 
     # Preferred goal-song configuration: a list of PlayerSong UUIDs in the order
     # they should be cycled through.
-    goal_song_song_ids: models.JSONField[list[str]] = models.JSONField(
-        default=list,
-        blank=True,
-    )
+    selection_field = "goal_song_song_ids"
+    selection_owner = "player"
+
+    @property
+    def goal_song_song_ids(self) -> list[str]:
+        """Expose the existing ordered list contract from relational selections."""
+        return self.selected_song_ids()
+
+    @goal_song_song_ids.setter
+    def goal_song_song_ids(self, values: list[str]) -> None:
+        """Stage an ordered selection for the next save."""
+        self.set_selected_song_ids(values)
 
     all_objects = models.Manager()
     objects = VisiblePlayerManager()
@@ -164,6 +176,8 @@ class Player(models.Model):
     @property
     def display_name(self) -> str:
         """Display a player independently of whether they have a login account."""
+        if self.archived_at is not None:
+            return "Afgeschermd"
         if self.user_id:
             return self.name or str(self.user.username)
         if self.knkv_person_id and (

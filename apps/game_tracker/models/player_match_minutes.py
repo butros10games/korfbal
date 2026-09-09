@@ -39,7 +39,7 @@ class PlayerMatchMinutes(models.Model):
 
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="match_minutes",
     )
 
@@ -53,6 +53,8 @@ class PlayerMatchMinutes(models.Model):
         decimal_places=2,
         default=Decimal("0.00"),
     )
+
+    source_revision = models.PositiveBigIntegerField(null=True, editable=False)
 
     computed_at: models.DateTimeField = models.DateTimeField(auto_now=True)
 

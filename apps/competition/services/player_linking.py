@@ -15,7 +15,7 @@ from apps.competition.models import (
 from apps.competition.services.player_photos import PREFIX, photo_name
 from apps.competition.services.rosters import ROSTER_RELATIONS
 from apps.player.models import Player
-from apps.team.models import TeamData
+from apps.team.models import TeamData, TeamRosterMembership
 
 
 def _validate_source(source: Player, target: Player) -> None:
@@ -50,7 +50,7 @@ def _validate_source(source: Player, target: Player) -> None:
 
 
 def _validate_native_history(source: Player) -> None:
-    allowed = {RosterMembership, MatchMembership, TeamData}
+    allowed = {RosterMembership, MatchMembership, TeamData, TeamRosterMembership}
     for relation in Player._meta.related_objects:
         if relation.related_model in allowed:
             continue
@@ -88,6 +88,13 @@ def _move_rosters(source: Player, target: Player) -> None:
             ignore_conflicts=True,
         )
         through.objects.filter(player=source).delete()
+    now = timezone.now()
+    for row in TeamRosterMembership.objects.filter(player=source, ended_at=None):
+        if TeamRosterMembership.objects.filter(
+            player=target, team_data_id=row.team_data_id, role=row.role, ended_at=None
+        ).exists():
+            TeamRosterMembership.objects.filter(pk=row.pk).update(ended_at=now)
+    TeamRosterMembership.objects.filter(player=source).update(player=target)
     RosterMembership.objects.filter(player=source).update(player=target)
     MatchMembership.objects.filter(player=source).update(player=target)
 

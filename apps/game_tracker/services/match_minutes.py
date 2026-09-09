@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from decimal import Decimal
 import logging
 
-from django.db import transaction
+from django.db.models import Prefetch
 
 from apps.game_tracker.models import (
     MatchData,
@@ -36,6 +36,11 @@ from apps.game_tracker.services.match_impact import (
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_timeline_payloads,
 )
+from apps.game_tracker.services.statistics_revision import (
+    load_statistics_match,
+    publish_statistics_revision,
+)
+from apps.player.models import Player
 
 
 logger = logging.getLogger(__name__)
@@ -155,7 +160,7 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
     groups = list(
         PlayerGroup.objects
         .select_related("starting_type", "team")
-        .prefetch_related("players")
+        .prefetch_related(Prefetch("players", queryset=Player.all_objects.all()))
         .filter(match_data=match_data)
     )
 
@@ -189,14 +194,22 @@ def persist_match_minutes(*, match_data: MatchData) -> int:
 
     Returns number of rows written.
     """
+    match_data = load_statistics_match(match_data)
     minutes_by_player_id = compute_minutes_by_player_id(match_data=match_data)
-    if not minutes_by_player_id:
-        return 0
 
     rows_written = 0
 
     # Keep writes consistent if multiple signals fire in a short time.
-    with transaction.atomic():
+    with publish_statistics_revision(match_data):
+        retained = {
+            player_id
+            for player_id, minutes in minutes_by_player_id.items()
+            if minutes > 0
+        }
+        PlayerMatchMinutes.objects.filter(
+            match_data=match_data,
+            algorithm_version=LATEST_MATCH_MINUTES_VERSION,
+        ).exclude(player_id__in=retained).delete()
         for player_id, minutes in minutes_by_player_id.items():
             if minutes <= 0:
                 continue
@@ -204,7 +217,10 @@ def persist_match_minutes(*, match_data: MatchData) -> int:
                 match_data=match_data,
                 player_id=player_id,
                 algorithm_version=LATEST_MATCH_MINUTES_VERSION,
-                defaults={"minutes_played": Decimal(str(minutes))},
+                defaults={
+                    "minutes_played": Decimal(str(minutes)),
+                    "source_revision": match_data.live_revision,
+                },
             )
             rows_written += 1
 

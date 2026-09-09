@@ -29,6 +29,12 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Bulk roster-link deletions bypass M2M signals. Capture and lock affected TeamData
+  rows before deleting provider observations, then reconcile their roster history.
+
+- Register new signal modules in `AppConfig.ready()` with `import_module()` so Ruff
+  cannot remove a side-effect-only import as unused.
+
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
 - Keep packages imported during Django startup in the base runtime dependencies; Celery and
   collectstatic images must be able to initialize every installed app too.

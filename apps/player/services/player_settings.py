@@ -6,9 +6,12 @@ from collections.abc import Iterable, Mapping
 from typing import Final, cast
 
 from django.db import transaction
-from django.db.models import Model
+from django.db.models import Model, Q
+from django.db.models.deletion import ProtectedError
+from django.utils import timezone
 
 from apps.player.models.player import Player
+from apps.team.models import TeamData
 
 
 PRIVACY_FIELDS: Final[tuple[str, ...]] = (
@@ -97,6 +100,47 @@ def update_player_profile(
         manager.set(values)
 
 
+@transaction.atomic
 def delete_player_profile(player: Player) -> None:
-    """Delete a Player profile without deleting its user account."""
-    player.delete()
+    """Remove a profile while retaining a private identity required by history."""
+    # Roster and team-song commands lock the seasonal team before the player.
+    # Follow that order when clearing current memberships during archival.
+    roster_ids = TeamData.objects.filter(
+        Q(players=player) | Q(coach=player) | Q(staff=player)
+    ).values("pk")
+    list(
+        TeamData.objects
+        .select_for_update(no_key=True)
+        .filter(pk__in=roster_ids)
+        .order_by("pk")
+    )
+    player = Player.all_objects.select_for_update().get(pk=player.pk)
+    try:
+        with transaction.atomic():
+            player.delete()
+        return
+    except ProtectedError:
+        pass
+    picture = player.profile_picture
+    player.user = None
+    player.name = ""
+    player.date_of_birth = None
+    player.profile_picture = None
+    player.knkv_photo = ""
+    player.knkv_privacy = ""
+    player.knkv_observed_at = None
+    player.goal_song_uri = ""
+    player.song_start_time = None
+    player.goal_song_song_ids = []
+    player.archived_at = timezone.now()
+    for field in PRIVACY_FIELDS:
+        setattr(player, field, Player.Visibility.PRIVATE)
+    player.save()
+    player.team_follow.clear()
+    player.club_follow.clear()
+    player.clubs.clear()
+    player.songs.all().delete()
+    for relation in ("team_data_as_player", "team_data_as_coach", "team_data_as_staff"):
+        getattr(player, relation).clear()
+    if picture:
+        transaction.on_commit(lambda: picture.delete(save=False))

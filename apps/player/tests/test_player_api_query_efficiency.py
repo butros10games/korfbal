@@ -110,7 +110,7 @@ def test_player_read_endpoints_keep_bounded_query_counts(client: Client) -> None
         counts[name] = len(queries)
 
     assert counts == {
-        "profile": 9,
+        "profile": 10,
         "teams": 7,
         "overview": 8,
         "stats": 8,

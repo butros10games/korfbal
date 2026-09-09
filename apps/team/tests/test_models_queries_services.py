@@ -143,10 +143,10 @@ def test_delete_team_player_song_supports_player_only_cleanup() -> None:
     ).exists()
 
 
-def test_team_player_discovery_is_one_query(
+def test_team_player_discovery_and_songs_use_two_queries(
     django_assert_num_queries: DjangoAssertNumQueries,
 ) -> None:
-    """Discover roster and event-only players without fetching match IDs first."""
+    """Discover players and batch their songs without fetching match IDs first."""
     context = build_team_context(suffix="one_query")
     opponent = Team.objects.create(name="Opponent", club=context.club)
     guest = create_player(username="guest_query")
@@ -163,7 +163,7 @@ def test_team_player_discovery_is_one_query(
             match_data=match_data, player=guest, team=context.team
         )
         Shot.objects.create(match_data=match_data, player=shot_only, team=context.team)
-    with django_assert_num_queries(1):
+    with django_assert_num_queries(2):
         players = list(
             team_players(
                 context.team, context.season, team_matches(context.team, context.season)
@@ -276,3 +276,24 @@ def test_player_impact_matches_avoid_event_fanout(with_persisted: bool) -> None:
         )
         joined_rows = 7 * 70
         assert previous.filter(pk=match_data_rows[0].pk).count() == joined_rows
+
+
+def test_team_player_song_selections_are_prefetched_in_order(
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """Repeated song-administration reads stay query-free across the roster."""
+    context = build_team_context(suffix="song_prefetch")
+    empty_player = create_player(username="empty_song_selection")
+    context.team_data.players.add(empty_player)
+    first = create_song(player=context.player, title="First selection")
+    second = create_song(player=context.player, title="Second selection")
+    expected = [str(second.pk), str(first.pk)]
+    context.player.goal_song_song_ids = expected
+    context.player.save(update_fields=["goal_song_song_ids"])
+    players = list(team_players(context.team, context.season, MatchData.objects.none()))
+
+    with django_assert_num_queries(0):
+        for player in players:
+            selection = expected if player.pk == context.player.pk else []
+            assert player.goal_song_song_ids == selection
+            assert player.goal_song_song_ids == selection

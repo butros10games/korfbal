@@ -60,6 +60,18 @@ class MatchData(models.Model):
     class Meta:
         """Meta class for MatchData model."""
 
+        constraints: ClassVar = [
+            models.CheckConstraint(
+                condition=models.Q(home_score__gte=0, away_score__gte=0),
+                name="match_data_nonnegative_scores",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    parts__gte=1, current_part__gte=1, part_length__gte=1
+                ),
+                name="match_data_positive_periods",
+            ),
+        ]
         indexes: ClassVar[list[models.Index]] = [
             models.Index(fields=["status"]),
             models.Index(fields=["status", "match_link"]),

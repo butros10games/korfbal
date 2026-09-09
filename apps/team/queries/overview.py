@@ -96,6 +96,7 @@ def team_players(
     return (
         Player.objects
         .select_related("user")
+        .prefetch_related("goal_song_selections")
         .only(
             "id_uuid",
             "profile_picture",
@@ -103,11 +104,11 @@ def team_players(
             "stats_visibility",
             "goal_song_uri",
             "song_start_time",
-            "goal_song_song_ids",
             "user__username",
             "name",
             "knkv_person_id",
             "knkv_privacy",
+            "archived_at",
             "knkv_observed_at",
         )
         .filter(id_uuid__in=player_ids)

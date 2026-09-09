@@ -34,7 +34,7 @@ class StartingPlayerAssignment(models.Model):
     player_group_id: str
     player: models.ForeignKey[Any, Any] = models.ForeignKey(
         player_model_string,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="starting_match_assignments",
     )
     player_id: str

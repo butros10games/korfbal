@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -90,6 +91,7 @@ def resolve_player_for_membership(data: dict[str, Any]) -> Player | None:
     return Player.objects.filter(id_uuid=player.id_uuid).select_related("user").first()
 
 
+@transaction.atomic
 def create_active_membership(
     *,
     club: Club,
@@ -97,12 +99,18 @@ def create_active_membership(
     start_date: date | None = None,
 ) -> tuple[PlayerClubMembership, bool]:
     """Create an active club membership when one does not already exist."""
-    return PlayerClubMembership.objects.get_or_create(
-        player=player,
-        club=club,
-        end_date__isnull=True,
-        defaults={"start_date": start_date or timezone.localdate()},
+    Player.all_objects.select_for_update().get(pk=player.pk)
+    existing = PlayerClubMembership.objects.filter(
+        player=player, club=club, end_date__isnull=True
+    ).first()
+    if existing is not None:
+        return existing, False
+    membership = PlayerClubMembership(
+        player=player, club=club, start_date=start_date or timezone.localdate()
     )
+    membership.full_clean()
+    membership.save()
+    return membership, True
 
 
 def close_active_membership(
