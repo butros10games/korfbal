@@ -918,8 +918,8 @@ wheels = [
 ]
 
 [package.optional-dependencies]
-phonenumbers = [
-    { name = "phonenumbers" },
+phonenumberslite = [
+    { name = "phonenumberslite" },
 ]
 
 [[package]]
@@ -1311,7 +1311,7 @@ dependencies = [
     { name = "django" },
     { name = "django-cors-headers" },
     { name = "django-crontab" },
-    { name = "django-phonenumber-field", extra = ["phonenumbers"] },
+    { name = "django-phonenumber-field", extra = ["phonenumberslite"] },
     { name = "django-prometheus" },
     { name = "django-ratelimit" },
     { name = "django-storages", extra = ["boto3"] },
@@ -1324,7 +1324,6 @@ dependencies = [
     { name = "qrcode" },
     { name = "reportlab" },
     { name = "requests" },
-    { name = "spotdl" },
     { name = "valkey" },
 ]
 
@@ -1341,6 +1340,9 @@ uwsgi = [
     { name = "granian" },
     { name = "pillow" },
 ]
+worker = [
+    { name = "spotdl" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1354,7 +1356,7 @@ requires-dist = [
     { name = "django", specifier = ">=6.1,<6.2" },
     { name = "django-cors-headers" },
     { name = "django-crontab" },
-    { name = "django-phonenumber-field", extras = ["phonenumbers"] },
+    { name = "django-phonenumber-field", extras = ["phonenumberslite"] },
     { name = "django-prometheus", specifier = "==2.6.0.dev4" },
     { name = "django-ratelimit" },
     { name = "django-storages", extras = ["boto3"] },
@@ -1367,7 +1369,6 @@ requires-dist = [
     { name = "qrcode", specifier = ">=8.2,<9" },
     { name = "reportlab", specifier = ">=5.0.1,<6" },
     { name = "requests" },
-    { name = "spotdl", specifier = ">=4.5.2" },
     { name = "valkey" },
 ]
 
@@ -1384,6 +1385,7 @@ uwsgi = [
     { name = "granian" },
     { name = "pillow" },
 ]
+worker = [{ name = "spotdl", specifier = ">=4.5.2" }]
 
 [[package]]
 name = "markdown-it-py"
@@ -1661,12 +1663,12 @@ wheels = [
 ]
 
 [[package]]
-name = "phonenumbers"
+name = "phonenumberslite"
 version = "9.0.38"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0f/55/17ea3dcefbeabd0006e09dcecba1a4ec5b27acff788add158a061f39f46b/phonenumbers-9.0.38.tar.gz", hash = "sha256:6806bebd46638af2fc2609675ea046067a40512eca81bf1446132e2fda29d113", size = 2311043, upload-time = "2026-08-28T09:48:51.458Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/70/958aeb1e6c6f110bc0587eeb2993e059bcb6bdee5f3a78902aaefeb64db6/phonenumberslite-9.0.38.tar.gz", hash = "sha256:ee3441c0fa6e0a8a5282cf8b10fdd0bde05bb8f0fe9dd60efbfe688364819089", size = 292927, upload-time = "2026-08-28T09:48:34.938Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/09/6df2574777489592b37e6b9cda72962709af2e121b122bf6aae19bcce7b4/phonenumbers-9.0.38-py2.py3-none-any.whl", hash = "sha256:f3cbeb1a42bf226060c60fc6277f5431755d325eddc23fbf2c72ef7e156113c6", size = 2594756, upload-time = "2026-08-28T09:48:48.33Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/74/487e0399e3ebbbd8ba1ad6ba553d422fb05684d1993ceff058fdc76de17c/phonenumberslite-9.0.38-py2.py3-none-any.whl", hash = "sha256:a089149e963c6373fc0db41b2b103e7d12a6788ef186c4d5c205837ff5f1e32a", size = 473165, upload-time = "2026-08-28T09:48:33.55Z" },
 ]
 
 [[package]]

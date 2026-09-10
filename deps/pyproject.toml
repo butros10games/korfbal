@@ -11,7 +11,7 @@ dependencies = [
     "django-storages[boto3]",
     "bg-auth",
     "bg-uuidv7",
-    "django-phonenumber-field[phonenumbers]",
+    "django-phonenumber-field[phonenumberslite]",
     "python-dotenv",
     "django_crontab",
     "valkey",
@@ -27,10 +27,12 @@ dependencies = [
     "reportlab>=5.0.1,<6",
     "pywebpush",
     "requests",
-    "spotdl>=4.5.2",
 ]
 
 [dependency-groups]
+# Audio downloads run in Celery alongside ffmpeg, not in web/collectstatic.
+worker = ["spotdl>=4.5.2"]
+
 uwsgi = [
     "Pillow",
     "granian",

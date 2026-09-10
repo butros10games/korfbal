@@ -26,22 +26,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --group uwsgi --no-dev --no-editable --no-install-local
 
-COPY libs/shared_python_packages/bg_audit_events/src/ /build/libs/shared_python_packages/bg_audit_events/src/
-COPY libs/django_packages/bg_auth/src/ /build/libs/django_packages/bg_auth/src/
-COPY libs/django_packages/bg_django_caching_paginator/src/ /build/libs/django_packages/bg_django_caching_paginator/src/
-COPY libs/django_packages/bg_django_mobile_detector/src/ /build/libs/django_packages/bg_django_mobile_detector/src/
-COPY libs/shared_python_packages/bg_uuidv7/src/ /build/libs/shared_python_packages/bg_uuidv7/src/
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --group uwsgi --no-dev --no-editable
-
 ## ------------------------------- Venv Optimizer Stage ------------------------------ ##
-# Separate stage so app source changes don't re-run optimization
+# Mount local sources only for wheel assembly; retain only the installed, pruned venv.
 FROM deps AS venv-optimizer
 
-RUN find /app/.venv -type d -name "tests" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "test" ! -path "*/django/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=libs/shared_python_packages/bg_audit_events/src,target=/build/libs/shared_python_packages/bg_audit_events/src \
+    --mount=type=bind,source=libs/django_packages/bg_auth/src,target=/build/libs/django_packages/bg_auth/src \
+    --mount=type=bind,source=libs/django_packages/bg_django_caching_paginator/src,target=/build/libs/django_packages/bg_django_caching_paginator/src \
+    --mount=type=bind,source=libs/django_packages/bg_django_mobile_detector/src,target=/build/libs/django_packages/bg_django_mobile_detector/src \
+    --mount=type=bind,source=libs/shared_python_packages/bg_uuidv7/src,target=/build/libs/shared_python_packages/bg_uuidv7/src \
+    uv sync --frozen --group uwsgi --no-dev --no-editable && \
+    find /app/.venv -type d -name "tests" ! -path "*/django/*" -prune -exec rm -rf {} + && \
+    find /app/.venv -type d -name "test" ! -path "*/django/*" -prune -exec rm -rf {} + && \
+    find /app/.venv -type d -name "examples" -prune -exec rm -rf {} + && \
     rm -rf /app/.venv/lib/python3.13/site-packages/pip \
     /app/.venv/lib/python3.13/site-packages/setuptools \
     /app/.venv/lib/python3.13/site-packages/wheel
@@ -59,7 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    libexpat1 libjemalloc2 libpq5 libxml2 && \
+    libjemalloc2 && \
     groupadd --gid "${APP_GID}" appuser && \
     useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser && \
     install -d -o appuser -g appuser /app && \
@@ -71,9 +69,9 @@ ENV PATH="/app/.venv/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 
 COPY --link --chmod=0555 apps/django_projects/korfbal/configs/uwsgi/generic_entrypoint.sh /app/entrypoint.sh
-COPY --link apps/django_projects/korfbal/manage.py /app/
-COPY --link apps/django_projects/korfbal/korfbal/ /app/korfbal/
-COPY --link apps/django_projects/korfbal/apps/ /app/apps/
+COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/manage.py /app/
+COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/korfbal/ /app/korfbal/
+COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/apps/ /app/apps/
 
 ENV GRANIAN_WORKERS=4
 
@@ -82,4 +80,4 @@ USER appuser
 EXPOSE 1664
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["sh", "-c", "granian --interface asgi --no-ws --host 0.0.0.0 --port 1664 --workers $GRANIAN_WORKERS korfbal.asgi:application"]
+CMD ["sh", "-c", "exec granian --interface asgi --no-ws --host 0.0.0.0 --port 1664 --workers \"$GRANIAN_WORKERS\" korfbal.asgi:application"]
