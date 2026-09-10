@@ -5,8 +5,75 @@ from datetime import date
 from django.conf import settings
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.loader import MigrationLoader
+from django.test import override_settings
 from django.utils import timezone
 import pytest
+
+
+@override_settings(MIGRATION_MODULES={})
+def test_migration_graph_has_no_conflicting_heads() -> None:
+    """Deployment's migrate command must be able to select one leaf per app."""
+    assert MigrationLoader(None).detect_conflicts() == {}
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    "starting_migration",
+    [
+        "0018_match_polling_coverage",
+        "0019_cupcompetition_cupfixture_and_more",
+        "0019_sync_run_monitoring",
+    ],
+)
+def test_cup_and_sync_merge_preserves_existing_rows(starting_migration: str) -> None:
+    """Either deployed branch can advance to a schema containing both features."""
+    executor = MigrationExecutor(connection)
+    before = [("competition", starting_migration)]
+    after = [("competition", "0020_merge_cup_and_sync_monitoring")]
+    try:
+        executor.migrate([("competition", "0018_match_polling_coverage")])
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="merge-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        if starting_migration == "0019_cupcompetition_cupfixture_and_more":
+            old.get_model("competition", "CupCompetition").objects.create(
+                season=season, name="Existing cup"
+            )
+        if starting_migration == "0019_sync_run_monitoring":
+            old.get_model("competition", "SyncRun").objects.create(
+                season=season, started_at=timezone.now(), summary={"matches": 3}
+            )
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        current = executor.loader.project_state(after).apps
+        cups = current.get_model("competition", "CupCompetition").objects
+        runs = current.get_model("competition", "SyncRun").objects
+        assert not current.get_model("competition", "CupFixture").objects.exists()
+        assert (
+            current
+            .get_model("schedule", "Season")
+            .objects.filter(pk=season.pk)
+            .exists()
+        )
+        if starting_migration == "0019_cupcompetition_cupfixture_and_more":
+            assert cups.get(season_id=season.pk).name == "Existing cup"
+        else:
+            assert not cups.exists()
+        if starting_migration == "0019_sync_run_monitoring":
+            assert runs.get(season_id=season.pk).summary == {"matches": 3}
+        else:
+            assert not runs.exists()
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
 
 @pytest.mark.migration_regression
