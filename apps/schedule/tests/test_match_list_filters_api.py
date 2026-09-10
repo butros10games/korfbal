@@ -73,6 +73,17 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
     payload = response.json()
     assert payload["id_uuid"] == str(followed_match.id_uuid)
 
+    for value in ("false", "0"):
+        global_response = client.get("/api/matches/upcoming/", {"followed": value})
+        assert len(global_response.json()) == Match.objects.count()
+        assert client.get("/api/matches/next/", {"followed": value}).json()[
+            "id_uuid"
+        ] != str(followed_match.id_uuid)
+
+    user.player.team_follow.clear()
+    assert client.get("/api/matches/upcoming/", {"followed": "true"}).json() == []
+    assert client.get("/api/matches/next/", {"followed": "true"}).content == b""
+
 
 def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -> None:
     """Regression test: followed endpoints should tolerate users without Player rows."""
@@ -106,7 +117,7 @@ def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
     assert isinstance(payload, list)
-    assert payload, "Expected at least one upcoming match"
+    assert payload == []
 
 
 def test_match_upcoming_filters_by_team_and_limit_parsing(client: Client) -> None:
@@ -157,6 +168,11 @@ def test_match_upcoming_filters_by_team_and_limit_parsing(client: Client) -> Non
         or line["away_team"]["id_uuid"] == str(team.id_uuid)
         for line in payload
     )
+
+    expanded = client.get(
+        "/api/matches/upcoming/", {"team": str(team.id_uuid), "limit": "25"}
+    )
+    assert len(expanded.json()) == Match.objects.filter(home_team=team).count()
 
     response_zero_limit = client.get(
         "/api/matches/upcoming/",

@@ -136,12 +136,18 @@ class MatchViewSet(
             self.request.query_params.getlist("season"), parameter="season"
         )
 
-        if not team_ids and self.request.query_params.get("followed"):
+        if not team_ids and self.request.query_params.get("followed", "").lower() in {
+            "true",
+            "1",
+        }:
             player = self._get_player()
             if player:
                 team_ids = list(player.team_follow.values_list("id_uuid", flat=True))
+            queryset = queryset.filter(
+                Q(home_team__id_uuid__in=team_ids) | Q(away_team__id_uuid__in=team_ids)
+            )
 
-        if team_ids:
+        elif team_ids:
             queryset = queryset.filter(
                 Q(home_team__id_uuid__in=team_ids) | Q(away_team__id_uuid__in=team_ids)
             )
