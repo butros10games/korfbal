@@ -74,6 +74,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   general test lane excludes `migration_regression` tests.
 - Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those
   against real migrations in an isolated database while ordinary tests use `--nomigrations`.
+- Keep the database-free migration graph check in the general test lane and override
+  `MIGRATION_MODULES` there so `--nomigrations` cannot hide conflicting shipped migration leaves.
 - Size both CI test lanes explicitly and budget their workers together; leaving the migration
   lane sequential can dominate the full target even when the general suite finishes quickly.
 - When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
