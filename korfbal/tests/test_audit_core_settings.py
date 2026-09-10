@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bg_auth.tasks import send_2fa_email_task, send_confirmation_email_task
 from django.conf import settings
 import pytest
 
@@ -11,6 +12,16 @@ from korfbal.settings_test import (
     _postgres_test_database_name,
     _sqlite_test_database_name,
 )
+
+
+def test_workers_consume_authentication_email_queues() -> None:
+    """Task-declared queues must be consumed even without worker CLI overrides."""
+    # Inspect the configured consumers before routing can auto-create a queue.
+    queues = {queue.name for queue in app.conf.task_queues}
+    assert app.conf.task_default_queue in queues
+    for task in (send_2fa_email_task, send_confirmation_email_task):
+        route = app.amqp.router.route(task._get_exec_options(), task.name)
+        assert route["queue"].name in queues
 
 
 def test_api_authentication_defaults_are_secure_and_ordered() -> None:

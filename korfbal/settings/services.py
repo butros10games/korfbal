@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kombu import Queue
+
 from .env import env, env_bool, env_int
 from .runtime import KORFBAL_ENABLE_PROMETHEUS, RUNNING_TESTS
 
@@ -74,6 +76,9 @@ CELERY_RESULT_BACKEND = (
     f"{env('CELERY_RESULT_PORT', str(VALKEY_PORT))}/0"
 )
 CELERY_ACCEPT_CONTENT = ["json"]
+# Shared authentication tasks explicitly publish to instant. Workers must consume
+# it as well as the default queue used by competition and media jobs.
+CELERY_TASK_QUEUES = (Queue("celery"), Queue("instant"))
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = env("CELERY_TIMEZONE", "UTC")
 CELERY_TASK_TRACK_STARTED = env_bool("CELERY_TASK_TRACK_STARTED", True)
