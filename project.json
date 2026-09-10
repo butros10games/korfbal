@@ -56,11 +56,11 @@
                 "ci": {
                     "commands": [
                         {
-                            "command": "KORFBAL_TEST_DB_LANE=general PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal --nomigrations -q -n 3 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-config=apps/django_projects/korfbal/.coveragerc --cov-report=term:skip-covered --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83",
+                            "command": "KORFBAL_TEST_DB_LANE=general PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-config=apps/django_projects/korfbal/.coveragerc --cov-report=term:skip-covered --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83",
                             "forwardAllArgs": false
                         },
                         {
-                            "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py",
+                            "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py",
                             "forwardAllArgs": false
                         }
                     ]
