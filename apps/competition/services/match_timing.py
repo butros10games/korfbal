@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from apps.competition.models import Match
+from apps.competition.services.cups import import_cup_fixture
 from apps.schedule.models import Season
 
 
@@ -22,27 +23,39 @@ def playing_minutes(data: dict[str, Any]) -> int | None:
 
 def import_playing_time(
     match: Match, data: dict[str, Any], observed_at: datetime
-) -> None:
-    """Retain actual playing time without treating it as elapsed match duration."""
+) -> bool:
+    """Retain regulation minutes and possible periods, not elapsed match duration."""
     if match.playing_time_observed_at and match.playing_time_observed_at > observed_at:
-        return
+        return True
     value = playing_minutes(data)
     periods = data.get("MatchPeriod")
     if value is None or not isinstance(periods, list) or not periods:
-        return
+        return False
     if any(
         not isinstance(period, dict)
         or type(period.get("PlayTime")) is not int
-        or not 0 < period["PlayTime"] <= MAX_PLAYING_MINUTES
+        or not 0 <= period["PlayTime"] <= MAX_PLAYING_MINUTES
+        or (
+            period["PlayTime"] == 0
+            and period.get("Description", "") != "Strafworpserie"
+        )
         or not isinstance(period.get("Description"), str)
         for period in periods
     ):
-        return
+        return False
+    if not any(period["PlayTime"] > 0 for period in periods):
+        return False
     if (
         data.get("EventTimeResolution") == "NONE"
-        and sum(period["PlayTime"] for period in periods) != value
+        and sum(
+            period["PlayTime"]
+            for period in periods
+            if period["Description"] not in {"1e verlenging", "2e verlenging"}
+        )
+        != value
     ):
-        return
+        return False
+    import_cup_fixture(match)
     match.playing_time_minutes = value
     match.playing_time_observed_at = observed_at
     match.match_periods = [
@@ -57,6 +70,8 @@ def import_playing_time(
         )
     )
 
+    return True
+
 
 def import_timing_details(
     season: Season, source_id: str, data: dict[str, Any], observed_at: datetime
@@ -70,6 +85,5 @@ def import_timing_details(
     if str(data.get("PublicMatchId", "")) != source_id:
         raise ValueError("Unrecognized match timing")
     match = Match.objects.get(season=season, external_id=source_id)
-    import_playing_time(match, data, observed_at)
-    if match.playing_time_observed_at is None:
+    if not import_playing_time(match, data, observed_at):
         raise ValueError("Missing or unsupported match duration/periods")

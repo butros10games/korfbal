@@ -224,6 +224,70 @@ class CompetitionClass(models.Model):
         return f"{self.edition_id}:{self.code}:{self.age_group}"
 
 
+class CupCompetition(models.Model):
+    """An observed season-specific cup, distinct from league classifications."""
+
+    if TYPE_CHECKING:
+        local_tournament_id: UUID | None
+
+    season = models.ForeignKey("schedule.Season", on_delete=models.CASCADE)
+    name = models.CharField(max_length=200)
+    sport = models.CharField(max_length=80, blank=True)
+    local_tournament = models.OneToOneField(
+        "tournament.Tournament",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_cup",
+    )
+
+    class Meta:
+        """Retain separate regional, discipline and season identities."""
+
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["season", "name", "sport"], name="unique_source_cup"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return the observed cup label."""
+        return self.name
+
+
+class CupFixture(models.Model):
+    """Provider evidence and native tracking link for one cup fixture.
+
+    Absent bracket metadata stays unknown; dates do not establish a round.
+    """
+
+    competition = models.ForeignKey(
+        CupCompetition, on_delete=models.CASCADE, related_name="fixtures"
+    )
+    match = models.OneToOneField(
+        "Match", on_delete=models.CASCADE, related_name="cup_fixture"
+    )
+    round_name = models.CharField(max_length=120, blank=True)
+    round_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    next_fixture = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    winner_to_side = models.CharField(
+        max_length=4, blank=True, choices=[("home", "Home"), ("away", "Away")]
+    )
+    local_match = models.OneToOneField(
+        "tournament.TournamentMatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_cup_fixture",
+    )
+
+    def __str__(self) -> str:
+        """Return the source fixture identity."""
+        return str(self.match)
+
+
 class Pool(SeasonalIdentity):
     """Poule metadata and freshness of its official standings."""
 

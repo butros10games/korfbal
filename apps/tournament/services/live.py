@@ -15,7 +15,9 @@ def _operational_status(tournament: Tournament) -> str:
     """Derive the public lifecycle from the aggregate's match states."""
     if tournament.status in {Tournament.Status.DRAFT, Tournament.Status.ARCHIVED}:
         return tournament.status
-    match_statuses = set(tournament.matches.values_list("status", flat=True))
+    match_statuses = set(
+        tournament.matches.order_by().values_list("status", flat=True).distinct()
+    )
     if not match_statuses:
         return tournament.status
     terminal = {TournamentMatch.Status.FINAL, TournamentMatch.Status.CANCELLED}

@@ -13,6 +13,7 @@ from apps.tournament.models import (
     TournamentPool,
     TournamentPoolEntry,
 )
+from apps.tournament.services.cups import cup_state
 from apps.tournament.services.qualifiers import evaluate_best_rank, evaluate_pool_rank
 from apps.tournament.services.standings import StandingRow, calculate_pool_standings
 
@@ -125,10 +126,22 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                     "team"
                 ).prefetch_related("adjustments"),
             ),
-            "matches",
+            Prefetch(
+                "matches",
+                queryset=TournamentMatch.objects.only(
+                    "pool_id",
+                    "home_team_id",
+                    "away_team_id",
+                    "home_score",
+                    "away_score",
+                    "status",
+                ),
+            ),
         )
         .order_by("sort_order", "name", "id_uuid")
     )
+    # The reverse manager supplies the already-loaded tournament to cup_state;
+    # avoid hydrating that same aggregate and unrelated team fields per match.
     matches = list(
         tournament.matches.select_related(
             "stage",
@@ -137,8 +150,45 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             "field",
             "home_team",
             "away_team",
-            "winner",
             "referee_team",
+        ).only(
+            "tournament_id",
+            "stage_id",
+            "pool_id",
+            "field_id",
+            "home_team_id",
+            "away_team_id",
+            "referee_team_id",
+            "home_qualifier",
+            "away_qualifier",
+            "round_number",
+            "match_number",
+            "starts_at",
+            "duration_minutes",
+            "status",
+            "field_ready_at",
+            "referee_claimed_at",
+            "home_score",
+            "away_score",
+            "winner_id",
+            "next_match_id",
+            "winner_to_side",
+            "revision",
+            "cup_state",
+            "stage__name",
+            "stage__kind",
+            "stage__final_group_id",
+            "stage__final_group__name",
+            "pool__name",
+            "field__label",
+            "home_team__name",
+            "home_team__short_name",
+            "home_team__color",
+            "away_team__name",
+            "away_team__short_name",
+            "away_team__color",
+            "referee_team__name",
+            "referee_team__short_name",
         )
     )
     final_groups = list(tournament.final_groups.all())
@@ -175,6 +225,7 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
             "draw_points": tournament.draw_points,
             "loss_points": tournament.loss_points,
             "match_duration_minutes": tournament.match_duration_minutes,
+            "cup_rules": tournament.cup_rules,
             "changeover_minutes": tournament.changeover_minutes,
             "minimum_rest_minutes": tournament.minimum_rest_minutes,
             "live_revision": tournament.live_revision,
@@ -331,7 +382,12 @@ def build_tournament_snapshot(tournament: Tournament) -> dict[str, Any]:
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "winner_id": str(match.winner_id) if match.winner_id else None,
+                "next_match_id": str(match.next_match_id)
+                if match.next_match_id
+                else None,
+                "winner_to_side": match.winner_to_side,
                 "revision": match.revision,
+                "cup": cup_state(match),
             }
             for match in matches
         ],

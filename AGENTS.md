@@ -139,8 +139,16 @@ misleading provider 500/603 errors.
 
 - Sportlink `EventTimeResolution=NONE` can still accompany minute-based Duration and
   MatchPeriod.PlayTime. Accept the observed NONE contract only when validated period
-  minutes sum to Duration; do not confuse event timestamp precision with match length.
+  regular-period minutes sum to Duration; cup extra time is optional and the observed
+  zero-minute `Strafworpserie` is untimed. Neither proves those phases were played.
 
 - Drain Sportlink metadata from a due-component queue; do not rebuild the match
   polling graph for each component. During catch-up, preserve due result/schedule
   priority and periodically recheck it without scanning the entire metadata backlog.
+
+- Catch tournament command errors outside a nested transaction savepoint; winner propagation
+  can fail after saving a result, so refresh the match after rollback before returning a conflict.
+
+- Share tournament SSE recovery reads per ASGI event loop, retain a bounded latest-revision
+  queue per receiver, and release the shared worker after the last disconnect; viewer
+  count must not multiply periodic database scans or let slow receivers block others.

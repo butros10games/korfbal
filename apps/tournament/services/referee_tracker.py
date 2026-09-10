@@ -19,6 +19,7 @@ from apps.tournament.models import (
     TournamentResultAudit,
     TournamentTeam,
 )
+from apps.tournament.services.cups import cup_state
 
 
 MAX_TOURNAMENT_SCORE = 999
@@ -358,20 +359,57 @@ def _audit_matches_current_score(
 
 def latest_referee_goal(match: TournamentMatch) -> TournamentResultAudit | None:
     """Return the newest goal that currently determines the visible score."""
-    latest_change = match.result_audits.order_by("-created_at", "-id_uuid").first()
-    if latest_change is None or latest_change.source not in {
-        TournamentResultAudit.Source.REFEREE_GOAL,
-        TournamentResultAudit.Source.REFEREE_UNDO,
-    }:
+    # Goal correction needs score/lifecycle metadata, not the potentially large
+    # before/after shootout snapshots retained in the durable audit history.
+    audits = match.result_audits.defer("previous_cup_state", "new_cup_state")
+    latest_change = audits.order_by("-created_at", "-id_uuid").first()
+    reopened_period = bool(
+        latest_change
+        and match.tournament.cup_rules
+        and match.cup_state.get("phase") in {"regular", "extra"}
+        and latest_change.previous_status == TournamentMatch.Status.FINAL
+        and latest_change.new_status == TournamentMatch.Status.LIVE
+        and latest_change.source == TournamentResultAudit.Source.DIRECT
+    )
+    if latest_change is None or (
+        not reopened_period
+        and latest_change.source
+        not in {
+            TournamentResultAudit.Source.REFEREE_GOAL,
+            TournamentResultAudit.Source.REFEREE_UNDO,
+        }
+    ):
         return None
     if (
         latest_change.source == TournamentResultAudit.Source.REFEREE_GOAL
         and _audit_matches_current_score(match, latest_change)
     ):
         return latest_change
-    if latest_change.source == TournamentResultAudit.Source.REFEREE_UNDO:
+    if (
+        reopened_period
+        or latest_change.source == TournamentResultAudit.Source.REFEREE_UNDO
+    ):
+        goals = audits.all()
+        if match.tournament.cup_rules:
+            boundary = (
+                audits
+                .filter(source=TournamentResultAudit.Source.DIRECT)
+                # Closing and reopening the same period do not confirm its goals.
+                .exclude(
+                    previous_status=TournamentMatch.Status.LIVE,
+                    new_status=TournamentMatch.Status.FINAL,
+                )
+                .exclude(
+                    previous_status=TournamentMatch.Status.FINAL,
+                    new_status=TournamentMatch.Status.LIVE,
+                )
+                .order_by("-created_at", "-id_uuid")
+                .first()
+            )
+            if boundary:
+                goals = goals.filter(created_at__gt=boundary.created_at)
         return (
-            match.result_audits
+            goals
             .filter(
                 source=TournamentResultAudit.Source.REFEREE_GOAL,
                 new_home_score=match.home_score,
@@ -445,6 +483,7 @@ def build_referee_tracker_state(match: TournamentMatch) -> dict[str, Any]:
             "home_score": match.home_score,
             "away_score": match.away_score,
             "revision": match.revision,
+            "cup": cup_state(match),
         },
         "latest_event": _latest_event_payload(match),
     }
@@ -515,6 +554,12 @@ def record_goal(
     if match.home_team is None or match.away_team is None:
         raise RefereeTrackerError(
             "Beide teams moeten bekend zijn voor de score kan starten."
+        )
+
+    state = cup_state(match)
+    if state and state["phase"] in {"shootout", "unobserved"}:
+        raise RefereeTrackerError(
+            "Gebruik de aparte strafworpserie; deze telt niet bij de wedstrijdstand."
         )
 
     previous_home_score = match.home_score

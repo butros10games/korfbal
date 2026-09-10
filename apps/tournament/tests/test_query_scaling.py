@@ -1,5 +1,7 @@
 """Keep tournament reads bounded as the number of events and pools grows."""
 
+from unittest.mock import Mock
+
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -27,11 +29,26 @@ LIST_QUERIES = 1
 
 
 @pytest.mark.parametrize("pool_count", [1, 6])
-def test_snapshot_queries_do_not_grow_per_pool(pool_count: int) -> None:
+@pytest.mark.parametrize("cup_enabled", [False, True])
+def test_snapshot_queries_do_not_grow_per_pool(
+    pool_count: int,
+    cup_enabled: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Both live and final standings must consume the snapshot's prefetched data."""
     owner = get_user_model().objects.create_user(username="snapshot-owner")
     tournament = Tournament.objects.create(
-        owner=owner, name="Query cup", slug="query-cup", starts_at=timezone.now()
+        owner=owner,
+        name="Query cup",
+        slug="query-cup",
+        starts_at=timezone.now(),
+        cup_rules={
+            "regular_minutes": [30, 30],
+            "extra_minutes": [5, 5],
+            "shootout_attempts": 3,
+        }
+        if cup_enabled
+        else {},
     )
     stage = TournamentStage.objects.create(
         tournament=tournament, name="Pools", kind=TournamentStage.Kind.POOL
@@ -60,8 +77,22 @@ def test_snapshot_queries_do_not_grow_per_pool(pool_count: int) -> None:
     tournament = Tournament.objects.select_related("display_config").get(
         pk=tournament.pk
     )
+    hydrate_tournament = Mock(wraps=Tournament.from_db.__func__)
+    monkeypatch.setattr(Tournament, "from_db", classmethod(hydrate_tournament))
     with CaptureQueriesContext(connection) as queries:
         snapshot = build_tournament_snapshot(tournament)
+    # Reuse the aggregate loaded by the request instead of rebuilding it per match.
+    hydrate_tournament.assert_not_called()
+    for query in queries:
+        if f'FROM "{TournamentMatch._meta.db_table}"' not in query["sql"]:
+            continue
+        assert "referee_claim_token" not in query["sql"]
+        assert "referee_access_token" not in query["sql"]
+        with connection.cursor() as cursor:
+            cursor.execute(query["sql"])
+            maximum_selected_columns = 50
+            assert len(cursor.description) <= maximum_selected_columns
+    assert all(bool(match["cup"]) == cup_enabled for match in snapshot["matches"])
     assert len(queries) == SNAPSHOT_QUERIES
     assert len(snapshot["pools"]) == pool_count
     assert all(pool["standings"][0]["played"] == 1 for pool in snapshot["pools"])

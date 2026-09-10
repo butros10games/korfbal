@@ -44,12 +44,32 @@ from .views import (
     TournamentTeamSubstitutionView,
     TournamentViewSet,
 )
+from .views.cups import (
+    TournamentCupCommandView,
+    TournamentCupPlanView,
+    TournamentCupSetupView,
+)
 
 
 router = DefaultRouter()
 router.register(r"", TournamentViewSet, basename="tournament")
 
 urlpatterns = [
+    path(
+        "matches/<uuid:match_id>/cup/plan/",
+        TournamentCupPlanView.as_view(),
+        name="tournament-cup-plan",
+    ),
+    path(
+        "<uuid:tournament_id>/cup/",
+        TournamentCupSetupView.as_view(),
+        name="tournament-cup-setup",
+    ),
+    path(
+        "matches/<uuid:match_id>/tracker/cup/",
+        TournamentCupCommandView.as_view(),
+        name="tournament-cup-command",
+    ),
     path(
         "referee-duties/<uuid:access_token>/",
         TournamentRefereeDutiesView.as_view(),

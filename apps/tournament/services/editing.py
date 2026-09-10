@@ -399,7 +399,7 @@ def substitute_absent_team(
 
     editable_matches = list(
         tournament.matches
-        .select_for_update()
+        .select_for_update(of=("self",))
         .select_related("stage", "pool", "field", "home_team", "away_team")
         .filter(
             stage__kind=TournamentStage.Kind.POOL,
@@ -421,7 +421,7 @@ def substitute_absent_team(
 
     referee_matches = list(
         tournament.matches
-        .select_for_update()
+        .select_for_update(of=("self",))
         .select_related("field", "home_team", "away_team", "referee_team")
         .filter(referee_team=absent_team)
         .exclude(

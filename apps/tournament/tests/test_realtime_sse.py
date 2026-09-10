@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from http import HTTPStatus
+from inspect import unwrap
 import json
 
 from asgiref.sync import sync_to_async
 from asgiref.testing import ApplicationCommunicator
+from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
+from apps.tournament import realtime_reconciliation
 from apps.tournament.models import Tournament
 from apps.tournament.realtime import TournamentEventsSseConsumer
 
@@ -79,3 +85,83 @@ async def test_sse_consumer_recovers_a_missed_channel_notification() -> None:
 
     await communicator.send_input({"type": "http.disconnect"})
     await communicator.wait(timeout=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+@override_settings(
+    KORFBAL_SSE_ENABLED=True,
+    KORFBAL_SSE_HEARTBEAT_SECONDS=60,
+    KORFBAL_SSE_RECONCILE_SECONDS=0.01,
+)
+async def test_one_recovery_query_serves_a_hundred_connected_viewers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All viewers recover a lost notification from one shared SQL read."""
+    owner = await sync_to_async(get_user_model().objects.create)(
+        username="many-viewers"
+    )
+    tournament = await sync_to_async(Tournament.objects.create)(
+        name="Shared recovery",
+        slug="shared-recovery",
+        owner=owner,
+        starts_at=timezone.now(),
+    )
+    tournament_id = str(tournament.id_uuid)
+    sync_reader = unwrap(realtime_reconciliation.read_tournament_revisions)
+    query_counts: list[int] = []
+    permit = asyncio.Semaphore(0)
+
+    @database_sync_to_async
+    def measured_read(ids: tuple[str, ...]) -> dict[str, int]:
+        with CaptureQueriesContext(connection) as queries:
+            revisions = sync_reader(ids)
+        query_counts.append(len(queries))
+        return revisions
+
+    async def read(ids: tuple[str, ...]) -> dict[str, int]:
+        await permit.acquire()
+        return await measured_read(ids)
+
+    monkeypatch.setattr(realtime_reconciliation, "read_tournament_revisions", read)
+    viewers = [
+        ApplicationCommunicator(
+            TournamentEventsSseConsumer.as_asgi(),
+            _sse_scope(tournament_id),
+        )
+        for _ in range(100)
+    ]
+
+    async def connect(viewer: ApplicationCommunicator) -> None:
+        await viewer.send_input({
+            "type": "http.request",
+            "body": b"",
+            "more_body": False,
+        })
+        assert (await viewer.receive_output(timeout=5))["status"] == HTTPStatus.OK
+        assert b"event: ready" in (await viewer.receive_output(timeout=5))["body"]
+
+    try:
+        await asyncio.gather(*(connect(viewer) for viewer in viewers))
+        await sync_to_async(Tournament.objects.filter(pk=tournament.pk).update)(
+            live_revision=1
+        )
+        permit.release()
+        changes = await asyncio.gather(
+            *(viewer.receive_output(timeout=5) for viewer in viewers)
+        )
+        assert all(
+            json.loads(event["body"].split(b"data: ", maxsplit=1)[1])
+            == {
+                "tournament_id": tournament_id,
+                "revision": 1,
+            }
+            for event in changes
+        )
+        assert query_counts == [1]
+    finally:
+        await asyncio.gather(
+            *(viewer.send_input({"type": "http.disconnect"}) for viewer in viewers)
+        )
+        await asyncio.gather(*(viewer.wait(timeout=5) for viewer in viewers))
+    assert not realtime_reconciliation._workers

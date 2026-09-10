@@ -50,6 +50,7 @@ def unique_tournament_slug(name: str) -> str:
 class TournamentSerializer(serializers.ModelSerializer):
     """Manage tournament identity, rules, and lifecycle settings."""
 
+    cup_rules = serializers.JSONField(read_only=True)
     can_manage = serializers.SerializerMethodField()
     team_count = serializers.IntegerField(read_only=True, default=0)
     field_count = serializers.IntegerField(read_only=True, default=0)
@@ -82,6 +83,7 @@ class TournamentSerializer(serializers.ModelSerializer):
             "changeover_minutes",
             "minimum_rest_minutes",
             "live_revision",
+            "cup_rules",
             "can_manage",
             "team_count",
             "field_count",

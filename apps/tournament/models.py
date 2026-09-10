@@ -89,6 +89,8 @@ class Tournament(models.Model):
         default=5,
         validators=[MaxValueValidator(240)],
     )
+    # Null keeps ordinary tournaments on their existing scoring rules.
+    cup_rules = models.JSONField(null=True, blank=True)
     live_revision = models.PositiveBigIntegerField(default=0)
     live_changed_at = models.DateTimeField(default=django_timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -486,7 +488,7 @@ class TournamentMatch(models.Model):
         related_name="matches",
     )
     field_id: UUID | None
-    round_number = models.PositiveSmallIntegerField(default=1)
+    round_number = models.PositiveSmallIntegerField(default=1, null=True, blank=True)
     match_number = models.PositiveIntegerField(default=1)
     starts_at = models.DateTimeField(null=True, blank=True)
     duration_minutes = models.PositiveSmallIntegerField(default=20)
@@ -535,6 +537,7 @@ class TournamentMatch(models.Model):
         editable=False,
     )
     referee_claimed_at = models.DateTimeField(null=True, blank=True)
+    cup_state = models.JSONField(default=dict, blank=True)
     home_score = models.PositiveSmallIntegerField(null=True, blank=True)
     away_score = models.PositiveSmallIntegerField(null=True, blank=True)
     winner = models.ForeignKey(
@@ -634,6 +637,8 @@ class TournamentResultAudit(models.Model):
         on_delete=models.CASCADE,
         related_name="result_audits",
     )
+    previous_cup_state = models.JSONField(default=dict, blank=True)
+    new_cup_state = models.JSONField(default=dict, blank=True)
     previous_home_score = models.PositiveSmallIntegerField(null=True, blank=True)
     previous_away_score = models.PositiveSmallIntegerField(null=True, blank=True)
     new_home_score = models.PositiveSmallIntegerField(null=True, blank=True)

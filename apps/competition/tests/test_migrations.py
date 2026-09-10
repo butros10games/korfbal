@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.conf import settings
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
@@ -395,6 +396,58 @@ def test_schedule_baseline_migration_seeds_only_published_snapshots() -> None:
         assert updated.objects.get(pk=published.pk).local_match_id == local.pk
         assert updated.objects.get(pk=published.pk).schedule_notification_id is None
         assert updated.objects.get(pk=pending.pk).published_schedule == {}
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_cup_schema_preserves_existing_tournament_results() -> None:
+    """Cup extensions preserve native scores and default ordinary events to no cup."""
+    executor = MigrationExecutor(connection)
+    before = [
+        ("competition", "0018_match_polling_coverage"),
+        ("tournament", "0008_tournamentdisplayconfig_show_sponsors"),
+    ]
+    after = [("competition", "0019_cupcompetition_cupfixture_and_more")]
+    try:
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        owner = old.get_model(settings.AUTH_USER_MODEL).objects.create(
+            username="cup-migration-owner"
+        )
+        tournament = old.get_model("tournament", "Tournament").objects.create(
+            name="Existing event",
+            slug="existing-cup-migration",
+            owner=owner,
+            starts_at=timezone.now(),
+        )
+        stage = old.get_model("tournament", "TournamentStage").objects.create(
+            tournament=tournament, name="Finale", kind="final"
+        )
+        match = old.get_model("tournament", "TournamentMatch").objects.create(
+            tournament=tournament,
+            stage=stage,
+            match_number=1,
+            status="final",
+            home_score=12,
+            away_score=9,
+        )
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        current = executor.loader.project_state(after).apps
+        preserved = current.get_model("tournament", "TournamentMatch").objects.get(
+            pk=match.pk
+        )
+        assert (preserved.home_score, preserved.away_score, preserved.status) == (
+            12,
+            9,
+            "final",
+        )
+        assert preserved.cup_state == {}
+        assert preserved.tournament.cup_rules is None
+        assert not current.get_model("competition", "CupFixture").objects.exists()
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())

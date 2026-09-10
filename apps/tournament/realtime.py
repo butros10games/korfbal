@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import aclosing
 import json
 from urllib.parse import parse_qs
 from uuid import UUID
 
 from channels.consumer import AsyncConsumer
-from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
 from django.conf import settings
 
-from apps.tournament.models import Tournament
 from apps.tournament.realtime_contracts import tournament_group_name
+from apps.tournament.realtime_reconciliation import (
+    read_tournament_revisions,
+    revision_updates,
+)
 
 
 MAX_TOURNAMENT_STREAMS = 20
@@ -59,7 +62,7 @@ class TournamentEventsSseConsumer(AsyncConsumer):
             "status": 200,
             "headers": headers,
         })
-        self.revisions = await self._revisions()
+        self.revisions = await read_tournament_revisions(self.tournament_ids)
         await self._send_event("ready", {"revisions": self.revisions})
         self.heartbeat_task = asyncio.create_task(self._heartbeats())
         self.reconciliation_task = asyncio.create_task(self._reconcile_revisions())
@@ -121,10 +124,10 @@ class TournamentEventsSseConsumer(AsyncConsumer):
     async def _reconcile_revisions(self) -> None:
         """Recover committed changes missed by the best-effort channel layer."""
         try:
-            while True:
-                await asyncio.sleep(settings.KORFBAL_SSE_RECONCILE_SECONDS)
-                for tournament_id, revision in (await self._revisions()).items():
-                    await self._send_changed_if_new(tournament_id, revision)
+            async with aclosing(revision_updates(self.tournament_ids)) as updates:
+                async for revisions in updates:
+                    for tournament_id, revision in revisions.items():
+                        await self._send_changed_if_new(tournament_id, revision)
         except asyncio.CancelledError:
             return
 
@@ -134,6 +137,7 @@ class TournamentEventsSseConsumer(AsyncConsumer):
             self.heartbeat_task = None
         if self.reconciliation_task:
             self.reconciliation_task.cancel()
+            await asyncio.gather(self.reconciliation_task, return_exceptions=True)
             self.reconciliation_task = None
         for tournament_id in self.tournament_ids:
             await self.channel_layer.group_discard(
@@ -182,12 +186,3 @@ class TournamentEventsSseConsumer(AsyncConsumer):
         return (
             settings.CORS_ALLOW_ALL_ORIGINS or origin in settings.CORS_ALLOWED_ORIGINS
         )
-
-    @database_sync_to_async
-    def _revisions(self) -> dict[str, int]:
-        return {
-            str(tournament_id): revision
-            for tournament_id, revision in Tournament.objects.filter(
-                id_uuid__in=self.tournament_ids
-            ).values_list("id_uuid", "live_revision")
-        }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 
 from django.utils import timezone
 
@@ -170,8 +171,16 @@ def reset_match_state(match: TournamentMatch, *, actor: object) -> bool:
             "De volgende wedstrijd is al gestart. Zet die eerst terug."
         )
 
+    previous_cup_state = deepcopy(match.cup_state)
+    if new_status == TournamentMatch.Status.SCHEDULED:
+        match.cup_state = {}
+    elif match.cup_state and match.cup_state["phase"] in {"regular", "extra"}:
+        match.cup_state["completed_periods"] = match.cup_state["completed_periods"][:-1]
+
     TournamentResultAudit.objects.create(
         match=match,
+        previous_cup_state=previous_cup_state,
+        new_cup_state=match.cup_state,
         previous_home_score=previous_home_score,
         previous_away_score=previous_away_score,
         new_home_score=home_score,
@@ -190,6 +199,7 @@ def reset_match_state(match: TournamentMatch, *, actor: object) -> bool:
     match.revision += 1
     match.save(
         update_fields=[
+            "cup_state",
             "home_score",
             "away_score",
             "status",

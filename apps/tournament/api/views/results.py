@@ -105,6 +105,11 @@ class TournamentMatchResultView(APIView):
         data = serializer.validated_data
         if data["expected_revision"] != match.revision:
             raise Conflict()
+        if tournament.cup_rules:
+            raise ValidationError({
+                "detail": "Gebruik de bekertracker om periodes en strafworpen "
+                "afzonderlijk vast te leggen."
+            })
         if match.home_team is None or match.away_team is None:
             return Response(
                 {"detail": "Both teams must be known before entering a result."},
@@ -337,6 +342,14 @@ class TournamentRoundStartView(APIView):
         """
         tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
+        if tournament.cup_rules:
+            return Response(
+                {
+                    "detail": "Start bekerwedstrijden afzonderlijk "
+                    "zodra hun veld vrij is."
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         matches = list(
             TournamentMatch.objects
             .select_for_update(of=("self",))

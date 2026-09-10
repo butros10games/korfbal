@@ -21,6 +21,7 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.classification import map_pool
+from apps.competition.services.cups import import_observed_cup_fixture
 from apps.competition.services.identities import team_group_key
 from apps.competition.services.lineups import import_lineup
 from apps.competition.services.logos import cache_logo, discover_logo
@@ -238,6 +239,7 @@ class Importer:
             fields = assign_changed(match, {**values, "status": data["Status"]})
             if fields:
                 match.save(update_fields=(*fields, "updated_at"))
+        import_observed_cup_fixture(match, data)
         self.discover_details(match)
 
     def discover_details(self, match: Match) -> None:
