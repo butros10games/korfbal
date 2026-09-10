@@ -5,21 +5,25 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 
 from apps.game_tracker.models import GoalType
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     GoalTypeAdminBase = ModelAdminBase[GoalType]
 else:
-    GoalTypeAdminBase = admin.ModelAdmin
+    GoalTypeAdminBase = KorfbalModelAdmin
 
 
 @admin.register(GoalType)
 class GoalTypeAdmin(GoalTypeAdminBase):
     """Admin for the GoalType model."""
 
-    list_display = ["id_uuid", "name"]
+    search_fields = ("id_uuid", "name")
+    ordering = ("name",)
+
+    list_display = ("name",)
     show_full_result_count = False
 
     class Meta:

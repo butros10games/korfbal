@@ -37,6 +37,7 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 - Keep app-owned `apps/*/static/` sources tracked; only collected `/static/` output is generated.
   The root ignore also matches nested static directories, so preserve the local exceptions.
+  Keep app assets in collectstatic release detection and check custom asset URLs after deployment.
 
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
 - Keep packages imported during Django startup in the base runtime dependencies; Celery and

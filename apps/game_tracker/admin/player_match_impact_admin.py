@@ -5,22 +5,30 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 
 from apps.game_tracker.models import PlayerMatchImpact
+from apps.kwt_common.admin_base import KorfbalModelAdmin
+from apps.kwt_common.admin_filters import relation_filter
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     PlayerMatchImpactAdminBase = ModelAdminBase[PlayerMatchImpact]
 else:
-    PlayerMatchImpactAdminBase = admin.ModelAdmin
+    PlayerMatchImpactAdminBase = KorfbalModelAdmin
 
 
 @admin.register(PlayerMatchImpact)
 class PlayerMatchImpactAdmin(PlayerMatchImpactAdminBase):
     """Admin for the PlayerMatchImpact model."""
 
+    list_select_related = (
+        "match_data__match_link__home_team",
+        "match_data__match_link__away_team",
+        "player__user",
+        "team__club",
+    )
+
     list_display = (
-        "id_uuid",
         "match_data",
         "player",
         "team",
@@ -29,7 +37,7 @@ class PlayerMatchImpactAdmin(PlayerMatchImpactAdminBase):
         "algorithm_version",
         "computed_at",
     )
-    list_filter = ("algorithm_version", "team")
+    list_filter = ("algorithm_version", relation_filter("team", "Team"))
     search_fields = (
         "id_uuid",
         "match_data__id_uuid",

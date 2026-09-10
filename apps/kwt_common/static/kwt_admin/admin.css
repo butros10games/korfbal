@@ -1,0 +1,291 @@
+:root {
+    --primary: #146c78;
+    --secondary: #123c48;
+    --accent: #fff;
+    --link-fg: #096c7b;
+    --link-selected-fg: #074f59;
+}
+html[data-theme='dark'] {
+    --primary: #267c89;
+    --secondary: #163b46;
+    --link-fg: #77d1db;
+    --link-selected-fg: #a5e5eb;
+}
+@media (prefers-color-scheme: dark) {
+    html[data-theme='auto'] {
+        --primary: #267c89;
+        --secondary: #163b46;
+        --link-fg: #77d1db;
+        --link-selected-fg: #a5e5eb;
+    }
+}
+body #header {
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 18px 28px;
+}
+#site-name {
+    font-size: 22px;
+    font-weight: 650;
+    letter-spacing: -0.5px;
+}
+.admin-shortcuts {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.admin-shortcuts a:link,
+.admin-shortcuts a:visited {
+    padding: 7px 12px;
+    border: 1px solid #ffffff40;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 12px;
+}
+.admin-shortcuts a:hover {
+    background: #ffffff18;
+}
+#content {
+    padding: 24px 28px;
+    min-width: 0;
+}
+#content h1 {
+    font-size: 25px;
+    font-weight: 600;
+}
+.module {
+    border: 1px solid var(--hairline-color);
+    border-radius: 7px;
+    overflow: hidden;
+}
+.module caption,
+.module h2 {
+    padding: 13px 15px;
+}
+#changelist .results {
+    overflow-x: auto;
+}
+#result_list th,
+#result_list td {
+    padding: 12px 10px;
+    vertical-align: middle;
+}
+#result_list tbody tr:hover {
+    background: var(--selected-row);
+}
+#changelist-search input[type='text'] {
+    min-width: min(340px, 55vw);
+    padding: 9px;
+}
+#changelist-search input[type='submit'],
+.admin-relation-filter button {
+    padding: 9px 12px;
+    border-radius: 4px;
+}
+#changelist-filter {
+    border-left: 1px solid var(--hairline-color);
+}
+#changelist-filter details {
+    padding-bottom: 12px;
+}
+#changelist-filter summary {
+    padding-top: 12px;
+    font-weight: 600;
+}
+.admin-relation-filter {
+    padding: 4px 15px 8px;
+}
+.admin-relation-filter .select2-container {
+    min-width: 0;
+    width: 100% !important;
+}
+.admin-relation-filter button {
+    margin-top: 9px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    border: 0;
+    cursor: pointer;
+}
+.select2-container--admin-autocomplete .select2-selection--single {
+    min-height: 36px;
+}
+.select2-container--admin-autocomplete .select2-selection--multiple {
+    min-height: 36px;
+}
+.change-form .form-row {
+    padding: 15px;
+}
+.change-form textarea {
+    box-sizing: border-box;
+    max-width: 100%;
+}
+.change-form .readonly {
+    overflow-wrap: anywhere;
+    max-height: 24rem;
+    overflow: auto;
+}
+.change-form .submit-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+.change-form .submit-row input {
+    margin: 0;
+}
+.admin-welcome {
+    border: 1px solid var(--hairline-color);
+    border-top: 3px solid var(--primary);
+    padding: 24px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    background: var(--darkened-bg);
+}
+.admin-eyebrow {
+    color: var(--link-fg);
+    font-size: 11px;
+    letter-spacing: 1.7px;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+.admin-welcome h2 {
+    font-size: 26px;
+    margin: 8px 0;
+}
+.admin-welcome p {
+    line-height: 1.6;
+    color: var(--body-quiet-color);
+}
+.admin-welcome label {
+    display: block;
+    font-weight: 600;
+    margin: 20px 0 8px;
+}
+.admin-welcome input {
+    box-sizing: border-box;
+    width: min(100%, 560px);
+    padding: 12px;
+}
+body.dashboard #content {
+    width: auto;
+    margin-right: 0;
+    max-width: 1500px;
+}
+body.dashboard #content-main {
+    width: calc(100% - 285px);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+body.dashboard #content-main .module {
+    margin-bottom: 0;
+}
+body.dashboard #content-main [hidden] {
+    display: none;
+}
+body.dashboard #content-related {
+    margin-right: 0;
+    width: 260px;
+}
+body.dashboard #content-main table {
+    width: 100%;
+}
+body.dashboard #content-main th {
+    width: auto;
+}
+body.dashboard #content-main th a {
+    padding: 5px 0;
+}
+.admin-shortcuts a:focus-visible,
+.admin-welcome input:focus-visible {
+    outline: 3px solid var(--link-fg);
+    outline-offset: 2px;
+}
+@media (max-width: 1024px) {
+    body #header {
+        flex-wrap: nowrap;
+        align-items: stretch;
+    }
+    #toolbar #changelist-search > div {
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+    #toolbar #changelist-search #searchbar {
+        min-width: 0;
+        flex: 1 1 120px;
+        margin: 0;
+    }
+    #toolbar #changelist-search input[type='submit'] {
+        flex: 0 0 auto;
+    }
+    #toolbar #changelist-search .quiet {
+        flex: 1 0 100%;
+        width: auto;
+        margin: 0;
+    }
+}
+@media (max-width: 1100px) {
+    body.dashboard #content-main {
+        grid-template-columns: 1fr;
+    }
+}
+@media (max-width: 767px) {
+    #header {
+        padding: 16px;
+    }
+    #content {
+        padding: 18px 14px;
+    }
+    .admin-welcome {
+        padding: 18px;
+    }
+    .admin-welcome h2 {
+        font-size: 23px;
+    }
+    body.dashboard #content-main {
+        display: block;
+        width: 100%;
+    }
+    body.dashboard #content-main .module {
+        margin-bottom: 16px;
+    }
+    body.dashboard #content-related {
+        margin: 24px 0 0;
+        width: 100%;
+    }
+    #changelist-filter {
+        border-left: 0;
+    }
+    .change-form .submit-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .change-form .submit-row input {
+        width: 100%;
+    }
+    .change-form .aligned .form-row .flex-container {
+        flex-wrap: wrap;
+    }
+    .admin-relation-filter {
+        max-width: 420px;
+    }
+}
+
+@media (max-width: 767px) {
+    .change-form .aligned .form-row > div {
+        width: 100%;
+        min-width: 0;
+    }
+    .change-form .related-widget-wrapper {
+        max-width: 100%;
+        min-width: 0;
+    }
+    .change-form .related-widget-wrapper .select2-container {
+        width: 100% !important;
+        min-width: 0;
+        max-width: 100%;
+    }
+}

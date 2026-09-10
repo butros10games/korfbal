@@ -5,35 +5,38 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 
 from apps.awards.models import MatchMvp, MatchMvpVote
+from apps.kwt_common.admin_base import KorfbalModelAdmin
+from apps.kwt_common.admin_filters import relation_filter
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     MatchMvpAdminBase = ModelAdminBase[MatchMvp]
     MatchMvpVoteAdminBase = ModelAdminBase[MatchMvpVote]
 else:
-    MatchMvpAdminBase = admin.ModelAdmin
-    MatchMvpVoteAdminBase = admin.ModelAdmin
+    MatchMvpAdminBase = KorfbalModelAdmin
+    MatchMvpVoteAdminBase = KorfbalModelAdmin
 
 
 @admin.register(MatchMvp)
 class MatchMvpAdmin(MatchMvpAdminBase):
     """Admin for MatchMvp."""
 
-    list_display = (
-        "id_uuid",
-        "match",
-        "finished_at",
-        "closes_at",
-        "mvp_player",
-        "published_at",
+    list_select_related = (
+        "match__home_team",
+        "match__away_team",
+        "mvp_player__user",
     )
+
+    list_display = ("match", "finished_at", "closes_at", "mvp_player", "published_at")
     list_filter = ("published_at", "closes_at")
     search_fields = (
         "id_uuid",
         "match__id_uuid",
-        "match__match_data_id",
+        "match__home_team__name",
+        "match__away_team__name",
+        "mvp_player__name",
         "mvp_player__user__username",
     )
     autocomplete_fields = ("match", "mvp_player")
@@ -50,15 +53,15 @@ class MatchMvpAdmin(MatchMvpAdminBase):
 class MatchMvpVoteAdmin(MatchMvpVoteAdminBase):
     """Admin for MatchMvpVote."""
 
-    list_display = (
-        "id_uuid",
-        "match",
-        "voter",
-        "voter_token",
-        "candidate",
-        "created_at",
+    list_select_related = (
+        "match__home_team",
+        "match__away_team",
+        "voter__user",
+        "candidate__user",
     )
-    list_filter = ("created_at", "match")
+
+    list_display = ("match", "voter", "candidate", "created_at")
+    list_filter = ("created_at", relation_filter("match", "Match"))
     search_fields = (
         "id_uuid",
         "match__id_uuid",

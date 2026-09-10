@@ -5,21 +5,22 @@ from typing import TYPE_CHECKING, Any
 
 from django import forms
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
-from django.db.models import Q
 from django.forms.renderers import BaseRenderer
 from django.forms.utils import ErrorList
 from django.utils.datastructures import MultiValueDict
 
 from apps.game_tracker.models import Shot
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     ShotAdminBase = ModelAdminBase[Shot]
 else:
-    ShotAdminBase = admin.ModelAdmin
+    ShotAdminBase = KorfbalModelAdmin
 
 
 class ShotAdminForm(forms.ModelForm):
@@ -46,6 +47,7 @@ class ShotAdminForm(forms.ModelForm):
         renderer: BaseRenderer | None = None,
     ) -> None:
         """Initialize the ShotAdminForm."""
+        from apps.game_tracker.models import MatchData
         from apps.team.models import Team
 
         super().__init__(
@@ -66,28 +68,60 @@ class ShotAdminForm(forms.ModelForm):
         if not isinstance(team_field, forms.ModelChoiceField):
             return
 
-        if instance is not None:
-            match = instance.match_data.match_link
-            team_field.queryset = Team.objects.filter(
-                Q(home_matches=match) | Q(away_matches=match),
-            ).distinct()
-        else:
-            team_field.queryset = Team.objects.none()
+        match_data_id = (
+            self.data.get(self.add_prefix("match_data"))
+            if self.is_bound
+            else getattr(instance, "match_data_id", None)
+            or self.initial.get("match_data")
+        )
+        try:
+            match_data = (
+                MatchData.objects
+                .select_related("match_link")
+                .filter(pk=match_data_id)
+                .first()
+            )
+        except (ValueError, ValidationError):
+            match_data = None
+        team_field.queryset = (
+            Team.objects.filter(
+                pk__in=[
+                    match_data.match_link.home_team_id,
+                    match_data.match_link.away_team_id,
+                ]
+            )
+            if match_data
+            else Team.objects.none()
+        )
 
 
 @admin.register(Shot)
 class ShotAdmin(ShotAdminBase):
     """Admin for the Shot model."""
 
-    form = ShotAdminForm
-    list_display = (
-        "id_uuid",
-        "player",
-        "match_data",
-        "for_team",
-        "team",
-        "scored",
+    list_select_related = (
+        "player__user",
+        "match_data__match_link__home_team",
+        "match_data__match_link__away_team",
+        "team__club",
+        "match_part__match_data__match_link__home_team",
+        "match_part__match_data__match_link__away_team",
+        "shot_type",
     )
+    search_fields = (
+        "id_uuid",
+        "player__name",
+        "player__user__username",
+        "match_data__id_uuid",
+        "match_data__match_link__home_team__name",
+        "match_data__match_link__away_team__name",
+        "team__name",
+    )
+    list_filter = ("scored", "for_team", "time")
+    ordering = ("-time",)
+
+    form = ShotAdminForm
+    list_display = ("time", "player", "match_data", "team", "for_team", "scored")
     show_full_result_count = False
 
     class Meta:

@@ -4,20 +4,22 @@ from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 from apps.player.models import Player, PlayerClubMembership, PlayerSong
 
 
 if TYPE_CHECKING:
     from django.contrib.admin import (
-        ModelAdmin as ModelAdminBase,
         TabularInline as TabularInlineBase,
     )
+
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     PlayerModelAdminBase = ModelAdminBase[Player]
     PlayerSongInlineBase = TabularInlineBase[PlayerSong, Player]
     PlayerClubMembershipInlineBase = TabularInlineBase[PlayerClubMembership, Player]
 else:
-    PlayerModelAdminBase = admin.ModelAdmin
+    PlayerModelAdminBase = KorfbalModelAdmin
     PlayerSongInlineBase = admin.TabularInline
     PlayerClubMembershipInlineBase = admin.TabularInline
 
@@ -51,6 +53,8 @@ class PlayerSongInline(PlayerSongInlineBase):
 class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
     """Inline admin showing a player's club membership history."""
 
+    autocomplete_fields = ("club",)
+
     model = PlayerClubMembership
     extra = 0
     show_change_link = True
@@ -73,6 +77,10 @@ class PlayerClubMembershipInline(PlayerClubMembershipInlineBase):
 @admin.register(Player)
 class PlayerAdmin(PlayerModelAdminBase):
     """Player admin configuration."""
+
+    list_select_related = ("user",)
+    list_filter = ("archived_at", "knkv_privacy")
+    ordering = ("name", "id_uuid")
 
     list_display = ("display_name", "user", "knkv_observed_at")
     search_fields = (

@@ -6,29 +6,31 @@ from typing import TYPE_CHECKING
 
 from django.contrib import admin
 
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 from apps.player.models import PlayerSong
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     PlayerSongModelAdminBase = ModelAdminBase[PlayerSong]
 else:
-    PlayerSongModelAdminBase = admin.ModelAdmin
+    PlayerSongModelAdminBase = KorfbalModelAdmin
 
 
 @admin.register(PlayerSong)
 class PlayerSongAdmin(PlayerSongModelAdminBase):
     """PlayerSong admin configuration."""
 
+    list_select_related = ("player__user", "cached_song")
+    ordering = ("-created_at",)
+
     list_display = (
-        "id_uuid",
+        "title",
         "player",
         "status",
-        "title",
         "artists",
         "duration_seconds",
-        "start_time_seconds",
         "created_at",
     )
 
@@ -38,6 +40,7 @@ class PlayerSongAdmin(PlayerSongModelAdminBase):
         "spotify_url",
         "title",
         "artists",
+        "player__name",
         "player__user__username",
         "player__user__email",
     )

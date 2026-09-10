@@ -26,11 +26,12 @@ from apps.competition.models import (
     TrafficState,
 )
 from apps.competition.queries.monitoring import monitoring_dashboard
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 from apps.schedule.models import Season
 from apps.schedule.queries.seasons import current_season
 
 
-class CatalogueAdmin(admin.ModelAdmin):
+class CatalogueAdmin(KorfbalModelAdmin):
     """Keep provider data inspectable without bypassing import/linking invariants."""
 
     actions = None
@@ -206,6 +207,7 @@ class SyncRunAdmin(CatalogueAdmin):
     list_display = ("started_at", "finished_at", "season", "status")
     list_filter = ("season", "status")
     list_select_related = ("season",)
+    search_fields = ("season__name", "status")
     ordering = ("-started_at",)
     date_hierarchy = "started_at"
 
@@ -224,6 +226,7 @@ class TrafficStateAdmin(CatalogueAdmin):
     """Show the shared provider request counters."""
 
     list_display = ("key", "hour_requests", "day_requests", "next_request_at")
+    search_fields = ("key",)
 
 
 @admin.register(SyncLease)
@@ -231,6 +234,7 @@ class SyncLeaseAdmin(CatalogueAdmin):
     """Show whether an importer lease or cooldown is active."""
 
     list_display = ("key", "owner", "expires_at")
+    search_fields = ("key", "owner")
 
 
 @admin.register(HistoricalResource)
@@ -269,4 +273,5 @@ class SeasonBindingAdmin(CatalogueAdmin):
     """Inspect source scopes and native season mappings."""
 
     list_display = ("scope", "sport", "season")
+    search_fields = ("scope__name", "season__name", "sport")
     list_select_related = ("scope", "season")

@@ -5,22 +5,28 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 
 from apps.game_tracker.models import PlayerMatchMinutes
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     PlayerMatchMinutesAdminBase = ModelAdminBase[PlayerMatchMinutes]
 else:
-    PlayerMatchMinutesAdminBase = admin.ModelAdmin
+    PlayerMatchMinutesAdminBase = KorfbalModelAdmin
 
 
 @admin.register(PlayerMatchMinutes)
 class PlayerMatchMinutesAdmin(PlayerMatchMinutesAdminBase):
     """Admin for the PlayerMatchMinutes model."""
 
+    list_select_related = (
+        "match_data__match_link__home_team",
+        "match_data__match_link__away_team",
+        "player__user",
+    )
+
     list_display = (
-        "id_uuid",
         "match_data",
         "player",
         "minutes_played",

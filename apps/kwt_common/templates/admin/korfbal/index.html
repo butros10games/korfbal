@@ -1,0 +1,17 @@
+{% extends "admin/index.html" %}
+{% block content %}
+    <section class="admin-welcome"
+             aria-labelledby="welcome-heading"
+             data-ui-ready="true">
+        <p class="admin-eyebrow">Korfbal · Operations</p>
+        <h2 id="welcome-heading">Find the right record, faster</h2>
+        <p>Manage match days, clubs and players. Inspect competition imports and tournament results.</p>
+        <label for="admin-directory-search">Find an admin screen</label>
+        <input id="admin-directory-search"
+               type="search"
+               placeholder="Try matches, players or sync…"
+               autocomplete="off">
+        <p id="admin-directory-empty" hidden>No matching screens. Try another name.</p>
+    </section>
+    {{ block.super }}
+{% endblock %}

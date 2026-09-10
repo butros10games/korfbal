@@ -1,10 +1,10 @@
 {% extends "admin/base_site.html" %}
-{% load static %}
+{% load admin_assets %}
 {% block extrastyle %}
-    {{ block.super }}<link rel="stylesheet" href="{% static 'competition/monitor.css' %}">
+    {{ block.super }}<link rel="stylesheet" href="{% admin_asset 'competition/monitor.css' %}">
 {% endblock %}
 {% block extrahead %}
-    {{ block.super }}<script src="{% static 'competition/monitor.js' %}" defer></script>
+    {{ block.super }}<script src="{% admin_asset 'competition/monitor.js' %}" defer></script>
 {% endblock %}
 {% block breadcrumbs %}
     <div class="breadcrumbs">

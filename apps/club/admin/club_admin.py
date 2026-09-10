@@ -10,23 +10,26 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from apps.club.models import Club, ClubAdmin
+from apps.kwt_common.admin_base import KorfbalModelAdmin
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     ClubModelAdminBase = ModelAdminBase[Club]
     ClubAdminLinkAdminBase = ModelAdminBase[ClubAdmin]
 else:
-    ClubModelAdminBase = admin.ModelAdmin
-    ClubAdminLinkAdminBase = admin.ModelAdmin
+    ClubModelAdminBase = KorfbalModelAdmin
+    ClubAdminLinkAdminBase = KorfbalModelAdmin
 
 
 @admin.register(Club)
 class ClubModelAdmin(ClubModelAdminBase):
     """Admin configuration for the Club model."""
 
-    list_display = ("id_uuid", "name", "knkv_catalogue")
+    ordering = ("name",)
+
+    list_display = ("name", "knkv_catalogue")
     search_fields = ("name", "id_uuid")
     show_full_result_count = False
 
@@ -57,9 +60,12 @@ class ClubModelAdmin(ClubModelAdminBase):
 class ClubAdminLinkAdmin(ClubAdminLinkAdminBase):
     """Admin configuration for the ClubAdmin through model."""
 
+    list_select_related = ("club", "player__user")
+
     list_display = ("club", "player")
     search_fields = (
         "club__name",
+        "player__name",
         "player__user__username",
         "player__user__email",
     )

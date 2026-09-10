@@ -5,28 +5,36 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 
 from apps.game_tracker.models import Attack
+from apps.kwt_common.admin_base import KorfbalModelAdmin
+from apps.kwt_common.admin_filters import relation_filter
 
 
 if TYPE_CHECKING:
-    from django.contrib.admin import ModelAdmin as ModelAdminBase
+    from apps.kwt_common.admin_base import KorfbalModelAdmin as ModelAdminBase
 
     AttackAdminBase = ModelAdminBase[Attack]
 else:
-    AttackAdminBase = admin.ModelAdmin
+    AttackAdminBase = KorfbalModelAdmin
 
 
 @admin.register(Attack)
 class AttackAdmin(AttackAdminBase):
     """Admin for the Attack model."""
 
-    list_display = (
-        "id_uuid",
-        "match_data",
-        "team",
-        "match_part",
-        "time",
+    list_select_related = (
+        "match_data__match_link__home_team",
+        "match_data__match_link__away_team",
+        "match_part__match_data__match_link__home_team",
+        "match_part__match_data__match_link__away_team",
+        "team__club",
     )
-    list_filter = ("team", "match_part")
+    ordering = ("-time",)
+
+    list_display = ("match_data", "team", "match_part", "time")
+    list_filter = (
+        relation_filter("team", "Team"),
+        relation_filter("match_part", "Match part"),
+    )
     search_fields = (
         "id_uuid",
         "match_data__id_uuid",

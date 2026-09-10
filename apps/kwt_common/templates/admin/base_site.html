@@ -1,0 +1,8 @@
+{% extends "admin/base.html" %}
+{% load admin_assets %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title }}{% endblock %}
+{% block branding %}<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header }}</a></div>{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}{% endblock %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet"
+      href="{% admin_asset 'kwt_admin/admin.css' %}">{% endblock %}
+{% block extrahead %}{{ block.super }}<script src="{% admin_asset 'kwt_admin/admin.js' %}" defer></script>{% endblock %}
+{% block nav-global %}{% if korfbal_shortcuts %}<nav class="admin-shortcuts" aria-label="Common tasks">{% for link in korfbal_shortcuts %}<a href="{{ link.url }}">{{ link.label }}</a>{% endfor %}</nav>{% endif %}{% endblock %}

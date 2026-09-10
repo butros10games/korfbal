@@ -1,0 +1,8 @@
+<details data-filter-title="{{ title }}" open>
+    <summary>By {{ title }}</summary>
+    <form method="get" class="admin-relation-filter">
+        {% for key, value in spec.hidden_parameters %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+        {{ spec.widget }}
+        <button type="submit">Apply {{ title|lower }}</button>
+    </form>
+</details>

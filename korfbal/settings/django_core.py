@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from .env import BASE_DIR
 from .runtime import KORFBAL_ENABLE_PROMETHEUS
 
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "apps.kwt_common.admin_config.KorfbalAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -74,8 +75,8 @@ SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # No project-level templates: the React SPA owns the UI.
-        "DIRS": [],
+        # Resolve local admin overrides before Django's built-in templates.
+        "DIRS": [BASE_DIR / "apps" / "kwt_common" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
