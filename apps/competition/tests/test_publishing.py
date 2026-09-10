@@ -93,9 +93,11 @@ def test_imported_records_use_native_admin_search_and_detail_pages(
         AppMatch.objects.count(),
         TeamData.objects.count(),
     ) == (2, 2, 1, 2)
-    client.force_login(
-        get_user_model().objects.create_superuser(username="native-admin")
-    )
+    user = get_user_model().objects.create_superuser(username="native-admin")
+    client.force_login(user)
+    session = client.session
+    session["bg_auth_mfa_verified"] = user.get_session_auth_hash()
+    session.save()
     assert b"Club T1" in client.get(reverse("admin:club_club_changelist")).content
 
 

@@ -218,7 +218,7 @@ class AuditEventBulkIngestAPIView(KorfbalAPIView):
 class AuditTimelineAPIView(KorfbalAPIView):
     """List audit events as a searchable timeline."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAdminUser,)
 
     def get(
         self,
@@ -313,7 +313,7 @@ class AuditTimelineAPIView(KorfbalAPIView):
 class AuditSummaryAPIView(KorfbalAPIView):
     """Return aggregate audit statistics for dashboards/operations."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAdminUser,)
 
     def get(
         self,
@@ -335,7 +335,7 @@ class AuditSummaryAPIView(KorfbalAPIView):
 class AuditProducerStatsAPIView(KorfbalAPIView):
     """Return producer/source health statistics over a configurable window."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAdminUser,)
 
     def get(
         self,
@@ -357,7 +357,7 @@ class AuditProducerStatsAPIView(KorfbalAPIView):
 class AuditTrendStatsAPIView(KorfbalAPIView):
     """Return hourly trend points and error-rate delta for dashboards/alerting."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAdminUser,)
 
     def get(
         self,
@@ -379,7 +379,7 @@ class AuditTrendStatsAPIView(KorfbalAPIView):
 class AuditProducerHealthAPIView(KorfbalAPIView):
     """Rank producer health using weighted risk metrics for operations."""
 
-    permission_classes = (permissions.IsAuthenticated,)
+    permission_classes = (permissions.IsAdminUser,)
 
     def get(
         self,

@@ -14,11 +14,10 @@ from korfbal.settings_test import (
 
 
 def test_api_authentication_defaults_are_secure_and_ordered() -> None:
-    """JWT/session/basic auth should all inherit an authenticated-by-default API."""
+    """JWT/session auth should all inherit an authenticated-by-default API."""
     assert settings.REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"] == (
         "korfbal.authentication.JwtBearerAuthentication",
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
     )
     assert settings.REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] == (
         "rest_framework.permissions.IsAuthenticated",

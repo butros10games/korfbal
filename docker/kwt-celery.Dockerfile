@@ -1,3 +1,5 @@
+FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS audio-js
+
 ## ------------------------------- Dependency Stage ------------------------------ ##
 # Install third-party dependencies before local source so library changes retain that cache.
 FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS deps
@@ -62,6 +64,8 @@ RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
     && chown appuser:appuser /app \
     && install -d -o appuser -g appuser -m 0755 /app/logs
+
+COPY --link --from=audio-js /usr/local/bin/node /usr/local/bin/node
 
 COPY --link --from=venv-optimizer /app/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"

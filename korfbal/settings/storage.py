@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from .env import BASE_DIR, env, env_bool, env_int
+from .runtime import DEBUG
+from .security import KORFBAL_ORIGIN, KWT_ORIGIN
 
 
 AWS_S3_ENDPOINT_URL = env("MINIO_URL", "http://kwt-minio:9000")
@@ -30,6 +32,15 @@ S3_STORAGE_BACKEND = "storages.backends.s3boto3.S3Boto3Storage"
 DEFAULT_STORAGE_BACKEND = env("DEFAULT_STORAGE_BACKEND", S3_STORAGE_BACKEND)
 STATICFILES_STORAGE_BACKEND = env("STATICFILES_STORAGE", S3_STORAGE_BACKEND)
 
+KORFBAL_MEDIA_API_ORIGIN = env(
+    "KORFBAL_MEDIA_API_ORIGIN", KWT_ORIGIN if DEBUG else KORFBAL_ORIGIN
+).rstrip("/")
+KORFBAL_MEDIA_URL_MAX_AGE = 3600
+if DEFAULT_STORAGE_BACKEND == S3_STORAGE_BACKEND:
+    DEFAULT_STORAGE_BACKEND = (
+        "apps.player.adapters.outbound.private_storage.PrivateMediaStorage"
+    )
+
 STORAGES = {
     "default": {
         "BACKEND": DEFAULT_STORAGE_BACKEND,
@@ -37,6 +48,7 @@ STORAGES = {
             "bucket_name": AWS_MEDIA_BUCKET_NAME,
             # Personal data (profile pictures) should not be world-readable.
             "default_acl": "private",
+            "file_overwrite": False,
             "querystring_auth": AWS_QUERYSTRING_AUTH,
             "querystring_expire": AWS_QUERYSTRING_EXPIRE,
             "custom_domain": AWS_MEDIA_CUSTOM_DOMAIN,

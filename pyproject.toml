@@ -26,7 +26,7 @@ dependencies = [
     "reportlab>=5.0.1,<6",
     "pywebpush",
     "requests",
-    "spotdl>=4.5.2",
+    "yt-dlp[default]>=2026.8.19",
 ]
 
 [dependency-groups]

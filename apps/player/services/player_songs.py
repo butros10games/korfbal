@@ -23,6 +23,7 @@ from apps.player.services.player_song_queries import (
     owned_player_song_or_none,
     player_song_by_id,
 )
+from apps.player.services.upload_validation import validate_audio_upload
 from apps.player.spotify import canonicalize_spotify_track_url
 
 
@@ -165,6 +166,7 @@ def create_player_song(
 ) -> PlayerSongCreation:
     """Create a player song and dispatch processing after commit."""
     if isinstance(uploaded_audio, UploadedFile):
+        validate_audio_upload(uploaded_audio)
         filename = Path(uploaded_audio.name or "uploaded.mp3").name
         title = Path(filename).stem[:255]
 

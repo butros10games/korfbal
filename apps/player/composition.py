@@ -8,8 +8,12 @@ from django.conf import settings
 
 from apps.player.adapters.outbound.command_runner import SubprocessCommandRunner
 from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
+from apps.player.adapters.outbound.media_privacy import (
+    check_media_privacy as _check_media_privacy,
+)
 from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
 from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
+from apps.player.adapters.outbound.spotify_tracks import RequestsTrackMetadataClient
 from apps.player.adapters.outbound.storage import DjangoAudioStorage
 from apps.player.adapters.outbound.web_push import PyWebPushClient
 from apps.player.adapters.outbound.web_push_batch import (
@@ -32,14 +36,14 @@ from apps.player.services.push_notifications import (
     missing_webpush_settings,
     send_test_payload as _send_test_payload,
 )
-from apps.player.services.spotdl import (
-    download_spotify_track as _download_spotify_track,
-)
 from apps.player.services.spotify import (
     complete_spotify_authorization as _complete_spotify_authorization,
     create_spotify_authorization as _create_spotify_authorization,
     pause_spotify as _pause_spotify,
     play_spotify as _play_spotify,
+)
+from apps.player.services.spotify_download import (
+    download_spotify_track as _download_spotify_track,
 )
 from apps.player.services.web_push import (
     WebPushPayload,
@@ -47,6 +51,7 @@ from apps.player.services.web_push import (
 )
 
 
+check_media_privacy = _check_media_privacy
 command_runner = SubprocessCommandRunner()
 audio_storage = DjangoAudioStorage()
 audio_runtime = AudioRuntime(storage=audio_storage, commands=command_runner)
@@ -65,6 +70,7 @@ send_expo_push = partial(send_expo_push_tokens, client=expo_push_client)
 download_spotify_track = partial(
     _download_spotify_track,
     command_runner=command_runner,
+    metadata_client=RequestsTrackMetadataClient(),
 )
 ensure_goal_song_clip = partial(
     _ensure_goal_song_clip,

@@ -19,6 +19,7 @@ from apps.player.services.player_uploads import (
     save_profile_picture_upload,
     uploaded_file_or_none,
 )
+from apps.player.services.upload_validation import InvalidAudioUploadError
 
 from .common import (
     PLAYER_NOT_FOUND_MESSAGE,
@@ -112,11 +113,14 @@ class UploadGoalSongAPIView(KorfbalAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        url = save_goal_song_upload(
-            player=player,
-            uploaded=uploaded,
-            jobs=song_jobs,
-        )
+        try:
+            url = save_goal_song_upload(
+                player=player,
+                uploaded=uploaded,
+                jobs=song_jobs,
+            )
+        except InvalidAudioUploadError as error:
+            return Response({"error": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({
             "url": url,

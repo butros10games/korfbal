@@ -16,6 +16,9 @@ def test_catalogue_admin_and_existing_club_link() -> None:
     user = get_user_model().objects.create_superuser(username="catalogue-admin")
     client = Client()
     client.force_login(user)
+    session = client.session
+    session["bg_auth_mfa_verified"] = user.get_session_auth_hash()
+    session.save()
     local = LocalClub.objects.create(name="DTS")
     club = Club.objects.create(
         external_id="DTS-E", name="DTS (E)", city="Enkhuizen", local_club=local
@@ -66,9 +69,11 @@ def test_catalogue_admin_and_existing_club_link() -> None:
 def test_catalogue_admin_lists_are_registered(model: str) -> None:
     """Every catalogue and import progress model has a working admin list."""
     client = Client()
-    client.force_login(
-        get_user_model().objects.create_superuser(username="catalogue-admin")
-    )
+    user = get_user_model().objects.create_superuser(username="catalogue-admin")
+    client.force_login(user)
+    session = client.session
+    session["bg_auth_mfa_verified"] = user.get_session_auth_hash()
+    session.save()
     assert (
         client.get(reverse(f"admin:competition_{model}_changelist")).status_code
         == status.HTTP_200_OK

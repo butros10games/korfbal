@@ -9,6 +9,9 @@ from .runtime import DEBUG
 from .security import WEB_APP_ORIGIN
 
 
+BG_AUTH_REQUIRE_STAFF_MFA = True
+BG_AUTH_JWT_ROTATE_REFRESH = True
+
 SITE = "Korfbal Web Tool"
 LOGIN_FOTO: str = "images/logo/KWT_logo.png"
 LOGIN_TITLE: str = "Welkom terug!"

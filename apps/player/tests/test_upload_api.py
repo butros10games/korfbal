@@ -111,12 +111,14 @@ def test_upload_profile_picture_happy_path_persists_file_and_returns_url(
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
     assert payload["url"].startswith("/media/profile_pictures/")
-    assert "avatar" in payload["url"]
+    assert str(user.player.pk) in payload["url"]
     assert payload["url"].endswith(".png")
 
     user.refresh_from_db()
     assert user.player.profile_picture
-    assert user.player.profile_picture.name.startswith("profile_pictures/avatar")
+    assert user.player.profile_picture.name.startswith(
+        f"profile_pictures/{user.player.pk}/"
+    )
     assert user.player.profile_picture.name.endswith(".png")
 
 
@@ -236,8 +238,8 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     song = PlayerSong.objects.get(player=user.player)
     assert song.status == PlayerSongStatus.READY
     assert song.audio_file.name.startswith("player_songs/")
-    assert Path(song.audio_file.name).stem.startswith("coolsong1")
-    assert Path(song.audio_file.name).suffix == ".MP3"
+    assert str(user.player.pk) in song.audio_file.name
+    assert Path(song.audio_file.name).suffix == ".mp3"
     assert user.player.goal_song_song_ids == [str(song.id_uuid)]
     assert user.player.goal_song_uri == payload["url"]
     assert payload["url"].endswith(song.audio_file.name)

@@ -10,6 +10,8 @@ from django.db import models
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
 
+from apps.player.media_paths import player_song_path
+
 from .cached_song import CachedSong
 from .player import Player
 
@@ -81,7 +83,7 @@ class PlayerSong(models.Model):
     error_message: models.TextField[str, str] = models.TextField(blank=True)
 
     audio_file: models.FileField = models.FileField(
-        upload_to="player_songs/",
+        upload_to=player_song_path,
         blank=True,
         null=True,
     )

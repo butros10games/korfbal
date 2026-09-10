@@ -31,7 +31,7 @@ dependencies = [
 
 [dependency-groups]
 # Audio downloads run in Celery alongside ffmpeg, not in web/collectstatic.
-worker = ["spotdl>=4.5.2"]
+worker = ["yt-dlp[default]>=2026.8.19"]
 
 uwsgi = [
     "Pillow",

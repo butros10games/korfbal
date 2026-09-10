@@ -794,3 +794,11 @@ A worker crash after claiming an event may lose delivery; claimed events are not
 A broker outage is logged without rolling back imported data; this change does not
 add a durable notification outbox or replay missed alerts. The importer still needs
 its deployment-owned recurring invocation; this PR does not install a new scheduler.
+
+### Security remediation rollout
+
+Apply migrations before starting the updated backend. Release the matching mobile client: old JWTs without a refresh-session identifier require sign-in again, and old unverified admin sessions must complete MFA. Ensure staff have a working email address or passkey before rollout.
+
+Media must use a bucket separate from static files. From the configured Korfbal runtime, `python manage.py check_media_privacy` verifies the MinIO bucket policy without changing it. To remove public allow statements while retaining authenticated grants, an operator can run `python manage.py check_media_privacy --repair --probe`. The probe creates and deletes a uniquely named synthetic object; it does not read user files. Test the signed download endpoint and verify the old media hostname no longer serves raw objects after deploying the proxy configuration. Do not treat a successful local probe as production verification.
+
+Spotify track imports now require both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Metadata comes from Spotify's official API; the Celery worker uses yt-dlp, its packaged JavaScript solver, Node, and ffmpeg to find and convert one audio result. Search matching can differ from spotDL. Direct MP3 uploads remain available without Spotify credentials. The existing `SPOTDL_DOWNLOAD_TIMEOUT_SECONDS` setting continues to bound each download attempt for deployment compatibility. The worker accepts only a successful, nonempty MP3 within the upload size limit and kills decoder descendants on timeout.

@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import base64
-import subprocess  # nosec B404
+import subprocess
+import sys
+from time import monotonic  # nosec B404
 from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
@@ -282,3 +284,26 @@ def test_push_transport_never_follows_redirects() -> None:
     with patch("requests.Session.send") as request:
         PushSession().post("https://fcm.googleapis.com/push", allow_redirects=True)
     assert request.call_args.kwargs["allow_redirects"] is False
+
+
+def test_downloader_timeout_terminates_descendant_with_inherited_output() -> None:
+    """A child decoder must not keep pipes open after the parent times out."""
+    started = monotonic()
+    script = (
+        "import subprocess,sys,time; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "print('started', flush=True); time.sleep(30)"
+    )
+    with pytest.raises(subprocess.TimeoutExpired):
+        SubprocessCommandRunner().run(
+            [sys.executable, "-c", script],
+            CommandRunOptions(
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1,
+                kill_process_tree=True,
+            ),
+        )
+    maximum_cleanup_seconds = 10
+    assert monotonic() - started < maximum_cleanup_seconds

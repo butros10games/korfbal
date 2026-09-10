@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 from django.contrib.auth import password_validation
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.uploadedfile import UploadedFile
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -18,6 +19,10 @@ from apps.player.models.player_song import PlayerSong
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.push_endpoints import validate_web_push_endpoint
+from apps.player.services.upload_validation import (
+    InvalidAudioUploadError,
+    validate_audio_upload,
+)
 
 
 class PlayerGoalSongSelectionSerializer(serializers.Serializer):
@@ -156,6 +161,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             "id_uuid",
             "user",
             "display_name",
+            "profile_picture",
             "viewer_is_superuser",
             "can_view_profile_picture",
             "can_view_stats",
@@ -420,27 +426,12 @@ class PlayerSongCreateSerializer(serializers.Serializer):
             ValidationError: When the uploaded file is not an MP3 or exceeds limits.
 
         """
-        name = getattr(uploaded, "name", "") or ""
-        content_type = getattr(uploaded, "content_type", "") or ""
-        size = int(getattr(uploaded, "size", 0) or 0)
-
-        if not name.lower().endswith(".mp3"):
-            raise serializers.ValidationError({
-                "audio_file": "Only MP3 uploads are supported."
-            })
-
-        if content_type and content_type not in {"audio/mpeg", "audio/mp3"}:
-            # Some browsers omit/lie; only enforce when provided.
-            raise serializers.ValidationError({
-                "audio_file": "Invalid content type (expected MP3)."
-            })
-
-        # Guardrail to avoid accidental huge uploads.
-        max_bytes = 25 * 1024 * 1024
-        if size and size > max_bytes:
-            raise serializers.ValidationError({
-                "audio_file": "File is too large (max 25MB)."
-            })
+        if not isinstance(uploaded, UploadedFile):
+            raise serializers.ValidationError({"audio_file": "Invalid upload."})
+        try:
+            validate_audio_upload(uploaded)
+        except InvalidAudioUploadError as error:
+            raise serializers.ValidationError({"audio_file": str(error)}) from error
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         """Require either spotify_url or audio_file.

@@ -231,27 +231,14 @@ def test_timeline_filters_and_orders_newest_first(client: Client) -> None:
 
 
 @pytest.mark.parametrize(
-    ("event_name", "visible"),
-    [
-        pytest.param("visible.actor.debug", True, id="actor-debug"),
-        pytest.param("visible.blank-club.debug", True, id="blank-club-debug"),
-        pytest.param("visible.allowed-severity", True, id="allowed-severity-private"),
-        pytest.param("hidden.private.debug", False, id="private-debug"),
-    ],
+    "endpoint", ["timeline", "summary", "producers", "trends", "health"]
 )
-def test_timeline_applies_each_non_staff_visibility_rule(
-    client: Client,
-    event_name: str,
-    visible: bool,
-) -> None:
-    """Exercise one independently named non-staff visibility predicate."""
+def test_operational_audit_requires_staff(client: Client, endpoint: str) -> None:
+    """Severity and club metadata must never authorize ordinary account holders."""
     actor_id = _login(client)
     _visibility_events(actor_id=actor_id)
-    response = client.get(f"{AUDIT_API}/timeline/")
-
-    assert response.status_code == HTTPStatus.OK
-    returned_names = {item["event_name"] for item in response.json()["items"]}
-    assert (event_name in returned_names) is visible
+    response = client.get(f"{AUDIT_API}/{endpoint}/")
+    assert response.status_code == HTTPStatus.FORBIDDEN
 
 
 def test_timeline_cursor_pages_are_disjoint(client: Client) -> None:
@@ -439,12 +426,12 @@ def test_aggregate_endpoints_normalize_reporting_window(
 
 
 @pytest.mark.parametrize("endpoint", ["summary", "producers", "trends", "health"])
-def test_aggregate_endpoints_apply_non_staff_visibility(
+def test_aggregate_endpoints_preserve_staff_visibility(
     client: Client,
     endpoint: str,
 ) -> None:
-    """Apply the same non-staff visibility boundary to every aggregate."""
-    actor_id = _login(client)
+    """Staff may inspect operational records from every actor and club."""
+    actor_id = _login(client, staff=True)
     _visibility_events(actor_id=actor_id)
     response = client.get(f"{AUDIT_API}/{endpoint}/", {"window_hours": 24})
 
@@ -454,8 +441,14 @@ def test_aggregate_endpoints_apply_non_staff_visibility(
         "visible.actor.debug",
         "visible.blank-club.debug",
         "visible.allowed-severity",
+        "hidden.private.debug",
     }
-    visible_sources = {"actor-source", "blank-club-source", "allowed-source"}
+    visible_sources = {
+        "actor-source",
+        "blank-club-source",
+        "allowed-source",
+        "private-source",
+    }
     if endpoint == "summary":
         assert payload["total"] == len(visible_names)
         assert {row["event_name"] for row in payload["top_events"]} == visible_names
@@ -466,6 +459,7 @@ def test_aggregate_endpoints_apply_non_staff_visibility(
             {"debug": 1, "info": 0, "warning": 0, "error": 0},
             {"debug": 1, "info": 0, "warning": 0, "error": 0},
             {"debug": 0, "info": 0, "warning": 0, "error": 1},
+            {"debug": 1, "info": 0, "warning": 0, "error": 0},
         ]
     else:
         assert payload["count"] == len(visible_sources)

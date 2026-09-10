@@ -7,8 +7,11 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.player.api.views.media import MediaDownloadAPIView
+
 
 urlpatterns = [
+    path("media/download/", MediaDownloadAPIView.as_view(), name="media-download"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "schema/swagger-ui/",

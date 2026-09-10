@@ -16,6 +16,7 @@ class CommandRunOptions:
     capture_output: bool = False
     text: bool = False
     timeout: int | None = None
+    kill_process_tree: bool = False
 
 
 class CommandRunner(Protocol):
@@ -132,3 +133,18 @@ class SpotifyClient(Protocol):
         json_body: dict[str, Any] | None = None,
     ) -> SpotifyResponse:
         """Invoke a playback action."""
+
+
+@dataclass(frozen=True, slots=True)
+class TrackMetadata:
+    """Only the catalogue fields required for an audio search."""
+
+    title: str
+    artists: tuple[str, ...]
+
+
+class TrackMetadataClient(Protocol):
+    """Read a single canonical Spotify track without exposing provider secrets."""
+
+    def get_track(self, track_id: str) -> TrackMetadata:
+        """Return the track's title and artists or a controlled provider error."""

@@ -12,6 +12,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.player.media_paths import player_picture_path
 from apps.player.models.ordered_song_selection import OrderedSongSelectionModel
 
 from .constants import club_model_string, team_model_string
@@ -81,7 +82,7 @@ class Player(OrderedSongSelectionModel):
     )
 
     profile_picture: models.ImageField = models.ImageField(
-        upload_to="profile_pictures/",
+        upload_to=player_picture_path,
         blank=True,
         null=True,
     )

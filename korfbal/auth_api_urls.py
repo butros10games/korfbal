@@ -22,6 +22,9 @@ ViewType = Callable[..., HttpResponseBase]
 
 
 urlpatterns = [
+    path(
+        "auth/jwt/revoke/", cast(ViewType, views.api.jwt_revoke), name="auth-jwt-revoke"
+    ),
     # Session + login
     path(
         "auth/session/",
