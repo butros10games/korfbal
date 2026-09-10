@@ -10,7 +10,7 @@ from korfbal.celery import app
 import pytest
 
 from apps.competition.application.ports import FetchResult
-from apps.competition.models import SyncLease, SyncResource
+from apps.competition.models import SyncLease, SyncResource, SyncRun
 from apps.competition.services.importer import enqueue
 from apps.competition.services.traffic import TrafficGate
 from apps.competition.tasks import sync_current_competition
@@ -84,6 +84,12 @@ def test_scheduled_batch_honors_budget_and_resumes(
     assert second["failed"] == 0
     idle = sync_current_competition()
     assert idle["http_requests"] == 0
+    assert list(SyncRun.objects.order_by("pk").values_list("status", flat=True)) == [
+        "completed",
+        "completed",
+        "idle",
+    ]
+    assert SyncRun.objects.latest("pk").backlog["candidate_feed_requests"] == 0
     assert configured_sync.fetch.call_count == len({"club_program", "clubs"})
     assert not SyncResource.objects.filter(fetched_at__isnull=True).exists()
 

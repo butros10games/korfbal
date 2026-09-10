@@ -437,11 +437,22 @@ class PollPlanner:
             and row["away_score"] is not None
         ]
         samples = []
+        measured_delays = []
         for result in observed:
             previous = self.row_by_id.get(result["id"])
             if not self._usable_reporting_sample(previous, result):
                 continue
             assert previous is not None
+            measured_delays.append(
+                max(
+                    0,
+                    int(
+                        (
+                            result["result_observed_at"] - expected_finish(previous)
+                        ).total_seconds()
+                    ),
+                )
+            )
             # Subtract the observation uncertainty: a delayed polling worker
             # must not teach future workers to wait longer.
             delay = max(
@@ -456,6 +467,10 @@ class PollPlanner:
         if samples:
             Match.objects.bulk_update(samples, ["reporting_delay_seconds"])
         return {
+            "measured_final_results": len(measured_delays),
+            "measured_delay_seconds_total": sum(measured_delays),
+            "measured_delay_seconds_max": max(measured_delays, default=0),
+            "unmeasured_final_results": len(delays) - len(measured_delays),
             "reporting_samples_added": len(samples),
             "results_observed": len(observed),
             "new_final_results": len(delays),

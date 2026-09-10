@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.competition.application.ports import CompetitionClient
 from apps.competition.composition import competition_client
 from apps.competition.models import SyncLease
+from apps.competition.services.monitoring import observe_run
 from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
 from apps.schedule.models import Season
 
@@ -53,7 +54,7 @@ def sync_current_competition() -> dict[str, object]:
     if season is None:
         logger.warning("Competition sync configured season is not active")
         return {"status": "inactive_season", "http_requests": 0}
-    return _run_scheduled(season)
+    return observe_run(season, lambda: _run_scheduled(season))
 
 
 def _run_scheduled(season: Season) -> dict[str, object]:

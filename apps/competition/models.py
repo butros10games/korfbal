@@ -393,6 +393,26 @@ class SyncResource(models.Model):
         return f"{self.kind}:{self.source_id}"
 
 
+class SyncRun(models.Model):
+    """Bounded, credential-free history of scheduled polling heartbeats."""
+
+    season = models.ForeignKey("schedule.Season", on_delete=models.CASCADE)
+    started_at = models.DateTimeField(db_index=True)
+    finished_at = models.DateTimeField(null=True)
+    status = models.CharField(max_length=32, default="running")
+    summary = models.JSONField(default=dict)
+    backlog = models.JSONField(default=dict)
+
+    class Meta:
+        """Keep recent season history cheap to read."""
+
+        indexes: ClassVar = [models.Index(fields=("season", "started_at"))]
+
+    def __str__(self) -> str:
+        """Identify a heartbeat without provider or account data."""
+        return f"{self.started_at:%Y-%m-%d %H:%M} · {self.status}"
+
+
 class SyncLease(models.Model):
     """A global lease prevents concurrent importers exceeding the request pace."""
 

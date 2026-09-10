@@ -171,7 +171,14 @@ def test_first_final_collects_sample_without_dirtying_match(season: Season) -> N
     Importer(season, now).apply("club_results", "H0", {"MatchResult": rows})
     fixture = Match.objects.get()
     changed_at = fixture.updated_at
-    assert planner.result_metrics()["reporting_samples_added"] == 1
+    metrics = planner.result_metrics()
+    assert metrics["reporting_samples_added"] == 1
+    assert metrics["measured_final_results"] == 1
+    assert metrics["unmeasured_final_results"] == 0
+    assert (
+        metrics["measured_delay_seconds_total"] == metrics["result_delay_seconds_total"]
+    )
+    assert metrics["measured_delay_seconds_max"] == metrics["result_delay_seconds_max"]
     fixture.refresh_from_db()
     assert fixture.reporting_delay_seconds is not None
     assert fixture.updated_at == changed_at

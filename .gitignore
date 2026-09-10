@@ -7,7 +7,10 @@
 __pycache__/
 db.sqlite3
 media/
-static/
+/static/
+# Keep app-owned sources despite the root generated-static ignore.
+!apps/*/static/
+!apps/*/static/**
 cert.crt
 cert.key
 simracing.sock

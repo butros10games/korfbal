@@ -1,0 +1,402 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}
+    {{ block.super }}<link rel="stylesheet" href="{% static 'competition/monitor.css' %}">
+{% endblock %}
+{% block extrahead %}
+    {{ block.super }}<script src="{% static 'competition/monitor.js' %}" defer></script>
+{% endblock %}
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a> › <a href="{% url 'admin:competition_syncresource_changelist' %}">Sync resources</a> › Monitoring</div>
+{% endblock %}
+{% block content %}
+    <div class="monitor" data-ui-ready="true">
+        {% if not monitor %}
+            <p>No seasons are available yet. Import a competition season to begin monitoring.</p>
+        {% else %}
+            <div class="monitor-heading">
+                <div>
+                    <p class="eyebrow">KNKV · Operations</p>
+                    <h2>Match results, in view</h2>
+                    <p>Coverage, polling pressure and the health of your result collection.</p>
+                </div>
+                <span class="stamp">Updated {{ monitor.now|date:"d M, H:i:s T" }}</span>
+            </div>
+            <form class="monitor-filters" method="get">
+                <div>
+                    <label for="season">Season</label>
+                    <select id="season" name="season">
+                        {% for season in seasons %}
+                            <option value="{{ season.pk }}"
+                                    {% if season.pk == monitor.season.pk %} selected {% endif %}>{{ season.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="date">Match day</label>
+                    <input id="date"
+                           type="date"
+                           name="date"
+                           value="{{ monitor.day|date:'Y-m-d' }}">
+                </div>
+                <button type="submit">Show day / refresh</button>
+                <label class="auto">
+                    <input id="monitor-refresh" type="checkbox">
+                    Refresh every 60 seconds
+                </label>
+            </form>
+            <section aria-labelledby="health-heading" class="panel health">
+                <h3 id="health-heading">Current polling health</h3>
+                {% for alert in monitor.alerts %}
+                    <p class="notice">{{ alert }}</p>
+                {% empty %}
+                    <p class="healthy">Scheduler is reporting · no configuration or exhausted-feed alerts</p>
+                {% endfor %}
+                <p>
+                    Latest heartbeat:
+                    {% if monitor.latest %}
+                        {{ monitor.latest.started_at|date:"d M H:i:s" }} · {{ monitor.latest.status }}
+                    {% else %}
+                        Not recorded
+                    {% endif %}
+                    .
+                    {% if monitor.lease %}
+                        Provider lease or cooldown active until {{ monitor.lease.expires_at|date:"H:i:s" }}.
+                    {% endif %}
+                </p>
+                <div class="health-grid">
+                    <div>
+                        <strong>
+                            {% if monitor.snapshot %}
+                                {{ monitor.snapshot.backlog.overdue_pending_matches|default:0 }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                        <span>Overdue pending matches · whole season</span>
+                    </div>
+                    <div>
+                        <strong>
+                            {% if monitor.snapshot %}
+                                {{ monitor.snapshot.backlog.candidate_feed_requests|default:0 }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                        <span>Candidate feeds before deduplication</span>
+                    </div>
+                    <div>
+                        <strong>{{ monitor.exhausted }}</strong>
+                        <span>Feeds with retries exhausted</span>
+                    </div>
+                </div>
+                <p class="muted">
+                    Backlog snapshot:
+                    {% if monitor.snapshot %}
+                        {{ monitor.snapshot.finished_at|date:"d M H:i:s T" }}
+                    {% else %}
+                        not recorded
+                    {% endif %}
+                    . A missing or stale snapshot does not mean an empty queue. Suspended matches can remain in the scheduler’s pending count.
+                </p>
+            </section>
+            <div class="section-heading">
+                <h3>{{ monitor.day|date:"l, j F Y" }}</h3>
+                <span>Match dates use {{ monitor.timezone }}. Polling history uses the selected calendar day.</span>
+            </div>
+            <div class="stat-grid">
+                <div class="stat">
+                    <span>Fixtures</span>
+                    <strong>{{ monitor.totals.total }}</strong>
+                    <small>All scheduled starts</small>
+                </div>
+                <div class="stat">
+                    <span>Final scores</span>
+                    <strong>{{ monitor.totals.final }}</strong>
+                    <small>Both scores recorded</small>
+                </div>
+                <div class="stat">
+                    <span>Awaiting a final score</span>
+                    <strong>{{ monitor.totals.pending }}</strong>
+                    <small>Includes upcoming matches</small>
+                </div>
+                <div class="stat">
+                    <span>Not awaiting a score</span>
+                    <strong>{{ monitor.totals.excluded }}</strong>
+                    <small>Cancelled, postponed, withdrawn or suspended</small>
+                </div>
+            </div>
+            <div class="monitor-columns">
+                <section class="panel">
+                    <h3>Match-day demand</h3>
+                    <p class="muted">Scheduled kickoffs by hour. Bars show match count.</p>
+                    <div class="bar-chart">
+                        {% for row in monitor.hourly %}
+                            <div class="bar-row">
+                                <span>{{ row.hour|date:"H:i" }}</span>
+                                <div class="bar-track">
+                                    <div class="bar" style="width:{{ row.width }}%"></div>
+                                </div>
+                                <strong>{{ row.total }}</strong>
+                            </div>
+                        {% empty %}
+                            <p>No fixtures on this date.</p>
+                        {% endfor %}
+                    </div>
+                </section>
+                <section class="panel">
+                    <h3>Observed result delay</h3>
+                    <div class="delay">
+                        <strong>
+                            {% if monitor.delay_mean != None %}
+                                {{ monitor.delay_mean }}<small> min average</small>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </strong>
+                        <span>
+                            {% if monitor.delay_max != None %}
+                                {{ monitor.delay_max }} min maximum
+                            {% else %}
+                                No qualified measurements yet
+                            {% endif %}
+                        </span>
+                    </div>
+                    <p>{{ monitor.counters.measured_final_results|default:0 }} measured finals · {{ monitor.counters.unmeasured_final_results|default:0 }} imported or unmeasured finals</p>
+                    <p class="muted">From estimated match finish to observing the final score, including the provider’s reporting delay. Only scheduled-to-final transitions observed no more than three minutes apart qualify. Initial imports and longer gaps are excluded, so this sample can underrepresent slow polling. Use the backlog alongside it.</p>
+                </section>
+            </div>
+            <section class="panel">
+                <div class="section-heading">
+                    <h3>Polling through the day</h3>
+                    <span>30-minute buckets · saved run history</span>
+                </div>
+                <div class="stat-grid compact">
+                    <div>
+                        <strong>{{ monitor.counters.http_requests|default:0 }}</strong>
+                        <span>HTTP attempts</span>
+                    </div>
+                    <div>
+                        <strong>{{ monitor.counters.matches_checked|default:0 }}</strong>
+                        <span>Match checks, including repeats</span>
+                    </div>
+                    <div>
+                        <strong>{{ monitor.counters.failed|default:0 }}</strong>
+                        <span>Failed feed attempts</span>
+                    </div>
+                    <div>
+                        <strong>{{ monitor.counters.deferred|default:0 }}</strong>
+                        <span>Runs that deferred work</span>
+                    </div>
+                </div>
+                {% if monitor.history_incomplete %}
+                    <p class="notice">Some runs failed or are unfinished. Their request counts may be missing from these totals.</p>
+                {% endif %}
+                {% if monitor.history_truncated %}
+                    <p class="notice">History is limited to the latest 3,000 runs on this date; totals are partial.</p>
+                {% endif %}
+                {% if monitor.timeline %}
+                    <div class="table-scroll" tabindex="0">
+                        <table>
+                            <caption>Backlog at the last available snapshot in each bucket; a dash means no snapshot.</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">Requests</th>
+                                    <th scope="col">Candidate feeds</th>
+                                    <th scope="col">Overdue matches</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in monitor.timeline %}
+                                    <tr>
+                                        <th scope="row">{{ row.time|date:"H:i" }}</th>
+                                        <td>{{ row.requests }}</td>
+                                        <td>{{ row.feeds|default_if_none:"—" }}</td>
+                                        <td>
+                                            {{ row.overdue|default_if_none:"—" }}
+                                            <div class="bar-track backlog-bar">
+                                                <div class="bar warning" style="width:{{ row.width }}%"></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="empty">No polling history for this date. History starts when the updated scheduler runs and is retained for 30 days. Existing scores do not establish live polling performance.</p>
+                {% endif %}
+            </section>
+            <div class="monitor-columns">
+                <section class="panel">
+                    <h3>Provider traffic · current</h3>
+                    <dl class="settings">
+                        <dt>Normal request spacing</dt>
+                        <dd>
+                            {{ monitor.spacing }} seconds
+                        </dd>
+                        <dt>Spacing-only ceiling</dt>
+                        <dd>
+                            {{ monitor.capacity }} requests/hour
+                        </dd>
+                        <dt>Requests in active hour window</dt>
+                        <dd>
+                            {{ monitor.hour_requests }} / {{ monitor.hour_limit|default:"uncapped" }}
+                        </dd>
+                        <dt>Requests in active day window</dt>
+                        <dd>
+                            {{ monitor.day_requests }} / {{ monitor.day_limit|default:"uncapped" }}
+                        </dd>
+                        <dt>Metadata backfill spacing</dt>
+                        <dd>
+                            {{ monitor.backfill_spacing|default_if_none:"normal" }} seconds
+                        </dd>
+                        <dt>Provider rate limit ever observed</dt>
+                        <dd>
+                            {{ monitor.traffic.rate_limited|yesno:"Yes,No,Unknown" }}
+                        </dd>
+                    </dl>
+                    <p class="muted">Counters are shared across importers and use rolling windows, not calendar totals. The request ceiling excludes network, processing, and worker overhead. Operator quotas are not verified provider limits.</p>
+                </section>
+                <section class="panel">
+                    <h3>Feed failures · current</h3>
+                    <p class="muted">Six consecutive failures exhaust a feed. Other club or pool feeds may still cover its matches.</p>
+                    {% if monitor.failures %}
+                        <div class="table-scroll" tabindex="0">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Feed</th>
+                                        <th scope="col">Failing</th>
+                                        <th scope="col">Exhausted</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in monitor.failures %}
+                                        <tr>
+                                            <th scope="row">
+                                                <a href="{% url 'admin:competition_syncresource_changelist' %}?season__id_uuid__exact={{ monitor.season.pk }}&amp;kind__exact={{ row.kind }}&amp;failures__gte=1">{{ row.kind }}</a>
+                                            </th>
+                                            <td>{{ row.total }}</td>
+                                            <td>{{ row.exhausted }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p>No failing feeds in this season.</p>
+                    {% endif %}
+                </section>
+            </div>
+            <section class="panel overdue-panel">
+                <h3>Unresolved results for this match day</h3>
+                <p class="muted">{{ monitor.overdue_count }} matches past their estimated finish without a final score; showing the oldest 25. Cancelled, postponed, withdrawn and suspended fixtures are excluded here. Finish estimates use stored match timing or format defaults. These are current records, not a historical snapshot.</p>
+                <div class="table-scroll" tabindex="0">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">Match</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Last check</th>
+                                <th scope="col">Since estimated finish</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in monitor.overdue %}
+                                <tr>
+                                    <th scope="row">
+                                        <a href="{% url 'admin:competition_match_change' row.pk %}">{{ row.starts_at|date:"d M H:i" }} · match {{ row.pk }}</a>
+                                    </th>
+                                    <td>{{ row.status }}</td>
+                                    <td>{{ row.checked_at|date:"d M H:i"|default:"Never" }}</td>
+                                    <td>{{ row.minutes }} min</td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="4">No unresolved results past their estimated finish.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <details class="panel calendar-panel" open>
+                <summary>Season calendar · daily match coverage</summary>
+                <p class="muted">Current final-score coverage, including imported results. This is not a measurement of collection speed.</p>
+                <div class="table-scroll" tabindex="0">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Matches</th>
+                                <th scope="col">Final scores</th>
+                                <th scope="col">Excluded statuses</th>
+                                <th scope="col">Coverage</th>
+                                <th scope="col">Relative demand</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in monitor.daily %}
+                                <tr>
+                                    <th scope="row">
+                                        <a href="?season={{ monitor.season.pk }}&amp;date={{ row.day|date:'Y-m-d' }}">{{ row.day|date:"D d M" }}</a>
+                                    </th>
+                                    <td>{{ row.total }}</td>
+                                    <td>{{ row.final }}</td>
+                                    <td>{{ row.excluded }}</td>
+                                    <td>{{ row.completion }}%</td>
+                                    <td>
+                                        <div class="bar-track">
+                                            <div class="bar" style="width:{{ row.width }}%"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="6">No imported fixtures.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            <details class="panel">
+                <summary>Recent runs · selected day</summary>
+                <p>
+                    <a href="{% url 'admin:competition_syncrun_changelist' %}?season__id_uuid__exact={{ monitor.season.pk }}">Browse all retained runs</a>
+                </p>
+                <div class="table-scroll" tabindex="0">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">Started</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Requests</th>
+                                <th scope="col">Elapsed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for run in monitor.runs %}
+                                <tr>
+                                    <th scope="row">
+                                        <a href="{% url 'admin:competition_syncrun_change' run.pk %}">{{ run.started_at|date:"H:i:s" }}</a>
+                                    </th>
+                                    <td>{{ run.status }}</td>
+                                    <td>{{ run.summary.http_requests|default_if_none:"—" }}</td>
+                                    <td>{{ run.summary.elapsed_ms|default_if_none:"—" }} ms</td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="4">No run history.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        {% endif %}
+    </div>
+{% endblock %}

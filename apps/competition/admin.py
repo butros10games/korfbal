@@ -1,7 +1,14 @@
 """Read-only visibility into imported KNKV data and discovery progress."""
 
+from datetime import date
+
 from django.contrib import admin
-from django.http import HttpRequest
+from django.contrib.auth.models import PermissionsMixin
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
+from django.template.response import TemplateResponse
+from django.urls import URLPattern, path
+from django.utils import timezone
 
 from apps.competition.models import (
     Club,
@@ -13,10 +20,14 @@ from apps.competition.models import (
     SeasonBinding,
     SyncLease,
     SyncResource,
+    SyncRun,
     Team,
     TeamGroup,
     TrafficState,
 )
+from apps.competition.queries.monitoring import monitoring_dashboard
+from apps.schedule.models import Season
+from apps.schedule.queries.seasons import current_season
 
 
 class CatalogueAdmin(admin.ModelAdmin):
@@ -131,6 +142,72 @@ class SyncResourceAdmin(CatalogueAdmin):
     search_fields = ("source_id", "last_error")
     list_filter = ("kind", "season")
     list_select_related = ("season",)
+    change_list_template = "admin/competition/syncresource/change_list.html"
+
+    def get_urls(self) -> list[URLPattern]:
+        """Keep the monitor inside Django's authenticated admin boundary."""
+        return [
+            path(
+                "monitor/",
+                self.admin_site.admin_view(self.monitor),
+                name="competition_monitor",
+            ),
+            *super().get_urls(),
+        ]
+
+    def monitor(self, request: HttpRequest) -> HttpResponse:
+        """Render date-scoped visibility without provider I/O.
+
+        Raises:
+            PermissionDenied: The operator cannot view every exposed model.
+
+        """
+        if not isinstance(request.user, PermissionsMixin):
+            raise PermissionDenied
+        if not request.user.has_perms([
+            "competition.view_syncresource",
+            "competition.view_syncrun",
+            "competition.view_match",
+            "competition.view_trafficstate",
+            "competition.view_synclease",
+        ]):
+            raise PermissionDenied
+        try:
+            day = (
+                date.fromisoformat(request.GET["date"])
+                if request.GET.get("date")
+                else timezone.localdate()
+            )
+            if day == date.max:
+                return HttpResponseBadRequest("Choose a date before 9999-12-31.")
+            season = (
+                Season.objects.get(pk=request.GET["season"])
+                if request.GET.get("season")
+                else current_season()
+            )
+        except (ValueError, ValidationError, Season.DoesNotExist):
+            return HttpResponseBadRequest("Choose a valid season and date.")
+        if season is None:
+            season = Season.objects.order_by("-start_date").first()
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Competition monitoring",
+            "opts": self.model._meta,
+            "seasons": Season.objects.order_by("-start_date"),
+            "monitor": monitoring_dashboard(season, day) if season else None,
+        }
+        return TemplateResponse(request, "admin/competition/monitor.html", context)
+
+
+@admin.register(SyncRun)
+class SyncRunAdmin(CatalogueAdmin):
+    """Inspect sanitized scheduled run outcomes and saved backlog snapshots."""
+
+    list_display = ("started_at", "finished_at", "season", "status")
+    list_filter = ("season", "status")
+    list_select_related = ("season",)
+    ordering = ("-started_at",)
+    date_hierarchy = "started_at"
 
 
 @admin.register(ResultRevision)

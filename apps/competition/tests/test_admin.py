@@ -57,6 +57,7 @@ def test_catalogue_admin_and_existing_club_link() -> None:
         "pool",
         "match",
         "syncresource",
+        "syncrun",
         "resultrevision",
         "trafficstate",
         "synclease",

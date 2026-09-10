@@ -35,6 +35,9 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Register new signal modules in `AppConfig.ready()` with `import_module()` so Ruff
   cannot remove a side-effect-only import as unused.
 
+- Keep app-owned `apps/*/static/` sources tracked; only collected `/static/` output is generated.
+  The root ignore also matches nested static directories, so preserve the local exceptions.
+
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
 - Keep packages imported during Django startup in the base runtime dependencies; Celery and
   collectstatic images must be able to initialize every installed app too.
