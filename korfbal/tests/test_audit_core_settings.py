@@ -68,14 +68,19 @@ def test_package_exports_the_configured_celery_application() -> None:
     assert celery_app is app
     assert app.main == "korfbal"
     assert app.conf.beat_schedule == {
-        "sync-private-match-forms": {
-            "task": "apps.competition.tasks.sync_match_forms",
-            "schedule": 15.0,
-            "options": {"expires": 15},
+        "dispatch-durable-jobs": {
+            "task": "apps.kwt_common.tasks.dispatch_due_jobs",
+            "schedule": 60.0,
+            "options": {"expires": 60},
+        },
+        "discover-private-match-forms": {
+            "task": "apps.competition.tasks.discover_match_forms",
+            "schedule": 60.0,
+            "options": {"expires": 60, "queue": "competition"},
         },
         "sync-current-competition": {
             "task": "apps.competition.tasks.sync_current_competition",
-            "schedule": 30.0,
-            "options": {"expires": 30},
+            "schedule": 60.0,
+            "options": {"expires": 60, "queue": "competition"},
         },
     }

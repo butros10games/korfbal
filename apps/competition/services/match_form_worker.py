@@ -34,13 +34,42 @@ from apps.competition.services.match_forms import (
 )
 from apps.competition.services.traffic import TrafficGate
 from apps.game_tracker.application.ports import MatchChangePublisher
+from apps.game_tracker.models import MatchLiveChange
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 
 
 MAX_ATTEMPTS = 5
+FORM_RESOURCES = {"tracker", "events", "player_groups"}
 
 
-def discover() -> None:
+def _substitution_due(job: MatchFormSync | None, revision: int) -> bool:
+    """Ignore derived-statistics revisions without hiding actual timeline changes."""
+    if job is None:
+        return True
+    if job.state in {"pending", "running"} or job.expected_revision == revision:
+        return False
+    changes = list(
+        MatchLiveChange.objects
+        .filter(
+            match_data__match_link_id=job.match_id,
+            revision__gt=job.expected_revision,
+            revision__lte=revision,
+        )
+        .order_by("revision")
+        .values_list("revision", "resources")
+    )
+    if len(changes) != revision - job.expected_revision or any(
+        FORM_RESOURCES.intersection(resources) for _, resources in changes
+    ):
+        return True
+    MatchFormSync.objects.filter(
+        pk=job.pk,
+        expected_revision=job.expected_revision,
+    ).exclude(state__in={"pending", "running"}).update(expected_revision=revision)
+    return False
+
+
+def discover(*, match_id: object | None = None, access_id: int | None = None) -> None:
     """Queue upcoming roster imports and opted-in recent finished-match corrections."""
     now = timezone.now()
     upcoming = Q(
@@ -53,11 +82,21 @@ def discover() -> None:
         pool__competition_class__category="a",
         local_match__tracker_data__status="finished",
     )
-    for access in MatchFormAccess.objects.filter(enabled=True).select_related(
-        "user", "team"
-    ):
+    accesses = MatchFormAccess.objects.filter(enabled=True)
+    if access_id is not None:
+        accesses = accesses.filter(pk=access_id)
+    matches = SourceMatch.objects.all()
+    if match_id is not None:
+        matches = matches.filter(local_match_id=match_id)
+        teams = matches.values_list(
+            "local_match__home_team_id", "local_match__away_team_id"
+        ).first()
+        if teams is None:
+            return
+        accesses = accesses.filter(team_id__in=teams)
+    for access in accesses.select_related("user", "team"):
         sources = list(
-            SourceMatch.objects.filter(
+            matches.filter(
                 Q(local_match__home_team=access.team)
                 | Q(local_match__away_team=access.team),
                 upcoming | finished if access.auto_substitutions else upcoming,
@@ -85,24 +124,17 @@ def discover() -> None:
                 "expected_revision",
             )
         }
-        for match_id, starts_at, status, revision in sources:
+        for source_match_id, starts_at, status, revision in sources:
             action = "import" if status == "upcoming" else "substitutions"
-            job = jobs.get((match_id, action))
+            job = jobs.get((source_match_id, action))
             if action == "import" and not import_is_due(starts_at, now, job):
                 continue
-            if (
-                action == "substitutions"
-                and job
-                and (
-                    job.state in {"pending", "running"}
-                    or job.expected_revision == revision
-                )
-            ):
+            if action == "substitutions" and not _substitution_due(job, revision):
                 continue
             try:
                 enqueue(
                     access,
-                    match_id,
+                    source_match_id,
                     action,
                     revision,
                     options=MatchFormOptions(automatic=True),
@@ -116,7 +148,6 @@ def drain(
     publisher: MatchChangePublisher,
 ) -> str:
     """Run one job, restoring abandoned work before a later periodic invocation."""
-    discover()
     now = timezone.now()
     owner = uuid4()
     lease, _ = SyncLease.objects.get_or_create(
@@ -180,6 +211,10 @@ def drain(
         SyncLease.objects.filter(pk=lease.pk, owner=owner).update(
             owner=None, expires_at=timezone.now() + timedelta(seconds=cooldown)
         )
+    if job:
+        # A correction may commit while the provider is accepting the old snapshot.
+        # Reconcile after saving the receipt so the newer revision gets a successor.
+        discover(match_id=job.match_id, access_id=job.access_id)
     return job.state if job else "idle"
 
 

@@ -11,10 +11,11 @@ from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
 from django.core.management import call_command
+from django.db import transaction
 from django.test import override_settings
-from kombu.exceptions import OperationalError as KombuOperationalError
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.player.adapters.outbound.command_runner import SubprocessCommandRunner
 from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
 from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
@@ -22,7 +23,6 @@ from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
 from apps.player.adapters.outbound.web_push import PushSession, PyWebPushClient
 from apps.player.application.ports import (
     CommandRunOptions,
-    JobDispatchUnavailableError,
     WebPushDeliveryError,
 )
 from apps.player.management.commands.generate_vapid_keys import generate_vapid_keypair
@@ -71,76 +71,30 @@ def test_subprocess_adapter_forwards_only_explicit_safe_options() -> None:
         ("player_song", "download_player_song"),
     ],
 )
-def test_celery_dispatcher_routes_eager_and_broker_backed_jobs(
-    method_name: str,
-    task_name: str,
+@pytest.mark.django_db
+def test_media_dispatch_is_durable_even_with_eager_settings(
+    method_name: str, task_name: str
 ) -> None:
-    task = Mock()
-    dispatcher = CelerySongDownloadDispatcher()
-
-    with (
-        patch(
-            "apps.player.adapters.outbound.song_jobs._task",
-            return_value=task,
-        ) as resolve_task,
-        patch(
-            "apps.player.adapters.outbound.song_jobs._run_eagerly",
-            return_value=True,
-        ),
-    ):
-        getattr(dispatcher, method_name)("song-eager")
-
-    resolve_task.assert_called_once_with(task_name)
-    task.apply.assert_called_once_with(args=["song-eager"])
-    task.delay.assert_not_called()
-
-    task.reset_mock()
-    with (
-        patch(
-            "apps.player.adapters.outbound.song_jobs._task",
-            return_value=task,
-        ),
-        patch(
-            "apps.player.adapters.outbound.song_jobs._run_eagerly",
-            return_value=False,
-        ),
-    ):
-        getattr(dispatcher, method_name)("song-delayed")
-
-    task.delay.assert_called_once_with("song-delayed")
-    task.apply.assert_not_called()
+    with override_settings(CELERY_TASK_ALWAYS_EAGER=True):
+        getattr(CelerySongDownloadDispatcher(), method_name)("song-id")
+    job = BackgroundJob.objects.get()
+    assert job.task == f"apps.player.tasks.{task_name}"
+    assert job.args == ["song-id"]
+    assert job.queue == "media"
+    assert job.completed_generation == 0
 
 
-def test_celery_dispatcher_translates_only_broker_failures() -> None:
-    task = Mock()
-    task.delay.side_effect = KombuOperationalError("broker unavailable")
-
-    with (
-        patch("apps.player.adapters.outbound.song_jobs._task", return_value=task),
-        patch(
-            "apps.player.adapters.outbound.song_jobs._run_eagerly",
-            return_value=False,
-        ),
-        pytest.raises(JobDispatchUnavailableError) as error,
-    ):
+@pytest.mark.django_db
+def test_media_dispatch_rolls_back_with_its_transaction() -> None:
+    with transaction.atomic():
         CelerySongDownloadDispatcher().cached_song("song-id")
-
-    assert isinstance(error.value.__cause__, KombuOperationalError)
-
-    task.delay.side_effect = ValueError("programming error")
-    with (
-        patch("apps.player.adapters.outbound.song_jobs._task", return_value=task),
-        patch(
-            "apps.player.adapters.outbound.song_jobs._run_eagerly",
-            return_value=False,
-        ),
-        pytest.raises(ValueError, match="programming error"),
-    ):
-        CelerySongDownloadDispatcher().cached_song("song-id")
+        transaction.set_rollback(True)
+    assert not BackgroundJob.objects.exists()
 
 
 def test_requests_expo_adapter_uses_provider_contract() -> None:
     response = Mock()
+    response.json.return_value = {"data": [{"status": "ok"}]}
     messages = [{"to": "ExponentPushToken[value]", "title": "Goal"}]
 
     with patch(
@@ -307,3 +261,16 @@ def test_downloader_timeout_terminates_descendant_with_inherited_output() -> Non
         )
     maximum_cleanup_seconds = 10
     assert monotonic() - started < maximum_cleanup_seconds
+
+
+def test_expo_rejection_is_not_mistaken_for_delivery() -> None:
+    response = Mock()
+    response.json.return_value = {"data": [{"status": "error"}]}
+    with (
+        patch(
+            "apps.player.adapters.outbound.expo_push.requests.post",
+            return_value=response,
+        ),
+        pytest.raises(RuntimeError, match="Expo rejected"),
+    ):
+        RequestsExpoPushClient().send_messages([{"to": "synthetic"}])

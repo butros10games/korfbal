@@ -15,53 +15,28 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+from apps.kwt_common.models import BackgroundJob
 
 
 @pytest.mark.django_db(transaction=True)
-def test_finished_transition_dispatches_after_commit_and_not_after_rollback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Finished-match jobs are commit-aware and run only on the first transition."""
-    impact_dispatch = Mock()
-    minutes_dispatch = Mock()
-    monkeypatch.setattr(
-        composition.tracker_jobs,
-        "recompute_impacts",
-        impact_dispatch,
-    )
-    monkeypatch.setattr(
-        composition.tracker_jobs,
-        "recompute_minutes",
-        minutes_dispatch,
-    )
+def test_finished_transition_coalesces_and_rolls_back_intent() -> None:
+    """Statistics intent coalesces and generation updates roll back with mutations."""
     tracker = create_tracker_match(prefix="Finished signal")
-
+    job = BackgroundJob.objects.get(args=[str(tracker.match_data.pk)])
+    generation = job.generation
     with transaction.atomic():
         tracker.match_data.status = "finished"
         tracker.match_data.save(update_fields=["status"])
         transaction.set_rollback(True)
-
-    impact_dispatch.assert_not_called()
-    minutes_dispatch.assert_not_called()
+    job.refresh_from_db()
+    assert job.generation == generation
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.status == "upcoming"
-
     tracker.match_data.status = "finished"
     tracker.match_data.save(update_fields=["status"])
-
-    impact_dispatch.assert_called_once_with(
-        match_data_id=str(tracker.match_data.id_uuid),
-        countdown_seconds=30,
-    )
-    minutes_dispatch.assert_called_once_with(
-        match_data_id=str(tracker.match_data.id_uuid),
-        countdown_seconds=30,
-    )
-
-    tracker.match_data.home_score = 1
-    tracker.match_data.save(update_fields=["home_score"])
-    assert impact_dispatch.call_count == 1
-    assert minutes_dispatch.call_count == 1
+    job.refresh_from_db()
+    assert job.generation > generation
+    assert BackgroundJob.objects.count() == 1
 
 
 @pytest.mark.django_db(transaction=True)

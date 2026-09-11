@@ -1,135 +1,59 @@
-"""Signals that schedule impact recomputation when match timeline data changes."""
+"""Coalesce timeline changes into one durable statistics computation."""
 
-from __future__ import annotations
-
-from typing import Any, cast
-
-from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.dispatch import receiver
 
 from apps.game_tracker.composition import schedule_match_impact_recompute
-from apps.game_tracker.models import MatchData, Pause, PlayerChange, PlayerGroup, Shot
+from apps.game_tracker.models import (
+    MatchData,
+    MatchPart,
+    Pause,
+    PlayerChange,
+    PlayerGroup,
+    Shot,
+)
 from apps.game_tracker.services.live_update_signal_control import (
     tracker_delete_side_effects_suppressed,
 )
-
-
-FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS = 30
-
-
-def _match_data_id_from_instance(
-    instance: Shot | PlayerChange | Pause | PlayerGroup,
-) -> str | None:
-    if tracker_delete_side_effects_suppressed():
-        return None
-
-    match_data_id = instance.__dict__.get("match_data_id")
-    if match_data_id:
-        return str(match_data_id)
-
-    try:
-        match_data_id = getattr(instance, "match_data_id", None)
-    except instance.__class__.DoesNotExist:
-        match_data_id = None
-    if match_data_id:
-        return str(match_data_id)
-
-    # Some models connect through a player group.
-    player_group_id = getattr(instance, "player_group_id", None)
-    if player_group_id:
-        group = (
-            PlayerGroup.objects
-            .filter(id_uuid=player_group_id)
-            .only("match_data_id")
-            .first()
-        )
-        if group and group.match_data_id:
-            return str(group.match_data_id)
-
-    return None
-
-
-@receiver(pre_save, sender=MatchData)
-def _match_data_pre_save(
-    sender: type[MatchData], instance: MatchData, **kwargs: object
-) -> None:
-    """Track status transitions so post_save can react to "finished"."""
-    if not instance.pk:
-        # New row.
-        cast(Any, instance)._previous_status_for_impact_recompute = None
-        return
-
-    previous_status = (
-        MatchData.objects
-        .filter(pk=instance.pk)
-        .values_list("status", flat=True)
-        .first()
-    )
-    cast(Any, instance)._previous_status_for_impact_recompute = previous_status
 
 
 @receiver(post_save, sender=MatchData)
 def _match_data_post_save(
     sender: type[MatchData],
     instance: MatchData,
-    created: bool,
+    update_fields: frozenset[str] | None = None,
     **kwargs: object,
 ) -> None:
-    """Ensure we recompute impacts shortly after a match finishes."""
-    if instance.status != "finished":
+    """Include match duration/status changes, but not revision-only publication."""
+    if update_fields and set(update_fields) <= {"live_revision", "live_changed_at"}:
         return
+    schedule_match_impact_recompute(match_data_id=str(instance.pk), countdown_seconds=2)
 
-    previous_status = getattr(instance, "_previous_status_for_impact_recompute", None)
-    if created or previous_status != "finished":
+
+@receiver([post_save, post_delete], sender=Shot)
+@receiver([post_save, post_delete], sender=PlayerChange)
+@receiver([post_save, post_delete], sender=Pause)
+@receiver([post_save, post_delete], sender=PlayerGroup)
+@receiver([post_save, post_delete], sender=MatchPart)
+def _timeline_changed(
+    sender: type,
+    instance: Shot | PlayerChange | Pause | PlayerGroup | MatchPart,
+    **kwargs: object,
+) -> None:
+    """One pending generation per match, even when a command writes many rows."""
+    if tracker_delete_side_effects_suppressed():
+        return
+    match_data_id = getattr(instance, "match_data_id", None)
+    if match_data_id:
         schedule_match_impact_recompute(
-            match_data_id=str(instance.id_uuid),
-            countdown_seconds=FINISHED_MATCH_IMPACT_RECOMPUTE_DELAY_SECONDS,
+            match_data_id=str(match_data_id), countdown_seconds=2
         )
-
-
-@receiver(post_save, sender=Shot)
-@receiver(post_delete, sender=Shot)
-def _shot_changed(sender: type[Shot], instance: Shot, **kwargs: object) -> None:
-    match_data_id = _match_data_id_from_instance(instance)
-    if match_data_id:
-        schedule_match_impact_recompute(match_data_id=match_data_id)
-
-
-@receiver(post_save, sender=PlayerChange)
-@receiver(post_delete, sender=PlayerChange)
-def _player_change_changed(
-    sender: type[PlayerChange], instance: PlayerChange, **kwargs: object
-) -> None:
-    match_data_id = _match_data_id_from_instance(instance)
-    if match_data_id:
-        schedule_match_impact_recompute(match_data_id=match_data_id)
-
-
-@receiver(post_save, sender=Pause)
-@receiver(post_delete, sender=Pause)
-def _pause_changed(sender: type[Pause], instance: Pause, **kwargs: object) -> None:
-    match_data_id = _match_data_id_from_instance(instance)
-    if match_data_id:
-        schedule_match_impact_recompute(match_data_id=match_data_id)
-
-
-@receiver(post_save, sender=PlayerGroup)
-@receiver(post_delete, sender=PlayerGroup)
-def _player_group_changed(
-    sender: type[PlayerGroup], instance: PlayerGroup, **kwargs: object
-) -> None:
-    match_data_id = _match_data_id_from_instance(instance)
-    if match_data_id:
-        schedule_match_impact_recompute(match_data_id=match_data_id)
 
 
 @receiver(m2m_changed, sender=PlayerGroup.players.through)
 def _player_group_players_changed(
-    sender: type[object], instance: PlayerGroup, action: str, **kwargs: object
+    sender: type, instance: PlayerGroup, action: str, **kwargs: object
 ) -> None:
-    if action not in {"post_add", "post_remove", "post_clear"}:
-        return
-
-    match_data_id = _match_data_id_from_instance(instance)
-    if match_data_id:
-        schedule_match_impact_recompute(match_data_id=match_data_id)
+    """Membership edits affect both minutes and impacts."""
+    if action in {"post_add", "post_remove", "post_clear"}:
+        _timeline_changed(sender, instance)

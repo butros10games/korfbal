@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.utils import timezone
 import pytest
 
@@ -18,7 +19,7 @@ from apps.competition.services.schedule_notifications import (
 )
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
-from apps.game_tracker.tests.tracker_test_helpers import OnCommitCapture
+from apps.kwt_common.models import BackgroundJob
 from apps.player.models import Player
 from apps.schedule.models import Season
 
@@ -121,22 +122,18 @@ def test_historical_and_initial_schedule_snapshots_stay_silent() -> None:
 
 
 @pytest.mark.django_db
-def test_dispatch_waits_for_commit(
-    django_capture_on_commit_callbacks: OnCommitCapture,
-) -> None:
-    """No broker call happens until the fixture update commits."""
-    with patch(
-        "apps.competition.adapters.outbound.notifications.notify_official_schedule_change.delay"
-    ) as delay:
-        with django_capture_on_commit_callbacks(execute=True):
-            dispatch_schedule_change(
-                notification_id=str(uuid4()),
-                match_id="synthetic",
-                starts_at="2026-10-01T13:00:00+00:00",
-                cancelled=False,
-            )
-            delay.assert_not_called()
-        delay.assert_called_once()
+def test_dispatch_waits_for_commit() -> None:
+    """Schedule notification intent is atomic with the fixture transaction."""
+    with transaction.atomic():
+        dispatch_schedule_change(
+            notification_id=str(uuid4()),
+            match_id="synthetic",
+            starts_at="2026-10-01T13:00:00+00:00",
+            cancelled=False,
+        )
+        assert BackgroundJob.objects.count() == 1
+        transaction.set_rollback(True)
+    assert not BackgroundJob.objects.exists()
 
 
 @pytest.mark.django_db

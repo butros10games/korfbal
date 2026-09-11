@@ -1,8 +1,6 @@
-"""Celery tasks for game_tracker."""
+"""Stable Celery entry points for revision-guarded match statistics."""
 
-from __future__ import annotations
-
-import logging
+from collections.abc import Callable
 
 from celery import shared_task
 
@@ -13,38 +11,32 @@ from apps.game_tracker.services.match_impact import (
 from apps.game_tracker.services.match_minutes import persist_match_minutes
 
 
-logger = logging.getLogger(__name__)
-
-
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def recompute_match_impacts(self, match_data_id: str) -> dict[str, int | str]:
-    """Recompute persisted impact rows (+ breakdowns) for a match."""
+def _recompute(match_data_id: str, persist: Callable[..., int]) -> dict[str, int | str]:
     match_data = (
-        MatchData.objects
-        .filter(id_uuid=match_data_id)
-        .select_related("match_link")
-        .first()
+        MatchData.objects.select_related("match_link").filter(pk=match_data_id).first()
     )
-    if not match_data:
-        return {"match_data_id": match_data_id, "rows": 0, "status": "not_found"}
+    rows = persist(match_data=match_data) if match_data else 0
+    return {
+        "match_data_id": match_data_id,
+        "rows": rows,
+        "status": "ok" if match_data else "not_found",
+    }
 
-    rows = persist_match_impact_rows_with_breakdowns(match_data=match_data)
-    logger.info("Recomputed match impacts for %s (%s rows)", match_data_id, rows)
-    return {"match_data_id": match_data_id, "rows": rows, "status": "ok"}
+
+@shared_task(ignore_result=True)
+def recompute_match_impacts(match_data_id: str) -> dict[str, int | str]:
+    """Compatibility entry point for previously published impact jobs."""
+    return _recompute(match_data_id, persist_match_impact_rows_with_breakdowns)
 
 
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def recompute_match_minutes(self, match_data_id: str) -> dict[str, int | str]:
-    """Recompute persisted minutes-played rows for a match."""
-    match_data = (
-        MatchData.objects
-        .filter(id_uuid=match_data_id)
-        .select_related("match_link")
-        .first()
-    )
-    if not match_data:
-        return {"match_data_id": match_data_id, "rows": 0, "status": "not_found"}
+@shared_task(ignore_result=True)
+def recompute_match_minutes(match_data_id: str) -> dict[str, int | str]:
+    """Compatibility entry point for previously published minutes jobs."""
+    return _recompute(match_data_id, persist_match_minutes)
 
-    rows = persist_match_minutes(match_data=match_data)
-    logger.info("Recomputed match minutes for %s (%s rows)", match_data_id, rows)
-    return {"match_data_id": match_data_id, "rows": rows, "status": "ok"}
+
+@shared_task(ignore_result=True)
+def recompute_match_statistics(match_data_id: str) -> None:
+    """One durable generation rebuilds both projections; retries belong to its job."""
+    recompute_match_impacts.run(match_data_id)
+    recompute_match_minutes.run(match_data_id)

@@ -24,7 +24,6 @@ from apps.game_tracker.services.live_updates import (
 from apps.game_tracker.services.player_designation import (
     apply_player_designation as _apply_player_designation,
 )
-from apps.game_tracker.services.recompute import schedule_recompute
 from apps.game_tracker.services.tracker_http import execute_tracker_command
 from apps.schedule.models import Match
 from apps.team.models import Team
@@ -79,25 +78,6 @@ def record_match_change(
     )
 
 
-def schedule_match_impact_recompute(
-    *, match_data_id: str, countdown_seconds: int = 0
-) -> None:
-    """Schedule impact work through the production job adapter."""
-    schedule_recompute(
-        match_data_id=match_data_id,
-        countdown_seconds=countdown_seconds,
-        dispatch=tracker_jobs.recompute_impacts,
-        task_name="recompute_match_impacts",
-    )
-
-
-def schedule_match_minutes_recompute(
-    *, match_data_id: str, countdown_seconds: int = 0
-) -> None:
-    """Schedule minutes work through the production job adapter."""
-    schedule_recompute(
-        match_data_id=match_data_id,
-        countdown_seconds=countdown_seconds,
-        dispatch=tracker_jobs.recompute_minutes,
-        task_name="recompute_match_minutes",
-    )
+# These adapters persist intent within the caller's transaction.
+schedule_match_impact_recompute = tracker_jobs.recompute_impacts
+schedule_match_minutes_recompute = tracker_jobs.recompute_minutes

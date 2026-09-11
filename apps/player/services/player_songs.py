@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 from pathlib import Path
 from typing import Protocol
 
@@ -12,7 +11,6 @@ from django.db import transaction
 from django.db.models.fields.files import FieldFile
 
 from apps.player.application.ports import (
-    JobDispatchUnavailableError,
     SongDownloadDispatcher,
 )
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
@@ -25,11 +23,6 @@ from apps.player.services.player_song_queries import (
 )
 from apps.player.services.upload_validation import validate_audio_upload
 from apps.player.spotify import canonicalize_spotify_track_url
-
-
-logger = logging.getLogger(__name__)
-
-CELERY_BROKER_UNAVAILABLE_MESSAGE = "Celery broker unavailable"
 
 
 class PlayerSongNotFoundError(Exception):
@@ -89,71 +82,11 @@ class PlayerSongClip:
     clip_key: str | None
 
 
-def _mark_broker_unavailable(song: PlayerSong) -> None:
-    cached = song.cached_song
-    if cached is not None:
-        cached.status = CachedSongStatus.FAILED
-        cached.error_message = CELERY_BROKER_UNAVAILABLE_MESSAGE
-        cached.save(update_fields=["status", "error_message", "updated_at"])
-        return
-
-    song.status = PlayerSongStatus.FAILED
-    song.error_message = CELERY_BROKER_UNAVAILABLE_MESSAGE
-    song.save(update_fields=["status", "error_message", "updated_at"])
-
-
 def enqueue_download_for_player_song(
-    song: PlayerSong,
-    *,
-    jobs: SongDownloadDispatcher,
+    song: PlayerSong, *, jobs: SongDownloadDispatcher
 ) -> None:
-    """Dispatch work for the song's effective audio source immediately."""
-    cached = song.cached_song
-    if cached is not None:
-        jobs.cached_song(str(cached.id_uuid))
-        return
-
+    """Record work atomically with the song, including clip-only updates."""
     jobs.player_song(str(song.id_uuid))
-
-
-def _dispatch_download(
-    song: PlayerSong,
-    *,
-    jobs: SongDownloadDispatcher,
-    operation: str,
-    mark_unavailable: bool,
-) -> None:
-    try:
-        enqueue_download_for_player_song(song, jobs=jobs)
-    except JobDispatchUnavailableError:
-        logger.warning(
-            "Celery broker unavailable; could not %s PlayerSong %s",
-            operation,
-            song.id_uuid,
-            exc_info=True,
-        )
-        if mark_unavailable:
-            _mark_broker_unavailable(song)
-
-
-def _dispatch_download_after_commit(
-    song: PlayerSong,
-    *,
-    jobs: SongDownloadDispatcher,
-    operation: str,
-    mark_unavailable: bool = False,
-) -> None:
-    """Schedule external work only after the database state commits."""
-
-    def dispatch() -> None:
-        _dispatch_download(
-            song,
-            jobs=jobs,
-            operation=operation,
-            mark_unavailable=mark_unavailable,
-        )
-
-    transaction.on_commit(dispatch)
 
 
 @transaction.atomic
@@ -183,11 +116,7 @@ def create_player_song(
             error_message="",
             audio_file=uploaded_audio,
         )
-        _dispatch_download_after_commit(
-            song,
-            jobs=jobs,
-            operation="prepare",
-        )
+        enqueue_download_for_player_song(song, jobs=jobs)
         return PlayerSongCreation(song=song, created=True)
 
     canonical_url = canonicalize_spotify_track_url(str(spotify_url or "").strip())
@@ -197,12 +126,7 @@ def create_player_song(
         cached_song=cached,
         defaults={"spotify_url": canonical_url},
     )
-    _dispatch_download_after_commit(
-        song,
-        jobs=jobs,
-        operation="enqueue",
-        mark_unavailable=True,
-    )
+    enqueue_download_for_player_song(song, jobs=jobs)
     return PlayerSongCreation(song=song, created=created)
 
 
@@ -253,11 +177,7 @@ def update_owned_player_song_settings(
         locked_player.save(update_fields=["song_start_time"])
 
     if settings.start_time_seconds is not None:
-        _dispatch_download_after_commit(
-            song,
-            jobs=jobs,
-            operation="re-prepare",
-        )
+        enqueue_download_for_player_song(song, jobs=jobs)
     return song
 
 
@@ -302,12 +222,7 @@ def retry_owned_player_song_download(
         song.error_message = ""
         song.save(update_fields=["status", "error_message", "updated_at"])
 
-    _dispatch_download_after_commit(
-        song,
-        jobs=jobs,
-        operation="retry",
-        mark_unavailable=True,
-    )
+    enqueue_download_for_player_song(song, jobs=jobs)
     return song
 
 
@@ -330,10 +245,5 @@ def resolve_player_song_clip(
         duration_seconds=request.duration_seconds,
     )
     if request.enqueue_if_missing and clip_key is None:
-        _dispatch_download(
-            song,
-            jobs=jobs,
-            operation="prepare",
-            mark_unavailable=False,
-        )
+        enqueue_download_for_player_song(song, jobs=jobs)
     return PlayerSongClip(song=song, audio_file=audio_file, clip_key=clip_key)

@@ -16,7 +16,6 @@ from apps.player.tasks import download_cached_song
 @override_settings(
     TESTING=True,
     SPOTDL_DOWNLOAD_TIMEOUT_SECONDS=1,
-    SPOTDL_STALE_IN_PROGRESS_SECONDS=1,
 )
 def test_download_cached_song_reclaims_stale_downloading() -> None:
     """A CachedSong stuck in DOWNLOADING should be reclaimed and completed."""

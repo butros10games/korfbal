@@ -45,11 +45,16 @@ def test_cached_player_song_dispatches_the_shared_download_job() -> None:
     )
     song = PlayerSong.objects.create(player=player, cached_song=cached)
 
-    with patch("apps.player.tasks.download_cached_song.apply") as dispatch:
+    with patch("apps.player.tasks.enqueue") as dispatch:
         result = download_player_song.apply(args=[str(song.id_uuid)])
 
     assert result.successful()
-    dispatch.assert_called_once_with(args=[str(cached.id_uuid)])
+    dispatch.assert_called_once_with(
+        "apps.player.tasks.download_cached_song",
+        str(cached.pk),
+        args=[str(cached.pk)],
+        queue="media",
+    )
 
 
 @pytest.mark.django_db
@@ -72,16 +77,15 @@ def test_legacy_player_song_failure_is_persisted_and_reraised() -> None:
 
     song.refresh_from_db()
     assert song.status == PlayerSongStatus.FAILED
-    assert song.error_message == "provider unavailable"
+    assert song.error_message == "RuntimeError"
 
 
 @pytest.mark.django_db
-def test_finished_match_claims_and_schedules_the_mvp_lifecycle() -> None:
+def test_finished_match_records_the_mvp_deadlines() -> None:
     tracker = create_tracker_match(prefix="Player pipeline")
     tracker.match_data.status = "finished"
     tracker.match_data.save(update_fields=["status"])
     closes_at = timezone.now() + timedelta(hours=2)
-    claim_once = Mock(return_value=True)
     send_payload = Mock()
     schedule_reminder = Mock()
     schedule_publish = Mock()
@@ -94,17 +98,12 @@ def test_finished_match_claims_and_schedules_the_mvp_lifecycle() -> None:
             match_id=str(tracker.match.id_uuid),
             match_data_id=str(tracker.match_data.id_uuid),
             jobs=FinishedMatchJobs(
-                claim_once=claim_once,
                 send_payload=send_payload,
                 schedule_reminder=schedule_reminder,
                 schedule_publish=schedule_publish,
             ),
         )
 
-    claim_once.assert_called_once_with(
-        f"push:match_finished:{tracker.match_data.id_uuid}",
-        60 * 60 * 24,
-    )
     send_payload.assert_called_once()
     schedule_reminder.assert_called_once_with(
         match_id=str(tracker.match.id_uuid),

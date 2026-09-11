@@ -813,15 +813,65 @@ the next publication.
 
 Migration 0017 adds a publication event ID claimed with a conditional update before
 delivery. Repeated schedule values and duplicate jobs cannot replay a claimed event.
-Expo messages are batched in groups of at most 100; browser delivery uses four
-concurrent requests with ten-second HTTP timeouts and batches expired-subscription
-updates. A failing destination does not prevent attempts to the remaining devices.
+Each active destination receives a separate durable delivery job with bounded
+transport timeouts. A failing destination does not prevent attempts to the remaining
+devices.
 
-Delivery is best effort after the database commit through the existing Celery worker.
-A worker crash after claiming an event may lose delivery; claimed events are not retried.
-A broker outage is logged without rolling back imported data; this change does not
-add a durable notification outbox or replay missed alerts. The importer still needs
-its deployment-owned recurring invocation; this PR does not install a new scheduler.
+Schedule changes, match notifications, statistics and media work now record durable
+jobs inside the domain transaction and dispatch them immediately after commit. A
+broker outage leaves the work pending. Beat recovers missed dispatches and promotes
+deadlines within the next minute every 60 seconds. Short ETAs preserve debounce and
+retry timing; multi-hour deadlines stay in the database. Repeated statistics/media
+requests combine into the latest generation. Changes arriving during execution
+schedule another generation. Failed work gets up to five attempts with backoff; process
+loss is recovered after the bounded execution deadline. PostgreSQL advisory locks
+prevent overlapping executions of the same job. Use a direct PostgreSQL connection
+(or session pooling), not transaction-mode PgBouncer, for workers.
+
+The worker image supervises separate `celery,instant`, `projections`, `media` and
+`competition` pools. Their default concurrency is 2/2/1/1 and can be overridden with
+the `KORFBAL_*_CONCURRENCY` variables in `.env.example`. Queued private form actions
+dispatch after commit and continue draining due work without scanning team fixtures. Separate discovery/recovery and competition refresh
+checks run once a minute, retaining provider leases, deadlines and pacing. These
+jobs do not share execution slots with email or media jobs. Beat must run once per
+deployment.
+
+Match completion and subsequent timeline/lineup corrections create eligible
+substitution jobs with the final live revision inside the same database transaction.
+The worker dispatches after commit. If a correction arrives during a provider upload,
+completion reconciles that match again and queues a successor; published event IDs
+remain available for safe reconciliation. Statistics-only revisions do not cause
+substitution uploads. Enabling a team connection and publishing/rescheduling a source
+fixture also check only the affected scope for due form work.
+
+The worker trigger audit is:
+
+| Work                             | Trigger                                                         |
+| -------------------------------- | --------------------------------------------------------------- |
+| Substitutions                    | Finished-match/timeline revision; scoped recovery after upload  |
+| Private roster imports           | Due fixture/connection changes; scheduled pre-match windows     |
+| Manual form actions              | Committed action request                                        |
+| Statistics                       | Committed timeline changes, coalesced per match                 |
+| Audio downloads and clips        | Song creation/settings changes and source completion            |
+| Match and schedule notifications | Committed match completion or publication event                 |
+| MVP reminder/publication         | Deadlines recorded after match completion                       |
+| Authentication email             | Direct dispatch through the shared `instant` queue              |
+| Competition feeds                | External refresh deadlines, provider pacing and bounded batches |
+
+MVP publication is separate from notification delivery. Each recipient gets an
+independent durable intent; completed keys prevent ordinary duplicate delivery.
+An external provider accepting a push immediately before worker death can still
+cause a repeated push on recovery. Successful intents discard their payloads while
+retaining their deduplication keys. `python manage.py background_jobs` reports safe
+pending/error counts, and `python manage.py background_jobs --retry-id ID` retries
+one exhausted job without replaying completed notifications.
+
+Apply migrations before activating the new worker image. Migration 0002 adopts
+non-failed audio sources and unpublished MVP deadlines without broker calls. Drain
+the old worker before replacing it, retain a 35-minute container shutdown grace
+period, and verify all four worker names respond after startup. Existing Celery task
+names remain available for queued messages. Rollback may leave the additive jobs
+table in place; old images do not drain it, so preserve it for a forward recovery.
 
 ### Security remediation rollout
 

@@ -5,7 +5,8 @@ from datetime import timedelta
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
-from django.db import connection
+from django.db import connection, transaction
+from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
@@ -34,8 +35,10 @@ from apps.competition.services.match_form_worker import (
 )
 from apps.competition.services.match_forms import enqueue, execute, import_is_due
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.tasks import discover_match_forms, sync_match_forms
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_rosters import person
+from apps.game_tracker.composition import apply_tracker_command
 from apps.game_tracker.models import (
     GroupType,
     MatchData,
@@ -44,8 +47,11 @@ from apps.game_tracker.models import (
     PlayerChange,
     PlayerGroup,
 )
+from apps.game_tracker.realtime.contracts import LiveResource
+from apps.game_tracker.services.live_updates import record_match_change
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 from apps.game_tracker.services.player_groups import ensure_player_groups_for_match_data
+from apps.game_tracker.tests.tracker_test_helpers import create_match_part
 from apps.player.models import Player
 from apps.schedule.models import Season
 
@@ -403,10 +409,10 @@ def test_auto_discovery_is_opt_in_a_category_and_runs_once(
     access.save()
     discover()
     assert not MatchFormSync.objects.exists()
-    access.auto_substitutions = True
-    access.save()
     source.pool.competition_class.category = "b"
     source.pool.competition_class.save()
+    access.auto_substitutions = True
+    access.save()
     discover()
     assert not MatchFormSync.objects.exists()
     source.pool.competition_class.category = "a"
@@ -979,7 +985,7 @@ def test_abandoned_import_waits_until_the_next_slot(
     source, tracker, access = scope
     now = timezone.now()
     source.starts_at = now + timedelta(minutes=minutes_before)
-    source.save()
+    Match.objects.filter(pk=source.pk).update(starts_at=source.starts_at)
     provider = Mock()
     provider.read.side_effect = KeyboardInterrupt
     with patch("django.utils.timezone.now", return_value=now):
@@ -1085,6 +1091,7 @@ def test_idle_discovery_query_count_does_not_grow_with_matches(
     MatchData.objects.update(status="upcoming" if action == "import" else "finished")
     trackers = MatchData.objects.all()
     assert trackers.count() == match_count
+    MatchFormSync.objects.all().delete()
     MatchFormSync.objects.bulk_create([
         MatchFormSync(
             access=access,
@@ -1128,3 +1135,196 @@ def test_discovery_does_not_use_another_teams_receipt(
     own_job = MatchFormSync.objects.get(access=access)
     assert own_job.state == "pending"
     assert own_job.action == "import"
+
+
+@pytest.mark.django_db
+def test_form_enqueue_wakes_after_commit_and_rollback_is_silent(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A manual form action does not wait for timed discovery."""
+    source, tracker, access = scope
+    with patch("apps.competition.tasks.sync_match_forms.apply_async") as publish:
+        with TestCase.captureOnCommitCallbacks(execute=True):
+            enqueue(access, source.local_match_id, "import", tracker.live_revision)
+            publish.assert_not_called()
+        publish.assert_called_once_with(countdown=0, expires=300)
+        publish.reset_mock()
+        MatchFormSync.objects.all().delete()
+        with TestCase.captureOnCommitCallbacks(execute=True), transaction.atomic():
+            enqueue(access, source.local_match_id, "import", tracker.live_revision)
+            transaction.set_rollback(True)
+        publish.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_form_drain_does_not_scan_discovery(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Executing a queued action never scans all enabled teams and fixtures."""
+    with patch("apps.competition.services.match_form_worker.discover") as discovery:
+        assert drain(Mock(), Mock()) == "idle"
+        discovery.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("result", ["succeeded", "busy"])
+def test_form_worker_continues_backlog_but_does_not_spin_on_busy_provider(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+    result: str,
+) -> None:
+    """Due work continues directly; a provider lease is left to recovery."""
+    source, tracker, access = scope
+    enqueue(access, source.local_match_id, "import", tracker.live_revision)
+    with (
+        patch("apps.competition.tasks.run_match_form_queue", return_value=result),
+        patch("apps.competition.tasks.sync_match_forms.apply_async") as publish,
+    ):
+        assert sync_match_forms.run() == result
+        assert publish.call_count == (0 if result == "busy" else 1)
+
+
+@pytest.mark.django_db
+def test_discovery_recovers_a_committed_form_job_without_a_message(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A lost after-commit wakeup cannot permanently strand a private form action."""
+    source, tracker, access = scope
+    enqueue(access, source.local_match_id, "import", tracker.live_revision)
+    with (
+        patch("apps.competition.tasks.discover"),
+        patch("apps.competition.tasks.sync_match_forms.apply_async") as publish,
+    ):
+        discover_match_forms.run()
+        publish.assert_called_once_with(expires=300)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("rollback", [False, True])
+def test_finishing_match_records_substitutions_with_final_revision(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+    rollback: bool,
+) -> None:
+    """Finish persists the intent atomically and publishes only after commit."""
+    source, tracker, _access = finished_scope
+    tracker.status, tracker.parts = "active", 1
+    tracker.save(update_fields=["status", "parts"])
+    create_match_part(match_data=tracker)
+    with patch("apps.competition.tasks.sync_match_forms.apply_async") as publish:
+        with TestCase.captureOnCommitCallbacks(execute=True), transaction.atomic():
+            apply_tracker_command(
+                source.local_match,
+                team=source.local_match.home_team,
+                payload={"command": "part_end"},
+            )
+            tracker.refresh_from_db()
+            job = MatchFormSync.objects.get(action="substitutions")
+            assert job.expected_revision == tracker.live_revision
+            assert job.state == "pending"
+            publish.assert_not_called()
+            transaction.set_rollback(rollback)
+        assert (
+            MatchFormSync.objects.filter(action="substitutions").exists()
+            is not rollback
+        )
+        assert publish.called is not rollback
+
+
+@pytest.mark.django_db
+def test_finished_match_correction_requeues_without_discovery_tick(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A later editor revision creates fresh work while retaining provider receipts."""
+    source, tracker, access = finished_scope
+    job = enqueue(access, source.local_match_id, "substitutions", tracker.live_revision)
+    job.state, job.published_event_ids = "succeeded", ["owned-event"]
+    job.save()
+    record_match_change(tracker, resources=[LiveResource.EVENTS], publisher=Mock())
+    job.refresh_from_db()
+    assert job.state == "pending"
+    assert job.expected_revision == tracker.live_revision
+    assert job.published_event_ids == ["owned-event"]
+
+
+@pytest.mark.django_db
+def test_correction_during_provider_upload_gets_a_successor(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Changes after snapshot capture survive an in-flight upload's completion."""
+    source, tracker, access = finished_scope
+    job = enqueue(access, source.local_match_id, "substitutions", tracker.live_revision)
+
+    def upload(*args: object) -> None:
+        record_match_change(tracker, resources=[LiveResource.EVENTS], publisher=Mock())
+
+    with patch(
+        "apps.competition.services.match_form_worker.execute", side_effect=upload
+    ):
+        assert drain(Mock(), Mock()) == "succeeded"
+    job.refresh_from_db()
+    assert job.state == "pending"
+    assert job.expected_revision == tracker.live_revision
+
+
+@pytest.mark.django_db
+def test_enabling_team_and_rescheduling_fixture_queue_due_work(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Connection and fixture changes do not wait for global discovery."""
+    source, tracker, access = finished_scope
+    access.save()
+    assert MatchFormSync.objects.get(action="substitutions").state == "pending"
+    MatchFormSync.objects.all().delete()
+    MatchData.objects.filter(pk=tracker.pk).update(status="upcoming")
+    source.starts_at = timezone.now() + timedelta(minutes=45)
+    source.save(update_fields=["starts_at"])
+    assert MatchFormSync.objects.get(action="import").automatic is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("restriction", ["disabled", "opt_out", "category_b"])
+def test_finish_event_preserves_substitution_opt_in_and_category(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+    restriction: str,
+) -> None:
+    """Local events do not bypass the existing team authorization policy."""
+    source, tracker, access = finished_scope
+    if restriction == "category_b":
+        source.pool.competition_class.category = "b"
+        source.pool.competition_class.save()
+    else:
+        MatchFormAccess.objects.filter(pk=access.pk).update(**{
+            "enabled" if restriction == "disabled" else "auto_substitutions": False
+        })
+    record_match_change(tracker, resources=[LiveResource.EVENTS], publisher=Mock())
+    assert not MatchFormSync.objects.exists()
+
+
+@pytest.mark.django_db
+def test_statistics_revisions_do_not_trigger_substitution_uploads(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Both event dispatch and recovery ignore derived-only revisions."""
+    source, tracker, access = finished_scope
+    job = enqueue(access, source.local_match_id, "substitutions", tracker.live_revision)
+    job.state = "succeeded"
+    job.save()
+    record_match_change(
+        tracker,
+        resources=[LiveResource.STATS, LiveResource.IMPACTS],
+        publisher=Mock(),
+    )
+    discover()
+    job.refresh_from_db()
+    assert job.state == "succeeded"
+    assert job.expected_revision == tracker.live_revision
+
+
+@pytest.mark.django_db
+def test_publishing_historical_fixture_does_not_upload_old_substitutions(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Event triggers preserve the existing recent-match eligibility window."""
+    source, _tracker, _access = finished_scope
+    source.starts_at = timezone.now() - timedelta(days=30)
+    source.save(update_fields=["starts_at"])
+    assert not MatchFormSync.objects.exists()

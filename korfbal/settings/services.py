@@ -78,7 +78,16 @@ CELERY_RESULT_BACKEND = (
 CELERY_ACCEPT_CONTENT = ["json"]
 # Shared authentication tasks explicitly publish to instant. Workers must consume
 # it as well as the default queue used by competition and media jobs.
-CELERY_TASK_QUEUES = (Queue("celery"), Queue("instant"))
+CELERY_TASK_QUEUES = tuple(
+    Queue(name) for name in ("celery", "instant", "projections", "media", "competition")
+)
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_TASK_ROUTES = {
+    "apps.competition.tasks.*": {"queue": "competition"},
+    "apps.player.tasks.download_*": {"queue": "media"},
+    "apps.game_tracker.tasks.*": {"queue": "projections"},
+}
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = env("CELERY_TIMEZONE", "UTC")
 CELERY_TASK_TRACK_STARTED = env_bool("CELERY_TASK_TRACK_STARTED", True)

@@ -205,7 +205,7 @@ def test_audio_transcoder_clamps_range_and_uses_safe_command_options() -> None:
         "4",
         "/output/clip.mp3",
     ]
-    assert options == CommandRunOptions(check=True)
+    assert options == CommandRunOptions(check=True, timeout=60, kill_process_tree=True)
 
 
 def test_audio_transcoder_requires_ffmpeg() -> None:
@@ -252,7 +252,7 @@ def test_invalid_goal_song_selection_does_not_persist_partial_settings() -> None
 
 
 @pytest.mark.django_db
-def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit(
+def test_direct_upload_and_clip_intent_commit_together(
     django_capture_on_commit_callbacks: OnCommitCapture,
 ) -> None:
     player = create_tracker_player(username="direct-upload-command")
@@ -270,7 +270,7 @@ def test_direct_upload_song_creation_is_ready_and_dispatches_after_commit(
             spotify_url=None,
             jobs=jobs,
         )
-        jobs.player_song.assert_not_called()
+        jobs.player_song.assert_called_once()
 
     song = creation.song
     assert creation.created is True
@@ -308,7 +308,7 @@ def test_spotify_song_creation_is_idempotent_for_one_player(
     assert second.song.id_uuid == first.song.id_uuid
     assert CachedSong.objects.count() == 1
     assert PlayerSong.objects.filter(player=player).count() == 1
-    assert jobs.cached_song.call_count == EXPECTED_DISPATCH_COUNT
+    assert jobs.player_song.call_count == EXPECTED_DISPATCH_COUNT
 
 
 @pytest.mark.django_db

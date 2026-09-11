@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import Protocol
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.awards.models.mvp import MatchMvpVote
@@ -20,14 +21,6 @@ from apps.schedule.models.match import Match
 
 
 logger = logging.getLogger(__name__)
-
-
-class IdempotencyClaim(Protocol):
-    """Claim a short-lived idempotency key."""
-
-    def __call__(self, key: str, timeout_seconds: int, /) -> bool:
-        """Return whether the key was claimed by this caller."""
-        ...
 
 
 class PayloadSender(Protocol):
@@ -91,7 +84,6 @@ class ExpoPushSender(Protocol):
 class FinishedMatchJobs:
     """Runtime capabilities used when a match reaches its terminal state."""
 
-    claim_once: IdempotencyClaim
     send_payload: PayloadSender
     schedule_reminder: TaskScheduler
     schedule_publish: TaskScheduler
@@ -166,6 +158,7 @@ def send_payload_to_users(
         )
 
 
+@transaction.atomic
 def handle_finished_match(
     *,
     match_id: str,
@@ -194,12 +187,12 @@ def handle_finished_match(
         .filter(id_uuid=match_data_id)
         .first()
     )
-    if match is None or match_data is None or match_data.status != "finished":
-        return
-
-    # Claim only after the committed terminal state is visible. A worker can run
-    # before the transaction that finished the match commits and then be retried.
-    if not jobs.claim_once(f"push:match_finished:{match_data_id}", 60 * 60 * 24):
+    if (
+        match is None
+        or match_data is None
+        or match_data.status != "finished"
+        or str(match_data.match_link.pk) != match_id
+    ):
         return
 
     home = getattr(match.home_team, "name", "") or "Thuis"
@@ -214,19 +207,14 @@ def handle_finished_match(
         ),
     )
 
-    try:
-        match_mvp = mvp_service.get_or_create_match_mvp(match, match_data)
-    except Exception:
-        logger.warning("Failed to ensure MatchMvp for %s", match_id, exc_info=True)
-        return
+    match_mvp = mvp_service.get_or_create_match_mvp(match, match_data)
 
     reminder_at = match_mvp.closes_at - timedelta(hours=1)
     if reminder_at > timezone.now():
         jobs.schedule_reminder(match_id=match_id, eta=reminder_at)
 
     publish_at = match_mvp.closes_at + timedelta(minutes=1)
-    if publish_at > timezone.now():
-        jobs.schedule_publish(match_id=match_id, eta=publish_at)
+    jobs.schedule_publish(match_id=match_id, eta=publish_at)
 
 
 def remind_mvp_voters(
@@ -245,11 +233,7 @@ def remind_mvp_voters(
     if match is None or match_data is None:
         return
 
-    try:
-        match_mvp = mvp_service.get_or_create_match_mvp(match, match_data)
-    except Exception:
-        logger.warning("Failed to load MatchMvp for %s", match_id, exc_info=True)
-        return
+    match_mvp = mvp_service.get_or_create_match_mvp(match, match_data)
 
     now = timezone.now()
     if now < match_mvp.closes_at - timedelta(hours=1) or now >= match_mvp.closes_at:
@@ -283,6 +267,7 @@ def remind_mvp_voters(
     )
 
 
+@transaction.atomic
 def publish_mvp(
     *,
     match_id: str,
@@ -299,10 +284,8 @@ def publish_mvp(
     if match is None or match_data is None:
         return
 
-    before = mvp_service.get_or_create_match_mvp(match, match_data)
-    was_published = bool(before.published_at)
     after = mvp_service.ensure_mvp_published(match, match_data)
-    if not after.published_at or was_published:
+    if not after.published_at:
         return
 
     winner_name = None

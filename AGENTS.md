@@ -31,7 +31,12 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 - In Caddy, use an explicit matcher for relative redirects (`redir * /admin/ 301`); otherwise `/admin/` is parsed as a matcher. Verify both `/admin` and `/admin/`, since an unmatched handler can return an empty HTTP 200.
 
-- Korfbal workers must consume both `celery` and `instant`: shared `bg_auth` MFA and activation tasks explicitly publish to `instant`. A successful SMTP connection does not verify queue consumption.
+- The worker image supervises isolated `celery,instant`, `projections`, `media`, and
+  `competition` pools. Preserve `instant` for shared `bg_auth` MFA/activation tasks;
+  verify every pool after changing the image entrypoint or queue routing.
+- Persist background intent inside the domain transaction with `kwt_common.services.jobs`.
+  Broker publication, cache claims, and task ETA reservations are not durable workflow state.
+  Keep recipient delivery separate from MVP publication and retain completed intent keys.
 
 - Bulk roster-link deletions bypass M2M signals. Capture and lock affected TeamData
   rows before deleting provider observations, then reconcile their roster history.
@@ -176,3 +181,11 @@ misleading provider 500/603 errors.
 
 - Admin rendering and permission tests must establish `bg_auth_mfa_verified` from the
   authenticated user’s session auth hash; `force_login()` alone now redirects to MFA.
+
+- Dispatch committed durable work immediately; keep periodic scans for recovery and
+  future deadlines. Release execution ownership before publishing a successor, and
+  keep match-form discovery out of the action-processing path.
+
+- Queue private match-form work from the finalized `MatchLiveChange` revision inside
+  the mutation transaction; discovery is recovery. Reconcile after an upload so edits
+  during provider I/O get a successor, and ignore statistics-only revision changes.

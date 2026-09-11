@@ -255,9 +255,10 @@ def _validate_vote_or_raise(
 def ensure_mvp_published(match: Match, match_data: MatchData) -> MatchMvp:
     """If voting is closed and not published yet, compute and persist the winner."""
     mvp = get_or_create_match_mvp(match, match_data)
+    mvp = MatchMvp.objects.select_for_update().get(pk=mvp.pk)
 
     # Already published.
-    if mvp.mvp_player_id and mvp.published_at:
+    if mvp.published_at:
         return mvp
 
     now = timezone.now()

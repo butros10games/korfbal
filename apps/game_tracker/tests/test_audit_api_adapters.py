@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 
+from django.utils import timezone
 import pytest
 
 from apps.game_tracker.adapters.outbound.runtime import (
@@ -15,56 +16,35 @@ from apps.game_tracker.realtime.publisher import (
     match_group_name,
     publish_match_changed,
 )
+from apps.kwt_common.models import BackgroundJob
 
 
+@pytest.mark.django_db
 def test_celery_dispatcher_routes_immediate_and_delayed_recomputes() -> None:
-    """Countdowns select the Celery primitive without changing task arguments."""
+    """Both projection requests coalesce and preserve the earliest deadline."""
     dispatcher = CeleryTrackerJobDispatcher()
-    impact_task = Mock()
-    minutes_task = Mock()
-
-    with patch.object(
-        dispatcher,
-        "_task",
-        side_effect=[impact_task, minutes_task],
-    ) as task_lookup:
-        dispatcher.recompute_impacts(match_data_id="impact-id")
-        dispatcher.recompute_minutes(
-            match_data_id="minutes-id",
-            countdown_seconds=12,
-        )
-
-    assert task_lookup.call_args_list == [
-        (("recompute_match_impacts",),),
-        (("recompute_match_minutes",),),
-    ]
-    impact_task.delay.assert_called_once_with("impact-id")
-    impact_task.apply_async.assert_not_called()
-    minutes_task.apply_async.assert_called_once_with(
-        args=("minutes-id",),
-        countdown=12,
-    )
-    minutes_task.delay.assert_not_called()
+    dispatcher.recompute_minutes(match_data_id="data-id", countdown_seconds=12)
+    job = BackgroundJob.objects.get()
+    assert job.due_at > timezone.now()
+    dispatcher.recompute_impacts(match_data_id="data-id")
+    job.refresh_from_db()
+    assert BackgroundJob.objects.count() == 1
+    assert job.queue == "projections"
+    assert job.args == ["data-id"]
+    assert job.due_at <= timezone.now()
 
 
+@pytest.mark.django_db
 def test_celery_dispatcher_routes_match_finished_to_player_task() -> None:
-    """Post-match work belongs to the player worker and preserves named IDs."""
-    finished_task = Mock()
-
-    with patch(
-        "apps.game_tracker.adapters.outbound.runtime._task",
-        return_value=finished_task,
-    ) as task_lookup:
+    """Post-match lifecycle identifiers are durable and uniquely scheduled."""
+    for _ in range(2):
         CeleryTrackerJobDispatcher().match_finished(
-            match_id="match-id",
-            match_data_id="data-id",
+            match_id="match-id", match_data_id="data-id"
         )
-
-    task_lookup.assert_called_once_with("apps.player.tasks", "handle_match_finished")
-    finished_task.delay.assert_called_once_with(
-        match_id="match-id",
-        match_data_id="data-id",
-    )
+    job = BackgroundJob.objects.get()
+    assert job.task == "apps.player.tasks.handle_match_finished"
+    assert job.kwargs == {"match_id": "match-id", "match_data_id": "data-id"}
+    assert job.generation == 1
 
 
 def test_channels_adapter_forwards_the_publication_contract() -> None:

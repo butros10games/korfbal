@@ -47,13 +47,3 @@ SPOTDL_DOWNLOAD_TIMEOUT_SECONDS = env_int(
     "SPOTDL_DOWNLOAD_TIMEOUT_SECONDS",
     60 * 15,
 )
-
-# If a download gets stuck (worker restart/crash), the CachedSong can remain in
-# DOWNLOADING/UPLOADING forever. The Celery task will reclaim the work once the
-# record hasn't been updated for this long.
-#
-# Default: timeout + 60 seconds.
-SPOTDL_STALE_IN_PROGRESS_SECONDS = env_int(
-    "SPOTDL_STALE_IN_PROGRESS_SECONDS",
-    SPOTDL_DOWNLOAD_TIMEOUT_SECONDS + 60,
-)

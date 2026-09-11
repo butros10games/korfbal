@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import Mock
 from uuid import UUID
 
 from django.db import transaction
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.adapters.outbound.runtime import CeleryTrackerJobDispatcher
 from apps.game_tracker.models import PlayerMatchMinutes, Shot
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.game_tracker.services import match_minutes
@@ -17,57 +17,30 @@ from apps.game_tracker.services.match_scores import (
     compute_scores_for_matchdata_ids,
     persist_matchdata_scores,
 )
-from apps.game_tracker.services.recompute import schedule_recompute
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+from apps.kwt_common.models import BackgroundJob
 
 
 @pytest.mark.django_db(transaction=True)
-def test_recompute_dispatch_is_commit_aware_and_best_effort() -> None:
-    """Derived work runs after commit, skips rollback, and cannot abort a write."""
-    dispatch = Mock()
-
+def test_recompute_intent_rolls_back_with_mutation() -> None:
+    """The durable dispatch rolls back with its owner; write failures propagate."""
+    dispatch = CeleryTrackerJobDispatcher().recompute_impacts
     with transaction.atomic():
-        schedule_recompute(
-            match_data_id="rolled-back",
+        dispatch(
+            match_data_id="rollback",
             countdown_seconds=7,
-            dispatch=dispatch,
-            task_name="audit_recompute",
         )
-        dispatch.assert_not_called()
+        assert BackgroundJob.objects.exists()
         transaction.set_rollback(True)
-
-    dispatch.assert_not_called()
-
-    with transaction.atomic():
-        schedule_recompute(
-            match_data_id="committed",
-            countdown_seconds=11,
-            dispatch=dispatch,
-            task_name="audit_recompute",
-        )
-        dispatch.assert_not_called()
-
-    dispatch.assert_called_once_with(
-        match_data_id="committed",
-        countdown_seconds=11,
-    )
-
-    failing_dispatch = Mock(side_effect=RuntimeError("queue unavailable"))
-    with transaction.atomic():
-        schedule_recompute(
-            match_data_id="still-commits",
-            countdown_seconds=0,
-            dispatch=failing_dispatch,
-            task_name="audit_recompute",
-        )
-
-    failing_dispatch.assert_called_once_with(
-        match_data_id="still-commits",
+    assert not BackgroundJob.objects.exists()
+    dispatch(
+        match_data_id="commit",
         countdown_seconds=0,
     )
+    assert BackgroundJob.objects.get().args == ["commit"]
 
 
 @pytest.mark.django_db

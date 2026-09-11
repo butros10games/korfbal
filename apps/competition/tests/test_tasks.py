@@ -195,6 +195,6 @@ def test_idle_heartbeat_does_not_open_oauth_session(
 def test_heartbeat_expires_before_another_tick() -> None:
     """Keep delayed jobs from replaying a burst of obsolete scheduler ticks."""
     heartbeat = app.conf.beat_schedule["sync-current-competition"]
-    interval = 30
+    interval = 60
     assert heartbeat["schedule"] == interval
     assert heartbeat["options"]["expires"] == interval

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -38,6 +39,7 @@ def schedule_changed(previous: dict, current: dict) -> bool:
     return old_time != new_time or previous["status"] != current["status"]
 
 
+@transaction.atomic
 def notify_schedule_change(
     *,
     notification_id: str,
@@ -52,7 +54,7 @@ def notify_schedule_change(
         "status": "CANCELLED" if cancelled else "SCHEDULED",
     }
     # Claim the exact publication once, even if a later schedule repeats its values.
-    # Delivery remains best effort: a crash after this claim is not replayed.
+    # The claim and per-recipient durable delivery intents commit together.
     if not SourceMatch.objects.filter(
         local_match_id=match_id,
         published_schedule=expected,
@@ -99,6 +101,6 @@ def notify_schedule_change(
             title=title,
             body=body,
             url=match.get_absolute_url(),
-            tag=f"schedule:{match_id}",
+            tag=f"schedule:{notification_id}",
         ),
     )

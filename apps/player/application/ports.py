@@ -64,10 +64,6 @@ class SongDownloadDispatcher(Protocol):
         """Schedule download of a legacy player-owned song."""
 
 
-class JobDispatchUnavailableError(RuntimeError):
-    """Raised when background work cannot be handed to the job runtime."""
-
-
 class WebPushDeliveryError(RuntimeError):
     """Provider-neutral web-push delivery failure."""
 

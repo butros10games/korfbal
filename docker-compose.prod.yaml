@@ -63,6 +63,7 @@ services:
             - kwt-net
 
     kwt-celery_worker:
+        stop_grace_period: 35m
         image: butros10/kwt-celery:latest
         container_name: kwt-celery_worker
         restart: unless-stopped

@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.competition.application.ports import CompetitionClient
 from apps.competition.composition import competition_client, run_match_form_queue
 from apps.competition.models import MatchFormSync, SyncLease, SyncResource
+from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
@@ -22,7 +23,25 @@ logger = logging.getLogger(__name__)
 @shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
 def sync_match_forms() -> str:
     """Drain durable, account-scoped form work including finished-match recovery."""
-    return run_match_form_queue()
+    result = run_match_form_queue()
+    if (
+        result != "busy"
+        and MatchFormSync.objects.filter(
+            state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+        ).exists()
+    ):
+        sync_match_forms.apply_async(expires=300)
+    return result
+
+
+@shared_task(ignore_result=True)
+def discover_match_forms() -> None:
+    """Discover timed imports and recover missed or abandoned queue dispatches."""
+    discover()
+    if MatchFormSync.objects.filter(
+        state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+    ).exists():
+        sync_match_forms.apply_async(expires=300)
 
 
 class SessionUnavailableError(Exception):

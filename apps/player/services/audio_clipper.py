@@ -75,4 +75,6 @@ def transcode_to_mp3_clip_file(
         output_path,
     ]
 
-    command_runner.run(cmd, CommandRunOptions(check=True))
+    command_runner.run(
+        cmd, CommandRunOptions(check=True, timeout=60, kill_process_tree=True)
+    )

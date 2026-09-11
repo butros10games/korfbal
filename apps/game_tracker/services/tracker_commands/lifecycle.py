@@ -6,8 +6,6 @@ from dataclasses import dataclass
 import logging
 from uuid import UUID
 
-from django.db import transaction
-
 from apps.game_tracker.application.ports import TrackerJobDispatcher
 from apps.game_tracker.domain.match_limits import MAX_TIMEOUTS_PER_TEAM
 from apps.game_tracker.models import (
@@ -295,19 +293,9 @@ def _enqueue_match_finished(
     match_data: MatchData,
     jobs: TrackerJobDispatcher,
 ) -> None:
-    def enqueue() -> None:
-        try:
-            jobs.match_finished(
-                match_id=str(match.id_uuid),
-                match_data_id=str(match_data.id_uuid),
-            )
-        except Exception:
-            logger.warning(
-                "Failed to enqueue match finished push task (http)",
-                exc_info=True,
-            )
-
-    transaction.on_commit(enqueue)
+    jobs.match_finished(
+        match_id=str(match.id_uuid), match_data_id=str(match_data.id_uuid)
+    )
 
 
 @dataclass(frozen=True, slots=True)

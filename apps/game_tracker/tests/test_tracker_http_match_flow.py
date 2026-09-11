@@ -21,6 +21,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+from apps.kwt_common.models import BackgroundJob
 from apps.team.models import Team
 
 
@@ -330,7 +331,7 @@ def test_tracker_rejects_a_team_outside_the_match() -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_finished_task_is_enqueued_after_match_commit() -> None:
+def test_finished_task_intent_commits_with_match() -> None:
     tracker = create_tracker_match(prefix="Finish Commit")
     match_data = tracker.match_data
     match_data.status = "active"
@@ -338,7 +339,7 @@ def test_finished_task_is_enqueued_after_match_commit() -> None:
     match_data.save(update_fields=["status", "parts"])
     create_match_part(match_data=match_data)
 
-    with patch("apps.player.tasks.handle_match_finished.delay") as delay:
+    with patch("apps.kwt_common.tasks.execute_job.apply_async") as publish:
         apply_tracker_command(
             tracker.match,
             team=tracker.home_team,
@@ -347,10 +348,12 @@ def test_finished_task_is_enqueued_after_match_commit() -> None:
 
     match_data.refresh_from_db()
     assert match_data.status == "finished"
-    delay.assert_called_once_with(
-        match_id=str(tracker.match.id_uuid),
-        match_data_id=str(match_data.id_uuid),
-    )
+    job = BackgroundJob.objects.get(task="apps.player.tasks.handle_match_finished")
+    assert any(call.kwargs["args"] == [job.pk] for call in publish.call_args_list)
+    assert job.kwargs == {
+        "match_id": str(tracker.match.pk),
+        "match_data_id": str(match_data.pk),
+    }
 
 
 @pytest.mark.django_db

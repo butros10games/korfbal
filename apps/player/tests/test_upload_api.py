@@ -16,6 +16,7 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.player.models import PlayerSong, PlayerSongStatus
 from apps.player.models.player import Player
 from apps.player.services.player_uploads import (
@@ -244,7 +245,10 @@ def test_upload_goal_song_happy_path_sanitizes_name_and_updates_player(
     assert user.player.goal_song_uri == payload["url"]
     assert payload["url"].endswith(song.audio_file.name)
     assert payload["player"]["goal_song_uri"] == payload["url"]
-    prepare.assert_called_once_with(args=[str(song.id_uuid)])
+    prepare.assert_not_called()
+    assert BackgroundJob.objects.get(
+        task="apps.player.tasks.download_player_song"
+    ).args == [str(song.pk)]
 
 
 @pytest.mark.django_db

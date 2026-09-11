@@ -79,4 +79,5 @@ USER appuser
 
 EXPOSE 1664
 
-CMD ["celery", "-A", "korfbal", "worker", "--loglevel", "info"]
+ENTRYPOINT ["python", "-m", "korfbal.worker"]
+CMD ["worker"]
