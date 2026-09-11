@@ -13,7 +13,7 @@ def rows_at(form: dict, *path: str) -> list[dict[str, Any]]:
     """Require a complete collection; malformed input must never clear a form.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: A collection is missing or contains malformed rows.
 
     """
     value = form
@@ -30,7 +30,7 @@ def player_rows(form: dict, home: bool) -> list[dict]:
     """Require both the requested side and the provider's edit permission.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The form belongs to the wrong side or does not allow editing.
 
     """
     if form.get("IsHome") is not home:
@@ -56,7 +56,7 @@ def publish_players(
     """Publish selected players without assigning KNKV-unsupported court positions.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The selection or captain is invalid, or editing is not allowed.
 
     """
     updated = deepcopy(form)
@@ -120,7 +120,7 @@ def merge_substitutions(
     """Keep opponent events and manual entries; replace only acknowledged own IDs.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: Editing is denied or an event conflicts with a KNKV entry.
 
     """
     permission = (

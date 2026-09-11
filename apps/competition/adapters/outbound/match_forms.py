@@ -80,7 +80,7 @@ class SportlinkMatchForms:
         """Never guess a roster identity by a display-name match.
 
         Raises:
-            MatchFormError: The requested scope, form or publication is invalid.
+            MatchFormError: The response does not identify exactly one matching player.
 
         """
         data = self._request(
@@ -124,7 +124,7 @@ class SportlinkMatchForms:
         """Preflight changes, preserve ETags, and read back the committed form.
 
         Raises:
-            MatchFormError: The requested scope, form or publication is invalid.
+            MatchFormError: The resource is read-only or the form changed since reading.
 
         """
         if resource not in {"players", "events"}:
@@ -143,7 +143,7 @@ def _response_body(
     """Decode a bounded response without exposing provider error bodies.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: KNKV returned an error, malformed body, or another match.
         ProviderCooldownError: The provider requested a cooldown.
 
     """

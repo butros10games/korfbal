@@ -6,6 +6,7 @@ import time
 from uuid import uuid4
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.competition.application.match_forms import (
@@ -28,7 +29,6 @@ from apps.competition.models import (
 from apps.competition.services.match_forms import enqueue, execute
 from apps.competition.services.traffic import TrafficGate
 from apps.game_tracker.application.ports import MatchChangePublisher
-from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 
 
@@ -41,20 +41,17 @@ def discover_finished() -> None:
         enabled=True, auto_substitutions=True
     ).select_related("user", "team"):
         sources = SourceMatch.objects.filter(
+            Q(local_match__home_team=access.team)
+            | Q(local_match__away_team=access.team),
             starts_at__gte=timezone.now() - timedelta(days=2),
             pool__competition_class__category="a",
             local_match__tracker_data__status="finished",
-        ).filter(local_match__home_team=access.team) | SourceMatch.objects.filter(
-            starts_at__gte=timezone.now() - timedelta(days=2),
-            pool__competition_class__category="a",
-            local_match__tracker_data__status="finished",
-            local_match__away_team=access.team,
-        )
+        ).select_related("local_match__tracker_data")
         existing = MatchFormSync.objects.filter(
             access=access, action="substitutions"
         ).values("match_id")
         for source in sources.exclude(local_match_id__in=existing):
-            tracker = MatchData.objects.get(match_link_id=source.local_match_id)
+            tracker = source.local_match.tracker_data
             try:
                 enqueue(
                     access,

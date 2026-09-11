@@ -12,7 +12,7 @@ from apps.team.models import Team
 
 
 class Command(BaseCommand):
-    """Configure the account, DTS team identities and optional automatic uploads."""
+    """Configure the account, team bindings and optional automatic uploads."""
 
     help = (
         "Bind the configured Sportlink session to one account and explicit team UUIDs."
@@ -29,7 +29,8 @@ class Command(BaseCommand):
         """Bind without reading or displaying secrets or sending provider writes.
 
         Raises:
-            CommandError: The requested scope, form or publication is invalid.
+            CommandError: Missing session, conflicting binding,
+                or invalid account/team choices.
 
         """
         options = cast(dict[str, Any], options)

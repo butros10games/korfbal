@@ -18,6 +18,7 @@ from apps.competition.models import (
     MatchFormSync,
 )
 from apps.competition.services.match_form_payloads import (
+    SUBSTITUTION_EVENT,
     event_signature,
     is_player,
     merge_substitutions,
@@ -57,7 +58,7 @@ def resolve_scope(
     """Require native permissions and exact provider/native side bindings.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The account lacks access or the provider team is not linked.
 
     """
     source = (
@@ -113,7 +114,7 @@ def enqueue(
     """Queue once under the aggregate lock, preserving publication receipts.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The action is not allowed for this match or captain.
 
     """
     options = options or MatchFormOptions()
@@ -163,11 +164,12 @@ def import_reserves(
     scope: tuple[SourceMatch, MatchData, bool],
     form: dict,
     publisher: MatchChangePublisher,
-) -> int:
+) -> None:
     """Add visible selected players to the bank without replacing existing groups.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The match started, the selection is too large, or a player
+            is already assigned to the opposing team.
 
     """
     source, tracker, home = scope
@@ -233,7 +235,6 @@ def import_reserves(
         job.save(
             update_fields=["player_count", "captain_player", "state", "updated_at"]
         )
-        return available
 
 
 def _imported_captain(
@@ -285,20 +286,13 @@ def _captain_person_id(
 
 def _selection(tracker: MatchData, access: MatchFormAccess) -> dict[str, bool]:
     selected = {}
-    for group in (
-        PlayerGroup.objects
-        .filter(match_data=tracker, team=access.team)
-        .select_related("starting_type")
-        .prefetch_related("players")
-    ):
-        for player in Player.all_objects.filter(player_groups=group):
-            if (
-                not player.knkv_person_id
-                or player.knkv_person_id == "PRIVATE"
-                or player.knkv_person_id in selected
-            ):
-                raise MatchFormError("players_not_linked")
-            selected[player.knkv_person_id] = group.starting_type.name != "Reserve"
+    players = PlayerGroup.objects.filter(
+        match_data=tracker, team=access.team, players__isnull=False
+    ).values_list("players__knkv_person_id", "starting_type__name")
+    for person_id, group_name in players:
+        if not person_id or person_id == "PRIVATE" or person_id in selected:
+            raise MatchFormError("players_not_linked")
+        selected[person_id] = group_name != "Reserve"
     return selected
 
 
@@ -363,7 +357,7 @@ def _substitutions(
                     f"korfbal:knkv:{source.external_id}:{event.logical_id}",
                 )
             ),
-            "TypeOfEvent": 10,
+            "TypeOfEvent": SUBSTITUTION_EVENT,
             "PersonId": change.player_out.knkv_person_id,
             "OtherPersonId": change.player_in.knkv_person_id,
             "RoleId": "PLAYER_DEFAULT",
@@ -380,15 +374,13 @@ def execute(
     """Fetch authorized forms, take a current local snapshot, publish and verify.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The form is inaccessible, invalid, or cannot be confirmed.
 
     """
     source, tracker, home = resolve_scope(job.access, job.match_id)
     if job.action == "import":
         form = provider.read("players", source.external_id, home=home)
-        job.player_count = import_reserves(
-            job, (source, tracker, home), form, publisher
-        )
+        import_reserves(job, (source, tracker, home), form, publisher)
         return
     if job.action == "publish":
         _publish_selection(job, provider, source, tracker, home)
@@ -442,7 +434,7 @@ def _publish_selection(
     """Publish only a revision-checked pre-match selection.
 
     Raises:
-        MatchFormError: The requested scope, form or publication is invalid.
+        MatchFormError: The match started or KNKV rejected the selection or captain.
 
     """
     form = provider.read("players", source.external_id, home=home)

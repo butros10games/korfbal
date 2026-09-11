@@ -378,11 +378,14 @@ def finished_scope(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("home", [True, False])
 def test_auto_discovery_is_opt_in_a_category_and_runs_once(
-    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+    finished_scope: tuple[Match, MatchData, MatchFormAccess], home: bool
 ) -> None:
     """Auto discovery is opt in a category and runs once."""
     source, _tracker, access = finished_scope
+    if not home:
+        access.team = source.local_match.away_team
     access.auto_substitutions = False
     access.save()
     discover_finished()
@@ -703,3 +706,40 @@ def test_form_does_not_create_private_identity_from_visible_duplicate(
     assert not Player.all_objects.filter(knkv_person_id="P1").exists()
     assert job.captain_player_id is None
     assert job.player_count == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("identity", ["unlinked", "private", "duplicate"])
+def test_publication_rejects_invalid_selection_before_provider_write(
+    captain_scope: tuple[Match, MatchData, MatchFormAccess, Player], identity: str
+) -> None:
+    """Every selected player must have one usable provider identity."""
+    source, tracker, access, captain = captain_scope
+    reserve = PlayerGroup.objects.get(
+        match_data=tracker, team=access.team, starting_type__name="Reserve"
+    )
+    player = (
+        captain
+        if identity == "duplicate"
+        else Player.objects.create(
+            name="Synthetic reserve",
+            knkv_person_id="PRIVATE" if identity == "private" else None,
+        )
+    )
+    reserve.players.add(player)
+    tracker.refresh_from_db()
+    job = enqueue(
+        access,
+        source.local_match_id,
+        "publish",
+        tracker.live_revision,
+        options=MatchFormOptions(captain_player_id=captain.pk),
+    )
+    provider = Mock()
+    provider.read.side_effect = [
+        form(),
+        {"Details": {"ClassAttributes": {"AllowsBasePlayers": True}}},
+    ]
+    with pytest.raises(MatchFormError, match="players_not_linked"):
+        execute(job, provider, Mock())
+    provider.replace.assert_not_called()
