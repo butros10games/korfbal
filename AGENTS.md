@@ -29,6 +29,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- In Caddy, use an explicit matcher for relative redirects (`redir * /admin/ 301`); otherwise `/admin/` is parsed as a matcher. Verify both `/admin` and `/admin/`, since an unmatched handler can return an empty HTTP 200.
+
 - Korfbal workers must consume both `celery` and `instant`: shared `bg_auth` MFA and activation tasks explicitly publish to `instant`. A successful SMTP connection does not verify queue consumption.
 
 - Bulk roster-link deletions bypass M2M signals. Capture and lock affected TeamData
