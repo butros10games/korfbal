@@ -26,8 +26,8 @@ def rows_at(form: dict, *path: str) -> list[dict[str, Any]]:
     return value
 
 
-def player_rows(form: dict, home: bool) -> list[dict]:
-    """Require both the requested side and the provider's edit permission.
+def player_rows(form: dict, home: bool, *, editing: bool = True) -> list[dict]:
+    """Require the requested side and provider permission for reading or editing.
 
     Raises:
         MatchFormError: The form belongs to the wrong side or does not allow editing.
@@ -35,7 +35,10 @@ def player_rows(form: dict, home: bool) -> list[dict]:
     """
     if form.get("IsHome") is not home:
         raise MatchFormError("invalid_response")
-    if form.get("Permissions", {}).get("TeamEditAllowed") is not True:
+    permissions = form.get("Permissions", {})
+    if permissions.get("TeamEditAllowed") is not True and (
+        editing or permissions.get("TeamViewAllowed") is not True
+    ):
         raise MatchFormError("knkv_access_denied")
     return rows_at(form, "MatchFormTeamPersons", "MatchFormTeamPerson")
 

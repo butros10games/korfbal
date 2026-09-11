@@ -1,7 +1,9 @@
 """Account-scoped private form jobs and native tracker integration."""
 
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
+from hashlib import sha256
+import json
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -134,21 +136,39 @@ def enqueue(
             _captain_person_id(locked, access, captain_player_id)
         elif captain_player_id is not None:
             raise MatchFormError("invalid_action")
-        job, created = MatchFormSync.objects.get_or_create(
+        job = MatchFormSync.objects.filter(
             access=access,
             match_id=match_id,
             action=action,
-            defaults={"expected_revision": expected_revision},
-        )
-        if not created and (job.state in {"pending", "running"} or options.automatic):
-            return job
-        # Reopening a page must not continuously refetch or replace a local selection.
-        if (
-            not created
-            and action == "import"
-            and job.updated_at > timezone.now() - timedelta(seconds=60)
+        ).first()
+        if job and (
+            job.state in {"pending", "running"}
+            or (
+                options.automatic
+                and action == "substitutions"
+                and job.expected_revision == expected_revision
+            )
         ):
             return job
+        if (
+            options.automatic
+            and action == "import"
+            and not import_is_due(source.starts_at, timezone.now(), job)
+        ):
+            if job is None:
+                raise MatchFormError("import_not_due")
+            return job
+        if (
+            job
+            and action == "publish"
+            and (
+                job.expected_revision != expected_revision
+                or job.captain_player_id != captain_player_id
+            )
+        ):
+            job.publication_intent = {}
+        job = job or MatchFormSync(access=access, match_id=match_id, action=action)
+        job.automatic = options.automatic
         job.state = "pending"
         job.error_code = ""
         job.attempts = 0
@@ -173,7 +193,7 @@ def import_reserves(
 
     """
     source, tracker, home = scope
-    form_rows = player_rows(form, home)
+    form_rows = player_rows(form, home, editing=False)
     rows = [
         row for row in form_rows if is_player(row) and row.get("OnMatchForm") is True
     ]
@@ -379,6 +399,10 @@ def execute(
     """
     source, tracker, home = resolve_scope(job.access, job.match_id)
     if job.action == "import":
+        if job.automatic and not (
+            source.starts_at - timedelta(hours=1) <= timezone.now() < source.starts_at
+        ):
+            raise MatchFormError("import_not_due")
         form = provider.read("players", source.external_id, home=home)
         import_reserves(job, (source, tracker, home), form, publisher)
         return
@@ -394,6 +418,7 @@ def execute(
             raise MatchFormError("match_not_finished")
         # Snapshot canonical, corrected facts; recomputation may have advanced revision.
         desired = _substitutions(locked, job.access, source, home, details)
+        job.expected_revision = locked.live_revision
     team_id = (source.home_team if home else source.away_team).external_id
     updated = merge_substitutions(
         form,
@@ -406,7 +431,7 @@ def execute(
     job.published_event_ids = sorted(
         set(job.published_event_ids) | {row["ClientEventId"] for row in desired}
     )
-    job.save(update_fields=["published_event_ids"])
+    job.save(update_fields=["published_event_ids", "expected_revision"])
     result = provider.replace("events", source.external_id, form, updated)
     actual = {
         row.get("ClientEventId"): row
@@ -438,6 +463,13 @@ def _publish_selection(
 
     """
     form = provider.read("players", source.external_id, home=home)
+    intent = job.publication_intent
+    if intent and form.get("InputForm", {}).get("CaptainApproved") is True:
+        actual = selection_signature(form, home, allows_base=intent["allows_base"])
+        if _selection_digest(actual) != intent["digest"]:
+            raise MatchFormError("knkv_changed")
+        job.player_count = len(actual)
+        return
     info = provider.read("info", source.external_id)
     allows_base = (
         info.get("Details", {}).get("ClassAttributes", {}).get("AllowsBasePlayers")
@@ -458,11 +490,48 @@ def _publish_selection(
     updated = publish_players(
         draft, home, selected, allows_base=allows_base, captain_id=captain_id
     )
+    expected = selection_signature(updated, home, allows_base=allows_base)
+    job.publication_intent = {
+        "allows_base": allows_base,
+        "digest": _selection_digest(expected),
+    }
+    job.save(update_fields=["publication_intent"])
     result = provider.replace("players", source.external_id, form, updated, home=home)
     if (
-        selection_signature(result, home, allows_base=allows_base)
-        != selection_signature(updated, home, allows_base=allows_base)
+        selection_signature(result, home, allows_base=allows_base) != expected
         or result.get("InputForm", {}).get("CaptainApproved") is not True
     ):
         raise MatchFormError("publication_not_confirmed")
     job.player_count = len(selected)
+
+
+def _selection_digest(signature: set[tuple]) -> str:
+    """Persist a publication fingerprint, never the private provider form."""
+    return sha256(
+        json.dumps(sorted(signature), separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def import_slots(starts_at: datetime) -> tuple[datetime, ...]:
+    """Shared schedule for discovery and abandoned-job recovery, before kickoff."""
+    return tuple(
+        starts_at - timedelta(minutes=minutes)
+        for minutes in (60, 30, 25, 20, 15, 10, 5)
+    )
+
+
+def import_is_due(
+    starts_at: datetime, now: datetime, job: MatchFormSync | None
+) -> bool:
+    """Attempt at minus 60, minus 30, then each five minutes until scheduled start."""
+    slots = import_slots(starts_at)
+    first = slots[0]
+    if not first <= now < starts_at:
+        return False
+    if job is None:
+        return True
+    if job.state in {"pending", "running"}:
+        return False
+    if job.state == "succeeded" and job.player_count > 0 and job.updated_at >= first:
+        return False
+    return any(job.updated_at < slot <= now for slot in slots)

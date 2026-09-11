@@ -38,12 +38,14 @@ class MatchFormSync(models.Model):
     state = models.CharField(max_length=20, default="pending")
     expected_revision = models.PositiveBigIntegerField()
     attempts = models.PositiveSmallIntegerField(default=0)
+    automatic = models.BooleanField(default=False)
     next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(default=timezone.now)
     error_code = models.CharField(max_length=50, blank=True)
     player_count = models.PositiveSmallIntegerField(default=0)
     event_count = models.PositiveSmallIntegerField(default=0)
     published_event_ids = models.JSONField(default=list)
+    publication_intent = models.JSONField(default=dict)
     captain_player = models.ForeignKey(
         "player.Player", null=True, blank=True, on_delete=models.SET_NULL
     )

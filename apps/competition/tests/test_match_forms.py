@@ -2,9 +2,11 @@
 
 from copy import deepcopy
 from datetime import timedelta
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 from rest_framework import status
@@ -17,15 +19,20 @@ from apps.competition.models import (
     Match,
     MatchFormAccess,
     MatchFormSync,
+    Pool,
     SyncLease,
 )
 from apps.competition.services.importer import Importer
 from apps.competition.services.match_form_payloads import (
     merge_substitutions,
+    player_rows,
     publish_players,
 )
-from apps.competition.services.match_form_worker import discover_finished, drain
-from apps.competition.services.match_forms import enqueue, execute
+from apps.competition.services.match_form_worker import (
+    discover,
+    drain,
+)
+from apps.competition.services.match_forms import enqueue, execute, import_is_due
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_rosters import person
@@ -203,8 +210,10 @@ def scope(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("read_only", [False, True])
 def test_import_adds_reserves_once_preserves_manual_divisions_and_revision(
     scope: tuple[Match, MatchData, MatchFormAccess],
+    read_only: bool,
 ) -> None:
     """Import adds reserves once preserves manual divisions and revision."""
     source, tracker, access = scope
@@ -222,6 +231,10 @@ def test_import_adds_reserves_once_preserves_manual_divisions_and_revision(
     job = enqueue(access, source.local_match_id, "import", tracker.live_revision)
     provider = Mock()
     provider.read.return_value = form()
+    provider.read.return_value["Permissions"] = {
+        "TeamEditAllowed": not read_only,
+        "TeamViewAllowed": True,
+    }
     provider.read.return_value["MatchFormTeamPersons"]["MatchFormTeamPerson"][0][
         "Captain"
     ] = True
@@ -388,18 +401,18 @@ def test_auto_discovery_is_opt_in_a_category_and_runs_once(
         access.team = source.local_match.away_team
     access.auto_substitutions = False
     access.save()
-    discover_finished()
+    discover()
     assert not MatchFormSync.objects.exists()
     access.auto_substitutions = True
     access.save()
     source.pool.competition_class.category = "b"
     source.pool.competition_class.save()
-    discover_finished()
+    discover()
     assert not MatchFormSync.objects.exists()
     source.pool.competition_class.category = "a"
     source.pool.competition_class.save()
-    discover_finished()
-    discover_finished()
+    discover()
+    discover()
     assert MatchFormSync.objects.filter(action="substitutions").count() == 1
 
 
@@ -743,3 +756,375 @@ def test_publication_rejects_invalid_selection_before_provider_write(
     with pytest.raises(MatchFormError, match="players_not_linked"):
         execute(job, provider, Mock())
     provider.replace.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("changed_upstream", [False, True])
+def test_publication_timeout_recovers_after_submission_locks_and_match_starts(
+    captain_scope: tuple[Match, MatchData, MatchFormAccess, Player],
+    changed_upstream: bool,
+) -> None:
+    """A committed submission is recognized from durable intent, without another PUT."""
+    source, tracker, access, player = captain_scope
+    job = enqueue(
+        access,
+        source.local_match_id,
+        "publish",
+        tracker.live_revision,
+        options=MatchFormOptions(captain_player_id=player.pk),
+    )
+    provider = Mock()
+    current = form()
+    provider.read.side_effect = lambda resource, *_args, **_kwargs: (
+        deepcopy(current)
+        if resource == "players"
+        else {"Details": {"ClassAttributes": {"AllowsBasePlayers": True}}}
+    )
+
+    def commit_then_timeout(
+        _resource: str, _match: str, _original: dict, updated: dict, **_kwargs: object
+    ) -> dict:
+        current.clear()
+        current.update(deepcopy(updated))
+        current["Permissions"] = {"TeamEditAllowed": False, "TeamViewAllowed": True}
+        raise MatchFormError("connection_failed")
+
+    provider.replace.side_effect = commit_then_timeout
+    with pytest.raises(MatchFormError, match="connection_failed"):
+        execute(job, provider, Mock())
+    job = MatchFormSync.objects.get(pk=job.pk)
+    assert set(job.publication_intent) == {"digest", "allows_base"}
+    MatchData.objects.filter(pk=tracker.pk).update(status="active", live_revision=999)
+    if changed_upstream:
+        current["MatchFormTeamPersons"]["MatchFormTeamPerson"][0]["Captain"] = False
+        with pytest.raises(MatchFormError, match="knkv_changed"):
+            execute(job, provider, Mock())
+    else:
+        execute(job, provider, Mock())
+        assert job.player_count == 1
+    assert provider.replace.call_count == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("state", ["succeeded", "failed", "pending", "running"])
+def test_automatic_corrections_requeue_only_terminal_jobs_on_a_new_revision(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+    state: str,
+) -> None:
+    """Retry new revisions once; preserve active jobs and unchanged failures."""
+    _source, tracker, _access = finished_scope
+    discover()
+    job = MatchFormSync.objects.get(action="substitutions")
+    job.state = state
+    job.published_event_ids = ["previous-owned-event"]
+    job.save()
+    discover()
+    job.refresh_from_db()
+    assert job.state == state
+    MatchData.objects.filter(pk=tracker.pk).update(
+        live_revision=tracker.live_revision + 1
+    )
+    discover()
+    job.refresh_from_db()
+    assert job.state == ("pending" if state in {"succeeded", "failed"} else state)
+    assert job.expected_revision == tracker.live_revision + (
+        state in {"succeeded", "failed"}
+    )
+    assert job.published_event_ids == ["previous-owned-event"]
+
+
+@pytest.mark.parametrize("permissions", [{}, {"TeamViewAllowed": False}])
+def test_import_requires_at_least_provider_view_permission(permissions: dict) -> None:
+    """Read-only import must not bypass provider access control."""
+    payload = form()
+    payload["Permissions"] = permissions
+    with pytest.raises(MatchFormError, match="knkv_access_denied"):
+        player_rows(payload, True, editing=False)
+
+
+@pytest.mark.parametrize(
+    ("minutes_before", "last_attempt", "due"),
+    [
+        (61, None, False),
+        (60, None, True),
+        (45, None, True),
+        (59, 60, False),
+        (31, 60, False),
+        (30, 60, True),
+        (29, 30, False),
+        (26, 30, False),
+        (25, 30, True),
+        (20, 25, True),
+        (5, 10, True),
+        (1, 5, False),
+        (0, 5, False),
+    ],
+)
+def test_import_schedule_boundaries(
+    minutes_before: int, last_attempt: int | None, due: bool
+) -> None:
+    """Late discovery catches up once; retries follow match-relative slots."""
+    start = timezone.now()
+    job = (
+        None
+        if last_attempt is None
+        else MatchFormSync(
+            state="failed",
+            updated_at=start - timedelta(minutes=last_attempt),
+        )
+    )
+    assert import_is_due(start, start - timedelta(minutes=minutes_before), job) is due
+
+
+@pytest.mark.django_db
+def test_scheduled_imports_retry_empty_results_then_stop_after_players_arrive(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """The server schedules imports without browser requests and stops on success."""
+    source, _tracker, _access = scope
+    start = timezone.now() + timedelta(hours=1)
+    source.starts_at = start
+    source.save()
+    first_minute, success_minute = 60, 25
+    for minute, should_queue in [
+        (60, True),
+        (40, False),
+        (30, True),
+        (26, False),
+        (25, True),
+        (20, False),
+    ]:
+        now = start - timedelta(minutes=minute)
+        with patch("django.utils.timezone.now", return_value=now):
+            discover()
+        job = MatchFormSync.objects.get(action="import")
+        assert (job.state == "pending") is should_queue
+        assert job.automatic is True
+        if should_queue:
+            job.state = "failed" if minute == first_minute else "succeeded"
+            job.player_count = 12 if minute == success_minute else 0
+            job.updated_at = now
+            job.save()
+    assert MatchFormSync.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_scheduled_import_expiring_in_queue_does_not_contact_knkv(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A delayed job cannot import after the scheduled kickoff."""
+    source, tracker, access = scope
+    source.starts_at = timezone.now() + timedelta(minutes=30)
+    source.save()
+    job = enqueue(
+        access,
+        source.local_match_id,
+        "import",
+        tracker.live_revision,
+        options=MatchFormOptions(automatic=True),
+    )
+    provider = Mock()
+    with (
+        patch("django.utils.timezone.now", return_value=source.starts_at),
+        pytest.raises(MatchFormError, match="import_not_due"),
+    ):
+        execute(job, provider, Mock())
+    provider.read.assert_not_called()
+
+
+@pytest.mark.parametrize("automatic", [True, False])
+@pytest.mark.django_db
+def test_scheduled_import_failure_uses_schedule_instead_of_transport_retry(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+    automatic: bool,
+) -> None:
+    """Scheduled failures await the next slot; manual requests retain retries."""
+    source, tracker, access = scope
+    job = enqueue(access, source.local_match_id, "import", tracker.live_revision)
+    job.automatic = automatic
+    job.save()
+    source.starts_at = timezone.now() + timedelta(minutes=30)
+    source.save()
+    provider = Mock()
+    provider.read.side_effect = MatchFormError("connection_failed")
+    drain(lambda _gate: provider, Mock())
+    job.refresh_from_db()
+    assert job.state == ("failed" if automatic else "pending")
+
+
+@pytest.mark.django_db
+def test_manual_import_can_repeat_without_page_refresh_cooldown(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """Explicit requests remain available immediately after a completed import."""
+    source, tracker, access = scope
+    job = enqueue(access, source.local_match_id, "import", tracker.live_revision)
+    job.state = "succeeded"
+    job.save()
+    repeated = enqueue(access, source.local_match_id, "import", tracker.live_revision)
+    assert repeated.state == "pending"
+    assert not repeated.automatic
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("minutes_before", "retry_before"), [(60, 30), (45, 30), (30, 25), (26, 25), (5, 0)]
+)
+def test_abandoned_import_waits_until_the_next_slot(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+    minutes_before: int,
+    retry_before: int,
+) -> None:
+    """A crash waits for the next slot; the final slot expires at kickoff."""
+    source, tracker, access = scope
+    now = timezone.now()
+    source.starts_at = now + timedelta(minutes=minutes_before)
+    source.save()
+    provider = Mock()
+    provider.read.side_effect = KeyboardInterrupt
+    with patch("django.utils.timezone.now", return_value=now):
+        job = enqueue(
+            access,
+            source.local_match_id,
+            "import",
+            tracker.live_revision,
+            options=MatchFormOptions(automatic=True),
+        )
+        with pytest.raises(KeyboardInterrupt):
+            drain(lambda _gate: provider, Mock())
+    job.refresh_from_db()
+    assert job.state == "running"
+    assert job.next_attempt_at == source.starts_at - timedelta(minutes=retry_before)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("minutes_before", [61, 0])
+def test_automatic_enqueue_outside_window_leaves_no_job(
+    scope: tuple[Match, MatchData, MatchFormAccess], minutes_before: int
+) -> None:
+    """Enqueue itself enforces the window without relying on discovery filters."""
+    source, tracker, access = scope
+    now = timezone.now()
+    source.starts_at = now + timedelta(minutes=minutes_before)
+    source.save()
+    with (
+        patch("django.utils.timezone.now", return_value=now),
+        pytest.raises(MatchFormError, match="import_not_due"),
+    ):
+        enqueue(
+            access,
+            source.local_match_id,
+            "import",
+            tracker.live_revision,
+            options=MatchFormOptions(automatic=True),
+        )
+    assert not MatchFormSync.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("enabled", [True, False])
+def test_discovery_handles_upcoming_and_finished_matches_for_one_account(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess], enabled: bool
+) -> None:
+    """One discovery pass handles both actions, only for enabled accounts."""
+    finished, _tracker, access = finished_scope
+    access.enabled = enabled
+    access.save()
+    payload = match_payload()
+    payload.update(
+        PublicMatchId="M2",
+        MatchDateTime=(timezone.now() + timedelta(minutes=45)).isoformat(),
+        Status="SCHEDULED",
+    )
+    payload["Pool"] = {**payload["Pool"], "PoolId": 11}
+    Importer(finished.season, timezone.now()).match(payload, result=False)
+    publish_catalogue()
+    upcoming = Match.objects.get(external_id="M2")
+    MatchData.objects.update_or_create(
+        match_link=upcoming.local_match, defaults={"status": "upcoming"}
+    )
+    discover()
+    assert set(MatchFormSync.objects.values_list("match_id", "action")) == (
+        {
+            (finished.local_match_id, "substitutions"),
+            (upcoming.local_match_id, "import"),
+        }
+        if enabled
+        else set()
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ["import", "substitutions"])
+@pytest.mark.parametrize("match_count", [1, 8])
+def test_idle_discovery_query_count_does_not_grow_with_matches(
+    finished_scope: tuple[Match, MatchData, MatchFormAccess],
+    action: str,
+    match_count: int,
+) -> None:
+    """Idle polling reads receipts in bulk and does not lock settled matches."""
+    source, _tracker, access = finished_scope
+    now = timezone.now()
+    start = (
+        now + timedelta(minutes=45) if action == "import" else now - timedelta(hours=2)
+    )
+    source.starts_at = start
+    source.save()
+    for index in range(1, match_count):
+        payload = match_payload()
+        payload.update(
+            PublicMatchId=f"M{index + 1}",
+            MatchDateTime=(start - timedelta(minutes=index)).isoformat(),
+        )
+        payload["Pool"] = {**payload["Pool"], "PoolId": 11}
+        Importer(source.season, now).match(payload, result=False)
+    publish_catalogue()
+    Pool.objects.filter(external_id="11").update(
+        competition_class_id=source.pool.competition_class_id
+    )
+    MatchData.objects.update(status="upcoming" if action == "import" else "finished")
+    trackers = MatchData.objects.all()
+    assert trackers.count() == match_count
+    MatchFormSync.objects.bulk_create([
+        MatchFormSync(
+            access=access,
+            match_id=tracker.match_link_id,
+            action=action,
+            state="succeeded",
+            player_count=12,
+            expected_revision=tracker.live_revision,
+            updated_at=now,
+        )
+        for tracker in trackers
+    ])
+    with CaptureQueriesContext(connection) as queries:
+        discover()
+    expected_queries = 3  # Account bindings, candidate matches, and their receipts.
+    assert len(queries) == expected_queries
+    assert all(query["sql"].lstrip().upper().startswith("SELECT") for query in queries)
+    assert all("FOR UPDATE" not in query["sql"].upper() for query in queries)
+
+
+@pytest.mark.django_db
+def test_discovery_does_not_use_another_teams_receipt(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A settled opponent receipt cannot suppress this team's import."""
+    source, tracker, access = scope
+    source.starts_at = timezone.now() + timedelta(minutes=30)
+    source.save()
+    opponent = MatchFormAccess.objects.create(
+        user=access.user, team=source.local_match.away_team, enabled=False
+    )
+    MatchFormSync.objects.create(
+        access=opponent,
+        match_id=source.local_match_id,
+        action="import",
+        state="succeeded",
+        player_count=12,
+        expected_revision=tracker.live_revision,
+    )
+    discover()
+    own_job = MatchFormSync.objects.get(access=access)
+    assert own_job.state == "pending"
+    assert own_job.action == "import"

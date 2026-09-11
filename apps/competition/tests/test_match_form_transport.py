@@ -99,3 +99,55 @@ def test_provider_cooldown_is_retained_and_timeout_is_ambiguous() -> None:
     client.session.request.side_effect = requests.Timeout("private transport detail")
     with pytest.raises(MatchFormError, match="connection_failed"):
         SportlinkMatchForms(client, Mock()).read("events", "M1")
+
+
+@pytest.mark.parametrize("http_status", [200, 400, 409, 412, 422])
+@pytest.mark.parametrize(
+    ("violations", "code"),
+    [
+        ({"TEAM_ALREADY_APPROVED": "private details"}, "team_already_approved"),
+        ({"MULTIPLE_INSERT": "private details"}, "duplicate_player"),
+        ({"WARNING_ELIGIBILITY": "private details"}, "knkv_validation_warning"),
+        (
+            {"WARNING_ELIGIBILITY": "private", "INVALID_TEAM": "private"},
+            "knkv_validation_rejected",
+        ),
+    ],
+)
+def test_condition_errors_are_actionable_without_exposing_provider_text(
+    http_status: int,
+    violations: dict,
+    code: str,
+) -> None:
+    """Recognize Violations even on HTTP 200 without accepting warnings."""
+    client = SportlinkClient("synthetic", user_agent="synthetic")
+    client.session.request = Mock(
+        return_value=response(
+            {"PublicMatchId": "M1", "Violations": violations},
+            status=http_status,
+        )
+    )
+    with pytest.raises(MatchFormError, match=code) as error:
+        SportlinkMatchForms(client, Mock()).read("players", "M1", home=True)
+    assert "private" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (200, "invalid_response"),
+        (400, "knkv_unavailable"),
+        (409, "knkv_changed"),
+        (412, "knkv_changed"),
+        (422, "knkv_unavailable"),
+        (500, "knkv_unavailable"),
+    ],
+)
+def test_malformed_json_preserves_http_error(status: int, code: str) -> None:
+    """An unreadable body must not hide the provider's conflict status."""
+    client = SportlinkClient("synthetic", user_agent="synthetic")
+    malformed = response({}, status=status)
+    malformed.json.side_effect = ValueError("private response")
+    client.session.request = Mock(return_value=malformed)
+    with pytest.raises(MatchFormError, match=code):
+        SportlinkMatchForms(client, Mock()).read("players", "M1", home=True)

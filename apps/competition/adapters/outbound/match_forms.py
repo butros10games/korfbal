@@ -1,5 +1,6 @@
 """Fixed-host KNKV form transport; credentials stay in the worker session."""
 
+from contextlib import suppress
 from typing import Any
 
 import requests
@@ -153,14 +154,15 @@ def _response_body(
         )
     if response.status_code in {401, 403}:
         raise MatchFormError("knkv_access_denied")
+    data = None
+    if response.status_code in {200, 400, 409, 412, 422}:
+        with suppress(ValueError):
+            data = response.json()
+        _check_violations(data)
     if response.status_code in {409, 412}:
         raise MatchFormError("knkv_changed")
     if response.status_code != requests.codes.ok:
         raise MatchFormError("knkv_unavailable")
-    try:
-        data = response.json()
-    except ValueError:
-        raise MatchFormError("invalid_response") from None
     if (
         not isinstance(data, dict)
         or data.get("Error")
@@ -168,3 +170,24 @@ def _response_body(
     ):
         raise MatchFormError("invalid_response")
     return data
+
+
+def _check_violations(data: object) -> None:
+    """Translate KNKV condition errors without retaining arbitrary response text.
+
+    Raises:
+        MatchFormError: KNKV rejected the form or requires warning review.
+
+    """
+    violations = data.get("Violations") if isinstance(data, dict) else None
+    if not isinstance(violations, dict) or not violations:
+        return
+    if "TEAM_ALREADY_APPROVED" in violations:
+        code = "team_already_approved"
+    elif "MULTIPLE_INSERT" in violations:
+        code = "duplicate_player"
+    elif all(isinstance(key, str) and key.startswith("WARNING") for key in violations):
+        code = "knkv_validation_warning"
+    else:
+        code = "knkv_validation_rejected"
+    raise MatchFormError(code)
