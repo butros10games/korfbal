@@ -71,6 +71,9 @@ def test_monitor_permissions_filters_and_no_provider_requests(season: Season) ->
     assert client.get(url).status_code == status.HTTP_302_FOUND
     user = get_user_model().objects.create_user(username="monitor", is_staff=True)
     client.force_login(user)
+    session = client.session
+    session["bg_auth_mfa_verified"] = user.get_session_auth_hash()
+    session.save()
     assert client.get(url).status_code == status.HTTP_403_FORBIDDEN
     user.user_permissions.add(
         *Permission.objects.filter(
@@ -209,3 +212,34 @@ def test_initial_import_is_not_a_measured_result_delay(season: Season) -> None:
     assert metrics["unmeasured_final_results"] == 1
     assert metrics["measured_final_results"] == 0
     assert metrics["measured_delay_seconds_total"] == 0
+
+
+def test_missing_results_and_interrupted_runs_are_flagged(season: Season) -> None:
+    """Reconciliation flags survive a later healthy scheduler heartbeat."""
+    Importer(season, NOW).apply(
+        "club_results", "CT1", {"MatchResult": [match_payload()]}
+    )
+    Match.objects.update(
+        status="SCHEDULED",
+        starts_at=NOW - timedelta(hours=4),
+        home_score=None,
+        away_score=None,
+        results_checked_at=None,
+        results_attempted_at=NOW,
+        missing_result_attempts=3,
+    )
+    SyncRun.objects.create(
+        season=season,
+        started_at=NOW - timedelta(hours=1),
+        finished_at=NOW,
+        status="interrupted",
+    )
+    SyncRun.objects.create(
+        season=season, started_at=NOW, finished_at=NOW, status="idle"
+    )
+    with patch("apps.competition.queries.monitoring.timezone.now", return_value=NOW):
+        data = monitoring_dashboard(season, NOW.date())
+    assert any("missing from checked provider" in alert for alert in data["alerts"])
+    assert any("interrupted" in alert for alert in data["alerts"])
+    assert data["overdue"][0]["checked_at"] is None
+    assert data["overdue"][0]["attempted_at"] == NOW

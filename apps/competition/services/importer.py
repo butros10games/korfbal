@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -38,6 +39,9 @@ from apps.competition.services.player_photos import cache_photo
 from apps.competition.services.rosters import import_roster
 from apps.competition.services.seasons import configure_seasons
 from apps.schedule.models import Season
+
+
+logger = logging.getLogger(__name__)
 
 
 STANDING_FIELDS = (
@@ -78,6 +82,16 @@ def enqueue(season: Season, kind: str, source_id: str = "") -> None:
         source_id=source_id,
         defaults={"next_sync_at": timezone.now()},
     )
+
+
+def _self_fixture(data: dict[str, Any]) -> bool:
+    """Reject provider self-fixtures before identity writes or coverage tracking."""
+    same_team = str(data["HomeTeam"]["PublicTeamId"]) == str(
+        data["AwayTeam"]["PublicTeamId"]
+    )
+    if same_team:
+        logger.warning("Skipping provider fixture with identical home/away teams")
+    return same_team
 
 
 class Importer:
@@ -197,11 +211,11 @@ class Importer:
             <= self.season.end_date
         ):
             return
-        if self._repeated_match(data, starts_at, result=result):
+        if _self_fixture(data) or self._repeated_match(data, starts_at, result=result):
             return
         home = self.team(data["HomeTeam"])
         away = self.team(data["AwayTeam"])
-        if home == away or home.sport != away.sport:
+        if home.sport != away.sport:
             raise ValueError("Inconsistent match teams")
         values = {
             "home_team_id": home.pk,

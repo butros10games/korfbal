@@ -9,6 +9,7 @@ from uuid import UUID
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import Group, Permission
 from django.contrib.staticfiles import finders
 from django.db import connection, models
@@ -32,11 +33,21 @@ AUTOCOMPLETE_PAGE_SIZE = 20
 pytestmark = pytest.mark.django_db
 
 
+def login_verified(client: Client, user: AbstractBaseUser) -> None:
+    """Exercise administrative permissions with the required verified session."""
+    client.force_login(user)
+    session = client.session
+    session["bg_auth_mfa_verified"] = user.get_session_auth_hash()
+    session.save()
+
+
 @pytest.fixture
 def operator() -> Client:
     """Authenticate a synthetic administrator without hashing an unused password."""
     client = Client()
-    client.force_login(get_user_model().objects.create_superuser(username="operator"))
+    login_verified(
+        client, get_user_model().objects.create_superuser(username="operator")
+    )
     return client
 
 
@@ -119,7 +130,7 @@ def test_match_autocomplete_is_bounded_and_checks_permissions(
     assert len(response.json()["results"]) == AUTOCOMPLETE_PAGE_SIZE
     assert response.json()["pagination"]["more"] is True
     staff = get_user_model().objects.create_user(username="restricted", is_staff=True)
-    operator.force_login(staff)
+    login_verified(operator, staff)
     assert (
         operator.get(reverse("admin:autocomplete"), query).status_code
         == HTTPStatus.FORBIDDEN
@@ -164,7 +175,7 @@ def test_permission_aware_navigation(operator: Client) -> None:
             content_type__app_label="schedule", codename="view_match"
         )
     )
-    operator.force_login(staff)
+    login_verified(operator, staff)
     response = operator.get(reverse("admin:index"))
     assert response.status_code == HTTPStatus.OK
     assert b"Polling monitor" not in response.content

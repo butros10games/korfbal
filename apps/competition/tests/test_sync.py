@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 import json
@@ -13,10 +14,11 @@ import pytest
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
 from apps.competition.application.ports import FetchResult
-from apps.competition.models import Club, Match, Pool, SyncLease, SyncResource
+from apps.competition.models import Club, Match, Pool, SyncLease, SyncResource, Team
 from apps.competition.services.importer import Importer, enqueue
+from apps.competition.services.polling import PollJob
 from apps.competition.services.publishing import publish_catalogue
-from apps.competition.services.sync import preview_sync, sync
+from apps.competition.services.sync import checkpoint, preview_sync, sync
 from apps.competition.services.traffic import TrafficGate
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
@@ -81,6 +83,69 @@ def test_malformed_payload_does_not_checkpoint(season: Season) -> None:
     assert result["failed"] == 1
     assert SyncResource.objects.get().fetched_at is None
     assert not Club.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["club_results", "club_program"])
+@pytest.mark.parametrize("self_fixture_first", [True, False])
+def test_self_fixture_does_not_exhaust_shared_feed(
+    season: Season, kind: str, self_fixture_first: bool
+) -> None:
+    """Import valid neighbours without publishing or refreshing self-fixtures."""
+    valid = match_payload()
+    skipped = deepcopy(valid)
+    skipped["PublicMatchId"] = "self-fixture"
+    skipped["HomeTeam"]["PublicTeamId"] = "self-team"
+    skipped["AwayTeam"] = deepcopy(skipped["HomeTeam"])
+    rows = [skipped, valid] if self_fixture_first else [valid, skipped]
+    payload = (
+        {"MatchResult": rows}
+        if kind == "club_results"
+        else {"ProgramItemMatchClub": [{"Match": row} for row in rows]}
+    )
+    resource = SyncResource.objects.create(
+        season=season,
+        kind=kind,
+        source_id="CT1",
+        failures=5,
+        next_sync_at=timezone.now(),
+        last_error="invalid_response_or_transport",
+    )
+    job = PollJob(resource, set(), 1)
+    assert checkpoint(resource, FetchResult(200, payload, '"fresh"'), job)
+    resource.refresh_from_db()
+    match = Match.objects.get()
+    assert match.external_id == "M1"
+    assert not Team.objects.filter(external_id="self-team").exists()
+    assert resource.failures == 0
+    assert not resource.last_error
+    assert resource.match_ids == [match.pk]
+    assert job.covered_matches == {match.pk}
+    assert checkpoint(resource, FetchResult(304), PollJob(resource, set(), 1))
+    assert Match.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_different_sports_still_reject_shared_feed(season: Season) -> None:
+    """The observed self-fixture exception must not relax other identity checks."""
+    invalid = match_payload()
+    invalid["AwayTeam"]["SportId"] = "different-sport"
+    resource = SyncResource.objects.create(
+        season=season,
+        kind="club_results",
+        source_id="CT1",
+        next_sync_at=timezone.now(),
+    )
+    with pytest.raises(ValueError, match="Inconsistent match teams"):
+        checkpoint(
+            resource,
+            FetchResult(200, {"MatchResult": [invalid]}),
+            PollJob(resource, set(), 1),
+        )
+    resource.refresh_from_db()
+    assert resource.fetched_at is None
+    assert not Match.objects.exists()
+    assert not Team.objects.exists()
 
 
 @pytest.mark.django_db

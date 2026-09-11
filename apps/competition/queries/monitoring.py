@@ -91,6 +91,8 @@ def _match_day(season: Season, day: date, now: datetime) -> dict[str, Any]:
                 "starts_at": row["starts_at"],
                 "status": row["status"],
                 "checked_at": row["results_checked_at"],
+                "attempted_at": row["results_attempted_at"],
+                "missing_attempts": row["missing_result_attempts"],
                 "minutes": int((now - finish).total_seconds() / 60),
             })
     overdue.sort(key=itemgetter("minutes"), reverse=True)
@@ -159,7 +161,7 @@ def _run_history(runs: QuerySet[SyncRun], day: date) -> dict[str, Any]:
         "counters": dict(counters),
         "history_truncated": truncated,
         "history_incomplete": any(
-            run.status in {"error", "running"} for run in history
+            run.status in {"error", "running", "interrupted"} for run in history
         ),
         "delay_mean": delay_mean,
         "delay_max": delay_max,
@@ -215,6 +217,26 @@ def _health_alerts(
         or latest.summary.get("reauth_required")
     ):
         alerts.append("The latest run failed or needs a renewed provider session.")
+    if SyncRun.objects.filter(
+        season=season, status="interrupted", finished_at__gte=now - timedelta(days=1)
+    ).exists():
+        alerts.append(
+            "An import was interrupted in the last day. "
+            "Review its saved progress and diagnostics."
+        )
+    missing = (
+        Match.objects
+        .filter(season=season, missing_result_attempts__gt=0, starts_at__lt=now)
+        .exclude(FINAL)
+        .exclude(status__in=EXCLUDED)
+        .count()
+    )
+    if missing:
+        alerts.append(
+            f"Matches missing from checked provider result feeds: {missing}. "
+            "Retries are paced separately. Review unresolved matches "
+            "for reconciliation."
+        )
     if exhausted:
         alerts.append(
             f"{exhausted} feeds exhausted their retries "

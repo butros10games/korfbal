@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
 from apps.competition.composition import competition_client
+from apps.competition.services.monitoring import observe_run, outcome
 from apps.competition.services.sync import preview_sync, sync
 from apps.schedule.models import Season
 
@@ -72,7 +73,12 @@ class Command(BaseCommand):
             return
         client = self._client(options)
         try:
-            summary = sync(season, client, budget=int(str(options["max_requests"])))
+
+            def run() -> dict[str, object]:
+                result = sync(season, client, budget=int(str(options["max_requests"])))
+                return {**result, "status": outcome(result)}
+
+            summary = observe_run(season, run)
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
         finally:
@@ -82,7 +88,7 @@ class Command(BaseCommand):
             raise CommandError(
                 "Sign in again and replace the session file; import progress is saved"
             )
-        if summary["failed"]:
+        if summary["failed"] or summary["exhausted"]:
             raise CommandError(
                 "Some feeds failed; inspect competition SyncResource.last_error "
                 "and retry later"

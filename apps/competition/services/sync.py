@@ -25,6 +25,7 @@ from apps.competition.domain.timing import expected_finish
 from apps.competition.models import Match, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.match_details import DETAIL_FIELDS
+from apps.competition.services.monitoring import bind_run_lease, progress
 from apps.competition.services.polling import (
     MetadataPlanner,
     PollJob,
@@ -75,7 +76,7 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
         counts[kind] = counts.get(kind, 0) + 1
     total = sum(counts.values())
     overdue = [
-        next_result_check(row, planner.now)
+        next_result_check(row, planner.now, include_attempts=False)
         for row in planner.rows
         if expected_finish(row) <= planner.now
         and row["status"] not in {"CANCELLED", "WITHDRAWN", "POSTPONED"}
@@ -84,7 +85,7 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
             and row["home_score"] is not None
             and row["away_score"] is not None
         )
-        and next_result_check(row, planner.now) <= planner.now
+        and next_result_check(row, planner.now, include_attempts=False) <= planner.now
     ]
     schedules = [
         row for row in planner.rows if row["status"] not in {"FINAL", "WITHDRAWN"}
@@ -109,6 +110,9 @@ def preview_sync(season: Season, *, budget: int | None = 100) -> dict[str, objec
         "batch_feed_requests_upper_bound": min(budget, total) if budget else total,
         "by_kind": counts,
         "overdue_pending_matches": len(overdue),
+        "missing_provider_results": sum(
+            row["missing_result_attempts"] > 0 for row in planner.rows
+        ),
         "oldest_result_check_overdue_seconds": max(
             (int((planner.now - due).total_seconds()) for due in overdue),
             default=0,
@@ -270,11 +274,13 @@ def _sync(
     }
     cooldown = 0
     try:
+        bind_run_lease(owner)
         if client_factory is not None:
             client = client_factory()
         assert client is not None
         if not options.details_only:
             enqueue(season, "clubs")
+        progress("planning", summary)
         planner = (
             MetadataPlanner(season, timezone.now())
             if options.details_only
@@ -289,6 +295,7 @@ def _sync(
         summary["request_spacing_seconds"] = gate.spacing
         cooldown = _drain(planner, client, gate, budget, summary)
         if summary["updated"] and not options.details_only:
+            progress("publishing", summary)
             publication = publish_catalogue(lease_owner=owner)
             summary["publication_blocked"] = len(publication["blocked"])
     finally:
@@ -299,16 +306,18 @@ def _sync(
             SyncLease.objects.filter(pk=lease.pk, owner=owner).update(
                 owner=None, expires_at=timezone.now() + timedelta(seconds=cooldown)
             )
+    resources = SyncResource.objects.filter(season=season)
+    if options.details_only:
+        resources = resources.filter(kind__in=DETAIL_FIELDS)
     summary["pending"] = (
-        SyncResource.objects
-        .filter(season=season, failures__lt=MAX_FEED_FAILURES)
+        resources
+        .filter(failures__lt=MAX_FEED_FAILURES)
         .filter(Q(fetched_at__isnull=True) | Q(next_sync_at__lte=timezone.now()))
         .count()
     )
-    summary["exhausted"] = SyncResource.objects.filter(
-        season=season, failures__gte=MAX_FEED_FAILURES
-    ).count()
+    summary["exhausted"] = resources.filter(failures__gte=MAX_FEED_FAILURES).count()
     summary["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+    progress("finished", summary)
     return summary
 
 
@@ -344,6 +353,8 @@ def _drain(
             cooldown = max(0, int((exc.retry_at - timezone.now()).total_seconds()) + 1)
             break
         finally:
+            summary["http_requests"] = gate.requests
+            progress(None, summary)
             key = f"http_requests_{job.resource.kind}"
             summary[key] = summary.get(key, 0) + gate.requests - before_requests
         planner.completed(job, checked=checked)
@@ -351,6 +362,8 @@ def _drain(
             break
     if budget is not None and gate.requests >= budget and planner.candidate_jobs():
         summary["deferred"] = 1
+    if not isinstance(planner, MetadataPlanner):
+        planner.record_missing_results()
     summary["http_requests"] = gate.requests
     summary["matches_checked"] = len(planner.checked)
     summary["schedules_checked"] = len(planner.schedule_checked)
@@ -366,6 +379,8 @@ def _fetch_one(
     if resource.failures >= MAX_FEED_FAILURES:
         return 0, False
     checked = False
+    stage = "fetching"
+    progress(stage, summary, resource=resource)
     try:
         result = client.fetch(resource, gate)
         if result.status == HTTP_RATE_LIMIT:
@@ -373,6 +388,7 @@ def _fetch_one(
         if result.status not in {HTTP_OK, HTTP_NOT_MODIFIED}:
             record_failure(resource, f"http_{result.status}", result.retry_after)
             summary["failed"] += 1
+            progress(stage, summary, resource=resource, code=f"http_{result.status}")
             if result.status == HTTP_RATE_LIMIT or (
                 result.status in AUTH_ERRORS
                 and resource.kind not in {"club_logo", "player_photo"}
@@ -383,12 +399,15 @@ def _fetch_one(
             ):
                 return result.retry_after, False
             return 0, False
+        stage = "checkpoint"
+        progress(stage, summary, resource=resource)
         checked = checkpoint(resource, result, job)
         summary["unchanged" if result.status == HTTP_NOT_MODIFIED else "updated"] += 1
-    except AuthenticationRequiredError:
+    except AuthenticationRequiredError as exc:
         record_failure(resource, "reauth_required")
         summary["failed"] += 1
         summary["reauth_required"] += 1
+        progress(stage, summary, resource=resource, code="reauth_required", error=exc)
         return 60, False
     except TransportError as exc:
         if isinstance(exc, ProviderCooldownError):
@@ -401,8 +420,15 @@ def _fetch_one(
         )
         record_failure(resource, code, delay)
         summary["failed"] += 1
+        progress(stage, summary, resource=resource, code=code, error=exc)
         return delay, False
-    except (ValueError, KeyError, TypeError):
-        record_failure(resource, "invalid_response_or_transport")
+    except (ValueError, KeyError, TypeError) as exc:
+        code = (
+            "invalid_response"
+            if stage == "checkpoint"
+            else "invalid_transport_response"
+        )
+        record_failure(resource, code)
         summary["failed"] += 1
+        progress(stage, summary, resource=resource, code=code, error=exc)
     return 0, checked

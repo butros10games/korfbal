@@ -8,13 +8,9 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
 from apps.game_tracker.models import (
-    MatchData,
-    MatchPart,
     PlayerMatchImpact,
     PlayerMatchImpactBreakdown,
     Shot,
@@ -26,10 +22,12 @@ from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows_with_breakdowns,
     round_js_1dp,
 )
-from apps.game_tracker.tests.tracker_test_helpers import create_tracker_player
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_tracker_match,
+    create_tracker_player,
+)
 from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
 
 
 FIXTURES_DIR = (
@@ -84,31 +82,11 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
     expected = impacts[0]
     assert isinstance(expected, dict)
 
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - impact",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
-    )
+    tracker = create_tracker_match(prefix="Impact", start_offset=-timedelta(minutes=30))
+    match_data = tracker.match_data
+    part = create_match_part(match_data=match_data, start_offset=-timedelta(minutes=10))
+    part_start = part.start_time
+    assert part_start is not None
 
     player = create_tracker_player(username="impact_shooter")
     Player.objects.filter(pk=player.pk).update(
@@ -120,7 +98,7 @@ def test_compute_match_impact_rows_missed_shot_penalizes_shooter() -> None:
         player=player,
         match_data=match_data,
         match_part=part,
-        team=home_team,
+        team=tracker.home_team,
         scored=False,
         time=part_start + timedelta(minutes=1),
     )
@@ -153,31 +131,11 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category(
     algorithm_version: str, expected_score: Decimal, category: str
 ) -> None:
     """Breakdown should explain negative impact from missed shots."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - impact breakdown",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
-    )
+    tracker = create_tracker_match(prefix="Impact", start_offset=-timedelta(minutes=30))
+    match_data = tracker.match_data
+    part = create_match_part(match_data=match_data, start_offset=-timedelta(minutes=10))
+    part_start = part.start_time
+    assert part_start is not None
 
     player = create_tracker_player(username="impact_breakdown_shooter")
 
@@ -185,7 +143,7 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category(
         player=player,
         match_data=match_data,
         match_part=part,
-        team=home_team,
+        team=tracker.home_team,
         scored=False,
         time=part_start + timedelta(minutes=1),
     )
@@ -215,34 +173,14 @@ def test_compute_match_impact_breakdown_includes_missed_shot_category(
 @pytest.mark.django_db
 def test_persist_match_impact_rows_with_breakdowns_creates_db_rows() -> None:
     """Persisting with breakdowns should create PlayerMatchImpactBreakdown rows."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - impact persist breakdown",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Impact", start_offset=-timedelta(minutes=30))
+    match_data = tracker.match_data
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
 
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
-    )
+    part = create_match_part(match_data=match_data, start_offset=-timedelta(minutes=10))
+    part_start = part.start_time
+    assert part_start is not None
 
     player = create_tracker_player(username="impact_persist_breakdown")
 
@@ -250,7 +188,7 @@ def test_persist_match_impact_rows_with_breakdowns_creates_db_rows() -> None:
         player=player,
         match_data=match_data,
         match_part=part,
-        team=home_team,
+        team=tracker.home_team,
         scored=False,
         time=part_start + timedelta(minutes=1),
     )

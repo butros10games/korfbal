@@ -21,6 +21,7 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.services.match_impact import compute_match_impact_rows
+from apps.schedule.api.constants import MATCH_TRACKER_DATA_NOT_FOUND
 
 from .match_api_test_support import (
     add_roster_player,
@@ -34,6 +35,13 @@ from .match_api_test_support import (
 
 
 JSON = "application/json"
+EVENT_NOT_FOUND = {
+    "goals": "Goal event not found.",
+    "substitutes": "Substitution event not found.",
+    "pauses": "Pause event not found.",
+    "timeouts": "Timeout event not found.",
+    "possession-changes": "Possession-change event not found.",
+}
 EDITABLE_EVENT_KINDS = ("goals", "substitutes", "pauses", "timeouts")
 MISSING_EVENT_MUTATIONS = [
     *product(("patch", "delete"), EDITABLE_EVENT_KINDS),
@@ -61,11 +69,33 @@ def test_missing_editor_event_does_not_publish_live_change(
         content_type=JSON,
     )
     assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {"detail": EVENT_NOT_FOUND[event_kind]}
     graph.match_data.refresh_from_db()
     assert (
         graph.match_data.live_revision,
         MatchLiveChange.objects.filter(match_data=graph.match_data).count(),
     ) == (revision_before, changes_before)
+
+
+@pytest.mark.parametrize(
+    ("method", "event_kind"),
+    [*product(("post",), EDITABLE_EVENT_KINDS), *MISSING_EVENT_MUTATIONS],
+)
+def test_editor_requires_tracker_data_before_validating_input(
+    client: Client, method: str, event_kind: str
+) -> None:
+    """Every write returns the same tracker 404 even with an invalid body."""
+    graph = create_match_graph(prefix="missing-tracker")
+    login_coach(client, graph, username="missing-tracker-coach")
+    graph.match_data.delete()
+    suffix = "" if method == "post" else f"{uuid4()}/"
+    response = getattr(client, method)(
+        f"/api/matches/{graph.match.id_uuid}/events/{event_kind}/{suffix}",
+        data={},
+        content_type=JSON,
+    )
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {"detail": MATCH_TRACKER_DATA_NOT_FOUND}
 
 
 def test_goal_editor_create_update_delete_flow(client: Client) -> None:

@@ -8,18 +8,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.game_tracker.models import GoalType, Shot
 from apps.game_tracker.services.match_impact import (
     compute_match_impact_breakdown,
 )
-from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_tracker_match,
+    create_tracker_player,
+)
 
 
 GOAL_COUNT = 6
@@ -28,42 +27,19 @@ GOAL_COUNT = 6
 @pytest.mark.django_db
 def test_goal_points_streak_bonus_is_capped() -> None:
     """Long scoring streaks should not increase goal points without bound."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - streak cap",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Impact", start_offset=-timedelta(minutes=30))
+    match_data = tracker.match_data
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
 
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
-    )
+    part = create_match_part(match_data=match_data, start_offset=-timedelta(minutes=10))
+    part_start = part.start_time
+    assert part_start is not None
 
     # "doorloop" => type weight 1.25.
     goal_type = GoalType.objects.create(name="Doorloopbal")
 
-    user = get_user_model().objects.create_user(username="streak_scorer")
-    scorer = getattr(user, "player", None)
-    if scorer is None:
-        scorer = Player.objects.create(user=user)
+    scorer = create_tracker_player(username="streak_scorer")
 
     # Create consecutive goals by the same team and player.
     for i in range(GOAL_COUNT):
@@ -71,7 +47,7 @@ def test_goal_points_streak_bonus_is_capped() -> None:
             player=scorer,
             match_data=match_data,
             match_part=part,
-            team=home_team,
+            team=tracker.home_team,
             for_team=True,
             scored=True,
             shot_type=goal_type,

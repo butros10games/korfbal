@@ -451,13 +451,43 @@ def test_team_impact_breakdown_tolerates_self_heal_failure(
     )
 
 
-def test_team_goal_song_admin_requires_authentication(client: Client) -> None:
-    """Goal-song administration rejects anonymous requests."""
-    team, _, _, _ = _coached_team()
-
-    response = client.get(f"/api/team/teams/{team.id_uuid}/goal-song-admin/")
-
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
+@pytest.mark.parametrize("viewer", ["anonymous", "player", "other-season-coach"])
+@pytest.mark.parametrize(
+    ("method", "suffix"),
+    [
+        ("get", ""),
+        ("patch", "fallback/"),
+        ("patch", "player/{player}/"),
+        ("delete", "player/{player}/songs/{song}/"),
+        ("patch", "player/{player}/songs/{song}/settings/"),
+    ],
+)
+def test_team_goal_song_admin_requires_authentication(
+    client: Client, viewer: str, method: str, suffix: str
+) -> None:
+    """Every moderation route requires an authorized viewer for the chosen season."""
+    setup = _goal_song_setup()
+    season = setup.team_data.season
+    if viewer != "anonymous":
+        actor = setup.coach if viewer == "other-season-coach" else setup.player
+        client.force_login(actor.user)
+    if viewer == "other-season-coach":
+        season = create_season("Other season")
+        _roster(setup.team, season, setup.player)
+    path = suffix.format(player=setup.player.pk, song=setup.song_a.pk)
+    response = getattr(client, method)(
+        f"/api/team/teams/{setup.team.pk}/goal-song-admin/{path}?season={season.pk}",
+        data={},
+        content_type="application/json",
+    )
+    expected = (
+        HTTPStatus.UNAUTHORIZED if viewer == "anonymous" else HTTPStatus.FORBIDDEN
+    )
+    assert response.status_code == expected
+    if viewer != "anonymous":
+        assert response.json() == {
+            "detail": "You do not have permission to manage team goal songs."
+        }
 
 
 def test_team_goal_song_admin_returns_roster_to_coach(client: Client) -> None:

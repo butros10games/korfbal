@@ -85,7 +85,7 @@ def test_scheduled_batch_honors_budget_and_resumes(
     idle = sync_current_competition()
     assert idle["http_requests"] == 0
     assert list(SyncRun.objects.order_by("pk").values_list("status", flat=True)) == [
-        "completed",
+        "deferred",
         "completed",
         "idle",
     ]

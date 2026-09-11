@@ -380,6 +380,8 @@ class Match(SeasonalIdentity):
     automatic_result = models.BooleanField(default=False)
     result_observed_at = models.DateTimeField(null=True)
     results_checked_at = models.DateTimeField(null=True)
+    results_attempted_at = models.DateTimeField(null=True)
+    missing_result_attempts = models.PositiveIntegerField(default=0)
     schedule_checked_at = models.DateTimeField(null=True)
     playing_time_minutes = models.PositiveSmallIntegerField(null=True)
     playing_time_observed_at = models.DateTimeField(null=True)
@@ -466,6 +468,9 @@ class SyncRun(models.Model):
     status = models.CharField(max_length=32, default="running")
     summary = models.JSONField(default=dict)
     backlog = models.JSONField(default=dict)
+    diagnostics = models.JSONField(default=dict)
+    heartbeat_at = models.DateTimeField(null=True)
+    lease_owner = models.UUIDField(null=True)
 
     class Meta:
         """Keep recent season history cheap to read."""

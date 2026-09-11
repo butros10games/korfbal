@@ -271,8 +271,36 @@ KNKV app requests:
 | Venue        | `match/MatchFacility?PublicMatchId=…&v=3`      | Facility, address, pitch/surface and dressing-room metadata                                   |
 | Rules        | `match/MatchInfo?PublicMatchId=…&v=1`          | The provider's structured match rules                                                         |
 
-Live `NONE` event resolution is accepted only when the supplied period minutes
-sum to `Duration`; it does not mean that playing time is absent.
+Live `NONE` event resolution is accepted only when regulation-period minutes
+sum to `Duration`; optional extra time and the untimed `Strafworpserie` penalty
+phase do not extend regulation duration or prove those phases were played.
+
+Import runs retain bounded, payload-free failure codes, exception types, stages,
+partial counters and an importer code fingerprint. Heartbeats older than ten minutes
+are marked `interrupted` only when their matching provider lease is no longer live.
+Run statuses distinguish `retrying`, `exhausted` and `deferred` from completed work.
+Metadata backfills exit unsuccessfully when exhausted or unable to make progress.
+
+After correcting a failure, preview a narrow retry scope before applying it:
+
+```bash
+uv run python manage.py retry_competition_resources --season 2026-2027 \
+    --kind match_timing --error-code invalid_response
+uv run python manage.py retry_competition_resources --season 2026-2027 \
+    --kind match_timing --error-code invalid_response --apply
+```
+
+Use repeatable `--resource-id` arguments to narrow the scope further. Retry leaves
+successful data and shared traffic budgets intact, refuses an active lease/cooldown,
+and clears selected ETags so the fixed parser receives a full response. Legacy
+failures may have the code `invalid_response_or_transport`.
+
+When every available owner feed successfully omits an overdue match, the importer
+records `results_attempted_at` and `missing_result_attempts` separately from confirmed
+coverage. These attempts use the normal age-based retry intervals. Alternate feeds
+still get a chance to supply the result, and a later observation clears the missing
+streak. The monitoring dashboard flags missing provider results for reconciliation;
+HTTP success alone never advances an absent match's confirmed freshness.
 
 Both `v` and `X-Navajo-Version` use the endpoint's version. All calls retain the
 session's originating User-Agent and `X-Navajo-Instance: KNKV`. Venue data comes

@@ -9,6 +9,7 @@ from apps.competition.services.match_details import (
     preview_details,
     queue_missing_details,
 )
+from apps.competition.services.monitoring import observe_run, outcome
 from apps.competition.services.sync import MAX_REQUESTS, sync_details
 from apps.schedule.models import Season
 
@@ -52,11 +53,19 @@ class Command(SyncCommand):
             return
         queued = queue_missing_details(season)
         try:
-            summary = sync_details(
-                season,
-                client_factory=lambda: self._client(options),
-                budget=budget,
-            )
+
+            def run() -> dict[str, object]:
+                result = sync_details(
+                    season,
+                    client_factory=lambda: self._client(options),
+                    budget=budget,
+                )
+                state = outcome(result)
+                if not result["requests"] and state == "completed":
+                    state = "deferred"
+                return {**result, "status": state}
+
+            summary = observe_run(season, run)
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
         self.stdout.write(
@@ -64,6 +73,20 @@ class Command(SyncCommand):
                 {"queued": queued, **summary, **preview_details(season)}, sort_keys=True
             )
         )
+        if summary["exhausted"]:
+            raise CommandError(
+                "Import stalled: feeds exhausted their retries. Inspect diagnostics, "
+                "fix the cause, then use retry_competition_resources "
+                "for the affected kind."
+            )
+        if (
+            not summary["requests"]
+            and preview_details(season)["remaining_detail_requests"]
+        ):
+            raise CommandError(
+                "Import deferred by retry backoff; no progress this batch. "
+                "Retry after next_sync_at."
+            )
         if summary["reauth_required"] or summary["failed"]:
             raise CommandError(
                 "Some details could not be fetched; saved checkpoints allow resuming. "

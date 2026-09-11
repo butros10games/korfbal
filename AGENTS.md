@@ -146,6 +146,10 @@ misleading provider 500/603 errors.
   success must not mark absent matches fresh. Clear legacy collection validators
   when introducing membership tracking, so old ETags cannot certify unknown scope.
 
+- Sportlink feeds can contain fixtures with identical home/away team IDs. Skip those
+  rows before identity writes without rejecting valid neighbours or counting skipped
+  fixtures as observed coverage; retain validation for other identity conflicts.
+
 - Sportlink `EventTimeResolution=NONE` can still accompany minute-based Duration and
   MatchPeriod.PlayTime. Accept the observed NONE contract only when validated period
   regular-period minutes sum to Duration; cup extra time is optional and the observed
@@ -155,9 +159,20 @@ misleading provider 500/603 errors.
   polling graph for each component. During catch-up, preserve due result/schedule
   priority and periodically recheck it without scanning the entire metadata backlog.
 
+- When repairing Sportlink imports after a worker release, check separately launched
+  backfill containers too. An older importer can keep exhausting shared checkpoints
+  even when the scheduled worker already contains the parser fix.
+
 - Catch tournament command errors outside a nested transaction savepoint; winner propagation
   can fail after saving a result, so refresh the match after rollback before returning a conflict.
 
 - Share tournament SSE recovery reads per ASGI event loop, retain a bounded latest-revision
   queue per receiver, and release the shared worker after the last disconnect; viewer
   count must not multiply periodic database scans or let slow receivers block others.
+
+- Distinguish missing Sportlink feed membership from HTTP failure. Pace absent-result
+  retries with an attempt timestamp without advancing confirmed match coverage; retain
+  all owner-feed fallbacks and persist safe diagnostics before publication can fail.
+
+- Admin rendering and permission tests must establish `bg_auth_mfa_verified` from the
+  authenticated user’s session auth hash; `force_login()` alone now redirects to MFA.

@@ -5,70 +5,44 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 import pytest
 
-from apps.club.models import Club
-from apps.game_tracker.models import GoalType, MatchData, MatchPart, Shot
+from apps.game_tracker.models import GoalType, Shot
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     compute_match_impact_breakdown,
 )
-from apps.player.models.player import Player
-from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.game_tracker.tests.tracker_test_helpers import (
+    create_match_part,
+    create_tracker_match,
+    create_tracker_player,
+)
 
 
 @pytest.mark.django_db
 def test_v7_scores_for_team_false_as_direct_defensive_responsibility() -> None:
     """A conceded goal must hurt the selected defender, not credit a scorer."""
-    home_club = Club.objects.create(name="Home Club")
-    away_club = Club.objects.create(name="Away Club")
-    home_team = Team.objects.create(name="Home Team", club=home_club)
-    away_team = Team.objects.create(name="Away Team", club=away_club)
-
-    season = Season.objects.create(
-        name="2025 Season - for_team semantics",
-        start_date=timezone.now().date(),
-        end_date=timezone.now().date() + timedelta(days=365),
-    )
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now() - timedelta(minutes=30),
-    )
-    match_data = MatchData.objects.get(match_link=match)
+    tracker = create_tracker_match(prefix="Impact", start_offset=-timedelta(minutes=30))
+    match_data = tracker.match_data
     match_data.status = "finished"
     match_data.save(update_fields=["status"])
 
-    part_start = timezone.now() - timedelta(minutes=10)
-    part = MatchPart.objects.create(
-        match_data=match_data,
-        part_number=1,
-        start_time=part_start,
-        active=True,
-    )
+    part = create_match_part(match_data=match_data, start_offset=-timedelta(minutes=10))
+    part_start = part.start_time
+    assert part_start is not None
 
     goal_type = GoalType.objects.create(name="Doorloopbal")
 
-    user_scorer = get_user_model().objects.create_user(username="scorer")
-    scorer = getattr(user_scorer, "player", None)
-    if scorer is None:
-        scorer = Player.objects.create(user=user_scorer)
+    scorer = create_tracker_player(username="scorer")
 
-    user_defender = get_user_model().objects.create_user(username="defender")
-    defender = getattr(user_defender, "player", None)
-    if defender is None:
-        defender = Player.objects.create(user=user_defender)
+    defender = create_tracker_player(username="defender")
 
     # A real scored goal for the shooter's team.
     Shot.objects.create(
         player=scorer,
         match_data=match_data,
         match_part=part,
-        team=home_team,
+        team=tracker.home_team,
         for_team=True,
         scored=True,
         shot_type=goal_type,
@@ -80,7 +54,7 @@ def test_v7_scores_for_team_false_as_direct_defensive_responsibility() -> None:
         player=defender,
         match_data=match_data,
         match_part=part,
-        team=home_team,
+        team=tracker.home_team,
         for_team=False,
         scored=True,
         shot_type=goal_type,

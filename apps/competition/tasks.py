@@ -9,8 +9,9 @@ from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient
 from apps.competition.composition import competition_client
-from apps.competition.models import SyncLease
-from apps.competition.services.monitoring import observe_run
+from apps.competition.models import SyncLease, SyncResource
+from apps.competition.services.monitoring import observe_run, outcome, progress
+from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
 from apps.schedule.models import Season
 
@@ -63,9 +64,19 @@ def _run_scheduled(season: Season) -> dict[str, object]:
         key="sportlink", expires_at__gt=timezone.now()
     ).exists():
         return {"status": "busy_or_cooldown", "http_requests": 0}
+    progress("planning")
     backlog = preview_sync(season, budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None)
     if not backlog["candidate_feed_requests"]:
-        return {"status": "idle", "http_requests": 0, "backlog": backlog}
+        exhausted = SyncResource.objects.filter(
+            season=season, failures__gte=MAX_FEED_FAILURES
+        ).count()
+        retrying = SyncResource.objects.filter(season=season, failures__gt=0).exists()
+        return {
+            "status": "exhausted" if exhausted else "retrying" if retrying else "idle",
+            "http_requests": 0,
+            "exhausted": exhausted,
+            "backlog": backlog,
+        }
     try:
         summary = sync(
             season,
@@ -88,4 +99,4 @@ def _run_scheduled(season: Season) -> dict[str, object]:
         )
     if summary["reauth_required"]:
         logger.warning("Competition sync requires a renewed login session")
-    return {"status": "completed", **summary, "backlog": backlog}
+    return {"status": outcome(summary), **summary, "backlog": backlog}

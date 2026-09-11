@@ -392,15 +392,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         **kwargs: Any,
     ) -> Response:
         """Return team player songs and fallback song configuration for moderation."""
-        team = self.get_object()
-        seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
-
-        self._ensure_goal_song_admin_access(
-            request=request,
-            team=team,
-            season=season,
-        )
+        team, season = self._goal_song_admin_context(request)
 
         match_data_qs = team_matches(team, season)
         players = list(team_players(team, season, match_data_qs))
@@ -472,15 +464,7 @@ class TeamViewSet(viewsets.ModelViewSet):
           ValidationError: If payload/song ids are invalid or no season TeamData exists.
 
         """
-        team = self.get_object()
-        seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
-
-        self._ensure_goal_song_admin_access(
-            request=request,
-            team=team,
-            season=season,
-        )
+        team, season = self._goal_song_admin_context(request)
 
         ids = self._parse_song_id_list_from_payload(
             payload=request.data,
@@ -522,34 +506,16 @@ class TeamViewSet(viewsets.ModelViewSet):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Update goal-song selection for a team player.
-
-        Raises:
-            NotFound: If the referenced player cannot be found.
-            ValidationError: If payload/song ids are invalid or player is not in roster.
-
-        """
-        team = self.get_object()
-        seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
-
-        self._ensure_goal_song_admin_access(
-            request=request,
-            team=team,
-            season=season,
-        )
+        """Update goal-song selection for a player in the authorized team's roster."""
+        team, season = self._goal_song_admin_context(request)
 
         ids = self._parse_song_id_list_from_payload(
             payload=request.data,
             field_name="goal_song_song_ids",
         )
-        roster_player_ids = main_roster_ids(team=team, season=season)
-        if player_id not in roster_player_ids:
-            raise ValidationError({"detail": "Player is not in this team roster."})
-
-        player = Player.objects.select_related("user").filter(id_uuid=player_id).first()
-        if player is None:
-            raise NotFound(detail="Player not found")
+        player = self._goal_song_roster_player(
+            team, season, player_id, not_found="Player not found"
+        )
 
         songs = self._validated_ready_songs(
             ids=ids,
@@ -596,33 +562,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         **kwargs: Any,
     ) -> Response:
         """Delete a player song from the team moderation view."""
-        team = self.get_object()
-        seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
+        team, season = self._goal_song_admin_context(request)
 
-        if not viewer_can_manage_team(
-            request=request,
-            team=team,
-            season=season,
-        ):
-            return Response(
-                {"detail": "You do not have permission to manage team goal songs."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        roster_player_ids = main_roster_ids(team=team, season=season)
-        if player_id not in roster_player_ids:
-            return Response(
-                {"detail": "Player is not in this team roster."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        player = Player.objects.filter(id_uuid=player_id).first()
-        if player is None:
-            return Response(
-                {"detail": "Song not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        player = self._goal_song_roster_player(team, season, player_id)
 
         try:
             delete_team_player_song(
@@ -655,33 +597,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         **kwargs: Any,
     ) -> Response:
         """Update song timing/speed for a player song from team moderation."""
-        team = self.get_object()
-        seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
+        team, season = self._goal_song_admin_context(request)
 
-        if not viewer_can_manage_team(
-            request=request,
-            team=team,
-            season=season,
-        ):
-            return Response(
-                {"detail": "You do not have permission to manage team goal songs."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        roster_player_ids = main_roster_ids(team=team, season=season)
-        if player_id not in roster_player_ids:
-            return Response(
-                {"detail": "Player is not in this team roster."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        player = Player.objects.filter(id_uuid=player_id).first()
-        if player is None:
-            return Response(
-                {"detail": "Song not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        player = self._goal_song_roster_player(team, season, player_id)
         if owned_player_song_or_none(player=player, song_id=song_id) is None:
             return Response(
                 {"detail": "Song not found"},
@@ -709,22 +627,44 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         return Response(PlayerSongSerializer(song).data)
 
-    def _ensure_goal_song_admin_access(
-        self,
-        *,
-        request: Request,
+    def _goal_song_admin_context(self, request: Request) -> tuple[Team, Season | None]:
+        """Resolve the requested season and require moderation access.
+
+        Raises:
+            PermissionDenied: The viewer cannot manage this team's songs.
+
+        """
+        team = self.get_object()
+        season = resolve_team_season(
+            request.query_params.get("season"), list(team_seasons(team))
+        )
+        if not viewer_can_manage_team(request=request, team=team, season=season):
+            raise PermissionDenied(
+                detail="You do not have permission to manage team goal songs."
+            )
+        return team, season
+
+    @staticmethod
+    def _goal_song_roster_player(
         team: Team,
         season: Season | None,
-    ) -> None:
-        if viewer_can_manage_team(
-            request=request,
-            team=team,
-            season=season,
-        ):
-            return
-        raise PermissionDenied(
-            detail="You do not have permission to manage team goal songs."
-        )
+        player_id: str,
+        *,
+        not_found: str = "Song not found",
+    ) -> Player:
+        """Resolve a player only after verifying the season's main roster.
+
+        Raises:
+            ValidationError: The player is outside this team's roster.
+            NotFound: The roster player no longer exists.
+
+        """
+        if player_id not in main_roster_ids(team=team, season=season):
+            raise ValidationError({"detail": "Player is not in this team roster."})
+        player = Player.objects.select_related("user").filter(id_uuid=player_id).first()
+        if player is None:
+            raise NotFound(detail=not_found)
+        return player
 
     @staticmethod
     def _parse_song_id_list_from_payload(

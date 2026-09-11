@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.competition.domain.timing import expected_finish
@@ -55,16 +55,26 @@ MATCH_FIELDS = (
     "home_score",
     "away_score",
     "results_checked_at",
+    "results_attempted_at",
+    "missing_result_attempts",
     "result_observed_at",
 )
 
 
-def next_result_check(row: dict[str, Any], now: datetime) -> datetime:
+def next_result_check(
+    row: dict[str, Any], now: datetime, *, include_attempts: bool = True
+) -> datetime:
     """Use playing format and bounded learned reporting delay for due times."""
     finish = expected_finish(row) + timedelta(
         seconds=row.get("learned_delay_seconds", 0)
     )
     checked = row["results_checked_at"] or row["result_observed_at"]
+    if include_attempts and row.get("results_attempted_at"):
+        checked = (
+            max(checked, row["results_attempted_at"])
+            if checked
+            else row["results_attempted_at"]
+        )
     if row["status"] in {"CANCELLED", "WITHDRAWN", "POSTPONED"}:
         return (checked or finish) + timedelta(days=7)
     final = (
@@ -189,6 +199,7 @@ class PollPlanner:
         )
         self.pools = {pool["id"]: pool for pool in pools}
         self.attempted: set[int] = set()
+        self.missing_responses: set[int] = set()
         self.checked: set[int] = set()
         self.schedule_checked: set[int] = set()
         self.row_by_id = {row["id"]: dict(row) for row in self.rows}
@@ -516,6 +527,37 @@ class PollPlanner:
         self.metadata_only_until = self.now
         self._completed_feed(job, checked=checked)
 
+    def record_missing_results(self) -> None:
+        """Back off only after every usable owner returned a response omitting a match.
+
+        Failed/budget-deferred fallbacks remain due. Successful observations retain
+        their independent freshness timestamp and clear the missing-data streak.
+        """
+        missing = {
+            pk
+            for pk in self.missing_responses
+            if pk not in self.checked
+            and (owners := self._owners(self.row_by_id[pk]))
+            and all(
+                not resource.failures
+                and resource.fetched_at
+                and resource.fetched_at
+                >= max(
+                    expected_finish(self.row_by_id[pk]),
+                    self.row_by_id[pk].get("results_attempted_at")
+                    or self.row_by_id[pk]["results_checked_at"]
+                    or self.row_by_id[pk]["result_observed_at"]
+                    or self.row_by_id[pk]["starts_at"],
+                )
+                and pk not in resource.match_ids
+                for resource in owners
+            )
+        }
+        Match.objects.filter(season=self.season, pk__in=missing).update(
+            results_attempted_at=timezone.now(),
+            missing_result_attempts=F("missing_result_attempts") + 1,
+        )
+
     def _completed_feed(self, job: PollJob, *, checked: bool) -> None:
         """Refresh only observed feed membership before planning overlapping checks."""
         if job.resource.kind == "pool_results" and not checked:
@@ -535,6 +577,7 @@ class PollPlanner:
             self.schedule_checked.update(job.covered_matches)
         if checked and job.resource.kind in {"club_results", "pool_results"}:
             self.checked.update(job.covered_matches)
+            self.missing_responses.update(job.matches - job.covered_matches)
         if checked and job.covered_matches:
             self._refresh_matches(job.covered_matches)
         if checked and job.resource.kind == "match_lineup":
@@ -579,7 +622,10 @@ def mark_checked(job: PollJob, now: datetime) -> bool:
         else "results_checked_at"
     )
     job.covered_matches = set(job.resource.match_ids)
+    updates = {field_name: now}
+    if field_name == "results_checked_at":
+        updates.update(results_attempted_at=now, missing_result_attempts=0)
     Match.objects.filter(season=job.resource.season, pk__in=job.covered_matches).filter(
         Q(**{field_name + "__isnull": True}) | Q(**{field_name + "__lt": now})
-    ).update(**{field_name: now})
+    ).update(**updates)
     return True

@@ -518,3 +518,69 @@ def test_cup_schema_preserves_existing_tournament_results() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_import_recovery_preserves_checkpoints_and_unknown_attempts() -> None:
+    """Adding recovery telemetry cannot reset data or invent legacy coverage."""
+    before = [("competition", "0020_merge_cup_and_sync_monitoring")]
+    after = [("competition", "0021_import_recovery")]
+    executor = MigrationExecutor(connection)
+    try:
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        season = old.get_model("schedule", "Season").objects.create(
+            name="recovery-migration",
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+        )
+        club = old.get_model("competition", "Club").objects.create(
+            external_id="synthetic", name="Example"
+        )
+        team = old.get_model("competition", "Team").objects.create(
+            season=season, club=club, external_id="team", name="Example", sport="VE"
+        )
+        now = timezone.now()
+        match = old.get_model("competition", "Match").objects.create(
+            season=season,
+            external_id="match",
+            home_team=team,
+            away_team=team,
+            starts_at=now,
+            status="SCHEDULED",
+            results_checked_at=now,
+        )
+        resource = old.get_model("competition", "SyncResource").objects.create(
+            season=season,
+            kind="club_results",
+            next_sync_at=now,
+            fetched_at=now,
+            etag="keep",
+            match_ids=[match.pk],
+            failures=6,
+            last_error="invalid_response_or_transport",
+        )
+        run = old.get_model("competition", "SyncRun").objects.create(
+            season=season, started_at=now, status="error", summary={"updated": 3}
+        )
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        current = executor.loader.project_state(after).apps
+        saved_match = current.get_model("competition", "Match").objects.get(pk=match.pk)
+        saved_resource = current.get_model("competition", "SyncResource").objects.get(
+            pk=resource.pk
+        )
+        saved_run = current.get_model("competition", "SyncRun").objects.get(pk=run.pk)
+        assert saved_match.results_checked_at == now
+        assert saved_match.results_attempted_at is None
+        assert saved_match.missing_result_attempts == 0
+        assert saved_resource.etag == "keep"
+        assert saved_resource.match_ids == [match.pk]
+        assert saved_resource.failures == resource.failures
+        assert saved_run.summary == {"updated": 3}
+        assert saved_run.diagnostics == {}
+        assert saved_run.heartbeat_at is None
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

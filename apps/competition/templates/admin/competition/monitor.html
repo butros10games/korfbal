@@ -262,7 +262,7 @@
                 </section>
                 <section class="panel">
                     <h3>Feed failures · current</h3>
-                    <p class="muted">Six consecutive failures exhaust a feed. Other club or pool feeds may still cover its matches.</p>
+                    <p class="muted">Six consecutive failures exhaust a feed. Other club or pool feeds may still cover its matches. After fixing the cause, preview the affected season and feed kind with retry_competition_resources, then requeue with --apply.</p>
                     {% if monitor.failures %}
                         <div class="table-scroll" tabindex="0">
                             <table>
@@ -300,7 +300,8 @@
                             <tr>
                                 <th scope="col">Match</th>
                                 <th scope="col">Status</th>
-                                <th scope="col">Last check</th>
+                                <th scope="col">Confirmed coverage</th>
+                                <th scope="col">Provider absence</th>
                                 <th scope="col">Since estimated finish</th>
                             </tr>
                         </thead>
@@ -312,11 +313,18 @@
                                     </th>
                                     <td>{{ row.status }}</td>
                                     <td>{{ row.checked_at|date:"d M H:i"|default:"Never" }}</td>
+                                    <td>
+                                        {% if row.missing_attempts %}
+                                            {{ row.missing_attempts }} checks missing · {{ row.attempted_at|date:"d M H:i" }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
                                     <td>{{ row.minutes }} min</td>
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="4">No unresolved results past their estimated finish.</td>
+                                    <td colspan="5">No unresolved results past their estimated finish.</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
