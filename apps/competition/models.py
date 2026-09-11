@@ -3,8 +3,69 @@
 from typing import TYPE_CHECKING, ClassVar
 from uuid import UUID
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+
+class MatchFormAccess(models.Model):
+    """Explicit account/team scope for the worker's private Sportlink session."""
+
+    objects: ClassVar[models.Manager["MatchFormAccess"]]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    team = models.OneToOneField("team.Team", on_delete=models.CASCADE)
+    enabled = models.BooleanField(default=True)
+    auto_substitutions = models.BooleanField(default=False)
+
+    def __str__(self) -> str:
+        """Identify the local account/team binding."""
+        return f"{self.user_id}:{self.team_id}"
+
+    if TYPE_CHECKING:
+        user_id: int
+        team_id: UUID
+
+
+class MatchFormSync(models.Model):
+    """Durable per-action work and receipts, without private upstream forms."""
+
+    objects: ClassVar[models.Manager["MatchFormSync"]]
+    access = models.ForeignKey(MatchFormAccess, on_delete=models.CASCADE)
+    match = models.ForeignKey("schedule.Match", on_delete=models.CASCADE)
+    action = models.CharField(
+        max_length=20, choices=[(v, v) for v in ("import", "publish", "substitutions")]
+    )
+    state = models.CharField(max_length=20, default="pending")
+    expected_revision = models.PositiveBigIntegerField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+    error_code = models.CharField(max_length=50, blank=True)
+    player_count = models.PositiveSmallIntegerField(default=0)
+    event_count = models.PositiveSmallIntegerField(default=0)
+    published_event_ids = models.JSONField(default=list)
+    captain_player = models.ForeignKey(
+        "player.Player", null=True, blank=True, on_delete=models.SET_NULL
+    )
+
+    if TYPE_CHECKING:
+        access_id: int
+        match_id: UUID
+        captain_player_id: UUID | None
+
+    class Meta:
+        """Serialize each team/form action and reuse its publication receipts."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("access", "match", "action"),
+                name="competition_match_form_action_once",
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the action without private provider data."""
+        return f"{self.match_id}:{self.action}:{self.state}"
 
 
 class Club(models.Model):

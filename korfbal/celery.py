@@ -20,6 +20,11 @@ app.autodiscover_tasks()
 
 # Celery Beat schedule for periodic tasks.
 app.conf.beat_schedule = {
+    "sync-private-match-forms": {
+        "task": "apps.competition.tasks.sync_match_forms",
+        "schedule": 15.0,
+        "options": {"expires": 15},
+    },
     "sync-current-competition": {
         "task": "apps.competition.tasks.sync_current_competition",
         "schedule": 30.0,

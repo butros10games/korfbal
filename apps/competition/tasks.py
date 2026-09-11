@@ -8,8 +8,8 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient
-from apps.competition.composition import competition_client
-from apps.competition.models import SyncLease, SyncResource
+from apps.competition.composition import competition_client, run_match_form_queue
+from apps.competition.models import MatchFormSync, SyncLease, SyncResource
 from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
@@ -17,6 +17,12 @@ from apps.schedule.models import Season
 
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
+def sync_match_forms() -> str:
+    """Drain durable, account-scoped form work including finished-match recovery."""
+    return run_match_form_queue()
 
 
 class SessionUnavailableError(Exception):
@@ -60,6 +66,10 @@ def sync_current_competition() -> dict[str, object]:
 
 def _run_scheduled(season: Season) -> dict[str, object]:
     """Avoid opening credentials or loading catalogue snapshots while idle/busy."""
+    if MatchFormSync.objects.filter(
+        state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+    ).exists():
+        return {"status": "match_form_pending", "http_requests": 0}
     if SyncLease.objects.filter(
         key="sportlink", expires_at__gt=timezone.now()
     ).exists():
