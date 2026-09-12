@@ -22,7 +22,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.game_tracker.composition import apply_player_designation
-from apps.game_tracker.models import MatchData, PlayerGroup
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 from apps.game_tracker.services.player_designation import (
     PLAYER_GROUP_EDIT_PERMISSION_ERROR,
@@ -126,7 +126,23 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
             },
         )
 
+    captain_id = (
+        MatchPlayer.objects
+        .filter(
+            match_data=match_data,
+            team_id=team_id,
+            is_captain=True,
+            player_id__in=[
+                player["id_uuid"]
+                for group in player_groups_data
+                for player in group["players"]
+            ],
+        )
+        .values_list("player_id", flat=True)
+        .first()
+    )
     return Response({
+        "captain_player_id": str(captain_id) if captain_id else None,
         "player_groups": player_groups_data,
         "live_revision": match_data.live_revision,
     })
@@ -301,6 +317,8 @@ def _parse_designation_payload(request: Request) -> dict[str, Any] | None:
     """Return DRF's parsed payload when it is object-shaped."""
     if not isinstance(request.data, Mapping):
         return None
+    if not isinstance(request.data.get("make_captain", False), bool):
+        return None
     return dict(request.data)
 
 
@@ -340,6 +358,8 @@ def _prepare_player_designation(
             )
         )
 
+    make_captain = data.get("make_captain", False)
+
     new_group_id = data.get("new_group_id")
     if new_group_id and not isinstance(new_group_id, str):
         return None, Response({"error": "Unknown player group"}, status=400)
@@ -362,6 +382,7 @@ def _prepare_player_designation(
                 new_group_id if isinstance(new_group_id, str) and new_group_id else None
             ),
             expected_revision=expected_revision,
+            make_captain=make_captain,
         ),
         None,
     )

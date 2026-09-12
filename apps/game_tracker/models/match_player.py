@@ -38,6 +38,7 @@ class MatchPlayer(models.Model):
         related_name="match_players",
     )
     player_id: str
+    is_captain = models.BooleanField(default=False)
 
     class Meta:
         """Meta options for MatchPlayer."""
@@ -46,6 +47,11 @@ class MatchPlayer(models.Model):
             models.Index(fields=["team", "match_data"], name="mp_team_match_idx"),
         )
         constraints: ClassVar[tuple[models.BaseConstraint, ...]] = (
+            models.UniqueConstraint(
+                fields=["match_data", "team"],
+                condition=models.Q(is_captain=True),
+                name="game_tracker_unique_team_captain",
+            ),
             models.UniqueConstraint(
                 fields=["match_data", "player"],
                 name="game_tracker_unique_match_player",

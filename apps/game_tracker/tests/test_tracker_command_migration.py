@@ -172,3 +172,76 @@ def test_access_and_integrity_merge_preserves_both_upgrade_paths(
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.migration_regression
+@pytest.mark.parametrize("captain_state", ["selected", "removed", "private", "cleared"])
+def test_captain_migration_preserves_only_latest_available_selection(
+    captain_state: str,
+) -> None:
+    """Backfill confirmed captains without restoring removed or private players."""
+    tracker = create_tracker_match(prefix="Captain migration")
+    player = create_tracker_player(username="migration-captain")
+    executor = MigrationExecutor(connection)
+    try:
+        before = [
+            ("game_tracker", "0040_merge_duplicate_heads"),
+            ("competition", "0025_matchformsync_automatic"),
+        ]
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        group_type = old.get_model("game_tracker", "GroupType").objects.create(
+            name="Aanval"
+        )
+        group = old.get_model("game_tracker", "PlayerGroup").objects.create(
+            match_data_id=tracker.match_data.pk,
+            team_id=tracker.home_team.pk,
+            starting_type_id=group_type.pk,
+            current_type_id=group_type.pk,
+        )
+        if captain_state != "removed":
+            group.players.add(player.pk)
+        if captain_state == "private":
+            old.get_model("player", "Player").objects.filter(pk=player.pk).update(
+                knkv_privacy="PRIVATE"
+            )
+        roster = old.get_model("game_tracker", "MatchPlayer").objects.create(
+            match_data_id=tracker.match_data.pk,
+            team_id=tracker.home_team.pk,
+            player_id=player.pk,
+        )
+        access = old.get_model("competition", "MatchFormAccess").objects.create(
+            user_id=player.user_id, team_id=tracker.home_team.pk
+        )
+        jobs = old.get_model("competition", "MatchFormSync")
+        jobs.objects.create(
+            access_id=access.pk,
+            match_id=tracker.match.pk,
+            action="publish",
+            state="succeeded",
+            expected_revision=0,
+            captain_player_id=player.pk,
+            updated_at=timezone.now() - timedelta(hours=1),
+        )
+        jobs.objects.create(
+            access_id=access.pk,
+            match_id=tracker.match.pk,
+            action="import",
+            state="succeeded",
+            expected_revision=0,
+            captain_player_id=None if captain_state == "cleared" else player.pk,
+        )
+        after = [
+            ("game_tracker", "0041_matchplayer_captain"),
+            ("competition", "0025_matchformsync_automatic"),
+        ]
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        new = executor.loader.project_state(after).apps
+        assert new.get_model("game_tracker", "MatchPlayer").objects.get(
+            pk=roster.pk
+        ).is_captain == (captain_state == "selected")
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

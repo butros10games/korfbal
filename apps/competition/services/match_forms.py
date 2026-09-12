@@ -43,6 +43,7 @@ from apps.game_tracker.services.match_mutations import (
 )
 from apps.game_tracker.services.player_designation import (
     can_edit_player_groups,
+    set_team_captain,
     sync_match_players_for_team,
 )
 from apps.game_tracker.services.player_groups import get_reserve_group
@@ -245,10 +246,13 @@ def import_reserves(
                     raise MatchFormError("too_many_players")
                 reserve.players.add(player)
                 added += 1
-        if added or withdrawn:
-            sync_match_players_for_team(match_data=locked, team=job.access.team)
-            record_match_change(locked, publisher=publisher)
         job.captain_player = _imported_captain(rows, locked, job.access)
+        sync_match_players_for_team(match_data=locked, team=job.access.team)
+        captain_changed = set_team_captain(
+            match_data=locked, team=job.access.team, player_id=job.captain_player_id
+        )
+        if added or withdrawn or captain_changed:
+            record_match_change(locked, publisher=publisher)
         job.player_count = available
         job.state = "succeeded"
         job.updated_at = timezone.now()

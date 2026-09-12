@@ -52,6 +52,7 @@ class DesignatePlayersCommand:
     players: tuple[PlayerDesignationSelection, ...]
     target_group_id: str | None
     expected_revision: int
+    make_captain: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +117,16 @@ def sync_match_players_for_team(*, match_data: MatchData, team: Team) -> None:
         ).delete()
 
 
+def set_team_captain(*, match_data: MatchData, team: Team, player_id: object) -> bool:
+    """Set the lineup captain under the caller's match lock; report a change."""
+    players = MatchPlayer.objects.filter(match_data=match_data, team=team)
+    if players.filter(is_captain=True, player_id=player_id).exists():
+        return False
+    cleared = players.filter(is_captain=True).update(is_captain=False)
+    selected = players.filter(player_id=player_id).update(is_captain=True)
+    return bool(cleared or selected)
+
+
 def sync_match_players(*, match_data: MatchData) -> None:
     """Sync MatchPlayer rows for both teams in the match."""
     match = match_data.match_link
@@ -160,7 +171,29 @@ def _apply_designation(
     groups_by_id: dict[str, PlayerGroup],
     target_group: PlayerGroup | None,
 ) -> None:
-    """Apply already-resolved designation changes."""
+    """Apply already-resolved designation changes.
+
+    Raises:
+        PlayerDesignationValidationError: The captain is not one selected player.
+
+    """
+    if command.make_captain:
+        if len(command.players) != 1 or target_group is not None:
+            raise PlayerDesignationValidationError(
+                "Select exactly one captain without moving players"
+            )
+        selection = command.players[0]
+        group = groups_by_id.get(selection.source_group_id or "")
+        if group is None or not group.players.filter(pk=selection.player_id).exists():
+            raise PlayerDesignationValidationError(
+                "The captain must be in this team's selection"
+            )
+        sync_match_players_for_team(match_data=group.match_data, team=group.team)
+        set_team_captain(
+            match_data=group.match_data, team=group.team, player_id=selection.player_id
+        )
+        return
+
     for selection in command.players:
         player = players_by_id[selection.player_id]
         old_group = (

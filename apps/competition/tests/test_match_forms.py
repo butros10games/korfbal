@@ -43,6 +43,7 @@ from apps.game_tracker.models import (
     GroupType,
     MatchData,
     MatchPart,
+    MatchPlayer,
     Pause,
     PlayerChange,
     PlayerGroup,
@@ -247,6 +248,12 @@ def test_import_adds_reserves_once_preserves_manual_divisions_and_revision(
     execute(job, provider, Mock())
     job.refresh_from_db()
     assert job.captain_player_id == assigned.pk
+    assert (
+        MatchPlayer.objects.get(
+            match_data=tracker, team=access.team, is_captain=True
+        ).player_id
+        == assigned.pk
+    )
     assert list(attack.players.values_list("knkv_person_id", flat=True)) == ["P1"]
     reserve = PlayerGroup.objects.get(
         match_data=tracker, team=access.team, starting_type__name="Reserve"

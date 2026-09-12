@@ -1,11 +1,12 @@
 """Focused contracts for assigning players to match groups."""
 
 from http import HTTPStatus
+from typing import Any
 
 from django.test.client import Client
 import pytest
 
-from apps.game_tracker.models import MatchPlayer
+from apps.game_tracker.models import MatchPlayer, PlayerGroup
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_group_types,
     create_tracker_match,
@@ -14,6 +15,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     get_tracker_group,
     login_home_club_editor,
 )
+from apps.player.models import Player
 
 
 pytestmark = pytest.mark.django_db
@@ -272,3 +274,113 @@ def test_outsider_cannot_designate_players(client: Client) -> None:
     assert not MatchPlayer.objects.filter(match_data=tracker.match_data).exists()
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.live_revision == expected_revision
+
+
+def test_captain_is_saved_replaced_moved_and_removed_with_lineup(
+    client: Client,
+) -> None:
+    """Captain reads survive requests and follow the player's lineup membership."""
+    tracker = create_tracker_match(prefix="Captain")
+    create_group_types("Aanval", "Reserve")
+    attack = get_tracker_group(tracker, "Aanval")
+    reserve = get_tracker_group(tracker, "Reserve")
+    first = create_tracker_player(username="first-captain")
+    second = create_tracker_player(username="second-captain")
+    attack.players.add(first, second)
+    login_home_club_editor(client, tracker, "captain-editor")
+    overview = (
+        f"/api/match/player_overview_data/{tracker.match.pk}/{tracker.home_team.pk}/"
+    )
+
+    def designate(
+        player: Player, group: PlayerGroup, **extra: str | bool
+    ) -> dict[str, Any]:
+        revision = client.get(overview).json()["live_revision"]
+        response = client.post(
+            DESIGNATION_URL,
+            data={
+                "players": [{"id_uuid": str(player.pk), "groupId": str(group.pk)}],
+                "expected_revision": revision,
+                **extra,
+            },
+            content_type="application/json",
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.json()["live_revision"] == revision + 1
+        return client.get(overview).json()
+
+    assert designate(first, attack, make_captain=True)["captain_player_id"] == str(
+        first.pk
+    )
+    assert designate(second, attack, make_captain=True)["captain_player_id"] == str(
+        second.pk
+    )
+    assert (
+        MatchPlayer.objects.filter(
+            match_data=tracker.match_data, is_captain=True
+        ).count()
+        == 1
+    )
+    assert set(attack.players.all()) == {first, second}
+    away = client.get(
+        f"/api/match/player_overview_data/{tracker.match.pk}/{tracker.away_team.pk}/"
+    )
+    assert away.json()["captain_player_id"] is None
+    assert designate(second, attack, new_group_id=str(reserve.pk))[
+        "captain_player_id"
+    ] == str(second.pk)
+    assert designate(second, reserve)["captain_player_id"] is None
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "unselected",
+        "multiple",
+        "move",
+        "stale",
+        "unauthorized",
+        "anonymous",
+        "invalid-flag",
+    ],
+)
+def test_captain_rejects_invalid_or_unauthorized_writes(
+    client: Client, invalid: str
+) -> None:
+    """Captain writes use lineup membership, permission and revision validation."""
+    tracker = create_tracker_match(prefix="Captain validation")
+    create_group_types("Aanval", "Reserve")
+    attack = get_tracker_group(tracker, "Aanval")
+    player = create_tracker_player(username="captain-candidate")
+    if invalid != "unselected":
+        attack.players.add(player)
+    tracker.match_data.refresh_from_db()
+    if invalid == "unauthorized":
+        client.force_login(create_tracker_user(username="outsider"))
+    elif invalid != "anonymous":
+        login_home_club_editor(client, tracker, "captain-validator")
+    payload: dict[str, Any] = {
+        "players": [{"id_uuid": str(player.pk), "groupId": str(attack.pk)}],
+        "make_captain": True,
+        "expected_revision": tracker.match_data.live_revision,
+    }
+    if invalid == "multiple":
+        payload["players"] *= 2
+    elif invalid == "move":
+        payload["new_group_id"] = str(get_tracker_group(tracker, "Reserve").pk)
+    elif invalid == "stale":
+        payload["expected_revision"] += 1
+    elif invalid == "invalid-flag":
+        payload["make_captain"] = "true"
+    response = client.post(
+        DESIGNATION_URL, data=payload, content_type="application/json"
+    )
+    expected_status = {"stale": 409, "unauthorized": 403, "anonymous": 401}.get(
+        invalid, 400
+    )
+    assert response.status_code == expected_status
+    if invalid == "stale":
+        assert response.json()["code"] == "revision_conflict"
+    assert not MatchPlayer.objects.filter(
+        match_data=tracker.match_data, is_captain=True
+    ).exists()
