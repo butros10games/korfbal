@@ -1,5 +1,6 @@
 """Issue and validate narrowly scoped, expiring tracker capabilities."""
 
+from collections.abc import Mapping
 from datetime import timedelta
 from hashlib import sha256
 import secrets
@@ -13,6 +14,16 @@ from apps.team.models import Team
 
 
 SESSION_KEY = "tracker_access"
+
+
+def has_tracker_grant(grants: Mapping[str, str], *, match: Match, team: Team) -> bool:
+    """Validate a session grant against its current match/team invitation."""
+    if team.pk not in {match.home_team_id, match.away_team_id}:
+        return False
+    digest = grants.get(f"{match.pk}:{team.pk}")
+    return bool(
+        digest and active_tracker_links(match, team).filter(token_hash=digest).exists()
+    )
 
 
 def token_digest(token: str) -> str:

@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.utils import timezone
+
 from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
-from apps.player.models import Player
-from apps.team.models import Team
+from apps.player.models import Player, PlayerClubMembership
+from apps.schedule.models import Match
+from apps.team.models import Team, TeamData
 
 
 RESERVE_GROUP_NAME = "Reserve"
@@ -21,6 +25,25 @@ class PlayerGroupAssignmentError(ValueError):
     def __str__(self) -> str:
         """Return the user-facing error string."""
         return self.message
+
+
+def club_lineup_players(*, match: Match, team: Team) -> QuerySet[Player]:
+    """Return the club's eligible picker candidates for this match's date/season."""
+    match_date = timezone.localdate(match.start_time)
+    season_rosters = TeamData.objects.filter(
+        team__club_id=team.club_id,
+        season_id=match.season_id,
+    )
+    memberships = PlayerClubMembership.objects.filter(
+        player_id=OuterRef("pk"),
+        club_id=team.club_id,
+        start_date__lte=match_date,
+    ).filter(Q(end_date__isnull=True) | Q(end_date__gte=match_date))
+    return Player.objects.filter(
+        Exists(season_rosters.filter(players=OuterRef("pk")))
+        | Exists(season_rosters.filter(coach=OuterRef("pk")))
+        | Exists(memberships)
+    )
 
 
 def ensure_player_groups_for_match_data(match_data: MatchData) -> None:

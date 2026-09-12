@@ -29,6 +29,9 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Guest lineup writes must validate player IDs against actual source-group membership
+  or the club/date/season picker candidates; frontend filtering is not authorization.
+
 - In Caddy, use an explicit matcher for relative redirects (`redir * /admin/ 301`); otherwise `/admin/` is parsed as a matcher. Verify both `/admin` and `/admin/`, since an unmatched handler can return an empty HTTP 200.
 
 - The worker image supervises isolated `celery,instant`, `projections`, `media`, and

@@ -10,7 +10,7 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
-from apps.game_tracker.services.tracker_access import SESSION_KEY, active_tracker_links
+from apps.game_tracker.services.tracker_access import SESSION_KEY, has_tracker_grant
 from apps.player.models.player import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.models import Match
@@ -119,11 +119,8 @@ class HasTrackerAccess(IsClubMemberOrCoachOrAdmin):
         match, team = _get_match_and_team(view, require_team=True)
         if not match or not team:
             return False
-        grants = request.session.get(SESSION_KEY, {})
-        digest = grants.get(f"{match.pk}:{team.pk}")
-        if (
-            not digest
-            or not active_tracker_links(match, team).filter(token_hash=digest).exists()
+        if not has_tracker_grant(
+            request.session.get(SESSION_KEY, {}), match=match, team=team
         ):
             return False
         # DRF does not enforce session CSRF for anonymous users automatically.

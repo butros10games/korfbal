@@ -11,13 +11,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -32,8 +32,10 @@ from apps.game_tracker.services.player_designation import (
     PlayerDesignationValidationError,
     can_edit_player_groups,
 )
+from apps.game_tracker.services.player_groups import club_lineup_players
 from apps.game_tracker.services.player_search import player_name_match_score
-from apps.player.models import Player, PlayerClubMembership
+from apps.game_tracker.services.tracker_access import SESSION_KEY, has_tracker_grant
+from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_queries import player_access_queryset
 from apps.schedule.models import Match
@@ -43,6 +45,14 @@ from apps.team.models import Team, TeamData
 # DRF's ``api_view`` returns a callable view object that is valid input for
 # drf-spectacular but narrower than its type annotation permits.
 _function_schema = cast(Any, extend_schema)
+
+
+class HasPlayerGroupSession(BasePermission):
+    """Require a login or invitation session before resolving the lineup scope."""
+
+    def has_permission(self, request: Request, view: object) -> bool:
+        """Scope and expiry are checked against the resolved match/team below."""
+        return bool(request.user.is_authenticated or request.session.get(SESSION_KEY))
 
 
 def _viewer_player(request: Request) -> Player | None:
@@ -69,6 +79,10 @@ def _player_group_editor_error(
     team: Team,
 ) -> Response | None:
     if can_edit_player_groups(user=request.user, match=match, team=team):
+        return None
+    if request.auth is None and has_tracker_grant(
+        request.session.get(SESSION_KEY, {}), match=match, team=team
+    ):
         return None
     return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
 
@@ -150,7 +164,7 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
 
 @_function_schema(responses=OpenApiTypes.OBJECT)
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasPlayerGroupSession])
 def players_team(request: Request, match_id: str, team_id: str) -> Response:
     """Return team players that are not in a player group for this match."""
     match_model = get_object_or_404(Match, id_uuid=match_id)
@@ -204,7 +218,7 @@ MAX_PLAYER_NAME_LENGTH = 50
 
 @_function_schema(responses=OpenApiTypes.OBJECT)
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasPlayerGroupSession])
 def player_search(request: Request, match_id: str, team_id: str) -> Response:
     """Search for players by username, excluding already-grouped players."""
     search_query = (request.query_params.get("search") or "").strip()
@@ -249,30 +263,11 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
         .distinct()
     )
 
-    match_date = timezone.localdate(match_model.start_time)
-
-    # Only show players who belong to this club context.
-    # - TeamData is season-scoped (legacy) and historically incomplete.
-    #   We therefore consider *any* team of the club in the match season.
-    # - club membership is date-scoped (new) and preferred when available.
-    season_rosters = TeamData.objects.filter(
-        team__club_id=team_model.club_id,
-        season_id=match_model.season_id,
-    )
-    memberships = PlayerClubMembership.objects.filter(
-        player_id=OuterRef("pk"),
-        club_id=team_model.club_id,
-        start_date__lte=match_date,
-    ).filter(Q(end_date__isnull=True) | Q(end_date__gte=match_date))
-
-    # Separate existence checks avoid multiplying playing, coaching, and
-    # membership rows before deduplicating the entire imported club roster.
+    # Use the same club/date/season boundary for discovery and guest writes.
     roster_players = (
         player_access_queryset()
         .filter(
-            Exists(season_rosters.filter(players=OuterRef("pk")))
-            | Exists(season_rosters.filter(coach=OuterRef("pk")))
-            | Exists(memberships)
+            pk__in=club_lineup_players(match=match_model, team=team_model).values("pk")
         )
         .exclude(id_uuid__in=excluded_ids)
     )
@@ -390,7 +385,7 @@ def _prepare_player_designation(
 
 @_function_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasPlayerGroupSession])
 def player_designation(request: Request) -> Response:
     """Designate players to/from a player group.
 
@@ -401,12 +396,24 @@ def player_designation(request: Request) -> Response:
         }
 
     """
+    # SessionAuthentication already checks signed-in browser users; bearer
+    # clients do not need CSRF. Anonymous invitation sessions need it explicitly.
+    if not request.user.is_authenticated:
+        SessionAuthentication().enforce_csrf(request)
     command, error_response = _prepare_player_designation(request)
     if error_response is not None:
         return error_response
     assert command is not None
     try:
-        result = apply_player_designation(actor=request.user, command=command)
+        result = apply_player_designation(
+            actor=request.user,
+            command=command,
+            # Bearer requests use the token's own permissions. Do not borrow
+            # cookie-based capabilities without session CSRF authentication.
+            tracker_grants=(
+                request.session.get(SESSION_KEY, {}) if request.auth is None else {}
+            ),
+        )
     except MatchRevisionConflictError as exc:
         return Response(
             {

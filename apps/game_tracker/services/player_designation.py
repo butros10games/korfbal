@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -19,7 +20,9 @@ from apps.game_tracker.services.match_mutations import (
 from apps.game_tracker.services.player_groups import (
     PlayerGroupAssignmentError,
     add_player_to_group,
+    club_lineup_players,
 )
+from apps.game_tracker.services.tracker_access import has_tracker_grant
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
@@ -313,11 +316,60 @@ def _load_locked_command_state(
     return groups_by_id, players_by_id
 
 
+def _validate_guest_selections(
+    *,
+    command: DesignatePlayersCommand,
+    match_data: MatchData,
+    match: Match,
+    team: Team,
+) -> None:
+    """Bind delegated writes to actual group members or eligible new club players.
+
+    Raises:
+        PlayerDesignationValidationError: The submitted source membership is false.
+        PlayerDesignationPermissionError: A new player is outside the invited club.
+
+    """
+    memberships: dict[str, set[str]] = {}
+    for player_id, group_id in PlayerGroup.objects.filter(
+        match_data=match_data,
+        team=team,
+        players__pk__in=[selection.player_id for selection in command.players],
+    ).values_list("players__pk", "pk"):
+        memberships.setdefault(str(player_id), set()).add(str(group_id))
+
+    additions: set[str] = set()
+    for selection in command.players:
+        current_groups = memberships.get(selection.player_id, set())
+        if selection.source_group_id is not None:
+            if selection.source_group_id not in current_groups:
+                raise PlayerDesignationValidationError(
+                    "Player is not in the selected source group"
+                )
+        elif current_groups:
+            raise PlayerDesignationValidationError(
+                "Player is already in a player group"
+            )
+        else:
+            additions.add(selection.player_id)
+
+    if additions:
+        eligible_ids = {
+            str(player_id)
+            for player_id in club_lineup_players(match=match, team=team)
+            .filter(pk__in=additions)
+            .values_list("pk", flat=True)
+        }
+        if eligible_ids != additions:
+            raise PlayerDesignationPermissionError(PLAYER_GROUP_EDIT_PERMISSION_ERROR)
+
+
 def apply_player_designation(
     *,
     actor: object,
     command: DesignatePlayersCommand,
     publisher: MatchChangePublisher,
+    tracker_grants: Mapping[str, str] | None = None,
 ) -> PlayerDesignationResult:
     """Validate and apply one lineup mutation under the aggregate lock.
 
@@ -327,7 +379,10 @@ def apply_player_designation(
 
     """
     match_data, match, team = _resolve_context(command)
-    if not can_edit_player_groups(user=actor, match=match, team=team):
+    delegated = not can_edit_player_groups(user=actor, match=match, team=team)
+    if delegated and not (
+        tracker_grants and has_tracker_grant(tracker_grants, match=match, team=team)
+    ):
         raise PlayerDesignationPermissionError(PLAYER_GROUP_EDIT_PERMISSION_ERROR)
 
     try:
@@ -341,6 +396,13 @@ def apply_player_designation(
                 match_data=locked,
                 team=team,
             )
+            if delegated:
+                _validate_guest_selections(
+                    command=command,
+                    match_data=locked,
+                    match=match,
+                    team=team,
+                )
             target_group = (
                 groups_by_id[command.target_group_id]
                 if command.target_group_id is not None
