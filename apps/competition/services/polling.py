@@ -7,11 +7,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from django.db.models import F, Q
+from django.db.models import F, Max, Q
 from django.utils import timezone
 
 from apps.competition.domain.timing import expected_finish
-from apps.competition.models import Match, Pool, SyncResource
+from apps.competition.models import Match, Pool, ResultRevision, SyncResource
 from apps.competition.services.match_details import DETAIL_FIELDS, source_matches
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
@@ -198,6 +198,8 @@ class PollPlanner:
             "id", "external_id", "results_filtered"
         )
         self.pools = {pool["id"]: pool for pool in pools}
+        self.result_changes: dict[int, datetime] = {}
+        self._refresh_result_changes()
         self.attempted: set[int] = set()
         self.missing_responses: set[int] = set()
         self.checked: set[int] = set()
@@ -206,6 +208,46 @@ class PollPlanner:
         self.current_by_source = {row["external_id"]: row for row in self.rows}
         self._apply_class_durations()
         self._learn_reporting_delays()
+
+    def _refresh_result_changes(self, match_ids: set[int] | None = None) -> None:
+        """Retain actual score changes, including removals, across worker runs."""
+        revisions = ResultRevision.objects.filter(match__season=self.season)
+        if match_ids is not None:
+            revisions = revisions.filter(match_id__in=match_ids)
+        changes = (
+            revisions
+            .values("match_id")
+            .annotate(
+                changed_at=Max("observed_at"),
+                scored_at=Max(
+                    "observed_at",
+                    filter=Q(status="FINAL")
+                    | Q(home_score__isnull=False)
+                    | Q(away_score__isnull=False),
+                ),
+            )
+            .filter(scored_at__isnull=False)
+        )
+        self.result_changes.update(
+            (change["match_id"], change["changed_at"]) for change in changes
+        )
+
+    def _add_standings_job(self, row: dict[str, Any], jobs: dict[int, PollJob]) -> None:
+        """Club score coverage cannot confirm the poule's official standings."""
+        changed_at = self.result_changes.get(row["id"])
+        pool = self.pools.get(row["pool_id"])
+        if changed_at is None or not pool or pool["results_filtered"]:
+            return
+        resource = self.resources.get(("pool_results", pool["external_id"]))
+        if (
+            resource is None
+            or not self._available(resource)
+            or (resource.fetched_at and resource.fetched_at >= changed_at)
+        ):
+            return
+        job = jobs.setdefault(resource.pk, PollJob(resource, set(), 1))
+        job.priority = min(job.priority, 1)
+        job.matches.add(row["id"])
 
     def _apply_class_durations(self) -> None:
         """Reuse unambiguous recent details within the same mapped class."""
@@ -326,6 +368,7 @@ class PollPlanner:
         }
         for row in self.rows:
             self._add_program_jobs(row, jobs)
+            self._add_standings_job(row, jobs)
             if row["id"] in self.checked or next_result_check(row, self.now) > self.now:
                 continue
             for resource in self._owners(row):
@@ -580,6 +623,8 @@ class PollPlanner:
             self.missing_responses.update(job.matches - job.covered_matches)
         if checked and job.covered_matches:
             self._refresh_matches(job.covered_matches)
+            if job.resource.kind in {"club_results", "pool_results"}:
+                self._refresh_result_changes(job.covered_matches)
         if checked and job.resource.kind == "match_lineup":
             row = self.current_by_source.get(job.resource.source_id)
             self._refresh_matches({row["id"]} if row else set())

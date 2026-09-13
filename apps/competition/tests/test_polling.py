@@ -9,18 +9,26 @@ from django.utils import timezone
 import pytest
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
-from apps.competition.application.ports import RequestBudgetError
-from apps.competition.models import Match, Pool, SyncLease, SyncResource, TrafficState
+from apps.competition.application.ports import FetchResult, RequestBudgetError
+from apps.competition.models import (
+    Match,
+    Pool,
+    PoolEntry,
+    SyncLease,
+    SyncResource,
+    TrafficState,
+)
 from apps.competition.services.importer import Importer
 from apps.competition.services.polling import (
+    PollJob,
     PollPlanner,
     mark_checked,
     next_result_check,
 )
 from apps.competition.services.resources import ENDPOINTS
-from apps.competition.services.sync import sync
+from apps.competition.services.sync import checkpoint, sync
 from apps.competition.services.traffic import TrafficGate
-from apps.competition.tests.test_importer import match_payload
+from apps.competition.tests.test_importer import match_payload, team_payload
 from apps.schedule.models import Season
 
 
@@ -359,3 +367,119 @@ def test_expired_deadline_after_wait_never_sends_http(season: Season) -> None:
     get.assert_not_called()
     assert gate.requests == 1
     client.close()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("change", ["finished", "corrected", "removed"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_club_result_changes_refresh_standings_before_daily_audit(
+    season: Season, change: str, resume: bool
+) -> None:
+    """Final scores and corrections refresh their shared table across worker runs."""
+    now = timezone.now()
+    original = match_payload()
+    if change == "finished":
+        original.update(Status="SCHEDULED", HomeResult=None, AwayResult=None)
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [original]}
+    )
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(hours=1), next_sync_at=now + timedelta(days=1)
+    )
+    planner = PollPlanner(season, now)
+    row = match_payload()
+    if change == "corrected":
+        row["HomeResult"] = {"Score": 12}
+    elif change == "removed":
+        row.update(Status="CANCELLED", HomeResult=None, AwayResult=None)
+    resource = SyncResource.objects.get(kind="club_results", source_id="CT1")
+    club_job = PollJob(resource, {Match.objects.get().pk}, 1)
+    with patch("apps.competition.services.sync.timezone.now", return_value=now):
+        checked = checkpoint(
+            resource, FetchResult(200, {"MatchResult": [row]}), club_job
+        )
+    planner.completed(club_job, checked=checked)
+    assert checked
+    if resume:
+        planner = PollPlanner(season, now)
+    job = planner.next_job()
+    assert job is not None
+    assert (job.resource.kind, job.resource.source_id) == ("pool_results", "10")
+    assert job.resource.next_sync_at > now
+    # A poule response updates the exact values served to the Stand tab.
+    standing = {
+        **team_payload("T1"),
+        "TotalMatches": 0 if change == "removed" else 1,
+        "TotalPoints": 2 if change == "corrected" else 0,
+    }
+    result = FetchResult(
+        200,
+        {
+            "MatchResult": [row],
+            "PoolStanding": {"PoolStandingTeam": [standing]},
+            "ResultsFiltered": False,
+        },
+    )
+    checked = checkpoint(job.resource, result, job)
+    planner.completed(job, checked=checked)
+    assert (
+        PoolEntry.objects.get(team__external_id="T1").standing["TotalPoints"]
+        == standing["TotalPoints"]
+    )
+    assert planner.next_job() is None
+    assert PollPlanner(season, timezone.now()).next_job() is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "guard", ["unchanged", "filtered", "paced", "backoff", "exhausted"]
+)
+def test_standings_refresh_respects_existing_feed_guards(
+    season: Season, guard: str
+) -> None:
+    """Freshness-only observations and provider limits must not trigger extra reads."""
+    now = timezone.now()
+    row = match_payload()
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [row]}
+    )
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(hours=1), next_sync_at=now + timedelta(days=1)
+    )
+    if guard != "unchanged":
+        row["HomeResult"] = {"Score": 12}
+    Importer(season, now).apply("club_results", "CT1", {"MatchResult": [row]})
+    pool_resource = SyncResource.objects.filter(kind="pool_results")
+    if guard == "filtered":
+        Pool.objects.update(results_filtered=True)
+    elif guard == "paced":
+        pool_resource.update(fetched_at=now - timedelta(minutes=1))
+    elif guard == "backoff":
+        pool_resource.update(failures=1)
+    elif guard == "exhausted":
+        pool_resource.update(failures=6)
+    assert PollPlanner(season, now).next_job() is None
+
+
+@pytest.mark.django_db
+def test_not_modified_standings_confirm_the_result_change_without_repeat_reads(
+    season: Season,
+) -> None:
+    """A successful conditional check satisfies the pending standings refresh."""
+    now = timezone.now()
+    row = match_payload()
+    Importer(season, now).apply("club_results", "CT1", {"MatchResult": [row]})
+    Pool.objects.update(results_filtered=False)
+    SyncResource.objects.update(
+        fetched_at=now - timedelta(hours=1), next_sync_at=now + timedelta(days=1)
+    )
+    planner = PollPlanner(season, now)
+    job = planner.next_job()
+    assert job is not None
+    assert job.resource.kind == "pool_results"
+    checked = checkpoint(job.resource, FetchResult(304), job)
+    planner.completed(job, checked=checked)
+    assert planner.next_job() is None
+    assert PollPlanner(season, timezone.now()).next_job() is None

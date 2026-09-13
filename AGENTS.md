@@ -154,6 +154,10 @@ misleading provider 500/603 errors.
   success must not mark absent matches fresh. Clear legacy collection validators
   when introducing membership tracking, so old ETags cannot certify unknown scope.
 
+- Club result coverage does not confirm official poule standings. Schedule stale
+  poule feeds from actual result revisions, including on resumed worker runs;
+  preserve provider pacing and skip freshness-only score observations.
+
 - Sportlink feeds can contain fixtures with identical home/away team IDs. Skip those
   rows before identity writes without rejecting valid neighbours or counting skipped
   fixtures as observed coverage; retain validation for other identity conflicts.
