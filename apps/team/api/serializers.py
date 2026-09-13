@@ -9,6 +9,7 @@ from rest_framework import serializers
 from apps.club.api.serializers import ClubSerializer
 from apps.club.models.club import Club
 from apps.player.models import Player
+from apps.schedule.models import Season
 from apps.team.models.team import Team
 
 
@@ -35,3 +36,19 @@ class TeamRosterMutationSerializer(serializers.Serializer):
 
     player = serializers.PrimaryKeyRelatedField(queryset=Player.objects.all())
     operation = serializers.ChoiceField(choices=["add", "remove"])
+
+
+class TeamPoolMatchesQuerySerializer(serializers.Serializer):
+    """Require an explicit season and match status for pool browsing."""
+
+    season = serializers.PrimaryKeyRelatedField(queryset=Season.objects.all())
+    status = serializers.ChoiceField(choices=["upcoming", "finished"])
+
+
+class TeamPoolMatchesPageSerializer(serializers.Serializer):
+    """Document the paginated public match-summary response."""
+
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = serializers.ListField(child=serializers.DictField())

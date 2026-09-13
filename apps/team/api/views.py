@@ -21,6 +21,7 @@ from apps.game_tracker.services.match_impact import (
 )
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
+from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.api.serializers import PlayerSongSerializer, PlayerSongUpdateSerializer
 from apps.player.composition import update_owned_player_song_settings
 from apps.player.models import Player
@@ -53,6 +54,7 @@ from apps.team.queries.overview import (
     team_data_for_season,
     team_matches,
     team_players,
+    team_pool_matches,
     team_seasons,
 )
 from apps.team.services.goal_song_reads import (
@@ -69,7 +71,12 @@ from apps.team.services.overview import (
 from apps.team.services.roster import change_team_membership
 
 from .filters import TeamSearchFilter
-from .serializers import TeamRosterMutationSerializer, TeamSerializer
+from .serializers import (
+    TeamPoolMatchesPageSerializer,
+    TeamPoolMatchesQuerySerializer,
+    TeamRosterMutationSerializer,
+    TeamSerializer,
+)
 
 
 _ROSTER_SEARCH_MIN_LENGTH = 2
@@ -238,6 +245,24 @@ class TeamViewSet(viewsets.ModelViewSet):
             ],
             "has_more": len(candidates) > _ROSTER_SEARCH_LIMIT,
         })
+
+    @extend_schema(
+        parameters=[TeamPoolMatchesQuerySerializer],
+        responses=TeamPoolMatchesPageSerializer,
+    )
+    @action(detail=True, methods=("GET",), url_path="pool-matches", filter_backends=[])
+    def pool_matches(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Return a page of matches from the team's season-specific pools."""
+        team = self.get_object()
+        query = TeamPoolMatchesQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        matches = team_pool_matches(
+            team,
+            query.validated_data["season"],
+            finished=query.validated_data["status"] == "finished",
+        )
+        page = self.paginate_queryset(matches)
+        return self.get_paginated_response(build_match_summaries(page or []))
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(

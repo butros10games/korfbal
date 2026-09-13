@@ -7,7 +7,7 @@ from django.db.models import Exists, F, OuterRef, Q, QuerySet
 
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchImpact, Shot
 from apps.player.models import Player
-from apps.schedule.models import Match, Season
+from apps.schedule.models import Match, Season, SeasonPool
 from apps.schedule.queries.seasons import (
     current_season,
     most_recent_season,
@@ -36,22 +36,42 @@ def team_seasons(team: Team) -> QuerySet[Season]:
     ).order_by("-start_date")
 
 
+def _match_data() -> QuerySet[MatchData]:
+    return MatchData.objects.select_related(
+        "match_link",
+        "match_link__home_team",
+        "match_link__home_team__club",
+        "match_link__away_team",
+        "match_link__away_team__club",
+        "match_link__season",
+    ).fetch_mode(models.FETCH_RAISE)
+
+
 def team_matches(team: Team, season: Season | None) -> QuerySet[MatchData]:
     """Return match data for a team, optionally scoped to one season."""
-    queryset = (
-        MatchData.objects
-        .select_related(
-            "match_link",
-            "match_link__home_team",
-            "match_link__home_team__club",
-            "match_link__away_team",
-            "match_link__away_team__club",
-            "match_link__season",
-        )
-        .filter(Q(match_link__home_team=team) | Q(match_link__away_team=team))
-        .fetch_mode(models.FETCH_RAISE)
+    queryset = _match_data().filter(
+        Q(match_link__home_team=team) | Q(match_link__away_team=team)
     )
     return queryset.filter(match_link__season=season) if season else queryset
+
+
+def team_pool_matches(
+    team: Team, season: Season, *, finished: bool
+) -> QuerySet[MatchData]:
+    """Read every fixture assigned to this team's pools in the selected season."""
+    pools = SeasonPool.objects.filter(season=season, teams=team)
+    return (
+        _match_data()
+        .filter(
+            match_link__season=season,
+            match_link__pool__in=pools,
+            status__in=["finished"] if finished else ["upcoming", "active"],
+        )
+        .order_by(
+            "-match_link__start_time" if finished else "match_link__start_time",
+            "match_link__id_uuid",
+        )
+    )
 
 
 def team_players(
