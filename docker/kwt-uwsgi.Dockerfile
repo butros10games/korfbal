@@ -52,12 +52,13 @@ ARG APP_GID=1000
 
 WORKDIR /app
 
+# Refresh perl-base from Debian to apply security fixes missing from the pinned base.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    libjemalloc2 && \
+    libjemalloc2 perl-base && \
     groupadd --gid "${APP_GID}" appuser && \
     useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser && \
     install -d -o appuser -g appuser /app && \

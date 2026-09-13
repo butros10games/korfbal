@@ -47,6 +47,13 @@ FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eeba
 ARG APP_UID=1000
 ARG APP_GID=1000
 
+# Refresh perl-base from Debian to apply security fixes missing from the pinned base.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    perl-base
+
 RUN set -euo \
     && groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser \
