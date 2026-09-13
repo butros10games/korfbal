@@ -11,6 +11,7 @@ from datetime import timedelta
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test.client import Client
 from django.utils import timezone
 import pytest
@@ -27,7 +28,8 @@ MINIMUM_LIMIT = 1
 pytestmark = pytest.mark.django_db
 
 
-def test_match_next_scopes_to_followed_teams(client: Client) -> None:
+@pytest.mark.parametrize("match_status", ["upcoming", "active"])
+def test_match_next_scopes_to_followed_teams(client: Client, match_status: str) -> None:
     """The next endpoint should respect ?followed=1 for authenticated players."""
     today = timezone.now().date()
     season = Season.objects.create(name="2025", start_date=today, end_date=today)
@@ -58,7 +60,7 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
 
     for match in Match.objects.all():
         data = MatchData.objects.get(match_link=match)
-        data.status = "upcoming"
+        data.status = match_status
         data.save(update_fields=["status"])
 
     user = get_user_model().objects.create_user(
@@ -83,6 +85,61 @@ def test_match_next_scopes_to_followed_teams(client: Client) -> None:
     user.player.team_follow.clear()
     assert client.get("/api/matches/upcoming/", {"followed": "true"}).json() == []
     assert client.get("/api/matches/next/", {"followed": "true"}).content == b""
+
+
+@pytest.mark.parametrize("followed", [False, True])
+def test_match_next_keeps_started_match_until_finished(
+    client: Client, monkeypatch: pytest.MonkeyPatch, followed: bool
+) -> None:
+    """The home hero keeps an active match after its scheduled start passes."""
+    now = timezone.now()
+    season = Season.objects.create(
+        name="2026", start_date=now.date(), end_date=now.date()
+    )
+    club = Club.objects.create(name="Club")
+    home = Team.objects.create(name="Home", club=club)
+    away = Team.objects.create(name="Away", club=club)
+    match = Match.objects.create(
+        home_team=home,
+        away_team=away,
+        season=season,
+        start_time=now + timedelta(hours=1),
+    )
+    upcoming = Match.objects.create(
+        home_team=home,
+        away_team=away,
+        season=season,
+        start_time=now + timedelta(hours=2),
+    )
+    if followed:
+        user = get_user_model().objects.create_user(username="viewer")
+        user.player.team_follow.add(home)
+        client.force_login(user)
+    params = {"followed": "true"} if followed else {}
+    cache_key = "korfbal:schedule:/api/matches/next/"
+
+    assert client.get("/api/matches/next/", params).json()["id_uuid"] == str(
+        match.id_uuid
+    )
+
+    monkeypatch.setattr(timezone, "now", lambda: now + timedelta(minutes=90))
+    MatchData.objects.filter(match_link=match).update(status="active")
+    cache.delete(cache_key)  # Exercise a fresh read after the response cache expires.
+    assert client.get("/api/matches/next/", params).json()["id_uuid"] == str(
+        match.id_uuid
+    )
+
+    MatchData.objects.filter(match_link=match).update(status="finished")
+    cache.delete(cache_key)
+    assert client.get("/api/matches/next/", params).json()["id_uuid"] == str(
+        upcoming.id_uuid
+    )
+
+    MatchData.objects.filter(match_link=upcoming).update(status="finished")
+    cache.delete(cache_key)
+    response = client.get("/api/matches/next/", params)
+    assert response.status_code == HTTPStatus.OK
+    assert response.content == b""
 
 
 def test_match_followed_does_not_crash_when_user_has_no_player(client: Client) -> None:

@@ -238,7 +238,7 @@ class MatchViewSet(
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Return the next upcoming match for the active context.
+        """Return an active match, or the next upcoming match, for this context.
 
         Returns:
             Response: Serialized next match.
@@ -251,7 +251,14 @@ class MatchViewSet(
             if cached_payload is not cache_miss:
                 return Response(cached_payload)
 
-        match = self._upcoming_queryset().first()
+        match = self.get_queryset().filter(tracker_data__status="active").first()
+        if match is None:
+            match = (
+                self
+                ._upcoming_queryset()
+                .exclude(tracker_data__status="finished")
+                .first()
+            )
         if not match:
             payload: Any = None
             if self._is_cacheable_public_request():
