@@ -324,7 +324,7 @@ class PlayerSerializer(serializers.ModelSerializer):
             )
             clip_query = urlencode({
                 "start": int(song.start_time_seconds or 0),
-                "duration": 8,
+                "duration": song.clip_duration_seconds,
             })
             clip_url = f"{clip_path}?{clip_query}"
             if request is not None and hasattr(request, "build_absolute_uri"):
@@ -344,6 +344,7 @@ class PlayerSerializer(serializers.ModelSerializer):
 class PlayerSongSerializer(serializers.ModelSerializer):
     """Serializer for PlayerSong model."""
 
+    source_id = serializers.CharField(read_only=True)
     source_url = serializers.CharField(source="spotify_url", read_only=True)
     title = serializers.SerializerMethodField()
     artists = serializers.SerializerMethodField()
@@ -360,6 +361,9 @@ class PlayerSongSerializer(serializers.ModelSerializer):
             "id_uuid",
             "spotify_url",
             "source_url",
+            "source_id",
+            "clip_name",
+            "clip_duration_seconds",
             "title",
             "artists",
             "duration_seconds",
@@ -477,7 +481,13 @@ class PlayerSongCreateSerializer(serializers.Serializer):
 class PlayerSongUpdateSerializer(serializers.Serializer):
     """Input serializer for updating PlayerSong settings."""
 
-    start_time_seconds = serializers.IntegerField(min_value=0, required=False)
+    clip_name = serializers.CharField(max_length=80, allow_blank=True, required=False)
+    clip_duration_seconds = serializers.IntegerField(
+        min_value=1, max_value=15, required=False
+    )
+    start_time_seconds = serializers.IntegerField(
+        min_value=0, max_value=899, required=False
+    )
     playback_speed = serializers.FloatField(
         min_value=0.5,
         max_value=2.0,
@@ -488,14 +498,19 @@ class PlayerSongUpdateSerializer(serializers.Serializer):
         """Require at least one updatable field.
 
         Raises:
-            ValidationError: When neither `start_time_seconds` nor `playback_speed`
-                is provided.
+            ValidationError: When no clip setting is provided.
 
         """
-        if "start_time_seconds" not in attrs and "playback_speed" not in attrs:
-            raise serializers.ValidationError(
-                "Provide start_time_seconds and/or playback_speed."
-            )
+        if not attrs:
+            raise serializers.ValidationError("Provide at least one clip setting.")
+        return attrs
+
+
+class PlayerSongClipCreateSerializer(PlayerSongUpdateSerializer):
+    """Optional settings for another clip of an existing owned song."""
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Allow defaults when creating another clip."""
         return attrs
 
 

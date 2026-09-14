@@ -6,6 +6,7 @@ from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.http import FileResponse, HttpResponseRedirect
+from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
@@ -13,6 +14,7 @@ from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.player.api.serializers import (
+    PlayerSongClipCreateSerializer,
     PlayerSongCreateSerializer,
     PlayerSongSerializer,
     PlayerSongUpdateSerializer,
@@ -20,6 +22,7 @@ from apps.player.api.serializers import (
 from apps.player.composition import (
     audio_storage,
     create_player_song,
+    create_song_clip,
     resolve_player_song_clip,
     retry_owned_player_song_download,
     update_owned_player_song_settings,
@@ -29,6 +32,7 @@ from apps.player.services.player_song_queries import (
     player_songs_for_player,
 )
 from apps.player.services.player_songs import (
+    InvalidSongClipError,
     PlayerSongAlreadyReadyError,
     PlayerSongClipRequest,
     PlayerSongNotFoundError,
@@ -191,15 +195,12 @@ class CurrentPlayerSongDetailAPIView(KorfbalAPIView):
             song = update_owned_player_song_settings(
                 player=player,
                 song_id=song_id,
-                settings=PlayerSongSettingsPatch(
-                    start_time_seconds=serializer.validated_data.get(
-                        "start_time_seconds"
-                    ),
-                    playback_speed=serializer.validated_data.get("playback_speed"),
-                ),
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
             )
         except PlayerSongNotFoundError:
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        except InvalidSongClipError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(PlayerSongSerializer(song).data)
 
     def delete(
@@ -251,3 +252,33 @@ class CurrentPlayerSongRetryAPIView(KorfbalAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(PlayerSongSerializer(song).data)
+
+
+class CurrentPlayerSongClipsAPIView(KorfbalAPIView):
+    """Create independently selectable clips of the current player's audio."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    @extend_schema(
+        request=PlayerSongClipCreateSerializer, responses={201: PlayerSongSerializer}
+    )
+    def post(
+        self, request: Request, song_id: str, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Create a clip only from an owned, ready source."""
+        player = get_current_player(request)
+        if player is None:
+            return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        serializer = PlayerSongClipCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            song = create_song_clip(
+                owner=player,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
+            )
+        except PlayerSongNotFoundError:
+            return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
+        except InvalidSongClipError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(PlayerSongSerializer(song).data, status=status.HTTP_201_CREATED)

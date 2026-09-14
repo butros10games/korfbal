@@ -17,6 +17,7 @@ from apps.player.services.player_songs import (
     delete_owned_player_song,
     enqueue_download_for_player_song,
     retry_song_download,
+    validate_song_clip_settings,
 )
 from apps.team.models.team_data import TeamData
 
@@ -93,12 +94,28 @@ def update_team_song(
 ) -> PlayerSong:
     """Edit a team-owned clip without changing any player's personal settings."""
     song = _locked_team_song(team_data=team_data, song_id=song_id)
+    validate_song_clip_settings(song, settings)
     if settings.start_time_seconds is not None:
         song.start_time_seconds = settings.start_time_seconds
     if settings.playback_speed is not None:
         song.playback_speed = settings.playback_speed
-    song.save(update_fields=["start_time_seconds", "playback_speed", "updated_at"])
-    if settings.start_time_seconds is not None:
+    if settings.clip_name is not None:
+        song.clip_name = settings.clip_name
+    if settings.clip_duration_seconds is not None:
+        song.clip_duration_seconds = settings.clip_duration_seconds
+    song.save(
+        update_fields=[
+            "start_time_seconds",
+            "playback_speed",
+            "clip_name",
+            "clip_duration_seconds",
+            "updated_at",
+        ]
+    )
+    if (
+        settings.start_time_seconds is not None
+        or settings.clip_duration_seconds is not None
+    ):
         enqueue_download_for_player_song(song, jobs=jobs)
     return song
 

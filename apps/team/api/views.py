@@ -25,11 +25,12 @@ from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.api.serializers import (
+    PlayerSongClipCreateSerializer,
     PlayerSongCreateSerializer,
     PlayerSongSerializer,
     PlayerSongUpdateSerializer,
 )
-from apps.player.composition import update_owned_player_song_settings
+from apps.player.composition import create_song_clip, update_owned_player_song_settings
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong
 from apps.player.services.goal_song import (
@@ -43,6 +44,7 @@ from apps.player.services.player_song_queries import (
     player_songs_for_players,
 )
 from apps.player.services.player_songs import (
+    InvalidSongClipError,
     PlayerSongAlreadyReadyError,
     PlayerSongNotFoundError,
     PlayerSongSettingsPatch,
@@ -603,6 +605,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         Raises:
             NotFound: The song is not owned by this team and season.
+            ValidationError: The clip settings exceed the source bounds.
 
         """
         team_data = self._goal_song_team_owner(request)
@@ -619,7 +622,82 @@ class TeamViewSet(viewsets.ModelViewSet):
             )
         except PlayerSongNotFoundError as exc:
             raise NotFound("Song not found") from exc
+        except InvalidSongClipError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
         return Response(PlayerSongSerializer(song).data)
+
+    @extend_schema(
+        request=PlayerSongClipCreateSerializer,
+        responses={201: PlayerSongSerializer},
+        parameters=[_SONG_ID_PARAMETER],
+    )
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/clips",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def create_goal_song_clip(
+        self, request: Request, song_id: str, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Create another clip within the authorized team and season.
+
+        Raises:
+            NotFound: The source belongs to a different owner.
+            ValidationError: The source or clip settings are invalid.
+
+        """
+        owner = self._goal_song_team_owner(request)
+        serializer = PlayerSongClipCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            song = create_song_clip(
+                owner=owner,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
+            )
+        except PlayerSongNotFoundError as exc:
+            raise NotFound("Song not found") from exc
+        except InvalidSongClipError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(PlayerSongSerializer(song).data, status=201)
+
+    @extend_schema(
+        request=PlayerSongClipCreateSerializer,
+        responses={201: PlayerSongSerializer},
+        parameters=[_PLAYER_ID_PARAMETER, _SONG_ID_PARAMETER],
+    )
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path=r"goal-song-admin/player/(?P<player_id>[^/.]+)/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/clips",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def create_player_song_clip(
+        self, request: Request, player_id: str, song_id: str, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Create a clip only for an authorized roster player's own audio.
+
+        Raises:
+            NotFound: The source belongs to a different owner.
+            ValidationError: The source or clip settings are invalid.
+
+        """
+        team, season = self._goal_song_admin_context(request)
+        owner = self._goal_song_roster_player(team, season, player_id)
+        serializer = PlayerSongClipCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            song = create_song_clip(
+                owner=owner,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
+            )
+        except PlayerSongNotFoundError as exc:
+            raise NotFound("Song not found") from exc
+        except InvalidSongClipError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(PlayerSongSerializer(song).data, status=201)
 
     @extend_schema(
         request=None, responses=PlayerSongSerializer, parameters=[_SONG_ID_PARAMETER]
@@ -759,7 +837,12 @@ class TeamViewSet(viewsets.ModelViewSet):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Update song timing/speed for a player song from team moderation."""
+        """Update clip settings from team moderation.
+
+        Raises:
+            ValidationError: The clip settings exceed the source bounds.
+
+        """
         team, season = self._goal_song_admin_context(request)
 
         player = self._goal_song_roster_player(team, season, player_id)
@@ -775,13 +858,10 @@ class TeamViewSet(viewsets.ModelViewSet):
             song = update_owned_player_song_settings(
                 player=player,
                 song_id=song_id,
-                settings=PlayerSongSettingsPatch(
-                    start_time_seconds=serializer.validated_data.get(
-                        "start_time_seconds"
-                    ),
-                    playback_speed=serializer.validated_data.get("playback_speed"),
-                ),
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
             )
+        except InvalidSongClipError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
         except PlayerSongNotFoundError:
             return Response(
                 {"detail": "Song not found"},
@@ -794,6 +874,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         """Resolve the requested season and require moderation access.
 
         Raises:
+            NotFound: An explicitly requested season is not available.
             PermissionDenied: The viewer cannot manage this team's songs.
 
         """
@@ -801,6 +882,9 @@ class TeamViewSet(viewsets.ModelViewSet):
         season = resolve_team_season(
             request.query_params.get("season"), list(team_seasons(team))
         )
+        requested_season = (request.query_params.get("season") or "").strip()
+        if requested_season and (season is None or str(season.pk) != requested_season):
+            raise NotFound(detail="Season not found for this team.")
         if not viewer_can_manage_team(request=request, team=team, season=season):
             raise PermissionDenied(
                 detail="You do not have permission to manage team goal songs."

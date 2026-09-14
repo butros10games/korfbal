@@ -22,7 +22,7 @@ from apps.player.privacy import can_view_by_visibility
 
 
 EXPECTED_HISTORY_ROWS = 3
-EXPECTED_PLAYER_SONG_ROWS = 3
+EXPECTED_PLAYER_SONG_ROWS = 4
 CACHED_DURATION_SECONDS = 123
 DIRECT_DURATION_SECONDS = 789
 
@@ -118,7 +118,7 @@ def test_player_club_membership_enforces_history_constraints() -> None:
 
 
 @pytest.mark.django_db
-def test_player_song_cached_source_constraint_is_conditional() -> None:
+def test_player_song_cached_source_allows_independent_clips() -> None:
     first = create_tracker_player(username="cached-constraint-first")
     second = create_tracker_player(username="cached-constraint-second")
     cached = CachedSong.objects.create(
@@ -127,8 +127,7 @@ def test_player_song_cached_source_constraint_is_conditional() -> None:
     PlayerSong.objects.create(player=first, cached_song=cached)
     PlayerSong.objects.create(player=second, cached_song=cached)
 
-    with pytest.raises(IntegrityError), transaction.atomic():
-        PlayerSong.objects.create(player=first, cached_song=cached)
+    PlayerSong.objects.create(player=first, cached_song=cached, clip_name="Refrein")
 
     PlayerSong.objects.create(player=first)
     PlayerSong.objects.create(player=first)

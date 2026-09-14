@@ -204,3 +204,5 @@ misleading provider 500/603 errors.
 - Queue private match-form work from the finalized `MatchLiveChange` revision inside
   the mutation transaction; discovery is recovery. Reconcile after an upload so edits
   during provider I/O get a successor, and ignore statistics-only revision changes.
+
+- Keep goal-song clip lengths consistent in worker preparation, selected-song URLs, and tracker manifests. Song administration must reject an unknown explicit season instead of falling back to the current season.

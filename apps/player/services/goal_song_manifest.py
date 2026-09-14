@@ -8,7 +8,6 @@ from urllib.parse import urlencode
 from django.urls import reverse
 
 from apps.player.models import Player, PlayerSong, PlayerSongStatus
-from apps.player.services.player_audio import GOAL_SONG_CLIP_DURATION_SECONDS
 from apps.player.services.player_song_queries import player_songs_by_ids
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
@@ -41,7 +40,7 @@ def _entry(song: PlayerSong) -> dict[str, object]:
     source_updated_at = song.effective_updated_at
     query = urlencode({
         "start": start_seconds,
-        "duration": GOAL_SONG_CLIP_DURATION_SECONDS,
+        "duration": song.clip_duration_seconds,
         "stream": 1,
         "v": (
             f"{getattr(audio_file, 'name', '')}:"

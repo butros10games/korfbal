@@ -22,6 +22,7 @@ from .push import (
     CurrentPlayerTestPushNotificationAPIView,
 )
 from .songs import (
+    CurrentPlayerSongClipsAPIView,
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
@@ -43,6 +44,7 @@ __all__ = [
     "CurrentPlayerPasswordAPIView",
     "CurrentPlayerPrivacySettingsAPIView",
     "CurrentPlayerPushSubscriptionsAPIView",
+    "CurrentPlayerSongClipsAPIView",
     "CurrentPlayerSongDetailAPIView",
     "CurrentPlayerSongRetryAPIView",
     "CurrentPlayerSongsAPIView",

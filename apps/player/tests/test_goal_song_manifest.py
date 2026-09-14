@@ -34,8 +34,9 @@ def test_goal_song_manifest_preserves_player_and_fallback_selection_order() -> N
         player=scorer,
         status=PlayerSongStatus.READY,
         start_time_seconds=3,
+        clip_duration_seconds=6,
+        audio_file=first.audio_file.name,
     )
-    second.audio_file.save("second.mp3", ContentFile(b"second"), save=True)
     fallback = PlayerSong.objects.create(
         player=fallback_player,
         status=PlayerSongStatus.READY,
@@ -66,7 +67,10 @@ def test_goal_song_manifest_preserves_player_and_fallback_selection_order() -> N
     ]
     assert str(entries[0]["url"]).startswith("/api/player/api/songs/")
     assert "start=3" in str(entries[0]["url"])
-    assert "duration=8" in str(entries[0]["url"])
+    assert "duration=6" in str(entries[0]["url"])
+    assert "duration=8" in str(entries[1]["url"])
+    assert entries[0]["url"] != entries[1]["url"]
+    assert first.source_id == second.source_id
     assert "stream=1" in str(entries[0]["url"])
     assert "media." not in str(entries[0]["url"])
     fallback_entries = cast(list[dict[str, Any]], manifest["fallback"])

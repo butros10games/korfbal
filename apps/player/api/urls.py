@@ -10,6 +10,7 @@ from .views import (
     CurrentPlayerPasswordAPIView,
     CurrentPlayerPrivacySettingsAPIView,
     CurrentPlayerPushSubscriptionsAPIView,
+    CurrentPlayerSongClipsAPIView,
     CurrentPlayerSongDetailAPIView,
     CurrentPlayerSongRetryAPIView,
     CurrentPlayerSongsAPIView,
@@ -83,6 +84,11 @@ urlpatterns = [
         "me/songs/<uuid:song_id>/",
         CurrentPlayerSongDetailAPIView.as_view(),
         name="player-song-detail",
+    ),
+    path(
+        "me/songs/<uuid:song_id>/clips/",
+        CurrentPlayerSongClipsAPIView.as_view(),
+        name="player-song-clips",
     ),
     path(
         "me/songs/<uuid:song_id>/retry/",

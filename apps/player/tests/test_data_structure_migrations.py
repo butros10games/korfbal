@@ -92,3 +92,57 @@ def test_rosters_and_song_order_survive_migration_and_rollback() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.migration_regression
+@pytest.mark.django_db(transaction=True)
+def test_multiple_clips_preserve_existing_sources_and_selections() -> None:
+    """Existing clips keep their identity while an owner may reuse cached audio."""
+    executor = MigrationExecutor(connection)
+    before = [("player", "0029_team_song_ownership")]
+    original_start, default_duration = 12, 8
+    try:
+        executor.migrate(before)
+        old = executor.loader.project_state(before).apps
+        player = old.get_model("player", "Player").objects.create(name="Clip owner")
+        cached = old.get_model("player", "CachedSong").objects.create(
+            spotify_url="https://www.youtube.com/watch?v=BaW_jenozKc",
+        )
+        original = old.get_model("player", "PlayerSong").objects.create(
+            player=player, cached_song=cached, start_time_seconds=original_start
+        )
+        selection = old.get_model("player", "PlayerGoalSongSelection").objects.create(
+            player=player, song=original, position=0
+        )
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        executor.migrate(targets)
+        current = executor.loader.project_state(targets).apps
+        songs = current.get_model("player", "PlayerSong")
+        migrated = songs.objects.get(pk=original.pk)
+        assert not migrated.clip_name
+        assert migrated.clip_duration_seconds == default_duration
+        assert migrated.start_time_seconds == original_start
+        assert migrated.cached_song_id == cached.pk
+        assert (
+            current
+            .get_model("player", "PlayerGoalSongSelection")
+            .objects.get(pk=selection.pk)
+            .song_id
+            == original.pk
+        )
+        second = songs.objects.create(
+            player_id=player.pk,
+            cached_song_id=cached.pk,
+            clip_name="Refrein",
+            start_time_seconds=30,
+            clip_duration_seconds=6,
+        )
+        assert second.pk != original.pk
+        with pytest.raises(IntegrityError), transaction.atomic():
+            songs.objects.create(player_id=player.pk, clip_duration_seconds=0)
+        with pytest.raises(IntegrityError), transaction.atomic():
+            songs.objects.create(player_id=player.pk, clip_duration_seconds=16)
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

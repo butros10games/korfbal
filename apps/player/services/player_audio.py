@@ -116,5 +116,6 @@ def prepare_player_song_clip(
         audio_file=audio_file,
         song=song,
         start_seconds=max(0, int(song.start_time_seconds or 0)),
+        duration_seconds=song.clip_duration_seconds,
         runtime=runtime,
     )

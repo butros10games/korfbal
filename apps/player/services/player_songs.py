@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -23,14 +23,22 @@ from apps.player.services.player_song_queries import (
 )
 from apps.player.services.upload_validation import validate_audio_upload
 from apps.player.song_sources import parse_song_source
-
-
-if TYPE_CHECKING:
-    from apps.team.models.team_data import TeamData
+from apps.team.models.team_data import TeamData
 
 
 class PlayerSongNotFoundError(Exception):
     """Raised when a player does not own the requested song."""
+
+
+MAX_CLIP_SECONDS = 15
+MAX_SOURCE_SECONDS = 900
+MIN_PLAYBACK_SPEED = 0.5
+MAX_PLAYBACK_SPEED = 2
+MAX_CLIP_NAME_LENGTH = 80
+
+
+class InvalidSongClipError(ValueError):
+    """The clip is unavailable or its requested range is invalid."""
 
 
 class PlayerSongAlreadyReadyError(Exception):
@@ -65,6 +73,8 @@ class PlayerSongSettingsPatch:
 
     start_time_seconds: int | None = None
     playback_speed: float | None = None
+    clip_name: str | None = None
+    clip_duration_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +131,11 @@ def create_owned_song(
     jobs: SongDownloadDispatcher,
 ) -> PlayerSongCreation:
     """Create a player song and dispatch processing after commit."""
+    # Serialize imports per owner: several clips may now reference one cache row.
+    if isinstance(owner, Player):
+        owner = Player.objects.select_for_update().get(pk=owner.pk)
+    else:
+        owner = TeamData.objects.select_for_update().get(pk=owner.pk)
     player = owner if isinstance(owner, Player) else None
     team_data = None if isinstance(owner, Player) else owner
     if isinstance(uploaded_audio, UploadedFile):
@@ -148,15 +163,21 @@ def create_owned_song(
     source = parse_song_source(source_url or spotify_url or "")
     canonical_url = source.url
     cached, _ = CachedSong.objects.get_or_create(spotify_url=canonical_url)
-    song, created = PlayerSong.objects.get_or_create(
-        player=player,
-        team_data=team_data,
-        cached_song=cached,
-        defaults={
-            "spotify_url": canonical_url,
-            "start_time_seconds": source.start_seconds,
-        },
+    song = (
+        PlayerSong.objects
+        .filter(player=player, team_data=team_data, cached_song=cached)
+        .order_by("created_at", "pk")
+        .first()
     )
+    created = song is None
+    if song is None:
+        song = PlayerSong.objects.create(
+            player=player,
+            team_data=team_data,
+            cached_song=cached,
+            spotify_url=canonical_url,
+            start_time_seconds=source.start_seconds,
+        )
     enqueue_download_for_player_song(song, jobs=jobs)
     return PlayerSongCreation(song=song, created=created)
 
@@ -188,6 +209,7 @@ def update_owned_player_song_settings(
     """Update an owned song and keep the selected legacy start time in sync."""
     locked_player = _lock_player(player)
     song = _owned_song_for_update(player=locked_player, song_id=song_id)
+    validate_song_clip_settings(song, settings)
     update_fields: list[str] = ["updated_at"]
 
     if settings.start_time_seconds is not None:
@@ -197,6 +219,11 @@ def update_owned_player_song_settings(
         song.playback_speed = settings.playback_speed
         update_fields.append("playback_speed")
 
+    for field in ("clip_name", "clip_duration_seconds"):
+        value = getattr(settings, field)
+        if value is not None:
+            setattr(song, field, value)
+            update_fields.append(field)
     song.save(update_fields=update_fields)
     selected_ids = [
         value for value in (locked_player.goal_song_song_ids or []) if value
@@ -207,7 +234,10 @@ def update_owned_player_song_settings(
         locked_player.song_start_time = song.start_time_seconds
         locked_player.save(update_fields=["song_start_time"])
 
-    if settings.start_time_seconds is not None:
+    if (
+        settings.start_time_seconds is not None
+        or settings.clip_duration_seconds is not None
+    ):
         enqueue_download_for_player_song(song, jobs=jobs)
     return song
 
@@ -285,3 +315,110 @@ def resolve_player_song_clip(
     if request.enqueue_if_missing and clip_key is None:
         enqueue_download_for_player_song(song, jobs=jobs)
     return PlayerSongClip(song=song, audio_file=audio_file, clip_key=clip_key)
+
+
+def validate_song_clip_settings(
+    song: PlayerSong, settings: PlayerSongSettingsPatch
+) -> None:
+    """Validate clip settings in the shared service, including alternate routes.
+
+    Raises:
+        InvalidSongClipError: A name, speed, duration or range is invalid.
+
+    """
+    start = (
+        settings.start_time_seconds
+        if settings.start_time_seconds is not None
+        else song.start_time_seconds
+    )
+    duration = (
+        settings.clip_duration_seconds
+        if settings.clip_duration_seconds is not None
+        else song.clip_duration_seconds
+    )
+    speed = (
+        settings.playback_speed
+        if settings.playback_speed is not None
+        else song.playback_speed
+    )
+    name = settings.clip_name if settings.clip_name is not None else song.clip_name
+    if (
+        not 1 <= duration <= MAX_CLIP_SECONDS
+        or not 0 <= start < MAX_SOURCE_SECONDS
+        or not MIN_PLAYBACK_SPEED <= speed <= MAX_PLAYBACK_SPEED
+        or len(name) > MAX_CLIP_NAME_LENGTH
+    ):
+        raise InvalidSongClipError(
+            "Geef een geldige clipnaam, starttijd, lengte (1-15 sec.) en snelheid op."
+        )
+    full_duration = song.effective_duration_seconds
+    if full_duration is not None and start + duration > full_duration:
+        raise InvalidSongClipError(
+            "De clip moet binnen de lengte van het nummer vallen."
+        )
+
+
+@transaction.atomic
+def create_song_clip(
+    *,
+    owner: Player | TeamData,
+    song_id: str,
+    settings: PlayerSongSettingsPatch,
+    jobs: SongDownloadDispatcher,
+) -> PlayerSong:
+    """Create an independent clip without downloading or copying owned audio.
+
+    Uploaded clips share the same immutable owner-scoped file. Deleting a clip
+    removes only its database selection; it must not delete its siblings' audio.
+
+    Raises:
+        PlayerSongNotFoundError: The source does not belong to this owner.
+        InvalidSongClipError: The source is not ready or clip settings are invalid.
+
+    """
+    if isinstance(owner, Player):
+        owner = Player.objects.select_for_update().get(pk=owner.pk)
+        query = PlayerSong.objects.filter(player=owner)
+    else:
+        owner = TeamData.objects.select_for_update().get(pk=owner.pk)
+        query = PlayerSong.objects.filter(team_data=owner)
+    source = (
+        query
+        .select_related("cached_song")
+        .select_for_update(of=("self",))
+        .filter(pk=song_id)
+        .first()
+    )
+    if source is None:
+        raise PlayerSongNotFoundError
+    if (
+        source.effective_status != PlayerSongStatus.READY
+        or not source.effective_audio_file
+    ):
+        raise InvalidSongClipError(
+            "Wacht tot het nummer klaar is voordat je een clip toevoegt."
+        )
+    validate_song_clip_settings(source, settings)
+    clip = PlayerSong.objects.create(
+        player_id=source.player_id,
+        team_data_id=source.team_data_id,
+        cached_song=source.cached_song,
+        spotify_url=source.spotify_url,
+        audio_file=source.audio_file.name,
+        title=source.title,
+        artists=source.artists,
+        duration_seconds=source.duration_seconds,
+        status=source.status,
+        start_time_seconds=settings.start_time_seconds
+        if settings.start_time_seconds is not None
+        else source.start_time_seconds,
+        playback_speed=settings.playback_speed
+        if settings.playback_speed is not None
+        else source.playback_speed,
+        clip_name=settings.clip_name or "Nieuwe clip",
+        clip_duration_seconds=settings.clip_duration_seconds
+        if settings.clip_duration_seconds is not None
+        else source.clip_duration_seconds,
+    )
+    enqueue_download_for_player_song(clip, jobs=jobs)
+    return clip

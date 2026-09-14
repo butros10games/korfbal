@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from typing import TYPE_CHECKING, ClassVar
 
 from bg_uuidv7 import uuidv7
@@ -84,8 +85,12 @@ class PlayerSong(models.Model):
     )
 
     start_time_seconds: models.IntegerField[int, int] = models.IntegerField(default=0)
+    clip_name: models.CharField[str, str] = models.CharField(max_length=80, blank=True)
+    clip_duration_seconds: models.PositiveSmallIntegerField[int, int] = (
+        models.PositiveSmallIntegerField(default=8)
+    )
 
-    # Playback speed used in the web UI preview (and any future local playback).
+    # Playback speed used by previews and tracker audio.
     playback_speed: models.FloatField[float, float] = models.FloatField(default=1.0)
 
     status: models.CharField[str, str] = models.CharField(
@@ -116,15 +121,11 @@ class PlayerSong(models.Model):
                 ),
                 name="song_has_one_owner",
             ),
-            models.UniqueConstraint(
-                fields=["team_data", "cached_song"],
-                condition=Q(cached_song__isnull=False),
-                name="unique_team_cached_song",
-            ),
-            models.UniqueConstraint(
-                fields=["player", "cached_song"],
-                condition=Q(cached_song__isnull=False),
-                name="unique_player_cached_song",
+            models.CheckConstraint(
+                condition=Q(
+                    clip_duration_seconds__gte=1, clip_duration_seconds__lte=15
+                ),
+                name="song_clip_duration_bounds",
             ),
         )
 
@@ -132,6 +133,14 @@ class PlayerSong(models.Model):
         """Return a readable representation for admin/debugging."""
         label = self.title or self.spotify_url or "(uploaded song)"
         return f"{self.player_id or self.team_data_id}: {label}"
+
+    @property
+    def source_id(self) -> str:
+        """Group clips by their immutable audio without exposing a storage key."""
+        if self.cached_song_id is not None:
+            return str(self.cached_song_id)
+        key = self.audio_file.name or str(self.pk)
+        return hashlib.sha256(key.encode()).hexdigest()
 
     @property
     def effective_audio_file(self) -> FieldFile:
