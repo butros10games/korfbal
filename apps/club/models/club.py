@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from typing import TYPE_CHECKING, Any
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.db import models
 from django.templatetags.static import static
+from django.urls import reverse
 
 
 if TYPE_CHECKING:
@@ -58,6 +60,11 @@ class Club(models.Model):
         # project migrated to a React SPA. Club links should point into the SPA.
         return f"{settings.WEB_APP_ORIGIN}/clubs/{self.id_uuid}"
 
+    @property
+    def logo_version(self) -> str:
+        """Identify an immutable stored upload without exposing its storage key."""
+        return sha256((self.logo.name or "").encode()).hexdigest()
+
     def get_club_logo(self) -> str:
         """Get the URL of the club logo.
 
@@ -66,7 +73,10 @@ class Club(models.Model):
 
         """
         if self.logo:
-            return self.logo.url
+            path = reverse(
+                "club-logo", kwargs={"club_id": self.pk, "version": self.logo_version}
+            )
+            return f"{settings.KORFBAL_MEDIA_API_ORIGIN}{path}"
 
         # Optional: if the KWT club doesn't have an uploaded logo in the DB,
         # serve a known static brand asset.

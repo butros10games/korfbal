@@ -29,6 +29,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Public club-logo URLs must be stable and versioned by the immutable storage key; expiring private-media tokens in cached catalogue responses cause repeated downloads and broken logos. Keep the public route restricted to the current club logo, never arbitrary media keys.
+
 - For eligibility, use published competition classifications for imported teams;
   `TeamData` can retain the manual B-category/rank-1 defaults. Keep missing player
   ages and official B-youth cutoffs as explicit checks, never inferred permission.

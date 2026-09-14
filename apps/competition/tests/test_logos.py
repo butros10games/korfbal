@@ -58,7 +58,7 @@ def test_discovery_cache_and_native_publication(season: Season) -> None:
     source = Club.objects.get()
     local = AppClub.objects.get()
     assert local.logo.name == source.cached_logo == source.published_logo
-    assert local.get_club_logo() == local.logo.url
+    assert f"/club/clubs/{local.pk}/logo/{local.logo_version}/" in local.get_club_logo()
     gate = Mock()
     with patch("apps.competition.adapters.outbound.logos.requests.get") as request:
         result = fetch_logo(source.external_id, gate, retry_delay)
