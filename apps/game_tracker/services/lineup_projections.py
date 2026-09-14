@@ -16,7 +16,7 @@ from apps.game_tracker.models import (
     SubstitutionEventDetail,
 )
 
-from .match_events import active_match_events
+from .match_events import active_match_events, event_root_sequences
 from .player_groups import RESERVE_GROUP_NAME
 
 
@@ -95,7 +95,14 @@ def rebuild_current_lineup(match_data: MatchData) -> None:
             )
             .order_by("event__sequence")
         )
-        for change in changes:
+        # Corrections append envelopes but retain the original substitution order.
+        root_sequences = event_root_sequences(locked)
+        for change in sorted(
+            changes,
+            key=lambda change: root_sequences[
+                "player_change", str(change.event.source_id)
+            ],
+        ):
             if change.player_in_id is None or change.player_out_id is None:
                 continue
             target = group_by_id.get(str(change.player_group_id))

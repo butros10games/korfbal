@@ -44,10 +44,10 @@ def _remove_player_change(
 
 
 def _remove_pause(event: Pause) -> None:
-    timeout = Timeout.objects.filter(pause=event).first()
-    if timeout is not None:
-        timeout.delete()
     if event.active:
+        timeout = Timeout.objects.filter(pause=event).first()
+        if timeout is not None:
+            timeout.delete()
         event.delete()
         return
 

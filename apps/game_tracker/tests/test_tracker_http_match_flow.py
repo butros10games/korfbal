@@ -230,6 +230,50 @@ def test_timeout_command_can_register_opponent_timeout_and_counts_in_state() -> 
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("for_team", [True, False])
+def test_undo_timeout_resume_preserves_timeout_until_start_is_undone(
+    for_team: bool,
+) -> None:
+    tracker = create_tracker_match(prefix=f"Undo timeout {for_team}")
+    tracker.match_data.status = "active"
+    tracker.match_data.save(update_fields=["status"])
+    create_match_part(match_data=tracker.match_data)
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "timeout", "for_team": for_team},
+    )
+    timeout = Timeout.objects.get(match_data=tracker.match_data)
+    pause_id = timeout.pause_id
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "start/pause"},
+    )
+
+    reopened = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "remove_last_event"},
+    )
+
+    assert reopened["paused"] is True
+    assert reopened["timeouts"]["for" if for_team else "against"] == 1
+    assert Timeout.objects.filter(pk=timeout.pk).exists()
+    assert Pause.objects.get(pk=pause_id).active is True
+
+    removed = apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={"command": "remove_last_event"},
+    )
+    assert removed["paused"] is False
+    assert removed["timeouts"]["for" if for_team else "against"] == 0
+    assert not Timeout.objects.filter(pk=timeout.pk).exists()
+    assert not Pause.objects.filter(pk=pause_id).exists()
+
+
+@pytest.mark.django_db
 def test_timeout_command_enforces_maximum_for_each_team() -> None:
     tracker = create_tracker_match(prefix="Timeout Limit")
     match_data = tracker.match_data

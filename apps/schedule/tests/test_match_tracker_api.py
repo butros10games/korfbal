@@ -12,6 +12,7 @@ from django.test.client import Client
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.models import TrackerCommand
 from apps.game_tracker.services.tracker_commands import TrackerCommandError
 from apps.player.models.player_club_membership import PlayerClubMembership
 
@@ -99,6 +100,28 @@ def test_tracker_command_rejects_non_object_json(client: Client) -> None:
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json() == {"detail": "Invalid JSON body."}
     apply_command.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", [[], {}, ["ball_loss"], {"kind": "ball_loss"}])
+def test_tracker_command_rejects_non_string_possession_kind(
+    client: Client, kind: object
+) -> None:
+    """Malformed nested JSON returns a controlled error without changing the match."""
+    graph = create_match_graph(prefix="Invalid possession")
+    _login_member(client, graph, "invalid-possession-member")
+    revision = graph.match_data.live_revision
+
+    response = client.post(
+        _url(graph, "commands"),
+        {"command": "possession_change_reg", "kind": kind},
+        content_type=JSON,
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    graph.match_data.refresh_from_db()
+    assert graph.match_data.live_revision == revision
+    assert not TrackerCommand.objects.filter(match_data=graph.match_data).exists()
 
 
 def test_tracker_conflict_returns_reconciliation_metadata(client: Client) -> None:

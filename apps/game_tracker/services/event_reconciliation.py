@@ -363,9 +363,15 @@ def _event_summary(event: MatchEvent) -> dict[str, object]:
 
 def pending_reconciliations(match_data: MatchData) -> list[dict[str, object]]:
     """Return unresolved candidate pairs with enough context for human review."""
+    active_event_ids = active_match_events(match_data).values("pk")
     candidates = (
         MatchEventReconciliation.objects
-        .filter(match_data=match_data, decision__isnull=True)
+        .filter(
+            match_data=match_data,
+            decision__isnull=True,
+            first_event_id__in=active_event_ids,
+            second_event_id__in=active_event_ids,
+        )
         .select_related(
             "first_event",
             "first_event__shot_detail",
@@ -538,6 +544,13 @@ def resolve_reconciliation(
                 if canonical_event.pk == reconciliation.first_event_id
                 else reconciliation.first_event
             )
+            candidate_event_ids = (canonical_event.pk, duplicate.pk)
+            if active_match_events(locked).filter(
+                pk__in=candidate_event_ids
+            ).count() != len(candidate_event_ids):
+                raise EventReconciliationError(
+                    "Candidate events changed; review them again before merging."
+                )
             _merge_duplicate_projection(
                 match_data=locked,
                 duplicate=duplicate,

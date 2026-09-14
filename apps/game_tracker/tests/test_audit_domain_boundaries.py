@@ -96,7 +96,12 @@ def test_iso_parser_normalizes_offsets_and_treats_naive_values_as_utc() -> None:
 
 @pytest.mark.parametrize(
     "payload",
-    [{}, {"client_time_ms": "not-an-integer", "client_time_iso": "not-a-time"}],
+    [
+        {},
+        {"client_time_ms": "not-an-integer", "client_time_iso": "not-a-time"},
+        {"client_time_iso": "0001-01-01T00:00:00+01:00"},
+        {"client_time_iso": "9999-12-31T23:59:59-01:00"},
+    ],
 )
 def test_command_time_uses_server_time_when_no_client_time_is_usable(
     payload: dict[str, object],

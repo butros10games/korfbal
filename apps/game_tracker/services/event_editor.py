@@ -654,6 +654,20 @@ def _pause_times(
     return start, end
 
 
+def _validate_pause_active_state(pause: Pause) -> None:
+    if not pause.active:
+        return
+    if pause.start_time is None or pause.end_time is not None:
+        _validation_error("active", "An active pause must have a start and no end.")
+    if (
+        Pause.objects
+        .filter(match_data=pause.match_data, active=True)
+        .exclude(pk=pause.pk)
+        .exists()
+    ):
+        _validation_error("active", "This match already has an active pause.")
+
+
 @_apply_command.register
 def _create_pause(command: CreatePauseEvent, match_data: MatchData) -> Pause:
     match_part = _match_part(match_data, command.match_part_id)
@@ -663,13 +677,16 @@ def _create_pause(command: CreatePauseEvent, match_data: MatchData) -> Pause:
         minute=command.minute,
         length_seconds=command.length_seconds,
     )
-    return Pause.objects.create(
+    pause = Pause(
         match_data=match_data,
         match_part=match_part,
         start_time=start,
         end_time=end,
         active=command.active,
     )
+    _validate_pause_active_state(pause)
+    pause.save()
+    return pause
 
 
 def _apply_pause_patch(
@@ -682,6 +699,7 @@ def _apply_pause_patch(
         pause.match_part = _match_part(match_data, command.match_part_id)
 
     if not _timing_requested(
+        command.match_part_id,
         command.start_time,
         command.minute,
         command.length_seconds,
@@ -702,6 +720,7 @@ def _apply_pause_patch(
         start = pause.start_time
     if start is None:
         _validation_error("start_time", "Pause has no start.")
+    _validate_event_time_in_part(match_part, start)
 
     duration = (
         command.length_seconds
@@ -734,7 +753,12 @@ def _update_pause(
     )
     if command.active is not UNSET:
         pause.active = command.active
+    _validate_pause_active_state(pause)
     pause.save()
+    for timeout in Timeout.objects.filter(pause=pause):
+        timeout.pause = pause
+        timeout.match_part = pause.match_part
+        timeout.save(update_fields=["match_part"])
     return pause
 
 
@@ -805,6 +829,7 @@ def _update_timeout(
     )
     if command.match_part_id is not UNSET:
         timeout.match_part = timeout.pause.match_part
+    _validate_pause_active_state(timeout.pause)
     timeout.pause.save()
     timeout.save()
     return timeout

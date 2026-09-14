@@ -51,6 +51,7 @@ def test_team_catalog_caps_page_size_and_serializes_nested_club(
         "name": club.name,
         "logo": None,
         "logo_url": club_payload["logo_url"],
+        "city": None,
     }
     assert club_payload["logo_url"].endswith("/images/clubs/blank-club-picture.png")
     assert "club_id" not in payload["results"][0]

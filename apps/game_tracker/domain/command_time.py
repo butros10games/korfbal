@@ -13,11 +13,11 @@ def parse_client_time_iso(value: str) -> datetime | None:
     """Parse an ISO timestamp as UTC, accepting a ``Z`` suffix."""
     try:
         parsed = datetime.fromisoformat(value.strip())
-    except ValueError:
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError):
         return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def command_time_from_payload(

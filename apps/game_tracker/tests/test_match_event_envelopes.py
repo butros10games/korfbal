@@ -20,6 +20,7 @@ from apps.game_tracker.models import (
     MatchPart,
     Pause,
     PlayerChange,
+    PossessionChange,
     Shot,
     ShotEventDetail,
     SubstitutionEventDetail,
@@ -547,6 +548,44 @@ def test_typed_projections_rebuild_exactly_without_appending_events() -> None:
     )
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.event_sequence == last_sequence
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("kind", "attributed"),
+    [(PossessionChange.BALL_LOSS, True), (PossessionChange.INTERCEPTION, False)],
+)
+def test_replay_preserves_possession_changes(kind: str, attributed: bool) -> None:
+    """Replacing period projections must restore their possession records too."""
+    tracker = create_tracker_match(prefix="Possession replay")
+    now = timezone.now()
+    part = MatchPart.objects.create(
+        match_data=tracker.match_data,
+        part_number=1,
+        start_time=now - timedelta(minutes=5),
+        active=True,
+    )
+    player = create_tracker_player(username="possession-replay") if attributed else None
+    possession = PossessionChange.objects.create(
+        match_data=tracker.match_data,
+        match_part=part,
+        team=tracker.home_team,
+        player=player,
+        kind=kind,
+        time=now,
+    )
+    expected = PossessionChange.objects.filter(pk=possession.pk).values().get()
+    event_count = MatchEvent.objects.filter(match_data=tracker.match_data).count()
+
+    for _ in range(2):
+        rebuild_typed_event_projections(tracker.match_data)
+        assert (
+            PossessionChange.objects.filter(pk=possession.pk).values().get() == expected
+        )
+        assert (
+            MatchEvent.objects.filter(match_data=tracker.match_data).count()
+            == event_count
+        )
 
 
 @pytest.mark.django_db

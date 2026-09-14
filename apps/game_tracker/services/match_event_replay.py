@@ -15,6 +15,7 @@ from apps.game_tracker.models import (
     MatchPart,
     Pause,
     PlayerChange,
+    PossessionChange,
     Shot,
     Timeout,
 )
@@ -31,9 +32,17 @@ _PROJECTION_MODELS: dict[str, type[models.Model]] = {
     "timeout": Timeout,
     "shot": Shot,
     "player_change": PlayerChange,
+    "possession_change": PossessionChange,
     "attack": Attack,
 }
-_DEPENDENT_SOURCE_TYPES = ("timeout", "shot", "player_change", "attack", "pause")
+_DEPENDENT_SOURCE_TYPES = (
+    "timeout",
+    "shot",
+    "player_change",
+    "possession_change",
+    "attack",
+    "pause",
+)
 
 
 class IncompleteMatchEventHistoryError(RuntimeError):
@@ -128,7 +137,14 @@ def rebuild_typed_event_projections(match_data: MatchData) -> None:
 
         _rebuild_match_parts(records["match_part"], match_data_id=locked.pk)
 
-        for source_type in ("pause", "timeout", "shot", "player_change", "attack"):
+        for source_type in (
+            "pause",
+            "timeout",
+            "shot",
+            "player_change",
+            "possession_change",
+            "attack",
+        ):
             model = _PROJECTION_MODELS[source_type]
             model.objects.bulk_create([
                 model(

@@ -8,14 +8,19 @@ from django.apps import apps as django_apps
 from django.utils import timezone
 import pytest
 
-from apps.game_tracker.composition import apply_tracker_command
+from apps.game_tracker.composition import (
+    apply_event_editor_command,
+    apply_tracker_command,
+)
 from apps.game_tracker.models import (
     MatchPart,
+    MatchPlayer,
     PlayerChange,
     PlayerGroup,
     Shot,
     StartingPlayerAssignment,
 )
+from apps.game_tracker.services.event_editor import UpdateSubstitutionEvent
 from apps.game_tracker.services.lineup_projections import (
     capture_starting_lineup,
     rebuild_current_lineup,
@@ -131,6 +136,56 @@ def test_current_lineup_rebuilds_from_snapshot_and_substitutions() -> None:
     rebuild_current_lineup(tracker.match_data)
     assert set(attack.players.values_list("pk", flat=True)) == {starter.pk}
     assert set(reserve.players.values_list("pk", flat=True)) == {substitute.pk}
+
+
+@pytest.mark.django_db
+def test_correcting_earlier_substitution_preserves_current_lineup() -> None:
+    """A correction envelope must not move an earlier substitution after later play."""
+    tracker, attack, _defense, reserve, players = _lineup_fixture()
+    starter, first_substitute = players
+    final_substitute = create_tracker_player(username="corrected-lineup-final")
+    reserve.players.add(final_substitute)
+    MatchPlayer.objects.bulk_create([
+        MatchPlayer(
+            match_data=tracker.match_data, team=tracker.home_team, player=player
+        )
+        for player in (starter, first_substitute, final_substitute)
+    ])
+    apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload={"command": "start/pause"}
+    )
+    for outgoing, incoming in (
+        (starter, first_substitute),
+        (first_substitute, final_substitute),
+    ):
+        apply_tracker_command(
+            tracker.match,
+            team=tracker.home_team,
+            payload={
+                "command": "substitute_reg",
+                "new_player_id": str(incoming.pk),
+                "old_player_id": str(outgoing.pk),
+            },
+        )
+    change = PlayerChange.objects.get(
+        match_data=tracker.match_data, player_in=first_substitute
+    )
+    part = MatchPart.objects.get(match_data=tracker.match_data)
+    tracker.match_data.refresh_from_db()
+    apply_event_editor_command(
+        match_data_id=tracker.match_data.pk,
+        expected_revision=tracker.match_data.live_revision,
+        actor=None,
+        command=UpdateSubstitutionEvent(
+            event_id=str(change.pk), time=part.start_time.isoformat()
+        ),
+    )
+
+    assert set(attack.players.values_list("pk", flat=True)) == {final_substitute.pk}
+    assert set(reserve.players.values_list("pk", flat=True)) == {
+        starter.pk,
+        first_substitute.pk,
+    }
 
 
 @pytest.mark.django_db

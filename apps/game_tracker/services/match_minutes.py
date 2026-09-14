@@ -151,11 +151,14 @@ def compute_minutes_by_player_id(*, match_data: MatchData) -> dict[str, float]:
     # The timeline payload builders can return "?" for shots without part/time.
     # When all events/shots are missing timestamps, the JS-parity end-minute
     # falls back to 1.0, which makes all players appear to have ~0-1 minutes.
-    # For minutes-played we prefer a match-length fallback.
-    match_end_minutes = max(match_end_minutes, _expected_match_end_minutes(match_data))
+    # Use the schedule only as a fallback. A recorded match may finish early.
     from_parts = _match_end_minutes_from_match_parts(match_data)
-    if from_parts is not None:
-        match_end_minutes = max(match_end_minutes, from_parts)
+    match_end_minutes = max(
+        match_end_minutes,
+        from_parts
+        if from_parts is not None
+        else _expected_match_end_minutes(match_data),
+    )
 
     groups = list(
         PlayerGroup.objects

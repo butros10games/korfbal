@@ -14,12 +14,14 @@ import pytest
 from apps.game_tracker.models import (
     MatchEvent,
     MatchLiveChange,
+    MatchPart,
     Pause,
     PossessionChange,
     Shot,
     ShotEventDetail,
     Timeout,
 )
+from apps.game_tracker.services.match_events import active_match_events
 from apps.game_tracker.services.match_impact import compute_match_impact_rows
 from apps.schedule.api.constants import MATCH_TRACKER_DATA_NOT_FOUND
 
@@ -48,6 +50,178 @@ MISSING_EVENT_MUTATIONS = [
     ("delete", "possession-changes"),
 ]
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("route", ["pauses", "timeouts"])
+@pytest.mark.parametrize("change_period", [False, True])
+def test_moving_timeout_pause_keeps_timeout_period_and_history_in_sync(
+    client: Client, route: str, change_period: bool
+) -> None:
+    """Both editor routes must move the timeout together with its backing pause."""
+    context = create_editor_context(client, username="timeout-period-sync")
+    graph = context.graph
+    first = context.match_part
+    first.active = False
+    first.end_time = first.start_time + timedelta(minutes=30)
+    first.save(update_fields=["active", "end_time"])
+    second = MatchPart.objects.create(
+        match_data=graph.match_data,
+        part_number=2,
+        start_time=first.end_time + timedelta(minutes=10),
+        active=True,
+    )
+    pause = Pause.objects.create(
+        match_data=graph.match_data,
+        match_part=first,
+        start_time=first.start_time,
+        end_time=first.start_time + timedelta(seconds=30),
+        active=False,
+    )
+    timeout = Timeout.objects.create(
+        match_data=graph.match_data,
+        match_part=first,
+        pause=pause,
+        team=graph.home_team,
+    )
+    graph.match_data.refresh_from_db()
+    target_part = second if change_period else first
+    response = client.patch(
+        f"/api/matches/{graph.match.pk}/events/{route}/{pause.pk}/",
+        data={
+            "match_part_id": str(target_part.pk),
+            "minute": (target_part.part_number - 1) * graph.match_data.part_length // 60
+            + 1,
+            "expected_revision": graph.match_data.live_revision,
+        },
+        content_type=JSON,
+    )
+    assert response.status_code == HTTPStatus.OK
+    pause.refresh_from_db()
+    timeout.refresh_from_db()
+    assert pause.match_part_id == target_part.pk
+    assert timeout.match_part_id == target_part.pk
+    event = active_match_events(graph.match_data, source_types={"timeout"}).get(
+        source_id=timeout.pk
+    )
+    assert event.period_id == target_part.pk
+    assert event.payload["record"]["match_part_id"] == str(target_part.pk)
+    assert event.effective_at == pause.start_time
+
+
+@pytest.mark.parametrize("event_kind", ["pauses", "timeouts"])
+def test_pause_editor_rejects_period_change_with_old_timestamps(
+    client: Client, event_kind: str
+) -> None:
+    """A period-only PATCH must not strand pause times in a different period."""
+    context = create_editor_context(client, username="pause-period-coach")
+    graph = context.graph
+    first = context.match_part
+    first.active = False
+    first.end_time = first.start_time + timedelta(minutes=30)
+    first.save(update_fields=["active", "end_time"])
+    second = MatchPart.objects.create(
+        match_data=graph.match_data,
+        part_number=2,
+        start_time=first.end_time + timedelta(minutes=10),
+        active=True,
+    )
+    pause = Pause.objects.create(
+        match_data=graph.match_data,
+        match_part=first,
+        start_time=first.start_time + timedelta(minutes=1),
+        end_time=first.start_time + timedelta(minutes=2),
+        active=False,
+    )
+    if event_kind == "timeouts":
+        Timeout.objects.create(
+            match_data=graph.match_data,
+            match_part=first,
+            pause=pause,
+            team=graph.home_team,
+        )
+    graph.match_data.refresh_from_db()
+    revision = graph.match_data.live_revision
+    events_before = MatchEvent.objects.filter(match_data=graph.match_data).count()
+    response = client.patch(
+        f"/api/matches/{graph.match.pk}/events/{event_kind}/{pause.pk}/",
+        data={"match_part_id": str(second.pk), "expected_revision": revision},
+        content_type=JSON,
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "time" in response.json()
+    pause.refresh_from_db()
+    graph.match_data.refresh_from_db()
+    assert pause.match_part_id == first.pk
+    assert graph.match_data.live_revision == revision
+    assert (
+        MatchEvent.objects.filter(match_data=graph.match_data).count() == events_before
+    )
+
+    corrected = client.patch(
+        f"/api/matches/{graph.match.pk}/events/{event_kind}/{pause.pk}/",
+        data={
+            "match_part_id": str(second.pk),
+            "minute": graph.match_data.part_length // 60 + 1,
+            "expected_revision": revision,
+        },
+        content_type=JSON,
+    )
+    assert corrected.status_code == HTTPStatus.OK
+    pause.refresh_from_db()
+    assert pause.match_part_id == second.pk
+    assert pause.start_time == second.start_time + timedelta(minutes=1)
+    assert pause.length() == timedelta(minutes=1)
+    if event_kind == "timeouts":
+        assert Timeout.objects.get(pause=pause).match_part_id == second.pk
+
+
+@pytest.mark.parametrize("method", ["post", "patch"])
+@pytest.mark.parametrize("conflict", ["duration", "existing_pause"])
+def test_pause_editor_rejects_invalid_active_pause(
+    client: Client, method: str, conflict: str
+) -> None:
+    """An active pause must be open and the only active pause in the match."""
+    context = create_editor_context(client, username="active-pause-coach")
+    graph = context.graph
+    url = f"/api/matches/{graph.match.pk}/events/pauses/"
+    if conflict == "existing_pause":
+        Pause.objects.create(
+            match_data=graph.match_data,
+            match_part=context.match_part,
+            start_time=context.match_part.start_time,
+            active=True,
+        )
+    if method == "patch":
+        pause = Pause.objects.create(
+            match_data=graph.match_data,
+            match_part=context.match_part,
+            start_time=context.match_part.start_time,
+            active=conflict == "duration",
+        )
+        url += f"{pause.pk}/"
+    graph.match_data.refresh_from_db()
+    revision = graph.match_data.live_revision
+    events_before = MatchEvent.objects.filter(match_data=graph.match_data).count()
+    response = getattr(client, method)(
+        url,
+        data={
+            "match_part_id": str(context.match_part.pk),
+            "minute": 0,
+            "length_seconds": 30 if conflict == "duration" else 0,
+            "active": True,
+            "expected_revision": revision,
+        },
+        content_type=JSON,
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "active" in response.json()
+    graph.match_data.refresh_from_db()
+    assert graph.match_data.live_revision == revision
+    assert (
+        MatchEvent.objects.filter(match_data=graph.match_data).count() == events_before
+    )
 
 
 @pytest.mark.parametrize(("method", "event_kind"), MISSING_EVENT_MUTATIONS)

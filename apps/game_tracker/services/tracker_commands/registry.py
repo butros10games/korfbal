@@ -101,7 +101,7 @@ def _parse_goal(payload: dict[str, Any]) -> TrackerCommand:
 def _parse_possession_change(payload: dict[str, Any]) -> TrackerCommand:
     player_id = payload.get("player_id")
     kind = payload.get("kind")
-    if kind not in {
+    if not isinstance(kind, str) or kind not in {
         PossessionChange.BALL_LOSS,
         PossessionChange.INTERCEPTION,
     }:
