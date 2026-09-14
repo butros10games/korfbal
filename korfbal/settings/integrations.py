@@ -17,6 +17,10 @@ SPOTIFY_REDIRECT_URI = env(
     f"{spotify_origin.rstrip('/')}/api/player/spotify/callback/",
 )
 
+# Optional Netscape-format session file mounted read-only in the media worker.
+# Downloader jobs use private temporary copies because yt-dlp rewrites cookie jars.
+YOUTUBE_COOKIES_FILE = env("YOUTUBE_COOKIES_FILE", "")
+
 # --- Web push notifications (PWA) ---
 # The frontend subscribes using the *public* VAPID key.
 # The backend sends notifications using `pywebpush` with the private key.

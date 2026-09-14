@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from django.test import override_settings
 import pytest
+from yt_dlp.utils import match_filter_func
 
 from apps.player.adapters.outbound import song_downloader as downloader
 from apps.player.application.ports import CommandRunOptions, TrackMetadata
@@ -21,6 +22,8 @@ from apps.player.application.ports import CommandRunOptions, TrackMetadata
 SPOTIFY_URL = "https://open.spotify.com/track/27CXrzqx1N44o1Pi6AHRT4"
 EXPECTED_CALLS = 2
 VIDEO_DURATION = 60
+PRIVATE_FILE_MODE = 0o600
+PRIVATE_DIRECTORY_MODE = 0o700
 
 
 class FakeMetadata:
@@ -244,3 +247,190 @@ def test_restricted_video_failure_does_not_expose_process_output(
         )
     assert "private provider diagnostics" not in str(error.value)
     assert not (tmp_path / "audio.mp3").exists()
+
+
+@pytest.mark.parametrize(
+    ("diagnostic", "message", "reason"),
+    [
+        (
+            "ERROR: Sign in to confirm you\u2019re not a bot. Use --cookies",
+            "YouTube is blocking this import",
+            "youtube_sign_in_required",
+        ),
+        (
+            "ERROR: Sign in to confirm you're not a bot. Use --cookies",
+            "YouTube is blocking this import",
+            "youtube_sign_in_required",
+        ),
+        (
+            "ERROR: HTTP Error 429: Too Many Requests",
+            "YouTube is temporarily limiting imports",
+            "youtube_rate_limited",
+        ),
+        (
+            "WARNING: The provided YouTube account cookies are no longer valid",
+            "YouTube import session has expired or is invalid",
+            "youtube_session_invalid",
+        ),
+    ],
+)
+def test_provider_rejection_is_specific_redacted_and_not_repeated_immediately(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    diagnostic: str,
+    message: str,
+    reason: str,
+) -> None:
+    """Known provider denials must not be reported as invalid songs or timeouts."""
+    secret = uuid4().hex
+    runner = Mock()
+    runner.run.return_value = subprocess.CompletedProcess(
+        [],
+        1,
+        stderr=f"{diagnostic}\nCookie: {secret}\nhttps://private.example/{secret}",
+    )
+    (tmp_path / "audio.mp3").write_bytes(b"partial")
+    with pytest.raises(RuntimeError, match=message) as error:
+        downloader.download_song(
+            "https://www.youtube.com/watch?v=SSbBvKaM6sk&t=8s",
+            tmp_path,
+            command_runner=runner,
+            metadata_client=Mock(),
+        )
+    runner.run.assert_called_once()
+    command = runner.run.call_args.args[0]
+    assert command[-1] == "https://www.youtube.com/watch?v=SSbBvKaM6sk"
+    assert "--cookies" not in command
+    assert reason in caplog.text
+    assert secret not in str(error.value)
+    assert secret not in caplog.text
+    assert not (tmp_path / "audio.mp3").exists()
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "timeout"])
+def test_optional_session_uses_private_disposable_cookie_copy(
+    tmp_path: Path, outcome: str
+) -> None:
+    """An importer cannot modify its read-only secret or leave credentials behind."""
+    secret = uuid4().hex
+    source = tmp_path / "mounted-session.txt"
+    source.write_text(f"# Netscape HTTP Cookie File\n# {secret}\n", encoding="utf-8")
+    source.chmod(0o400)
+    before = source.read_bytes()
+    cookie_paths: list[Path] = []
+    output = tmp_path / "audio"
+
+    def run(
+        cmd: Sequence[str], options: CommandRunOptions
+    ) -> subprocess.CompletedProcess[str]:
+        cookie_file = Path(cmd[cmd.index("--cookies") + 1])
+        cookie_paths.append(cookie_file)
+        assert cookie_file != source
+        filters = [
+            cmd[index + 1]
+            for index, value in enumerate(cmd)
+            if value == "--match-filter"
+        ]
+        matcher = match_filter_func(filters)
+        for availability in ("public", "unlisted"):
+            assert (
+                matcher(
+                    {
+                        "availability": availability,
+                        "duration": VIDEO_DURATION,
+                        "is_live": False,
+                    },
+                    incomplete=False,
+                )
+                is None
+            )
+        for availability in (
+            "private",
+            "needs_auth",
+            "premium_only",
+            "subscriber_only",
+            None,
+        ):
+            assert (
+                matcher(
+                    {
+                        "availability": availability,
+                        "duration": VIDEO_DURATION,
+                        "is_live": False,
+                    },
+                    incomplete=False,
+                )
+                is not None
+            )
+        assert (
+            matcher(
+                {"availability": "public", "duration": 901, "is_live": False},
+                incomplete=False,
+            )
+            is not None
+        )
+        assert (
+            matcher(
+                {
+                    "availability": "unlisted",
+                    "duration": VIDEO_DURATION,
+                    "is_live": True,
+                },
+                incomplete=False,
+            )
+            is not None
+        )
+        assert cookie_file.stat().st_mode & 0o777 == PRIVATE_FILE_MODE
+        assert cookie_file.parent.stat().st_mode & 0o777 == PRIVATE_DIRECTORY_MODE
+        assert secret not in " ".join(cmd)
+        assert source.read_bytes() == before
+        cookie_file.write_text(
+            "# Netscape HTTP Cookie File\n# provider refresh\n", encoding="utf-8"
+        )
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(list(cmd), options.timeout)
+        if outcome == "failure":
+            return subprocess.CompletedProcess(list(cmd), 1, stderr="Failed")
+        (output / "audio.mp3").write_bytes(b"complete synthetic audio")
+        return subprocess.CompletedProcess(list(cmd), 0)
+
+    with override_settings(YOUTUBE_COOKIES_FILE=str(source)):
+        if outcome == "success":
+            downloader.download_song(
+                SPOTIFY_URL,
+                output,
+                command_runner=FakeCommandRunner(run),
+                metadata_client=FakeMetadata(),
+            )
+        else:
+            with pytest.raises(RuntimeError):
+                downloader.download_song(
+                    SPOTIFY_URL,
+                    output,
+                    command_runner=FakeCommandRunner(run),
+                    metadata_client=FakeMetadata(),
+                )
+    assert source.read_bytes() == before
+    assert cookie_paths
+    assert all(not path.exists() for path in cookie_paths)
+
+
+def test_missing_configured_session_fails_without_an_anonymous_attempt(
+    tmp_path: Path,
+) -> None:
+    """A missing mounted secret is an operational error, never a public path leak."""
+    secret_path = tmp_path / uuid4().hex / "cookies.txt"
+    runner = Mock()
+    with (
+        override_settings(YOUTUBE_COOKIES_FILE=str(secret_path)),
+        pytest.raises(RuntimeError, match="authentication is unavailable") as error,
+    ):
+        downloader.download_song(
+            "https://youtu.be/SSbBvKaM6sk?t=8s",
+            tmp_path,
+            command_runner=runner,
+            metadata_client=Mock(),
+        )
+    runner.run.assert_not_called()
+    assert str(secret_path) not in str(error.value)
+    assert error.value.__cause__ is None
