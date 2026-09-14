@@ -49,13 +49,19 @@ from apps.player.services.player_songs import (
     PlayerSongNotFoundError,
     PlayerSongSettingsPatch,
 )
+from apps.player.services.upload_validation import InvalidAudioUploadError
 from apps.schedule.models import Season
 from apps.team.api.permissions import (
     viewer_can_manage_roster,
     viewer_can_manage_team,
     viewer_player,
 )
-from apps.team.composition import create_team_song, retry_team_song, update_team_song
+from apps.team.composition import (
+    add_team_library_clip,
+    create_team_song,
+    retry_team_song,
+    update_team_song,
+)
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 from apps.team.queries.overview import (
@@ -68,6 +74,7 @@ from apps.team.queries.overview import (
     team_pool_matches,
     team_seasons,
 )
+from apps.team.services.clip_library import search_team_clips
 from apps.team.services.goal_song_reads import (
     fallback_goal_song_audio_urls,
     fallback_goal_song_song_ids,
@@ -84,6 +91,9 @@ from apps.team.services.roster import change_team_membership
 from .filters import TeamSearchFilter
 from .serializers import (
     TeamCatalogSerializer,
+    TeamClipLibraryAddSerializer,
+    TeamClipLibraryQuerySerializer,
+    TeamClipLibrarySerializer,
     TeamPoolMatchesPageSerializer,
     TeamPoolMatchesQuerySerializer,
     TeamRosterMutationSerializer,
@@ -733,6 +743,69 @@ class TeamViewSet(viewsets.ModelViewSet):
         if team_data is None:
             raise ValidationError({"detail": "No TeamData found for this season."})
         return team_data
+
+    @extend_schema(
+        parameters=[TeamClipLibraryQuerySerializer],
+        responses=TeamClipLibrarySerializer(many=True),
+    )
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="goal-song-admin/library",
+        permission_classes=[permissions.IsAuthenticated],
+        filter_backends=[],
+    )
+    def goal_song_library(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Browse ready clips from other teams for an authorized recipient."""
+        owner = self._goal_song_team_owner(request)
+        query = TeamClipLibraryQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        songs = search_team_clips(owner=owner, search=query.validated_data["search"])
+        paginator = StandardResultsSetPagination()
+        paginator.page_size = 20
+        page = paginator.paginate_queryset(songs, request, view=self)
+        return paginator.get_paginated_response(
+            TeamClipLibrarySerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        request=TeamClipLibraryAddSerializer,
+        responses={201: PlayerSongSerializer, 200: PlayerSongSerializer},
+    )
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path="goal-song-admin/library/add",
+        permission_classes=[permissions.IsAuthenticated],
+        filter_backends=[],
+    )
+    def add_goal_song_from_library(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Import a shared clip without granting write access to its source team.
+
+        Raises:
+            NotFound: The source is not a ready shared team clip.
+            ValidationError: The clip or stored upload is invalid.
+
+        """
+        owner = self._goal_song_team_owner(request)
+        serializer = TeamClipLibraryAddSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = add_team_library_clip(
+                owner=owner, source_id=str(serializer.validated_data["source_id"])
+            )
+        except PlayerSongNotFoundError as exc:
+            raise NotFound("Clip not found in the team library.") from exc
+        except (InvalidSongClipError, InvalidAudioUploadError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        return Response(
+            PlayerSongSerializer(result.song).data,
+            status=201 if result.created else 200,
+        )
 
     @action(
         detail=True,

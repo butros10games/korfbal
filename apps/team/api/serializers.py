@@ -8,9 +8,44 @@ from rest_framework import serializers
 
 from apps.club.api.serializers import ClubCatalogSerializer, ClubSerializer
 from apps.club.models.club import Club
+from apps.player.api.serializers import PlayerSongSerializer
 from apps.player.models import Player
 from apps.schedule.models import Season
 from apps.team.models.team import Team
+
+
+class TeamClipLibrarySerializer(PlayerSongSerializer):
+    """A reusable team clip with provenance and an owner-scoped import receipt."""
+
+    team_name = serializers.CharField(source="team_data.team.name", read_only=True)
+    club_name = serializers.CharField(source="team_data.team.club.name", read_only=True)
+    season_name = serializers.CharField(source="team_data.season.name", read_only=True)
+    already_added = serializers.BooleanField(source="library_added", read_only=True)
+
+    class Meta(PlayerSongSerializer.Meta):
+        """Extend the existing clip contract without exposing personal owners."""
+
+        fields: ClassVar[list[str]] = [
+            *PlayerSongSerializer.Meta.fields,
+            "team_name",
+            "club_name",
+            "season_name",
+            "already_added",
+        ]
+
+
+class TeamClipLibraryQuerySerializer(serializers.Serializer):
+    """Bound shared library search input."""
+
+    search = serializers.CharField(
+        required=False, allow_blank=True, max_length=100, default=""
+    )
+
+
+class TeamClipLibraryAddSerializer(serializers.Serializer):
+    """Select one library source to copy into the authorized team."""
+
+    source_id = serializers.UUIDField()
 
 
 class TeamSerializer(serializers.ModelSerializer):

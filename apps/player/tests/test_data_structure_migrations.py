@@ -6,6 +6,7 @@ from uuid import uuid4
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.state import StateApps
 import pytest
 
 
@@ -68,7 +69,9 @@ def test_rosters_and_song_order_survive_migration_and_rollback() -> None:
             songs.objects.create()
         with pytest.raises(IntegrityError), transaction.atomic():
             songs.objects.create(player_id=player.pk, team_data_id=roster.pk)
-        team_song.delete()
+        _assert_library_copy_survives_source_deletion(
+            current, str(team_song.pk), roster.pk
+        )
         assert list(selections.values_list("song_id", flat=True)) == [
             second.pk,
             first.pk,
@@ -146,3 +149,19 @@ def test_multiple_clips_preserve_existing_sources_and_selections() -> None:
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+def _assert_library_copy_survives_source_deletion(
+    apps: StateApps, source_id: str, team_data_id: int
+) -> None:
+    """Verify the migrated receipt constraint and non-cascading source reference."""
+    songs = apps.get_model("player", "PlayerSong")
+    copied = songs.objects.create(
+        team_data_id=team_data_id, library_source_id=source_id
+    )
+    with pytest.raises(IntegrityError), transaction.atomic():
+        songs.objects.create(team_data_id=team_data_id, library_source_id=source_id)
+    songs.objects.get(pk=source_id).delete()
+    copied.refresh_from_db()
+    assert copied.library_source_id is None
+    copied.delete()

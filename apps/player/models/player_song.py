@@ -61,6 +61,15 @@ class PlayerSong(models.Model):
     )
     team_data_id: int | None
 
+    library_source = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="library_copies",
+    )
+    library_source_id: str | None
+
     # Shared cached download for this track.
     cached_song: models.ForeignKey[CachedSong, CachedSong] = models.ForeignKey(
         CachedSong,
@@ -114,6 +123,10 @@ class PlayerSong(models.Model):
 
         ordering: ClassVar[list[str]] = ["-created_at"]
         constraints = (
+            models.UniqueConstraint(
+                fields=("team_data", "library_source"),
+                name="unique_team_library_clip",
+            ),
             models.CheckConstraint(
                 condition=(
                     Q(player__isnull=False, team_data__isnull=True)
