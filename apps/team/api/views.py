@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from django.core.files.uploadedfile import UploadedFile
 from django.db import models
 from django.db.models import QuerySet
 from drf_spectacular.types import OpenApiTypes
@@ -12,6 +13,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -22,7 +24,11 @@ from apps.game_tracker.services.match_impact import (
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.player.api.serializers import PlayerSongSerializer, PlayerSongUpdateSerializer
+from apps.player.api.serializers import (
+    PlayerSongCreateSerializer,
+    PlayerSongSerializer,
+    PlayerSongUpdateSerializer,
+)
 from apps.player.composition import update_owned_player_song_settings
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong
@@ -32,10 +38,12 @@ from apps.player.services.goal_song import (
 )
 from apps.player.services.player_song_queries import (
     owned_player_song_or_none,
+    player_song_queryset,
     player_songs_by_ids,
     player_songs_for_players,
 )
 from apps.player.services.player_songs import (
+    PlayerSongAlreadyReadyError,
     PlayerSongNotFoundError,
     PlayerSongSettingsPatch,
 )
@@ -45,6 +53,7 @@ from apps.team.api.permissions import (
     viewer_can_manage_team,
     viewer_player,
 )
+from apps.team.composition import create_team_song, retry_team_song, update_team_song
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 from apps.team.queries.overview import (
@@ -62,7 +71,7 @@ from apps.team.services.goal_song_reads import (
     fallback_goal_song_song_ids,
     song_entries_for_ids,
 )
-from apps.team.services.goal_songs import delete_team_player_song
+from apps.team.services.goal_songs import delete_team_player_song, delete_team_song
 from apps.team.services.impact_breakdowns import aggregate_player_impact_breakdowns
 from apps.team.services.overview import (
     TeamOverviewOptions,
@@ -427,8 +436,16 @@ class TeamViewSet(viewsets.ModelViewSet):
         team, season = self._goal_song_admin_context(request)
 
         match_data_qs = team_matches(team, season)
-        players = list(team_players(team, season, match_data_qs))
+        players = list(
+            team_players(team, season, match_data_qs).filter(
+                id_uuid__in=main_roster_ids(team=team, season=season)
+            )
+        )
         songs = list(player_songs_for_players(players))
+        team_data = team_data_for_season(team=team, season=season)
+        team_songs = list(
+            player_song_queryset().filter(team_data=team_data, team_data__isnull=False)
+        )
 
         songs_by_player: dict[str, list[PlayerSong]] = {}
         for song in songs:
@@ -437,7 +454,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         fallback_ids = fallback_goal_song_song_ids(team=team, season=season)
         fallback_songs = song_entries_for_ids(
-            songs=songs,
+            songs=[*songs, *team_songs],
             ids=fallback_ids,
         )
 
@@ -474,6 +491,7 @@ class TeamViewSet(viewsets.ModelViewSet):
             },
             "fallback_goal_song_song_ids": fallback_ids,
             "fallback_goal_song_songs": fallback_songs,
+            "team_songs": PlayerSongSerializer(team_songs, many=True).data,
             "players": players_payload,
         }
         return Response(payload)
@@ -502,17 +520,21 @@ class TeamViewSet(viewsets.ModelViewSet):
             payload=request.data,
             field_name="fallback_goal_song_song_ids",
         )
-        roster_player_ids = main_roster_ids(team=team, season=season)
-        valid_songs = self._validated_ready_songs(
-            ids=ids,
-            songs_qs=player_songs_by_ids(song_ids=ids).filter(
-                player_id__in=roster_player_ids
-            ),
-        )
-
         team_data = team_data_for_season(team=team, season=season)
         if team_data is None:
             raise ValidationError({"detail": "No TeamData found for this season."})
+        # Team imports may be selected while processing. Only ready clips enter
+        # the match manifest; personal songs still require a ready roster owner.
+        team_songs = list(player_songs_by_ids(song_ids=ids).filter(team_data=team_data))
+        team_song_ids = {str(song.pk) for song in team_songs}
+        personal_ids = [song_id for song_id in ids if song_id not in team_song_ids]
+        personal_songs = self._validated_ready_songs(
+            ids=personal_ids,
+            songs_qs=player_songs_by_ids(song_ids=personal_ids).filter(
+                player_id__in=main_roster_ids(team=team, season=season)
+            ),
+        )
+        valid_songs = [*personal_songs, *team_songs]
 
         team_data.fallback_goal_song_song_ids = ids
         team_data.save(update_fields=["fallback_goal_song_song_ids"])
@@ -524,6 +546,115 @@ class TeamViewSet(viewsets.ModelViewSet):
                 ids=ids,
             ),
         })
+
+    @extend_schema(
+        request=PlayerSongCreateSerializer,
+        responses={200: PlayerSongSerializer, 201: PlayerSongSerializer},
+    )
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path="goal-song-admin/songs",
+        permission_classes=[permissions.IsAuthenticated],
+        parser_classes=[JSONParser, FormParser, MultiPartParser],
+    )
+    def create_goal_song(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Upload or import a song owned by this team and season."""
+        team_data = self._goal_song_team_owner(request)
+        serializer = PlayerSongCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded = serializer.validated_data.get("audio_file")
+        creation = create_team_song(
+            team_data=team_data,
+            uploaded_audio=uploaded if isinstance(uploaded, UploadedFile) else None,
+            source_url=str(
+                serializer.validated_data.get("source_url")
+                or serializer.validated_data.get("spotify_url")
+                or ""
+            ),
+        )
+        return Response(
+            PlayerSongSerializer(creation.song).data,
+            status=201 if creation.created else 200,
+        )
+
+    @extend_schema(
+        methods=["PATCH"],
+        request=PlayerSongUpdateSerializer,
+        responses=PlayerSongSerializer,
+        parameters=[_SONG_ID_PARAMETER],
+    )
+    @extend_schema(
+        methods=["DELETE"],
+        request=None,
+        responses={204: None},
+        parameters=[_SONG_ID_PARAMETER],
+    )
+    @action(
+        detail=True,
+        methods=("PATCH", "DELETE"),
+        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def manage_goal_song(
+        self, request: Request, song_id: str, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Edit or remove a song only from the authorized team's library.
+
+        Raises:
+            NotFound: The song is not owned by this team and season.
+
+        """
+        team_data = self._goal_song_team_owner(request)
+        try:
+            if request.method == "DELETE":
+                delete_team_song(team_data=team_data, song_id=song_id)
+                return Response(status=204)
+            serializer = PlayerSongUpdateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            song = update_team_song(
+                team_data=team_data,
+                song_id=song_id,
+                settings=PlayerSongSettingsPatch(**serializer.validated_data),
+            )
+        except PlayerSongNotFoundError as exc:
+            raise NotFound("Song not found") from exc
+        return Response(PlayerSongSerializer(song).data)
+
+    @extend_schema(
+        request=None, responses=PlayerSongSerializer, parameters=[_SONG_ID_PARAMETER]
+    )
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/retry",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def retry_goal_song(
+        self, request: Request, song_id: str, *args: Any, **kwargs: Any
+    ) -> Response:
+        """Retry a team import using the durable media worker.
+
+        Raises:
+            NotFound: The song is not owned by this team and season.
+            ValidationError: The song is already ready.
+
+        """
+        team_data = self._goal_song_team_owner(request)
+        try:
+            song = retry_team_song(team_data=team_data, song_id=song_id)
+        except PlayerSongNotFoundError as exc:
+            raise NotFound("Song not found") from exc
+        except PlayerSongAlreadyReadyError as exc:
+            raise ValidationError({"detail": "Song is already ready."}) from exc
+        return Response(PlayerSongSerializer(song).data)
+
+    def _goal_song_team_owner(self, request: Request) -> TeamData:
+        team, season = self._goal_song_admin_context(request)
+        team_data = team_data_for_season(team=team, season=season)
+        if team_data is None:
+            raise ValidationError({"detail": "No TeamData found for this season."})
+        return team_data
 
     @action(
         detail=True,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -23,6 +23,10 @@ from apps.player.services.player_song_queries import (
 )
 from apps.player.services.upload_validation import validate_audio_upload
 from apps.player.song_sources import parse_song_source
+
+
+if TYPE_CHECKING:
+    from apps.team.models.team_data import TeamData
 
 
 class PlayerSongNotFoundError(Exception):
@@ -89,7 +93,6 @@ def enqueue_download_for_player_song(
     jobs.player_song(str(song.id_uuid))
 
 
-@transaction.atomic
 def create_player_song(
     *,
     player: Player,
@@ -98,7 +101,28 @@ def create_player_song(
     source_url: str | None = None,
     jobs: SongDownloadDispatcher,
 ) -> PlayerSongCreation:
+    """Create audio owned by a player's personal library."""
+    return create_owned_song(
+        owner=player,
+        uploaded_audio=uploaded_audio,
+        spotify_url=spotify_url,
+        source_url=source_url,
+        jobs=jobs,
+    )
+
+
+@transaction.atomic
+def create_owned_song(
+    *,
+    owner: Player | TeamData,
+    uploaded_audio: UploadedFile | None,
+    spotify_url: str | None = None,
+    source_url: str | None = None,
+    jobs: SongDownloadDispatcher,
+) -> PlayerSongCreation:
     """Create a player song and dispatch processing after commit."""
+    player = owner if isinstance(owner, Player) else None
+    team_data = None if isinstance(owner, Player) else owner
     if isinstance(uploaded_audio, UploadedFile):
         validate_audio_upload(uploaded_audio)
         filename = Path(uploaded_audio.name or "uploaded.mp3").name
@@ -106,6 +130,7 @@ def create_player_song(
 
         song = PlayerSong.objects.create(
             player=player,
+            team_data=team_data,
             cached_song=None,
             spotify_url="",
             title=title,
@@ -125,6 +150,7 @@ def create_player_song(
     cached, _ = CachedSong.objects.get_or_create(spotify_url=canonical_url)
     song, created = PlayerSong.objects.get_or_create(
         player=player,
+        team_data=team_data,
         cached_song=cached,
         defaults={
             "spotify_url": canonical_url,
@@ -205,13 +231,20 @@ def retry_owned_player_song_download(
     song_id: str,
     jobs: SongDownloadDispatcher,
 ) -> PlayerSong:
-    """Reset and re-dispatch a non-ready song owned by a player.
+    """Reset and re-dispatch a non-ready song owned by a player."""
+    song = _owned_song_for_update(player=player, song_id=song_id)
+    return retry_song_download(song=song, jobs=jobs)
+
+
+def retry_song_download(
+    *, song: PlayerSong, jobs: SongDownloadDispatcher
+) -> PlayerSong:
+    """Retry a song after its caller has authorized and locked its owner.
 
     Raises:
-        PlayerSongAlreadyReadyError: If the effective song source is already ready.
+        PlayerSongAlreadyReadyError: The song already has ready audio.
 
     """
-    song = _owned_song_for_update(player=player, song_id=song_id)
     if song.effective_status == PlayerSongStatus.READY:
         raise PlayerSongAlreadyReadyError
 

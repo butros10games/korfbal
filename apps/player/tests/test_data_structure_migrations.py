@@ -3,7 +3,8 @@
 from datetime import date
 from uuid import uuid4
 
-from django.db import connection
+from django.core.files.base import ContentFile
+from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 import pytest
 
@@ -25,6 +26,7 @@ def test_rosters_and_song_order_survive_migration_and_rollback() -> None:
         )
         song_model = old.get_model("player", "PlayerSong")
         first = song_model.objects.create(player=player)
+        first.audio_file.save("historical.mp3", ContentFile(b"ID3"), save=True)
         second = song_model.objects.create(player=player)
         player.goal_song_song_ids = [
             str(second.pk),
@@ -57,6 +59,16 @@ def test_rosters_and_song_order_survive_migration_and_rollback() -> None:
             .objects.filter(player_id=player.pk)
             .order_by("position")
         )
+        songs = current.get_model("player", "PlayerSong")
+        assert songs.objects.get(pk=first.pk).player_id == player.pk
+        assert songs.objects.get(pk=first.pk).team_data_id is None
+        team_song = songs.objects.create(team_data_id=roster.pk)
+        assert team_song.player_id is None
+        with pytest.raises(IntegrityError), transaction.atomic():
+            songs.objects.create()
+        with pytest.raises(IntegrityError), transaction.atomic():
+            songs.objects.create(player_id=player.pk, team_data_id=roster.pk)
+        team_song.delete()
         assert list(selections.values_list("song_id", flat=True)) == [
             second.pk,
             first.pk,

@@ -107,7 +107,13 @@ def build_goal_song_manifest(
         _entry(songs_by_id[song_id])
         for song_id in fallback_ids
         if song_id in songs_by_id
-        and str(songs_by_id[song_id].player_id) in allowed_fallback_player_ids
+        and (
+            str(songs_by_id[song_id].player_id) in allowed_fallback_player_ids
+            or (
+                team_data is not None
+                and songs_by_id[song_id].team_data_id == team_data.pk
+            )
+        )
     ]
 
     return {"version": 1, "players": players, "fallback": fallback}

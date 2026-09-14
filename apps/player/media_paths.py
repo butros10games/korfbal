@@ -21,6 +21,9 @@ def player_picture_path(instance: Player, filename: str) -> str:
 def player_song_path(instance: PlayerSong, filename: str) -> str:
     """Never replace another upload or a cached clip through a name collision."""
     suffix = Path(filename).suffix.lower()
+    team_data_id = getattr(instance, "team_data_id", None)
+    if team_data_id is not None:
+        return f"team_songs/{team_data_id}/{uuid4().hex}{suffix}"
     return f"player_songs/{instance.player_id}/{uuid4().hex}{suffix}"
 
 

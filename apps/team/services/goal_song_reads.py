@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from django.db.models import Q
+
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.services.player_song_queries import player_songs_by_ids
 from apps.schedule.models import Season
@@ -42,7 +44,7 @@ def _song_entry(song: PlayerSong) -> dict[str, object] | None:
         "playback_speed": float(song.playback_speed or 1.0),
         "title": song.effective_title,
         "artists": song.effective_artists,
-        "player_id": str(song.player_id),
+        **({"player_id": str(song.player_id)} if song.player_id else {}),
     }
 
 
@@ -77,7 +79,13 @@ def fallback_goal_song_audio_urls(
 
     roster_player_ids = main_roster_ids(team=team, season=season)
     songs = list(
-        player_songs_by_ids(song_ids=ids).filter(player_id__in=roster_player_ids)
+        player_songs_by_ids(song_ids=ids).filter(
+            Q(player_id__in=roster_player_ids)
+            | Q(
+                team_data=team_data_for_season(team=team, season=season),
+                team_data__isnull=False,
+            )
+        )
     )
     entries = song_entries_for_ids(songs=songs, ids=ids)
     audio_urls: list[str] = []

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -14,6 +14,10 @@ from apps.player.media_paths import player_song_path
 
 from .cached_song import CachedSong
 from .player import Player
+
+
+if TYPE_CHECKING:
+    from apps.team.models.team_data import TeamData
 
 
 class PlayerSongStatus(models.TextChoices):
@@ -39,12 +43,22 @@ class PlayerSong(models.Model):
         editable=False,
     )
 
-    player: models.ForeignKey[Player, Player] = models.ForeignKey(
+    player: models.ForeignKey[Player | None, Player | None] = models.ForeignKey(
         Player,
         on_delete=models.CASCADE,
         related_name="songs",
+        null=True,
+        blank=True,
     )
-    player_id: str
+    player_id: str | None
+    team_data: models.ForeignKey[TeamData | None, TeamData | None] = models.ForeignKey(
+        "team.TeamData",
+        on_delete=models.CASCADE,
+        related_name="songs",
+        null=True,
+        blank=True,
+    )
+    team_data_id: int | None
 
     # Shared cached download for this track.
     cached_song: models.ForeignKey[CachedSong, CachedSong] = models.ForeignKey(
@@ -95,6 +109,18 @@ class PlayerSong(models.Model):
 
         ordering: ClassVar[list[str]] = ["-created_at"]
         constraints = (
+            models.CheckConstraint(
+                condition=(
+                    Q(player__isnull=False, team_data__isnull=True)
+                    | Q(player__isnull=True, team_data__isnull=False)
+                ),
+                name="song_has_one_owner",
+            ),
+            models.UniqueConstraint(
+                fields=["team_data", "cached_song"],
+                condition=Q(cached_song__isnull=False),
+                name="unique_team_cached_song",
+            ),
             models.UniqueConstraint(
                 fields=["player", "cached_song"],
                 condition=Q(cached_song__isnull=False),
@@ -105,7 +131,7 @@ class PlayerSong(models.Model):
     def __str__(self) -> str:
         """Return a readable representation for admin/debugging."""
         label = self.title or self.spotify_url or "(uploaded song)"
-        return f"{self.player.id_uuid}: {label}"
+        return f"{self.player_id or self.team_data_id}: {label}"
 
     @property
     def effective_audio_file(self) -> FieldFile:
