@@ -15,6 +15,7 @@ from pytest_django.fixtures import DjangoAssertNumQueries
 
 from apps.club.models import Club
 from apps.club.queries.overview import club_matches, club_teams
+from apps.competition.models import Club as CompetitionClub
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.models.player_match_minutes import (
     LATEST_MATCH_MINUTES_VERSION,
@@ -646,6 +647,33 @@ def test_club_eligibility_counts_lowest_a_team_per_speelweek(client: Client) -> 
 
 
 @pytest.mark.parametrize("entity", ["club", "team"])
+def test_catalog_returns_club_city_without_per_result_queries(
+    client: Client,
+    django_assert_num_queries: DjangoAssertNumQueries,
+    entity: str,
+) -> None:
+    """Search includes city metadata and tolerates unlinked or incomplete imports."""
+    for index, city in enumerate(("Delft", "", None)):
+        club = Club.objects.create(name=f"Search Club {index}")
+        Team.objects.create(name=f"Team {index}", club=club)
+        if city is not None:
+            CompetitionClub.objects.create(
+                external_id=f"search-{index}",
+                name=club.name,
+                city=city,
+                local_club=club,
+            )
+
+    with django_assert_num_queries(2):
+        response = client.get(f"/api/{entity}/{entity}s/", {"search": "Search Club"})
+
+    assert response.status_code == HTTPStatus.OK
+    results = response.json()["results"]
+    clubs = results if entity == "club" else [row["club"] for row in results]
+    assert [club["city"] for club in clubs] == ["Delft", "", None]
+
+
+@pytest.mark.parametrize("entity", ["club", "team"])
 @pytest.mark.parametrize("authenticated", [False, True])
 def test_followed_catalog_filters_before_pagination_and_search(
     client: Client, entity: str, authenticated: bool
@@ -654,6 +682,12 @@ def test_followed_catalog_filters_before_pagination_and_search(
     viewer = _make_player(f"followed_{entity}")
     other = _make_player(f"other_{entity}")
     clubs = [Club.objects.create(name=f"Catalog {index:02}") for index in range(30)]
+    CompetitionClub.objects.create(
+        external_id="followed-club",
+        name=clubs[-1].name,
+        city="Delft",
+        local_club=clubs[-1],
+    )
     objects = (
         clubs
         if entity == "club"
@@ -676,6 +710,9 @@ def test_followed_catalog_filters_before_pagination_and_search(
     assert [row["id_uuid"] for row in payload["results"]] == (
         [str(objects[-1].pk)] if authenticated else []
     )
+    if authenticated:
+        row = payload["results"][0]
+        assert (row if entity == "club" else row["club"])["city"] == "Delft"
 
 
 def test_club_season_teams_avoid_multiplying_match_joins(

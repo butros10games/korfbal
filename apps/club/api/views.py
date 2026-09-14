@@ -41,6 +41,7 @@ from apps.team.api.serializers import TeamSerializer
 from .permissions import IsClubAdmin
 from .serializers import (
     ClubAdminPlayerSerializer,
+    ClubCatalogSerializer,
     ClubMembershipAddSerializer,
     ClubMembershipSerializer,
     ClubSerializer,
@@ -64,6 +65,10 @@ class ClubViewSet(viewsets.ModelViewSet):
     lookup_field = "id_uuid"
     filter_backends = (filters.SearchFilter,)
     search_fields = ("name",)
+
+    def get_serializer_class(self) -> type[ClubSerializer]:
+        """Add city metadata only to catalog responses."""
+        return ClubCatalogSerializer if self.action == "list" else ClubSerializer
 
     @action(detail=True, methods=("GET",), url_path="match-day", filter_backends=[])
     def match_day(self, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -92,6 +97,8 @@ class ClubViewSet(viewsets.ModelViewSet):
     def get_queryset(self) -> models.QuerySet[Club]:
         """Scope followed catalogs before pagination, counting, and searching."""
         queryset = super().get_queryset()
+        if self.action == "list":
+            queryset = queryset.select_related("competition_identity")
         if (
             self.action == "list"
             and self.request.query_params.get("followed") == "true"

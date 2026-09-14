@@ -33,6 +33,19 @@ class ClubSerializer(serializers.ModelSerializer):
         return obj.get_club_logo()
 
 
+class ClubCatalogSerializer(ClubSerializer):
+    """Include the imported city in discovery results."""
+
+    city = serializers.CharField(
+        source="competition_identity.city", read_only=True, allow_null=True
+    )
+
+    class Meta(ClubSerializer.Meta):
+        """Keep the regular club fields and add the display location."""
+
+        fields: ClassVar[list[str]] = [*ClubSerializer.Meta.fields, "city"]
+
+
 class ClubAdminPlayerSerializer(serializers.Serializer):
     """Small player representation for club admin tools."""
 

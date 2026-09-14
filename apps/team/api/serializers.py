@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
-from apps.club.api.serializers import ClubSerializer
+from apps.club.api.serializers import ClubCatalogSerializer, ClubSerializer
 from apps.club.models.club import Club
 from apps.player.models import Player
 from apps.schedule.models import Season
@@ -29,6 +29,12 @@ class TeamSerializer(serializers.ModelSerializer):
         model = Team
         fields: ClassVar[list[str]] = ["id_uuid", "name", "club", "club_id"]
         read_only_fields: ClassVar[list[str]] = ["id_uuid"]
+
+
+class TeamCatalogSerializer(TeamSerializer):
+    """Include each team's club city in discovery results."""
+
+    club = ClubCatalogSerializer(read_only=True)
 
 
 class TeamRosterMutationSerializer(serializers.Serializer):

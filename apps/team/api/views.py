@@ -72,6 +72,7 @@ from apps.team.services.roster import change_team_membership
 
 from .filters import TeamSearchFilter
 from .serializers import (
+    TeamCatalogSerializer,
     TeamPoolMatchesPageSerializer,
     TeamPoolMatchesQuerySerializer,
     TeamRosterMutationSerializer,
@@ -128,9 +129,15 @@ class TeamViewSet(viewsets.ModelViewSet):
     filter_backends = (TeamSearchFilter,)
     search_fields = ("name", "club__name")
 
+    def get_serializer_class(self) -> type[TeamSerializer]:
+        """Add club city metadata only to catalog responses."""
+        return TeamCatalogSerializer if self.action == "list" else TeamSerializer
+
     def get_queryset(self) -> QuerySet[Team]:
         """Optionally scope the paginated catalog to one club."""
         queryset = super().get_queryset()
+        if self.action == "list":
+            queryset = queryset.select_related("club__competition_identity")
         if (
             self.action == "list"
             and self.request.query_params.get("followed") == "true"
