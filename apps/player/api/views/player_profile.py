@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth import logout, update_session_auth_hash
+from django.contrib.auth.models import User
 from django.db.models import QuerySet
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -26,6 +27,7 @@ from apps.player.services.player_queries import player_by_id, player_detail_quer
 from apps.player.services.player_settings import (
     change_player_password,
     delete_player_profile,
+    delete_user_account,
     player_privacy_settings,
     update_player_account,
     update_player_privacy_settings,
@@ -159,6 +161,20 @@ class CurrentPlayerAPIView(KorfbalAPIView):
                 context=player_serializer_context(request, current_player=refreshed),
             ).data
         )
+
+
+class CurrentUserAccountAPIView(KorfbalAPIView):
+    """Delete only the authenticated user's login account."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    @extend_schema(request=None, responses={status.HTTP_204_NO_CONTENT: None})
+    def delete(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Keep the linked player and sporting records, then end this session."""
+        del args, kwargs
+        delete_user_account(user=cast(User, request.user))
+        logout(request._request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CurrentPlayerPasswordAPIView(KorfbalAPIView):

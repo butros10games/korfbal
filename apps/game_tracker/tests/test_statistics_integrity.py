@@ -188,7 +188,11 @@ def test_account_deletion_preserves_history(
         match_data=match, player=ctx.player, minutes_played=30
     )
     ctx.player.user.delete()
-    assert Player.all_objects.get(pk=ctx.player.pk).archived_at is not None
+    retained = Player.all_objects.get(pk=ctx.player.pk)
+    assert retained.user_id is None
+    assert retained.archived_at is None
+    assert ctx.team_data.players.filter(pk=retained.pk).exists()
+    assert TeamRosterMembership.objects.filter(player=retained, ended_at=None).exists()
     assert PlayerMatchMinutes.objects.filter(player_id=ctx.player.pk).exists()
 
 

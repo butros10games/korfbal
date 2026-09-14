@@ -15,6 +15,7 @@ from .views import (
     CurrentPlayerSongsAPIView,
     CurrentPlayerTeamsAPIView,
     CurrentPlayerTestPushNotificationAPIView,
+    CurrentUserAccountAPIView,
     PlayerConnectedClubRecentResultsAPIView,
     PlayerFollowedTeamsAPIView,
     PlayerOverviewAPIView,
@@ -37,6 +38,7 @@ router.register(r"players", PlayerViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("me/", CurrentPlayerAPIView.as_view(), name="player-current"),
+    path("me/account/", CurrentUserAccountAPIView.as_view(), name="user-account"),
     path(
         "me/password/",
         CurrentPlayerPasswordAPIView.as_view(),

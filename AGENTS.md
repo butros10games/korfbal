@@ -29,6 +29,10 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Account deletion removes the Django user only. Preserve the linked Player, KNKV
+  metadata, and sporting relationships through `Player.user`'s `SET_NULL`; do not
+  invoke the separate player-profile deletion/archival service from user signals.
+
 - Guest lineup writes must validate player IDs against actual source-group membership
   or the club/date/season picker candidates; frontend filtering is not authorization.
 

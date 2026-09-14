@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Final, cast
 
+from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Model, Q
 from django.db.models.deletion import ProtectedError
@@ -66,6 +67,12 @@ def update_player_account(
     user.username = username
     user.email = email
     user.save(update_fields=["username", "email"])
+
+
+@transaction.atomic
+def delete_user_account(*, user: User) -> None:
+    """Delete login credentials; Player.user SET_NULL preserves sporting identity."""
+    user.delete()
 
 
 @transaction.atomic
