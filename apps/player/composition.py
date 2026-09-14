@@ -11,6 +11,9 @@ from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
 from apps.player.adapters.outbound.media_privacy import (
     check_media_privacy as _check_media_privacy,
 )
+from apps.player.adapters.outbound.song_downloader import (
+    download_song as _download_song,
+)
 from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
 from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
 from apps.player.adapters.outbound.spotify_tracks import RequestsTrackMetadataClient
@@ -42,9 +45,6 @@ from apps.player.services.spotify import (
     pause_spotify as _pause_spotify,
     play_spotify as _play_spotify,
 )
-from apps.player.services.spotify_download import (
-    download_spotify_track as _download_spotify_track,
-)
 from apps.player.services.web_push import (
     WebPushPayload,
     send_to_model_subscription,
@@ -67,8 +67,8 @@ complete_spotify_authorization = partial(
 play_spotify = partial(_play_spotify, client=spotify_client)
 pause_spotify = partial(_pause_spotify, client=spotify_client)
 send_expo_push = partial(send_expo_push_tokens, client=expo_push_client)
-download_spotify_track = partial(
-    _download_spotify_track,
+download_song = partial(
+    _download_song,
     command_runner=command_runner,
     metadata_client=RequestsTrackMetadataClient(),
 )

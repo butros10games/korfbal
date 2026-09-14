@@ -23,6 +23,7 @@ from apps.player.services.upload_validation import (
     InvalidAudioUploadError,
     validate_audio_upload,
 )
+from apps.player.song_sources import parse_song_source
 
 
 class PlayerGoalSongSelectionSerializer(serializers.Serializer):
@@ -343,6 +344,7 @@ class PlayerSerializer(serializers.ModelSerializer):
 class PlayerSongSerializer(serializers.ModelSerializer):
     """Serializer for PlayerSong model."""
 
+    source_url = serializers.CharField(source="spotify_url", read_only=True)
     title = serializers.SerializerMethodField()
     artists = serializers.SerializerMethodField()
     duration_seconds = serializers.SerializerMethodField()
@@ -357,6 +359,7 @@ class PlayerSongSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "spotify_url",
+            "source_url",
             "title",
             "artists",
             "duration_seconds",
@@ -411,6 +414,7 @@ class PlayerSongSerializer(serializers.ModelSerializer):
 class PlayerSongCreateSerializer(serializers.Serializer):
     """Input serializer for creating a PlayerSong."""
 
+    source_url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     spotify_url = serializers.URLField(
         max_length=500,
         required=False,
@@ -434,7 +438,7 @@ class PlayerSongCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"audio_file": str(error)}) from error
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        """Require either spotify_url or audio_file.
+        """Require one link or audio file; retain the legacy spotify_url alias.
 
         Also validates that uploaded files look like MP3.
 
@@ -444,18 +448,28 @@ class PlayerSongCreateSerializer(serializers.Serializer):
 
         """
         spotify_url = attrs.get("spotify_url")
+        source_url = str(attrs.get("source_url") or "").strip()
         audio_file = attrs.get("audio_file")
 
         spotify_url_str = str(spotify_url).strip() if spotify_url is not None else ""
 
-        if not spotify_url_str and audio_file is None:
-            raise serializers.ValidationError("Provide spotify_url or audio_file.")
+        if sum((bool(source_url), bool(spotify_url_str), audio_file is not None)) != 1:
+            raise serializers.ValidationError(
+                "Provide exactly one of source_url, spotify_url or audio_file."
+            )
 
         if audio_file is not None:
             self._validate_audio_file(audio_file)
+        else:
+            field = "source_url" if source_url else "spotify_url"
+            try:
+                parse_song_source(source_url or spotify_url_str)
+            except ValueError as error:
+                raise serializers.ValidationError({field: str(error)}) from error
 
         # Normalise whitespace.
         attrs["spotify_url"] = spotify_url_str
+        attrs["source_url"] = source_url
 
         return attrs
 

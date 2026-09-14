@@ -11,7 +11,7 @@ from celery import shared_task
 from apps.competition.services.schedule_notifications import notify_schedule_change
 from apps.kwt_common.services.jobs import enqueue
 from apps.player.composition import (
-    download_spotify_track,
+    download_song,
     expo_push_client,
     prepare_player_song_clip,
     send_web_push,
@@ -129,7 +129,7 @@ def download_cached_song(self: Any, cached_song_id: str) -> None:
     """Download a shared song and prepare its dependent player clips."""
     process_cached_song_download(
         cached_song_id,
-        download_track=download_spotify_track,
+        download_track=download_song,
         prepare_clip=_queue_clip,
     )
 
@@ -140,7 +140,7 @@ def download_player_song(self: Any, song_id: str) -> None:
     process_player_song_download(
         song_id,
         dispatch_cached_song=_dispatch_cached_song,
-        download_track=download_spotify_track,
+        download_track=download_song,
         prepare_clip=_prepare_clip,
     )
 

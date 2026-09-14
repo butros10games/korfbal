@@ -155,6 +155,7 @@ class CurrentPlayerSongsAPIView(KorfbalAPIView):
                 uploaded_audio if isinstance(uploaded_audio, UploadedFile) else None
             ),
             spotify_url=str(serializer.validated_data.get("spotify_url") or ""),
+            source_url=str(serializer.validated_data.get("source_url") or ""),
         )
         return Response(
             PlayerSongSerializer(creation.song).data,

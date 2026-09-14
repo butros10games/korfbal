@@ -27,9 +27,9 @@ class PlayerSongStatus(models.TextChoices):
 
 
 class PlayerSong(models.Model):
-    """A song the player added via Spotify or an uploaded audio file.
+    """A song imported from Spotify, YouTube or an uploaded audio file.
 
-    The actual audio is downloaded (spotDL) asynchronously and stored in the
+    The actual audio is imported asynchronously and stored in the
     configured Django storage backend (S3/MinIO).
     """
 
@@ -56,8 +56,7 @@ class PlayerSong(models.Model):
     )
     cached_song_id: str | None
 
-    # Spotify link when the song was added via Spotify.
-    # Uploaded songs can leave this empty.
+    # Historical column name; canonical Spotify/YouTube URL, empty for uploads.
     spotify_url: models.URLField = models.URLField(
         max_length=500,
         blank=True,
@@ -66,7 +65,7 @@ class PlayerSong(models.Model):
 
     title: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
     artists: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
-    duration_seconds: models.IntegerField[int, int | None] = models.IntegerField(
+    duration_seconds: models.IntegerField[int | None, int | None] = models.IntegerField(
         null=True, blank=True
     )
 

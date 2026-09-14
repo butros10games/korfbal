@@ -7,6 +7,7 @@ import tempfile
 from django.conf import settings
 from django.core.files import File
 
+from apps.player.application.ports import DownloadedSong, SongDownloadError
 from apps.player.models.cached_song import CachedSong
 from apps.player.models.player_song import PlayerSong
 from apps.player.services.player_song_queries import (
@@ -15,7 +16,7 @@ from apps.player.services.player_song_queries import (
 )
 
 
-TrackDownloader = Callable[[str, Path], Path]
+TrackDownloader = Callable[[str, Path], DownloadedSong]
 ClipPreparer = Callable[[PlayerSong], str | None]
 CachedSongDispatcher = Callable[[str], None]
 
@@ -39,24 +40,38 @@ def _download_source(
         with tempfile.TemporaryDirectory(prefix="korfbal_audio_") as directory:
             output = Path(directory)
             if getattr(settings, "TESTING", False):
-                downloaded = output / "dummy.mp3"
-                downloaded.write_bytes(b"ID3")
+                downloaded = DownloadedSong(output / "dummy.mp3")
+                downloaded.path.write_bytes(b"ID3")
             else:
                 downloaded = download_track(source.spotify_url, output)
             source.status = "uploading"
             source.save(update_fields=["status", "updated_at"])
-            with downloaded.open("rb") as handle:
+            source.title = downloaded.title or source.title
+            source.artists = downloaded.artists or source.artists
+            source.duration_seconds = downloaded.duration_seconds
+            with downloaded.path.open("rb") as handle:
                 source.audio_file.save(
-                    f"{source.pk}{downloaded.suffix or '.mp3'}",
+                    f"{source.pk}{downloaded.path.suffix or '.mp3'}",
                     File(handle),
                     save=False,
                 )
         source.status, source.error_message = "ready", ""
         source.save(
-            update_fields=["status", "error_message", "audio_file", "updated_at"]
+            update_fields=[
+                "status",
+                "error_message",
+                "audio_file",
+                "updated_at",
+                "title",
+                "artists",
+                "duration_seconds",
+            ]
         )
     except Exception as exc:
-        source.status, source.error_message = "failed", type(exc).__name__
+        source.status = "failed"
+        source.error_message = (
+            str(exc) if isinstance(exc, SongDownloadError) else type(exc).__name__
+        )
         source.save(update_fields=["status", "error_message", "updated_at"])
         raise
 

@@ -22,7 +22,7 @@ from apps.player.services.player_song_queries import (
     player_song_by_id,
 )
 from apps.player.services.upload_validation import validate_audio_upload
-from apps.player.spotify import canonicalize_spotify_track_url
+from apps.player.song_sources import parse_song_source
 
 
 class PlayerSongNotFoundError(Exception):
@@ -94,7 +94,8 @@ def create_player_song(
     *,
     player: Player,
     uploaded_audio: UploadedFile | None,
-    spotify_url: str | None,
+    spotify_url: str | None = None,
+    source_url: str | None = None,
     jobs: SongDownloadDispatcher,
 ) -> PlayerSongCreation:
     """Create a player song and dispatch processing after commit."""
@@ -119,12 +120,16 @@ def create_player_song(
         enqueue_download_for_player_song(song, jobs=jobs)
         return PlayerSongCreation(song=song, created=True)
 
-    canonical_url = canonicalize_spotify_track_url(str(spotify_url or "").strip())
+    source = parse_song_source(source_url or spotify_url or "")
+    canonical_url = source.url
     cached, _ = CachedSong.objects.get_or_create(spotify_url=canonical_url)
     song, created = PlayerSong.objects.get_or_create(
         player=player,
         cached_song=cached,
-        defaults={"spotify_url": canonical_url},
+        defaults={
+            "spotify_url": canonical_url,
+            "start_time_seconds": source.start_seconds,
+        },
     )
     enqueue_download_for_player_song(song, jobs=jobs)
     return PlayerSongCreation(song=song, created=created)

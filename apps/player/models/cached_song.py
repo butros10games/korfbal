@@ -17,7 +17,7 @@ class CachedSongStatus(models.TextChoices):
 
 
 class CachedSong(models.Model):
-    """A cached audio download for a Spotify track.
+    """A cached audio download for a Spotify track or YouTube video.
 
     Multiple players can reference the same CachedSong to avoid downloading
     the same track multiple times.
@@ -29,11 +29,12 @@ class CachedSong(models.Model):
         editable=False,
     )
 
+    # Historical column name; holds the canonical source URL for either provider.
     spotify_url: models.URLField = models.URLField(max_length=500, unique=True)
 
     title: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
     artists: models.CharField[str, str] = models.CharField(max_length=255, blank=True)
-    duration_seconds: models.IntegerField[int, int | None] = models.IntegerField(
+    duration_seconds: models.IntegerField[int | None, int | None] = models.IntegerField(
         null=True, blank=True
     )
 

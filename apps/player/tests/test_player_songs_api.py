@@ -6,6 +6,8 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from http import HTTPStatus
 import json
+from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -14,16 +16,20 @@ from django.test.client import Client
 from django.test.utils import CaptureQueriesContext
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.player.api.serializers import PlayerSongSerializer
+from apps.player.application.ports import DownloadedSong, SongDownloadError
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.services.player_song_queries import player_songs_for_player
+from apps.player.tasks import download_cached_song, download_player_song
 
 
 START_TIME_SECONDS = 42
 SECOND_SONG_START_TIME_SECONDS = 12
 PLAYBACK_SPEED = 1.25
+VIDEO_DURATION = 60
 QueryCounter = Callable[[int], AbstractContextManager[None]]
 
 
@@ -353,3 +359,107 @@ def test_player_song_list_queries_do_not_scale_with_song_count(client: Client) -
     assert initial_response.status_code == HTTPStatus.OK
     assert expanded_response.status_code == HTTPStatus.OK
     assert len(expanded_queries) == len(initial_queries)
+
+
+@pytest.mark.django_db
+@override_settings(TESTING=False)
+def test_youtube_import_cache_metadata_start_time_and_retry(client: Client) -> None:
+    """A shared link reaches the worker with metadata and playback settings."""
+    user = get_user_model().objects.create_user(username="youtube-import")
+    client.force_login(user)
+    response = client.post(
+        "/api/player/me/songs/", {"source_url": "https://youtu.be/BaW_jenozKc?t=42"}
+    )
+    assert response.status_code == HTTPStatus.CREATED
+    song = PlayerSong.objects.get(pk=response.json()["id_uuid"])
+    canonical = "https://www.youtube.com/watch?v=BaW_jenozKc"
+    assert response.json()["source_url"] == canonical
+    assert song.start_time_seconds == START_TIME_SECONDS
+    assert BackgroundJob.objects.filter(
+        task="apps.player.tasks.download_player_song", args=[str(song.pk)]
+    ).exists()
+    download_player_song.apply(args=[str(song.pk)], throw=True)
+    assert BackgroundJob.objects.filter(
+        task="apps.player.tasks.download_cached_song"
+    ).exists()
+
+    duplicate = client.post(
+        "/api/player/me/songs/", {"source_url": canonical + "&t=12"}
+    )
+    assert duplicate.status_code == HTTPStatus.OK
+    assert duplicate.json()["id_uuid"] == str(song.pk)
+    assert duplicate.json()["start_time_seconds"] == START_TIME_SECONDS
+
+    with (
+        patch(
+            "apps.player.tasks.download_song",
+            side_effect=SongDownloadError("Download timed out. Please retry."),
+        ),
+        pytest.raises(SongDownloadError),
+    ):
+        download_cached_song.apply(args=[str(song.cached_song_id)], throw=True)
+    failed = client.get("/api/player/me/songs/").json()[0]
+    assert failed["status"] == "failed"
+    assert failed["error_message"] == "Download timed out. Please retry."
+    assert (
+        client.post(f"/api/player/me/songs/{song.pk}/retry/").json()["status"]
+        == "queued"
+    )
+
+    def download(url: str, directory: Path) -> DownloadedSong:
+        assert url == canonical
+        path = directory / "audio.mp3"
+        path.write_bytes(b"synthetic complete audio")
+        return DownloadedSong(path, "Test sound", "Test channel", VIDEO_DURATION)
+
+    with patch("apps.player.tasks.download_song", side_effect=download) as importer:
+        download_cached_song.apply(args=[str(song.cached_song_id)], throw=True)
+        download_cached_song.apply(args=[str(song.cached_song_id)], throw=True)
+    importer.assert_called_once()
+    ready = client.get("/api/player/me/songs/").json()[0]
+    assert ready["status"] == "ready"
+    assert ready["title"] == "Test sound"
+    assert ready["artists"] == "Test channel"
+    assert ready["duration_seconds"] == VIDEO_DURATION
+    assert ready["audio_url"]
+    assert BackgroundJob.objects.filter(
+        task="apps.player.tasks.download_player_song"
+    ).exists()
+
+    other = get_user_model().objects.create_user(username="youtube-other")
+    client.force_login(other)
+    shared = client.post(
+        "/api/player/me/songs/", {"source_url": canonical + "&start=12"}
+    )
+    other_song = PlayerSong.objects.get(pk=shared.json()["id_uuid"])
+    assert other_song.cached_song_id == song.cached_song_id
+    assert other_song.start_time_seconds == SECOND_SONG_START_TIME_SECONDS
+    assert shared.json()["status"] == "ready"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"source_url": "https://example.com/audio"},
+        {"spotify_url": "https://www.youtube.com/playlist?list=bad"},
+        {"source_url": "https://www.youtube.com/watch?v=invalid"},
+        {
+            "source_url": "https://youtu.be/BaW_jenozKc",
+            "spotify_url": "https://open.spotify.com/track/example",
+        },
+        {},
+    ],
+)
+def test_invalid_song_import_returns_400_without_creating_jobs(
+    client: Client, payload: dict
+) -> None:
+    """Invalid links return a 400 without creating cache rows or queued work."""
+    user = get_user_model().objects.create_user(username="invalid-song-import")
+    client.force_login(user)
+    jobs_before = BackgroundJob.objects.count()
+    response = client.post("/api/player/me/songs/", payload)
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert not PlayerSong.objects.exists()
+    assert not CachedSong.objects.exists()
+    assert BackgroundJob.objects.count() == jobs_before

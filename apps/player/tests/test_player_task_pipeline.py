@@ -68,7 +68,7 @@ def test_legacy_player_song_failure_is_persisted_and_reraised() -> None:
 
     with (
         patch(
-            "apps.player.tasks.download_spotify_track",
+            "apps.player.tasks.download_song",
             side_effect=RuntimeError("provider unavailable"),
         ),
         pytest.raises(RuntimeError, match="provider unavailable"),

@@ -8,17 +8,19 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 import subprocess
+from unittest.mock import Mock
 from uuid import uuid4
 
 from django.test import override_settings
 import pytest
 
+from apps.player.adapters.outbound import song_downloader as downloader
 from apps.player.application.ports import CommandRunOptions, TrackMetadata
-from apps.player.services import spotify_download as downloader
 
 
 SPOTIFY_URL = "https://open.spotify.com/track/27CXrzqx1N44o1Pi6AHRT4"
 EXPECTED_CALLS = 2
+VIDEO_DURATION = 60
 
 
 class FakeMetadata:
@@ -85,14 +87,14 @@ def test_download_timeout_then_success(
         (output_dir / "audio.mp3").write_bytes(b"ID3" + (b"0" * 2048))
         return subprocess.CompletedProcess(cmd_list, 0, stdout="ok", stderr="")
 
-    downloaded = downloader.download_spotify_track(
+    downloaded = downloader.download_song(
         SPOTIFY_URL,
         tmp_path,
         command_runner=FakeCommandRunner(fake_run),
         metadata_client=FakeMetadata(),
     )
-    assert downloaded.exists()
-    assert downloaded.suffix == ".mp3"
+    assert downloaded.path.exists()
+    assert downloaded.path.suffix == ".mp3"
     assert calls == EXPECTED_CALLS
 
 
@@ -108,7 +110,7 @@ def test_download_all_timeouts_raises_user_friendly_error(
         raise subprocess.TimeoutExpired(cmd=list(cmd), timeout=options.timeout)
 
     with pytest.raises(RuntimeError) as excinfo:
-        _ = downloader.download_spotify_track(
+        _ = downloader.download_song(
             SPOTIFY_URL,
             tmp_path,
             command_runner=FakeCommandRunner(fake_run),
@@ -137,12 +139,12 @@ def test_download_keeps_credentials_out_of_process_arguments(tmp_path: Path) -> 
         return subprocess.CompletedProcess(list(cmd), 0)
 
     with override_settings(SPOTIFY_CLIENT_SECRET=client_secret):
-        assert downloader.download_spotify_track(
+        assert downloader.download_song(
             SPOTIFY_URL,
             tmp_path,
             command_runner=FakeCommandRunner(fake_run),
             metadata_client=FakeMetadata(),
-        ).is_file()
+        ).path.is_file()
 
 
 def test_timeout_never_accepts_partial_mp3(tmp_path: Path) -> None:
@@ -155,7 +157,7 @@ def test_timeout_never_accepts_partial_mp3(tmp_path: Path) -> None:
         raise subprocess.TimeoutExpired(list(cmd), options.timeout)
 
     with pytest.raises(RuntimeError, match="timed out"):
-        downloader.download_spotify_track(
+        downloader.download_song(
             SPOTIFY_URL,
             tmp_path,
             command_runner=FakeCommandRunner(fake_run),
@@ -174,11 +176,71 @@ def test_success_without_bounded_output_is_rejected(tmp_path: Path) -> None:
             stream.truncate(26 * 1024 * 1024)
         return subprocess.CompletedProcess(list(cmd), 0)
 
-    with pytest.raises(RuntimeError, match="Download failed"):
-        downloader.download_spotify_track(
+    with pytest.raises(RuntimeError, match="Could not import audio"):
+        downloader.download_song(
             SPOTIFY_URL,
             tmp_path,
             command_runner=FakeCommandRunner(fake_run),
             metadata_client=FakeMetadata(),
         )
+    assert not (tmp_path / "audio.mp3").exists()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://youtu.be/BaW_jenozKc?si=share&t=42",
+        "https://music.youtube.com/watch?v=BaW_jenozKc",
+        "https://www.youtube.com/shorts/BaW_jenozKc",
+    ],
+)
+def test_youtube_download_uses_exact_video_and_imports_metadata(
+    tmp_path: Path, url: str
+) -> None:
+    """Direct video imports never consult Spotify or search for a replacement."""
+    metadata = Mock()
+
+    def run(
+        cmd: Sequence[str], options: CommandRunOptions
+    ) -> subprocess.CompletedProcess[str]:
+        assert cmd[-1] == "https://www.youtube.com/watch?v=BaW_jenozKc"
+        assert "--no-playlist" in cmd
+        assert cmd[cmd.index("--format") + 1] == "bestaudio/best"
+        assert options.kill_process_tree
+        (tmp_path / "audio.mp3").write_bytes(b"complete synthetic audio")
+        return subprocess.CompletedProcess(
+            list(cmd),
+            0,
+            stdout='{"title":"Test sound","uploader":"Test channel","duration":60.8}',
+        )
+
+    downloaded = downloader.download_song(
+        url,
+        tmp_path,
+        command_runner=FakeCommandRunner(run),
+        metadata_client=metadata,
+    )
+    metadata.get_track.assert_not_called()
+    assert downloaded.path.read_bytes() == b"complete synthetic audio"
+    assert downloaded.title == "Test sound"
+    assert downloaded.artists == "Test channel"
+    assert downloaded.duration_seconds == VIDEO_DURATION
+
+
+def test_restricted_video_failure_does_not_expose_process_output(
+    tmp_path: Path,
+) -> None:
+    """A provider failure exposes a usable explanation, never its raw diagnostics."""
+    runner = Mock()
+    runner.run.return_value = subprocess.CompletedProcess(
+        [], 1, stderr="private provider diagnostics"
+    )
+    with pytest.raises(RuntimeError, match="publicly available") as error:
+        downloader.download_song(
+            "https://youtu.be/BaW_jenozKc",
+            tmp_path,
+            command_runner=runner,
+            metadata_client=Mock(),
+        )
+    assert "private provider diagnostics" not in str(error.value)
     assert not (tmp_path / "audio.mp3").exists()

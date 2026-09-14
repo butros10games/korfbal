@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 import subprocess  # nosec B404
 from typing import Any, BinaryIO, Protocol
 
@@ -62,6 +63,20 @@ class SongDownloadDispatcher(Protocol):
 
     def player_song(self, song_id: str) -> None:
         """Schedule download of a legacy player-owned song."""
+
+
+class SongDownloadError(RuntimeError):
+    """A controlled import failure whose message can be shown to the player."""
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadedSong:
+    """A completed audio download and its display metadata."""
+
+    path: Path
+    title: str = ""
+    artists: str = ""
+    duration_seconds: int | None = None
 
 
 class WebPushDeliveryError(RuntimeError):
