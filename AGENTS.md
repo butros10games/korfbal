@@ -29,6 +29,10 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- For eligibility, use published competition classifications for imported teams;
+  `TeamData` can retain the manual B-category/rank-1 defaults. Keep missing player
+  ages and official B-youth cutoffs as explicit checks, never inferred permission.
+
 - Account deletion removes the Django user only. Preserve the linked Player, KNKV
   metadata, and sporting relationships through `Player.user`'s `SET_NULL`; do not
   invoke the separate player-profile deletion/archival service from user signals.

@@ -550,7 +550,7 @@ def test_club_eligibility_dashboard_returns_own_team_and_distances(
 def test_club_eligibility_limits_players_moving_one_team_lower(
     client: Client,
 ) -> None:
-    """Allow only two higher-team players to move one team lower."""
+    """A club overview cannot reserve the two per-match places for a season."""
     today = timezone.localdate()
     graph = _make_club_graph(
         club_name="Limit Club",
@@ -599,7 +599,13 @@ def test_club_eligibility_limits_players_moving_one_team_lower(
         )["allowed_for_team"]
         for index in range(1, 4)
     ]
-    assert team_3_allowed == [True, True, False]
+    assert team_3_allowed == [False, False, False]
+    for row in rows.values():
+        target = next(
+            team for team in row["by_team"] if team["team_id"] == str(team_3.id_uuid)
+        )
+        assert target["eligibility_status"] == "check"
+        assert "per wedstrijd" in target["allowed_reason"]
 
 
 def test_club_eligibility_counts_lowest_a_team_per_speelweek(client: Client) -> None:

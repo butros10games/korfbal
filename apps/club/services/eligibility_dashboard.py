@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from itertools import pairwise
 import math
 from operator import itemgetter
 import re
@@ -14,6 +15,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.club.models import Club
+from apps.club.queries.overview import eligibility_classifications
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchMinutes
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.player.models import Player
@@ -25,7 +27,9 @@ WEEK_START_ISO_DAY = 2  # Tuesday
 INACTIVITY_RESET_DAYS = 45
 MIN_MATCHES_FOR_RESTRICTIONS = 3
 OWN_TEAM_PERCENT_THRESHOLD = 65
-LOWER_TEAM_MAX_PLAYERS = 2
+SEASON_START_MONTH = 7
+MODERN_YOUTH_START_YEAR = 2025
+MINIMUM_AGE = 5
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,8 @@ class TeamContext:
     team_rank: int
     family: str
     competition: str
+    context: str = ""
+    classification_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -62,6 +68,7 @@ class PlayerState:
     active_family: str | None
     own_team_id: str | None
     last_week_team_rank: int | None
+    history_needs_check: bool = False
 
 
 def _week_start_for(dt: datetime) -> date:
@@ -81,18 +88,30 @@ def _coerce_rank(raw_rank: int | None, team_name: str) -> int:
 
 
 def _infer_family(*, team_name: str, wedstrijd_sport: bool) -> str:
-    normalized = team_name.upper().replace(" ", "")
+    normalized = team_name.upper().strip()
 
-    youth_u = re.match(r"U(19|17|15)(?:-|_)?\d+", normalized)
+    youth_u = re.search(r"(?:^|\s)U\s*(19|17|15)\s*[-_]?\s*\d+$", normalized)
     if youth_u:
         return f"U{youth_u.group(1)}"
 
-    if re.match(r"J\d+", normalized):
+    if re.search(r"(?:^|\s)J\s*\d+$", normalized):
         return "J"
 
+    if not re.search(r"(?:^|\s)\d+$", normalized):
+        return "UNKNOWN"
     if wedstrijd_sport:
         return "SENIOR_A"
     return "SENIOR_B"
+
+
+def _team_order(family: str, rank: int) -> tuple[int, int]:
+    """Article 21 orders senior teams before U19, U17 and U15."""
+    return (
+        {"SENIOR_A": 0, "SENIOR_B": 0, "U19": 1, "U17": 2, "U15": 3, "J": 4}.get(
+            family, 5
+        ),
+        rank,
+    )
 
 
 def _expected_match_minutes(match_data: MatchData) -> float:
@@ -108,25 +127,7 @@ def _is_played_match(*, minutes_played: float, match_data: MatchData) -> bool:
 
 
 def _pick_counted_match_for_week(entries: list[PlayedEntry]) -> PlayedEntry:
-    a_entries = [entry for entry in entries if entry.wedstrijd_sport]
-    candidates = a_entries or entries
-    return max(candidates, key=lambda e: (e.team_rank, e.played_at))
-
-
-def _trim_by_inactivity(entries: list[PlayedEntry]) -> list[PlayedEntry]:
-    if len(entries) <= 1:
-        return entries
-
-    sorted_entries = sorted(entries, key=lambda e: e.played_at)
-    last_cut = 0
-    for idx in range(1, len(sorted_entries)):
-        previous = sorted_entries[idx - 1]
-        current = sorted_entries[idx]
-        if (
-            current.played_at.date() - previous.played_at.date()
-        ).days > INACTIVITY_RESET_DAYS:
-            last_cut = idx
-    return sorted_entries[last_cut:]
+    return max(entries, key=lambda e: (_team_order(e.family, e.team_rank), e.played_at))
 
 
 def _select_active_family(entries: list[PlayedEntry]) -> str | None:
@@ -160,31 +161,33 @@ def _own_team_id(
 ) -> str | None:
     if len(entries) < MIN_MATCHES_FOR_RESTRICTIONS:
         return None
-
-    family = _select_active_family(entries)
-    if family is None:
-        return None
-
-    family_entries = [entry for entry in entries if entry.family == family]
-    if not family_entries:
+    played_teams = [teams[entry.team_id] for entry in entries if entry.team_id in teams]
+    contexts = {team.context for team in played_teams}
+    if len(contexts) != 1 or any(
+        not team.classification_known for team in played_teams
+    ):
         return None
 
     played_counts: dict[str, int] = defaultdict(int)
-    for entry in family_entries:
+    for entry in entries:
         played_counts[entry.team_id] += 1
 
     ordered_teams = sorted(
-        [ctx for ctx in teams.values() if ctx.family == family],
-        key=lambda ctx: ctx.team_rank,
+        [
+            team
+            for team in teams.values()
+            if team.context in contexts and team.classification_known
+        ],
+        key=lambda ctx: _team_order(ctx.family, ctx.team_rank),
     )
-    total = len(family_entries)
+    total = len(entries)
     for candidate in ordered_teams:
         in_team_or_higher = sum(
             count
             for team_id, count in played_counts.items()
             if team_id in teams
-            and teams[team_id].family == candidate.family
-            and teams[team_id].team_rank <= candidate.team_rank
+            and _team_order(teams[team_id].family, teams[team_id].team_rank)
+            <= _team_order(candidate.family, candidate.team_rank)
         )
         if _threshold_passes(numerator=in_team_or_higher, denominator=total):
             return str(candidate.team.id_uuid)
@@ -193,50 +196,17 @@ def _own_team_id(
 
 
 def _distance_to_lock(*, current_q: int, current_n: int) -> int:
-    if _threshold_passes(numerator=current_q, denominator=current_n):
+    if current_n >= MIN_MATCHES_FOR_RESTRICTIONS and _threshold_passes(
+        numerator=current_q, denominator=current_n
+    ):
         return 0
     for extra in range(1, 51):
-        if _threshold_passes(
+        if current_n + extra >= MIN_MATCHES_FOR_RESTRICTIONS and _threshold_passes(
             numerator=current_q + extra,
             denominator=current_n + extra,
         ):
             return extra
     return 51
-
-
-def _season_before_three_quarters(season: Season | None) -> bool:
-    if season is None:
-        return True
-    today = timezone.localdate()
-    total_days = (season.end_date - season.start_date).days
-    if total_days <= 0:
-        return False
-    elapsed_days = (today - season.start_date).days
-    return elapsed_days <= int(total_days * 0.75)
-
-
-def _is_youth_family(family: str) -> bool:
-    return family.startswith("U") or family == "J"
-
-
-def _is_same_stage_family(a_family: str, b_family: str) -> bool:
-    if _is_youth_family(a_family) and _is_youth_family(b_family):
-        return True
-    return a_family.startswith("SENIOR") and b_family.startswith("SENIOR")
-
-
-def _can_lowest_a_play_b(
-    *,
-    own_team: TeamContext,
-    target_team: TeamContext,
-    lowest_a_rank_by_family: dict[str, int],
-) -> bool:
-    return (
-        own_team.wedstrijd_sport
-        and (not target_team.wedstrijd_sport)
-        and own_team.team_rank == lowest_a_rank_by_family.get(own_team.family)
-        and _is_same_stage_family(own_team.family, target_team.family)
-    )
 
 
 def _as_player_payload(player: Player) -> dict[str, str]:
@@ -257,10 +227,11 @@ def _build_teams_payload(
             "wedstrijd_sport": ctx.wedstrijd_sport,
             "team_rank": ctx.team_rank,
             "family": ctx.family,
+            "classification_known": ctx.classification_known,
         }
         for ctx in sorted(
             team_context_by_id.values(),
-            key=lambda t: (t.family, t.team_rank, t.team.name.lower()),
+            key=lambda t: (_team_order(t.family, t.team_rank), t.team.name.lower()),
         )
     ]
 
@@ -268,18 +239,52 @@ def _build_teams_payload(
 def _build_team_context_by_id(
     team_data_qs: QuerySet[TeamData],
 ) -> dict[str, TeamContext]:
+    classifications = eligibility_classifications(team_data_qs)
+
     team_context_by_id: dict[str, TeamContext] = {}
     for row in team_data_qs:
         team_id = str(row.team.id_uuid)
+        family = _infer_family(
+            team_name=row.team.name, wedstrijd_sport=bool(row.wedstrijd_sport)
+        )
+        wedstrijd_sport = bool(row.wedstrijd_sport)
+        competition = (row.competition or "").strip()
+        context = ""
+        known = family != "UNKNOWN" and not (
+            (family.startswith("U") and not wedstrijd_sport)
+            or (family == "J" and wedstrijd_sport)
+        )
+        observed = classifications.get(row.pk, set())
+        if len(observed) == 1:
+            category, age_group, competition, context = next(iter(observed))
+            wedstrijd_sport = category in {"top", "a"}
+            family = (
+                ("SENIOR_A" if wedstrijd_sport else "SENIOR_B")
+                if age_group == "senior"
+                else "J"
+                if age_group == "youth"
+                else age_group
+            )
+            known = category in {"top", "a", "b"} and family in {
+                "SENIOR_A",
+                "SENIOR_B",
+                "U19",
+                "U17",
+                "U15",
+                "J",
+            }
+        elif len(observed) > 1:
+            known = False
+        if family not in {"SENIOR_A", "SENIOR_B", "U19", "U17", "U15", "J"}:
+            family = "UNKNOWN"
         team_context_by_id[team_id] = TeamContext(
             team=row.team,
-            wedstrijd_sport=bool(row.wedstrijd_sport),
-            team_rank=_coerce_rank(getattr(row, "team_rank", None), row.team.name),
-            family=_infer_family(
-                team_name=row.team.name,
-                wedstrijd_sport=bool(row.wedstrijd_sport),
-            ),
-            competition=(row.competition or "").strip(),
+            wedstrijd_sport=wedstrijd_sport,
+            team_rank=_coerce_rank(None if observed else row.team_rank, row.team.name),
+            family=family,
+            competition=competition,
+            context=context,
+            classification_known=known,
         )
     return team_context_by_id
 
@@ -292,7 +297,7 @@ def _fetch_match_data_by_id(
     finished_matches_qs = (
         MatchData.objects
         .select_related("match_link", "match_link__season")
-        .filter(status="finished", match_link__isnull=False)
+        .filter(status="finished", match_link__start_time__lte=timezone.now())
         .filter(
             Q(match_link__home_team_id__in=club_team_ids)
             | Q(match_link__away_team_id__in=club_team_ids)
@@ -327,13 +332,13 @@ def _resolve_team_id_for_entry(
         return home_team_id
     if away_is_club and not home_is_club:
         return away_team_id
-    return home_team_id
+    # A derby without player/team attribution cannot identify an appearance.
+    return None
 
 
 def _collect_entries_and_players(
     *,
     match_data_by_id: dict[str, MatchData],
-    club_team_ids: list[str],
     team_context_by_id: dict[str, TeamContext],
 ) -> tuple[dict[str, list[PlayedEntry]], dict[str, Player]]:
     match_minutes_qs = PlayerMatchMinutes.objects.select_related(
@@ -342,6 +347,7 @@ def _collect_entries_and_players(
         "match_data",
         "match_data__match_link",
     ).filter(
+        player__in=Player.objects.all(),
         algorithm_version=LATEST_MATCH_MINUTES_VERSION,
         match_data_id__in=match_data_by_id.keys(),
     )
@@ -350,7 +356,6 @@ def _collect_entries_and_players(
         (str(row.match_data_id), str(row.player_id)): str(row.team_id)
         for row in MatchPlayer.objects.filter(
             match_data_id__in=match_data_by_id.keys(),
-            team_id__in=club_team_ids,
         ).only("match_data_id", "player_id", "team_id")
     }
 
@@ -358,7 +363,7 @@ def _collect_entries_and_players(
     players_by_id: dict[str, Player] = {}
 
     for row in match_minutes_qs:
-        match_data = row.match_data
+        match_data = match_data_by_id.get(str(row.match_data.pk))
         if match_data is None or match_data.match_link is None:
             continue
 
@@ -379,6 +384,16 @@ def _collect_entries_and_players(
             continue
 
         team_ctx = team_context_by_id[team_id]
+        if (
+            _age_check(
+                player,
+                team_ctx,
+                match_data.match_link.season,
+                on=timezone.localtime(match_data.match_link.start_time).date(),
+            )[0]
+            == "blocked"
+        ):
+            continue
         players_by_id[player_id] = player
         entries_by_player[player_id].append(
             PlayedEntry(
@@ -425,10 +440,29 @@ def _build_player_states(
             _pick_counted_match_for_week(entries)
             for _, entries in sorted(by_week.items(), key=itemgetter(0))
         ]
-        counted_entries = _trim_by_inactivity(counted_entries)
+        # Sportlink settles a week on Tuesday. The current week cannot change
+        # permission yet, including the week of the third qualifying appearance.
+        counted_entries = [
+            entry
+            for entry in counted_entries
+            if entry.week_start < _week_start_for(timezone.now())
+        ]
+        history = sorted(raw_entries, key=lambda entry: entry.played_at)
+        history_needs_check = any(
+            (right.played_at.date() - left.played_at.date()).days
+            >= INACTIVITY_RESET_DAYS
+            for left, right in pairwise(history)
+        )
+        if (
+            history
+            and (timezone.localdate() - history[-1].played_at.date()).days
+            >= INACTIVITY_RESET_DAYS
+        ):
+            history_needs_check = True
 
         player_states[player_id] = PlayerState(
             player=player,
+            history_needs_check=history_needs_check,
             counted_entries=counted_entries,
             total_counted=len(counted_entries),
             restrictions_active=len(counted_entries) >= MIN_MATCHES_FOR_RESTRICTIONS,
@@ -441,68 +475,189 @@ def _build_player_states(
     return player_states
 
 
-def _build_lower_team_slots(
-    *,
-    player_states: dict[str, PlayerState],
-    team_context_by_id: dict[str, TeamContext],
-    season: Season | None,
-) -> dict[str, set[str]]:
-    lower_team_slots: dict[str, set[str]] = defaultdict(set)
-    if not _season_before_three_quarters(season):
-        return lower_team_slots
-
-    for target_ctx in team_context_by_id.values():
-        if not target_ctx.wedstrijd_sport:
-            continue
-        source_rank = target_ctx.team_rank - 1
-        if source_rank < 1:
-            continue
-
-        candidates: list[tuple[datetime, str]] = []
-        for player_id, state in player_states.items():
-            own_ctx = (
-                team_context_by_id.get(state.own_team_id)
-                if state.own_team_id is not None
-                else None
-            )
-            if own_ctx is None:
-                continue
-            if not own_ctx.wedstrijd_sport:
-                continue
-            if own_ctx.family != target_ctx.family:
-                continue
-            if own_ctx.team_rank != source_rank:
-                continue
-
-            appearances = [
-                entry.played_at
-                for entry in state.counted_entries
-                if entry.team_id == str(target_ctx.team.id_uuid)
-            ]
-            if not appearances:
-                continue
-
-            candidates.append((min(appearances), player_id))
-
-        candidates.sort(key=itemgetter(0, 1))
-        lower_team_slots[str(target_ctx.team.id_uuid)] = {
-            pid for _, pid in candidates[:LOWER_TEAM_MAX_PLAYERS]
-        }
-
-    return lower_team_slots
-
-
 def _build_lowest_a_rank_by_family(
     team_context_by_id: dict[str, TeamContext],
-) -> dict[str, int]:
-    lowest_a_rank_by_family: dict[str, int] = {}
+) -> dict[tuple[str, str], int]:
+    lowest_a_rank_by_family: dict[tuple[str, str], int] = {}
     for ctx in team_context_by_id.values():
         if not ctx.wedstrijd_sport:
             continue
-        current = lowest_a_rank_by_family.get(ctx.family)
+        current = lowest_a_rank_by_family.get((ctx.context, ctx.family))
         if current is None or ctx.team_rank > current:
-            lowest_a_rank_by_family[ctx.family] = ctx.team_rank
+            lowest_a_rank_by_family[ctx.context, ctx.family] = ctx.team_rank
     return lowest_a_rank_by_family
+
+
+def _age_check(
+    player: Player, team: TeamContext, season: Season | None, *, on: date | None = None
+) -> tuple[str, str]:
+    """Check privately held dates; never infer an age from roster or J-number.
+
+    KNKV RvW art. 6 and competition handbook 7.2/7.3.3:
+    https://www.knkv.nl/kennisbank/competitiehandboek/
+    Published B cutoffs are not available locally. Rounded allocation averages
+    cannot replace either official cutoff (ordinary or A-bound substitutes).
+    """
+    born = player.date_of_birth
+    today = on or timezone.localdate()
+    if (
+        born is not None
+        and (
+            today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        )
+        < MINIMUM_AGE
+    ):
+        return "blocked", "De minimumleeftijd voor competitie is 5 jaar."
+    if team.family in {"U19", "U17", "U15"}:
+        return _youth_age_check(player, team, season)
+    if team.family == "J":
+        return "check", (
+            "Controleer de geboortedatum en de officiële KNKV-invallersgrens "
+            "van dit jeugdteam. "
+            "Bij vastspelen in A geldt de strengere grens op basis van de teamleeftijd."
+        )
+    if team.family.startswith("SENIOR"):
+        return "passed", "Geen bovengrens voor leeftijd bij senioren."
+    return "check", "Leeftijdscategorie van het team is niet vastgesteld."
+
+
+def _youth_age_check(
+    player: Player, team: TeamContext, season: Season | None
+) -> tuple[str, str]:
+    born = player.date_of_birth
+    if season is None:
+        return "check", "Kies een seizoen om de geboortejaargrens te bepalen."
+    year = season.start_date.year - (season.start_date.month < SEASON_START_MONTH)
+    if year < MODERN_YOUTH_START_YEAR:
+        return (
+            "check",
+            "Controleer de leeftijdsregels voor dit historische seizoen.",
+        )
+    earliest_year = year - int(team.family[1:]) + 1
+    if born is None:
+        return (
+            "check",
+            f"Geboortedatum ontbreekt; {team.family} vereist geboortejaar "
+            f"{earliest_year} of later.",
+        )
+    if born.year < earliest_year:
+        return (
+            "blocked",
+            f"Buiten de geboortejaargrens van {team.family} "
+            f"({earliest_year} of later).",
+        )
+    return "passed", f"Voldoet aan de geboortejaargrens van {team.family}."
+
+
+def _binding_check(
+    state: PlayerState,
+    target: TeamContext,
+    teams: dict[str, TeamContext],
+    lowest_a: dict[tuple[str, str], int],
+) -> tuple[str, str]:
+    """Evaluate article 21 without pretending to know a future match lineup."""
+    own = teams.get(state.own_team_id or "")
+    if not target.classification_known or any(
+        not teams[entry.team_id].classification_known for entry in state.counted_entries
+    ):
+        return (
+            "check",
+            "Competitie-indeling ontbreekt of bevat meerdere competitiedelen. "
+            "Controleer Sportlink.",
+        )
+    if any(
+        teams[entry.team_id].context != target.context
+        for entry in state.counted_entries
+    ):
+        return (
+            "check",
+            "Andere competitiecontext; controleer de speelstatus in Sportlink.",
+        )
+    if state.history_needs_check:
+        return (
+            "check",
+            "Onderbreking van 45 dagen of langer: controleer de herstartstatus "
+            "en eventuele veldpauze in Sportlink.",
+        )
+    if not state.restrictions_active or own is None:
+        return (
+            ("available", "Nog geen 3 meegetelde speelweken; geen vastspeelbeperking.")
+            if not state.restrictions_active
+            else ("check", "Eigen team is nog niet te bepalen.")
+        )
+    if not target.wedstrijd_sport:
+        return _b_binding_check(own, lowest_a)
+    return _a_binding_check(state, own, target, teams)
+
+
+def _b_binding_check(
+    own: TeamContext, lowest_a: dict[tuple[str, str], int]
+) -> tuple[str, str]:
+    if not own.wedstrijd_sport:
+        return (
+            "available",
+            "Geen vastspeelbeperking binnen B; de leeftijdsregels blijven gelden.",
+        )
+    if own.team_rank == lowest_a.get((own.context, own.family)):
+        return (
+            "available",
+            "Laagste A-team van de leeftijdscategorie; "
+            "de B-leeftijdsregels blijven gelden.",
+        )
+    return (
+        "blocked",
+        "Vastgespeeld in A, boven het laagste A-team van de leeftijdscategorie.",
+    )
+
+
+def _a_binding_check(
+    state: PlayerState,
+    own: TeamContext,
+    target: TeamContext,
+    teams: dict[str, TeamContext],
+) -> tuple[str, str]:
+    target_order = _team_order(target.family, target.team_rank)
+    own_order = _team_order(own.family, own.team_rank)
+    if own.competition.casefold() in {
+        "league:standard",
+        "korfbal league",
+    } and target.competition.casefold() in {"league:reserve", "reserve korfbal league"}:
+        return "available", "Korfbal League naar Reserve Korfbal League (artikel 21.9)."
+    if target_order <= own_order:
+        return "available", "Eigen team of een hoger team in de KNKV-volgorde."
+    if (
+        own.wedstrijd_sport
+        and own.family == target.family
+        and own.competition
+        and own.competition == target.competition
+    ):
+        return "available", "Het team speelt in dezelfde klasse als het eigen team."
+    last = state.counted_entries[-1] if state.counted_entries else None
+    if last and target_order <= _team_order(last.family, last.team_rank):
+        return (
+            "available",
+            "Toegestaan op basis van het team in de laatste meegetelde speelweek.",
+        )
+    lower_teams = sorted(
+        (
+            team
+            for team in teams.values()
+            if team.wedstrijd_sport
+            and team.context == own.context
+            and _team_order(team.family, team.team_rank) > own_order
+        ),
+        key=lambda team: _team_order(team.family, team.team_rank),
+    )
+    if own.wedstrijd_sport and lower_teams and lower_teams[0] == target:
+        return "check", (
+            "Eén team lager: maximaal 2 spelers uit het naaste hogere team "
+            "per wedstrijd, "
+            "alleen tot ¾ van de teamcompetitie. Controleer speelronde en opstelling."
+        )
+    return (
+        "blocked",
+        "Lager dan toegestaan op basis van het eigen team en de laatste speelweek.",
+    )
 
 
 def _build_player_payloads(
@@ -510,129 +665,83 @@ def _build_player_payloads(
     player_states: dict[str, PlayerState],
     team_context_by_id: dict[str, TeamContext],
     season: Season | None,
-    lower_team_slots: dict[str, set[str]],
-    lowest_a_rank_by_family: dict[str, int],
+    roster_teams: dict[str, list[str]],
+    lowest_a_rank_by_family: dict[tuple[str, str], int],
 ) -> list[dict[str, Any]]:
     players_payload: list[dict[str, Any]] = []
     for player_id, state in sorted(
-        player_states.items(),
-        key=lambda item: item[1].player.display_name.lower(),
+        player_states.items(), key=lambda item: item[1].player.display_name.lower()
     ):
         own_team = (
-            team_context_by_id.get(state.own_team_id)
-            if state.own_team_id is not None
-            else None
+            None
+            if state.history_needs_check
+            else team_context_by_id.get(state.own_team_id or "")
         )
-
         by_team_rows: list[dict[str, Any]] = []
         for team_ctx in sorted(
             team_context_by_id.values(),
-            key=lambda t: (t.family, t.team_rank, t.team.name.lower()),
+            key=lambda t: _team_order(t.family, t.team_rank),
         ):
+            status, reason = _binding_check(
+                state, team_ctx, team_context_by_id, lowest_a_rank_by_family
+            )
+            age_status, age_reason = _age_check(state.player, team_ctx, season)
+            if age_status == "blocked":
+                status = "blocked"
+            elif age_status == "check" and status != "blocked":
+                status = "check"
+            if state.total_counted == 0 and status == "available":
+                status = "check"
+                reason = (
+                    "Geen meegetelde speelminuten beschikbaar; "
+                    "controleer de speelgeschiedenis in Sportlink."
+                )
+            n = state.total_counted
             q = sum(
                 1
                 for entry in state.counted_entries
-                if entry.family == team_ctx.family
-                and entry.team_rank <= team_ctx.team_rank
+                if _team_order(entry.family, entry.team_rank)
+                <= _team_order(team_ctx.family, team_ctx.team_rank)
             )
-            n = sum(
-                1 for entry in state.counted_entries if entry.family == team_ctx.family
-            )
-            percentage = math.floor(q * 100 / n) if n else 0
-
-            same_class = bool(
-                own_team
-                and own_team.competition
-                and team_ctx.competition
-                and own_team.competition == team_ctx.competition
-            )
-            same_or_higher_from_own = bool(
-                own_team and team_ctx.team_rank <= own_team.team_rank
-            )
-            same_or_higher_from_last_week = bool(
-                state.last_week_team_rank is not None
-                and team_ctx.team_rank <= state.last_week_team_rank
-            )
-            one_lower_than_own = bool(
-                own_team and team_ctx.team_rank == own_team.team_rank + 1
-            )
-
-            if not state.restrictions_active:
-                allowed = True
-                reason = "Minder dan 3 gespeelde wedstrijden: geen beperkingen"
-            elif own_team is None:
-                allowed = False
-                reason = "Eigen team nog niet te bepalen"
-            elif _can_lowest_a_play_b(
-                own_team=own_team,
-                target_team=team_ctx,
-                lowest_a_rank_by_family=lowest_a_rank_by_family,
-            ):
-                allowed = True
-                reason = "Laagste A-team in leeftijdsgroep/senioren mag in B uitkomen"
-            elif team_ctx.family != state.active_family:
-                allowed = False
-                reason = "Andere teamfamilie (leeftijdscategorie/senioriteit)"
-            elif (
-                own_team.wedstrijd_sport is False and team_ctx.wedstrijd_sport is False
-            ):
-                allowed = True
-                reason = (
-                    "Breedtesport: binnen B-categorie toegestaan (leeftijdscheck apart)"
+            comparable = (
+                team_ctx.wedstrijd_sport
+                and team_ctx.classification_known
+                and not state.history_needs_check
+                and all(
+                    team_context_by_id[entry.team_id].classification_known
+                    and team_context_by_id[entry.team_id].context == team_ctx.context
+                    for entry in state.counted_entries
                 )
-            elif own_team.wedstrijd_sport and (
-                same_or_higher_from_own or same_class or same_or_higher_from_last_week
-            ):
-                allowed = True
-                if same_class and not same_or_higher_from_own:
-                    reason = "A-categorie: toegestaan in team met gelijke klasse"
-                elif same_or_higher_from_last_week and not same_or_higher_from_own:
-                    reason = "A-categorie: toegestaan op basis van laatste speelweek"
-                else:
-                    reason = "A-categorie: eigen team of hoger"
-            elif own_team.wedstrijd_sport and one_lower_than_own:
-                allowed = True
-                reason = "A-categorie: 1 team lager (teamlimieten van toepassing)"
-                if _season_before_three_quarters(season):
-                    slot_players = lower_team_slots.get(
-                        str(team_ctx.team.id_uuid),
-                        set(),
-                    )
-                    if player_id not in slot_players:
-                        allowed = False
-                        reason = (
-                            "A-categorie: limiet bereikt "
-                            "(max 2 spelers van naaste hogere team)"
-                        )
-            else:
-                allowed = False
-                reason = "Niet toegestaan volgens huidige teamstatus"
-
+            )
             by_team_rows.append({
                 "team_id": str(team_ctx.team.id_uuid),
                 "team_name": team_ctx.team.name,
                 "wedstrijd_sport": team_ctx.wedstrijd_sport,
                 "team_rank": team_ctx.team_rank,
                 "family": team_ctx.family,
-                "played_ratio_percent": percentage,
-                "distance_to_lock": _distance_to_lock(
-                    current_q=q,
-                    current_n=max(1, n),
-                ),
-                "allowed_for_team": allowed,
+                "played_ratio_percent": math.floor(q * 100 / n)
+                if n and comparable
+                else None,
+                "distance_to_lock": _distance_to_lock(current_q=q, current_n=n)
+                if comparable and status != "blocked"
+                else None,
+                "allowed_for_team": status == "available",
+                "eligibility_status": status,
                 "allowed_reason": reason,
+                "age_status": age_status,
+                "age_reason": age_reason,
             })
-
         players_payload.append({
             "player": _as_player_payload(state.player),
+            "birth_date_known": state.player.date_of_birth is not None,
+            "roster_team_ids": roster_teams.get(player_id, []),
             "played_matches_count": state.total_counted,
             "restrictions_active": state.restrictions_active,
-            "active_family": state.active_family,
+            "active_family": own_team.family if own_team else None,
             "own_team_id": str(own_team.team.id_uuid) if own_team else None,
             "own_team_name": own_team.team.name if own_team else None,
             "by_team": by_team_rows,
         })
-
     return players_payload
 
 
@@ -664,18 +773,8 @@ def build_club_eligibility_dashboard(
         club_team_ids=club_team_ids,
         season=season,
     )
-    if not match_data_by_id:
-        return {
-            "season_id": str(season.id_uuid) if season else None,
-            "season_name": season.name if season else None,
-            "generated_at": timezone.now().isoformat(),
-            "teams": teams_payload,
-            "players": [],
-        }
-
     entries_by_player, players_by_id = _collect_entries_and_players(
         match_data_by_id=match_data_by_id,
-        club_team_ids=club_team_ids,
         team_context_by_id=team_context_by_id,
     )
     _add_roster_players(players_by_id, team_data_qs)
@@ -685,17 +784,16 @@ def build_club_eligibility_dashboard(
         entries_by_player=entries_by_player,
         team_context_by_id=team_context_by_id,
     )
-    lower_team_slots = _build_lower_team_slots(
-        player_states=player_states,
-        team_context_by_id=team_context_by_id,
-        season=season,
-    )
+    roster_teams: dict[str, list[str]] = defaultdict(list)
+    for team_id, player_id in team_data_qs.values_list("team_id", "players__pk"):
+        if player_id is not None:
+            roster_teams[str(player_id)].append(str(team_id))
     lowest_a_rank_by_family = _build_lowest_a_rank_by_family(team_context_by_id)
     players_payload = _build_player_payloads(
         player_states=player_states,
         team_context_by_id=team_context_by_id,
         season=season,
-        lower_team_slots=lower_team_slots,
+        roster_teams=roster_teams,
         lowest_a_rank_by_family=lowest_a_rank_by_family,
     )
 

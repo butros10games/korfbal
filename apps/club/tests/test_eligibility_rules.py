@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import User
@@ -11,6 +12,14 @@ import pytest
 
 from apps.club.models import Club
 from apps.club.services import eligibility_dashboard as eligibility
+from apps.competition.models import (
+    Club as SourceClub,
+    CompetitionClass,
+    CompetitionEdition,
+    Pool,
+    PoolEntry,
+    Team as SourceTeam,
+)
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchMinutes
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.player.models import Player
@@ -63,6 +72,9 @@ def test_team_rank_uses_explicit_value_then_name_fallback(
         ("U19-2", True, "U19"),
         ("u 17_3", True, "U17"),
         ("J4", False, "J"),
+        ("Fortuna U17-2", True, "U17"),
+        ("Fortuna J12", False, "J"),
+        ("Recreanten", False, "UNKNOWN"),
         ("KWT 3", True, "SENIOR_A"),
         ("KWT 6", False, "SENIOR_B"),
     ],
@@ -95,8 +107,8 @@ def test_match_counts_at_exactly_seventy_five_percent() -> None:
     )
 
 
-def test_same_week_prefers_lowest_a_team_over_later_b_team() -> None:
-    """Only one match counts per week, with A-category appearances taking priority."""
+def test_same_week_counts_lowest_team_including_b() -> None:
+    """Article 21 counts the lowest team, without an A-category override."""
     week = timezone.make_aware(datetime.combine(date(2026, 8, 25), time(19)))
     higher_a = _played_entry(played_at=week, team_id="a-1", team_rank=1)
     lower_a = _played_entry(
@@ -114,29 +126,8 @@ def test_same_week_prefers_lowest_a_team_over_later_b_team() -> None:
 
     assert (
         eligibility._pick_counted_match_for_week([higher_a, later_b, lower_a])
-        == lower_a
+        == later_b
     )
-
-
-@pytest.mark.parametrize(
-    ("gap_days", "expected_count"),
-    [
-        (eligibility.INACTIVITY_RESET_DAYS, 2),
-        (eligibility.INACTIVITY_RESET_DAYS + 1, 1),
-    ],
-)
-def test_inactivity_resets_only_after_more_than_45_days(
-    gap_days: int,
-    expected_count: int,
-) -> None:
-    """The 45-day reset boundary is exclusive and discards older appearances."""
-    first_at = timezone.make_aware(datetime.combine(date(2026, 1, 1), time(12)))
-    entries = [
-        _played_entry(played_at=first_at),
-        _played_entry(played_at=first_at + timedelta(days=gap_days)),
-    ]
-
-    assert len(eligibility._trim_by_inactivity(entries)) == expected_count
 
 
 def test_own_team_threshold_is_strictly_greater_than_65_percent() -> None:
@@ -174,58 +165,12 @@ def test_own_team_uses_cumulative_appearances_at_or_above_candidate() -> None:
     )
 
 
-def test_only_lowest_a_team_can_cross_to_same_stage_b_family() -> None:
-    """The A-to-B exception applies only to the lowest A rank in the age stage."""
-    club = Club(name="Cross Category Club")
-    lowest_a = eligibility.TeamContext(
-        Team(name="3", club=club), True, 3, "SENIOR_A", ""
-    )
-    higher_a = eligibility.TeamContext(
-        Team(name="2", club=club), True, 2, "SENIOR_A", ""
-    )
-    senior_b = eligibility.TeamContext(
-        Team(name="4", club=club), False, 4, "SENIOR_B", ""
-    )
-    youth_b = eligibility.TeamContext(Team(name="J4", club=club), False, 4, "J", "")
-    lowest_by_family = {"SENIOR_A": 3}
-
-    assert eligibility._can_lowest_a_play_b(
-        own_team=lowest_a,
-        target_team=senior_b,
-        lowest_a_rank_by_family=lowest_by_family,
-    )
-    assert not eligibility._can_lowest_a_play_b(
-        own_team=higher_a,
-        target_team=senior_b,
-        lowest_a_rank_by_family=lowest_by_family,
-    )
-    assert not eligibility._can_lowest_a_play_b(
-        own_team=lowest_a,
-        target_team=youth_b,
-        lowest_a_rank_by_family=lowest_by_family,
-    )
-
-
 @pytest.mark.django_db
-def test_lower_team_slot_limit_turns_off_after_three_quarters(
+def test_dashboard_uses_designated_team_and_current_minutes_algorithm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The seasonal two-player limit applies through, but not after, 75 percent."""
-    season = Season.objects.create(
-        name="Boundary Season",
-        start_date=date(2026, 1, 1),
-        end_date=date(2026, 5, 1),
-    )
-    monkeypatch.setattr(timezone, "localdate", lambda: date(2026, 4, 1))
-    assert eligibility._season_before_three_quarters(season) is True
-
-    monkeypatch.setattr(timezone, "localdate", lambda: date(2026, 4, 2))
-    assert eligibility._season_before_three_quarters(season) is False
-
-
-@pytest.mark.django_db
-def test_dashboard_uses_designated_team_and_current_minutes_algorithm() -> None:
     """Dashboard appearances use lineup team attribution and the latest calculation."""
+    monkeypatch.setattr(timezone, "localdate", lambda: date(2026, 3, 10))
     season = Season.objects.create(
         name="Minutes Season",
         start_date=date(2026, 1, 1),
@@ -293,3 +238,356 @@ def test_dashboard_uses_designated_team_and_current_minutes_algorithm() -> None:
         if row["team_id"] == str(team_2.id_uuid)
     )
     assert team_2_row["played_ratio_percent"] == FULL_PERCENT
+
+
+def _context(
+    name: str, rank: int = 1, *, a_category: bool = True
+) -> eligibility.TeamContext:
+    return eligibility.TeamContext(
+        Team(name=name, club=Club(name="Synthetic club")),
+        a_category,
+        rank,
+        eligibility._infer_family(team_name=name, wedstrijd_sport=a_category),
+        "",
+    )
+
+
+def _dashboard_row(
+    *,
+    born: date | None,
+    target: eligibility.TeamContext,
+    own: eligibility.TeamContext | None = None,
+    weeks: int = 3,
+) -> dict:
+    player = Player(name="Synthetic player", date_of_birth=born)
+    source = own or target
+    contexts = {str(team.team.pk): team for team in (source, target)}
+    entries = [
+        _played_entry(
+            played_at=timezone.now() - timedelta(weeks=index + 1),
+            team_id=str(source.team.pk),
+            team_rank=source.team_rank,
+            family=source.family,
+            wedstrijd_sport=source.wedstrijd_sport,
+        )
+        for index in reversed(range(weeks))
+    ]
+    state = eligibility.PlayerState(
+        player,
+        entries,
+        weeks,
+        weeks >= eligibility.MIN_MATCHES_FOR_RESTRICTIONS,
+        source.family,
+        str(source.team.pk)
+        if weeks >= eligibility.MIN_MATCHES_FOR_RESTRICTIONS
+        else None,
+        source.team_rank,
+    )
+    return eligibility._build_player_payloads(
+        player_states={str(player.pk): state},
+        team_context_by_id=contexts,
+        season=Season(
+            name="2026/2027", start_date=date(2026, 8, 1), end_date=date(2027, 6, 30)
+        ),
+        roster_teams={str(player.pk): [str(source.team.pk)]},
+        lowest_a_rank_by_family=eligibility._build_lowest_a_rank_by_family(contexts),
+    )[0]
+
+
+@pytest.mark.parametrize(
+    ("family", "year"), [("U19", 2008), ("U17", 2010), ("U15", 2012)]
+)
+@pytest.mark.parametrize("relative_year", [-1, 0, 1])
+def test_youth_birth_year_boundary_applies_even_before_third_week(
+    family: str, year: int, relative_year: int
+) -> None:
+    """Being unrestricted by vastspelen must never override an age restriction."""
+    target = _context(f"Club {family}-1")
+    row = _dashboard_row(born=date(year + relative_year, 1, 1), target=target, weeks=1)
+    check = row["by_team"][0]
+    assert check["eligibility_status"] == (
+        "blocked" if relative_year < 0 else "available"
+    )
+    assert check["allowed_for_team"] is (relative_year >= 0)
+    assert "date_of_birth" not in row["player"]
+    assert "age" not in row["player"]
+
+
+def test_missing_birth_date_is_a_check_not_permission_or_a_block() -> None:
+    """A roster category is not evidence of a player's age."""
+    row = _dashboard_row(born=None, target=_context("U17-1"))
+    assert row["birth_date_known"] is False
+    assert row["by_team"][0]["eligibility_status"] == "check"
+    assert row["by_team"][0]["allowed_for_team"] is False
+
+
+@pytest.mark.parametrize("born", [None, date(2012, 1, 1), date(2000, 1, 1)])
+def test_b_youth_needs_the_published_cutoff_not_a_j_number(born: date | None) -> None:
+    """No invented ages or permission from numbering or a rounded team average."""
+    row = _dashboard_row(born=born, target=_context("J18", a_category=False))
+    assert row["by_team"][0]["eligibility_status"] == "check"
+    assert row["by_team"][0]["distance_to_lock"] is None
+
+
+def test_young_player_can_move_up_from_u17_to_u19_and_seniors() -> None:
+    """Age families form a hierarchy, rather than impermeable groups."""
+    own = _context("U17-1")
+    for target in (_context("U19-1"), _context("1")):
+        row = _dashboard_row(born=date(2011, 1, 1), target=target, own=own)
+        check = next(
+            check for check in row["by_team"] if check["team_id"] == str(target.team.pk)
+        )
+        assert check["eligibility_status"] == "available"
+
+
+def test_own_team_counts_across_age_categories() -> None:
+    """Two senior appearances plus a youth appearance bind to the senior team."""
+    senior, youth = _context("1"), _context("U19-1")
+    teams = {str(team.team.pk): team for team in (senior, youth)}
+    entries = [
+        _played_entry(
+            played_at=timezone.now() - timedelta(weeks=index + 1),
+            team_id=str(team.team.pk),
+            family=team.family,
+        )
+        for index, team in enumerate((senior, senior, youth))
+    ]
+    assert eligibility._own_team_id(entries=entries, teams=teams) == str(senior.team.pk)
+    assert eligibility._pick_counted_match_for_week(entries).family == "U19"
+
+
+def test_third_appearance_only_changes_permission_after_monday(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The entire third playing week is exempt from binding restrictions."""
+    monday = datetime(2026, 9, 14, 12, tzinfo=UTC)
+    player, target = Player(name="Week boundary"), _context("1")
+    entries = [
+        _played_entry(
+            played_at=monday - timedelta(weeks=index), team_id=str(target.team.pk)
+        )
+        for index in range(3)
+    ]
+    for now, expected in ((monday, 2), (monday + timedelta(days=1), 3)):
+        monkeypatch.setattr(timezone, "now", lambda now=now: now)
+        state = eligibility._build_player_states(
+            players_by_id={str(player.pk): player},
+            entries_by_player={str(player.pk): entries},
+            team_context_by_id={str(target.team.pk): target},
+        )[str(player.pk)]
+        assert state.total_counted == expected
+        assert state.restrictions_active is (
+            expected == eligibility.MIN_MATCHES_FOR_RESTRICTIONS
+        )
+
+
+@pytest.mark.parametrize("gap", [44, 45, 46])
+def test_inactivity_requires_an_official_restart_check(
+    monkeypatch: pytest.MonkeyPatch, gap: int
+) -> None:
+    """Do not silently make a bound returning player unrestricted."""
+    now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    monkeypatch.setattr(timezone, "now", lambda: now)
+    player, target = Player(name="Returning player"), _context("1")
+    entries = [
+        _played_entry(
+            played_at=now - timedelta(days=gap + week * 7), team_id=str(target.team.pk)
+        )
+        for week in range(3)
+    ]
+    state = eligibility._build_player_states(
+        players_by_id={str(player.pk): player},
+        entries_by_player={str(player.pk): entries},
+        team_context_by_id={str(target.team.pk): target},
+    )[str(player.pk)]
+    assert state.history_needs_check is (gap >= eligibility.INACTIVITY_RESET_DAYS)
+    if state.history_needs_check:
+        assert (
+            eligibility._binding_check(
+                state, target, {str(target.team.pk): target}, {("", "SENIOR_A"): 1}
+            )[0]
+            == "check"
+        )
+
+
+@pytest.mark.django_db
+def test_dashboard_includes_rosters_without_finished_matches() -> None:
+    """Preseason still has usable player rows, with unknown history explicit."""
+    season = Season.objects.create(
+        name="Preseason", start_date=date(2026, 8, 1), end_date=date(2027, 6, 30)
+    )
+    club = Club.objects.create(name="Roster club")
+    team = Team.objects.create(name="U17-1", club=club)
+    data = TeamData.objects.create(team=team, season=season, wedstrijd_sport=True)
+    player = Player.objects.create(name="No history", date_of_birth=date(2011, 1, 1))
+    data.players.add(player)
+    payload = eligibility.build_club_eligibility_dashboard(club=club, season=season)
+    assert len(payload["players"]) == 1
+    row = payload["players"][0]
+    assert row["roster_team_ids"] == [str(team.pk)]
+    assert row["played_matches_count"] == 0
+    assert row["by_team"][0]["eligibility_status"] == "check"
+    assert (
+        row["by_team"][0]["distance_to_lock"]
+        == eligibility.MIN_MATCHES_FOR_RESTRICTIONS
+    )
+
+
+@pytest.mark.django_db
+def test_imported_teams_use_official_categories_and_numbers() -> None:
+    """An imported A-team must not inherit the manual B/rank-1 defaults."""
+    season = Season.objects.create(
+        name="Official classification",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 30),
+    )
+    club = Club.objects.create(name="Classified club")
+    team = Team.objects.create(name="Classified club 3", club=club)
+    data = TeamData.objects.create(team=team, season=season)
+    source_club = SourceClub.objects.create(
+        external_id="synthetic-club", name=club.name
+    )
+    source_team = SourceTeam.objects.create(
+        season=season,
+        external_id="synthetic-team",
+        club=source_club,
+        local_team_data=data,
+        name=team.name,
+        sport="KORFBALL-VE-WK",
+    )
+    context = eligibility._build_team_context_by_id(
+        TeamData.objects.filter(pk=data.pk).select_related("team")
+    )[str(team.pk)]
+    assert context.classification_known is False
+    edition = CompetitionEdition.objects.create(
+        season=season, discipline="outdoor", phase="autumn", gender="mixed"
+    )
+    classification = CompetitionClass.objects.create(
+        edition=edition,
+        code="class_2",
+        category="a",
+        age_group="senior",
+        team_kind="reserve",
+        colour="unknown",
+        playing_format="eight",
+    )
+    pool = Pool.objects.create(
+        season=season, external_id="synthetic-pool", competition_class=classification
+    )
+    PoolEntry.objects.create(pool=pool, team=source_team)
+    context = eligibility._build_team_context_by_id(
+        TeamData.objects.filter(pk=data.pk).select_related("team")
+    )[str(team.pk)]
+    assert context.classification_known is True
+    assert context.wedstrijd_sport is True
+    assert context.family == "SENIOR_A"
+    assert context.team_rank == int(team.name.rsplit(" ", 1)[-1])
+    assert context.competition == str(classification.pk)
+    spring = CompetitionEdition.objects.create(
+        season=season, discipline="outdoor", phase="spring", gender="mixed"
+    )
+    other_class = CompetitionClass.objects.create(
+        edition=spring,
+        code="class_2",
+        category="a",
+        age_group="senior",
+        team_kind="reserve",
+        colour="unknown",
+        playing_format="eight",
+    )
+    other_pool = Pool.objects.create(
+        season=season, external_id="synthetic-spring", competition_class=other_class
+    )
+    PoolEntry.objects.create(pool=other_pool, team=source_team)
+    context = eligibility._build_team_context_by_id(
+        TeamData.objects.filter(pk=data.pk).select_related("team")
+    )[str(team.pk)]
+    assert context.classification_known is False
+
+
+@pytest.mark.django_db
+def test_opponent_minutes_do_not_create_club_players() -> None:
+    """The explicit opponent team must win over a single-club-match fallback."""
+    season = Season.objects.create(
+        name="Opponent attribution",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 30),
+    )
+    club = Club.objects.create(name="Home club")
+    away_club = Club.objects.create(name="Away club")
+    home = Team.objects.create(name="1", club=club)
+    away = Team.objects.create(name="1", club=away_club)
+    TeamData.objects.create(team=home, season=season, wedstrijd_sport=True)
+    opponent = Player.objects.create(name="Opponent")
+    match = Match.objects.create(
+        home_team=home,
+        away_team=away,
+        season=season,
+        start_time=timezone.now() - timedelta(weeks=1),
+    )
+    data = MatchData.objects.get(match_link=match)
+    data.status = "finished"
+    data.save(update_fields=["status"])
+    MatchPlayer.objects.create(match_data=data, player=opponent, team=away)
+    PlayerMatchMinutes.objects.create(
+        match_data=data,
+        player=opponent,
+        algorithm_version=LATEST_MATCH_MINUTES_VERSION,
+        minutes_played=Decimal(60),
+    )
+    payload = eligibility.build_club_eligibility_dashboard(club=club, season=season)
+    assert payload["players"] == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("birth_year", "count"), [(2009, 0), (2010, 1)])
+def test_age_ineligible_appearances_do_not_count_towards_binding(
+    birth_year: int, count: int
+) -> None:
+    """Article 21.5 excludes a known ineligible appearance from the history."""
+    season = Season.objects.create(
+        name="History age boundary",
+        start_date=date(2026, 8, 1),
+        end_date=date(2027, 6, 30),
+    )
+    club = Club.objects.create(name="History club")
+    other = Club.objects.create(name="Opponent club")
+    team = Team.objects.create(name="U17-1", club=club)
+    away = Team.objects.create(name="U17-1", club=other)
+    roster = TeamData.objects.create(team=team, season=season, wedstrijd_sport=True)
+    player = Player.objects.create(
+        name="Age boundary", date_of_birth=date(birth_year, 1, 1)
+    )
+    roster.players.add(player)
+    match = Match.objects.create(
+        home_team=team,
+        away_team=away,
+        season=season,
+        start_time=timezone.now() - timedelta(weeks=1),
+    )
+    data = MatchData.objects.get(match_link=match)
+    data.status = "finished"
+    data.save(update_fields=["status"])
+    MatchPlayer.objects.create(match_data=data, player=player, team=team)
+    PlayerMatchMinutes.objects.create(
+        match_data=data,
+        player=player,
+        algorithm_version=LATEST_MATCH_MINUTES_VERSION,
+        minutes_played=Decimal(60),
+    )
+    row = eligibility.build_club_eligibility_dashboard(club=club, season=season)[
+        "players"
+    ][0]
+    assert row["played_matches_count"] == count
+
+
+def test_korfbal_league_exception_is_not_limited_to_one_team_down() -> None:
+    """Article 21.9 permits the reserve league for the entire season."""
+    own = replace(_context("1"), competition="league:standard")
+    target = replace(_context("4", rank=4), competition="league:reserve")
+    row = _dashboard_row(born=date(2000, 1, 1), target=target, own=own)
+    check = next(
+        check for check in row["by_team"] if check["team_id"] == str(target.team.pk)
+    )
+    assert check["eligibility_status"] == "available"
+    assert "21.9" in check["allowed_reason"]
