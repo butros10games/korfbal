@@ -12,6 +12,8 @@ Prefer Nx targets (recommended):
 
 - List projects: `corepack pnpm nx show projects --verbose`
 - Run tests: `corepack pnpm nx run korfbal-django:test`
+- Run ordinary tests while iterating: `corepack pnpm nx run korfbal-django:test-general`
+- Run historical migration checks: `corepack pnpm nx run korfbal-django:test-migrations`
 - Run lint: `corepack pnpm nx run korfbal-django:lint`
 
 Fallback (from this directory):
@@ -105,14 +107,19 @@ Match tracker issues often require coordinated backend + frontend changes.
   translate that failure into a domain validation error that the API maps to 400.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
-- Add new migration test files to both explicit migration commands in `project.json`; the
+- Add new migration test files to both `test-migrations` commands in `project.json`; the
   general test lane excludes `migration_regression` tests.
+- Keep `test` dependent on both test lanes, including their `ci` configurations, so the
+  standard validation command always runs migration checks and CI retains coverage enforcement.
 - Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those
   against real migrations in an isolated database while ordinary tests use `--nomigrations`.
 - Keep the database-free migration graph check in the general test lane and override
   `MIGRATION_MODULES` there so `--nomigrations` cannot hide conflicting shipped migration leaves.
 - Size both CI test lanes explicitly and budget their workers together; leaving the migration
   lane sequential can dominate the full target even when the general suite finishes quickly.
+- Local migration tests use four workers; the `ci` configuration keeps two alongside the
+  general lane's two to fit the four-CPU quality runner. Benchmark both lanes together
+  before increasing that CI budget.
 - When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
   `django_db` rollback isolation and use `django_capture_on_commit_callbacks(execute=True)`;
   reserve `transaction=True` for real transaction visibility, async/SSE, and migration tests.

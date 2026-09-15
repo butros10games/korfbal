@@ -46,32 +46,34 @@
             }
         },
         "test": {
+            "executor": "nx:noop",
+            "dependsOn": ["test-general", "test-migrations"],
+            "configurations": {
+                "ci": {}
+            },
+            "inputs": [
+                "python",
+                "^python",
+                "sharedGlobals",
+                "{workspaceRoot}/fixtures/korfbal/**/*",
+                "{workspaceRoot}/configs/pytest_plugins/**/*",
+                "{workspaceRoot}/scripts/python/run_pytest_target.py",
+                {
+                    "env": "DJANGO_TEST_USE_POSTGRES"
+                }
+            ],
+            "outputs": []
+        },
+        "test-general": {
             "executor": "nx:run-commands",
+            "cache": true,
             "options": {
-                "commands": [
-                    {
-                        "command": "KORFBAL_TEST_DB_LANE=general uv run python scripts/python/run_pytest_target.py -- --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal",
-                        "forwardAllArgs": false
-                    },
-                    {
-                        "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py",
-                        "forwardAllArgs": false
-                    }
-                ],
-                "parallel": true
+                "command": "KORFBAL_TEST_DB_LANE=general uv run python scripts/python/run_pytest_target.py -- --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal"
             },
             "configurations": {
                 "ci": {
-                    "commands": [
-                        {
-                            "command": "KORFBAL_TEST_DB_LANE=general PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-config=apps/django_projects/korfbal/.coveragerc --cov-report=term:skip-covered --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83",
-                            "forwardAllArgs": false
-                        },
-                        {
-                            "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py",
-                            "forwardAllArgs": false
-                        }
-                    ]
+                    "command": "KORFBAL_TEST_DB_LANE=general PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal --cov=apps/django_projects/korfbal/apps --cov=apps/django_projects/korfbal/korfbal --cov-config=apps/django_projects/korfbal/.coveragerc --cov-report=term:skip-covered --cov-report=xml:reports/coverage/coverage-korfbal.xml --cov-fail-under=83",
+                    "outputs": ["{workspaceRoot}/reports/coverage/coverage-korfbal.xml"]
                 }
             },
             "inputs": [
@@ -84,7 +86,32 @@
                 {
                     "env": "DJANGO_TEST_USE_POSTGRES"
                 }
-            ]
+            ],
+            "outputs": []
+        },
+        "test-migrations": {
+            "executor": "nx:run-commands",
+            "cache": true,
+            "options": {
+                "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 4 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py"
+            },
+            "configurations": {
+                "ci": {
+                    "command": "KORFBAL_TEST_DB_LANE=migrations PYTHONPATH=.:${PYTHONPATH} uv run pytest -p configs.pytest_plugins.django_projects --django-project korfbal -q -n 2 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py"
+                }
+            },
+            "inputs": [
+                "python",
+                "^python",
+                "sharedGlobals",
+                "{workspaceRoot}/fixtures/korfbal/**/*",
+                "{workspaceRoot}/configs/pytest_plugins/**/*",
+                "{workspaceRoot}/scripts/python/run_pytest_target.py",
+                {
+                    "env": "DJANGO_TEST_USE_POSTGRES"
+                }
+            ],
+            "outputs": []
         },
         "build": {
             "executor": "nx:run-commands",
