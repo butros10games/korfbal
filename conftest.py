@@ -16,7 +16,7 @@ from pathlib import Path
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-from django.core.cache import cache
+from django.core.cache import cache, caches
 import pytest
 from pytest_django.fixtures import Settings
 
@@ -24,6 +24,7 @@ from pytest_django.fixtures import Settings
 def _clear_shared_test_backends() -> None:
     """Discard process-local state that Django doesn't roll back between tests."""
     cache.clear()
+    caches["public_live"].clear()
 
     channel_layer = get_channel_layer()
     if channel_layer is not None and "flush" in getattr(

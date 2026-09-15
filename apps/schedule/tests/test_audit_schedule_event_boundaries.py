@@ -47,42 +47,28 @@ def _login_home_club_member(
     return user
 
 
-def _private_tracker_state() -> dict[str, object]:
-    return {
-        "score": {"for": 4, "against": 3},
-        "current_part": 2,
-        "parts": 4,
-        "paused": False,
-        "timer": {"elapsed": 120},
-        "last_changed_at": "2026-08-30T12:00:00+00:00",
-        "resources": ["events"],
-        **{key: {"private": True} for key in PRIVATE_TRACKER_KEYS},
-    }
-
-
 def test_public_live_endpoints_strip_team_tracker_details(client: Client) -> None:
-    """Public snapshots expose only match-wide state, never coach-only data."""
+    """Public reads never build private tracker data, including on a poll change."""
     graph = create_match_graph(prefix="Public live allowlist")
-    state = _private_tracker_state()
-
-    with patch(
-        "apps.schedule.api.match_viewset_live.get_tracker_state", return_value=state
+    with (
+        patch("apps.schedule.api.match_viewset_live.get_tracker_state") as private_read,
+        patch(
+            "apps.schedule.api.match_viewset_live.poll_tracker_state"
+        ) as private_poll,
     ):
         full_response = client.get(f"/api/matches/{graph.match.id_uuid}/live/")
-    with patch(
-        "apps.schedule.api.match_viewset_live.poll_tracker_state", return_value=state
-    ):
         changed_response = client.get(
             f"/api/matches/{graph.match.id_uuid}/live/poll/",
-            {"since_revision": "0", "timeout": "1"},
+            {"since_revision": "-1", "timeout": "1"},
         )
-
+    private_read.assert_not_called()
+    private_poll.assert_not_called()
     assert full_response.status_code == HTTPStatus.OK
     assert changed_response.status_code == HTTPStatus.OK
     for payload in (full_response.json(), changed_response.json()):
-        assert payload["score"] == {"home": 4, "away": 3}
-        assert payload["resources"] == ["events"]
+        assert payload["score"] == {"home": 0, "away": 0}
         assert PRIVATE_TRACKER_KEYS.isdisjoint(payload)
+    assert isinstance(changed_response.json()["resources"], list)
 
 
 def test_authorized_tracker_poll_forwards_parsed_transport_options(

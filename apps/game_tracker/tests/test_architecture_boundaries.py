@@ -16,6 +16,7 @@ COMMAND_HANDLER_DIRECTORY = APPS_ROOT / "game_tracker" / "services" / "tracker_c
 TRACKER_APPLICATION_FILES = (
     *COMMAND_HANDLER_DIRECTORY.glob("*.py"),
     APPS_ROOT / "game_tracker" / "services" / "tracker_state.py",
+    APPS_ROOT / "game_tracker" / "services" / "public_live.py",
 )
 FORBIDDEN_DOMAIN_IMPORTS = (
     "celery",

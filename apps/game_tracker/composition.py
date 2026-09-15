@@ -8,6 +8,9 @@ from typing import Any
 
 from django.utils import timezone
 
+from apps.game_tracker.adapters.outbound.public_live_cache import (
+    DjangoPublicLiveSnapshotCache,
+)
 from apps.game_tracker.adapters.outbound.runtime import (
     CeleryTrackerJobDispatcher,
     ChannelsMatchChangePublisher,
@@ -24,6 +27,7 @@ from apps.game_tracker.services.live_updates import (
 from apps.game_tracker.services.player_designation import (
     apply_player_designation as _apply_player_designation,
 )
+from apps.game_tracker.services.public_live import read_public_live as _read_public_live
 from apps.game_tracker.services.tracker_http import execute_tracker_command
 from apps.schedule.models import Match
 from apps.team.models import Team
@@ -81,3 +85,6 @@ def record_match_change(
 # These adapters persist intent within the caller's transaction.
 schedule_match_impact_recompute = tracker_jobs.recompute_impacts
 schedule_match_minutes_recompute = tracker_jobs.recompute_minutes
+
+
+read_public_live = partial(_read_public_live, snapshots=DjangoPublicLiveSnapshotCache())

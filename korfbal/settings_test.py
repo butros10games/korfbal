@@ -30,6 +30,10 @@ CACHES = {
         "LOCATION": "korfbal-test-cache",
     }
 }
+CACHES["public_live"] = {
+    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    "LOCATION": "korfbal-test-public-live-cache",
+}
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # Ensure sessions use the local cache backend defined above

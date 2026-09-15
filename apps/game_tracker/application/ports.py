@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from apps.game_tracker.realtime.contracts import LiveResource
 
@@ -53,3 +53,12 @@ class TrackerRuntime:
     now: Callable[[], datetime]
     jobs: TrackerJobDispatcher
     publisher: MatchChangePublisher
+
+
+class PublicLiveSnapshotCache(Protocol):
+    """Reuse public snapshots identified by their committed match revision."""
+
+    def get_or_build(
+        self, key: str, build: Callable[[], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Return an independent payload, falling back to the authoritative read."""

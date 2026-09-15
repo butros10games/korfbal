@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from kombu import Queue
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 
 from .env import env, env_bool, env_int
 from .runtime import KORFBAL_ENABLE_PROMETHEUS, RUNNING_TESTS
@@ -80,6 +82,17 @@ CACHES = {
     "default": {
         "BACKEND": cache_backend,
         "LOCATION": f"redis://{VALKEY_HOST}:{VALKEY_PORT}/1",
+    },
+}
+
+# Public snapshots hold a database connection while consulting this optional cache.
+# Keep its network waits short without changing session or Channels behavior.
+CACHES["public_live"] = {
+    **CACHES["default"],
+    "OPTIONS": {
+        "socket_connect_timeout": 0.05,
+        "socket_timeout": 0.05,
+        "retry": Retry(NoBackoff(), 0),
     },
 }
 

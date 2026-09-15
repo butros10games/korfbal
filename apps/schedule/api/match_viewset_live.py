@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -12,8 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.composition import apply_tracker_command, read_public_live
 from apps.game_tracker.services.tracker_commands import TrackerCommandError
 from apps.game_tracker.services.tracker_state import (
     get_tracker_state,
@@ -45,46 +43,6 @@ def _parse_since_revision(raw: str | None) -> int | None:
     except (TypeError, ValueError):
         return None
     return revision if revision >= -1 else None
-
-
-def _public_live_state(
-    *,
-    match: Match,
-    match_data: MatchData,
-    home_tracker_state: dict[str, Any],
-) -> dict[str, Any]:
-    """Return a safe, match-level live payload.
-
-    Notes:
-        We intentionally only expose match-wide fields here (timer/score/etc)
-        so the Match page can live-update without requiring coach permissions
-        and without exposing the full tracker roster state.
-
-    """
-    score = home_tracker_state.get("score")
-    home = 0
-    away = 0
-    if isinstance(score, dict):
-        home = int(score.get("for") or 0)
-        away = int(score.get("against") or 0)
-
-    return {
-        "match_id": str(match.id_uuid),
-        "match_data_id": str(match_data.id_uuid),
-        "status": match_data.status,
-        "current_part": int(home_tracker_state.get("current_part") or 0),
-        "parts": int(home_tracker_state.get("parts") or 0),
-        "paused": bool(home_tracker_state.get("paused")),
-        "timer": home_tracker_state.get("timer"),
-        "score": {"home": home, "away": away},
-        "last_changed_at": home_tracker_state.get("last_changed_at"),
-        "live_revision": match_data.live_revision,
-        **(
-            {"resources": home_tracker_state["resources"]}
-            if isinstance(home_tracker_state.get("resources"), list)
-            else {}
-        ),
-    }
 
 
 class MatchLiveActionsMixin:
@@ -233,23 +191,7 @@ class MatchLiveActionsMixin:
 
         """
         match: Match = self.get_object()
-        match_data = self._match_data(match)
-        if not match_data:
-            return Response(None, status=status.HTTP_200_OK)
-
-        try:
-            home_tracker_state = get_tracker_state(match, team=match.home_team)
-        except TrackerCommandError as exc:
-            return _tracker_read_error(exc)
-
-        return Response(
-            _public_live_state(
-                match=match,
-                match_data=match_data,
-                home_tracker_state=home_tracker_state,
-            ),
-            status=status.HTTP_200_OK,
-        )
+        return Response(read_public_live(match_id=match.pk), status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -284,7 +226,6 @@ class MatchLiveActionsMixin:
             )
 
         since_revision_raw = request.query_params.get("since_revision")
-        timeout_raw = request.query_params.get("timeout")
 
         since_revision = _parse_since_revision(since_revision_raw)
         if since_revision is None:
@@ -293,36 +234,5 @@ class MatchLiveActionsMixin:
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            timeout_seconds = int(timeout_raw) if timeout_raw else 25
-        except ValueError:
-            timeout_seconds = 25
-
-        try:
-            payload = poll_tracker_state(
-                match,
-                team=match.home_team,
-                since_revision=since_revision,
-                timeout_seconds=timeout_seconds,
-            )
-        except TrackerCommandError as exc:
-            return _tracker_read_error(exc)
-
-        if isinstance(payload, dict) and payload.get("changed") is False:
-            return Response(payload, status=status.HTTP_200_OK)
-
-        # Changed: payload is a full tracker state (home team perspective)
-        if not isinstance(payload, dict):
-            return Response(
-                {"detail": "Invalid live poll payload."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        return Response(
-            _public_live_state(
-                match=match,
-                match_data=match_data,
-                home_tracker_state=payload,
-            ),
-            status=status.HTTP_200_OK,
-        )
+        payload = read_public_live(match_id=match.pk, since_revision=since_revision)
+        return Response(payload, status=status.HTTP_200_OK)

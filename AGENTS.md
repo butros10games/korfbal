@@ -79,6 +79,11 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Keep timeline GET endpoints on the `game_tracker` timeline-read boundary. Build related payloads
   from one consistent read snapshot and never use `select_for_update()` for events, shots, or audit
   history reads; those row locks serialize readers with live tracker writes.
+- Public live caches must contain only revision-stable public fields. Generate timer
+  `server_time` per response and bypass shared caching inside caller-owned transactions
+  so rolled-back writes cannot populate or consume committed snapshots. Use the
+  dedicated public-live cache with short socket timeouts and no retries; optional
+  Redis reads inside a snapshot must not hold the database pool for seconds.
 - With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.
