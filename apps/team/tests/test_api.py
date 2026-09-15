@@ -16,6 +16,7 @@ from apps.game_tracker.models import (
     MatchPart,
     MatchPlayer,
     PlayerMatchImpact,
+    PossessionChange,
     Shot,
 )
 from apps.game_tracker.services.match_impact import (
@@ -146,6 +147,76 @@ def test_team_overview_returns_current_matches_stats_and_roster(client: Client) 
     assert payload["meta"]["season_id"] == str(season.id_uuid)
     assert payload["meta"]["season_name"] == season.name
     assert any(option["is_current"] for option in payload["seasons"])
+
+
+@pytest.mark.parametrize("with_shots", [True, False])
+def test_team_overview_counts_possession_events(
+    client: Client, with_shots: bool
+) -> None:
+    """Season totals include possession-only players without multiplying events."""
+    season = create_season()
+    team, opponent = _teams()
+    player = create_player(username="possession_player")
+    _roster(team, season, player)
+    for home, away in ((team, opponent), (opponent, team)):
+        match_data = _match(home, away, season, starts_in_days=-1, status="active")
+        part = MatchPart.objects.create(
+            match_data=match_data, part_number=1, start_time=timezone.now()
+        )
+        for kind in (
+            PossessionChange.INTERCEPTION,
+            PossessionChange.INTERCEPTION,
+            PossessionChange.BALL_LOSS,
+        ):
+            PossessionChange.objects.create(
+                match_data=match_data,
+                match_part=part,
+                team=team,
+                player=player,
+                kind=kind,
+                time=timezone.now(),
+            )
+        PossessionChange.objects.create(
+            match_data=match_data,
+            match_part=part,
+            team=opponent,
+            kind=PossessionChange.BALL_LOSS,
+            time=timezone.now(),
+        )
+        if with_shots:
+            for _ in range(3):
+                Shot.objects.create(
+                    match_data=match_data, player=player, team=team, for_team=True
+                )
+    other_season = create_season("Historical season")
+    excluded = _match(
+        team, opponent, other_season, starts_in_days=-400, status="active"
+    )
+    part = MatchPart.objects.create(
+        match_data=excluded, part_number=1, start_time=timezone.now()
+    )
+    PossessionChange.objects.create(
+        match_data=excluded,
+        match_part=part,
+        team=team,
+        player=player,
+        kind=PossessionChange.BALL_LOSS,
+        time=timezone.now(),
+    )
+
+    response = client.get(
+        f"/api/team/teams/{team.id_uuid}/overview/", {"season": str(season.pk)}
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    line = next(
+        row
+        for row in response.json()["stats"]["players"]
+        if row["id_uuid"] == str(player.pk)
+    )
+    assert line["interceptions"] == 4
+    assert line["ball_losses"] == 2
+    assert line["shots_for"] == (6 if with_shots else 0)
 
 
 @pytest.mark.parametrize("is_home", [True, False])

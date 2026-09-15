@@ -27,6 +27,7 @@ from apps.game_tracker.models import (
     MatchData,
     PlayerMatchImpact,
     PlayerMatchMinutes,
+    PossessionChange,
     Shot,
 )
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
@@ -49,6 +50,8 @@ class PlayerStatRow(TypedDict):
     shots_against: int
     goals_for: int
     goals_against: int
+    ball_losses: int
+    interceptions: int
     impact_score: float
     win_probability_added: float | None
     impact_is_stored: bool
@@ -323,6 +326,26 @@ def build_player_stats_sync(
         .order_by("-goals_for", "player_id")
     )
 
+    possession_rows = (
+        PossessionChange.objects
+        .filter(match_data__in=match_dataset, player__in=players)
+        .values("player_id")
+        .annotate(
+            ball_losses=Count("id_uuid", filter=Q(kind=PossessionChange.BALL_LOSS)),
+            interceptions=Count(
+                "id_uuid", filter=Q(kind=PossessionChange.INTERCEPTION)
+            ),
+        )
+    )
+    possessions_by_player_id = {str(row["player_id"]): row for row in possession_rows}
+    # Players can record possession events without taking or defending a shot.
+    shot_player_ids = {str(row["player_id"]) for row in rows}
+    rows.extend(
+        {"player_id": player_id}
+        for player_id in possessions_by_player_id
+        if player_id not in shot_player_ids
+    )
+
     impact_rows = (
         PlayerMatchImpact.objects
         .filter(
@@ -358,6 +381,12 @@ def build_player_stats_sync(
             "shots_against": (sa := int(cast(int, row.get("shots_against") or 0))),
             "goals_for": (gf := int(cast(int, row.get("goals_for") or 0))),
             "goals_against": (ga := int(cast(int, row.get("goals_against") or 0))),
+            "ball_losses": possessions_by_player_id.get(player_key, {}).get(
+                "ball_losses", 0
+            ),
+            "interceptions": possessions_by_player_id.get(player_key, {}).get(
+                "interceptions", 0
+            ),
             "impact_score": (
                 round(float(impact_by_player_id.get(player_key, 0.0)), 1)
                 if dataset_has_full_impacts
