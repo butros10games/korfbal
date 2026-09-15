@@ -7,7 +7,7 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.http import HttpResponse
-from django.test import Client
+from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
@@ -623,3 +623,32 @@ def test_shootout_tracker_keeps_audit_snapshots_out_of_goal_lookup(
     audit = match.result_audits.latest("created_at")
     assert audit.previous_cup_state == state
     assert audit.new_cup_state == match.cup_state
+
+
+@override_settings(TIME_ZONE="UTC")
+def test_cup_planning_rejects_unrepresentable_match_end(
+    client: Client,
+    cup: Tournament,
+) -> None:
+    """Manual cup edits cannot save dates that crash subsequent schedule reads."""
+    match = cup.matches.get(next_match__isnull=True)
+    original_start = match.starts_at
+    revision = match.revision
+    response = client.post(
+        f"/api/tournaments/matches/{match.pk}/cup/plan/",
+        {
+            "expected_revision": revision,
+            "round_name": "Finale",
+            "round_number": 2,
+            "starts_at": "9999-12-31T23:59:00Z",
+            "field_id": str(cup.fields.get().pk),
+            "next_match_id": None,
+            "winner_to_side": "",
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["detail"] == "The schedule exceeds the supported date range."
+    match.refresh_from_db()
+    assert match.starts_at == original_start
+    assert match.revision == revision

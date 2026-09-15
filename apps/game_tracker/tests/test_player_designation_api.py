@@ -15,6 +15,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     get_tracker_group,
     login_home_club_editor,
 )
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 
 
@@ -95,7 +96,7 @@ def test_designation_rejects_group_capacity_overflow_without_mutation(
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"error": "Too many players selected"}
+    assert_api_error(response.json(), {"error": "Too many players selected"})
     assert set(group.players.values_list("id_uuid", flat=True)) == {
         player.id_uuid for player in initial_players
     }
@@ -147,9 +148,9 @@ def test_non_reserve_move_requires_reserve_source(client: Client) -> None:
     )
 
     assert rejected_move.status_code == HTTPStatus.BAD_REQUEST
-    assert rejected_move.json() == {
-        "error": f"{player} is not in the reserve player group."
-    }
+    assert_api_error(
+        rejected_move.json(), {"error": f"{player} is not in the reserve player group."}
+    )
     assert attack.players.filter(pk=player.pk).exists()
     assert not reserve.players.filter(pk=player.pk).exists()
     assert not defense.players.filter(pk=player.pk).exists()
@@ -236,12 +237,15 @@ def test_stale_revision_keeps_only_accepted_membership(client: Client) -> None:
     )
 
     assert stale.status_code == HTTPStatus.CONFLICT
-    assert stale.json() == {
-        "code": "revision_conflict",
-        "detail": "The match changed while you were editing.",
-        "expected_revision": expected_revision,
-        "live_revision": accepted.json()["live_revision"],
-    }
+    assert_api_error(
+        stale.json(),
+        {
+            "code": "revision_conflict",
+            "detail": "The match changed while you were editing.",
+            "expected_revision": expected_revision,
+            "live_revision": accepted.json()["live_revision"],
+        },
+    )
     assert set(reserve.players.values_list("id_uuid", flat=True)) == {
         accepted_player.id_uuid
     }
@@ -267,9 +271,9 @@ def test_outsider_cannot_designate_players(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == {
-        "error": "You do not have permission to edit player groups."
-    }
+    assert_api_error(
+        response.json(), {"error": "You do not have permission to edit player groups."}
+    )
     assert not reserve.players.exists()
     assert not MatchPlayer.objects.filter(match_data=tracker.match_data).exists()
     tracker.match_data.refresh_from_db()

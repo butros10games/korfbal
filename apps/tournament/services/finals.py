@@ -15,6 +15,7 @@ from apps.tournament.models import (
 )
 from apps.tournament.services.final_groups import resolve_tournament_qualifiers
 from apps.tournament.services.generation import GenerationError
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 MIN_FINALISTS = 2
@@ -65,10 +66,14 @@ def _finals_start(tournament: Tournament, requested: datetime | None) -> datetim
     )
     if not last_match or not last_match.starts_at:
         return tournament.starts_at
-    return last_match.starts_at + timedelta(
-        minutes=last_match.duration_minutes
-        + tournament.changeover_minutes
-        + tournament.minimum_rest_minutes
+    return add_schedule_time(
+        last_match.starts_at,
+        timedelta(
+            minutes=last_match.duration_minutes
+            + tournament.changeover_minutes
+            + tournament.minimum_rest_minutes
+        ),
+        error_type=GenerationError,
     )
 
 
@@ -143,13 +148,16 @@ def generate_finals(
                 field=field,
                 round_number=round_index + 1,
                 match_number=next_number,
-                starts_at=current_start
-                + timedelta(
-                    minutes=slot
-                    * (
-                        tournament.match_duration_minutes
-                        + tournament.changeover_minutes
-                    )
+                starts_at=add_schedule_time(
+                    current_start,
+                    timedelta(
+                        minutes=slot
+                        * (
+                            tournament.match_duration_minutes
+                            + tournament.changeover_minutes
+                        )
+                    ),
+                    error_type=GenerationError,
                 ),
                 duration_minutes=tournament.match_duration_minutes,
             )
@@ -157,10 +165,14 @@ def generate_finals(
             round_matches.append(match)
         rounds.append(round_matches)
         slots = math.ceil(matches_in_round / len(fields))
-        current_start += timedelta(
-            minutes=slots
-            * (tournament.match_duration_minutes + tournament.changeover_minutes)
-            + tournament.minimum_rest_minutes
+        current_start = add_schedule_time(
+            current_start,
+            timedelta(
+                minutes=slots
+                * (tournament.match_duration_minutes + tournament.changeover_minutes)
+                + tournament.minimum_rest_minutes
+            ),
+            error_type=GenerationError,
         )
 
     for round_index, round_matches in enumerate(rounds[:-1]):

@@ -24,6 +24,7 @@ from apps.tournament.services.match_operations import (
     replace_scheduled_match_teams,
 )
 from apps.tournament.services.qualifiers import evaluate_best_rank, evaluate_pool_rank
+from apps.tournament.services.schedule_dates import add_schedule_time
 from apps.tournament.services.standings import calculate_pool_standings
 
 
@@ -46,7 +47,11 @@ class FinalMatchPlan:
     @property
     def ends_at(self) -> datetime:
         """Return the exclusive end of the planned match."""
-        return self.starts_at + timedelta(minutes=self.duration_minutes)
+        return add_schedule_time(
+            self.starts_at,
+            timedelta(minutes=self.duration_minutes),
+            error_type=FinalGroupError,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +123,11 @@ def _objects_for_plan(
 
 def _latest_pool_match_end(pools: list[TournamentPool]) -> datetime | None:
     ends = [
-        match.starts_at + timedelta(minutes=match.duration_minutes)
+        add_schedule_time(
+            match.starts_at,
+            timedelta(minutes=match.duration_minutes),
+            error_type=FinalGroupError,
+        )
         for pool in pools
         for match in pool.matches.all()
         if match.starts_at is not None
@@ -134,7 +143,11 @@ def _times_conflict(
     right_end: datetime,
     changeover: timedelta,
 ) -> bool:
-    return left_start < right_end + changeover and right_start < left_end + changeover
+    return left_start < add_schedule_time(
+        right_end, changeover, error_type=FinalGroupError
+    ) and right_start < add_schedule_time(
+        left_end, changeover, error_type=FinalGroupError
+    )
 
 
 def _validate_team_rest(
@@ -146,14 +159,18 @@ def _validate_team_rest(
     latest_pool_end = _latest_pool_match_end(pools)
     if latest_pool_end is not None:
         first_semifinal_start = min(item.starts_at for item in plan.semifinals)
-        if first_semifinal_start < latest_pool_end + rest:
+        if first_semifinal_start < add_schedule_time(
+            latest_pool_end, rest, error_type=FinalGroupError
+        ):
             raise FinalGroupError(
                 "The semifinals must respect the tournament's minimum team rest "
                 "after pool play."
             )
 
     semifinal_end = max(item.ends_at for item in plan.semifinals)
-    if plan.final.starts_at < semifinal_end + rest:
+    if plan.final.starts_at < add_schedule_time(
+        semifinal_end, rest, error_type=FinalGroupError
+    ):
         raise FinalGroupError(
             "The final must respect the tournament's minimum team rest after "
             "both semifinals."
@@ -185,7 +202,11 @@ def _validate_field_availability(
         for other in existing:
             if other.starts_at is None:
                 continue
-            other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+            other_end = add_schedule_time(
+                other.starts_at,
+                timedelta(minutes=other.duration_minutes),
+                error_type=FinalGroupError,
+            )
             if _times_conflict(
                 left.starts_at,
                 left.ends_at,

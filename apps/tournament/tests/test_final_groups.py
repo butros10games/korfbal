@@ -885,3 +885,26 @@ def test_final_group_creation_locks_only_match_rows(client: Client) -> None:
 
     assert created.status_code == HTTPStatus.CREATED
     select_for_update.assert_called_once_with(of=("self",))
+
+
+def test_final_group_rejects_overflow_before_creating_bracket(client: Client) -> None:
+    """An impossible final ending must not persist a partially planned group."""
+    tournament, pools = _tournament_with_pools(client)
+    fields = list(tournament.fields.all())
+    payload = _group_payload(
+        "Boundary", "two_pool_cross", [pools["A"], pools["B"]], fields[:2]
+    )
+    payload["final"] = {**_match_plan(fields[0], "23:59"), "date": "9999-12-31"}
+    previous_count = tournament.matches.count()
+    revision = tournament.live_revision
+    response = client.post(
+        f"/api/tournaments/{tournament.pk}/final-groups/",
+        payload,
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["detail"] == "The schedule exceeds the supported date range."
+    tournament.refresh_from_db()
+    assert tournament.live_revision == revision
+    assert tournament.matches.count() == previous_count
+    assert not tournament.final_groups.exists()

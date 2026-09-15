@@ -30,6 +30,7 @@ from apps.game_tracker.services.match_timeline_payload import (
     serialize_pause_event,
     serialize_substitute_event,
 )
+from apps.schedule.api.validation import UUID_URL_REGEX
 
 from .constants import MATCH_TRACKER_DATA_NOT_FOUND
 from .event_editor_commands import apply_command, mutation_payload
@@ -146,7 +147,7 @@ class MatchEventWriteActionsMixin:
     @action(
         detail=True,
         methods=("PATCH", "DELETE"),
-        url_path=r"events/goals/(?P<shot_id>[^/.]+)",
+        url_path=rf"events/goals/(?P<shot_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
     )
     def goal_detail(
@@ -186,7 +187,7 @@ class MatchEventWriteActionsMixin:
     @action(
         detail=True,
         methods=("DELETE",),
-        url_path=r"events/possession-changes/(?P<event_id>[^/.]+)",
+        url_path=rf"events/possession-changes/(?P<event_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
     )
     def possession_change_detail(
@@ -234,7 +235,7 @@ class MatchEventWriteActionsMixin:
     @action(
         detail=True,
         methods=("PATCH", "DELETE"),
-        url_path=r"events/substitutes/(?P<change_id>[^/.]+)",
+        url_path=rf"events/substitutes/(?P<change_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
     )
     def substitute_detail(
@@ -299,7 +300,7 @@ class MatchEventWriteActionsMixin:
     @action(
         detail=True,
         methods=("PATCH", "DELETE"),
-        url_path=r"events/pauses/(?P<pause_id>[^/.]+)",
+        url_path=rf"events/pauses/(?P<pause_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
     )
     def pause_detail(
@@ -369,7 +370,7 @@ class MatchEventWriteActionsMixin:
     @action(
         detail=True,
         methods=("PATCH", "DELETE"),
-        url_path=r"events/timeouts/(?P<timeout_id>[^/.]+)",
+        url_path=rf"events/timeouts/(?P<timeout_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
     )
     def timeout_detail(

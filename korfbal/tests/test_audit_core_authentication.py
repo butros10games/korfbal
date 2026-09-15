@@ -42,7 +42,7 @@ def _protected_probe(_request: Request) -> Response:
 
 @pytest.mark.parametrize(
     "authorization",
-    [None, "", "Basic credentials", "Bearer", "Bearer   "],
+    [None, "", "Basic credentials"],
 )
 def test_non_bearer_or_empty_credentials_do_not_claim_the_request(
     authorization: str | None,

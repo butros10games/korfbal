@@ -10,7 +10,10 @@ from rest_framework.response import Response
 
 from apps.tournament.api.permissions import can_manage_tournament, is_authenticated
 from apps.tournament.models import Tournament, TournamentMatch
-from apps.tournament.services.editing import TournamentEditingError
+from apps.tournament.services.editing import (
+    TournamentEditingError,
+    TournamentScheduleDateError,
+)
 from apps.tournament.services.final_groups import (
     FinalGroupError,
     resolve_tournament_qualifiers,
@@ -93,5 +96,10 @@ def resolve_qualifiers(tournament: Tournament) -> None:
 
 
 def editing_error_response(exc: TournamentEditingError) -> Response:
-    """Translate a rejected planning edit to the existing conflict response."""
-    return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+    """Separate invalid timing input from conflicting tournament state."""
+    code = (
+        status.HTTP_400_BAD_REQUEST
+        if isinstance(exc, TournamentScheduleDateError)
+        else status.HTTP_409_CONFLICT
+    )
+    return Response({"detail": str(exc)}, status=code)

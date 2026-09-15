@@ -17,6 +17,8 @@ from bg_auth import views
 from django.http import HttpResponseBase
 from django.urls import path
 
+from . import account_api
+
 
 ViewType = Callable[..., HttpResponseBase]
 
@@ -111,19 +113,19 @@ urlpatterns = [
         name="auth-password-reset-confirm",
     ),
     # Logout
-    path("auth/logout/", views.api.logout_user, name="auth-logout"),
+    path("auth/logout/", account_api.logout_account, name="auth-logout"),
     # Back-compat: some clients hit /api/logout
-    path("logout/", views.api.logout_user, name="logout"),
-    path("logout", views.api.logout_user),  # prevent 301 in tests
+    path("logout/", account_api.logout_account, name="logout"),
+    path("logout", account_api.logout_account),  # prevent 301 in tests
     # Account activation + email confirmation
     path(
         "activate/<uidb64>/<token>/",
-        views.api.activate_account,
+        account_api.activate_account,
         name="activate",
     ),
     path(
         "resend-confirmation/<str:token>/",
-        cast(ViewType, views.api.resend_confirmation_email),
+        cast(ViewType, account_api.resend_confirmation),
         name="resend_confirmation",
     ),
 ]

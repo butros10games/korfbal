@@ -14,6 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.tournament.api.permissions import can_manage_tournament, is_authenticated
 from apps.tournament.api.serializers import (
     TournamentDisplayConfigSerializer,
@@ -82,6 +83,7 @@ class TournamentViewSet(
     serializer_class = TournamentSerializer
     permission_classes = (permissions.AllowAny,)
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
     http_method_names = ("get", "post", "patch", "head", "options")
 
     def get_queryset(self) -> QuerySet[Tournament]:

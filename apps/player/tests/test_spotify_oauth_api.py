@@ -41,7 +41,7 @@ def test_spotify_connect_returns_400_when_not_configured(client: Client) -> None
 
     response = client.get("/api/player/spotify/connect/")
 
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json()["detail"] == "Spotify is not configured on the server"
 
 

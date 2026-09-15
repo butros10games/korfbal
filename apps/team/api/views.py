@@ -50,6 +50,7 @@ from apps.player.services.player_songs import (
     PlayerSongSettingsPatch,
 )
 from apps.player.services.upload_validation import InvalidAudioUploadError
+from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.schedule.models import Season
 from apps.team.api.permissions import (
     viewer_can_manage_roster,
@@ -147,6 +148,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
     filter_backends = (TeamSearchFilter,)
     search_fields = ("name", "club__name")
 
@@ -605,7 +607,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("PATCH", "DELETE"),
-        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+        url_path=rf"goal-song-admin/songs/(?P<song_id>{UUID_URL_REGEX})",
         permission_classes=[permissions.IsAuthenticated],
     )
     def manage_goal_song(
@@ -644,7 +646,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("POST",),
-        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/clips",
+        url_path=rf"goal-song-admin/songs/(?P<song_id>{UUID_URL_REGEX})/clips",
         permission_classes=[permissions.IsAuthenticated],
     )
     def create_goal_song_clip(
@@ -680,7 +682,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("POST",),
-        url_path=r"goal-song-admin/player/(?P<player_id>[^/.]+)/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/clips",
+        url_path=rf"goal-song-admin/player/(?P<player_id>{UUID_URL_REGEX})/songs/(?P<song_id>{UUID_URL_REGEX})/clips",
         permission_classes=[permissions.IsAuthenticated],
     )
     def create_player_song_clip(
@@ -715,7 +717,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("POST",),
-        url_path=r"goal-song-admin/songs/(?P<song_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/retry",
+        url_path=rf"goal-song-admin/songs/(?P<song_id>{UUID_URL_REGEX})/retry",
         permission_classes=[permissions.IsAuthenticated],
     )
     def retry_goal_song(
@@ -725,7 +727,6 @@ class TeamViewSet(viewsets.ModelViewSet):
 
         Raises:
             NotFound: The song is not owned by this team and season.
-            ValidationError: The song is already ready.
 
         """
         team_data = self._goal_song_team_owner(request)
@@ -733,8 +734,11 @@ class TeamViewSet(viewsets.ModelViewSet):
             song = retry_team_song(team_data=team_data, song_id=song_id)
         except PlayerSongNotFoundError as exc:
             raise NotFound("Song not found") from exc
-        except PlayerSongAlreadyReadyError as exc:
-            raise ValidationError({"detail": "Song is already ready."}) from exc
+        except PlayerSongAlreadyReadyError:
+            return Response(
+                {"detail": "Song is already ready.", "code": "song_already_ready"},
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(PlayerSongSerializer(song).data)
 
     def _goal_song_team_owner(self, request: Request) -> TeamData:
@@ -810,7 +814,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("PATCH",),
-        url_path=r"goal-song-admin/player/(?P<player_id>[^/.]+)",
+        url_path=rf"goal-song-admin/player/(?P<player_id>{UUID_URL_REGEX})",
         permission_classes=[permissions.IsAuthenticated],
     )
     def update_player_goal_song_selection(
@@ -862,8 +866,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         detail=True,
         methods=("DELETE",),
         url_path=(
-            r"goal-song-admin/player/(?P<player_id>[^/.]+)/"
-            r"songs/(?P<song_id>[^/.]+)"
+            rf"goal-song-admin/player/(?P<player_id>{UUID_URL_REGEX})/"
+            rf"songs/(?P<song_id>{UUID_URL_REGEX})"
         ),
         permission_classes=[permissions.IsAuthenticated],
     )
@@ -897,8 +901,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         detail=True,
         methods=("PATCH",),
         url_path=(
-            r"goal-song-admin/player/(?P<player_id>[^/.]+)/"
-            r"songs/(?P<song_id>[^/.]+)/settings"
+            rf"goal-song-admin/player/(?P<player_id>{UUID_URL_REGEX})/"
+            rf"songs/(?P<song_id>{UUID_URL_REGEX})/settings"
         ),
         permission_classes=[permissions.IsAuthenticated],
     )
@@ -1009,6 +1013,8 @@ class TeamViewSet(viewsets.ModelViewSet):
                     "detail": f"{field_name} must be a list of strings"
                 })
             song_id = entry.strip()
+            if song_id:
+                song_id = str(_uuid_query_value(song_id, parameter=field_name))
             if not song_id or song_id in seen:
                 continue
             seen.add(song_id)

@@ -8,7 +8,7 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import Client
+from django.test import Client, override_settings
 from django.utils import timezone
 import pytest
 
@@ -826,3 +826,97 @@ def test_scorekeeper_is_restricted_to_assigned_field(client: Client) -> None:
     )
     assert allowed.status_code == HTTPStatus.OK
     assert denied.status_code == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize("rule", [{"rule": "points"}, ["points"], 1, True, None])
+@pytest.mark.parametrize("method", ["post", "patch"])
+def test_tournament_rejects_nonstring_standings_rules(
+    client: Client, rule: object, method: str
+) -> None:
+    """Malformed JSON rules produce a 400 without writes or live publication."""
+    owner = get_user_model().objects.create_user(username="rules-manager")
+    client.force_login(owner)
+    tournament = Tournament.objects.create(
+        name="Existing tournament",
+        slug="rules-validation",
+        owner=owner,
+        starts_at=timezone.now(),
+    )
+    original_rules = tournament.tiebreakers
+    original_revision = tournament.live_revision
+    url = (
+        "/api/tournaments/"
+        if method == "post"
+        else f"/api/tournaments/{tournament.id_uuid}/"
+    )
+    with patch.object(change_publisher, "publish") as publish:
+        response = getattr(client, method)(
+            url,
+            data={
+                "name": "Rejected tournament",
+                "starts_at": timezone.now().isoformat(),
+                "tiebreakers": ["points", rule],
+            },
+            content_type="application/json",
+        )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert "tiebreakers" in response.json()
+    assert "list of strings" in str(response.json()["tiebreakers"])
+    tournament.refresh_from_db()
+    assert tournament.name == "Existing tournament"
+    assert tournament.tiebreakers == original_rules
+    assert tournament.live_revision == original_revision
+    assert Tournament.objects.count() == 1
+    publish.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["preview", "apply"])
+@pytest.mark.parametrize(
+    "timing",
+    [(15, 0, 0, 2), (1, 15, 0, 2), (1, 0, 15, 2), (4, 0, 0, 3)],
+    ids=["duration", "changeover", "rest", "accumulated"],
+)
+@override_settings(TIME_ZONE="UTC")
+def test_generation_rejects_datetime_overflow_without_writes(
+    client: Client,
+    action: str,
+    timing: tuple[int, int, int, int],
+) -> None:
+    """Unrepresentable match or availability times return a controlled 400."""
+    duration, changeover, rest, team_count = timing
+    owner = get_user_model().objects.create_user(username="overflow-organizer")
+    client.force_login(owner)
+    tournament = Tournament.objects.create(
+        name="Date boundary",
+        slug="date-boundary",
+        owner=owner,
+        starts_at=timezone.now(),
+    )
+    original_revision = tournament.live_revision
+    original_duration = tournament.match_duration_minutes
+    TournamentField.objects.create(tournament=tournament, label="Field")
+    for index in range(team_count):
+        TournamentTeam.objects.create(tournament=tournament, name=f"Team {index}")
+
+    response = client.post(
+        f"/api/tournaments/{tournament.id_uuid}/generation/{action}/",
+        data={
+            "pool_count": 1,
+            "starts_at": "9999-12-31T23:50:00Z",
+            "duration_minutes": duration,
+            "changeover_minutes": changeover,
+            "minimum_rest_minutes": rest,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert response.json()["detail"] == "The schedule exceeds the supported date range."
+    tournament.refresh_from_db()
+    assert tournament.live_revision == original_revision
+    assert tournament.match_duration_minutes == original_duration
+    assert not tournament.matches.exists()
+    assert not TournamentStage.objects.filter(tournament=tournament).exists()

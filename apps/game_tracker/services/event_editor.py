@@ -244,6 +244,23 @@ def _validate_event_time_in_part(match_part: MatchPart, event_time: datetime) ->
         _validation_error("time", "Event time is after the selected match part.")
 
 
+def _add_event_seconds(start: datetime, seconds: float, *, field: str) -> datetime:
+    try:
+        return start + timedelta(seconds=seconds)
+    except (ValueError, OverflowError):
+        _validation_error(field, "Time is outside the supported datetime range.")
+
+
+def _parse_event_datetime(value: str) -> datetime:
+    try:
+        parsed = parse_datetime(value)
+        if parsed is not None:
+            return _ensure_aware(parsed).astimezone(timezone.get_default_timezone())
+    except (ValueError, OverflowError):
+        pass
+    _validation_error("time", "Invalid datetime.")
+
+
 def _resolve_event_time(
     *,
     match_part: MatchPart,
@@ -252,10 +269,7 @@ def _resolve_event_time(
     exclude_pause_id: object | None = None,
 ) -> datetime:
     if time:
-        parsed = parse_datetime(time)
-        if parsed is None:
-            _validation_error("time", "Invalid datetime.")
-        resolved = _ensure_aware(parsed)
+        resolved = _parse_event_datetime(time)
         _validate_event_time_in_part(match_part, resolved)
         return resolved
 
@@ -269,7 +283,9 @@ def _resolve_event_time(
     if elapsed_seconds < 0:
         _validation_error("minute", "Minute is before the selected match part.")
 
-    resolved = _ensure_aware(match_part.start_time) + timedelta(seconds=elapsed_seconds)
+    resolved = _add_event_seconds(
+        _ensure_aware(match_part.start_time), elapsed_seconds, field="minute"
+    )
     pauses = Pause.objects.filter(
         match_part=match_part,
         start_time__isnull=False,
@@ -279,7 +295,9 @@ def _resolve_event_time(
         pauses = pauses.exclude(pk=exclude_pause_id)
     for pause_start, pause_end in pauses.values_list("start_time", "end_time"):
         if pause_start <= resolved and pause_end > pause_start:
-            resolved += pause_end - pause_start
+            resolved = _add_event_seconds(
+                resolved, (pause_end - pause_start).total_seconds(), field="minute"
+            )
 
     _validate_event_time_in_part(match_part, resolved)
     return resolved
@@ -648,7 +666,11 @@ def _pause_times(
         minute=minute,
         exclude_pause_id=exclude_pause_id,
     )
-    end = start + timedelta(seconds=length_seconds) if length_seconds else None
+    end = (
+        _add_event_seconds(start, length_seconds, field="length_seconds")
+        if length_seconds
+        else None
+    )
     if end is not None:
         _validate_event_time_in_part(match_part, end)
     return start, end
@@ -728,7 +750,11 @@ def _apply_pause_patch(
         else int(pause.length().total_seconds())
     )
     pause.start_time = start
-    pause.end_time = start + timedelta(seconds=duration) if duration else None
+    pause.end_time = (
+        _add_event_seconds(start, duration, field="length_seconds")
+        if duration
+        else None
+    )
     if pause.end_time is not None:
         _validate_event_time_in_part(match_part, pause.end_time)
 

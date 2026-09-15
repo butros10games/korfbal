@@ -18,7 +18,10 @@ from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.privacy import can_view_by_visibility
-from apps.player.services.push_endpoints import validate_web_push_endpoint
+from apps.player.services.push_endpoints import (
+    MAX_ENDPOINT_LENGTH,
+    validate_web_push_endpoint,
+)
 from apps.player.services.upload_validation import (
     InvalidAudioUploadError,
     validate_audio_upload,
@@ -607,6 +610,11 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
         if not isinstance(endpoint, str) or not endpoint.strip():
             raise serializers.ValidationError("subscription.endpoint is required")
 
+        if len(endpoint) > MAX_ENDPOINT_LENGTH:
+            raise serializers.ValidationError(
+                f"Endpoint must be at most {MAX_ENDPOINT_LENGTH} characters."
+            )
+
         # Expo push tokens only provide an endpoint.
         if endpoint.startswith("ExponentPushToken["):
             return payload
@@ -633,8 +641,16 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
 class PlayerPushSubscriptionDeactivateSerializer(serializers.Serializer):
     """Input serializer for deactivating a stored subscription."""
 
-    endpoint = serializers.URLField(max_length=1024, required=False)
+    endpoint = serializers.CharField(max_length=MAX_ENDPOINT_LENGTH, required=False)
     id_uuid = serializers.UUIDField(required=False)
+
+    def validate_endpoint(self, value: str) -> str:
+        """Accept registered Expo tokens while retaining URL validation for web push."""
+        if value.startswith("ExponentPushToken["):
+            return value
+        return serializers.URLField(max_length=MAX_ENDPOINT_LENGTH).run_validation(
+            value
+        )
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
         """Require either endpoint or id_uuid.

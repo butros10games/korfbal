@@ -12,6 +12,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 from apps.schedule.models import Season
 from apps.team.models.team import Team
@@ -95,7 +96,7 @@ def test_other_player_teams_club_blocks_anonymous(client: Client) -> None:
 
     response = client.get(f"/api/player/players/{target_player.id_uuid}/teams/")
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == PRIVATE_ACCOUNT_DETAIL
+    assert_api_error(response.json(), PRIVATE_ACCOUNT_DETAIL)
 
 
 @pytest.mark.django_db

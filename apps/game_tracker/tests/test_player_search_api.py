@@ -14,6 +14,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_user,
     login_home_club_editor,
 )
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.team.models import Team, TeamData
 
 
@@ -134,9 +135,12 @@ def test_player_search_rejects_non_club_users(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == {
-        "error": "You do not have permission to edit player groups.",
-    }
+    assert_api_error(
+        response.json(),
+        {
+            "error": "You do not have permission to edit player groups.",
+        },
+    )
 
 
 def test_player_search_does_not_match_email_addresses(client: Client) -> None:

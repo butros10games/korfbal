@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
+from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -16,6 +19,7 @@ from apps.player.services.player_overview import (
     player_seasons_queryset,
     resolve_season,
 )
+from apps.schedule.api.validation import uuid_query_values
 
 from .common import (
     PLAYER_NOT_FOUND_DETAIL,
@@ -74,7 +78,12 @@ class PlayerConnectedClubRecentResultsAPIView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-        """Return match summaries for the player's followed clubs."""
+        """Return match summaries for the player's followed clubs.
+
+        Raises:
+            ValidationError: The requested day window cannot be represented.
+
+        """
         player = get_current_player(request)
         if player is None:
             return Response(PLAYER_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
@@ -97,12 +106,23 @@ class PlayerConnectedClubRecentResultsAPIView(KorfbalAPIView):
             if days is not None and days <= 0:
                 days = None
 
+        season_id = request.query_params.get("season")
+        if season_id:
+            season_id = str(uuid_query_values([season_id], parameter="season")[0])
+        if days is not None:
+            try:
+                timezone.now() - timedelta(days=days)
+            except (OverflowError, ValueError):
+                raise ValidationError({
+                    "days": "Day window is outside the supported datetime range."
+                }) from None
+
         return Response(
             connected_club_recent_results(
                 player=player,
                 limit=limit,
                 days=days,
-                season_id=request.query_params.get("season"),
+                season_id=season_id,
             )
         )
 

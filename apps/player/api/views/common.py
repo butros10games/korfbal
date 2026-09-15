@@ -17,6 +17,7 @@ from apps.player.services.player_queries import (
     player_for_user_id,
     viewer_player_for_user_id,
 )
+from apps.schedule.api.validation import uuid_query_values
 
 
 TEST_PUSH_ERROR_LIMIT: Final[int] = 10
@@ -79,7 +80,8 @@ def get_current_player(request: Request, *, full_profile: bool = True) -> Player
         )
         player_id = request.query_params.get("player_id")
         if player_id:
-            player = queryset.filter(id_uuid=player_id).first()
+            player_uuid = uuid_query_values([player_id], parameter="player_id")[0]
+            player = queryset.filter(id_uuid=player_uuid).first()
             if player:
                 return player
         return queryset.first()

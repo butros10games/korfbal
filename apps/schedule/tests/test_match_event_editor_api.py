@@ -23,6 +23,7 @@ from apps.game_tracker.models import (
 )
 from apps.game_tracker.services.match_events import active_match_events
 from apps.game_tracker.services.match_impact import compute_match_impact_rows
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.schedule.api.constants import MATCH_TRACKER_DATA_NOT_FOUND
 
 from .match_api_test_support import (
@@ -243,7 +244,7 @@ def test_missing_editor_event_does_not_publish_live_change(
         content_type=JSON,
     )
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": EVENT_NOT_FOUND[event_kind]}
+    assert_api_error(response.json(), {"detail": EVENT_NOT_FOUND[event_kind]})
     graph.match_data.refresh_from_db()
     assert (
         graph.match_data.live_revision,
@@ -269,7 +270,7 @@ def test_editor_requires_tracker_data_before_validating_input(
         content_type=JSON,
     )
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": MATCH_TRACKER_DATA_NOT_FOUND}
+    assert_api_error(response.json(), {"detail": MATCH_TRACKER_DATA_NOT_FOUND})
 
 
 def test_goal_editor_create_update_delete_flow(client: Client) -> None:
@@ -439,12 +440,15 @@ def test_goal_editor_rejects_stale_revision(client: Client) -> None:
         content_type=JSON,
     )
     assert stale.status_code == HTTPStatus.CONFLICT
-    assert stale.json() == {
-        "code": "revision_conflict",
-        "detail": "The match changed while you were editing.",
-        "expected_revision": expected_revision,
-        "live_revision": first.json()["live_revision"],
-    }
+    assert_api_error(
+        stale.json(),
+        {
+            "code": "revision_conflict",
+            "detail": "The match changed while you were editing.",
+            "expected_revision": expected_revision,
+            "live_revision": first.json()["live_revision"],
+        },
+    )
     assert Shot.objects.filter(match_data=graph.match_data).count() == 1
 
 
@@ -459,9 +463,9 @@ def test_goal_editor_requires_expected_revision(client: Client) -> None:
         content_type=JSON,
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {
-        "expected_revision": "A non-negative integer is required."
-    }
+    assert_api_error(
+        response.json(), {"expected_revision": "A non-negative integer is required."}
+    )
 
 
 def test_goal_editor_rejects_player_from_wrong_roster_team(client: Client) -> None:

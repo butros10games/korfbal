@@ -20,6 +20,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_match_part,
     create_tracker_match,
 )
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player import Player
 
 
@@ -104,9 +105,12 @@ def test_mvp_vote_returns_conflict_when_match_not_finished(client: Client) -> No
     )
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {
-        "detail": "Voting is only available after the match is finished.",
-    }
+    assert_api_error(
+        response.json(),
+        {
+            "detail": "Voting is only available after the match is finished.",
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -138,7 +142,7 @@ def test_mvp_vote_rejects_invalid_candidate_input(
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"detail": detail}
+    assert_api_error(response.json(), {"detail": detail})
 
 
 def test_mvp_vote_rejects_candidate_not_in_match(client: Client) -> None:
@@ -153,7 +157,7 @@ def test_mvp_vote_rejects_candidate_not_in_match(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {"detail": "Invalid MVP candidate."}
+    assert_api_error(response.json(), {"detail": "Invalid MVP candidate."})
 
 
 def test_mvp_vote_flow_and_publish_after_close(client: Client) -> None:

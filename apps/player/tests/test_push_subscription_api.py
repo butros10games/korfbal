@@ -293,3 +293,90 @@ def test_push_subscription_rejects_non_provider_destinations(
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert not PlayerPushSubscription.objects.exists()
+
+
+@pytest.mark.django_db
+def test_push_subscription_rejects_oversized_expo_endpoint(client: Client) -> None:
+    """Expo endpoints must fit the same database column as web-push URLs."""
+    client.force_login(get_user_model().objects.create_user(username="expo-length"))
+    response = client.post(
+        "/api/player/me/push-subscriptions/",
+        data={
+            "platform": "expo",
+            "subscription": {"endpoint": "ExponentPushToken[" + "a" * 1024 + "]"},
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert "1024" in str(response.json()["subscription"])
+    assert not PlayerPushSubscription.objects.exists()
+
+
+@pytest.mark.django_db
+def test_expo_subscription_can_be_deactivated_by_endpoint(client: Client) -> None:
+    """An accepted Expo endpoint must also be accepted by the deletion API."""
+    user = get_user_model().objects.create_user(username="expo-delete")
+    client.force_login(user)
+    endpoint = "ExponentPushToken[synthetic-device]"
+    registered = client.post(
+        "/api/player/me/push-subscriptions/",
+        data={"platform": "expo", "subscription": {"endpoint": endpoint}},
+        content_type="application/json",
+    )
+    assert registered.status_code == HTTPStatus.CREATED
+
+    response = client.delete(
+        "/api/player/me/push-subscriptions/",
+        data={"endpoint": endpoint},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert not PlayerPushSubscription.objects.get(user=user).is_active
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint", ["not-a-url", "ExponentPushToken[" + "a" * 1024 + "]"]
+)
+def test_subscription_deletion_still_validates_endpoint(
+    client: Client, endpoint: str
+) -> None:
+    """Supporting Expo deletion must preserve endpoint syntax and length checks."""
+    client.force_login(get_user_model().objects.create_user(username="invalid-delete"))
+    response = client.delete(
+        "/api/player/me/push-subscriptions/",
+        data={"endpoint": endpoint},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert "endpoint" in response.json()
+
+
+@pytest.mark.django_db
+def test_expo_subscription_deletion_is_owner_scoped(client: Client) -> None:
+    """Recognizing Expo endpoints must not allow another account to deactivate them."""
+    owner = get_user_model().objects.create_user(username="expo-owner")
+    other = get_user_model().objects.create_user(username="expo-other")
+    endpoint = "ExponentPushToken[owned-device]"
+    subscription = PlayerPushSubscription.objects.create(
+        user=owner,
+        endpoint=endpoint,
+        subscription={"endpoint": endpoint},
+        platform="expo",
+    )
+    client.force_login(other)
+    response = client.delete(
+        "/api/player/me/push-subscriptions/",
+        data={"endpoint": endpoint},
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json()["code"] == "not_found"
+    subscription.refresh_from_db()
+    assert subscription.is_active

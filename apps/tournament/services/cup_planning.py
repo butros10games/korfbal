@@ -1,12 +1,13 @@
 """Edit explicit cup rounds and progression without inferring provider brackets."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from apps.tournament.models import TournamentMatch, TournamentStage
 from apps.tournament.services.cups import CupError
 from apps.tournament.services.match_operations import replace_scheduled_match_teams
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,11 @@ def plan_cup_match(match: TournamentMatch, plan: CupMatchPlan) -> None:
         raise CupError(
             "Pas alleen een geplande, nog niet gereed gemelde bekerwedstrijd aan."
         )
+    add_schedule_time(
+        plan.starts_at,
+        timedelta(minutes=match.duration_minutes),
+        error_type=CupError,
+    )
     field = tournament.fields.filter(pk=plan.field_id, active=True).first()
     if field is None:
         raise CupError("Kies een actief veld uit deze beker.")

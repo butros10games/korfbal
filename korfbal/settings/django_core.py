@@ -37,6 +37,7 @@ if KORFBAL_ENABLE_PROMETHEUS:
     INSTALLED_APPS.append("django_prometheus")
 
 MIDDLEWARE = [
+    "korfbal.api_errors.ApiErrorResponseMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "apps.kwt_common.middleware.request_timing.RequestTimingMiddleware",

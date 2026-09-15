@@ -22,6 +22,7 @@ from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     persist_match_impact_rows_with_breakdowns,
 )
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong
 from apps.schedule.models import Match, Season
@@ -485,9 +486,10 @@ def test_team_goal_song_admin_requires_authentication(
     )
     assert response.status_code == expected
     if viewer != "anonymous":
-        assert response.json() == {
-            "detail": "You do not have permission to manage team goal songs."
-        }
+        assert_api_error(
+            response.json(),
+            {"detail": "You do not have permission to manage team goal songs."},
+        )
 
 
 def test_team_goal_song_admin_returns_roster_to_coach(client: Client) -> None:

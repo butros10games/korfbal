@@ -13,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.models.push_subscription import PlayerPushSubscription
@@ -139,7 +140,9 @@ def test_account_patch_rejects_duplicate_username_without_partial_update(
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"username": ["This username is already in use."]}
+    assert_api_error(
+        response.json(), {"username": ["This username is already in use."]}
+    )
     user.refresh_from_db()
     assert user.username == "account-original"
     assert user.email == "original@example.test"
@@ -258,12 +261,12 @@ def test_song_retry_hides_other_users_song_and_rejects_ready_song(
     client.force_login(other)
     hidden_response = client.post(f"/api/player/me/songs/{song.id_uuid}/retry/")
     assert hidden_response.status_code == HTTPStatus.NOT_FOUND
-    assert hidden_response.json() == {"detail": "Song not found"}
+    assert_api_error(hidden_response.json(), {"detail": "Song not found"})
 
     client.force_login(owner)
     ready_response = client.post(f"/api/player/me/songs/{song.id_uuid}/retry/")
-    assert ready_response.status_code == HTTPStatus.BAD_REQUEST
-    assert ready_response.json() == {"detail": "Song is already ready"}
+    assert ready_response.status_code == HTTPStatus.CONFLICT
+    assert_api_error(ready_response.json(), {"detail": "Song is already ready"})
 
 
 @pytest.mark.django_db
@@ -291,7 +294,7 @@ def test_push_subscription_delete_cannot_target_another_user_by_id(
     )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": "Subscription not found"}
+    assert_api_error(response.json(), {"detail": "Subscription not found"})
     subscription.refresh_from_db()
     assert subscription.is_active is True
 
@@ -322,7 +325,7 @@ def test_connected_results_normalises_query_parameters(
     ) as recent_results:
         response = client.get(
             "/api/player/me/connected-clubs/recent-results/",
-            data={**query, "season": "season-id"},
+            data={**query, "season": "11111111-1111-4111-8111-111111111111"},
         )
 
     assert response.status_code == HTTPStatus.OK
@@ -331,7 +334,7 @@ def test_connected_results_normalises_query_parameters(
         player=recent_results.call_args.kwargs["player"],
         limit=expected_limit,
         days=expected_days,
-        season_id="season-id",
+        season_id="11111111-1111-4111-8111-111111111111",
     )
     assert (
         recent_results.call_args.kwargs["player"].id_uuid == _player_for(user).id_uuid
@@ -354,8 +357,8 @@ def test_song_clip_normalises_query_parameters_before_resolution(
             data={"start": "-5.9", "duration": "100.7", "stream": "1"},
         )
 
-    assert response.status_code == HTTPStatus.FOUND
-    assert response["Location"] == "/"
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json()["detail"] == "Song not found"
     resolve_clip.assert_called_once_with(
         request=PlayerSongClipRequest(
             song_id=cast(str, song_id),
@@ -364,3 +367,18 @@ def test_song_clip_normalises_query_parameters_before_resolution(
             enqueue_if_missing=True,
         )
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint", ["overview/", "stats/", "connected-clubs/recent-results/"]
+)
+@override_settings(DEBUG=True)
+def test_player_debug_override_rejects_invalid_uuid(
+    client: Client, endpoint: str
+) -> None:
+    """Anonymous debug reads validate player overrides before ORM lookups."""
+    response = client.get(f"/api/player/me/{endpoint}", {"player_id": "not-a-uuid"})
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(response.json(), {"player_id": "Must be a valid UUID."})

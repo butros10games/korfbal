@@ -231,6 +231,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
                 "success": False,
                 "error": "Player name should be at least 3 characters long",
             },
+            status=400,
         )
 
     if len(search_query) > MAX_PLAYER_NAME_LENGTH:
@@ -239,6 +240,7 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
                 "success": False,
                 "error": "Player name should be at most 50 characters long",
             },
+            status=400,
         )
 
     match_model = get_object_or_404(Match, id_uuid=match_id)

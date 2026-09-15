@@ -586,7 +586,7 @@ def test_api_rejects_captains_outside_this_teams_selection(
     response = api.post(
         f"/api/competition/match-forms/{source.local_match_id}/{access.team_id}/", data
     )
-    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.data["code"] == (
         "captain_required" if choice == "missing" else "captain_not_selected"
     )

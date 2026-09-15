@@ -20,6 +20,7 @@ from apps.tournament.models import (
     TournamentTeam,
 )
 from apps.tournament.services.cups import cup_state
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 MAX_TOURNAMENT_SCORE = 999
@@ -227,7 +228,11 @@ def _ensure_referee_team_available(
     """
     if match.starts_at is None:
         return
-    match_end = match.starts_at + timedelta(minutes=match.duration_minutes)
+    match_end = add_schedule_time(
+        match.starts_at,
+        timedelta(minutes=match.duration_minutes),
+        error_type=RefereeTrackerError,
+    )
     other_matches = (
         match.tournament.matches
         .filter(starts_at__isnull=False)
@@ -239,7 +244,11 @@ def _ensure_referee_team_available(
     for other in other_matches:
         if other.starts_at is None:
             continue
-        other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+        other_end = add_schedule_time(
+            other.starts_at,
+            timedelta(minutes=other.duration_minutes),
+            error_type=RefereeTrackerError,
+        )
         if match.starts_at < other_end and other.starts_at < match_end:
             raise RefereeTrackerError(
                 f"{team.name} speelt of fluit wedstrijd {other.match_number} "

@@ -14,6 +14,7 @@ import pytest
 
 from apps.game_tracker.models import TrackerCommand
 from apps.game_tracker.services.tracker_commands import TrackerCommandError
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player_club_membership import PlayerClubMembership
 
 from .match_api_test_support import MatchGraph, create_match_graph, create_user
@@ -98,7 +99,7 @@ def test_tracker_command_rejects_non_object_json(client: Client) -> None:
     with patch(COMMAND_SERVICE) as apply_command:
         response = client.post(_url(graph, "commands"), "[]", content_type=JSON)
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"detail": "Invalid JSON body."}
+    assert_api_error(response.json(), {"detail": "Invalid JSON body."})
     apply_command.assert_not_called()
 
 
@@ -142,11 +143,14 @@ def test_tracker_conflict_returns_reconciliation_metadata(client: Client) -> Non
     with patch(COMMAND_SERVICE, side_effect=conflict) as apply_command:
         response = client.post(_url(graph, "commands"), command, content_type=JSON)
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json() == {
-        "detail": "client_sequence was already used by another command.",
-        "code": "client_sequence_conflict",
-        **details,
-    }
+    assert_api_error(
+        response.json(),
+        {
+            "detail": "client_sequence was already used by another command.",
+            "code": "client_sequence_conflict",
+            **details,
+        },
+    )
     apply_command.assert_called_once_with(
         graph.match, team=graph.home_team, payload=command, actor=member
     )
@@ -159,7 +163,7 @@ def test_tracker_poll_rejects_invalid_since_revision(client: Client) -> None:
     with patch(POLL_SERVICE) as poll_state:
         response = client.get(_url(graph, "poll"), {"since_revision": "invalid"})
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"detail": "Invalid 'since_revision'."}
+    assert_api_error(response.json(), {"detail": "Invalid 'since_revision'."})
     poll_state.assert_not_called()
 
 

@@ -13,6 +13,7 @@ from django.utils import timezone
 import pytest
 
 from apps.audit.models import AuditEvent
+from apps.kwt_common.tests.api_test_support import assert_api_error
 
 
 AUDIT_TOKEN = "boundary-secret"  # nosec
@@ -80,7 +81,7 @@ def test_bulk_ingest_requires_token(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == {"detail": "Invalid audit ingest token."}
+    assert_api_error(response.json(), {"detail": "Invalid audit ingest token."})
     assert not AuditEvent.objects.exists()
 
 

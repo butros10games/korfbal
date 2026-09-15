@@ -11,6 +11,7 @@ from django.conf import settings
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -83,9 +84,17 @@ def _normalize_datetime(value: str | None) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError:
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except (ValueError, OverflowError):
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _datetime_query_value(request: Request, parameter: str) -> datetime | None:
+    value = request.query_params.get(parameter)
+    parsed = _normalize_datetime(value)
+    if value and parsed is None:
+        raise ValidationError({parameter: "Must be a valid datetime."})
+    return parsed
 
 
 def _cursor_value(*, row: AuditEvent) -> str:
@@ -299,11 +308,13 @@ class AuditTimelineAPIView(KorfbalAPIView):
                 | Q(subject_id__icontains=search_term)
             )
 
-        since = _normalize_datetime(request.query_params.get("since"))
+        since = _datetime_query_value(request, "since")
+        until = _datetime_query_value(request, "until")
+        if since is not None and until is not None and since > until:
+            raise ValidationError({"until": "Must not be before since."})
         if since:
             queryset = queryset.filter(occurred_at__gte=since)
 
-        until = _normalize_datetime(request.query_params.get("until"))
         if until:
             queryset = queryset.filter(occurred_at__lte=until)
 

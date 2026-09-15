@@ -33,7 +33,12 @@ from .match_viewset_mvp import MatchMvpActionsMixin
 from .match_viewset_stats import MatchStatsActionsMixin
 from .serializers import MatchSerializer, MatchWriteSerializer
 from .tracker_access import TrackerAccessActionsMixin
-from .validation import UUID_URL_REGEX, uuid_query_values
+from .validation import (
+    UUID_URL_REGEX,
+    match_summary_limit,
+    match_summary_offset,
+    uuid_query_values,
+)
 
 
 def _uuid_path_parameter(name: str) -> OpenApiParameter:
@@ -197,11 +202,12 @@ class MatchViewSet(
         if settings.DEBUG:
             player_id = self.request.query_params.get("player_id")
             if player_id:
+                player_uuid = uuid_query_values([player_id], parameter="player_id")[0]
                 return (
                     Player.objects
                     .prefetch_related("team_follow")
                     .filter(
-                        id_uuid=player_id,
+                        id_uuid=player_uuid,
                     )
                     .first()
                 )
@@ -215,7 +221,12 @@ class MatchViewSet(
 
         """
         now = timezone.now()
-        return self.get_queryset().filter(start_time__gte=now).order_by("start_time")
+        return (
+            self
+            .get_queryset()
+            .filter(start_time__gte=now)
+            .order_by("start_time", "id_uuid")
+        )
 
     def _is_cacheable_public_request(self) -> bool:
         """Return True when it is safe to cache a response for this request.
@@ -270,6 +281,18 @@ class MatchViewSet(
             cache.set(self._public_cache_key(), payload, timeout=30)
         return Response(payload)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "limit",
+                OpenApiTypes.INT,
+                description="Result count (1-200; default 5).",
+            ),
+            OpenApiParameter(
+                "offset", OpenApiTypes.INT, description="Rows to skip (default 0)."
+            ),
+        ]
+    )
     @action(detail=False, methods=("GET",), url_path="upcoming")
     def upcoming(
         self,
@@ -283,13 +306,9 @@ class MatchViewSet(
             Response: Serialized list of upcoming matches.
 
         """
-        limit_param = request.query_params.get("limit")
-        try:
-            limit = int(limit_param) if limit_param else 5
-        except ValueError:
-            limit = 5
-
-        queryset = self._upcoming_queryset()[: max(limit, 1)]
+        limit = match_summary_limit(request.query_params.get("limit"), default=5)
+        offset = match_summary_offset(request.query_params.get("offset"))
+        queryset = self._upcoming_queryset()[offset : offset + limit]
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -339,13 +358,7 @@ class MatchViewSet(
             Response: List of match summary dictionaries.
 
         """
-        limit_param = request.query_params.get("limit")
-        try:
-            limit = int(limit_param) if limit_param else 3
-        except ValueError:
-            limit = 3
-
-        limit = max(limit, 1)
+        limit = match_summary_limit(request.query_params.get("limit"), default=3)
 
         if self._is_cacheable_public_request():
             cache_key = self._public_cache_key()
@@ -370,12 +383,16 @@ class MatchViewSet(
             request.query_params.getlist("season"), parameter="season"
         )
 
-        if not team_ids and request.query_params.get("followed"):
+        followed_only = request.query_params.get("followed", "").lower() in {
+            "true",
+            "1",
+        }
+        if not team_ids and followed_only:
             player = self._get_player()
             if player:
                 team_ids = list(player.team_follow.values_list("id_uuid", flat=True))
 
-        if team_ids:
+        if team_ids or followed_only:
             match_filter &= Q(match_link__home_team__id_uuid__in=team_ids) | Q(
                 match_link__away_team__id_uuid__in=team_ids
             )

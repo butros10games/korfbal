@@ -299,3 +299,44 @@ def test_team_song_settings_retry_and_delete_keep_personal_audio(
     team_context.team_data.refresh_from_db()
     assert str(song.pk) not in team_context.team_data.fallback_goal_song_song_ids
     assert PlayerSong.objects.filter(pk=personal.pk).exists()
+
+
+@pytest.mark.parametrize("invalid_id", ["not-a-uuid", "123", "x" * 100])
+@pytest.mark.parametrize("target", ["fallback", "player"])
+def test_song_selection_rejects_malformed_uuids_without_writing(
+    client: Client, team_context: TeamTestContext, invalid_id: str, target: str
+) -> None:
+    """Malformed selection IDs must return field validation, not ORM server errors."""
+    suffix = (
+        "fallback/" if target == "fallback" else f"player/{team_context.player.pk}/"
+    )
+    field = (
+        "fallback_goal_song_song_ids" if target == "fallback" else "goal_song_song_ids"
+    )
+    response = client.patch(
+        _path(team_context, suffix),
+        data={field: [invalid_id]},
+        content_type="application/json",
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()[field] == "Must be a valid UUID."
+    team_context.player.refresh_from_db()
+    team_context.team_data.refresh_from_db()
+    assert team_context.player.goal_song_song_ids == []
+    assert team_context.team_data.fallback_goal_song_song_ids == []
+
+
+def test_ready_team_song_retry_is_a_state_conflict(
+    client: Client, team_context: TeamTestContext
+) -> None:
+    """A valid retry request cannot run against an already completed download."""
+    song = _import(client, team_context)
+    cached = song.cached_song
+    assert cached is not None
+    cached.status = PlayerSongStatus.READY
+    cached.save(update_fields=["status"])
+    response = client.post(_path(team_context, f"songs/{song.pk}/retry/"))
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()["code"] == "song_already_ready"
+    song.refresh_from_db()
+    assert song.effective_status == PlayerSongStatus.READY

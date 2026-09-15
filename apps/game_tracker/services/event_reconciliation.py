@@ -47,6 +47,14 @@ class EventReconciliationError(RuntimeError):
     """Raised when a reconciliation decision cannot be applied."""
 
 
+class EventReconciliationNotFoundError(EventReconciliationError):
+    """The requested candidate does not exist in the match."""
+
+
+class EventReconciliationValidationError(EventReconciliationError):
+    """The supplied decision is invalid independently of concurrent match state."""
+
+
 @dataclass(frozen=True, slots=True)
 class ShotReconciliationPlan:
     """Result of comparing one report with existing canonical shots."""
@@ -500,14 +508,18 @@ def resolve_reconciliation(
     """Resolve one candidate once and rebuild affected projections.
 
     Raises:
-        EventReconciliationError: If the candidate or decision is invalid.
+        EventReconciliationError: If the current match state prevents resolution.
+        EventReconciliationNotFoundError: If the candidate does not exist.
+        EventReconciliationValidationError: If the supplied decision is invalid.
 
     """
     if resolution.decision not in {
         MatchEventReconciliationDecision.DECISION_MERGE,
         MatchEventReconciliationDecision.DECISION_SEPARATE,
     }:
-        raise EventReconciliationError("Decision must be 'merge' or 'separate'.")
+        raise EventReconciliationValidationError(
+            "Decision must be 'merge' or 'separate'."
+        )
 
     with transaction.atomic():
         locked = MatchData.objects.select_for_update().get(pk=resolution.match_data.pk)
@@ -518,7 +530,9 @@ def resolve_reconciliation(
             .first()
         )
         if reconciliation is None:
-            raise EventReconciliationError("Reconciliation candidate not found.")
+            raise EventReconciliationNotFoundError(
+                "Reconciliation candidate not found."
+            )
         if MatchEventReconciliationDecision.objects.filter(
             reconciliation=reconciliation
         ).exists():
@@ -536,7 +550,7 @@ def resolve_reconciliation(
             )
             canonical_event = allowed.get(selected_id)
             if canonical_event is None:
-                raise EventReconciliationError(
+                raise EventReconciliationValidationError(
                     "canonical_event_id must belong to the candidate pair."
                 )
             duplicate = (

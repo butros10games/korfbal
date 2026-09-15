@@ -121,9 +121,15 @@ class TournamentSerializer(serializers.ModelSerializer):
             })
         rules = attrs.get("tiebreakers")
         if rules is not None:
-            if not isinstance(rules, list) or not rules:
+            if (
+                not isinstance(rules, list)
+                or not rules
+                or any(not isinstance(rule, str) for rule in rules)
+            ):
                 raise serializers.ValidationError({
-                    "tiebreakers": "Provide at least one standings rule."
+                    "tiebreakers": (
+                        "Provide at least one standings rule as a list of strings."
+                    )
                 })
             unsupported = [rule for rule in rules if rule not in SUPPORTED_TIEBREAKERS]
             if unsupported:

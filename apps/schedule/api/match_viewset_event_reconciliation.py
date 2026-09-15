@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -10,10 +10,13 @@ from rest_framework.response import Response
 from apps.game_tracker.composition import change_publisher
 from apps.game_tracker.services.event_reconciliation import (
     EventReconciliationError,
+    EventReconciliationNotFoundError,
+    EventReconciliationValidationError,
     ReconciliationResolution,
     pending_reconciliations,
     resolve_reconciliation,
 )
+from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.schedule.models import Match
 
 from .constants import MATCH_TRACKER_DATA_NOT_FOUND
@@ -22,7 +25,14 @@ from .match_viewset_contracts import MatchViewSetContext
 from .permissions import IsCoachOrAdmin
 
 
-RECONCILIATION_REASON_MAX_LENGTH = 255
+class ReconciliationDecisionSerializer(serializers.Serializer):
+    """Validate client input separately from conflicts with current match state."""
+
+    decision = serializers.ChoiceField(choices=("merge", "separate"))
+    canonical_event_id = serializers.UUIDField(required=False, allow_null=True)
+    reason = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
 
 
 class MatchEventReconciliationActionsMixin:
@@ -54,7 +64,7 @@ class MatchEventReconciliationActionsMixin:
     @action(
         detail=True,
         methods=("POST",),
-        url_path=r"events/reconciliations/(?P<reconciliation_id>[^/.]+)/resolve",
+        url_path=rf"events/reconciliations/(?P<reconciliation_id>{UUID_URL_REGEX})/resolve",
         permission_classes=[IsCoachOrAdmin],
     )
     def resolve_event_reconciliation(
@@ -73,37 +83,30 @@ class MatchEventReconciliationActionsMixin:
                 {"detail": MATCH_TRACKER_DATA_NOT_FOUND},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        payload = request_payload(request)
-        decision = payload.get("decision")
+        serializer = ReconciliationDecisionSerializer(data=request_payload(request))
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        decision = payload["decision"]
         canonical_event_id = payload.get("canonical_event_id")
-        reason = payload.get("reason", "")
-        if not isinstance(decision, str) or not isinstance(reason, str):
-            return Response(
-                {"detail": "Invalid reconciliation decision."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if canonical_event_id is not None and not isinstance(canonical_event_id, str):
-            return Response(
-                {"detail": "Invalid canonical_event_id."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if len(reason) > RECONCILIATION_REASON_MAX_LENGTH:
-            return Response(
-                {"detail": "Reason must contain at most 255 characters."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        reason = payload["reason"]
         try:
             resolved = resolve_reconciliation(
                 ReconciliationResolution(
                     match_data=match_data,
                     reconciliation_id=reconciliation_id,
                     decision=decision,
-                    canonical_event_id=canonical_event_id,
+                    canonical_event_id=str(canonical_event_id)
+                    if canonical_event_id
+                    else None,
                     actor=request.user,
                     reason=reason,
                 ),
                 publisher=change_publisher,
             )
+        except EventReconciliationNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except EventReconciliationValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except EventReconciliationError as exc:
             return Response(
                 {"detail": str(exc)},

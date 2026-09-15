@@ -22,10 +22,15 @@ from apps.tournament.services.referee_tracker import (
     RefereeTrackerError,
     assign_referee_team,
 )
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 class TournamentEditingError(ValueError):
     """Raised when a requested structural edit would be inconsistent."""
+
+
+class TournamentScheduleDateError(TournamentEditingError):
+    """The requested match timing exceeds the representable date range."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,7 +287,11 @@ def _ensure_available(
     draft: _ResolvedMatchDraft,
     exclude_match: TournamentMatch | None = None,
 ) -> None:
-    ends_at = draft.starts_at + timedelta(minutes=draft.duration_minutes)
+    ends_at = add_schedule_time(
+        draft.starts_at,
+        timedelta(minutes=draft.duration_minutes),
+        error_type=TournamentScheduleDateError,
+    )
     candidates = tournament.matches.filter(starts_at__isnull=False).exclude(
         status=TournamentMatch.Status.CANCELLED
     )
@@ -296,7 +305,11 @@ def _ensure_available(
     for other in candidates:
         if other.starts_at is None:
             continue
-        other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+        other_end = add_schedule_time(
+            other.starts_at,
+            timedelta(minutes=other.duration_minutes),
+            error_type=TournamentScheduleDateError,
+        )
         if draft.starts_at < other_end and other.starts_at < ends_at:
             raise TournamentEditingError(
                 f"This time overlaps with match {other.match_number} "
@@ -575,7 +588,11 @@ def _ensure_substitute_available(
 ) -> None:
     if match.starts_at is None:
         return
-    match_end = match.starts_at + timedelta(minutes=match.duration_minutes)
+    match_end = add_schedule_time(
+        match.starts_at,
+        timedelta(minutes=match.duration_minutes),
+        error_type=TournamentScheduleDateError,
+    )
     other_matches = (
         tournament.matches
         .filter(starts_at__isnull=False)
@@ -590,7 +607,11 @@ def _ensure_substitute_available(
     for other in other_matches:
         if other.starts_at is None:
             continue
-        other_end = other.starts_at + timedelta(minutes=other.duration_minutes)
+        other_end = add_schedule_time(
+            other.starts_at,
+            timedelta(minutes=other.duration_minutes),
+            error_type=TournamentScheduleDateError,
+        )
         if match.starts_at < other_end and other.starts_at < match_end:
             raise TournamentEditingError(
                 f"Team {substitute.name} is already playing or refereeing "

@@ -13,6 +13,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Season
 from apps.team.models.team import Team
@@ -56,7 +57,7 @@ def test_other_player_stats_club_blocks_anonymous(client: Client) -> None:
 
     response = client.get(f"/api/player/players/{target_player.id_uuid}/stats/")
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json() == PRIVATE_ACCOUNT_DETAIL
+    assert_api_error(response.json(), PRIVATE_ACCOUNT_DETAIL)
 
 
 @pytest.mark.django_db
@@ -110,7 +111,7 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
         f"/api/player/players/{target_player.id_uuid}/stats/"
     )
     assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
-    assert response_forbidden.json() == PRIVATE_ACCOUNT_DETAIL
+    assert_api_error(response_forbidden.json(), PRIVATE_ACCOUNT_DETAIL)
 
 
 @pytest.mark.django_db
@@ -188,7 +189,7 @@ def test_other_player_overview_club_allows_connected_and_blocks_unconnected(
         f"/api/player/players/{target_player.id_uuid}/overview/"
     )
     assert response_forbidden.status_code == HTTPStatus.FORBIDDEN
-    assert response_forbidden.json() == PRIVATE_ACCOUNT_DETAIL
+    assert_api_error(response_forbidden.json(), PRIVATE_ACCOUNT_DETAIL)
 
 
 @pytest.mark.django_db

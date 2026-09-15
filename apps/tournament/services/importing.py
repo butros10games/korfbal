@@ -20,6 +20,7 @@ from apps.tournament.models import (
     TournamentTeam,
 )
 from apps.tournament.services.generation import ensure_schedule_replaceable
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 class ScheduleImportError(ValueError):
@@ -51,7 +52,11 @@ class _PreparedRow:
 
     @property
     def ends_at(self) -> datetime:
-        return self.starts_at + timedelta(minutes=self.duration_minutes)
+        return add_schedule_time(
+            self.starts_at,
+            timedelta(minutes=self.duration_minutes),
+            error_type=ScheduleImportError,
+        )
 
 
 def _key(value: str) -> str:
@@ -119,6 +124,8 @@ def _validate_windows(rows: list[_PreparedRow]) -> None:
     field_windows: dict[str, list[_PreparedRow]] = {}
     team_windows: dict[str, list[_PreparedRow]] = {}
     for row in rows:
+        if row.ends_at <= row.starts_at:
+            raise ScheduleImportError("Match duration must be positive.")
         field_windows.setdefault(_key(row.field_label), []).append(row)
         for team_name in (row.home_team_name, row.away_team_name):
             team_windows.setdefault(_key(team_name), []).append(row)

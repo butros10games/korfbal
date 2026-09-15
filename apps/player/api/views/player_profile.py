@@ -37,6 +37,7 @@ from apps.player.services.player_teams import (
     followed_teams_for_player,
     grouped_teams_for_player,
 )
+from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.team.api.serializers import TeamSerializer
 
 from .common import (
@@ -69,6 +70,7 @@ class PlayerViewSet(
         CanModifyPlayer,
     )
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
 
     def get_queryset(self) -> QuerySet[Player]:
         """Evaluate source privacy freshness at request time, not process startup."""

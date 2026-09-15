@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from http import HTTPStatus
+from uuid import UUID
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -330,3 +331,74 @@ def test_match_finished_respects_team_and_season_filters(client: Client) -> None
     ids = {item["id_uuid"] for item in payload}
     assert str(match_in_scope.id_uuid) in ids
     assert str(match_outside_season.id_uuid) not in ids
+
+
+@pytest.mark.parametrize("endpoint", ["upcoming", "finished"])
+@pytest.mark.parametrize("limit", ["201", "9223372036854775808", "1" + "0" * 100])
+def test_match_summary_limits_reject_oversized_values(
+    client: Client, endpoint: str, limit: str
+) -> None:
+    """Large client limits must not overflow SQL or create unbounded responses."""
+    response = client.get(f"/api/matches/{endpoint}/", {"limit": limit})
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert response.json()["limit"] == "Must be at most 200."
+
+
+@pytest.mark.parametrize("followed", [False, True])
+def test_upcoming_pages_preserve_filters_and_order_for_simultaneous_matches(
+    client: Client, followed: bool
+) -> None:
+    """Retrieve beyond 200 without losing tied fixtures or changing team scope."""
+    start = timezone.now() + timedelta(days=1)
+    season = Season.objects.create(
+        name="Pagination", start_date=start.date(), end_date=start.date()
+    )
+    club = Club.objects.create(name="Pagination club")
+    home = Team.objects.create(name="Followed", club=club)
+    away = Team.objects.create(name="Away", club=club)
+    other = Team.objects.create(name="Other", club=club)
+    # Insert in reverse UUID order to exercise the explicit ordering tie-breaker.
+    matches = Match.objects.bulk_create([
+        Match(
+            id_uuid=UUID(int=index),
+            home_team=home,
+            away_team=away,
+            season=season,
+            start_time=start,
+        )
+        for index in range(205, 0, -1)
+    ])
+    Match.objects.create(
+        home_team=other,
+        away_team=away,
+        season=season,
+        start_time=start - timedelta(hours=1),
+    )
+    params: dict[str, str | int] = {"limit": 200}
+    if followed:
+        user = get_user_model().objects.create_user(username="page-viewer")
+        user.player.team_follow.add(home)
+        client.force_login(user)
+        params["followed"] = "true"
+    else:
+        params["team"] = str(home.pk)
+    first = client.get("/api/matches/upcoming/", params)
+    second = client.get("/api/matches/upcoming/", {**params, "offset": 200})
+    assert first.status_code == second.status_code == HTTPStatus.OK
+    page_size = 200
+    assert len(first.json()) == page_size
+    assert len(second.json()) == len(matches) - page_size
+    assert [row["id_uuid"] for row in first.json() + second.json()] == [
+        str(match.pk) for match in reversed(matches)
+    ]
+    assert client.get("/api/matches/upcoming/", {**params, "offset": 205}).json() == []
+
+
+@pytest.mark.parametrize("offset", ["-1", "invalid", "1.5", "", str(2**63)])
+def test_upcoming_rejects_invalid_offset(client: Client, offset: str) -> None:
+    """Invalid offsets return field errors rather than slicing or database failures."""
+    response = client.get("/api/matches/upcoming/", {"offset": offset})
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert "offset" in response.json()

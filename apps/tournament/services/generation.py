@@ -19,6 +19,7 @@ from apps.tournament.models import (
     TournamentStage,
     TournamentTeam,
 )
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 MIN_TEAMS = 2
@@ -27,6 +28,12 @@ MAX_POOLS = 26
 
 class GenerationError(ValueError):
     """Raised when a tournament cannot produce a valid plan."""
+
+
+def _add_schedule_minutes(start: datetime, minutes: int) -> datetime:
+    return add_schedule_time(
+        start, timedelta(minutes=minutes), error_type=GenerationError
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,9 +239,11 @@ def _scheduled_matches(
             )
             candidates.append((candidate_start, field.sort_order, field.label, field))
         match_start, _, _, field = min(candidates)
-        match_end = match_start + timedelta(minutes=duration)
-        field_available[str(field.id_uuid)] = match_end + timedelta(minutes=changeover)
-        next_team_time = match_end + timedelta(minutes=minimum_rest)
+        match_end = _add_schedule_minutes(match_start, duration)
+        field_available[str(field.id_uuid)] = _add_schedule_minutes(
+            match_end, changeover
+        )
+        next_team_time = _add_schedule_minutes(match_end, minimum_rest)
         team_available[home_id] = next_team_time
         team_available[away_id] = next_team_time
         if match_start not in slot_starts:

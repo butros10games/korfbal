@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.http import FileResponse, HttpResponseRedirect
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -32,6 +34,7 @@ from apps.player.services.player_song_queries import (
     player_songs_for_player,
 )
 from apps.player.services.player_songs import (
+    MAX_SOURCE_SECONDS,
     InvalidSongClipError,
     PlayerSongAlreadyReadyError,
     PlayerSongClipRequest,
@@ -54,9 +57,12 @@ class PlayerSongClipAPIView(KorfbalAPIView):
         if not raw:
             return default
         try:
-            return int(float(raw))
+            seconds = float(raw)
         except (TypeError, ValueError):
             return default
+        if not math.isfinite(seconds):
+            raise ValidationError({key: "Must be a finite number of seconds."})
+        return int(seconds)
 
     def get(
         self,
@@ -65,8 +71,15 @@ class PlayerSongClipAPIView(KorfbalAPIView):
         *args: Any,
         **kwargs: Any,
     ) -> FileResponse | HttpResponseRedirect | Response:
-        """Stream a stable, cacheable short clip for the requested song."""
+        """Stream a stable, cacheable short clip for the requested song.
+
+        Raises:
+            ValidationError: The requested start exceeds the supported source length.
+
+        """
         start_seconds = max(0, self._parse_seconds_query(request, "start", 0))
+        if start_seconds >= MAX_SOURCE_SECONDS:
+            raise ValidationError({"start": "Must be less than 900 seconds."})
         duration_seconds = self._parse_seconds_query(request, "duration", 8)
         duration_seconds = max(1, min(15, duration_seconds))
 
@@ -80,7 +93,7 @@ class PlayerSongClipAPIView(KorfbalAPIView):
             )
         )
         if clip is None:
-            return HttpResponseRedirect("/")
+            return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
 
         if not stream_requested:
             location = (
@@ -98,7 +111,13 @@ class PlayerSongClipAPIView(KorfbalAPIView):
             response["Retry-After"] = "2"
             return response
 
-        stream = audio_storage.open(clip.clip_key)
+        try:
+            stream = audio_storage.open(clip.clip_key)
+        except FileNotFoundError:
+            return Response(
+                {"detail": "Goal sound clip file not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         filename = clip.clip_key.rsplit("/", maxsplit=1)[-1]
 
         response = FileResponse(
@@ -248,8 +267,8 @@ class CurrentPlayerSongRetryAPIView(KorfbalAPIView):
             return Response(SONG_NOT_FOUND_DETAIL, status=status.HTTP_404_NOT_FOUND)
         except PlayerSongAlreadyReadyError:
             return Response(
-                {"detail": "Song is already ready"},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "Song is already ready", "code": "song_already_ready"},
+                status=status.HTTP_409_CONFLICT,
             )
         return Response(PlayerSongSerializer(song).data)
 

@@ -13,8 +13,10 @@ from django.core.files.base import ContentFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.application.ports import CommandRunOptions
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
+from apps.player.services.player_songs import PlayerSongClip
 
 
 @pytest.mark.django_db
@@ -48,7 +50,7 @@ def test_player_song_clip_reports_unavailable_when_ffmpeg_missing(
         )
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-    assert response.json() == {"detail": "Goal sound clip is not prepared."}
+    assert_api_error(response.json(), {"detail": "Goal sound clip is not prepared."})
     assert response["Retry-After"] == "2"
     enqueue.assert_called_once_with(str(song.id_uuid))
 
@@ -177,3 +179,77 @@ def test_player_song_clip_reuses_existing_cached_clip(client: Client) -> None:
     assert b"".join(response.streaming_content) == b"existing clip"
     assert response["X-Goal-Audio-Prepared"] == "1"
     mocked_transcode.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("parameter", ["start", "duration"])
+@pytest.mark.parametrize("value", ["inf", "-inf", "NaN", "1e999"])
+def test_clip_rejects_nonfinite_seconds(
+    client: Client, parameter: str, value: str
+) -> None:
+    """Non-finite query values return field errors before clip preparation."""
+    with patch("apps.player.api.views.songs.resolve_player_song_clip") as resolve:
+        response = client.get(
+            "/api/player/api/songs/11111111-1111-4111-8111-111111111111/clip/",
+            {parameter: value},
+        )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(
+        response.json(), {parameter: "Must be a finite number of seconds."}
+    )
+    resolve.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("start", ["900", "1e308"])
+def test_clip_rejects_start_beyond_supported_source(client: Client, start: str) -> None:
+    """Huge offsets cannot become invalid filesystem paths or transcoder input."""
+    with patch("apps.player.api.views.songs.resolve_player_song_clip") as resolve:
+        response = client.get(
+            "/api/player/api/songs/11111111-1111-4111-8111-111111111111/clip/",
+            {"start": start},
+        )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(response.json(), {"start": "Must be less than 900 seconds."})
+    resolve.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("stream", ["0", "1"])
+def test_missing_clip_song_returns_json_not_found(client: Client, stream: str) -> None:
+    """An unavailable song must not redirect API clients to an HTML homepage."""
+    response = client.get(
+        "/api/player/api/songs/11111111-1111-4111-8111-111111111111/clip/",
+        {"stream": stream},
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert_api_error(response.json(), {"detail": "Song not found"})
+    assert "Location" not in response
+
+
+@pytest.mark.django_db
+def test_disappearing_clip_file_returns_not_found(client: Client) -> None:
+    """Deletion between cache lookup and opening a file produces a JSON 404."""
+    song = PlayerSong(audio_file="songs/source.mp3", status=PlayerSongStatus.READY)
+    clip = PlayerSongClip(
+        song=song, audio_file=song.audio_file, clip_key="clips/test.mp3"
+    )
+    with (
+        patch(
+            "apps.player.api.views.songs.resolve_player_song_clip", return_value=clip
+        ),
+        patch(
+            "apps.player.api.views.songs.audio_storage.open",
+            side_effect=FileNotFoundError("private/storage/path"),
+        ),
+    ):
+        response = client.get(
+            f"/api/player/api/songs/{song.id_uuid}/clip/", {"stream": "1"}
+        )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert_api_error(response.json(), {"detail": "Goal sound clip file not found."})
+    assert "private/storage/path" not in response.content.decode()

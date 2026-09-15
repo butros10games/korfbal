@@ -8,6 +8,8 @@ from .env import env, env_bool, env_int, env_list, sorted_hosts
 from .runtime import DEBUG
 
 
+CSRF_FAILURE_VIEW = "korfbal.api_errors.csrf_failure"
+
 KORFBAL_ORIGIN = "https://api.korfbal.butrosgroot.com"
 WEB_KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
 KWT_ORIGIN = "https://api.korfbal.localhost"

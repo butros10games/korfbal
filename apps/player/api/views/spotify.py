@@ -65,13 +65,23 @@ def _spotify_error_response(
     exc: SpotifyInputError | SpotifyAccessError | SpotifyPlaybackError,
 ) -> Response:
     if isinstance(exc, SpotifyPlaybackError):
+        if exc.conflict or exc.provider_status == status.HTTP_401_UNAUTHORIZED:
+            response_status = status.HTTP_409_CONFLICT
+        elif exc.provider_status in {
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        }:
+            response_status = exc.provider_status
+        else:
+            response_status = status.HTTP_502_BAD_GATEWAY
         return Response(
-            {"code": exc.code, "detail": exc.detail},
-            status=(
-                status.HTTP_409_CONFLICT
-                if exc.conflict
-                else status.HTTP_400_BAD_REQUEST
-            ),
+            {"code": exc.code, "detail": exc.detail}, status=response_status
+        )
+    if isinstance(exc, SpotifyAccessError):
+        return Response(
+            {"code": "spotify_connection_required", "detail": exc.detail},
+            status=status.HTTP_409_CONFLICT,
         )
     return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -91,7 +101,7 @@ class SpotifyConnectAPIView(KorfbalAPIView):
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
         authorization = create_spotify_authorization()
@@ -158,7 +168,7 @@ class SpotifyPlayAPIView(KorfbalAPIView):
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
         payload = _request_payload(request)
@@ -198,7 +208,7 @@ class SpotifyPauseAPIView(KorfbalAPIView):
         if not spotify_enabled():
             return Response(
                 SPOTIFY_NOT_CONFIGURED_DETAIL,
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
         payload = _request_payload(request)

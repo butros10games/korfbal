@@ -96,6 +96,7 @@ class SpotifyPlaybackError(Exception):
     code: str
     detail: str
     conflict: bool = False
+    provider_status: int | None = None
 
 
 def spotify_enabled() -> bool:
@@ -411,6 +412,7 @@ def play_spotify(
     raise SpotifyPlaybackError(
         code="spotify_play_failed",
         detail=spotify_message or response.text or "Spotify play failed",
+        provider_status=response.status_code,
     )
 
 
@@ -443,4 +445,5 @@ def pause_spotify(
         raise SpotifyPlaybackError(
             code="spotify_pause_failed",
             detail=response.text or "Spotify pause failed",
+            provider_status=response.status_code,
         )

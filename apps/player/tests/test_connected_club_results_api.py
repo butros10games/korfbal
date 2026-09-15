@@ -13,6 +13,7 @@ import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData
+from apps.player.models import Player
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
@@ -111,3 +112,27 @@ def test_connected_club_recent_results_returns_latest_three_within_days(
     for row in payload:
         assert row["home"]["club"] == followed_club.name
         assert row["away"]["club"] == other_club.name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("following", [False, True])
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [("season", "not-a-uuid"), ("days", "1000000"), ("days", str(10**30))],
+)
+def test_recent_results_rejects_invalid_filters_with_or_without_followed_clubs(
+    client: Client, following: bool, parameter: str, value: str
+) -> None:
+    """Filter errors must not depend on having data or escape as ORM/time failures."""
+    user = get_user_model().objects.create_user(username="results-invalid-filter")
+    client.force_login(user)
+    if following:
+        Player.objects.get(user=user).club_follow.add(
+            Club.objects.create(name="Followed")
+        )
+    response = client.get(
+        "/api/player/me/connected-clubs/recent-results/", {parameter: value}
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert parameter in response.json()
+    assert response.json()["code"] == "bad_request"

@@ -18,6 +18,7 @@ import pytest
 from pytest_django.fixtures import Settings
 
 from apps.player.models.spotify_token import SpotifyToken
+from apps.player.services.spotify import SpotifyPlaybackError
 
 
 SPOTIFY_CLIENT_ID = "client_id"
@@ -105,7 +106,7 @@ def test_spotify_play_returns_400_when_not_configured(
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json()["detail"] == "Spotify is not configured on the server"
 
 
@@ -152,7 +153,7 @@ def test_spotify_play_returns_400_when_not_connected(
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()["detail"] == "Spotify not connected"
 
 
@@ -287,7 +288,7 @@ def test_spotify_pause_failure_is_best_effort_400(
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
     payload = response.json()
     assert payload["code"] == "spotify_pause_failed"
     assert payload["detail"] == "server error"
@@ -375,3 +376,33 @@ def test_spotify_callback_happy_path_creates_token_and_redirects(
     assert replay.status_code == HTTPStatus.FOUND
     assert replay["Location"] == f"{WEB_APP_ORIGIN}/"
     assert token_exchange_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("provider_status", "expected_status"),
+    [(400, 400), (401, 409), (403, 403), (429, 429), (500, 502), (503, 502)],
+)
+def test_spotify_failure_preserves_input_permissions_and_throttle_classification(
+    client: Client,
+    user: User,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_status: int,
+    expected_status: int,
+) -> None:
+    """Provider rejections are distinct from failed upstream communication."""
+
+    def reject(**kwargs: object) -> None:
+        raise SpotifyPlaybackError(
+            code="spotify_play_failed",
+            detail="Playback could not be completed.",
+            provider_status=provider_status,
+        )
+
+    monkeypatch.setattr("apps.player.api.views.spotify.play_spotify", reject)
+    response = client.post(
+        "/api/player/spotify/play/",
+        data={"track_uri": "spotify:track:synthetic"},
+        content_type="application/json",
+    )
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == "Playback could not be completed."

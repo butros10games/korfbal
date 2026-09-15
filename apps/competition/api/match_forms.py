@@ -1,7 +1,7 @@
 """Private status and durable commands for a connected account's match forms."""
 
 from drf_spectacular.utils import extend_schema
-from rest_framework import permissions, serializers
+from rest_framework import permissions, serializers, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,6 +15,26 @@ from apps.competition.services.match_forms import (
 )
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
+
+
+_FORM_ERROR_DETAILS = {
+    "not_connected": "No connected KNKV match form is available for this match.",
+    "access_denied": "You do not have permission to edit this team's match form.",
+    "team_not_linked": "This team is not linked to the KNKV match form.",
+    "invalid_action": "The requested match-form action or options are invalid.",
+    "match_started": "The match has started; lineup changes are closed.",
+    "substitutions_not_enabled": "Substitution submission is not enabled.",
+    "captain_required": "Select a captain before publishing the lineup.",
+    "captain_not_selected": "The selected captain must be in the match lineup.",
+    "players_not_linked": "Link all selected players to KNKV before publishing.",
+}
+_FORM_ERROR_STATUSES = {
+    "not_connected": status.HTTP_404_NOT_FOUND,
+    "access_denied": status.HTTP_403_FORBIDDEN,
+    "invalid_action": status.HTTP_400_BAD_REQUEST,
+    "captain_required": status.HTTP_400_BAD_REQUEST,
+    "captain_not_selected": status.HTTP_400_BAD_REQUEST,
+}
 
 
 class MatchFormCommandSerializer(serializers.Serializer):
@@ -107,7 +127,13 @@ class MatchFormView(APIView):
         """Queue a revision-checked action; the browser never receives credentials."""
         access = self._access(request, team_id)
         if access is None:
-            return Response({"code": "not_connected"}, status=403)
+            return Response(
+                {
+                    "code": "not_connected",
+                    "detail": "Connect your KNKV account to this team first.",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = MatchFormCommandSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -123,11 +149,28 @@ class MatchFormView(APIView):
             )
         except MatchRevisionConflictError as exc:
             return Response(
-                {"code": "revision_conflict", "live_revision": exc.live_revision},
+                {
+                    "code": "revision_conflict",
+                    "detail": "The match changed. Refresh it and try again.",
+                    "expected_revision": exc.expected_revision,
+                    "live_revision": exc.live_revision,
+                },
                 status=409,
             )
         except MatchData.DoesNotExist:
-            return Response({"code": "not_connected"}, status=404)
+            return Response(
+                {"code": "not_found", "detail": "Match tracker data was not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except MatchFormError as exc:
-            return Response({"code": exc.code}, status=409)
+            return Response(
+                {
+                    "code": exc.code,
+                    "detail": _FORM_ERROR_DETAILS.get(
+                        exc.code,
+                        "The match form cannot be updated in its current state.",
+                    ),
+                },
+                status=_FORM_ERROR_STATUSES.get(exc.code, status.HTTP_409_CONFLICT),
+            )
         return Response(MatchFormJobSerializer(job).data, status=202)

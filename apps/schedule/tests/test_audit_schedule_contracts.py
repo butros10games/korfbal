@@ -6,12 +6,15 @@ from datetime import date, timedelta
 from http import HTTPStatus
 from typing import Any, NamedTuple, cast
 
+from django.test import override_settings
 from django.test.client import Client
 from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData, Shot
+from apps.kwt_common.tests.api_test_support import assert_api_error
+from apps.player.models import Player
 from apps.schedule.models import Match, Season, SeasonPool
 from apps.schedule.queries.seasons import (
     current_season,
@@ -203,13 +206,13 @@ def test_match_partial_updates_revalidate_existing_pool_constraints(
     )
 
     assert wrong_team.status_code == HTTPStatus.BAD_REQUEST
-    assert wrong_team.json() == {
-        "away_team_id": ["Team must belong to the selected pool."]
-    }
+    assert_api_error(
+        wrong_team.json(), {"away_team_id": ["Team must belong to the selected pool."]}
+    )
     assert wrong_season.status_code == HTTPStatus.BAD_REQUEST
-    assert wrong_season.json() == {
-        "pool_id": ["Pool must belong to the selected season."]
-    }
+    assert_api_error(
+        wrong_season.json(), {"pool_id": ["Pool must belong to the selected season."]}
+    )
 
 
 def test_pool_editor_rejects_weak_identity_and_membership_changes(
@@ -410,3 +413,58 @@ def test_season_date_range_is_inclusive_at_both_boundaries() -> None:
 
     assert response.status_code == HTTPStatus.CREATED
     assert response.json()["is_current"] is True
+
+
+@pytest.mark.parametrize("followed", ["false", "0", "true", "1", "TRUE"])
+def test_finished_follow_filter_parses_boolean_values(
+    client: Client, followed: str
+) -> None:
+    """Finished results apply the same explicit follow flag as the schedule list."""
+    graph = _schedule_graph(prefix="followed-finished")
+    own = _match(graph, hours_from_now=-1, status="finished")
+    other = _match(
+        _schedule_graph(prefix="unrelated-finished"),
+        hours_from_now=-2,
+        status="finished",
+    )
+    user = create_user(username="finished-follower")
+    Player.objects.get(user=user).team_follow.add(graph.home)
+    client.force_login(user)
+
+    response = client.get("/api/matches/finished/", {"followed": followed})
+
+    assert response.status_code == HTTPStatus.OK
+    expected = [str(own.id_uuid)]
+    if followed in {"false", "0"}:
+        expected.append(str(other.id_uuid))
+    assert [item["id_uuid"] for item in response.json()] == expected
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_finished_follow_filter_does_not_fall_back_to_global_results(
+    client: Client, authenticated: bool
+) -> None:
+    """An empty personal feed stays empty even when global finished matches exist."""
+    _match(
+        _schedule_graph(prefix="global-finished"), hours_from_now=-1, status="finished"
+    )
+    if authenticated:
+        client.force_login(create_user(username="no-followed-teams"))
+
+    response = client.get("/api/matches/finished/", {"followed": "true"})
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == []
+
+
+@pytest.mark.parametrize("endpoint", ["", "upcoming/", "finished/"])
+@override_settings(DEBUG=True)
+def test_schedule_debug_player_id_is_validated(client: Client, endpoint: str) -> None:
+    """Development player overrides must not leak ORM UUID errors as server errors."""
+    response = client.get(
+        f"/api/matches/{endpoint}",
+        {"followed": "true", "player_id": "not-a-uuid"},
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(response.json(), {"player_id": "Must be a valid UUID."})

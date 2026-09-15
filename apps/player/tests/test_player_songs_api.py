@@ -17,6 +17,7 @@ from django.test.utils import CaptureQueriesContext
 import pytest
 
 from apps.kwt_common.models import BackgroundJob
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.api.serializers import PlayerSongSerializer
 from apps.player.application.ports import DownloadedSong, SongDownloadError
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
@@ -183,7 +184,7 @@ def test_missing_player_song_patch_returns_not_found_before_validation(
     )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": "Song not found"}
+    assert_api_error(response.json(), {"detail": "Song not found"})
 
 
 @pytest.mark.django_db

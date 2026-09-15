@@ -8,6 +8,8 @@ import json
 from django.test.client import Client
 import pytest
 
+from apps.kwt_common.tests.api_test_support import assert_api_error
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
@@ -84,7 +86,7 @@ def test_player_designation_rejects_malformed_payloads_before_application_call(
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == expected
+    assert_api_error(response.json(), expected)
 
 
 @pytest.mark.django_db
@@ -121,6 +123,5 @@ def test_player_search_validates_query_before_loading_match_data(
         secure=True,
     )
 
-    expected_status = HTTPStatus.BAD_REQUEST if not search else HTTPStatus.OK
-    assert response.status_code == expected_status
-    assert response.json() == expected_error
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(response.json(), expected_error)

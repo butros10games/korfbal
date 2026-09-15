@@ -90,8 +90,14 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Don’t make exception dataclasses frozen. Python context managers attach traceback state while
   unwinding, and frozen exceptions can mask the original domain error with a `TypeError`.
 - Document new APIView methods with explicit drf-spectacular request, response and parameter schemas; the full OpenAPI regression test rejects serializer-inference warnings and errors.
+- Keep dedicated API routes on JSON adapters, including account activation, resend and
+  logout; shared HTML auth views may reverse a login route that Korfbal does not expose.
+  Preserve field errors, conflict metadata and protocol headers when normalizing errors.
 - Parse UUID query parameters at the API boundary and return a controlled 400; constrain UUID
   detail routes so malformed identifiers become 404s instead of leaking ORM validation errors.
+- In tournament planners, check derived match-end, changeover and rest timestamps before
+  persisting a schedule. A valid input datetime can still overflow during arithmetic;
+  translate that failure into a domain validation error that the API maps to 400.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
 - Add new migration test files to both explicit migration commands in `project.json`; the

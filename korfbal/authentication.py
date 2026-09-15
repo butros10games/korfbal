@@ -11,6 +11,7 @@ from bg_auth.jwt import (
 )
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
+from django.core.exceptions import ValidationError
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
@@ -24,16 +25,21 @@ class JwtBearerAuthentication(BaseAuthentication):
     def _extract_bearer_token(self, auth_header: str) -> str | None:
         """Extract a bare token string from an Authorization header.
 
-        Returns the token string or None if the header is malformed / not a
-        bearer token.
+        Returns None for other authentication schemes. An explicitly empty
+        bearer credential is an authentication failure.
+
+        Raises:
+            AuthenticationFailed: If the bearer credential is empty.
+
         """
         if not auth_header:
             return None
 
-        try:
-            scheme, token = auth_header.split(" ", 1)
-        except ValueError:
+        parts = auth_header.split(maxsplit=1)
+        if not parts:
             return None
+        scheme = parts[0]
+        token = parts[1] if len(parts) > 1 else ""
 
         if scheme.lower() != self.keyword:
             return None
@@ -42,7 +48,9 @@ class JwtBearerAuthentication(BaseAuthentication):
         if token.lower().startswith("bearer "):
             token = token.split(" ", 1)[1].strip()
 
-        return token or None
+        if not token:
+            raise AuthenticationFailed("Invalid access token")
+        return token
 
     def authenticate(self, request: Any) -> tuple[AbstractBaseUser, str] | None:
         """Authenticate the request using a JWT bearer token.
@@ -76,6 +84,8 @@ class JwtBearerAuthentication(BaseAuthentication):
         user_model = get_user_model()
         try:
             user = user_model.objects.get(pk=user_id)
+        except (ValidationError, ValueError, TypeError, OverflowError) as exc:
+            raise AuthenticationFailed("Invalid access token") from exc
         except user_model.DoesNotExist as exc:
             raise AuthenticationFailed("User not found") from exc
 

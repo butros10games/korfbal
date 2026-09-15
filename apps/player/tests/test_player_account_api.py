@@ -10,6 +10,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 import pytest
 
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 from apps.player.models.push_subscription import PlayerPushSubscription
 
@@ -117,9 +118,9 @@ def test_current_player_password_change_returns_field_errors(client: Client) -> 
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {
-        "current_password": ["The current password is incorrect."]
-    }
+    assert_api_error(
+        response.json(), {"current_password": ["The current password is incorrect."]}
+    )
 
 
 @pytest.mark.django_db

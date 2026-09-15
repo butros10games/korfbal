@@ -17,6 +17,7 @@ from PIL.PngImagePlugin import PngInfo
 import pytest
 
 from apps.kwt_common.models import BackgroundJob
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import PlayerSong, PlayerSongStatus
 from apps.player.models.player import Player
 from apps.player.services.player_uploads import (
@@ -53,7 +54,7 @@ def test_upload_profile_picture_missing_file_returns_400(client: Client) -> None
     response = client.post("/api/player/api/upload_profile_picture/")
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"error": "No profile_picture uploaded"}
+    assert_api_error(response.json(), {"error": "No profile_picture uploaded"})
 
 
 @pytest.mark.django_db
@@ -81,7 +82,7 @@ def test_upload_profile_picture_player_missing_returns_404(
     )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"error": "Player not found"}
+    assert_api_error(response.json(), {"error": "Player not found"})
 
 
 @pytest.mark.django_db
@@ -145,7 +146,7 @@ def test_upload_goal_song_missing_file_returns_400(client: Client) -> None:
     response = client.post("/api/player/api/upload_goal_song/")
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"error": "No goal_song uploaded"}
+    assert_api_error(response.json(), {"error": "No goal_song uploaded"})
 
 
 @pytest.mark.django_db
@@ -170,10 +171,13 @@ def test_upload_goal_song_rejects_unsupported_content_type(client: Client) -> No
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {
-        "error": "Unsupported audio type",
-        "content_type": "text/plain",
-    }
+    assert_api_error(
+        response.json(),
+        {
+            "error": "Unsupported audio type",
+            "content_type": "text/plain",
+        },
+    )
 
 
 @pytest.mark.django_db
@@ -199,7 +203,7 @@ def test_upload_goal_song_player_missing_returns_404(client: Client) -> None:
     )
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"error": "Player not found"}
+    assert_api_error(response.json(), {"error": "Player not found"})
 
 
 @pytest.mark.django_db

@@ -32,6 +32,7 @@ from apps.club.services.eligibility_dashboard import build_club_eligibility_dash
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
+from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.schedule.queries.seasons import (
     requested_or_default_season,
     season_options_payload,
@@ -63,6 +64,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     permission_classes = (IsStaffOrReadOnly,)
     lookup_field = "id_uuid"
+    lookup_value_regex = UUID_URL_REGEX
     filter_backends = (filters.SearchFilter,)
     search_fields = ("name",)
 
@@ -260,7 +262,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=("DELETE",),
-        url_path=r"memberships/(?P<player_id>[^/.]+)",
+        url_path=rf"memberships/(?P<player_id>{UUID_URL_REGEX})",
         permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
     )
     def remove_membership(

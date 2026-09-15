@@ -9,6 +9,7 @@ from apps.tournament.models import (
     TournamentTeam,
 )
 from apps.tournament.services.cups import CupError
+from apps.tournament.services.schedule_dates import add_schedule_time
 
 
 MIN_TEAMS = 2
@@ -88,8 +89,11 @@ def generate_cup_draw(tournament: Tournament) -> None:
                 away_team=away if isinstance(away, TournamentTeam) else None,
                 field=fields[scheduled % len(fields)],
                 duration_minutes=duration,
-                starts_at=starts_at
-                + timedelta(minutes=(scheduled // len(fields)) * slot_minutes),
+                starts_at=add_schedule_time(
+                    starts_at,
+                    timedelta(minutes=(scheduled // len(fields)) * slot_minutes),
+                    error_type=CupError,
+                ),
             )
             for node, side in ((home, "home"), (away, "away")):
                 if isinstance(node, TournamentMatch):
@@ -99,9 +103,13 @@ def generate_cup_draw(tournament: Tournament) -> None:
             number += 1
             scheduled += 1
         nodes = next_nodes
-        starts_at += timedelta(
-            minutes=((scheduled + len(fields) - 1) // len(fields)) * slot_minutes
-            + tournament.minimum_rest_minutes
+        starts_at = add_schedule_time(
+            starts_at,
+            timedelta(
+                minutes=((scheduled + len(fields) - 1) // len(fields)) * slot_minutes
+                + tournament.minimum_rest_minutes
+            ),
+            error_type=CupError,
         )
         round_number += 1
 

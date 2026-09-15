@@ -464,3 +464,38 @@ def test_aggregate_endpoints_preserve_staff_visibility(
     else:
         assert payload["count"] == len(visible_sources)
         assert {row["source_system"] for row in payload["items"]} == visible_sources
+
+
+@pytest.mark.parametrize("parameter", ["since", "until", "cursor"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-date",
+        "2025-02-30T12:00:00Z",
+        "0001-01-01T00:00:00+23:59",
+        "9999-12-31T23:59:59-23:59",
+    ],
+)
+def test_timeline_rejects_invalid_or_unrepresentable_dates(
+    client: Client, parameter: str, value: str
+) -> None:
+    """Malformed filters must not silently expose an unfiltered timeline or crash."""
+    _login(client, staff=True)
+    _event("must-stay-filtered", occurred_at=timezone.now())
+    if parameter == "cursor":
+        value += "::11111111-1111-4111-8111-111111111111"
+    response = client.get(f"{AUDIT_API}/timeline/", {parameter: value})
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "bad_request"
+    assert "must-stay-filtered" not in response.content.decode()
+
+
+def test_timeline_rejects_reversed_date_window(client: Client) -> None:
+    """Reversed bounds are invalid input rather than a successful empty report."""
+    _login(client, staff=True)
+    response = client.get(
+        f"{AUDIT_API}/timeline/",
+        {"since": "2025-02-02T00:00:00Z", "until": "2025-02-01T00:00:00Z"},
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["until"] == "Must not be before since."

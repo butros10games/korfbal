@@ -12,6 +12,7 @@ from django.test.client import Client
 from django.utils import timezone
 import pytest
 
+from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player_club_membership import PlayerClubMembership
 
 from .match_api_test_support import MatchGraph, create_match_graph, create_user
@@ -135,5 +136,5 @@ def test_timeline_reads_reject_invalid_revision_before_querying(
         )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json() == {"detail": "Invalid 'since_revision'."}
+    assert_api_error(response.json(), {"detail": "Invalid 'since_revision'."})
     read_timeline.assert_not_called()
