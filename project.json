@@ -25,6 +25,14 @@
         "bg-uuidv7"
     ],
     "targets": {
+        "mutation": {
+            "executor": "nx:run-commands",
+            "cache": false,
+            "options": {
+                "command": "uv run --with mutmut==3.8.0 mutmut run --max-children 2",
+                "cwd": "apps/django_projects/korfbal"
+            }
+        },
         "loadtest": {
             "executor": "nx:run-commands",
             "cache": false,

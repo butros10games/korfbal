@@ -2,20 +2,84 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import MatchEvent, MatchPart, Pause, TrackerCommand
+from apps.game_tracker.models import (
+    MatchEvent,
+    MatchLiveChange,
+    MatchPart,
+    Pause,
+    TrackerCommand,
+)
 from apps.game_tracker.services.tracker_http import (
     TrackerCommandError,
 )
-from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
+from apps.game_tracker.tests.tracker_test_helpers import (
+    OnCommitCapture,
+    create_tracker_match,
+)
 
 
 SECOND_REVISION = 2
 CLIENT_SEQUENCE = 17
+
+
+@pytest.mark.django_db
+def test_response_failure_rolls_back_transition_receipt_and_publication(
+    django_capture_on_commit_callbacks: OnCommitCapture,
+) -> None:
+    """A failed response must leave the same command safe to retry."""
+    tracker = create_tracker_match(prefix="Failed response")
+    tracker.match_data.refresh_from_db()
+    before = (
+        tracker.match_data.status,
+        tracker.match_data.live_revision,
+        tracker.match_data.command_sequence,
+    )
+    revisions_before = MatchLiveChange.objects.filter(
+        match_data=tracker.match_data
+    ).count()
+    command_id = str(uuid4())
+    payload = {
+        "command": "start/pause",
+        "command_id": command_id,
+        "expected_revision": tracker.match_data.live_revision,
+    }
+    with (
+        django_capture_on_commit_callbacks(execute=False) as callbacks,
+        pytest.raises(RuntimeError, match="response unavailable"),
+        patch(
+            "apps.game_tracker.services.tracker_http.get_tracker_state",
+            side_effect=RuntimeError("response unavailable"),
+        ),
+    ):
+        apply_tracker_command(tracker.match, team=tracker.home_team, payload=payload)
+
+    tracker.match_data.refresh_from_db()
+    assert (
+        tracker.match_data.status,
+        tracker.match_data.live_revision,
+        tracker.match_data.command_sequence,
+    ) == before
+    assert not TrackerCommand.objects.filter(command_id=command_id).exists()
+    assert not MatchEvent.objects.filter(command_id=command_id).exists()
+    assert not MatchPart.objects.filter(match_data=tracker.match_data).exists()
+    assert (
+        MatchLiveChange.objects.filter(match_data=tracker.match_data).count()
+        == revisions_before
+    )
+    assert callbacks == []
+
+    result = apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload=payload
+    )
+    assert result["status"] == "active"
+    assert result["command_sequence"] == 1
+    assert TrackerCommand.objects.filter(command_id=command_id).count() == 1
 
 
 @pytest.mark.django_db

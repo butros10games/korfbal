@@ -6,6 +6,7 @@ from datetime import timedelta
 from http import HTTPStatus
 from typing import Any, cast
 from unittest.mock import patch
+from uuid import uuid4
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.test.client import Client
@@ -51,6 +52,80 @@ def test_outsider_cannot_read_tracker_state(client: Client) -> None:
         response = client.get(_url(graph, "state"))
     assert response.status_code == HTTPStatus.FORBIDDEN
     get_state.assert_not_called()
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_committed_command_replay_still_requires_current_access(
+    client: Client,
+    authenticated: bool,
+) -> None:
+    """A valid receipt is not authorization to read or replay its command."""
+    graph = create_match_graph(prefix="Replay authorization")
+    _login_member(client, graph, "replay-owner")
+    payload = {"command": "start/pause", "command_id": str(uuid4())}
+    first = client.post(_url(graph, "commands"), payload, content_type=JSON)
+    assert first.status_code == HTTPStatus.OK
+    graph.match_data.refresh_from_db()
+    revision = graph.match_data.live_revision
+    client.logout()
+    if authenticated:
+        client.force_login(create_user(username="replay-outsider"))
+
+    replay = client.post(_url(graph, "commands"), payload, content_type=JSON)
+
+    assert replay.status_code == (
+        HTTPStatus.FORBIDDEN if authenticated else HTTPStatus.UNAUTHORIZED
+    )
+    assert replay["Content-Type"].startswith(JSON)
+    assert "Location" not in replay
+    assert "detail" in replay.json()
+    assert "live_revision" not in replay.json()
+    graph.match_data.refresh_from_db()
+    assert graph.match_data.live_revision == revision
+    assert TrackerCommand.objects.filter(match_data=graph.match_data).count() == 1
+
+
+def test_stale_command_returns_real_revision_conflict_without_creating_receipt(
+    client: Client,
+) -> None:
+    """Exercise HTTP conflict translation against the real application service."""
+    graph = create_match_graph(prefix="Real revision conflict")
+    _login_member(client, graph, "revision-member")
+    graph.match_data.refresh_from_db()
+    initial_revision = graph.match_data.live_revision
+    first = client.post(
+        _url(graph, "commands"),
+        {
+            "command": "start/pause",
+            "command_id": str(uuid4()),
+            "expected_revision": initial_revision,
+        },
+        content_type=JSON,
+    )
+    assert first.status_code == HTTPStatus.OK
+    command_id = str(uuid4())
+    stale = client.post(
+        _url(graph, "commands"),
+        {
+            "command": "start/pause",
+            "command_id": command_id,
+            "expected_revision": initial_revision,
+        },
+        content_type=JSON,
+    )
+    assert stale.status_code == HTTPStatus.CONFLICT
+    assert_api_error(
+        stale.json(),
+        {
+            "detail": "Tracker state changed; refresh before retrying the command.",
+            "code": "revision_conflict",
+            "expected_revision": initial_revision,
+            "current_revision": first.json()["live_revision"],
+        },
+    )
+    assert not TrackerCommand.objects.filter(command_id=command_id).exists()
+    graph.match_data.refresh_from_db()
+    assert graph.match_data.live_revision == first.json()["live_revision"]
 
 
 def test_outsider_cannot_apply_tracker_command(client: Client) -> None:

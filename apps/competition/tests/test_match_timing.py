@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from django.utils import timezone
 import pytest
 
-from apps.competition.domain.timing import expected_finish
+from apps.competition.domain.timing import class_playing_minutes, expected_finish
 from apps.competition.models import Match, Pool
 from apps.competition.services.importer import Importer
 from apps.competition.services.polling import (
@@ -23,6 +23,9 @@ from apps.schedule.models import Season
     [
         (("b", "youth"), "blue", "four", "indoor", 70),
         (("b", "youth"), "red", "four", "outdoor", 70),
+        (("b", "youth"), "orange", "four", "indoor", 70),
+        (("b", "youth"), "yellow", "four", "indoor", 70),
+        (("b", "youth"), "green", "four", "indoor", 70),
         (("b", "youth"), "orange", "eight", "indoor", 80),
         (("b", "youth"), "yellow", "eight", "outdoor", 80),
         (("b", "youth"), "red", "eight", "outdoor", 90),
@@ -52,6 +55,66 @@ def test_class_duration_and_stopped_clock_fallback(
     assert expected_finish(row) == now + timedelta(minutes=90)
     row["playing_time_minutes"] = 50
     assert expected_finish(row) == now + timedelta(minutes=80)
+
+
+@pytest.mark.parametrize("status", ["conflict", "unresolved"])
+def test_ambiguous_classification_cannot_shorten_the_finish_estimate(
+    status: str,
+) -> None:
+    """A recognized colour must not override an unresolved provider mapping."""
+    now = timezone.now()
+    row = {
+        "starts_at": now,
+        "season__start_date": date(2026, 7, 1),
+        "pool__mapping_status": status,
+        "pool__competition_class__category": "b",
+        "pool__competition_class__age_group": "youth",
+        "pool__competition_class__colour": "blue",
+        "pool__competition_class__playing_format": "four",
+    }
+    assert class_playing_minutes(row) is None
+    assert expected_finish(row) == now + timedelta(minutes=90)
+
+
+@pytest.mark.parametrize(
+    ("context", "colour", "form", "discipline", "minutes"),
+    [
+        (("b", "senior"), "unknown", "eight", "indoor", 60),
+        (("b", "youth"), "unknown", "eight", "indoor", None),
+        (("b", "youth"), "unknown", "four", "indoor", None),
+        (("b", "youth"), "blue", "unknown", "indoor", None),
+        (("a", "U15"), "unknown", "eight", "indoor", 50),
+        (("a", "U15"), "unknown", "eight", "outdoor", 50),
+        (("a", "U15"), "unknown", "eight", "unknown", None),
+        (("a", "U17"), "unknown", "eight", "outdoor", 60),
+        (("a", "U19"), "unknown", "eight", "outdoor", 60),
+        (("a", "senior"), "unknown", "eight", "outdoor", 60),
+        (("a", "U17"), "unknown", "eight", "indoor", None),
+        (("a", "U19"), "unknown", "eight", "indoor", None),
+        (("a", "senior"), "unknown", "eight", "indoor", None),
+    ],
+)
+def test_playing_minutes_distinguish_known_rules_from_elapsed_time_fallback(
+    context: tuple[str, str],
+    colour: str,
+    form: str,
+    discipline: str,
+    minutes: int | None,
+) -> None:
+    """A known 60-minute rule and the 90-minute fallback are different evidence."""
+    category, age = context
+    assert (
+        class_playing_minutes({
+            "season__start_date": date(2026, 7, 1),
+            "pool__mapping_status": "mapped",
+            "pool__competition_class__category": category,
+            "pool__competition_class__age_group": age,
+            "pool__competition_class__colour": colour,
+            "pool__competition_class__playing_format": form,
+            "pool__competition_class__edition__discipline": discipline,
+        })
+        == minutes
+    )
 
 
 @pytest.mark.django_db

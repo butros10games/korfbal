@@ -63,8 +63,33 @@ packages = ["korfbal", "apps"]
 DJANGO_SETTINGS_MODULE = "korfbal.settings_test"
 python_files = ["test_*.py"]
 pythonpath = ["."]
+norecursedirs = ["mutants", ".*", "node_modules", "build", "dist"]
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "migration_regression: test that exercises Django's historical migration graph",
     "slow_migration: historical-state migration regression scheduled before faster tests",
+]
+
+# Run from this directory with `uv run --with mutmut==3.8.0 mutmut run --max-children 2`.
+# Begin with pure rules; expand only_mutate and test selection together for services.
+[tool.mutmut]
+source_paths = ["apps/"]
+only_mutate = ["apps/*/domain/*.py"]
+do_not_mutate = ["*/tests/*", "*/migrations/*", "*/__init__.py"]
+also_copy = ["korfbal/", "conftest.py"]
+pytest_add_cli_args = ["--nomigrations", "-x", "-q"]
+pytest_add_cli_args_test_selection = [
+    "apps/game_tracker/tests/test_domain_rules.py",
+    "apps/game_tracker/tests/test_audit_domain_boundaries.py",
+    "apps/game_tracker/tests/test_win_probability.py",
+    "apps/game_tracker/tests/test_impact_results.py",
+    "apps/game_tracker/tests/test_impact_scoring_v7.py",
+    "apps/game_tracker/tests/test_impact_scoring_v8.py",
+    "apps/competition/tests/test_match_timing.py",
+    "apps/competition/tests/test_allocations.py",
+    "apps/competition/tests/test_classification.py",
+    "apps/competition/tests/test_ratings.py",
+    "apps/competition/tests/test_rating_preview.py",
+    "apps/audit/tests/test_api.py",
+    "apps/audit/tests/test_producer_health.py",
 ]

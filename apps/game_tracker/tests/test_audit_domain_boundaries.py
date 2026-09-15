@@ -94,6 +94,17 @@ def test_iso_parser_normalizes_offsets_and_treats_naive_values_as_utc() -> None:
     assert parse_client_time_iso("not-a-time") is None
 
 
+def test_client_and_server_clocks_return_utc_not_the_host_timezone() -> None:
+    """Equal instants alone do not verify the canonical UTC representation."""
+    parsed = parse_client_time_iso("2026-01-01T13:00:00+01:00")
+    assert parsed is not None
+    assert parsed.tzinfo is UTC
+    server_now = datetime.fromisoformat("2026-01-01T13:00:00+01:00")
+    result = command_time_from_payload({}, server_now=server_now)
+    assert result == datetime(2026, 1, 1, 12, tzinfo=UTC)
+    assert result.tzinfo is UTC
+
+
 @pytest.mark.parametrize(
     "payload",
     [
