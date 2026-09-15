@@ -40,19 +40,12 @@ This is the quickest “I want tests + API running” setup.
 
 The API will typically be served behind nginx at `https://api.korfbal.<domain>/api/`.
 
-## Docker dev stack (recommended)
+## Isolated backend experiments
 
-From repo root (uses the shared compose files):
-
-1. One-time:
-
-- `docker network create monorepo_test-net`
-
-2. Start services:
-
-- `docker compose -f docker-compose.base.yaml -f docker-compose.kwt-dev.yaml --profile korfbal up --build`
-
-This brings up Postgres/Valkey/MinIO plus the korfbal services.
+For a disposable API/PostgreSQL/Valkey stack, use the
+[capacity experiment target](#repeatable-capacity-experiments). For interactive
+development, use the local setup above. The former `docker-compose.base.yaml`
+and `docker-compose.kwt-dev.yaml` files are no longer present in this repository.
 
 ## Project quality (Nx)
 
@@ -85,7 +78,92 @@ Fallback (from `apps/django_projects/korfbal/`):
 - Slow SQL logging: `KORFBAL_LOG_SLOW_DB_QUERIES=true`
 - Slow requests buffer: `KORFBAL_LOG_SLOW_REQUESTS=true` (see `/api/debug/slow-requests/`, staff-only)
 
-See `apps/django_projects/korfbal/korfbal/settings.py` for the full list of configuration flags.
+See [settings](korfbal/settings/) for the full list of configuration flags.
+
+### Repeatable capacity experiments
+
+Run from the repository root after `uv sync --all-packages --dev` and
+`corepack pnpm install`. Requires a local Docker daemon; no existing database,
+provider credentials, or running Korfbal instance is used.
+
+```bash
+# Compare identical workloads on fresh databases, running sequentially.
+corepack pnpm nx run korfbal-django:loadtest --viewers=10,50,100 --seconds=30 --shots=100 --reconnect --db-pool-size=0
+corepack pnpm nx run korfbal-django:loadtest --viewers=10,50,100 --seconds=30 --shots=100 --reconnect --db-pool-size=8
+
+# Spread spectators and one writer per match across four matches.
+corepack pnpm nx run korfbal-django:loadtest --matches=4 --viewers=100 --seconds=60 --shots=100 --db-pool-size=8
+```
+
+The runner creates PostgreSQL and Valkey containers with random loopback ports,
+starts four Granian workers and a two-process Celery projection worker, applies
+real migrations, and seeds synthetic players, lineups, and match commands. Each
+data container is limited to two CPUs and 1 GiB RAM; PostgreSQL uses its default
+100-connection limit. Only owned containers/processes are removed on exit, including
+failure. Email is in-memory, storage is in-memory, and provider import scheduling
+is disabled. No production target URL option exists.
+
+Each viewer maintains SSE plus live/summary and one events, shots, or stats tab.
+Only invalidated, mounted resources refetch, timeline reads request deltas, and
+updates received during a read coalesce. One authenticated writer per match sends
+a goal every fifth action and a missed shot otherwise, every three seconds by
+default. Reads and commands use normal permissions, CSRF, revisions and idempotency.
+`--reconnect` disconnects all spectators halfway through the phase. Statistics jobs
+run through the real durable job dispatcher; `--no-background-jobs` is available
+for a deliberate comparison, not a production-capacity claim.
+
+Reports and synthetic logs go under `reports/korfbal-loadtest/` at the repository
+root (`--output=/absolute/new/directory` overrides it). JSON includes p50/p95/p99
+latencies, HTTP outcomes, SSE readiness and delivery, generator scheduling lag,
+unfinished requests, stale revisions, sampled database connections/lock waits,
+SQL totals and background job progress. No session cookies or response payloads
+are written to reports. The default gate requires command p95 <= 1,000 ms, at least
+one successful command, no request/stream errors, no stale final state and no
+missed write intervals; `--max-p95-ms` changes that command budget. Read latency and
+job backlog are reported separately, so a passing gate is not a general SLA.
+
+These are local capacity experiments, not production user limits: the API, worker,
+and generator share host CPU, and TLS, proxies, WAN latency, uploads and external
+providers are excluded. Routes are warmed before measurement; later viewer levels
+have warmer caches and longer timelines. Compare fresh runs with identical inputs,
+repeat them, and inspect generator lag before attributing a ceiling to the server.
+
+Production Compose bounds web database usage with `KORFBAL_WEB_DB_POOL_MAX_SIZE`
+(default 8 connections per Granian process, up to 32 for four processes). Include
+all replicas, Celery, administration and monitoring when budgeting PostgreSQL
+connections. The pool waits up to five seconds instead of opening unlimited new
+connections. Set the Compose variable to `0` to disable pooling. Outside Compose,
+set `KORFBAL_DB_POOL_MAX_SIZE` on the web process only; do not put it in a shared
+worker environment because durable worker jobs hold session advisory locks.
+
+The checked-in [unpooled](loadtest/results/unpooled-single-match.json) and
+[pooled](loadtest/results/pooled-single-match.json) samples use identical inputs:
+one match, 100 initial shots, four web workers, background statistics jobs and
+a halfway reconnect, with 30 seconds per viewer level. They are short local
+samples, not production capacity guarantees. Percentiles below include successful
+command responses only; the failure counts are essential to interpreting them.
+These samples used Python 3.14.7 and Django 6.1.1; the production image currently
+pins Python 3.13. Repeat on the production runtime and hardware before sizing it.
+
+| Spectators | Unpooled HTTP errors | Pooled HTTP errors | Command p95, unpooled | Command p95, pooled |
+| ---------- | -------------------- | ------------------ | --------------------- | ------------------- |
+| 10         | 0                    | 0                  | 1,000 ms              | 562 ms              |
+| 50         | 99                   | 0                  | 5,871 ms              | 1,327 ms            |
+| 100        | 344                  | 0                  | 3,998 ms              | 2,514 ms            |
+
+The unpooled server logged PostgreSQL's `too many clients already` error. Pooling
+kept sampled database usage at 34 connections at the two higher viewer levels,
+with no stale final viewers or job errors. The 50/100-viewer pooled phases still
+failed the one-second command budget; the 100-viewer phase missed one scheduled
+write interval. Shared public read snapshots and reducing repeated timeline work
+remain candidates for the next measured optimization.
+
+The [four-match sample](loadtest/results/pooled-four-matches.json) distributes 40
+viewers across four matches, each starting with 100 shots, with one command every
+three seconds per match for 60 seconds and no forced reconnect. With pooling it
+completed 78 commands, with zero HTTP errors, stale viewers or pending jobs, and
+a sampled peak of 35 database connections. Command p95 was 2,180 ms and two write
+intervals were missed, so this scenario also failed the latency/arrival budget.
 
 ## Sportlink competition catalogue
 

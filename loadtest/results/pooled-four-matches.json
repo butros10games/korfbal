@@ -1,0 +1,148 @@
+{
+    "phases": [
+        {
+            "viewers": 40,
+            "matches": 4,
+            "seconds": 60,
+            "elapsed_seconds": 63.01,
+            "write_interval_seconds": 3,
+            "reconnect": false,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 78,
+                    "p50_ms": 1.68,
+                    "p95_ms": 4.75,
+                    "p99_ms": 28.24,
+                    "max_ms": 28.24
+                },
+                "summary": {
+                    "count": 238,
+                    "p50_ms": 306.71,
+                    "p95_ms": 869.09,
+                    "p99_ms": 910.98,
+                    "max_ms": 984.54
+                },
+                "generator_event_loop_lag": {
+                    "count": 620,
+                    "p50_ms": 0.94,
+                    "p95_ms": 4.66,
+                    "p99_ms": 8.02,
+                    "max_ms": 12.44
+                },
+                "events": {
+                    "count": 300,
+                    "p50_ms": 311.9,
+                    "p95_ms": 694.75,
+                    "p99_ms": 974.52,
+                    "max_ms": 1018.0
+                },
+                "sse_ready": {
+                    "count": 40,
+                    "p50_ms": 188.78,
+                    "p95_ms": 724.95,
+                    "p99_ms": 1519.63,
+                    "max_ms": 1519.63
+                },
+                "live": {
+                    "count": 238,
+                    "p50_ms": 591.76,
+                    "p95_ms": 1084.26,
+                    "p99_ms": 1260.18,
+                    "max_ms": 1312.51
+                },
+                "stats": {
+                    "count": 279,
+                    "p50_ms": 243.31,
+                    "p95_ms": 805.02,
+                    "p99_ms": 932.34,
+                    "max_ms": 988.52
+                },
+                "shots": {
+                    "count": 279,
+                    "p50_ms": 321.26,
+                    "p95_ms": 824.36,
+                    "p99_ms": 969.92,
+                    "max_ms": 1068.5
+                },
+                "tracker_state": {
+                    "count": 78,
+                    "p50_ms": 217.66,
+                    "p95_ms": 728.7,
+                    "p99_ms": 930.63,
+                    "max_ms": 930.63
+                },
+                "tracker_command": {
+                    "count": 78,
+                    "p50_ms": 860.19,
+                    "p95_ms": 2180.27,
+                    "p99_ms": 2864.86,
+                    "max_ms": 2864.86
+                },
+                "tracker_action": {
+                    "count": 78,
+                    "p50_ms": 1083.41,
+                    "p95_ms": 2840.45,
+                    "p99_ms": 3593.76,
+                    "max_ms": 3593.76
+                },
+                "write_start_to_sse": {
+                    "count": 780,
+                    "p50_ms": 1062.51,
+                    "p95_ms": 2826.49,
+                    "p99_ms": 3543.27,
+                    "max_ms": 3593.52
+                }
+            },
+            "outcomes": {
+                "summary:200": 238,
+                "events:200": 300,
+                "live:200": 238,
+                "stats:200": 279,
+                "shots:200": 279,
+                "tracker_state:200": 78,
+                "tracker_command:200": 78
+            },
+            "counters": {
+                "http_requests_started": 1490,
+                "response_bytes": 5288947,
+                "sse_connections_ready": 40,
+                "sse_changes": 780,
+                "commands_committed": 78,
+                "missed_write_slots": 2
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 46214,
+                "sql_execution_ms": 11216.57,
+                "peak_connections_sampled": 35,
+                "peak_lock_waiters_sampled": 2,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 188
+            },
+            "passed": false
+        }
+    ],
+    "passed": false,
+    "environment": {
+        "revision": "057addc6ab5337d6c5ae914ac6d9242cf4f51330",
+        "dirty": true,
+        "harness_sha256": "dcccb6702d8d423f0aea691c549ca42f9b94bc7195fd7d5ba53dd03837214457",
+        "application_diff_sha256": "d2660a4a2df8f7913f0de1504601ef6a0388a78f29dd05154fda1ed650050f06",
+        "python": "3.14.7",
+        "django": "6.1.1",
+        "granian": "2.8.2",
+        "host_logical_cpus": 16,
+        "asgi_workers": 4,
+        "db_pool_size_per_web_worker": 8,
+        "background_jobs": true,
+        "initial_shots_per_match": 100,
+        "max_command_p95_ms": 1000,
+        "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+        "data_images": [
+            "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+            "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+        ]
+    }
+}

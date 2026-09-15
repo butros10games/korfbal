@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from kombu import Queue
 
 from .env import env, env_bool, env_int
@@ -43,7 +45,7 @@ db_engine = (
     else "django.db.backends.postgresql"
 )
 
-DATABASES = {
+DATABASES: dict[str, dict[str, Any]] = {
     "default": {
         "ENGINE": db_engine,
         "NAME": env("POSTGRES_DB", "korfbal"),
@@ -53,6 +55,20 @@ DATABASES = {
         "PORT": env("POSTGRES_PORT", "5432"),
     },
 }
+
+# Enable only on web processes. Durable Celery jobs hold session advisory locks
+# and must retain direct connections. This limit is per process, not deployment.
+KORFBAL_DB_POOL_MAX_SIZE = env_int("KORFBAL_DB_POOL_MAX_SIZE", 0)
+if KORFBAL_DB_POOL_MAX_SIZE < 0:
+    raise ValueError("KORFBAL_DB_POOL_MAX_SIZE must be non-negative")
+if KORFBAL_DB_POOL_MAX_SIZE:
+    DATABASES["default"]["OPTIONS"] = {
+        "pool": {
+            "min_size": 0,
+            "max_size": KORFBAL_DB_POOL_MAX_SIZE,
+            "timeout": 5,
+        }
+    }
 
 cache_backend = (
     "django_prometheus.cache.backends.redis.RedisCache"

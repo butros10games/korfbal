@@ -1,0 +1,392 @@
+{
+    "phases": [
+        {
+            "viewers": 10,
+            "matches": 1,
+            "seconds": 30,
+            "elapsed_seconds": 33.0,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 10,
+                    "p50_ms": 1.02,
+                    "p95_ms": 3.54,
+                    "p99_ms": 3.54,
+                    "max_ms": 3.54
+                },
+                "generator_event_loop_lag": {
+                    "count": 327,
+                    "p50_ms": 0.44,
+                    "p95_ms": 2.75,
+                    "p99_ms": 6.85,
+                    "max_ms": 12.24
+                },
+                "events": {
+                    "count": 46,
+                    "p50_ms": 125.75,
+                    "p95_ms": 321.04,
+                    "p99_ms": 385.27,
+                    "max_ms": 385.27
+                },
+                "sse_ready": {
+                    "count": 20,
+                    "p50_ms": 30.04,
+                    "p95_ms": 139.18,
+                    "p99_ms": 154.58,
+                    "max_ms": 154.58
+                },
+                "summary": {
+                    "count": 35,
+                    "p50_ms": 87.69,
+                    "p95_ms": 226.82,
+                    "p99_ms": 231.46,
+                    "max_ms": 231.46
+                },
+                "live": {
+                    "count": 35,
+                    "p50_ms": 205.09,
+                    "p95_ms": 426.7,
+                    "p99_ms": 438.48,
+                    "max_ms": 438.48
+                },
+                "tracker_state": {
+                    "count": 10,
+                    "p50_ms": 106.79,
+                    "p95_ms": 421.52,
+                    "p99_ms": 421.52,
+                    "max_ms": 421.52
+                },
+                "shots": {
+                    "count": 35,
+                    "p50_ms": 137.74,
+                    "p95_ms": 222.97,
+                    "p99_ms": 234.89,
+                    "max_ms": 234.89
+                },
+                "stats": {
+                    "count": 34,
+                    "p50_ms": 94.5,
+                    "p95_ms": 303.05,
+                    "p99_ms": 373.78,
+                    "max_ms": 373.78
+                },
+                "tracker_command": {
+                    "count": 10,
+                    "p50_ms": 357.91,
+                    "p95_ms": 562.13,
+                    "p99_ms": 562.13,
+                    "max_ms": 562.13
+                },
+                "tracker_action": {
+                    "count": 10,
+                    "p50_ms": 472.15,
+                    "p95_ms": 983.98,
+                    "p99_ms": 983.98,
+                    "max_ms": 983.98
+                },
+                "write_start_to_sse": {
+                    "count": 95,
+                    "p50_ms": 471.93,
+                    "p95_ms": 992.48,
+                    "p99_ms": 998.89,
+                    "max_ms": 998.89
+                }
+            },
+            "outcomes": {
+                "events:200": 46,
+                "summary:200": 35,
+                "live:200": 35,
+                "tracker_state:200": 10,
+                "shots:200": 35,
+                "stats:200": 34,
+                "tracker_command:200": 10
+            },
+            "counters": {
+                "http_requests_started": 205,
+                "response_bytes": 762912,
+                "sse_connections_ready": 20,
+                "commands_committed": 10,
+                "sse_changes": 95
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 6374,
+                "sql_execution_ms": 914.95,
+                "peak_connections_sampled": 29,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 24
+            },
+            "passed": true
+        },
+        {
+            "viewers": 50,
+            "matches": 1,
+            "seconds": 30,
+            "elapsed_seconds": 33.01,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 10,
+                    "p50_ms": 0.97,
+                    "p95_ms": 18.6,
+                    "p99_ms": 18.6,
+                    "max_ms": 18.6
+                },
+                "sse_ready": {
+                    "count": 100,
+                    "p50_ms": 94.16,
+                    "p95_ms": 1852.07,
+                    "p99_ms": 2322.17,
+                    "max_ms": 2434.59
+                },
+                "summary": {
+                    "count": 170,
+                    "p50_ms": 628.86,
+                    "p95_ms": 1339.5,
+                    "p99_ms": 1477.83,
+                    "max_ms": 1693.6
+                },
+                "events": {
+                    "count": 194,
+                    "p50_ms": 442.84,
+                    "p95_ms": 1146.41,
+                    "p99_ms": 1459.55,
+                    "max_ms": 1472.27
+                },
+                "generator_event_loop_lag": {
+                    "count": 325,
+                    "p50_ms": 0.68,
+                    "p95_ms": 4.23,
+                    "p99_ms": 8.62,
+                    "max_ms": 23.5
+                },
+                "shots": {
+                    "count": 194,
+                    "p50_ms": 451.63,
+                    "p95_ms": 1294.25,
+                    "p99_ms": 1691.03,
+                    "max_ms": 1711.86
+                },
+                "live": {
+                    "count": 170,
+                    "p50_ms": 850.75,
+                    "p95_ms": 1526.04,
+                    "p99_ms": 1813.96,
+                    "max_ms": 1819.89
+                },
+                "tracker_state": {
+                    "count": 10,
+                    "p50_ms": 105.31,
+                    "p95_ms": 897.34,
+                    "p99_ms": 897.34,
+                    "max_ms": 897.34
+                },
+                "stats": {
+                    "count": 182,
+                    "p50_ms": 384.58,
+                    "p95_ms": 994.85,
+                    "p99_ms": 1552.87,
+                    "max_ms": 1720.54
+                },
+                "tracker_command": {
+                    "count": 10,
+                    "p50_ms": 381.68,
+                    "p95_ms": 1326.81,
+                    "p99_ms": 1326.81,
+                    "max_ms": 1326.81
+                },
+                "tracker_action": {
+                    "count": 10,
+                    "p50_ms": 482.66,
+                    "p95_ms": 1549.11,
+                    "p99_ms": 1549.11,
+                    "max_ms": 1549.11
+                },
+                "write_start_to_sse": {
+                    "count": 482,
+                    "p50_ms": 490.22,
+                    "p95_ms": 1540.81,
+                    "p99_ms": 2337.62,
+                    "max_ms": 2375.42
+                }
+            },
+            "outcomes": {
+                "summary:200": 170,
+                "events:200": 194,
+                "shots:200": 194,
+                "live:200": 170,
+                "tracker_state:200": 10,
+                "stats:200": 182,
+                "tracker_command:200": 10
+            },
+            "counters": {
+                "http_requests_started": 930,
+                "sse_connections_ready": 100,
+                "response_bytes": 3967230,
+                "sse_changes": 482,
+                "commands_committed": 10
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 15010,
+                "sql_execution_ms": 2389.64,
+                "peak_connections_sampled": 34,
+                "peak_lock_waiters_sampled": 1,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 24
+            },
+            "passed": false
+        },
+        {
+            "viewers": 100,
+            "matches": 1,
+            "seconds": 30,
+            "elapsed_seconds": 33.03,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 9,
+                    "p50_ms": 0.96,
+                    "p95_ms": 65.66,
+                    "p99_ms": 65.66,
+                    "max_ms": 65.66
+                },
+                "sse_ready": {
+                    "count": 200,
+                    "p50_ms": 154.25,
+                    "p95_ms": 5625.3,
+                    "p99_ms": 6008.56,
+                    "max_ms": 6210.47
+                },
+                "summary": {
+                    "count": 325,
+                    "p50_ms": 1106.94,
+                    "p95_ms": 2708.31,
+                    "p99_ms": 3811.24,
+                    "max_ms": 4008.21
+                },
+                "generator_event_loop_lag": {
+                    "count": 321,
+                    "p50_ms": 1.01,
+                    "p95_ms": 7.89,
+                    "p99_ms": 32.69,
+                    "max_ms": 89.53
+                },
+                "stats": {
+                    "count": 338,
+                    "p50_ms": 809.13,
+                    "p95_ms": 2254.38,
+                    "p99_ms": 3189.43,
+                    "max_ms": 3678.43
+                },
+                "events": {
+                    "count": 349,
+                    "p50_ms": 884.64,
+                    "p95_ms": 2450.27,
+                    "p99_ms": 3316.49,
+                    "max_ms": 4117.79
+                },
+                "live": {
+                    "count": 325,
+                    "p50_ms": 1444.08,
+                    "p95_ms": 2981.27,
+                    "p99_ms": 4015.31,
+                    "max_ms": 4322.35
+                },
+                "shots": {
+                    "count": 338,
+                    "p50_ms": 910.67,
+                    "p95_ms": 2317.03,
+                    "p99_ms": 2894.73,
+                    "max_ms": 4021.91
+                },
+                "tracker_state": {
+                    "count": 9,
+                    "p50_ms": 122.68,
+                    "p95_ms": 1048.39,
+                    "p99_ms": 1048.39,
+                    "max_ms": 1048.39
+                },
+                "tracker_command": {
+                    "count": 9,
+                    "p50_ms": 433.05,
+                    "p95_ms": 2513.67,
+                    "p99_ms": 2513.67,
+                    "max_ms": 2513.67
+                },
+                "tracker_action": {
+                    "count": 9,
+                    "p50_ms": 573.48,
+                    "p95_ms": 3033.68,
+                    "p99_ms": 3033.68,
+                    "max_ms": 3033.68
+                },
+                "write_start_to_sse": {
+                    "count": 852,
+                    "p50_ms": 536.63,
+                    "p95_ms": 4937.31,
+                    "p99_ms": 7289.54,
+                    "max_ms": 7361.96
+                }
+            },
+            "outcomes": {
+                "summary:200": 325,
+                "stats:200": 338,
+                "events:200": 349,
+                "live:200": 325,
+                "shots:200": 338,
+                "tracker_state:200": 9,
+                "tracker_command:200": 9
+            },
+            "counters": {
+                "http_requests_started": 1693,
+                "sse_connections_ready": 200,
+                "response_bytes": 7672579,
+                "commands_committed": 9,
+                "missed_write_slots": 1,
+                "sse_changes": 852
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 23665,
+                "sql_execution_ms": 3257.89,
+                "peak_connections_sampled": 34,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 22
+            },
+            "passed": false
+        }
+    ],
+    "passed": false,
+    "environment": {
+        "revision": "057addc6ab5337d6c5ae914ac6d9242cf4f51330",
+        "dirty": true,
+        "harness_sha256": "dcccb6702d8d423f0aea691c549ca42f9b94bc7195fd7d5ba53dd03837214457",
+        "application_diff_sha256": "d81110c398dffb29c7a82128bdbf6e64f3eef273184ed6bb47c40210398608e3",
+        "python": "3.14.7",
+        "django": "6.1.1",
+        "granian": "2.8.2",
+        "host_logical_cpus": 16,
+        "asgi_workers": 4,
+        "db_pool_size_per_web_worker": 8,
+        "background_jobs": true,
+        "initial_shots_per_match": 100,
+        "max_command_p95_ms": 1000,
+        "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+        "data_images": [
+            "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+            "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+        ]
+    }
+}
