@@ -73,6 +73,9 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Keep tracker command metadata in `services/tracker_commands/registry.py`, mutation behavior
   in its family handlers, read snapshots in `services/tracker_state.py`, and the shared
   lock/idempotency/publication envelope in `services/tracker_http.py`.
+- Scoring commands report complete logical event IDs directly. Preserve empty deltas
+  for reconciled reports and verify optimized IDs against full timeline diffs; clock,
+  undo and editor changes can affect existing rows and still need that comparison.
 - Keep event-editor DRF serializers input-only. Apply typed event corrections through the
   `game_tracker` event-editor command boundary so validation, the aggregate lock, projections,
   revision recording, and realtime publication commit together.
@@ -81,6 +84,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Keep timeline GET endpoints on the `game_tracker` timeline-read boundary. Build related payloads
   from one consistent read snapshot and never use `select_for_update()` for events, shots, or audit
   history reads; those row locks serialize readers with live tracker writes.
+- Keep isolated load-test settings aligned with production cache aliases and socket/pool
+  options while redirecting every service endpoint to owned disposable containers.
 - Public live caches must contain only revision-stable public fields. Generate timer
   `server_time` per response and bypass shared caching inside caller-owned transactions
   so rolled-back writes cannot populate or consume committed snapshots. Use the

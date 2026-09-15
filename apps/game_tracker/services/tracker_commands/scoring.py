@@ -26,7 +26,12 @@ from apps.game_tracker.services.lineup_projections import rebuild_group_roles
 from apps.player.models import Player
 from apps.team.models.team import Team
 
-from .base import TrackerCommandContext, TrackerCommandError, require_live_part
+from .base import (
+    TrackerCommandContext,
+    TrackerCommandError,
+    TrackerTimelineChanges,
+    require_live_part,
+)
 
 
 def _match_player(
@@ -75,7 +80,7 @@ class _ShotRegistration:
     event_time: datetime
 
 
-def _record_shot_observation(registration: _ShotRegistration) -> bool:
+def _record_shot_observation(registration: _ShotRegistration) -> MatchEvent | None:
     plan = plan_shot_reconciliation(
         ShotObservation(
             match_data=registration.match_data,
@@ -104,7 +109,7 @@ def _record_shot_observation(registration: _ShotRegistration) -> bool:
             effective_at=registration.event_time,
             payload=observation_payload,
         )
-        return False
+        return None
 
     shot = Shot.objects.create(
         player=registration.player,
@@ -121,7 +126,7 @@ def _record_shot_observation(registration: _ShotRegistration) -> bool:
         event=event,
         possible_duplicates=plan.review_events,
     )
-    return True
+    return event
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +137,7 @@ class ShotCommand:
     for_team: bool
     shot_type_id: str | None = None
 
-    def apply(self, context: TrackerCommandContext) -> None:
+    def apply(self, context: TrackerCommandContext) -> TrackerTimelineChanges:
         """Register the shot.
 
         Raises:
@@ -159,7 +164,7 @@ class ShotCommand:
                     code="bad_request",
                 ) from exc
 
-        _record_shot_observation(
+        event = _record_shot_observation(
             _ShotRegistration(
                 player=player,
                 match_data=context.match_data,
@@ -173,6 +178,12 @@ class ShotCommand:
             )
         )
 
+        return TrackerTimelineChanges(
+            shots=frozenset({str(event.logical_id)})
+            if event is not None
+            else frozenset(),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class GoalCommand:
@@ -182,7 +193,7 @@ class GoalCommand:
     goal_type_id: str
     for_team: bool
 
-    def apply(self, context: TrackerCommandContext) -> None:
+    def apply(self, context: TrackerCommandContext) -> TrackerTimelineChanges:
         """Register the goal.
 
         Raises:
@@ -204,7 +215,7 @@ class GoalCommand:
         except (GoalType.DoesNotExist, ValidationError, ValueError) as exc:
             raise TrackerCommandError("Invalid goal type.", code="bad_request") from exc
 
-        created = _record_shot_observation(
+        event = _record_shot_observation(
             _ShotRegistration(
                 player=player,
                 match_data=context.match_data,
@@ -217,5 +228,8 @@ class GoalCommand:
                 event_time=context.event_time,
             )
         )
-        if created:
-            rebuild_group_roles(context.match_data)
+        if event is None:
+            return TrackerTimelineChanges()
+        rebuild_group_roles(context.match_data)
+        ids = frozenset({str(event.logical_id)})
+        return TrackerTimelineChanges(events=ids, shots=ids)

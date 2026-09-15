@@ -76,6 +76,29 @@ def _timeline_resource_payloads(
     )
 
 
+def _changed_timeline_ids(
+    match_data: MatchData,
+    resources: frozenset[LiveResource],
+    before_events: dict[str, dict[str, Any]],
+    before_shots: dict[str, dict[str, Any]],
+) -> dict[LiveResource, set[str]]:
+    """Compare full payloads for commands that can alter existing timeline rows."""
+    event_rows, shot_rows = _timeline_resource_payloads(match_data, resources)
+    changes = {}
+    for resource, before, rows in (
+        (LiveResource.EVENTS, before_events, event_rows),
+        (LiveResource.SHOTS, before_shots, shot_rows),
+    ):
+        if resource in resources:
+            after = {row["event_id"]: row for row in rows}
+            changes[resource] = {
+                event_id
+                for event_id in before.keys() | after.keys()
+                if before.get(event_id) != after.get(event_id)
+            }
+    return changes
+
+
 @dataclass(frozen=True, slots=True)
 class _CommandMetadata:
     command_id: UUID | None
@@ -272,6 +295,7 @@ def execute_tracker_command(
 
     Raises:
         TrackerCommandError: If the command is invalid or cannot be applied.
+        RuntimeError: If an optimized command omits its timeline changes.
 
     """
     definition = command_definition(payload)
@@ -302,12 +326,15 @@ def execute_tracker_command(
             else command_time_from_payload(payload, server_now=runtime.now())
         )
         affected_resources = definition.resources
-        before_event_rows, before_shot_rows = _timeline_resource_payloads(
-            match_data,
-            affected_resources,
-        )
-        before_events = {event["event_id"]: event for event in before_event_rows}
-        before_shots = {shot["event_id"]: shot for shot in before_shot_rows}
+        before_events: dict[str, dict[str, Any]] = {}
+        before_shots: dict[str, dict[str, Any]] = {}
+        if not definition.explicit_timeline_changes:
+            before_event_rows, before_shot_rows = _timeline_resource_payloads(
+                match_data,
+                affected_resources,
+            )
+            before_events = {event["event_id"]: event for event in before_event_rows}
+            before_shots = {shot["event_id"]: shot for shot in before_shot_rows}
 
         with (
             match_event_context(
@@ -323,7 +350,7 @@ def execute_tracker_command(
             ),
             suppress_live_update_signals(),
         ):
-            parsed_command.apply(
+            timeline_changes = parsed_command.apply(
                 TrackerCommandContext(
                     match=match,
                     match_data=match_data,
@@ -334,24 +361,19 @@ def execute_tracker_command(
             )
         if definition.mutating:
             changed_ids: dict[LiveResource, set[str]] = {}
-            after_event_rows, after_shot_rows = _timeline_resource_payloads(
-                match_data,
-                affected_resources,
-            )
-            if LiveResource.EVENTS in affected_resources:
-                after_events = {event["event_id"]: event for event in after_event_rows}
-                changed_ids[LiveResource.EVENTS] = {
-                    event_id
-                    for event_id in before_events.keys() | after_events.keys()
-                    if before_events.get(event_id) != after_events.get(event_id)
-                }
-            if LiveResource.SHOTS in affected_resources:
-                after_shots = {shot["event_id"]: shot for shot in after_shot_rows}
-                changed_ids[LiveResource.SHOTS] = {
-                    event_id
-                    for event_id in before_shots.keys() | after_shots.keys()
-                    if before_shots.get(event_id) != after_shots.get(event_id)
-                }
+            if definition.explicit_timeline_changes:
+                if timeline_changes is None:
+                    raise RuntimeError(
+                        "Tracker command did not report its timeline changes."
+                    )
+                changed_ids = timeline_changes.by_resource()
+            else:
+                changed_ids = _changed_timeline_ids(
+                    match_data,
+                    affected_resources,
+                    before_events,
+                    before_shots,
+                )
             record_match_change(
                 match_data,
                 resources=affected_resources,

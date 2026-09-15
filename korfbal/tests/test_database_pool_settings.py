@@ -67,10 +67,10 @@ def test_production_pool_budget_is_only_applied_to_web() -> None:
                 assert "KORFBAL_DB_POOL_MAX_SIZE" not in environment
 
 
-def test_loadtest_preserves_application_pool_options(
+def test_loadtest_preserves_application_service_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The experiment must actually measure the application's configured pool."""
+    """Keep production pool/cache options while isolating every measured service."""
     pool = {"pool": {"min_size": 0, "max_size": 8, "timeout": 5}}
     monkeypatch.setattr(
         application_settings, "DATABASES", {"default": {"OPTIONS": pool}}
@@ -92,3 +92,8 @@ def test_loadtest_preserves_application_pool_options(
     assert module.DATABASES["default"]["OPTIONS"] == pool
     assert module.DATABASES["default"]["NAME"] == "korfbal_loadtest"
     assert module.DATABASES["default"]["HOST"] == "127.0.0.1"
+    assert module.CACHES["public_live"]["LOCATION"] == "redis://127.0.0.1:54322/1"
+    assert (
+        module.CACHES["public_live"]["OPTIONS"]
+        == application_settings.CACHES["public_live"]["OPTIONS"]
+    )

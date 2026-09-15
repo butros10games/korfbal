@@ -39,6 +39,7 @@ class CommandDefinition:
     resources: frozenset[LiveResource] = frozenset()
     mutating: bool = True
     server_timed: bool = False
+    explicit_timeline_changes: bool = False
 
 
 def _constant(command: TrackerCommand) -> CommandParser:
@@ -163,6 +164,7 @@ COMMAND_DEFINITIONS = (
     CommandDefinition(
         name="shot_reg",
         parse=_parse_shot,
+        explicit_timeline_changes=True,
         resources=frozenset({
             LiveResource.TRACKER,
             LiveResource.EVENTS,
@@ -174,6 +176,7 @@ COMMAND_DEFINITIONS = (
     CommandDefinition(
         name="goal_reg",
         parse=_parse_goal,
+        explicit_timeline_changes=True,
         resources=frozenset({
             LiveResource.LIVE,
             LiveResource.TRACKER,

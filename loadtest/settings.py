@@ -38,6 +38,10 @@ CACHES = {
         "LOCATION": f"redis://127.0.0.1:{_valkey_port}/1",
     }
 }
+CACHES["public_live"] = {
+    **application_settings.CACHES["public_live"],
+    "LOCATION": CACHES["default"]["LOCATION"],
+}
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",

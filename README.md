@@ -91,6 +91,9 @@ provider credentials, or running Korfbal instance is used.
 corepack pnpm nx run korfbal-django:loadtest --viewers=10,50,100 --seconds=30 --shots=100 --reconnect --db-pool-size=0
 corepack pnpm nx run korfbal-django:loadtest --viewers=10,50,100 --seconds=30 --shots=100 --reconnect --db-pool-size=8
 
+# Profile command stages separately, without HTTP load or worker consumption.
+corepack pnpm nx run korfbal-django:loadtest --profile-commands --shots=100
+
 # Spread spectators and one writer per match across four matches.
 corepack pnpm nx run korfbal-django:loadtest --matches=4 --viewers=100 --seconds=60 --shots=100 --db-pool-size=8
 ```
@@ -111,6 +114,14 @@ default. Reads and commands use normal permissions, CSRF, revisions and idempote
 `--reconnect` disconnects all spectators halfway through the phase. Statistics jobs
 run through the real durable job dispatcher; `--no-background-jobs` is available
 for a deliberate comparison, not a production-capacity claim.
+
+`--profile-commands` runs 20 sequential shot/goal service calls on the first seeded
+match instead of starting HTTP traffic. `command-profile.json` records SQL calls
+and elapsed time, aggregate-lock acquisition/body time, direct command-stage
+timers, and diagnostic cProfile function costs. Prefer direct timers for attribution;
+async publication callbacks can distort cProfile parent-function totals. Lock-body time excludes commit callbacks; SQL lock statements include their
+roundtrip time. Profiling adds overhead, so compare these stage measurements only
+with equivalent profile runs and use unprofiled HTTP runs for latency budgets.
 
 Reports and synthetic logs go under `reports/korfbal-loadtest/` at the repository
 root (`--output=/absolute/new/directory` overrides it). JSON includes p50/p95/p99

@@ -8,6 +8,7 @@ import aiohttp
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from loadtest.__main__ import passes
+from loadtest.profile_commands import profile_commands
 from loadtest.spectator import Spectator, events
 from loadtest.workload import Workload, distribution
 import pytest
@@ -155,3 +156,9 @@ async def test_cancelled_http_request_is_recorded_as_unfinished_load() -> None:
             await task
         release.set()
     assert workload.metrics.counters["http_requests_cancelled"] == 1
+
+
+def test_command_profile_refuses_non_disposable_database() -> None:
+    """Profiling must reject normal settings before loading any match IDs."""
+    with pytest.raises(RuntimeError, match="disposable load-test database"):
+        profile_commands({})

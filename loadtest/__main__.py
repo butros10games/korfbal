@@ -300,6 +300,11 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--max-p95-ms", type=float, default=1000)
     parser.add_argument("--reconnect", action="store_true")
     parser.add_argument(
+        "--profile-commands",
+        action="store_true",
+        help="Profile 20 commands on the first seeded match instead of HTTP load.",
+    )
+    parser.add_argument(
         "--background-jobs", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument(
@@ -445,6 +450,30 @@ def main() -> int:
                 stderr=log,
             )
             fixtures = json.loads(raw.splitlines()[-1])
+
+        if options.profile_commands:
+            with (options.output / "profile.log").open("w") as log:
+                profiled = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import django; django.setup(); "
+                        "from loadtest.profile_commands import main; main()",
+                    ],
+                    input=json.dumps(fixtures[0]),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=log,
+                    cwd=PROJECT,
+                    env=environment,
+                    check=True,
+                )
+            result = json.loads(profiled.stdout.splitlines()[-1])
+            result["environment"] = metadata
+            (options.output / "command-profile.json").write_text(
+                json.dumps(result, indent=2) + "\n"
+            )
+            return 0
 
         def start_process(name: str, args: list[str]) -> subprocess.Popen[Any]:
             log = stack.enter_context((options.output / f"{name}.log").open("w"))

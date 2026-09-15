@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 
 from apps.game_tracker.application.ports import TrackerJobDispatcher
 from apps.game_tracker.models import MatchData, MatchPart, Pause
+from apps.game_tracker.realtime.contracts import LiveResource
 from apps.schedule.models import Match
 from apps.team.models.team import Team
 
@@ -43,10 +44,25 @@ class TrackerCommandContext:
     jobs: TrackerJobDispatcher
 
 
+@dataclass(frozen=True, slots=True)
+class TrackerTimelineChanges:
+    """Complete logical timeline IDs changed by an additive command."""
+
+    events: frozenset[str] = frozenset()
+    shots: frozenset[str] = frozenset()
+
+    def by_resource(self) -> dict[LiveResource, set[str]]:
+        """Include empty sets to distinguish unchanged rows from unknown deltas."""
+        return {
+            LiveResource.EVENTS: set(self.events),
+            LiveResource.SHOTS: set(self.shots),
+        }
+
+
 class TrackerCommand(Protocol):
     """A parsed command that can mutate locked tracker state."""
 
-    def apply(self, context: TrackerCommandContext) -> None:
+    def apply(self, context: TrackerCommandContext) -> TrackerTimelineChanges | None:
         """Apply the command against the locked tracker state."""
 
 

@@ -1,0 +1,2491 @@
+{
+    "baseline_revision": "104e6332b",
+    "description": "Scoring commands report logical timeline IDs directly; compare against merged database pooling and public snapshots.",
+    "runtime_sha256": {
+        "apps/game_tracker/services/tracker_http.py": "92cd4d94091deeb98ef2e045ed4a8607ef8b7b292d1ecd6d5326dca4b4acbe81",
+        "apps/game_tracker/services/tracker_commands/base.py": "a39fe01f7f3ed83835a1d4b210d734c868ddc2a224a6670d72bd61ca19b9ce58",
+        "apps/game_tracker/services/tracker_commands/registry.py": "5842086bee1d834e160efb82675dcc3f11e58149a81cfa9d62f8cb7a336be981",
+        "apps/game_tracker/services/tracker_commands/scoring.py": "d385cfe45548c7fdbabfb2f476fba954ecd0e77d71bfaa6901cdbaab5601ffa5"
+    },
+    "workload_sha256": {
+        "workload.py": "0f106f8a6bbf3ca90c271053a4639bd3a172721fa4b09d0a3aa72730ee6363d7",
+        "spectator.py": "b8280a324b307f841d5dea801ed68dfe33092b2c0892551183793b5e652b00e0"
+    },
+    "notes": [
+        "Both HTTP runs use the isolated public_live cache alias with production timeout/retry options. The initial uncorrected harness failed warmup and is excluded.",
+        "The opt-in profiling mode was added after the initial HTTP baseline; the default HTTP workload and spectator modules are unchanged.",
+        "One-minute phases contain 20 commands each. Tail percentiles are sensitive to individual outliers; the 100-viewer command p95 worsened despite a lower median.",
+        "Four matches is an additional after-only scenario; no paired baseline is claimed for it.",
+        "Use direct stage timers for cost attribution; cProfile parent totals did not reconcile with elapsed time in this runtime.",
+        "Profiles run 20 sequential service commands without HTTP traffic or consuming jobs. They include cProfile overhead; compare with other profiles, not HTTP latency.",
+        "Local Python 3.14.7 differs from production Python 3.13. No TLS, proxy, WAN, media or provider traffic; these are not production capacity limits.",
+        "The full backend suite ran separately from measured load."
+    ],
+    "commands": [
+        "corepack pnpm nx run korfbal-django:loadtest --viewers=50,100 --matches=1 --seconds=60 --db-pool-size=8 --reconnect --output=<new-directory>",
+        "corepack pnpm nx run korfbal-django:loadtest --profile-commands --shots=100 --output=<new-directory>",
+        "corepack pnpm nx run korfbal-django:loadtest --viewers=40 --matches=4 --seconds=60 --db-pool-size=8 --output=<new-directory>"
+    ],
+    "runs": {
+        "http_before": {
+            "phases": [
+                {
+                    "viewers": 50,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.01,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 20,
+                            "p50_ms": 0.84,
+                            "p95_ms": 1.95,
+                            "p99_ms": 12.1,
+                            "max_ms": 12.1
+                        },
+                        "summary": {
+                            "count": 278,
+                            "p50_ms": 336.33,
+                            "p95_ms": 830.99,
+                            "p99_ms": 1028.98,
+                            "max_ms": 1065.42
+                        },
+                        "sse_ready": {
+                            "count": 100,
+                            "p50_ms": 40.68,
+                            "p95_ms": 88.8,
+                            "p99_ms": 542.45,
+                            "max_ms": 564.27
+                        },
+                        "live": {
+                            "count": 278,
+                            "p50_ms": 419.3,
+                            "p95_ms": 912.64,
+                            "p99_ms": 1092.56,
+                            "max_ms": 1124.97
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 625,
+                            "p50_ms": 0.43,
+                            "p95_ms": 1.64,
+                            "p99_ms": 2.24,
+                            "max_ms": 4.0
+                        },
+                        "shots": {
+                            "count": 366,
+                            "p50_ms": 352.27,
+                            "p95_ms": 771.31,
+                            "p99_ms": 974.78,
+                            "max_ms": 1125.26
+                        },
+                        "stats": {
+                            "count": 345,
+                            "p50_ms": 263.58,
+                            "p95_ms": 692.56,
+                            "p99_ms": 874.71,
+                            "max_ms": 1091.36
+                        },
+                        "events": {
+                            "count": 367,
+                            "p50_ms": 362.72,
+                            "p95_ms": 761.78,
+                            "p99_ms": 925.93,
+                            "max_ms": 1024.38
+                        },
+                        "tracker_state": {
+                            "count": 20,
+                            "p50_ms": 99.04,
+                            "p95_ms": 147.38,
+                            "p99_ms": 325.12,
+                            "max_ms": 325.12
+                        },
+                        "tracker_command": {
+                            "count": 20,
+                            "p50_ms": 320.25,
+                            "p95_ms": 374.97,
+                            "p99_ms": 1542.72,
+                            "max_ms": 1542.72
+                        },
+                        "tracker_action": {
+                            "count": 20,
+                            "p50_ms": 421.43,
+                            "p95_ms": 494.37,
+                            "p99_ms": 1868.12,
+                            "max_ms": 1868.12
+                        },
+                        "write_start_to_sse": {
+                            "count": 995,
+                            "p50_ms": 418.01,
+                            "p95_ms": 509.72,
+                            "p99_ms": 1782.62,
+                            "max_ms": 1806.28
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 278,
+                        "live:200": 278,
+                        "shots:200": 366,
+                        "stats:200": 345,
+                        "events:200": 367,
+                        "tracker_state:200": 20,
+                        "tracker_command:200": 20
+                    },
+                    "counters": {
+                        "http_requests_started": 1674,
+                        "response_bytes": 6215210,
+                        "sse_connections_ready": 100,
+                        "sse_changes": 995,
+                        "commands_committed": 20
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 22783,
+                        "sql_execution_ms": 3148.9,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 0,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 48
+                    },
+                    "passed": true
+                },
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.03,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 20,
+                            "p50_ms": 0.89,
+                            "p95_ms": 1.76,
+                            "p99_ms": 33.62,
+                            "max_ms": 33.62
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 99.7,
+                            "p95_ms": 2675.5,
+                            "p99_ms": 3108.21,
+                            "max_ms": 3230.47
+                        },
+                        "summary": {
+                            "count": 534,
+                            "p50_ms": 771.44,
+                            "p95_ms": 1846.8,
+                            "p99_ms": 2032.7,
+                            "max_ms": 2114.77
+                        },
+                        "live": {
+                            "count": 534,
+                            "p50_ms": 852.1,
+                            "p95_ms": 1960.98,
+                            "p99_ms": 2085.9,
+                            "max_ms": 2177.37
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 623,
+                            "p50_ms": 0.61,
+                            "p95_ms": 2.22,
+                            "p99_ms": 6.37,
+                            "max_ms": 69.38
+                        },
+                        "stats": {
+                            "count": 703,
+                            "p50_ms": 630.58,
+                            "p95_ms": 1599.0,
+                            "p99_ms": 1871.61,
+                            "max_ms": 2049.87
+                        },
+                        "events": {
+                            "count": 723,
+                            "p50_ms": 708.68,
+                            "p95_ms": 1662.16,
+                            "p99_ms": 2033.33,
+                            "max_ms": 2205.1
+                        },
+                        "shots": {
+                            "count": 704,
+                            "p50_ms": 734.25,
+                            "p95_ms": 1656.47,
+                            "p99_ms": 1985.71,
+                            "max_ms": 2190.7
+                        },
+                        "tracker_state": {
+                            "count": 20,
+                            "p50_ms": 98.66,
+                            "p95_ms": 163.18,
+                            "p99_ms": 693.49,
+                            "max_ms": 693.49
+                        },
+                        "tracker_command": {
+                            "count": 20,
+                            "p50_ms": 343.51,
+                            "p95_ms": 652.15,
+                            "p99_ms": 2054.03,
+                            "max_ms": 2054.03
+                        },
+                        "tracker_action": {
+                            "count": 20,
+                            "p50_ms": 440.35,
+                            "p95_ms": 1345.86,
+                            "p99_ms": 2217.48,
+                            "max_ms": 2217.48
+                        },
+                        "write_start_to_sse": {
+                            "count": 1968,
+                            "p50_ms": 435.75,
+                            "p95_ms": 1359.66,
+                            "p99_ms": 3330.54,
+                            "max_ms": 4088.55
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 534,
+                        "live:200": 534,
+                        "stats:200": 703,
+                        "events:200": 723,
+                        "shots:200": 704,
+                        "tracker_state:200": 20,
+                        "tracker_command:200": 20
+                    },
+                    "counters": {
+                        "http_requests_started": 3238,
+                        "sse_connections_ready": 200,
+                        "response_bytes": 13260722,
+                        "commands_committed": 20,
+                        "sse_changes": 1968
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 36729,
+                        "sql_execution_ms": 5584.32,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 1,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 48
+                    },
+                    "passed": true
+                }
+            ],
+            "passed": true,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "e711d226d33aff64c673c41f4bc7e5979b7c56eff8468717c70937787984273a",
+                "application_diff_sha256": "757e391e44ada2a945829e715471d6d3ab30e3c5306298b3da16eaa0d7ea007b",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "http_after": {
+            "phases": [
+                {
+                    "viewers": 50,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.01,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 20,
+                            "p50_ms": 0.9,
+                            "p95_ms": 2.07,
+                            "p99_ms": 9.43,
+                            "max_ms": 9.43
+                        },
+                        "sse_ready": {
+                            "count": 100,
+                            "p50_ms": 59.13,
+                            "p95_ms": 404.02,
+                            "p99_ms": 525.62,
+                            "max_ms": 579.9
+                        },
+                        "summary": {
+                            "count": 274,
+                            "p50_ms": 349.58,
+                            "p95_ms": 890.82,
+                            "p99_ms": 1001.34,
+                            "max_ms": 1066.25
+                        },
+                        "live": {
+                            "count": 274,
+                            "p50_ms": 420.11,
+                            "p95_ms": 942.56,
+                            "p99_ms": 1098.79,
+                            "max_ms": 1111.84
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 625,
+                            "p50_ms": 0.41,
+                            "p95_ms": 1.6,
+                            "p99_ms": 2.23,
+                            "max_ms": 10.25
+                        },
+                        "events": {
+                            "count": 365,
+                            "p50_ms": 350.83,
+                            "p95_ms": 753.49,
+                            "p99_ms": 865.59,
+                            "max_ms": 1068.08
+                        },
+                        "shots": {
+                            "count": 365,
+                            "p50_ms": 354.89,
+                            "p95_ms": 820.14,
+                            "p99_ms": 1022.1,
+                            "max_ms": 1097.44
+                        },
+                        "stats": {
+                            "count": 344,
+                            "p50_ms": 297.74,
+                            "p95_ms": 774.5,
+                            "p99_ms": 897.81,
+                            "max_ms": 1017.71
+                        },
+                        "tracker_state": {
+                            "count": 20,
+                            "p50_ms": 98.75,
+                            "p95_ms": 148.58,
+                            "p99_ms": 354.44,
+                            "max_ms": 354.44
+                        },
+                        "tracker_command": {
+                            "count": 20,
+                            "p50_ms": 222.46,
+                            "p95_ms": 360.06,
+                            "p99_ms": 999.54,
+                            "max_ms": 999.54
+                        },
+                        "tracker_action": {
+                            "count": 20,
+                            "p50_ms": 310.36,
+                            "p95_ms": 465.75,
+                            "p99_ms": 1354.28,
+                            "max_ms": 1354.28
+                        },
+                        "write_start_to_sse": {
+                            "count": 983,
+                            "p50_ms": 313.45,
+                            "p95_ms": 415.06,
+                            "p99_ms": 1361.19,
+                            "max_ms": 1447.0
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 274,
+                        "live:200": 274,
+                        "events:200": 365,
+                        "shots:200": 365,
+                        "stats:200": 344,
+                        "tracker_state:200": 20,
+                        "tracker_command:200": 20
+                    },
+                    "counters": {
+                        "http_requests_started": 1662,
+                        "sse_connections_ready": 100,
+                        "response_bytes": 6197266,
+                        "sse_changes": 983,
+                        "commands_committed": 20
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 22343,
+                        "sql_execution_ms": 3342.27,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 0,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 48
+                    },
+                    "passed": true
+                },
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.02,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 20,
+                            "p50_ms": 0.77,
+                            "p95_ms": 2.02,
+                            "p99_ms": 39.4,
+                            "max_ms": 39.4
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 103.66,
+                            "p95_ms": 2469.21,
+                            "p99_ms": 2859.16,
+                            "max_ms": 3043.6
+                        },
+                        "summary": {
+                            "count": 536,
+                            "p50_ms": 717.2,
+                            "p95_ms": 1898.76,
+                            "p99_ms": 2029.62,
+                            "max_ms": 2239.48
+                        },
+                        "live": {
+                            "count": 536,
+                            "p50_ms": 823.11,
+                            "p95_ms": 1961.02,
+                            "p99_ms": 2119.55,
+                            "max_ms": 2290.14
+                        },
+                        "events": {
+                            "count": 726,
+                            "p50_ms": 753.72,
+                            "p95_ms": 1558.14,
+                            "p99_ms": 1956.82,
+                            "max_ms": 2269.09
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 622,
+                            "p50_ms": 0.57,
+                            "p95_ms": 2.18,
+                            "p99_ms": 5.63,
+                            "max_ms": 79.31
+                        },
+                        "stats": {
+                            "count": 706,
+                            "p50_ms": 644.1,
+                            "p95_ms": 1530.15,
+                            "p99_ms": 2018.94,
+                            "max_ms": 2271.02
+                        },
+                        "shots": {
+                            "count": 704,
+                            "p50_ms": 731.9,
+                            "p95_ms": 1584.0,
+                            "p99_ms": 2028.74,
+                            "max_ms": 2270.97
+                        },
+                        "tracker_state": {
+                            "count": 20,
+                            "p50_ms": 101.15,
+                            "p95_ms": 321.44,
+                            "p99_ms": 782.51,
+                            "max_ms": 782.51
+                        },
+                        "tracker_command": {
+                            "count": 20,
+                            "p50_ms": 247.06,
+                            "p95_ms": 941.18,
+                            "p99_ms": 1847.24,
+                            "max_ms": 1847.24
+                        },
+                        "tracker_action": {
+                            "count": 20,
+                            "p50_ms": 346.95,
+                            "p95_ms": 1723.98,
+                            "p99_ms": 2168.95,
+                            "max_ms": 2168.95
+                        },
+                        "write_start_to_sse": {
+                            "count": 1970,
+                            "p50_ms": 346.38,
+                            "p95_ms": 1723.45,
+                            "p99_ms": 3410.51,
+                            "max_ms": 3851.45
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 536,
+                        "live:200": 536,
+                        "events:200": 726,
+                        "stats:200": 706,
+                        "shots:200": 704,
+                        "tracker_state:200": 20,
+                        "tracker_command:200": 20
+                    },
+                    "counters": {
+                        "http_requests_started": 3248,
+                        "sse_connections_ready": 200,
+                        "response_bytes": 13287760,
+                        "commands_committed": 20,
+                        "sse_changes": 1970
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 36259,
+                        "sql_execution_ms": 5495.21,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 0,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 48
+                    },
+                    "passed": true
+                }
+            ],
+            "passed": true,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "afc49ac3468cc0ec55591e5144238298a39c586953896c76198281addcdc3a98",
+                "application_diff_sha256": "0eea4098b208de7efe3c5f6f2072e89385559e737119ebe201ba464621818adb",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "four_matches_after": {
+            "phases": [
+                {
+                    "viewers": 40,
+                    "matches": 4,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.01,
+                    "write_interval_seconds": 3,
+                    "reconnect": false,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 80,
+                            "p50_ms": 1.32,
+                            "p95_ms": 2.86,
+                            "p99_ms": 6.06,
+                            "max_ms": 6.06
+                        },
+                        "sse_ready": {
+                            "count": 40,
+                            "p50_ms": 47.91,
+                            "p95_ms": 91.36,
+                            "p99_ms": 101.51,
+                            "max_ms": 101.51
+                        },
+                        "summary": {
+                            "count": 223,
+                            "p50_ms": 146.63,
+                            "p95_ms": 338.61,
+                            "p99_ms": 388.49,
+                            "max_ms": 483.67
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 625,
+                            "p50_ms": 0.45,
+                            "p95_ms": 1.85,
+                            "p99_ms": 3.22,
+                            "max_ms": 5.85
+                        },
+                        "shots": {
+                            "count": 281,
+                            "p50_ms": 209.15,
+                            "p95_ms": 396.04,
+                            "p99_ms": 502.3,
+                            "max_ms": 546.81
+                        },
+                        "live": {
+                            "count": 223,
+                            "p50_ms": 214.15,
+                            "p95_ms": 407.55,
+                            "p99_ms": 471.44,
+                            "max_ms": 472.19
+                        },
+                        "events": {
+                            "count": 301,
+                            "p50_ms": 202.57,
+                            "p95_ms": 381.78,
+                            "p99_ms": 469.9,
+                            "max_ms": 485.99
+                        },
+                        "stats": {
+                            "count": 281,
+                            "p50_ms": 152.29,
+                            "p95_ms": 344.4,
+                            "p99_ms": 435.1,
+                            "max_ms": 470.58
+                        },
+                        "tracker_state": {
+                            "count": 80,
+                            "p50_ms": 150.86,
+                            "p95_ms": 287.72,
+                            "p99_ms": 362.78,
+                            "max_ms": 362.78
+                        },
+                        "tracker_command": {
+                            "count": 80,
+                            "p50_ms": 500.79,
+                            "p95_ms": 930.2,
+                            "p99_ms": 1743.67,
+                            "max_ms": 1743.67
+                        },
+                        "tracker_action": {
+                            "count": 80,
+                            "p50_ms": 659.21,
+                            "p95_ms": 1181.25,
+                            "p99_ms": 2106.76,
+                            "max_ms": 2106.76
+                        },
+                        "write_start_to_sse": {
+                            "count": 795,
+                            "p50_ms": 656.41,
+                            "p95_ms": 1212.35,
+                            "p99_ms": 2027.37,
+                            "max_ms": 2145.65
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 223,
+                        "shots:200": 281,
+                        "live:200": 223,
+                        "events:200": 301,
+                        "stats:200": 281,
+                        "tracker_state:200": 80,
+                        "tracker_command:200": 80
+                    },
+                    "counters": {
+                        "http_requests_started": 1469,
+                        "sse_connections_ready": 40,
+                        "response_bytes": 5315717,
+                        "sse_changes": 795,
+                        "commands_committed": 80
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 41897,
+                        "sql_execution_ms": 4858.58,
+                        "peak_connections_sampled": 35,
+                        "peak_lock_waiters_sampled": 1,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 192
+                    },
+                    "passed": true
+                }
+            ],
+            "passed": true,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "afc49ac3468cc0ec55591e5144238298a39c586953896c76198281addcdc3a98",
+                "application_diff_sha256": "f04557aba7e1bc8828037ed8606ad15a27632ec492f5b1e351726aa7a6dd99de",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "profile_before": {
+            "samples": [
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 87,
+                    "sql_ms": 185.708,
+                    "row_lock_sql_ms": 15.21,
+                    "lock_acquire_ms": 5.153,
+                    "locked_body_ms": 479.474,
+                    "total_ms": 545.568,
+                    "stages_ms": {
+                        "_register_tracker_command": 26.904,
+                        "_timeline_resource_payloads": 175.954,
+                        "record_match_change": 22.649,
+                        "get_tracker_state": 117.317
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 135.349,
+                    "row_lock_sql_ms": 8.162,
+                    "lock_acquire_ms": 3.326,
+                    "locked_body_ms": 405.42,
+                    "total_ms": 435.455,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.497,
+                        "_timeline_resource_payloads": 182.58,
+                        "record_match_change": 21.246,
+                        "get_tracker_state": 92.978
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 127.339,
+                    "row_lock_sql_ms": 12.081,
+                    "lock_acquire_ms": 2.539,
+                    "locked_body_ms": 392.067,
+                    "total_ms": 424.432,
+                    "stages_ms": {
+                        "_register_tracker_command": 9.87,
+                        "_timeline_resource_payloads": 159.689,
+                        "record_match_change": 14.876,
+                        "get_tracker_state": 104.475
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 126.395,
+                    "row_lock_sql_ms": 10.089,
+                    "lock_acquire_ms": 3.426,
+                    "locked_body_ms": 391.714,
+                    "total_ms": 428.308,
+                    "stages_ms": {
+                        "_register_tracker_command": 14.013,
+                        "_timeline_resource_payloads": 169.55,
+                        "record_match_change": 14.503,
+                        "get_tracker_state": 98.592
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 123.463,
+                    "row_lock_sql_ms": 8.468,
+                    "lock_acquire_ms": 3.147,
+                    "locked_body_ms": 375.254,
+                    "total_ms": 413.976,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.246,
+                        "_timeline_resource_payloads": 163.782,
+                        "record_match_change": 15.26,
+                        "get_tracker_state": 76.979
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 111,
+                    "sql_ms": 161.771,
+                    "row_lock_sql_ms": 19.261,
+                    "lock_acquire_ms": 2.638,
+                    "locked_body_ms": 439.357,
+                    "total_ms": 492.46,
+                    "stages_ms": {
+                        "_register_tracker_command": 11.864,
+                        "_timeline_resource_payloads": 161.722,
+                        "record_match_change": 18.4,
+                        "get_tracker_state": 102.446
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 147.023,
+                    "row_lock_sql_ms": 8.154,
+                    "lock_acquire_ms": 2.676,
+                    "locked_body_ms": 415.002,
+                    "total_ms": 447.338,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.296,
+                        "_timeline_resource_payloads": 171.502,
+                        "record_match_change": 12.916,
+                        "get_tracker_state": 136.49
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 125.313,
+                    "row_lock_sql_ms": 8.477,
+                    "lock_acquire_ms": 2.991,
+                    "locked_body_ms": 383.447,
+                    "total_ms": 418.419,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.827,
+                        "_timeline_resource_payloads": 170.606,
+                        "record_match_change": 12.281,
+                        "get_tracker_state": 103.383
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 126.221,
+                    "row_lock_sql_ms": 10.008,
+                    "lock_acquire_ms": 3.802,
+                    "locked_body_ms": 388.215,
+                    "total_ms": 419.255,
+                    "stages_ms": {
+                        "_register_tracker_command": 18.411,
+                        "_timeline_resource_payloads": 183.787,
+                        "record_match_change": 10.235,
+                        "get_tracker_state": 82.899
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 136.207,
+                    "row_lock_sql_ms": 12.152,
+                    "lock_acquire_ms": 4.339,
+                    "locked_body_ms": 405.179,
+                    "total_ms": 443.161,
+                    "stages_ms": {
+                        "_register_tracker_command": 14.737,
+                        "_timeline_resource_payloads": 175.305,
+                        "record_match_change": 12.241,
+                        "get_tracker_state": 105.266
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 87,
+                    "sql_ms": 130.141,
+                    "row_lock_sql_ms": 11.033,
+                    "lock_acquire_ms": 3.212,
+                    "locked_body_ms": 405.881,
+                    "total_ms": 439.783,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.076,
+                        "_timeline_resource_payloads": 168.355,
+                        "record_match_change": 18.321,
+                        "get_tracker_state": 100.275
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 133.853,
+                    "row_lock_sql_ms": 9.477,
+                    "lock_acquire_ms": 1.887,
+                    "locked_body_ms": 401.448,
+                    "total_ms": 432.848,
+                    "stages_ms": {
+                        "_register_tracker_command": 11.612,
+                        "_timeline_resource_payloads": 169.923,
+                        "record_match_change": 20.38,
+                        "get_tracker_state": 101.836
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 143.625,
+                    "row_lock_sql_ms": 12.041,
+                    "lock_acquire_ms": 3.218,
+                    "locked_body_ms": 420.929,
+                    "total_ms": 465.75,
+                    "stages_ms": {
+                        "_register_tracker_command": 16.165,
+                        "_timeline_resource_payloads": 190.622,
+                        "record_match_change": 17.734,
+                        "get_tracker_state": 109.581
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 171.311,
+                    "row_lock_sql_ms": 11.44,
+                    "lock_acquire_ms": 3.07,
+                    "locked_body_ms": 576.452,
+                    "total_ms": 610.922,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.156,
+                        "_timeline_resource_payloads": 318.55,
+                        "record_match_change": 18.297,
+                        "get_tracker_state": 120.318
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 147.771,
+                    "row_lock_sql_ms": 13.1,
+                    "lock_acquire_ms": 3.394,
+                    "locked_body_ms": 426.361,
+                    "total_ms": 457.294,
+                    "stages_ms": {
+                        "_register_tracker_command": 22.251,
+                        "_timeline_resource_payloads": 197.532,
+                        "record_match_change": 15.342,
+                        "get_tracker_state": 89.905
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 111,
+                    "sql_ms": 176.753,
+                    "row_lock_sql_ms": 27.007,
+                    "lock_acquire_ms": 3.01,
+                    "locked_body_ms": 479.197,
+                    "total_ms": 536.705,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.358,
+                        "_timeline_resource_payloads": 190.42,
+                        "record_match_change": 17.184,
+                        "get_tracker_state": 93.276
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 163.13,
+                    "row_lock_sql_ms": 13.768,
+                    "lock_acquire_ms": 4.658,
+                    "locked_body_ms": 474.701,
+                    "total_ms": 514.568,
+                    "stages_ms": {
+                        "_register_tracker_command": 19.652,
+                        "_timeline_resource_payloads": 204.995,
+                        "record_match_change": 18.937,
+                        "get_tracker_state": 119.533
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 157.165,
+                    "row_lock_sql_ms": 11.773,
+                    "lock_acquire_ms": 4.434,
+                    "locked_body_ms": 443.0,
+                    "total_ms": 477.887,
+                    "stages_ms": {
+                        "_register_tracker_command": 18.422,
+                        "_timeline_resource_payloads": 198.113,
+                        "record_match_change": 19.43,
+                        "get_tracker_state": 117.097
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 148.931,
+                    "row_lock_sql_ms": 11.788,
+                    "lock_acquire_ms": 3.379,
+                    "locked_body_ms": 435.69,
+                    "total_ms": 473.156,
+                    "stages_ms": {
+                        "_register_tracker_command": 14.146,
+                        "_timeline_resource_payloads": 190.922,
+                        "record_match_change": 13.622,
+                        "get_tracker_state": 104.963
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 80,
+                    "sql_ms": 166.655,
+                    "row_lock_sql_ms": 10.934,
+                    "lock_acquire_ms": 2.853,
+                    "locked_body_ms": 485.345,
+                    "total_ms": 523.306,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.598,
+                        "_timeline_resource_payloads": 206.304,
+                        "record_match_change": 22.056,
+                        "get_tracker_state": 120.033
+                    }
+                }
+            ],
+            "functions": [
+                {
+                    "function": "services/tracker_http.py:64:_timeline_resource_payloads",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 2.081,
+                    "cumulative_ms": 3749.708
+                },
+                {
+                    "function": "services/match_timeline_payload.py:558:build_match_timeline_payloads",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 12.646,
+                    "cumulative_ms": 3747.59
+                },
+                {
+                    "function": "services/tracker_state.py:387:get_tracker_state",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 7.44,
+                    "cumulative_ms": 2097.275
+                },
+                {
+                    "function": "services/match_timeline_payload.py:461:_build_match_shots",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 19.515,
+                    "cumulative_ms": 1626.039
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:135:apply",
+                    "calls": 16,
+                    "primitive_calls": 16,
+                    "own_ms": 0.938,
+                    "cumulative_ms": 1514.702
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:78:_record_shot_observation",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.67,
+                    "cumulative_ms": 1484.476
+                },
+                {
+                    "function": "services/match_timeline_payload.py:318:_build_match_events",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 10.719,
+                    "cumulative_ms": 1349.885
+                },
+                {
+                    "function": "services/match_timeline_payload.py:65:load_match_timeline_context",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 8.943,
+                    "cumulative_ms": 721.192
+                },
+                {
+                    "function": "services/event_reconciliation.py:156:plan_shot_reconciliation",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 4.785,
+                    "cumulative_ms": 714.244
+                },
+                {
+                    "function": "models/event_projection.py:145:save",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.777,
+                    "cumulative_ms": 688.134
+                },
+                {
+                    "function": "services/tracker_state.py:165:_player_groups_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 3.227,
+                    "cumulative_ms": 580.378
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:185:apply",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.296,
+                    "cumulative_ms": 532.179
+                },
+                {
+                    "function": "services/tracker_state.py:226:_last_event_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 2.722,
+                    "cumulative_ms": 479.526
+                },
+                {
+                    "function": "models/event_projection.py:23:_record_event",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.299,
+                    "cumulative_ms": 461.77
+                },
+                {
+                    "function": "services/match_events.py:235:record_typed_match_event",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 3.862,
+                    "cumulative_ms": 460.995
+                },
+                {
+                    "function": "services/tracker_event_queries.py:23:last_event_model",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.857,
+                    "cumulative_ms": 390.447
+                },
+                {
+                    "function": "adapters/outbound/runtime.py:45:recompute_impacts",
+                    "calls": 48,
+                    "primitive_calls": 48,
+                    "own_ms": 1.049,
+                    "cumulative_ms": 344.114
+                },
+                {
+                    "function": "services/live_updates.py:66:record_match_change",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.439,
+                    "cumulative_ms": 335.67
+                },
+                {
+                    "function": "services/live_updates.py:20:_record_match_change_in_transaction",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 2.152,
+                    "cumulative_ms": 333.942
+                },
+                {
+                    "function": "services/match_mutations.py:64:locked_match_mutation",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 1.632,
+                    "cumulative_ms": 320.578
+                },
+                {
+                    "function": "services/tracker_http.py:180:_register_tracker_command",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.271,
+                    "cumulative_ms": 314.907
+                },
+                {
+                    "function": "services/match_timeline_payload.py:691:_serialize_shot_timeline_event",
+                    "calls": 4400,
+                    "primitive_calls": 4400,
+                    "own_ms": 64.872,
+                    "cumulative_ms": 278.334
+                },
+                {
+                    "function": "services/event_reconciliation.py:126:_candidate_shots",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 2.348,
+                    "cumulative_ms": 267.07
+                },
+                {
+                    "function": "adapters/outbound/runtime.py:18:publish",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.13,
+                    "cumulative_ms": 244.975
+                },
+                {
+                    "function": "realtime/publisher.py:23:publish_match_changed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.187,
+                    "cumulative_ms": 244.817
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:32:_match_player",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.565,
+                    "cumulative_ms": 215.07
+                },
+                {
+                    "function": "signals/impact_recompute_signals.py:33:_timeline_changed",
+                    "calls": 28,
+                    "primitive_calls": 28,
+                    "own_ms": 0.503,
+                    "cumulative_ms": 203.6
+                },
+                {
+                    "function": "services/tracker_state.py:116:_player_stats_by_team",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 2.367,
+                    "cumulative_ms": 179.922
+                },
+                {
+                    "function": "services/match_events.py:353:event_root_metadata",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 8.759,
+                    "cumulative_ms": 169.429
+                },
+                {
+                    "function": "services/tracker_state.py:98:_score",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 1.866,
+                    "cumulative_ms": 166.342
+                },
+                {
+                    "function": "services/lineup_projections.py:128:rebuild_group_roles",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.924,
+                    "cumulative_ms": 154.939
+                },
+                {
+                    "function": "services/tracker_commands/base.py:70:current_part",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 1.101,
+                    "cumulative_ms": 149.776
+                },
+                {
+                    "function": "services/tracker_commands/base.py:91:require_live_part",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.248,
+                    "cumulative_ms": 143.512
+                },
+                {
+                    "function": "signals/impact_recompute_signals.py:20:_match_data_post_save",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.478,
+                    "cumulative_ms": 142.473
+                },
+                {
+                    "function": "services/match_events.py:79:active_match_events",
+                    "calls": 64,
+                    "primitive_calls": 64,
+                    "own_ms": 0.734,
+                    "cumulative_ms": 140.665
+                },
+                {
+                    "function": "services/tracker_state.py:62:_timer_data",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.102,
+                    "cumulative_ms": 128.441
+                },
+                {
+                    "function": "services/match_events.py:55:latest_match_events",
+                    "calls": 64,
+                    "primitive_calls": 64,
+                    "own_ms": 2.493,
+                    "cumulative_ms": 124.925
+                },
+                {
+                    "function": "services/tracker_commands/base.py:80:is_paused",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.995,
+                    "cumulative_ms": 123.001
+                },
+                {
+                    "function": "services/tracker_state.py:203:_reserve_players_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.578,
+                    "cumulative_ms": 88.934
+                },
+                {
+                    "function": "services/match_events.py:137:_elapsed_ms",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.728,
+                    "cumulative_ms": 66.611
+                },
+                {
+                    "function": "services/match_timeline_payload.py:569:_serialize_match_event",
+                    "calls": 896,
+                    "primitive_calls": 896,
+                    "own_ms": 1.014,
+                    "cumulative_ms": 60.755
+                },
+                {
+                    "function": "services/match_timeline_payload.py:620:_serialize_goal_event",
+                    "calls": 896,
+                    "primitive_calls": 896,
+                    "own_ms": 13.831,
+                    "cumulative_ms": 59.568
+                },
+                {
+                    "function": "composition.py:53:apply_tracker_command",
+                    "calls": 40,
+                    "primitive_calls": 1,
+                    "own_ms": 9.673,
+                    "cumulative_ms": 54.948
+                },
+                {
+                    "function": "services/tracker_http.py:263:execute_tracker_command",
+                    "calls": 40,
+                    "primitive_calls": 1,
+                    "own_ms": 14.449,
+                    "cumulative_ms": 54.615
+                },
+                {
+                    "function": "services/match_timeline_payload.py:288:_event_timing_payload",
+                    "calls": 5296,
+                    "primitive_calls": 5296,
+                    "own_ms": 12.883,
+                    "cumulative_ms": 52.287
+                },
+                {
+                    "function": "services/match_events.py:186:_create_typed_detail",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.452,
+                    "cumulative_ms": 42.027
+                },
+                {
+                    "function": "services/match_timeline_payload.py:502:<lambda>",
+                    "calls": 4400,
+                    "primitive_calls": 4400,
+                    "own_ms": 12.799,
+                    "cumulative_ms": 41.716
+                },
+                {
+                    "function": "services/match_timeline_payload.py:236:_elapsed_match_seconds",
+                    "calls": 5296,
+                    "primitive_calls": 5296,
+                    "own_ms": 22.72,
+                    "cumulative_ms": 37.299
+                },
+                {
+                    "function": "services/match_timeline_payload.py:209:_ordered_sequence",
+                    "calls": 2688,
+                    "primitive_calls": 2688,
+                    "own_ms": 6.092,
+                    "cumulative_ms": 21.307
+                },
+                {
+                    "function": "services/match_timeline_payload.py:432:<lambda>",
+                    "calls": 896,
+                    "primitive_calls": 896,
+                    "own_ms": 2.687,
+                    "cumulative_ms": 18.06
+                },
+                {
+                    "function": "services/match_timeline_payload.py:197:_source_key",
+                    "calls": 3584,
+                    "primitive_calls": 3584,
+                    "own_ms": 4.711,
+                    "cumulative_ms": 16.65
+                },
+                {
+                    "function": "models/event_projection.py:130:get_queryset",
+                    "calls": 580,
+                    "primitive_calls": 580,
+                    "own_ms": 3.601,
+                    "cumulative_ms": 15.2
+                },
+                {
+                    "function": "services/match_timeline_payload.py:224:_logical_source_key",
+                    "calls": 896,
+                    "primitive_calls": 896,
+                    "own_ms": 0.869,
+                    "cumulative_ms": 5.036
+                },
+                {
+                    "function": "services/match_timeline_payload.py:267:<genexpr>",
+                    "calls": 5296,
+                    "primitive_calls": 5296,
+                    "own_ms": 3.615,
+                    "cumulative_ms": 4.868
+                },
+                {
+                    "function": "services/match_timeline_payload.py:187:_event_time_key",
+                    "calls": 5296,
+                    "primitive_calls": 5296,
+                    "own_ms": 2.629,
+                    "cumulative_ms": 4.336
+                },
+                {
+                    "function": "services/tracker_http.py:117:_command_metadata",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.671,
+                    "cumulative_ms": 2.526
+                },
+                {
+                    "function": "services/match_events.py:102:_snapshot",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.648,
+                    "cumulative_ms": 2.362
+                },
+                {
+                    "function": "services/tracker_state.py:270:_serialize_last_event_shot",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.592,
+                    "cumulative_ms": 2.06
+                },
+                {
+                    "function": "services/tracker_commands/base.py:53:other_team",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.716,
+                    "cumulative_ms": 1.385
+                },
+                {
+                    "function": "services/match_events.py:91:_json_value",
+                    "calls": 160,
+                    "primitive_calls": 160,
+                    "own_ms": 0.363,
+                    "cumulative_ms": 1.354
+                },
+                {
+                    "function": "services/match_timeline_payload.py:259:<genexpr>",
+                    "calls": 5296,
+                    "primitive_calls": 5296,
+                    "own_ms": 1.254,
+                    "cumulative_ms": 1.254
+                },
+                {
+                    "function": "services/match_events.py:127:_match_part",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.194,
+                    "cumulative_ms": 0.683
+                },
+                {
+                    "function": "services/tracker_event_queries.py:49:<lambda>",
+                    "calls": 2230,
+                    "primitive_calls": 2230,
+                    "own_ms": 0.401,
+                    "cumulative_ms": 0.588
+                },
+                {
+                    "function": "services/match_event_context.py:85:match_event_context",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.28,
+                    "cumulative_ms": 0.574
+                },
+                {
+                    "function": "services/live_updates.py:37:<genexpr>",
+                    "calls": 132,
+                    "primitive_calls": 132,
+                    "own_ms": 0.365,
+                    "cumulative_ms": 0.548
+                },
+                {
+                    "function": "services/live_update_signal_control.py:27:suppress_live_update_signals",
+                    "calls": 80,
+                    "primitive_calls": 80,
+                    "own_ms": 0.204,
+                    "cumulative_ms": 0.503
+                },
+                {
+                    "function": "services/match_event_context.py:75:suppress_match_event_recording",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.169,
+                    "cumulative_ms": 0.429
+                },
+                {
+                    "function": "services/tracker_http.py:362:<genexpr>",
+                    "calls": 132,
+                    "primitive_calls": 132,
+                    "own_ms": 0.237,
+                    "cumulative_ms": 0.412
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:192:_match_data_realtime_changed",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.239,
+                    "cumulative_ms": 0.402
+                },
+                {
+                    "function": "services/tracker_http.py:90:_client_command_metadata",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.152,
+                    "cumulative_ms": 0.363
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:66:_parse_shot",
+                    "calls": 16,
+                    "primitive_calls": 16,
+                    "own_ms": 0.154,
+                    "cumulative_ms": 0.262
+                },
+                {
+                    "function": "services/tracker_http.py:93:client_string",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.105,
+                    "cumulative_ms": 0.195
+                },
+                {
+                    "function": "services/live_update_signal_control.py:17:live_update_signals_suppressed",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.152,
+                    "cumulative_ms": 0.181
+                },
+                {
+                    "function": "domain/command_time.py:23:command_time_from_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.096,
+                    "cumulative_ms": 0.17
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:75:_shot_realtime_changed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.085,
+                    "cumulative_ms": 0.166
+                },
+                {
+                    "function": "services/match_events.py:111:_effective_at",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.101,
+                    "cumulative_ms": 0.164
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:58:_record",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.062,
+                    "cumulative_ms": 0.163
+                },
+                {
+                    "function": "services/live_update_signal_control.py:22:tracker_delete_side_effects_suppressed",
+                    "calls": 28,
+                    "primitive_calls": 28,
+                    "own_ms": 0.089,
+                    "cumulative_ms": 0.162
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:237:command_definition",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.101,
+                    "cumulative_ms": 0.144
+                },
+                {
+                    "function": "services/match_events.py:181:_snapshot_id",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.06,
+                    "cumulative_ms": 0.124
+                },
+                {
+                    "function": "services/match_events.py:165:_event_kind",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.092,
+                    "cumulative_ms": 0.107
+                },
+                {
+                    "function": "services/match_event_context.py:70:match_event_recording_is_suppressed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.054,
+                    "cumulative_ms": 0.093
+                },
+                {
+                    "function": "services/match_event_context.py:48:current_match_event_context",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.068,
+                    "cumulative_ms": 0.084
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:84:_parse_goal",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.039,
+                    "cumulative_ms": 0.064
+                },
+                {
+                    "function": "services/match_timeline_payload.py:89:<genexpr>",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.057,
+                    "cumulative_ms": 0.057
+                },
+                {
+                    "function": "signals/match_data_signals.py:13:create_player_groups_for_new_match_data",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.046,
+                    "cumulative_ms": 0.046
+                },
+                {
+                    "function": "realtime/publisher.py:18:match_group_name",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.02,
+                    "cumulative_ms": 0.02
+                },
+                {
+                    "function": "services/event_reconciliation.py:311:create_reconciliation_candidates",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.013,
+                    "cumulative_ms": 0.013
+                },
+                {
+                    "function": "services/tracker_state.py:431:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.012,
+                    "cumulative_ms": 0.012
+                },
+                {
+                    "function": "services/event_reconciliation.py:180:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.012,
+                    "cumulative_ms": 0.012
+                },
+                {
+                    "function": "services/tracker_state.py:86:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.011,
+                    "cumulative_ms": 0.011
+                }
+            ],
+            "limitations": "Twenty sequential service calls; cProfile overhead is included. No HTTP, spectator load or worker consumption. Use direct stage timers for attribution; cProfile parent totals may be distorted by async publication callbacks. SQL and stage times overlap. Locked body excludes commit and post-commit callbacks; row-lock SQL includes roundtrip time, not just contention.",
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "6dde7363a4e3acec397bd13343f7da1a577c50f20cfa123339a3b4a99b02c18e",
+                "application_diff_sha256": "dd770d47b5fdf39ccb9593eb6e90263497766b4ede79cc48a37206a9fbd0f395",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 0,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "profile_after": {
+            "samples": [
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 69,
+                    "sql_ms": 144.665,
+                    "row_lock_sql_ms": 14.666,
+                    "lock_acquire_ms": 5.288,
+                    "locked_body_ms": 309.152,
+                    "total_ms": 370.031,
+                    "stages_ms": {
+                        "_register_tracker_command": 26.668,
+                        "record_match_change": 17.195,
+                        "get_tracker_state": 94.256
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 51.756,
+                    "row_lock_sql_ms": 6.331,
+                    "lock_acquire_ms": 2.424,
+                    "locked_body_ms": 148.208,
+                    "total_ms": 178.281,
+                    "stages_ms": {
+                        "_register_tracker_command": 10.125,
+                        "record_match_change": 8.803,
+                        "get_tracker_state": 65.773
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 62.068,
+                    "row_lock_sql_ms": 7.245,
+                    "lock_acquire_ms": 2.393,
+                    "locked_body_ms": 188.024,
+                    "total_ms": 219.454,
+                    "stages_ms": {
+                        "_register_tracker_command": 10.502,
+                        "record_match_change": 11.457,
+                        "get_tracker_state": 86.821
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 96.418,
+                    "row_lock_sql_ms": 9.897,
+                    "lock_acquire_ms": 3.513,
+                    "locked_body_ms": 247.215,
+                    "total_ms": 280.904,
+                    "stages_ms": {
+                        "_register_tracker_command": 16.282,
+                        "record_match_change": 16.369,
+                        "get_tracker_state": 112.145
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 78.19,
+                    "row_lock_sql_ms": 9.257,
+                    "lock_acquire_ms": 3.553,
+                    "locked_body_ms": 215.443,
+                    "total_ms": 242.699,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.455,
+                        "record_match_change": 13.669,
+                        "get_tracker_state": 99.573
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 93,
+                    "sql_ms": 128.066,
+                    "row_lock_sql_ms": 26.281,
+                    "lock_acquire_ms": 2.053,
+                    "locked_body_ms": 277.509,
+                    "total_ms": 336.116,
+                    "stages_ms": {
+                        "_register_tracker_command": 9.647,
+                        "record_match_change": 14.955,
+                        "get_tracker_state": 106.713
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 89.506,
+                    "row_lock_sql_ms": 9.116,
+                    "lock_acquire_ms": 1.908,
+                    "locked_body_ms": 214.359,
+                    "total_ms": 239.399,
+                    "stages_ms": {
+                        "_register_tracker_command": 10.137,
+                        "record_match_change": 22.351,
+                        "get_tracker_state": 97.092
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 73.207,
+                    "row_lock_sql_ms": 8.215,
+                    "lock_acquire_ms": 4.084,
+                    "locked_body_ms": 202.016,
+                    "total_ms": 230.875,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.881,
+                        "record_match_change": 11.706,
+                        "get_tracker_state": 88.71
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 77.29,
+                    "row_lock_sql_ms": 8.762,
+                    "lock_acquire_ms": 2.479,
+                    "locked_body_ms": 192.09,
+                    "total_ms": 224.82,
+                    "stages_ms": {
+                        "_register_tracker_command": 10.134,
+                        "record_match_change": 11.582,
+                        "get_tracker_state": 90.226
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 87.374,
+                    "row_lock_sql_ms": 10.208,
+                    "lock_acquire_ms": 2.23,
+                    "locked_body_ms": 217.569,
+                    "total_ms": 248.435,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.798,
+                        "record_match_change": 14.119,
+                        "get_tracker_state": 89.285
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 69,
+                    "sql_ms": 127.496,
+                    "row_lock_sql_ms": 12.777,
+                    "lock_acquire_ms": 2.985,
+                    "locked_body_ms": 279.797,
+                    "total_ms": 320.728,
+                    "stages_ms": {
+                        "_register_tracker_command": 14.776,
+                        "record_match_change": 15.796,
+                        "get_tracker_state": 111.74
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 102.555,
+                    "row_lock_sql_ms": 12.119,
+                    "lock_acquire_ms": 3.682,
+                    "locked_body_ms": 245.761,
+                    "total_ms": 284.667,
+                    "stages_ms": {
+                        "_register_tracker_command": 16.796,
+                        "record_match_change": 14.79,
+                        "get_tracker_state": 111.816
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 94.937,
+                    "row_lock_sql_ms": 11.046,
+                    "lock_acquire_ms": 4.292,
+                    "locked_body_ms": 231.782,
+                    "total_ms": 267.081,
+                    "stages_ms": {
+                        "_register_tracker_command": 17.376,
+                        "record_match_change": 11.216,
+                        "get_tracker_state": 106.939
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 80.725,
+                    "row_lock_sql_ms": 10.746,
+                    "lock_acquire_ms": 5.214,
+                    "locked_body_ms": 223.961,
+                    "total_ms": 254.787,
+                    "stages_ms": {
+                        "_register_tracker_command": 19.835,
+                        "record_match_change": 18.148,
+                        "get_tracker_state": 78.325
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 78.862,
+                    "row_lock_sql_ms": 8.923,
+                    "lock_acquire_ms": 2.435,
+                    "locked_body_ms": 205.393,
+                    "total_ms": 236.315,
+                    "stages_ms": {
+                        "_register_tracker_command": 12.012,
+                        "record_match_change": 12.513,
+                        "get_tracker_state": 92.615
+                    }
+                },
+                {
+                    "command": "goal_reg",
+                    "sql_calls": 93,
+                    "sql_ms": 139.36,
+                    "row_lock_sql_ms": 24.499,
+                    "lock_acquire_ms": 5.333,
+                    "locked_body_ms": 286.896,
+                    "total_ms": 340.71,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.327,
+                        "record_match_change": 12.123,
+                        "get_tracker_state": 100.471
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 79.177,
+                    "row_lock_sql_ms": 8.572,
+                    "lock_acquire_ms": 2.734,
+                    "locked_body_ms": 210.433,
+                    "total_ms": 241.593,
+                    "stages_ms": {
+                        "_register_tracker_command": 15.24,
+                        "record_match_change": 12.815,
+                        "get_tracker_state": 100.155
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 93.265,
+                    "row_lock_sql_ms": 10.935,
+                    "lock_acquire_ms": 4.172,
+                    "locked_body_ms": 225.137,
+                    "total_ms": 254.617,
+                    "stages_ms": {
+                        "_register_tracker_command": 18.235,
+                        "record_match_change": 14.519,
+                        "get_tracker_state": 93.922
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 87.471,
+                    "row_lock_sql_ms": 10.15,
+                    "lock_acquire_ms": 3.929,
+                    "locked_body_ms": 204.263,
+                    "total_ms": 233.222,
+                    "stages_ms": {
+                        "_register_tracker_command": 13.358,
+                        "record_match_change": 16.343,
+                        "get_tracker_state": 89.374
+                    }
+                },
+                {
+                    "command": "shot_reg",
+                    "sql_calls": 62,
+                    "sql_ms": 72.051,
+                    "row_lock_sql_ms": 9.354,
+                    "lock_acquire_ms": 3.117,
+                    "locked_body_ms": 187.193,
+                    "total_ms": 217.695,
+                    "stages_ms": {
+                        "_register_tracker_command": 14.259,
+                        "record_match_change": 14.222,
+                        "get_tracker_state": 76.891
+                    }
+                }
+            ],
+            "functions": [
+                {
+                    "function": "services/tracker_state.py:387:get_tracker_state",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 5.712,
+                    "cumulative_ms": 1892.519
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:140:apply",
+                    "calls": 16,
+                    "primitive_calls": 16,
+                    "own_ms": 1.021,
+                    "cumulative_ms": 1378.427
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:83:_record_shot_observation",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.493,
+                    "cumulative_ms": 1364.189
+                },
+                {
+                    "function": "services/event_reconciliation.py:156:plan_shot_reconciliation",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 4.355,
+                    "cumulative_ms": 662.223
+                },
+                {
+                    "function": "models/event_projection.py:145:save",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.68,
+                    "cumulative_ms": 625.947
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:196:apply",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.312,
+                    "cumulative_ms": 601.111
+                },
+                {
+                    "function": "services/tracker_state.py:165:_player_groups_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 3.099,
+                    "cumulative_ms": 517.79
+                },
+                {
+                    "function": "services/tracker_state.py:226:_last_event_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 2.11,
+                    "cumulative_ms": 450.537
+                },
+                {
+                    "function": "models/event_projection.py:23:_record_event",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.24,
+                    "cumulative_ms": 422.007
+                },
+                {
+                    "function": "services/match_events.py:235:record_typed_match_event",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 3.434,
+                    "cumulative_ms": 421.333
+                },
+                {
+                    "function": "services/tracker_event_queries.py:23:last_event_model",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.572,
+                    "cumulative_ms": 366.845
+                },
+                {
+                    "function": "adapters/outbound/runtime.py:45:recompute_impacts",
+                    "calls": 48,
+                    "primitive_calls": 48,
+                    "own_ms": 0.948,
+                    "cumulative_ms": 321.699
+                },
+                {
+                    "function": "services/match_mutations.py:64:locked_match_mutation",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 1.501,
+                    "cumulative_ms": 300.472
+                },
+                {
+                    "function": "services/tracker_http.py:203:_register_tracker_command",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.133,
+                    "cumulative_ms": 293.664
+                },
+                {
+                    "function": "services/live_updates.py:66:record_match_change",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.271,
+                    "cumulative_ms": 284.529
+                },
+                {
+                    "function": "services/live_updates.py:20:_record_match_change_in_transaction",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.812,
+                    "cumulative_ms": 283.655
+                },
+                {
+                    "function": "services/event_reconciliation.py:126:_candidate_shots",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 2.097,
+                    "cumulative_ms": 260.916
+                },
+                {
+                    "function": "services/lineup_projections.py:128:rebuild_group_roles",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.946,
+                    "cumulative_ms": 233.115
+                },
+                {
+                    "function": "adapters/outbound/runtime.py:18:publish",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.129,
+                    "cumulative_ms": 224.006
+                },
+                {
+                    "function": "realtime/publisher.py:23:publish_match_changed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.149,
+                    "cumulative_ms": 223.851
+                },
+                {
+                    "function": "services/tracker_commands/scoring.py:37:_match_player",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 1.463,
+                    "cumulative_ms": 207.788
+                },
+                {
+                    "function": "signals/impact_recompute_signals.py:33:_timeline_changed",
+                    "calls": 28,
+                    "primitive_calls": 28,
+                    "own_ms": 0.405,
+                    "cumulative_ms": 190.291
+                },
+                {
+                    "function": "services/tracker_state.py:116:_player_stats_by_team",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 2.094,
+                    "cumulative_ms": 161.163
+                },
+                {
+                    "function": "services/tracker_state.py:98:_score",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 1.437,
+                    "cumulative_ms": 150.925
+                },
+                {
+                    "function": "services/match_events.py:79:active_match_events",
+                    "calls": 64,
+                    "primitive_calls": 64,
+                    "own_ms": 0.693,
+                    "cumulative_ms": 137.108
+                },
+                {
+                    "function": "signals/impact_recompute_signals.py:20:_match_data_post_save",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.41,
+                    "cumulative_ms": 133.086
+                },
+                {
+                    "function": "services/tracker_commands/base.py:86:current_part",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.79,
+                    "cumulative_ms": 129.768
+                },
+                {
+                    "function": "services/tracker_commands/base.py:107:require_live_part",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.228,
+                    "cumulative_ms": 126.165
+                },
+                {
+                    "function": "services/match_events.py:55:latest_match_events",
+                    "calls": 64,
+                    "primitive_calls": 64,
+                    "own_ms": 2.349,
+                    "cumulative_ms": 121.196
+                },
+                {
+                    "function": "services/tracker_state.py:62:_timer_data",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.933,
+                    "cumulative_ms": 120.91
+                },
+                {
+                    "function": "services/tracker_commands/base.py:96:is_paused",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.75,
+                    "cumulative_ms": 105.849
+                },
+                {
+                    "function": "services/tracker_state.py:203:_reserve_players_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.516,
+                    "cumulative_ms": 82.658
+                },
+                {
+                    "function": "services/match_events.py:137:_elapsed_ms",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.646,
+                    "cumulative_ms": 60.385
+                },
+                {
+                    "function": "composition.py:53:apply_tracker_command",
+                    "calls": 40,
+                    "primitive_calls": 1,
+                    "own_ms": 0.649,
+                    "cumulative_ms": 46.471
+                },
+                {
+                    "function": "services/tracker_http.py:286:execute_tracker_command",
+                    "calls": 40,
+                    "primitive_calls": 1,
+                    "own_ms": 2.859,
+                    "cumulative_ms": 46.45
+                },
+                {
+                    "function": "services/match_events.py:186:_create_typed_detail",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.492,
+                    "cumulative_ms": 37.003
+                },
+                {
+                    "function": "models/event_projection.py:130:get_queryset",
+                    "calls": 300,
+                    "primitive_calls": 300,
+                    "own_ms": 1.915,
+                    "cumulative_ms": 6.643
+                },
+                {
+                    "function": "services/tracker_http.py:140:_command_metadata",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.711,
+                    "cumulative_ms": 2.749
+                },
+                {
+                    "function": "services/match_events.py:102:_snapshot",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.545,
+                    "cumulative_ms": 2.095
+                },
+                {
+                    "function": "services/tracker_state.py:270:_serialize_last_event_shot",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.573,
+                    "cumulative_ms": 1.935
+                },
+                {
+                    "function": "services/match_events.py:91:_json_value",
+                    "calls": 160,
+                    "primitive_calls": 160,
+                    "own_ms": 0.35,
+                    "cumulative_ms": 1.238
+                },
+                {
+                    "function": "services/tracker_commands/base.py:69:other_team",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.649,
+                    "cumulative_ms": 1.166
+                },
+                {
+                    "function": "services/match_events.py:127:_match_part",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.192,
+                    "cumulative_ms": 0.585
+                },
+                {
+                    "function": "services/tracker_event_queries.py:49:<lambda>",
+                    "calls": 2230,
+                    "primitive_calls": 2230,
+                    "own_ms": 0.405,
+                    "cumulative_ms": 0.563
+                },
+                {
+                    "function": "services/live_update_signal_control.py:27:suppress_live_update_signals",
+                    "calls": 80,
+                    "primitive_calls": 80,
+                    "own_ms": 0.196,
+                    "cumulative_ms": 0.508
+                },
+                {
+                    "function": "services/match_event_context.py:85:match_event_context",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.245,
+                    "cumulative_ms": 0.47
+                },
+                {
+                    "function": "services/live_updates.py:37:<genexpr>",
+                    "calls": 132,
+                    "primitive_calls": 132,
+                    "own_ms": 0.241,
+                    "cumulative_ms": 0.437
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:192:_match_data_realtime_changed",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.203,
+                    "cumulative_ms": 0.41
+                },
+                {
+                    "function": "services/tracker_http.py:384:<genexpr>",
+                    "calls": 132,
+                    "primitive_calls": 132,
+                    "own_ms": 0.24,
+                    "cumulative_ms": 0.396
+                },
+                {
+                    "function": "services/tracker_http.py:113:_client_command_metadata",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.174,
+                    "cumulative_ms": 0.36
+                },
+                {
+                    "function": "services/match_event_context.py:75:suppress_match_event_recording",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.151,
+                    "cumulative_ms": 0.354
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:67:_parse_shot",
+                    "calls": 16,
+                    "primitive_calls": 16,
+                    "own_ms": 0.158,
+                    "cumulative_ms": 0.271
+                },
+                {
+                    "function": "services/match_events.py:111:_effective_at",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.123,
+                    "cumulative_ms": 0.239
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:58:_record",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.085,
+                    "cumulative_ms": 0.207
+                },
+                {
+                    "function": "services/live_update_signal_control.py:17:live_update_signals_suppressed",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.16,
+                    "cumulative_ms": 0.191
+                },
+                {
+                    "function": "domain/command_time.py:23:command_time_from_payload",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.098,
+                    "cumulative_ms": 0.172
+                },
+                {
+                    "function": "services/tracker_http.py:116:client_string",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.107,
+                    "cumulative_ms": 0.172
+                },
+                {
+                    "function": "services/tracker_commands/base.py:54:by_resource",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.171,
+                    "cumulative_ms": 0.171
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:240:command_definition",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.122,
+                    "cumulative_ms": 0.165
+                },
+                {
+                    "function": "services/live_update_signal_control.py:22:tracker_delete_side_effects_suppressed",
+                    "calls": 28,
+                    "primitive_calls": 28,
+                    "own_ms": 0.105,
+                    "cumulative_ms": 0.148
+                },
+                {
+                    "function": "signals/realtime_update_signals.py:75:_shot_realtime_changed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.078,
+                    "cumulative_ms": 0.147
+                },
+                {
+                    "function": "services/match_events.py:181:_snapshot_id",
+                    "calls": 60,
+                    "primitive_calls": 60,
+                    "own_ms": 0.061,
+                    "cumulative_ms": 0.108
+                },
+                {
+                    "function": "services/match_events.py:165:_event_kind",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.084,
+                    "cumulative_ms": 0.1
+                },
+                {
+                    "function": "services/match_event_context.py:70:match_event_recording_is_suppressed",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.058,
+                    "cumulative_ms": 0.091
+                },
+                {
+                    "function": "services/match_event_context.py:48:current_match_event_context",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.064,
+                    "cumulative_ms": 0.08
+                },
+                {
+                    "function": "services/tracker_commands/registry.py:85:_parse_goal",
+                    "calls": 4,
+                    "primitive_calls": 4,
+                    "own_ms": 0.039,
+                    "cumulative_ms": 0.064
+                },
+                {
+                    "function": "realtime/publisher.py:18:match_group_name",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.021,
+                    "cumulative_ms": 0.021
+                },
+                {
+                    "function": "signals/match_data_signals.py:13:create_player_groups_for_new_match_data",
+                    "calls": 40,
+                    "primitive_calls": 40,
+                    "own_ms": 0.019,
+                    "cumulative_ms": 0.019
+                },
+                {
+                    "function": "services/tracker_state.py:431:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.014,
+                    "cumulative_ms": 0.014
+                },
+                {
+                    "function": "services/event_reconciliation.py:311:create_reconciliation_candidates",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.013,
+                    "cumulative_ms": 0.013
+                },
+                {
+                    "function": "services/tracker_state.py:86:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.012,
+                    "cumulative_ms": 0.012
+                },
+                {
+                    "function": "services/event_reconciliation.py:180:<genexpr>",
+                    "calls": 20,
+                    "primitive_calls": 20,
+                    "own_ms": 0.011,
+                    "cumulative_ms": 0.011
+                }
+            ],
+            "limitations": "Twenty sequential service calls; cProfile overhead is included. No HTTP, spectator load or worker consumption. Use direct stage timers for attribution; cProfile parent totals may be distorted by async publication callbacks. SQL and stage times overlap. Locked body excludes commit and post-commit callbacks; row-lock SQL includes roundtrip time, not just contention.",
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "6dde7363a4e3acec397bd13343f7da1a577c50f20cfa123339a3b4a99b02c18e",
+                "application_diff_sha256": "49d7e23261128321944efd3e2e4e3b0f39201d0755de4287ce97f47e8c89c74c",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 0,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        }
+    }
+}
