@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from uuid import UUID
 
 from bg_uuidv7 import uuidv7
 from django.db import models
@@ -14,6 +15,7 @@ class MatchData(models.Model):
 
     objects: ClassVar[models.Manager[MatchData]]
     player_groups: models.Manager[Any]
+    match_link_id: UUID
 
     STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [
         ("upcoming", "Upcoming"),

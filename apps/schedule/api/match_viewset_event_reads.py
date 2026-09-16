@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.game_tracker.composition import read_public_match
 from apps.game_tracker.models import (
     GoalType,
     MatchPart,
@@ -73,6 +74,14 @@ class MatchEventReadActionsMixin:
                 {"detail": str(error)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        cached = read_public_match(
+            match_id=str(match.pk),
+            resource="events",
+            since_revision=since_revision,
+            identity_version=identity_version_raw,
+        )
+        if cached is not None:
+            return Response(cached)
         if match_data is None:
             return Response(
                 {
@@ -113,6 +122,14 @@ class MatchEventReadActionsMixin:
                 {"detail": str(error)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        cached = read_public_match(
+            match_id=str(match.pk),
+            resource="shots",
+            since_revision=since_revision,
+            identity_version=identity_version_raw,
+        )
+        if cached is not None:
+            return Response(cached)
         if match_data is None:
             return Response(
                 {

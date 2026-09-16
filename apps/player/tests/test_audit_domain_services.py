@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -209,7 +209,10 @@ def test_audio_transcoder_clamps_range_and_uses_safe_command_options() -> None:
 
 
 def test_audio_transcoder_requires_ffmpeg() -> None:
-    with pytest.raises(FileNotFoundError, match="ffmpeg not found"):
+    with (
+        patch("apps.player.services.audio_clipper.find_ffmpeg", return_value=None),
+        pytest.raises(FileNotFoundError, match="ffmpeg not found"),
+    ):
         transcode_to_mp3_clip_file(
             input_path="input",
             output_path="output",

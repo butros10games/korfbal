@@ -74,11 +74,11 @@ COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/manage.py /app/
 COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/korfbal/ /app/korfbal/
 COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/apps/ /app/apps/
 
-ENV GRANIAN_WORKERS=4
+ENV GRANIAN_WORKERS=4 KORFBAL_BIND_HOST=0.0.0.0
 
 USER appuser
 
-EXPOSE 1664
+EXPOSE 1664 1665 1666 1667
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["sh", "-c", "exec granian --interface asgi --no-ws --host 0.0.0.0 --port 1664 --workers \"$GRANIAN_WORKERS\" korfbal.asgi:application"]
+CMD ["python", "-m", "korfbal.serve"]

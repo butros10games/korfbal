@@ -91,6 +91,42 @@ Match tracker issues often require coordinated backend + frontend changes.
   so rolled-back writes cannot populate or consume committed snapshots. Use the
   dedicated public-live cache with short socket timeouts and no retries; optional
   Redis reads inside a snapshot must not hold the database pool for seconds.
+- Use the native Django Redis backend for atomic public snapshots, including the
+  Prometheus variant (`NativeRedisCache`); its `RedisCache` class wraps django-redis
+  and has a different client/serialization API. Reuse clients across ASGI threads.
+- Share match SSE broker reception and revision recovery per event loop. Keep viewer
+  dispatch database-free, bound pending updates per match, and preserve invalidations
+  when coalescing snapshots; revision gaps must refresh all affected client resources.
+- Coalesced SSE updates must share encoded replacement frames across slow viewers; never serialize a large frame per mailbox. Preserve affected-resource unions and bound the number of shared variants without losing invalidations. Give post-commit broker publication one reconciliation cycle before broad recovery, without restarting that grace period as revisions advance.
+- Keep SSE request reception and bounded mailbox delivery in persistent tasks;
+  per-message task creation adds fanout scheduling overhead. Disconnect or parent
+  cancellation must cancel a backpressured sender before releasing shared fanout.
+- Keep `timer.server_time` out of compact patch dictionaries: clients reconstruct
+  it from the connection's ready clock anchor, falling back to frame timestamps
+  for older servers; replay timestamps cannot measure current clock offset.
+  Bootstrap snapshots must clear covered pending frames before awaiting sends,
+  preserving only publications arriving afterward.
+- When shared SSE encoding falls back to local state, rotate its dictionary epoch
+  and send a reset before further patches; otherwise workers can fork the same
+  sequence space. Test Redis compare-and-swap with distinct concurrent updates,
+  as identical duplicate writes alone cannot prove lost-update protection.
+- Keep shared compact bootstrap mutations behind Redis compare-and-swap too;
+  a throttled preparation must never seed the shared epoch locally. Test a cold
+  bootstrap becoming available during the preparation throttle, then the next update.
+- Before claiming SSE load capacity, verify Granian backlog/backpressure admission
+  limits, ready-connection counts, delivery failures and generator event-loop lag;
+  successful-request percentiles alone cannot validate an overloaded run.
+- Report SSE body bytes separately from ordinary HTTP requests in capacity tests. Record proxy mode and CPU partitions; CPU affinity on one host is not a physically separate generator, and averages hide snapshot/reconnect bursts.
+- Pushed timeline deltas must name the previous revision affecting that resource;
+  unrelated revisions may be skipped, but missing bases or ordered IDs require HTTP
+  recovery. Coalescing must never relabel an older payload with a newer revision.
+- Shared public match reads must preserve timeline identity, delta bases, deletions
+  and ordering. Keep credentials and filters on the normal authentication/object
+  resolution path, and never put private tracker or audit payloads in these caches.
+- Published public snapshots must fence committed revisions atomically, persist
+  refresh intent with the domain transaction, and cap freshness from read start.
+  Keep zero-SQL HTTP coverage alongside rollback, deletion and real Redis
+  out-of-order publication tests; cache-only reads must preserve filtered-route checks.
 - With Django 6.1 fetch modes, use `FETCH_RAISE` for read querysets whose relations are explicitly
   loaded. For mutable many-to-many endpoints, use `FETCH_PEERS` or re-prefetch after writes because
   Django invalidates the relation cache before DRF renders the response.

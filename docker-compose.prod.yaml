@@ -4,11 +4,22 @@ services:
         container_name: kwt-uwsgi
         ports:
             - '1664:1664'
+            - '1665:1665'
+            - '1666:1666'
+            - '1667:1667'
         env_file:
             - .env
         environment:
             DJANGO_ENV: production
             DEBUG: 'false'
+            KORFBAL_PUBLIC_WORKERS: ${KORFBAL_PUBLIC_WORKERS:-2}
+            KORFBAL_LIVE_READ_WORKERS: ${KORFBAL_LIVE_READ_WORKERS:-2}
+            KORFBAL_LIVE_READ_THREADS: ${KORFBAL_LIVE_READ_THREADS:-2}
+            KORFBAL_LIVE_READ_BACKPRESSURE: ${KORFBAL_LIVE_READ_BACKPRESSURE:-16384}
+            KORFBAL_PUBLIC_THREADS: ${KORFBAL_PUBLIC_THREADS:-2}
+            KORFBAL_PUBLIC_BACKPRESSURE: ${KORFBAL_PUBLIC_BACKPRESSURE:-16384}
+            KORFBAL_SSE_WORKERS: ${KORFBAL_SSE_WORKERS:-2}
+            KORFBAL_SSE_BACKPRESSURE: ${KORFBAL_SSE_BACKPRESSURE:-8192}
             KORFBAL_DB_POOL_MAX_SIZE: ${KORFBAL_WEB_DB_POOL_MAX_SIZE:-8}
             BG_AUTH_PASSKEY_RP_ID: korfbal.butrosgroot.com
             BG_AUTH_PASSKEY_ORIGINS: https://korfbal.butrosgroot.com

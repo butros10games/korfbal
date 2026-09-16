@@ -1,0 +1,74 @@
+{
+    "kind": "isolated fanout coalescing microbenchmark",
+    "baseline_revision": "6e32be434566b9ede14a28643a9eb52dd1f7d951",
+    "runtime_sha256": "920f92adb859755f784d888ec2a2d4f0fb9e98da0f99c528af3d3a5ff8b0402d",
+    "payload_text_bytes": 65536,
+    "repeats": 3,
+    "results": [
+        {
+            "viewers": 100,
+            "samples_ms": {
+                "before": [21.952224022243172, 21.04136103298515, 22.576479997951537],
+                "after": [0.5179980071261525, 0.5706180236302316, 0.5611789529211819]
+            },
+            "median_ms": {
+                "before": 21.952224022243172,
+                "after": 0.5611789529211819
+            },
+            "retained": {
+                "before": {
+                    "distinct_wire_buffers": 100,
+                    "retained_wire_bytes": 6566900
+                },
+                "after": {
+                    "distinct_wire_buffers": 1,
+                    "retained_wire_bytes": 65669
+                }
+            }
+        },
+        {
+            "viewers": 1000,
+            "samples_ms": {
+                "before": [251.09027401776984, 246.33849796373397, 262.2641749912873],
+                "after": [1.4972389908507466, 1.1741559719666839, 1.2967450311407447]
+            },
+            "median_ms": {
+                "before": 251.09027401776984,
+                "after": 1.2967450311407447
+            },
+            "retained": {
+                "before": {
+                    "distinct_wire_buffers": 1000,
+                    "retained_wire_bytes": 65669000
+                },
+                "after": {
+                    "distinct_wire_buffers": 1,
+                    "retained_wire_bytes": 65669
+                }
+            }
+        },
+        {
+            "viewers": 10000,
+            "samples_ms": {
+                "before": [2338.828659034334, 2620.5994749907404, 2574.9224530300125],
+                "after": [8.81379802012816, 8.558612957131118, 9.152482030913234]
+            },
+            "median_ms": {
+                "before": 2574.9224530300125,
+                "after": 8.81379802012816
+            },
+            "retained": {
+                "before": {
+                    "distinct_wire_buffers": 10000,
+                    "retained_wire_bytes": 656690000
+                },
+                "after": {
+                    "distinct_wire_buffers": 1,
+                    "retained_wire_bytes": 65669
+                }
+            }
+        }
+    ],
+    "limitations": "Measures one synchronous replacement publication after all viewers have a pending frame. Setup excluded. No socket, HTTP, database, cache or whole-request latency; retained bytes count distinct wire buffers, not total process memory.",
+    "method": "Three alternating baseline/current repetitions per viewer count. Prepare N mailboxes with a pending revision 1 events frame whose public_reads.events.text contains 65536 ASCII x characters; time revision 2 publication with resources=[summary] and the same payload. Setup/GC excluded; count unique pending wire buffers afterward."
+}

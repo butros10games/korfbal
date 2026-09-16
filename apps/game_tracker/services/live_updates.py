@@ -52,6 +52,9 @@ def _record_match_change_in_transaction(
     match_data.live_revision = locked.live_revision
     match_data.live_changed_at = locked.live_changed_at
 
+    publisher.schedule_snapshot(
+        match_id=str(locked.match_link_id), revision=locked.live_revision
+    )
     transaction.on_commit(
         partial(
             publisher.publish,

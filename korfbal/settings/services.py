@@ -73,9 +73,9 @@ if KORFBAL_DB_POOL_MAX_SIZE:
     }
 
 cache_backend = (
-    "django_prometheus.cache.backends.redis.RedisCache"
+    "apps.kwt_common.adapters.outbound.redis_cache.PrometheusRedisCache"
     if KORFBAL_ENABLE_PROMETHEUS
-    else "django.core.cache.backends.redis.RedisCache"
+    else "apps.kwt_common.adapters.outbound.redis_cache.SharedRedisCache"
 )
 
 CACHES = {

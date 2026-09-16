@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import aiohttp
 
+from .generators import run_sharded
 from .spectator import Spectator
 
 
@@ -61,6 +62,11 @@ class Workload:
     seconds: int
     interval: float
     reconnect: bool
+    live_origin: str | None = None
+    sse_origin: str | None = None
+    public_origin: str | None = None
+    generator_shards: int = 1
+    compact: bool = False
     metrics: Metrics = field(default_factory=Metrics)
     commits: dict[tuple[str, int], float] = field(default_factory=dict)
     observations: list[tuple[str, int, float]] = field(default_factory=list)
@@ -89,7 +95,15 @@ class Workload:
         try:
             async with client.request(
                 "POST" if payload is not None else "GET",
-                self.origin + path,
+                (
+                    self.live_origin
+                    if name == "live" and self.live_origin
+                    else self.public_origin
+                    if name in {"live", "summary", "stats", "events", "shots"}
+                    and self.public_origin
+                    else self.origin
+                )
+                + path,
                 json=payload,
                 headers=headers,
                 allow_redirects=False,
@@ -98,7 +112,19 @@ class Workload:
                 self.metrics.outcomes[f"{name}:{response.status}"] += 1
                 self.metrics.counters["response_bytes"] += len(body)
                 if response.status == HTTPStatus.OK:
-                    self.metrics.latency[name].append((perf_counter() - start) * 1000)
+                    elapsed_ms = (perf_counter() - start) * 1000
+                    self.metrics.latency[name].append(elapsed_ms)
+                    cache_outcome = response.headers.get("X-Korfbal-Live-Cache")
+                    if cache_outcome in {"hit", "miss"}:
+                        self.metrics.latency[f"{name}_cache_{cache_outcome}"].append(
+                            elapsed_ms
+                        )
+                    server_ms = response.headers.get("X-Korfbal-Request-Duration-Ms")
+                    if server_ms is not None:
+                        self.metrics.latency[f"{name}_app"].append(float(server_ms))
+                        self.metrics.latency[f"{name}_outside_app"].append(
+                            max(0, elapsed_ms - float(server_ms))
+                        )
                 else:
                     self.metrics.counters["http_errors"] += 1
                 try:
@@ -178,6 +204,8 @@ class Workload:
 
     async def run(self) -> dict[str, Any]:
         """Run a timed phase and allow three seconds for final event delivery."""
+        if self.generator_shards > 1:
+            return await run_sharded(self)
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit=0),
             cookie_jar=aiohttp.DummyCookieJar(),
@@ -216,28 +244,32 @@ class Workload:
                 await asyncio.gather(
                     *writers, *viewers, monitor, return_exceptions=True
                 )
-            for match_id, revision, observed in self.observations:
-                committed = self.commits.get((match_id, revision))
-                if committed is not None:
-                    self.metrics.latency["write_start_to_sse"].append(
-                        (observed - committed) * 1000
-                    )
-            for index in range(self.viewers):
-                match_id = self.fixtures[index % len(self.fixtures)]["match_id"]
-                expected = max(
-                    (revision for match, revision in self.commits if match == match_id),
-                    default=-1,
+            return self.report(start)
+
+    def report(self, start: float) -> dict[str, Any]:
+        """Audit final viewer revisions and compute combined sample percentiles."""
+        for match_id, revision, observed in self.observations:
+            committed = self.commits.get((match_id, revision))
+            if committed is not None:
+                self.metrics.latency["write_start_to_sse"].append(
+                    (observed - committed) * 1000
                 )
-                if index not in self.latest or self.latest[index] < expected:
-                    self.metrics.counters["stale_viewers"] += 1
-                if self.refreshed.get(index, -1) < self.live_commits.get(match_id, -1):
-                    self.metrics.counters["stale_live_reads"] += 1
-            return {
-                "viewers": self.viewers,
-                "matches": len(self.fixtures),
-                "seconds": self.seconds,
-                "elapsed_seconds": round(perf_counter() - start, 2),
-                "write_interval_seconds": self.interval,
-                "reconnect": self.reconnect,
-                **self.metrics.report(),
-            }
+        for index in range(self.viewers):
+            match_id = self.fixtures[index % len(self.fixtures)]["match_id"]
+            expected = max(
+                (revision for match, revision in self.commits if match == match_id),
+                default=-1,
+            )
+            if index not in self.latest or self.latest[index] < expected:
+                self.metrics.counters["stale_viewers"] += 1
+            if self.refreshed.get(index, -1) < self.live_commits.get(match_id, -1):
+                self.metrics.counters["stale_live_reads"] += 1
+        return {
+            "viewers": self.viewers,
+            "matches": len(self.fixtures),
+            "seconds": self.seconds,
+            "elapsed_seconds": round(perf_counter() - start, 2),
+            "write_interval_seconds": self.interval,
+            "reconnect": self.reconnect,
+            **self.metrics.report(),
+        }

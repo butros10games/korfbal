@@ -1,0 +1,348 @@
+{
+    "phases": [
+        {
+            "viewers": 1000,
+            "matches": 1,
+            "seconds": 90,
+            "elapsed_seconds": 93.1,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 30,
+                    "p50_ms": 1.06,
+                    "p95_ms": 2.0,
+                    "p99_ms": 5.65,
+                    "max_ms": 5.65
+                },
+                "tracker_state": {
+                    "count": 30,
+                    "p50_ms": 100.91,
+                    "p95_ms": 117.22,
+                    "p99_ms": 741.67,
+                    "max_ms": 741.67
+                },
+                "tracker_state_app": {
+                    "count": 30,
+                    "p50_ms": 94.0,
+                    "p95_ms": 109.0,
+                    "p99_ms": 718.0,
+                    "max_ms": 718.0
+                },
+                "tracker_state_outside_app": {
+                    "count": 30,
+                    "p50_ms": 4.79,
+                    "p95_ms": 23.67,
+                    "p99_ms": 50.22,
+                    "max_ms": 50.22
+                },
+                "tracker_command": {
+                    "count": 30,
+                    "p50_ms": 323.98,
+                    "p95_ms": 391.27,
+                    "p99_ms": 465.94,
+                    "max_ms": 465.94
+                },
+                "tracker_command_app": {
+                    "count": 30,
+                    "p50_ms": 319.0,
+                    "p95_ms": 387.0,
+                    "p99_ms": 461.0,
+                    "max_ms": 461.0
+                },
+                "tracker_command_outside_app": {
+                    "count": 30,
+                    "p50_ms": 4.58,
+                    "p95_ms": 5.56,
+                    "p99_ms": 10.36,
+                    "max_ms": 10.36
+                },
+                "tracker_action": {
+                    "count": 30,
+                    "p50_ms": 422.28,
+                    "p95_ms": 496.81,
+                    "p99_ms": 1207.93,
+                    "max_ms": 1207.93
+                },
+                "sse_ready": {
+                    "count": 2000,
+                    "p50_ms": 104.96,
+                    "p95_ms": 276.82,
+                    "p99_ms": 297.36,
+                    "max_ms": 315.59
+                },
+                "generator_event_loop_lag": {
+                    "count": 14800,
+                    "p50_ms": 0.32,
+                    "p95_ms": 0.93,
+                    "p99_ms": 2.39,
+                    "max_ms": 67.31
+                },
+                "publication_to_compact_encode": {
+                    "count": 5595,
+                    "p50_ms": 8.51,
+                    "p95_ms": 14.84,
+                    "p99_ms": 21.1,
+                    "max_ms": 21.1
+                },
+                "compact_encode_to_receive": {
+                    "count": 5595,
+                    "p50_ms": 27.45,
+                    "p95_ms": 101.95,
+                    "p99_ms": 117.52,
+                    "max_ms": 134.25
+                },
+                "compact_live_decode": {
+                    "count": 5595,
+                    "p50_ms": 0.08,
+                    "p95_ms": 0.17,
+                    "p99_ms": 3.19,
+                    "max_ms": 12.25
+                },
+                "snapshot_publish_to_receive": {
+                    "count": 5595,
+                    "p50_ms": 35.64,
+                    "p95_ms": 118.71,
+                    "p99_ms": 133.73,
+                    "max_ms": 149.0
+                },
+                "write_start_to_sse": {
+                    "count": 31000,
+                    "p50_ms": 450.52,
+                    "p95_ms": 1318.67,
+                    "p99_ms": 3278.41,
+                    "max_ms": 3322.84
+                }
+            },
+            "outcomes": {
+                "tracker_state:200": 30,
+                "tracker_command:200": 30
+            },
+            "counters": {
+                "http_requests_started": 60,
+                "response_bytes": 181197,
+                "commands_committed": 30,
+                "sse_response_bytes": 45745038,
+                "sse_connections_ready": 2000,
+                "compact_frames_received": 31635,
+                "sse_changes": 31635,
+                "events_updates_pushed": 10566,
+                "summary_updates_pushed": 7635,
+                "live_snapshots_pushed": 7635,
+                "public_snapshots_received": 2040,
+                "shots_updates_pushed": 10535,
+                "stats_updates_pushed": 10534
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 15148,
+                "sql_execution_ms": 2000.61,
+                "peak_connections_sampled": 7,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 102
+            },
+            "passed": false
+        },
+        {
+            "viewers": 10000,
+            "matches": 1,
+            "seconds": 90,
+            "elapsed_seconds": 93.51,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 30,
+                    "p50_ms": 0.84,
+                    "p95_ms": 2.32,
+                    "p99_ms": 2.47,
+                    "max_ms": 2.47
+                },
+                "tracker_state": {
+                    "count": 30,
+                    "p50_ms": 100.66,
+                    "p95_ms": 116.02,
+                    "p99_ms": 116.84,
+                    "max_ms": 116.84
+                },
+                "tracker_state_app": {
+                    "count": 30,
+                    "p50_ms": 95.0,
+                    "p95_ms": 110.0,
+                    "p99_ms": 111.0,
+                    "max_ms": 111.0
+                },
+                "tracker_state_outside_app": {
+                    "count": 30,
+                    "p50_ms": 4.93,
+                    "p95_ms": 6.02,
+                    "p99_ms": 7.21,
+                    "max_ms": 7.21
+                },
+                "tracker_command": {
+                    "count": 30,
+                    "p50_ms": 327.27,
+                    "p95_ms": 409.97,
+                    "p99_ms": 509.01,
+                    "max_ms": 509.01
+                },
+                "tracker_command_app": {
+                    "count": 30,
+                    "p50_ms": 323.0,
+                    "p95_ms": 405.0,
+                    "p99_ms": 505.0,
+                    "max_ms": 505.0
+                },
+                "tracker_command_outside_app": {
+                    "count": 30,
+                    "p50_ms": 4.65,
+                    "p95_ms": 10.17,
+                    "p99_ms": 53.96,
+                    "max_ms": 53.96
+                },
+                "tracker_action": {
+                    "count": 30,
+                    "p50_ms": 423.25,
+                    "p95_ms": 512.96,
+                    "p99_ms": 620.68,
+                    "max_ms": 620.68
+                },
+                "sse_ready": {
+                    "count": 20000,
+                    "p50_ms": 571.78,
+                    "p95_ms": 3116.58,
+                    "p99_ms": 3440.65,
+                    "max_ms": 3838.87
+                },
+                "generator_event_loop_lag": {
+                    "count": 14239,
+                    "p50_ms": 0.34,
+                    "p95_ms": 9.71,
+                    "p99_ms": 107.43,
+                    "max_ms": 799.38
+                },
+                "publication_to_compact_encode": {
+                    "count": 41630,
+                    "p50_ms": 7.39,
+                    "p95_ms": 12.96,
+                    "p99_ms": 12.96,
+                    "max_ms": 12.96
+                },
+                "compact_encode_to_receive": {
+                    "count": 41630,
+                    "p50_ms": 223.48,
+                    "p95_ms": 372.37,
+                    "p99_ms": 424.84,
+                    "max_ms": 452.17
+                },
+                "compact_live_decode": {
+                    "count": 41630,
+                    "p50_ms": 0.05,
+                    "p95_ms": 0.12,
+                    "p99_ms": 3.13,
+                    "max_ms": 226.17
+                },
+                "snapshot_publish_to_receive": {
+                    "count": 41630,
+                    "p50_ms": 231.87,
+                    "p95_ms": 381.19,
+                    "p99_ms": 433.69,
+                    "max_ms": 459.35
+                },
+                "write_start_to_sse": {
+                    "count": 300000,
+                    "p50_ms": 592.89,
+                    "p95_ms": 1212.61,
+                    "p99_ms": 3011.8,
+                    "max_ms": 3883.77
+                }
+            },
+            "outcomes": {
+                "tracker_state:200": 30,
+                "tracker_command:200": 30
+            },
+            "counters": {
+                "http_requests_started": 60,
+                "response_bytes": 181507,
+                "commands_committed": 30,
+                "sse_response_bytes": 524127959,
+                "sse_connections_ready": 20000,
+                "compact_frames_received": 301895,
+                "sse_changes": 301895,
+                "events_updates_pushed": 100641,
+                "summary_updates_pushed": 61895,
+                "live_snapshots_pushed": 61895,
+                "public_snapshots_received": 20265,
+                "shots_updates_pushed": 100642,
+                "stats_updates_pushed": 100612
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 15148,
+                "sql_execution_ms": 2056.81,
+                "peak_connections_sampled": 6,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 102
+            },
+            "passed": false
+        }
+    ],
+    "passed": false,
+    "environment": {
+        "revision": "644f284dc1d9d72e42a2d0156a27f4c7b62084a1",
+        "dirty": true,
+        "harness_sha256": "c8f0cba18d1b6173bc942dee8a78ba570fe4c7309fa25b3db3b4578604ea5ada",
+        "application_diff_sha256": "b90367200a7574f420030c79a6f7b2515ae674114bac810d3390ed412803b74e",
+        "proxy": "caddy:2.10.2-alpine",
+        "server_cpus": "0,1,2,3,4,5,6,7",
+        "generator_cpus": "8,9,10,11,12,13,14,15",
+        "compact": true,
+        "generator_shards": 16,
+        "generator_source_addresses": "Separate loopback source addresses per shard",
+        "python": "3.14.7",
+        "django": "6.1.1",
+        "granian": "2.8.2",
+        "host_logical_cpus": 16,
+        "asgi_workers": 4,
+        "sse_workers": 2,
+        "sse_backpressure_per_worker": 8192,
+        "public_workers": 2,
+        "public_backpressure_per_worker": 16384,
+        "live_workers": 2,
+        "live_threads_per_worker": 2,
+        "live_backpressure_per_worker": 16384,
+        "live_interface": "wsgi",
+        "max_live_p95_ms": 100,
+        "max_push_p95_ms": 100,
+        "db_pool_size_per_web_worker": 8,
+        "background_jobs": true,
+        "initial_shots_per_match": 100,
+        "max_command_p95_ms": 1000,
+        "limitations": "Local synthetic traffic; API/worker/generator share one physical host. No TLS, WAN, media or provider traffic. Optional local Caddy uses HTTP/1.1. CPU partitions, when specified, share host memory and networking. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+        "data_images": [
+            "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+            "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+        ],
+        "proxy_image": "sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d",
+        "runtime_source_sha256": {
+            "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/shared_compact.py": "e81c4e7b2f21ce159cc7e1450806c9ee21fd9e7fc20a9a29a09ec7ba0cb2f0bf",
+            "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/match_fanout.py": "f72f10329308abc256e9a9b6dcf242978ef398f8ddee1b0f3dba7c7c129a1e9d",
+            "apps/django_projects/korfbal/apps/game_tracker/composition.py": "55dd84def7cda576e934037f4a22e729060d7fe29d4b94859ae79b95a9288741",
+            "apps/django_projects/korfbal/apps/game_tracker/realtime/consumer.py": "e902e05e0c7b10f75399fe48c34bbd6f5fbbc088127f16edd6007aec41afee2a",
+            "apps/django_projects/korfbal/apps/game_tracker/realtime/metrics.py": "f55bdb102de8533d48cfc3a6f34f91abb6d9b4a49956a23ab61ebd57ab17a4ea"
+        }
+    },
+    "notes": [
+        "Local synthetic Caddy HTTP/1.1; server CPUs 0-7, 16 generator shards on CPUs 8-15 of the same physical host. No TLS/WAN or production capacity guarantee.",
+        "Two SSE workers; 1000 and 10000 viewers, 90 seconds each, 30 writes and a halfway reconnect. All writes and 2000/20000 ready events completed, with zero public GETs, HTTP/SSE errors or stale final viewers.",
+        "Overall gates remain false: publication-to-receive p95 is 118.71/381.19 ms and zero live GETs provide no live-GET latency samples. No latency improvement is established against earlier single-host runs.",
+        "The generator creates fresh decoders/connections at its halfway reconnect, so this capacity run exercises shared bootstrap and steady delivery, not native Last-Event-ID recovery. Cross-worker cursor recovery is validated separately against real Redis.",
+        "Source hashes identify the uncommitted runtime candidate used during measurement; docs and tests were subsequently finalized."
+    ]
+}

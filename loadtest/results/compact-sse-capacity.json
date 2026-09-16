@@ -1,0 +1,858 @@
+{
+    "baseline": {
+        "phases": [
+            {
+                "viewers": 1000,
+                "matches": 1,
+                "seconds": 90,
+                "elapsed_seconds": 93.1,
+                "write_interval_seconds": 3,
+                "reconnect": true,
+                "latency": {
+                    "writer_schedule_lag": {
+                        "count": 30,
+                        "p50_ms": 0.86,
+                        "p95_ms": 2.87,
+                        "p99_ms": 4.11,
+                        "max_ms": 4.11
+                    },
+                    "tracker_state": {
+                        "count": 30,
+                        "p50_ms": 90.53,
+                        "p95_ms": 132.77,
+                        "p99_ms": 823.57,
+                        "max_ms": 823.57
+                    },
+                    "tracker_state_app": {
+                        "count": 30,
+                        "p50_ms": 86.0,
+                        "p95_ms": 126.0,
+                        "p99_ms": 796.0,
+                        "max_ms": 796.0
+                    },
+                    "tracker_state_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.55,
+                        "p95_ms": 15.01,
+                        "p99_ms": 27.57,
+                        "max_ms": 27.57
+                    },
+                    "tracker_command": {
+                        "count": 30,
+                        "p50_ms": 305.14,
+                        "p95_ms": 370.77,
+                        "p99_ms": 465.71,
+                        "max_ms": 465.71
+                    },
+                    "tracker_command_app": {
+                        "count": 30,
+                        "p50_ms": 301.0,
+                        "p95_ms": 367.0,
+                        "p99_ms": 461.0,
+                        "max_ms": 461.0
+                    },
+                    "tracker_command_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.38,
+                        "p95_ms": 10.3,
+                        "p99_ms": 10.87,
+                        "max_ms": 10.87
+                    },
+                    "tracker_action": {
+                        "count": 30,
+                        "p50_ms": 401.2,
+                        "p95_ms": 465.58,
+                        "p99_ms": 1289.74,
+                        "max_ms": 1289.74
+                    },
+                    "sse_ready": {
+                        "count": 2000,
+                        "p50_ms": 116.41,
+                        "p95_ms": 295.09,
+                        "p99_ms": 319.74,
+                        "max_ms": 330.68
+                    },
+                    "generator_event_loop_lag": {
+                        "count": 14778,
+                        "p50_ms": 0.34,
+                        "p95_ms": 1.11,
+                        "p99_ms": 7.63,
+                        "max_ms": 68.47
+                    },
+                    "snapshot_publish_to_receive": {
+                        "count": 5532,
+                        "p50_ms": 39.64,
+                        "p95_ms": 118.51,
+                        "p99_ms": 134.25,
+                        "max_ms": 142.7
+                    },
+                    "live": {
+                        "count": 102,
+                        "p50_ms": 4.42,
+                        "p95_ms": 11.64,
+                        "p99_ms": 17.39,
+                        "max_ms": 20.54
+                    },
+                    "live_cache_hit": {
+                        "count": 102,
+                        "p50_ms": 4.42,
+                        "p95_ms": 11.64,
+                        "p99_ms": 17.39,
+                        "max_ms": 20.54
+                    },
+                    "live_app": {
+                        "count": 102,
+                        "p50_ms": 2.0,
+                        "p95_ms": 6.0,
+                        "p99_ms": 9.0,
+                        "max_ms": 17.0
+                    },
+                    "live_outside_app": {
+                        "count": 102,
+                        "p50_ms": 2.52,
+                        "p95_ms": 6.33,
+                        "p99_ms": 8.13,
+                        "max_ms": 11.39
+                    },
+                    "summary": {
+                        "count": 102,
+                        "p50_ms": 10.28,
+                        "p95_ms": 20.16,
+                        "p99_ms": 21.45,
+                        "max_ms": 24.11
+                    },
+                    "summary_app": {
+                        "count": 102,
+                        "p50_ms": 5.0,
+                        "p95_ms": 8.0,
+                        "p99_ms": 12.0,
+                        "max_ms": 15.0
+                    },
+                    "summary_outside_app": {
+                        "count": 102,
+                        "p50_ms": 5.28,
+                        "p95_ms": 13.49,
+                        "p99_ms": 14.58,
+                        "max_ms": 14.99
+                    },
+                    "stats": {
+                        "count": 34,
+                        "p50_ms": 10.53,
+                        "p95_ms": 20.57,
+                        "p99_ms": 25.64,
+                        "max_ms": 25.64
+                    },
+                    "stats_app": {
+                        "count": 34,
+                        "p50_ms": 4.0,
+                        "p95_ms": 11.0,
+                        "p99_ms": 18.0,
+                        "max_ms": 18.0
+                    },
+                    "stats_outside_app": {
+                        "count": 34,
+                        "p50_ms": 5.4,
+                        "p95_ms": 14.57,
+                        "p99_ms": 16.32,
+                        "max_ms": 16.32
+                    },
+                    "shots": {
+                        "count": 35,
+                        "p50_ms": 11.64,
+                        "p95_ms": 23.55,
+                        "p99_ms": 30.91,
+                        "max_ms": 30.91
+                    },
+                    "shots_app": {
+                        "count": 35,
+                        "p50_ms": 7.0,
+                        "p95_ms": 14.0,
+                        "p99_ms": 26.0,
+                        "max_ms": 26.0
+                    },
+                    "shots_outside_app": {
+                        "count": 35,
+                        "p50_ms": 4.82,
+                        "p95_ms": 11.96,
+                        "p99_ms": 16.55,
+                        "max_ms": 16.55
+                    },
+                    "events": {
+                        "count": 33,
+                        "p50_ms": 9.91,
+                        "p95_ms": 19.19,
+                        "p99_ms": 26.86,
+                        "max_ms": 26.86
+                    },
+                    "events_app": {
+                        "count": 33,
+                        "p50_ms": 5.0,
+                        "p95_ms": 7.0,
+                        "p99_ms": 11.0,
+                        "max_ms": 11.0
+                    },
+                    "events_outside_app": {
+                        "count": 33,
+                        "p50_ms": 4.52,
+                        "p95_ms": 13.58,
+                        "p99_ms": 15.86,
+                        "max_ms": 15.86
+                    },
+                    "write_start_to_sse": {
+                        "count": 31007,
+                        "p50_ms": 431.28,
+                        "p95_ms": 1403.49,
+                        "p99_ms": 3291.64,
+                        "max_ms": 3345.01
+                    }
+                },
+                "outcomes": {
+                    "tracker_state:200": 30,
+                    "tracker_command:200": 30,
+                    "live:200": 102,
+                    "summary:200": 102,
+                    "stats:200": 34,
+                    "shots:200": 35,
+                    "events:200": 33
+                },
+                "counters": {
+                    "http_requests_started": 366,
+                    "response_bytes": 2960569,
+                    "commands_committed": 30,
+                    "sse_response_bytes": 570983437,
+                    "sse_connections_ready": 2000,
+                    "sse_changes": 31539,
+                    "summary_updates_pushed": 7430,
+                    "events_updates_pushed": 10499,
+                    "live_snapshots_pushed": 7430,
+                    "public_snapshots_received": 1898,
+                    "stats_updates_pushed": 10466,
+                    "shots_updates_pushed": 10465,
+                    "bootstrap_http_fallbacks": 102
+                },
+                "database": {
+                    "monitoring_errors": [],
+                    "sql_calls": 15159,
+                    "sql_execution_ms": 1788.52,
+                    "peak_connections_sampled": 6,
+                    "peak_lock_waiters_sampled": 0,
+                    "pending_jobs_before": 0,
+                    "pending_jobs_after": 0,
+                    "job_errors_after": 0,
+                    "completed_job_generations": 102
+                },
+                "passed": false
+            },
+            {
+                "viewers": 10000,
+                "matches": 1,
+                "seconds": 90,
+                "elapsed_seconds": 93.76,
+                "write_interval_seconds": 3,
+                "reconnect": true,
+                "latency": {
+                    "writer_schedule_lag": {
+                        "count": 30,
+                        "p50_ms": 0.86,
+                        "p95_ms": 2.4,
+                        "p99_ms": 2.45,
+                        "max_ms": 2.45
+                    },
+                    "tracker_state": {
+                        "count": 30,
+                        "p50_ms": 87.05,
+                        "p95_ms": 119.28,
+                        "p99_ms": 256.91,
+                        "max_ms": 256.91
+                    },
+                    "tracker_state_app": {
+                        "count": 30,
+                        "p50_ms": 82.0,
+                        "p95_ms": 109.0,
+                        "p99_ms": 117.0,
+                        "max_ms": 117.0
+                    },
+                    "tracker_state_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.71,
+                        "p95_ms": 10.28,
+                        "p99_ms": 139.91,
+                        "max_ms": 139.91
+                    },
+                    "tracker_command": {
+                        "count": 30,
+                        "p50_ms": 321.6,
+                        "p95_ms": 486.08,
+                        "p99_ms": 515.11,
+                        "max_ms": 515.11
+                    },
+                    "tracker_command_app": {
+                        "count": 30,
+                        "p50_ms": 318.0,
+                        "p95_ms": 482.0,
+                        "p99_ms": 492.0,
+                        "max_ms": 492.0
+                    },
+                    "tracker_command_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.17,
+                        "p95_ms": 9.2,
+                        "p99_ms": 23.11,
+                        "max_ms": 23.11
+                    },
+                    "tracker_action": {
+                        "count": 30,
+                        "p50_ms": 402.24,
+                        "p95_ms": 598.43,
+                        "p99_ms": 612.57,
+                        "max_ms": 612.57
+                    },
+                    "sse_ready": {
+                        "count": 20000,
+                        "p50_ms": 1093.64,
+                        "p95_ms": 4453.63,
+                        "p99_ms": 5121.89,
+                        "max_ms": 5525.71
+                    },
+                    "generator_event_loop_lag": {
+                        "count": 13416,
+                        "p50_ms": 0.39,
+                        "p95_ms": 61.8,
+                        "p99_ms": 231.08,
+                        "max_ms": 1373.2
+                    },
+                    "snapshot_publish_to_receive": {
+                        "count": 40978,
+                        "p50_ms": 357.84,
+                        "p95_ms": 613.35,
+                        "p99_ms": 684.98,
+                        "max_ms": 744.56
+                    },
+                    "events": {
+                        "count": 2520,
+                        "p50_ms": 3357.87,
+                        "p95_ms": 10465.15,
+                        "p99_ms": 10815.36,
+                        "max_ms": 11116.77
+                    },
+                    "events_app": {
+                        "count": 2520,
+                        "p50_ms": 6.0,
+                        "p95_ms": 10.0,
+                        "p99_ms": 17.0,
+                        "max_ms": 148.0
+                    },
+                    "events_outside_app": {
+                        "count": 2520,
+                        "p50_ms": 3351.75,
+                        "p95_ms": 10459.93,
+                        "p99_ms": 10806.36,
+                        "max_ms": 11110.77
+                    },
+                    "summary": {
+                        "count": 3665,
+                        "p50_ms": 5008.62,
+                        "p95_ms": 9884.5,
+                        "p99_ms": 10443.8,
+                        "max_ms": 10967.83
+                    },
+                    "summary_app": {
+                        "count": 3665,
+                        "p50_ms": 5.0,
+                        "p95_ms": 11.0,
+                        "p99_ms": 26.0,
+                        "max_ms": 567.0
+                    },
+                    "summary_outside_app": {
+                        "count": 3665,
+                        "p50_ms": 4999.29,
+                        "p95_ms": 9882.51,
+                        "p99_ms": 10424.0,
+                        "max_ms": 10961.83
+                    },
+                    "shots": {
+                        "count": 2490,
+                        "p50_ms": 3424.24,
+                        "p95_ms": 10512.77,
+                        "p99_ms": 10862.29,
+                        "max_ms": 11149.31
+                    },
+                    "shots_app": {
+                        "count": 2490,
+                        "p50_ms": 8.0,
+                        "p95_ms": 14.0,
+                        "p99_ms": 27.0,
+                        "max_ms": 169.0
+                    },
+                    "shots_outside_app": {
+                        "count": 2490,
+                        "p50_ms": 3414.44,
+                        "p95_ms": 10504.77,
+                        "p99_ms": 10855.29,
+                        "max_ms": 11144.31
+                    },
+                    "stats": {
+                        "count": 1232,
+                        "p50_ms": 5098.94,
+                        "p95_ms": 9941.8,
+                        "p99_ms": 10426.23,
+                        "max_ms": 10892.24
+                    },
+                    "stats_app": {
+                        "count": 1232,
+                        "p50_ms": 5.0,
+                        "p95_ms": 11.0,
+                        "p99_ms": 26.0,
+                        "max_ms": 271.0
+                    },
+                    "stats_outside_app": {
+                        "count": 1232,
+                        "p50_ms": 5093.94,
+                        "p95_ms": 9937.8,
+                        "p99_ms": 10424.23,
+                        "max_ms": 10887.24
+                    },
+                    "live": {
+                        "count": 1069,
+                        "p50_ms": 1127.81,
+                        "p95_ms": 1833.82,
+                        "p99_ms": 1981.59,
+                        "max_ms": 2045.28
+                    },
+                    "live_cache_hit": {
+                        "count": 1065,
+                        "p50_ms": 1125.75,
+                        "p95_ms": 1832.11,
+                        "p99_ms": 1981.59,
+                        "max_ms": 2045.28
+                    },
+                    "live_app": {
+                        "count": 1069,
+                        "p50_ms": 4.0,
+                        "p95_ms": 15.0,
+                        "p99_ms": 30.0,
+                        "max_ms": 717.0
+                    },
+                    "live_outside_app": {
+                        "count": 1069,
+                        "p50_ms": 1123.75,
+                        "p95_ms": 1827.79,
+                        "p99_ms": 1977.59,
+                        "max_ms": 2041.28
+                    },
+                    "live_cache_miss": {
+                        "count": 4,
+                        "p50_ms": 1165.91,
+                        "p95_ms": 1864.79,
+                        "p99_ms": 1864.79,
+                        "max_ms": 1864.79
+                    },
+                    "write_start_to_sse": {
+                        "count": 300936,
+                        "p50_ms": 740.72,
+                        "p95_ms": 1847.17,
+                        "p99_ms": 3357.3,
+                        "max_ms": 4974.89
+                    }
+                },
+                "outcomes": {
+                    "tracker_state:200": 30,
+                    "tracker_command:200": 30,
+                    "events:200": 2520,
+                    "summary:200": 3665,
+                    "shots:200": 2490,
+                    "stats:200": 1232,
+                    "live:200": 1069,
+                    "events:TimeoutError": 1823,
+                    "summary:TimeoutError": 1931,
+                    "stats:TimeoutError": 671,
+                    "shots:TimeoutError": 1750
+                },
+                "counters": {
+                    "http_requests_started": 17211,
+                    "response_bytes": 175023055,
+                    "commands_committed": 30,
+                    "sse_response_bytes": 5858158839,
+                    "sse_connections_ready": 20000,
+                    "sse_changes": 301914,
+                    "summary_updates_pushed": 55382,
+                    "events_updates_pushed": 90678,
+                    "live_snapshots_pushed": 59909,
+                    "public_snapshots_received": 18931,
+                    "stats_updates_pushed": 97435,
+                    "shots_updates_pushed": 90899,
+                    "bootstrap_http_fallbacks": 598,
+                    "public_delta_recoveries": 13413,
+                    "http_errors": 6175
+                },
+                "database": {
+                    "monitoring_errors": [],
+                    "sql_calls": 16000,
+                    "sql_execution_ms": 1892.62,
+                    "peak_connections_sampled": 10,
+                    "peak_lock_waiters_sampled": 0,
+                    "pending_jobs_before": 0,
+                    "pending_jobs_after": 0,
+                    "job_errors_after": 0,
+                    "completed_job_generations": 102
+                },
+                "passed": false
+            }
+        ],
+        "passed": false,
+        "environment": {
+            "revision": "6a949145d92b7190e3be6a8d739b5f7e59ff7f6e",
+            "dirty": true,
+            "harness_sha256": "27135759466950068ee6bacca6f9f68b237e502bc18949113a6cae8977ffe54e",
+            "application_diff_sha256": "3054bb230e6d45803f15b89c09c664b4030aa6fa3ef20487f339e2a40234bba7",
+            "proxy": "caddy:2.10.2-alpine",
+            "server_cpus": "0,1,2,3,4,5,6,7",
+            "generator_cpus": "8,9,10,11,12,13,14,15",
+            "compact": false,
+            "generator_shards": 16,
+            "generator_source_addresses": "Separate loopback source addresses per shard",
+            "python": "3.14.7",
+            "django": "6.1.1",
+            "granian": "2.8.2",
+            "host_logical_cpus": 16,
+            "asgi_workers": 4,
+            "sse_workers": 2,
+            "sse_backpressure_per_worker": 8192,
+            "public_workers": 2,
+            "public_backpressure_per_worker": 16384,
+            "live_workers": 2,
+            "live_threads_per_worker": 2,
+            "live_backpressure_per_worker": 16384,
+            "live_interface": "wsgi",
+            "max_live_p95_ms": 100,
+            "max_push_p95_ms": 100,
+            "db_pool_size_per_web_worker": 8,
+            "background_jobs": true,
+            "initial_shots_per_match": 100,
+            "max_command_p95_ms": 1000,
+            "limitations": "Local synthetic traffic; API/worker/generator share one physical host. No TLS, WAN, media or provider traffic. Optional local Caddy uses HTTP/1.1. CPU partitions, when specified, share host memory and networking. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+            "data_images": [
+                "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+            ],
+            "proxy_image": "sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+        }
+    },
+    "compact": {
+        "phases": [
+            {
+                "viewers": 1000,
+                "matches": 1,
+                "seconds": 90,
+                "elapsed_seconds": 93.12,
+                "write_interval_seconds": 3,
+                "reconnect": true,
+                "latency": {
+                    "writer_schedule_lag": {
+                        "count": 30,
+                        "p50_ms": 0.9,
+                        "p95_ms": 2.48,
+                        "p99_ms": 6.93,
+                        "max_ms": 6.93
+                    },
+                    "tracker_state": {
+                        "count": 30,
+                        "p50_ms": 86.3,
+                        "p95_ms": 126.94,
+                        "p99_ms": 798.37,
+                        "max_ms": 798.37
+                    },
+                    "tracker_state_app": {
+                        "count": 30,
+                        "p50_ms": 81.0,
+                        "p95_ms": 106.0,
+                        "p99_ms": 775.0,
+                        "max_ms": 775.0
+                    },
+                    "tracker_state_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.88,
+                        "p95_ms": 20.94,
+                        "p99_ms": 23.37,
+                        "max_ms": 23.37
+                    },
+                    "tracker_command": {
+                        "count": 30,
+                        "p50_ms": 305.58,
+                        "p95_ms": 413.79,
+                        "p99_ms": 452.13,
+                        "max_ms": 452.13
+                    },
+                    "tracker_command_app": {
+                        "count": 30,
+                        "p50_ms": 302.0,
+                        "p95_ms": 409.0,
+                        "p99_ms": 448.0,
+                        "max_ms": 448.0
+                    },
+                    "tracker_command_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.11,
+                        "p95_ms": 5.58,
+                        "p99_ms": 5.92,
+                        "max_ms": 5.92
+                    },
+                    "tracker_action": {
+                        "count": 30,
+                        "p50_ms": 394.29,
+                        "p95_ms": 488.91,
+                        "p99_ms": 1250.91,
+                        "max_ms": 1250.91
+                    },
+                    "sse_ready": {
+                        "count": 2000,
+                        "p50_ms": 127.03,
+                        "p95_ms": 343.85,
+                        "p99_ms": 365.06,
+                        "max_ms": 381.71
+                    },
+                    "generator_event_loop_lag": {
+                        "count": 14799,
+                        "p50_ms": 0.34,
+                        "p95_ms": 1.03,
+                        "p99_ms": 2.33,
+                        "max_ms": 88.1
+                    },
+                    "snapshot_publish_to_receive": {
+                        "count": 5617,
+                        "p50_ms": 26.6,
+                        "p95_ms": 132.12,
+                        "p99_ms": 140.75,
+                        "max_ms": 146.61
+                    },
+                    "write_start_to_sse": {
+                        "count": 31000,
+                        "p50_ms": 411.97,
+                        "p95_ms": 1378.0,
+                        "p99_ms": 3340.62,
+                        "max_ms": 3394.97
+                    }
+                },
+                "outcomes": {
+                    "tracker_state:200": 30,
+                    "tracker_command:200": 30
+                },
+                "counters": {
+                    "http_requests_started": 60,
+                    "response_bytes": 181197,
+                    "commands_committed": 30,
+                    "sse_response_bytes": 44428365,
+                    "sse_connections_ready": 2000,
+                    "compact_frames_received": 31653,
+                    "sse_changes": 31653,
+                    "events_updates_pushed": 10571,
+                    "summary_updates_pushed": 7653,
+                    "live_snapshots_pushed": 7653,
+                    "public_snapshots_received": 2036,
+                    "shots_updates_pushed": 10541,
+                    "stats_updates_pushed": 10541
+                },
+                "database": {
+                    "monitoring_errors": [],
+                    "sql_calls": 15152,
+                    "sql_execution_ms": 1739.71,
+                    "peak_connections_sampled": 6,
+                    "peak_lock_waiters_sampled": 1,
+                    "pending_jobs_before": 0,
+                    "pending_jobs_after": 0,
+                    "job_errors_after": 0,
+                    "completed_job_generations": 102
+                },
+                "passed": false
+            },
+            {
+                "viewers": 10000,
+                "matches": 1,
+                "seconds": 90,
+                "elapsed_seconds": 93.65,
+                "write_interval_seconds": 3,
+                "reconnect": true,
+                "latency": {
+                    "writer_schedule_lag": {
+                        "count": 30,
+                        "p50_ms": 1.07,
+                        "p95_ms": 2.79,
+                        "p99_ms": 10.21,
+                        "max_ms": 10.21
+                    },
+                    "tracker_state": {
+                        "count": 30,
+                        "p50_ms": 86.86,
+                        "p95_ms": 104.99,
+                        "p99_ms": 121.24,
+                        "max_ms": 121.24
+                    },
+                    "tracker_state_app": {
+                        "count": 30,
+                        "p50_ms": 82.0,
+                        "p95_ms": 97.0,
+                        "p99_ms": 112.0,
+                        "max_ms": 112.0
+                    },
+                    "tracker_state_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.67,
+                        "p95_ms": 9.24,
+                        "p99_ms": 11.62,
+                        "max_ms": 11.62
+                    },
+                    "tracker_command": {
+                        "count": 30,
+                        "p50_ms": 309.9,
+                        "p95_ms": 526.47,
+                        "p99_ms": 551.14,
+                        "max_ms": 551.14
+                    },
+                    "tracker_command_app": {
+                        "count": 30,
+                        "p50_ms": 305.0,
+                        "p95_ms": 516.0,
+                        "p99_ms": 522.0,
+                        "max_ms": 522.0
+                    },
+                    "tracker_command_outside_app": {
+                        "count": 30,
+                        "p50_ms": 4.42,
+                        "p95_ms": 7.71,
+                        "p99_ms": 35.14,
+                        "max_ms": 35.14
+                    },
+                    "tracker_action": {
+                        "count": 30,
+                        "p50_ms": 396.27,
+                        "p95_ms": 615.15,
+                        "p99_ms": 640.49,
+                        "max_ms": 640.49
+                    },
+                    "sse_ready": {
+                        "count": 20000,
+                        "p50_ms": 987.22,
+                        "p95_ms": 3611.13,
+                        "p99_ms": 3877.22,
+                        "max_ms": 4365.71
+                    },
+                    "generator_event_loop_lag": {
+                        "count": 14219,
+                        "p50_ms": 0.38,
+                        "p95_ms": 5.16,
+                        "p99_ms": 129.36,
+                        "max_ms": 921.76
+                    },
+                    "snapshot_publish_to_receive": {
+                        "count": 42520,
+                        "p50_ms": 286.07,
+                        "p95_ms": 525.6,
+                        "p99_ms": 571.24,
+                        "max_ms": 1810.06
+                    },
+                    "write_start_to_sse": {
+                        "count": 300014,
+                        "p50_ms": 595.44,
+                        "p95_ms": 1752.63,
+                        "p99_ms": 3457.24,
+                        "max_ms": 4287.79
+                    }
+                },
+                "outcomes": {
+                    "tracker_state:200": 30,
+                    "tracker_command:200": 30
+                },
+                "counters": {
+                    "http_requests_started": 60,
+                    "response_bytes": 181507,
+                    "commands_committed": 30,
+                    "sse_response_bytes": 498940431,
+                    "sse_connections_ready": 20000,
+                    "compact_frames_received": 302294,
+                    "sse_changes": 302294,
+                    "shots_updates_pushed": 100748,
+                    "summary_updates_pushed": 62594,
+                    "live_snapshots_pushed": 62594,
+                    "public_snapshots_received": 20074,
+                    "events_updates_pushed": 100788,
+                    "stats_updates_pushed": 100758
+                },
+                "database": {
+                    "monitoring_errors": [],
+                    "sql_calls": 15115,
+                    "sql_execution_ms": 1761.1,
+                    "peak_connections_sampled": 6,
+                    "peak_lock_waiters_sampled": 0,
+                    "pending_jobs_before": 0,
+                    "pending_jobs_after": 0,
+                    "job_errors_after": 0,
+                    "completed_job_generations": 102
+                },
+                "passed": false
+            }
+        ],
+        "passed": false,
+        "environment": {
+            "revision": "6a949145d92b7190e3be6a8d739b5f7e59ff7f6e",
+            "dirty": true,
+            "harness_sha256": "2800476c7fbe4e4ee1fa8881463b5a739078a66014d9509b2bfac37ccc15a5c4",
+            "application_diff_sha256": "9d03bf6a71061690b5c9d9e2179b900a099be372324350693f05539edb000362",
+            "proxy": "caddy:2.10.2-alpine",
+            "server_cpus": "0,1,2,3,4,5,6,7",
+            "generator_cpus": "8,9,10,11,12,13,14,15",
+            "compact": true,
+            "generator_shards": 16,
+            "generator_source_addresses": "Separate loopback source addresses per shard",
+            "python": "3.14.7",
+            "django": "6.1.1",
+            "granian": "2.8.2",
+            "host_logical_cpus": 16,
+            "asgi_workers": 4,
+            "sse_workers": 2,
+            "sse_backpressure_per_worker": 8192,
+            "public_workers": 2,
+            "public_backpressure_per_worker": 16384,
+            "live_workers": 2,
+            "live_threads_per_worker": 2,
+            "live_backpressure_per_worker": 16384,
+            "live_interface": "wsgi",
+            "max_live_p95_ms": 100,
+            "max_push_p95_ms": 100,
+            "db_pool_size_per_web_worker": 8,
+            "background_jobs": true,
+            "initial_shots_per_match": 100,
+            "max_command_p95_ms": 1000,
+            "limitations": "Local synthetic traffic; API/worker/generator share one physical host. No TLS, WAN, media or provider traffic. Optional local Caddy uses HTTP/1.1. CPU partitions, when specified, share host memory and networking. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+            "data_images": [
+                "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+            ],
+            "proxy_image": "sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+        }
+    },
+    "compact_runtime_files_sha256": {
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/compact_json.py": "d800ca1476cffb59042a13e86b84c9fe327888399c56de0d51909ca5c9119d92",
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/compact_match.py": "e9795b4c89302adf75653f096baff234a5a0f6168f8f268599a1f2a2c4d96919",
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/match_fanout.py": "29d27c17675d8a200d696d125f5bf3a19362ed9e0c730e12c8961cebf408b4a1",
+        "apps/django_projects/korfbal/apps/game_tracker/realtime/consumer.py": "a25ddc2d762275a0f417f199f96688f364e9a8b0eb9a96a521da0af545a099a4",
+        "apps/django_projects/korfbal/loadtest/__init__.py": "d6bfc4585ccfdcf331dc5b1dd480abb4526972e073b8d1061347ae8eee0c1b4f",
+        "apps/django_projects/korfbal/loadtest/__main__.py": "4482ddd0a09117e76b25ac8111fa70b7258804cba4c0c85d0fe00f1524b9be0d",
+        "apps/django_projects/korfbal/loadtest/compact.py": "ad2354be77e9fa7ad34d9f55f6275e83004b20bfd20d37a658994ef10fb8f57c",
+        "apps/django_projects/korfbal/loadtest/generators.py": "ea98268fea5db63b1ea38b5e05cb55c5e35aacd8e616550766d687f2564e278d",
+        "apps/django_projects/korfbal/loadtest/profile_commands.py": "0415f3759f4f34a89acfa3f7c90002ef0b68d822b407240034842fcbed509f21",
+        "apps/django_projects/korfbal/loadtest/profile_payloads.py": "a82e18f6275efb7af3a368fb1e20b9bd08497d96dfe7db7bd237f0b56aa35a83",
+        "apps/django_projects/korfbal/loadtest/proxy.py": "6c5d8b4840eee915eb887d3e069ca0aed6991412914043fba56e74d704b79244",
+        "apps/django_projects/korfbal/loadtest/seed.py": "e9b3042ca0691e838cd0c188bfcee0fe74003cf5e400eb829501bbf4a1154779",
+        "apps/django_projects/korfbal/loadtest/settings.py": "923b2008d94930491e5c2ca99969b05ec056141d692a0096e658274efe781bb8",
+        "apps/django_projects/korfbal/loadtest/spectator.py": "9ce2d8227c3976edc5e9112057102ff608e85cd9dc30e56f5dea586bd399a36d",
+        "apps/django_projects/korfbal/loadtest/workload.py": "7ca44a2f422d468b60b2b9d39e0c09293aae28834d1511273a308dc8e3bc835a"
+    },
+    "notes": [
+        "Sequential local Caddy HTTP/1.1 runs, 90 seconds per phase, 30 writes and one synchronized reconnect.",
+        "Server CPUs 0-7, generator CPUs 8-15; same physical host, no production TLS/WAN or rate-limited 100 Mbit link.",
+        "Final compact setup was paused before measurement while the 500-shot profile and client checks completed. No tests or profiling ran during its measured phases.",
+        "The baseline legacy path is unchanged by the final compact handshake fix. Metadata git diff hashes can differ due to documentation/tests; final compact runtime hashes are included.",
+        "Both commands exited 1: push p95 exceeds 100 ms. The compact runs have no live GET samples and therefore also fail the harness live-GET sample requirement; that metric is not applicable to their zero-public-GET workload.",
+        "SSE bytes include initial mappings, snapshots, deltas, reconnects and heartbeats; exclude HTTP/TCP/TLS overhead. Average bandwidth does not establish synchronized connection/reconnect burst capacity."
+    ]
+}

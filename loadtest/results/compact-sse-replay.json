@@ -1,0 +1,53 @@
+{
+  "scenario": "100 initial synthetic shots; reconnect after one missed publication on the same active worker and resource cohort",
+  "command": "corepack pnpm nx run korfbal-django:loadtest --profile-payloads --shots=100 --output=<scratch>",
+  "samples": [
+    {
+      "kind": "shot_reg",
+      "all_public": {
+        "full_snapshot_bytes": 37224,
+        "replay_bytes": 940,
+        "cursor_line_bytes": 39
+      },
+      "live_summary_events": {
+        "full_snapshot_bytes": 8257,
+        "replay_bytes": 267,
+        "cursor_line_bytes": 39
+      }
+    },
+    {
+      "kind": "goal_reg",
+      "all_public": {
+        "full_snapshot_bytes": 37742,
+        "replay_bytes": 1223,
+        "cursor_line_bytes": 39
+      },
+      "live_summary_events": {
+        "full_snapshot_bytes": 8618,
+        "replay_bytes": 720,
+        "cursor_line_bytes": 39
+      }
+    },
+    {
+      "kind": "shot_reg",
+      "all_public": {
+        "full_snapshot_bytes": 38014,
+        "replay_bytes": 812,
+        "cursor_line_bytes": 39
+      },
+      "live_summary_events": {
+        "full_snapshot_bytes": 8616,
+        "replay_bytes": 249,
+        "cursor_line_bytes": 39
+      }
+    }
+  ],
+  "limitations": [
+    "SSE compact frame bytes only; excludes ready, HTTP/TCP/TLS overhead and network latency.",
+    "Replay buffer is shared per active worker/match/resource mask: at most 32 frames and 64 KiB of wire bytes.",
+    "Native EventSource resumes only the last match cursor; other matches receive snapshots.",
+    "Worker change, missing cohort, dictionary reset, eviction or an ahead-of-publication database revision uses the snapshot path.",
+    "Every compact event now adds a cursor line: 39 bytes in this profile, increasing as the sequence grows.",
+    "No new 10,000-viewer capacity or latency claim."
+  ]
+}

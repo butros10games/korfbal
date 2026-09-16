@@ -50,6 +50,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "bg_django_mobile_detector.middleware.DetectMiddleware",
+    "apps.schedule.api.public_live_cache.PublicLiveCacheMiddleware",
 ]
 
 if KORFBAL_ENABLE_PROMETHEUS:

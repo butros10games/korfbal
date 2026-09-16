@@ -1,0 +1,838 @@
+{
+    "phases": [
+        {
+            "viewers": 100,
+            "matches": 1,
+            "seconds": 180,
+            "elapsed_seconds": 183.04,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 60,
+                    "p50_ms": 1.02,
+                    "p95_ms": 2.11,
+                    "p99_ms": 2.34,
+                    "max_ms": 2.34
+                },
+                "tracker_state": {
+                    "count": 60,
+                    "p50_ms": 90.71,
+                    "p95_ms": 110.04,
+                    "p99_ms": 745.06,
+                    "max_ms": 745.06
+                },
+                "tracker_state_app": {
+                    "count": 60,
+                    "p50_ms": 87.0,
+                    "p95_ms": 104.0,
+                    "p99_ms": 740.0,
+                    "max_ms": 740.0
+                },
+                "tracker_state_outside_app": {
+                    "count": 60,
+                    "p50_ms": 4.02,
+                    "p95_ms": 5.17,
+                    "p99_ms": 7.44,
+                    "max_ms": 7.44
+                },
+                "tracker_command": {
+                    "count": 60,
+                    "p50_ms": 324.58,
+                    "p95_ms": 396.23,
+                    "p99_ms": 525.08,
+                    "max_ms": 525.08
+                },
+                "tracker_command_app": {
+                    "count": 60,
+                    "p50_ms": 320.0,
+                    "p95_ms": 388.0,
+                    "p99_ms": 521.0,
+                    "max_ms": 521.0
+                },
+                "tracker_command_outside_app": {
+                    "count": 60,
+                    "p50_ms": 3.7,
+                    "p95_ms": 7.07,
+                    "p99_ms": 16.85,
+                    "max_ms": 16.85
+                },
+                "tracker_action": {
+                    "count": 60,
+                    "p50_ms": 420.17,
+                    "p95_ms": 488.78,
+                    "p99_ms": 1214.43,
+                    "max_ms": 1214.43
+                },
+                "live": {
+                    "count": 1092,
+                    "p50_ms": 47.78,
+                    "p95_ms": 243.08,
+                    "p99_ms": 750.4,
+                    "max_ms": 771.25
+                },
+                "live_cache_hit": {
+                    "count": 1060,
+                    "p50_ms": 47.86,
+                    "p95_ms": 161.35,
+                    "p99_ms": 746.98,
+                    "max_ms": 771.25
+                },
+                "live_app": {
+                    "count": 1092,
+                    "p50_ms": 5.0,
+                    "p95_ms": 9.0,
+                    "p99_ms": 40.0,
+                    "max_ms": 725.0
+                },
+                "live_outside_app": {
+                    "count": 1092,
+                    "p50_ms": 41.86,
+                    "p95_ms": 143.0,
+                    "p99_ms": 741.32,
+                    "max_ms": 767.25
+                },
+                "summary": {
+                    "count": 1092,
+                    "p50_ms": 217.02,
+                    "p95_ms": 396.48,
+                    "p99_ms": 447.01,
+                    "max_ms": 473.44
+                },
+                "summary_app": {
+                    "count": 1092,
+                    "p50_ms": 5.0,
+                    "p95_ms": 8.0,
+                    "p99_ms": 170.0,
+                    "max_ms": 394.0
+                },
+                "summary_outside_app": {
+                    "count": 1092,
+                    "p50_ms": 209.81,
+                    "p95_ms": 390.97,
+                    "p99_ms": 441.18,
+                    "max_ms": 470.44
+                },
+                "events": {
+                    "count": 374,
+                    "p50_ms": 214.51,
+                    "p95_ms": 395.33,
+                    "p99_ms": 450.51,
+                    "max_ms": 473.46
+                },
+                "events_app": {
+                    "count": 374,
+                    "p50_ms": 5.0,
+                    "p95_ms": 9.0,
+                    "p99_ms": 179.0,
+                    "max_ms": 277.0
+                },
+                "events_outside_app": {
+                    "count": 374,
+                    "p50_ms": 206.27,
+                    "p95_ms": 391.7,
+                    "p99_ms": 444.51,
+                    "max_ms": 468.46
+                },
+                "sse_ready": {
+                    "count": 200,
+                    "p50_ms": 18.35,
+                    "p95_ms": 23.44,
+                    "p99_ms": 36.4,
+                    "max_ms": 55.15
+                },
+                "generator_event_loop_lag": {
+                    "count": 29152,
+                    "p50_ms": 0.32,
+                    "p95_ms": 0.87,
+                    "p99_ms": 1.91,
+                    "max_ms": 18.13
+                },
+                "shots": {
+                    "count": 373,
+                    "p50_ms": 195.12,
+                    "p95_ms": 387.39,
+                    "p99_ms": 436.13,
+                    "max_ms": 460.17
+                },
+                "shots_app": {
+                    "count": 373,
+                    "p50_ms": 7.0,
+                    "p95_ms": 11.0,
+                    "p99_ms": 146.0,
+                    "max_ms": 270.0
+                },
+                "shots_outside_app": {
+                    "count": 373,
+                    "p50_ms": 188.46,
+                    "p95_ms": 377.39,
+                    "p99_ms": 429.13,
+                    "max_ms": 453.17
+                },
+                "stats": {
+                    "count": 358,
+                    "p50_ms": 194.29,
+                    "p95_ms": 395.83,
+                    "p99_ms": 450.24,
+                    "max_ms": 465.92
+                },
+                "stats_app": {
+                    "count": 358,
+                    "p50_ms": 5.0,
+                    "p95_ms": 10.0,
+                    "p99_ms": 161.0,
+                    "max_ms": 314.0
+                },
+                "stats_outside_app": {
+                    "count": 358,
+                    "p50_ms": 189.29,
+                    "p95_ms": 391.83,
+                    "p99_ms": 443.24,
+                    "max_ms": 460.92
+                },
+                "snapshot_publish_to_receive": {
+                    "count": 957,
+                    "p50_ms": 8.5,
+                    "p95_ms": 19.65,
+                    "p99_ms": 24.4,
+                    "max_ms": 26.37
+                },
+                "live_cache_miss": {
+                    "count": 32,
+                    "p50_ms": 46.24,
+                    "p95_ms": 765.37,
+                    "p99_ms": 766.08,
+                    "max_ms": 766.08
+                },
+                "write_start_to_sse": {
+                    "count": 6856,
+                    "p50_ms": 416.92,
+                    "p95_ms": 500.9,
+                    "p99_ms": 1051.39,
+                    "max_ms": 1217.58
+                }
+            },
+            "outcomes": {
+                "tracker_state:200": 60,
+                "tracker_command:200": 60,
+                "live:200": 1092,
+                "summary:200": 1092,
+                "events:200": 374,
+                "shots:200": 373,
+                "stats:200": 358
+            },
+            "counters": {
+                "http_requests_started": 3409,
+                "response_bytes": 8738765,
+                "commands_committed": 60,
+                "sse_connections_ready": 200,
+                "sse_changes": 6856,
+                "stats_updates_pushed": 1671,
+                "events_updates_pushed": 1717,
+                "shots_updates_pushed": 1656,
+                "summary_updates_pushed": 957,
+                "live_snapshots_pushed": 957,
+                "public_delta_recoveries": 13
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 31148,
+                "sql_execution_ms": 3730.79,
+                "peak_connections_sampled": 12,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 204
+            },
+            "passed": false
+        },
+        {
+            "viewers": 1000,
+            "matches": 1,
+            "seconds": 180,
+            "elapsed_seconds": 183.17,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 60,
+                    "p50_ms": 0.96,
+                    "p95_ms": 1.93,
+                    "p99_ms": 2.48,
+                    "max_ms": 2.48
+                },
+                "tracker_state": {
+                    "count": 60,
+                    "p50_ms": 86.73,
+                    "p95_ms": 110.04,
+                    "p99_ms": 784.93,
+                    "max_ms": 784.93
+                },
+                "tracker_state_app": {
+                    "count": 60,
+                    "p50_ms": 83.0,
+                    "p95_ms": 106.0,
+                    "p99_ms": 780.0,
+                    "max_ms": 780.0
+                },
+                "tracker_state_outside_app": {
+                    "count": 60,
+                    "p50_ms": 3.91,
+                    "p95_ms": 5.17,
+                    "p99_ms": 7.29,
+                    "max_ms": 7.29
+                },
+                "tracker_command": {
+                    "count": 60,
+                    "p50_ms": 340.95,
+                    "p95_ms": 443.76,
+                    "p99_ms": 526.28,
+                    "max_ms": 526.28
+                },
+                "tracker_command_app": {
+                    "count": 60,
+                    "p50_ms": 337.0,
+                    "p95_ms": 439.0,
+                    "p99_ms": 523.0,
+                    "max_ms": 523.0
+                },
+                "tracker_command_outside_app": {
+                    "count": 60,
+                    "p50_ms": 3.49,
+                    "p95_ms": 6.3,
+                    "p99_ms": 10.17,
+                    "max_ms": 10.17
+                },
+                "tracker_action": {
+                    "count": 60,
+                    "p50_ms": 428.67,
+                    "p95_ms": 529.81,
+                    "p99_ms": 1244.09,
+                    "max_ms": 1244.09
+                },
+                "events": {
+                    "count": 2316,
+                    "p50_ms": 2068.05,
+                    "p95_ms": 3375.44,
+                    "p99_ms": 3601.92,
+                    "max_ms": 3620.88
+                },
+                "events_app": {
+                    "count": 2316,
+                    "p50_ms": 5.0,
+                    "p95_ms": 9.0,
+                    "p99_ms": 12.0,
+                    "max_ms": 278.0
+                },
+                "events_outside_app": {
+                    "count": 2316,
+                    "p50_ms": 2057.46,
+                    "p95_ms": 3369.96,
+                    "p99_ms": 3596.93,
+                    "max_ms": 3615.88
+                },
+                "live": {
+                    "count": 6478,
+                    "p50_ms": 333.6,
+                    "p95_ms": 1017.25,
+                    "p99_ms": 1160.54,
+                    "max_ms": 1239.6
+                },
+                "live_cache_hit": {
+                    "count": 6464,
+                    "p50_ms": 335.51,
+                    "p95_ms": 1017.25,
+                    "p99_ms": 1160.54,
+                    "max_ms": 1239.6
+                },
+                "live_app": {
+                    "count": 6478,
+                    "p50_ms": 4.0,
+                    "p95_ms": 7.0,
+                    "p99_ms": 10.0,
+                    "max_ms": 46.0
+                },
+                "live_outside_app": {
+                    "count": 6478,
+                    "p50_ms": 329.16,
+                    "p95_ms": 1013.33,
+                    "p99_ms": 1156.04,
+                    "max_ms": 1236.6
+                },
+                "summary": {
+                    "count": 6478,
+                    "p50_ms": 2020.46,
+                    "p95_ms": 3375.7,
+                    "p99_ms": 3603.0,
+                    "max_ms": 3631.15
+                },
+                "summary_app": {
+                    "count": 6478,
+                    "p50_ms": 5.0,
+                    "p95_ms": 8.0,
+                    "p99_ms": 10.0,
+                    "max_ms": 332.0
+                },
+                "summary_outside_app": {
+                    "count": 6478,
+                    "p50_ms": 2015.46,
+                    "p95_ms": 3370.81,
+                    "p99_ms": 3597.62,
+                    "max_ms": 3623.15
+                },
+                "sse_ready": {
+                    "count": 2000,
+                    "p50_ms": 90.77,
+                    "p95_ms": 158.68,
+                    "p99_ms": 165.57,
+                    "max_ms": 185.63
+                },
+                "shots": {
+                    "count": 2300,
+                    "p50_ms": 2030.99,
+                    "p95_ms": 3363.65,
+                    "p99_ms": 3596.2,
+                    "max_ms": 3628.92
+                },
+                "shots_app": {
+                    "count": 2300,
+                    "p50_ms": 8.0,
+                    "p95_ms": 12.0,
+                    "p99_ms": 15.0,
+                    "max_ms": 332.0
+                },
+                "shots_outside_app": {
+                    "count": 2300,
+                    "p50_ms": 2023.89,
+                    "p95_ms": 3356.65,
+                    "p99_ms": 3588.95,
+                    "max_ms": 3620.56
+                },
+                "generator_event_loop_lag": {
+                    "count": 29093,
+                    "p50_ms": 0.34,
+                    "p95_ms": 1.25,
+                    "p99_ms": 5.98,
+                    "max_ms": 68.46
+                },
+                "stats": {
+                    "count": 2038,
+                    "p50_ms": 1920.68,
+                    "p95_ms": 3374.53,
+                    "p99_ms": 3603.96,
+                    "max_ms": 3631.49
+                },
+                "stats_app": {
+                    "count": 2038,
+                    "p50_ms": 5.0,
+                    "p95_ms": 8.0,
+                    "p99_ms": 11.0,
+                    "max_ms": 313.0
+                },
+                "stats_outside_app": {
+                    "count": 2038,
+                    "p50_ms": 1917.31,
+                    "p95_ms": 3370.53,
+                    "p99_ms": 3599.1,
+                    "max_ms": 3626.49
+                },
+                "snapshot_publish_to_receive": {
+                    "count": 11244,
+                    "p50_ms": 35.36,
+                    "p95_ms": 69.58,
+                    "p99_ms": 91.98,
+                    "max_ms": 114.73
+                },
+                "live_cache_miss": {
+                    "count": 14,
+                    "p50_ms": 61.29,
+                    "p95_ms": 97.57,
+                    "p99_ms": 97.57,
+                    "max_ms": 97.57
+                },
+                "write_start_to_sse": {
+                    "count": 64381,
+                    "p50_ms": 453.51,
+                    "p95_ms": 566.61,
+                    "p99_ms": 1062.02,
+                    "max_ms": 1321.45
+                }
+            },
+            "outcomes": {
+                "tracker_state:200": 60,
+                "tracker_command:200": 60,
+                "events:200": 2316,
+                "live:200": 6478,
+                "summary:200": 6478,
+                "shots:200": 2300,
+                "stats:200": 2038
+            },
+            "counters": {
+                "http_requests_started": 19730,
+                "response_bytes": 77753006,
+                "commands_committed": 60,
+                "sse_connections_ready": 2000,
+                "sse_changes": 64625,
+                "summary_updates_pushed": 11244,
+                "stats_updates_pushed": 18232,
+                "live_snapshots_pushed": 11244,
+                "public_delta_recoveries": 541,
+                "events_updates_pushed": 18009,
+                "shots_updates_pushed": 17965
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 31241,
+                "sql_execution_ms": 4287.67,
+                "peak_connections_sampled": 14,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 204
+            },
+            "passed": false
+        },
+        {
+            "viewers": 10000,
+            "matches": 1,
+            "seconds": 180,
+            "elapsed_seconds": 183.73,
+            "write_interval_seconds": 3,
+            "reconnect": true,
+            "latency": {
+                "writer_schedule_lag": {
+                    "count": 60,
+                    "p50_ms": 0.9,
+                    "p95_ms": 2.09,
+                    "p99_ms": 2.27,
+                    "max_ms": 2.27
+                },
+                "tracker_state": {
+                    "count": 60,
+                    "p50_ms": 86.09,
+                    "p95_ms": 105.48,
+                    "p99_ms": 118.3,
+                    "max_ms": 118.3
+                },
+                "tracker_state_app": {
+                    "count": 60,
+                    "p50_ms": 82.0,
+                    "p95_ms": 101.0,
+                    "p99_ms": 114.0,
+                    "max_ms": 114.0
+                },
+                "tracker_state_outside_app": {
+                    "count": 60,
+                    "p50_ms": 3.7,
+                    "p95_ms": 4.97,
+                    "p99_ms": 13.3,
+                    "max_ms": 13.3
+                },
+                "tracker_command": {
+                    "count": 60,
+                    "p50_ms": 360.11,
+                    "p95_ms": 531.64,
+                    "p99_ms": 627.21,
+                    "max_ms": 627.21
+                },
+                "tracker_command_app": {
+                    "count": 60,
+                    "p50_ms": 357.0,
+                    "p95_ms": 524.0,
+                    "p99_ms": 621.0,
+                    "max_ms": 621.0
+                },
+                "tracker_command_outside_app": {
+                    "count": 60,
+                    "p50_ms": 3.34,
+                    "p95_ms": 7.64,
+                    "p99_ms": 31.95,
+                    "max_ms": 31.95
+                },
+                "tracker_action": {
+                    "count": 60,
+                    "p50_ms": 441.03,
+                    "p95_ms": 607.1,
+                    "p99_ms": 711.22,
+                    "max_ms": 711.22
+                },
+                "sse_ready": {
+                    "count": 20000,
+                    "p50_ms": 1104.65,
+                    "p95_ms": 2356.06,
+                    "p99_ms": 2480.45,
+                    "max_ms": 2639.01
+                },
+                "live": {
+                    "count": 66314,
+                    "p50_ms": 2903.48,
+                    "p95_ms": 9896.89,
+                    "p99_ms": 10478.92,
+                    "max_ms": 10924.77
+                },
+                "live_cache_hit": {
+                    "count": 66194,
+                    "p50_ms": 2904.36,
+                    "p95_ms": 9898.07,
+                    "p99_ms": 10480.54,
+                    "max_ms": 10924.77
+                },
+                "live_app": {
+                    "count": 66314,
+                    "p50_ms": 5.0,
+                    "p95_ms": 9.0,
+                    "p99_ms": 14.0,
+                    "max_ms": 166.0
+                },
+                "live_outside_app": {
+                    "count": 66314,
+                    "p50_ms": 2897.96,
+                    "p95_ms": 9890.99,
+                    "p99_ms": 10474.54,
+                    "max_ms": 10919.77
+                },
+                "events": {
+                    "count": 840,
+                    "p50_ms": 5583.39,
+                    "p95_ms": 10198.51,
+                    "p99_ms": 10491.68,
+                    "max_ms": 10622.47
+                },
+                "events_app": {
+                    "count": 840,
+                    "p50_ms": 6.0,
+                    "p95_ms": 11.0,
+                    "p99_ms": 17.0,
+                    "max_ms": 229.0
+                },
+                "events_outside_app": {
+                    "count": 840,
+                    "p50_ms": 5574.7,
+                    "p95_ms": 10193.51,
+                    "p99_ms": 10485.68,
+                    "max_ms": 10619.47
+                },
+                "summary": {
+                    "count": 2510,
+                    "p50_ms": 5582.06,
+                    "p95_ms": 10188.18,
+                    "p99_ms": 10501.97,
+                    "max_ms": 10625.56
+                },
+                "summary_app": {
+                    "count": 2510,
+                    "p50_ms": 5.0,
+                    "p95_ms": 10.0,
+                    "p99_ms": 17.0,
+                    "max_ms": 483.0
+                },
+                "summary_outside_app": {
+                    "count": 2510,
+                    "p50_ms": 5577.06,
+                    "p95_ms": 10183.28,
+                    "p99_ms": 10497.97,
+                    "max_ms": 10617.56
+                },
+                "generator_event_loop_lag": {
+                    "count": 26464,
+                    "p50_ms": 0.4,
+                    "p95_ms": 67.79,
+                    "p99_ms": 218.17,
+                    "max_ms": 806.71
+                },
+                "stats": {
+                    "count": 837,
+                    "p50_ms": 5631.3,
+                    "p95_ms": 10204.11,
+                    "p99_ms": 10512.99,
+                    "max_ms": 10620.18
+                },
+                "stats_app": {
+                    "count": 837,
+                    "p50_ms": 5.0,
+                    "p95_ms": 11.0,
+                    "p99_ms": 16.0,
+                    "max_ms": 355.0
+                },
+                "stats_outside_app": {
+                    "count": 837,
+                    "p50_ms": 5626.3,
+                    "p95_ms": 10198.11,
+                    "p99_ms": 10507.99,
+                    "max_ms": 10617.18
+                },
+                "shots": {
+                    "count": 835,
+                    "p50_ms": 5552.95,
+                    "p95_ms": 10191.79,
+                    "p99_ms": 10530.05,
+                    "max_ms": 10634.74
+                },
+                "shots_app": {
+                    "count": 835,
+                    "p50_ms": 10.0,
+                    "p95_ms": 20.0,
+                    "p99_ms": 31.0,
+                    "max_ms": 153.0
+                },
+                "shots_outside_app": {
+                    "count": 835,
+                    "p50_ms": 5544.95,
+                    "p95_ms": 10182.95,
+                    "p99_ms": 10521.05,
+                    "max_ms": 10624.74
+                },
+                "snapshot_publish_to_receive": {
+                    "count": 95852,
+                    "p50_ms": 309.04,
+                    "p95_ms": 785.04,
+                    "p99_ms": 882.89,
+                    "max_ms": 973.22
+                },
+                "live_cache_miss": {
+                    "count": 120,
+                    "p50_ms": 2853.46,
+                    "p95_ms": 9128.85,
+                    "p99_ms": 9844.11,
+                    "max_ms": 9854.15
+                },
+                "write_start_to_sse": {
+                    "count": 643608,
+                    "p50_ms": 728.54,
+                    "p95_ms": 1158.94,
+                    "p99_ms": 1390.18,
+                    "max_ms": 2350.98
+                }
+            },
+            "outcomes": {
+                "tracker_state:200": 60,
+                "tracker_command:200": 60,
+                "live:200": 66314,
+                "events:200": 840,
+                "summary:200": 2510,
+                "stats:200": 837,
+                "shots:200": 835,
+                "summary:TimeoutError": 74589,
+                "shots:TimeoutError": 50833,
+                "events:TimeoutError": 50839,
+                "stats:TimeoutError": 16697,
+                "live:TimeoutError": 10785
+            },
+            "counters": {
+                "http_requests_started": 281866,
+                "response_bytes": 164719660,
+                "commands_committed": 60,
+                "sse_connections_ready": 20000,
+                "sse_changes": 643608,
+                "summary_updates_pushed": 95852,
+                "stats_updates_pushed": 173585,
+                "live_snapshots_pushed": 95852,
+                "public_delta_recoveries": 328030,
+                "events_updates_pushed": 9619,
+                "shots_updates_pushed": 9575,
+                "http_errors": 203743,
+                "http_requests_cancelled": 6667
+            },
+            "database": {
+                "monitoring_errors": [],
+                "sql_calls": 38393,
+                "sql_execution_ms": 5891.92,
+                "peak_connections_sampled": 13,
+                "peak_lock_waiters_sampled": 0,
+                "pending_jobs_before": 0,
+                "pending_jobs_after": 0,
+                "job_errors_after": 0,
+                "completed_job_generations": 204
+            },
+            "passed": false
+        }
+    ],
+    "passed": false,
+    "environment": {
+        "revision": "c736a171dda68cf9527eb6a45b15f7aa013810d6",
+        "dirty": true,
+        "harness_sha256": "659f2730f8ff5460ff010ecda70e2df6c77b9d577ec6055e61e43c22208cd432",
+        "application_diff_sha256": "31f09f75a0541cc67fa095d5b3dd88ee9f1fbb455376892be82c6f2c22e75980",
+        "generator_shards": 16,
+        "generator_source_addresses": "Separate loopback source addresses per shard",
+        "python": "3.14.7",
+        "django": "6.1.1",
+        "granian": "2.8.2",
+        "host_logical_cpus": 16,
+        "asgi_workers": 4,
+        "sse_workers": 2,
+        "sse_backpressure_per_worker": 8192,
+        "public_workers": 2,
+        "public_backpressure_per_worker": 16384,
+        "live_workers": 2,
+        "live_threads_per_worker": 2,
+        "live_backpressure_per_worker": 16384,
+        "live_interface": "wsgi",
+        "max_live_p95_ms": 100,
+        "max_push_p95_ms": 100,
+        "db_pool_size_per_web_worker": 8,
+        "background_jobs": true,
+        "initial_shots_per_match": 100,
+        "max_command_p95_ms": 1000,
+        "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+        "data_images": [
+            "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+            "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+        ]
+    },
+    "evidence": {
+        "date": "2026-09-15",
+        "command": "corepack pnpm nx run korfbal-django:loadtest --viewers=100,1000,10000 --matches=1 --seconds=180 --db-pool-size=8 --public-workers=2 --live-workers=2 --live-threads=2 --sse-workers=2 --generator-shards=16 --reconnect",
+        "exit_code": 1,
+        "baseline": "shared-public-reads.json",
+        "runtime_file_sha256": {
+            "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/match_fanout.py": "45bfb13c80c802745a5af2f2956dcf037114b40879b46a71c29baaf72ac27728",
+            "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/runtime.py": "eb6abf837af62b37cd1201a8e67c71263658e8f85270214b50380ce58e9f8af3",
+            "apps/django_projects/korfbal/apps/game_tracker/composition.py": "747e2456c225dea6fd9a53297c2f2a407a89bb48573ddd592f86a805c989dc61",
+            "apps/django_projects/korfbal/apps/game_tracker/realtime/publisher.py": "4e2361118ab04b600264ebee8377e1e69227cbd805c32692888f76ae4eb9ea54",
+            "apps/django_projects/korfbal/apps/game_tracker/services/public_match_reads.py": "2f4727a8afbb9e6861dc2eb3b91d16febf0783839ee870d191c36397a1e0317a",
+            "apps/django_projects/korfbal/loadtest/spectator.py": "a4e720f7f78a48bb97513e4861f7e824987312bbde48ee39a15c5942e9e24d25",
+            "libs/korfbal/core/src/domain/matchRealtime.ts": "5eeac9554493b417faf8ffeded6b30e244d220857a09b2ee4851e6f269eed3d9",
+            "libs/korfbal/query/src/matchPublicReads.ts": "7bd1fb4293a303e0725ebb3e62a6b748b51b3ccf69e1de617b0a6428a51638d9",
+            "libs/korfbal/query/src/matchResources.ts": "db1b7454543243dedb5586659364e8eaf26e37bba02c40eace80db7b7e080013"
+        },
+        "notes": [
+            "Same configured worker/generator topology, fixture initialization and duration as the baseline; independent local runs share host CPU with other processes.",
+            "The spectator model now applies public snapshots and validates timeline bases, identity, deletions and ordering before suppressing HTTP reads. It retains HTTP recovery.",
+            "HTTP request counts include tracker requests. response_bytes counts HTTP response bodies, not SSE traffic; do not infer overall bandwidth reduction.",
+            "All phases failed the overall latency gate. Successful HTTP percentiles exclude errors and cancellations, and the request mix changes when pushes replace reads.",
+            "All phases committed 60 commands and recorded no missed write slots, SSE errors, stale viewers or stale live reads. The final harness audit checks revisions/live state, not every public payload.",
+            "At 10000 viewers, 328030 delta recovery attempts accompanied initial/recovery HTTP overload; 203743 HTTP timeouts and 6667 deadline cancellations remain.",
+            "Concurrent statistics revision conflicts recovered through durable retries; all phases ended without pending or failed jobs.",
+            "Publication-to-receipt excludes write transactions and snapshot preparation. Local runs exclude TLS, proxy, WAN, media and provider traffic."
+        ]
+    },
+    "comparison": [
+        {
+            "viewers": 100,
+            "http_requests_before": 10808,
+            "http_requests_after": 3409,
+            "http_request_reduction_percent": 68.46,
+            "http_timeouts_before": 0,
+            "http_timeouts_after": 0
+        },
+        {
+            "viewers": 1000,
+            "http_requests_before": 85833,
+            "http_requests_after": 19730,
+            "http_request_reduction_percent": 77.01,
+            "http_timeouts_before": 0,
+            "http_timeouts_after": 0
+        },
+        {
+            "viewers": 10000,
+            "http_requests_before": 389849,
+            "http_requests_after": 281866,
+            "http_request_reduction_percent": 27.7,
+            "http_timeouts_before": 341241,
+            "http_timeouts_after": 203743
+        }
+    ]
+}

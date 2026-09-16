@@ -1,0 +1,65 @@
+{
+    "scenario": "100 initial synthetic shots; canonical state persisted in isolated Redis and restored through a fresh store/codec",
+    "command": "corepack pnpm nx run korfbal-django:loadtest --profile-payloads --shots=100 --output=<scratch>",
+    "samples": [
+        {
+            "kind": "bootstrap",
+            "all_public": {
+                "full_snapshot_bytes": 36971,
+                "cross_worker_replay_bytes": null,
+                "same_epoch_and_sequence": true
+            },
+            "live_summary_events": {
+                "full_snapshot_bytes": 8266,
+                "cross_worker_replay_bytes": null,
+                "same_epoch_and_sequence": true
+            }
+        },
+        {
+            "kind": "shot_reg",
+            "all_public": {
+                "full_snapshot_bytes": 37220,
+                "cross_worker_replay_bytes": 939,
+                "same_epoch_and_sequence": true
+            },
+            "live_summary_events": {
+                "full_snapshot_bytes": 8256,
+                "cross_worker_replay_bytes": 266,
+                "same_epoch_and_sequence": true
+            }
+        },
+        {
+            "kind": "goal_reg",
+            "all_public": {
+                "full_snapshot_bytes": 37741,
+                "cross_worker_replay_bytes": 1224,
+                "same_epoch_and_sequence": true
+            },
+            "live_summary_events": {
+                "full_snapshot_bytes": 8618,
+                "cross_worker_replay_bytes": 721,
+                "same_epoch_and_sequence": true
+            }
+        },
+        {
+            "kind": "shot_reg",
+            "all_public": {
+                "full_snapshot_bytes": 38014,
+                "cross_worker_replay_bytes": 812,
+                "same_epoch_and_sequence": true
+            },
+            "live_summary_events": {
+                "full_snapshot_bytes": 8618,
+                "cross_worker_replay_bytes": 249,
+                "same_epoch_and_sequence": true
+            }
+        }
+    ],
+    "limitations": [
+        "Measures compact SSE frame bytes, excluding ready/HTTP/TCP/TLS overhead.",
+        "Restores dictionary and stream sequence from Redis; does not model a production failover network.",
+        "Shared checkpoint: 120-second TTL and 2 MiB maximum. Replay frames: 32 frames and 64 KiB maximum.",
+        "Native EventSource resumes only its last match cursor; other matches still get snapshots.",
+        "Cache errors, expiry, oversize, contention and deduplication saturation retain snapshot fallback."
+    ]
+}

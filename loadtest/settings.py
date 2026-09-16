@@ -34,7 +34,7 @@ DATABASES["default"]["OPTIONS"] = dict(
 _valkey_port = int(os.environ["KORFBAL_LOADTEST_VALKEY_PORT"])
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "BACKEND": application_settings.CACHES["default"]["BACKEND"],
         "LOCATION": f"redis://127.0.0.1:{_valkey_port}/1",
     }
 }

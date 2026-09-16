@@ -23,3 +23,9 @@ SSE_PUBLICATIONS = Counter(
     "Committed match invalidations published to the channel layer.",
     labelnames=("result",),
 )
+
+SSE_SHARED_COMPACT = Counter(
+    "korfbal_sse_shared_compact_total",
+    "Shared compact encoder operations per worker/cohort, never per delivery.",
+    labelnames=("result",),
+)

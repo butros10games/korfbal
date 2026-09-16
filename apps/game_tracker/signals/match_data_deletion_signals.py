@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from django.db.models.signals import post_delete, pre_delete
 from django.dispatch import receiver
 
+from apps.game_tracker.composition import (
+    invalidate_public_match_reads,
+    published_live_store,
+)
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_event_context import (
     mark_match_data_deleting,
@@ -30,3 +35,12 @@ def _match_data_delete_finished(
 ) -> None:
     del sender, kwargs
     unmark_match_data_deleting(instance.pk)
+    transaction.on_commit(
+        lambda: published_live_store.invalidate(str(instance.match_link_id), 2**53 - 1),
+        robust=True,
+    )
+
+    transaction.on_commit(
+        lambda: invalidate_public_match_reads(str(instance.match_link_id), 2**53 - 1),
+        robust=True,
+    )

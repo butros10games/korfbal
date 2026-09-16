@@ -4,6 +4,10 @@ from collections.abc import Callable
 
 from celery import shared_task
 
+from apps.game_tracker.composition import (
+    prepare_public_match_reads,
+    publish_public_live_snapshot as publish,
+)
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows_with_breakdowns,
@@ -40,3 +44,10 @@ def recompute_match_statistics(match_data_id: str) -> None:
     """One durable generation rebuilds both projections; retries belong to its job."""
     recompute_match_impacts.run(match_data_id)
     recompute_match_minutes.run(match_data_id)
+
+
+@shared_task(ignore_result=True)
+def publish_public_live_snapshot(match_id: str) -> None:
+    """Warm shared state; durable generations recover concurrent edits."""
+    publish(match_id=match_id)
+    prepare_public_match_reads(match_id=match_id)

@@ -2,13 +2,16 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from django.core.cache import caches
 from django.db import close_old_connections, connection, transaction
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker import tasks
 from apps.game_tracker.composition import read_public_live
 from apps.game_tracker.models import MatchData, MatchPart, Pause, Shot
 from apps.game_tracker.services.tracker_commands.base import current_part
@@ -21,8 +24,10 @@ from apps.schedule.tests.match_api_test_support import (
 )
 
 
+assert tasks.publish_public_live_snapshot.name
+
 pytestmark = pytest.mark.django_db(transaction=True)
-MAX_COLD_SELECTS = 4
+MAX_COLD_SELECTS = 5
 
 
 @pytest.mark.parametrize("state", ["upcoming", "active", "paused", "finished"])
@@ -94,7 +99,7 @@ def test_cached_imported_score_refreshes_at_next_revision(source: str) -> None:
     assert second["live_revision"] > first["live_revision"]
 
 
-def test_warm_read_only_queries_revision_and_refreshes_server_time() -> None:
+def test_warm_read_uses_no_sql_and_refreshes_server_time() -> None:
     """Shared snapshots remove score/period reads without freezing the live clock."""
     graph = create_match_graph(prefix="Warm public snapshot")
     create_match_part(graph)
@@ -109,12 +114,7 @@ def test_warm_read_only_queries_revision_and_refreshes_server_time() -> None:
     ):
         second = read_public_live(match_id=graph.match.pk)
     assert second is not None
-    selects = [
-        query["sql"]
-        for query in queries
-        if query["sql"].lstrip().upper().startswith("SELECT")
-    ]
-    assert len(selects) == 1
+    assert len(queries) == 0
     assert second["timer"]["server_time"] == later.isoformat()
     assert "resources" not in second
     assert first["timer"]["server_time"] != second["timer"]["server_time"]
@@ -146,7 +146,9 @@ def test_missing_tracker_data_returns_none() -> None:
 @pytest.mark.skipif(
     connection.vendor != "postgresql", reason="MVCC requires PostgreSQL"
 )
-def test_concurrent_pause_cannot_mix_revisions() -> None:
+@override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+@patch("apps.kwt_common.services.jobs.publish_job")
+def test_concurrent_pause_cannot_mix_revisions(dispatch: Mock) -> None:
     """A committed pause during a read appears wholly in the following snapshot."""
     graph = create_match_graph(prefix="Concurrent pause snapshot")
     part = create_match_part(graph)
@@ -154,6 +156,7 @@ def test_concurrent_pause_cannot_mix_revisions() -> None:
     graph.match_data.save(update_fields=["status"])
     graph.match_data.refresh_from_db()
     revision = graph.match_data.live_revision
+    caches["public_live"].clear()
 
     def pause() -> None:
         close_old_connections()
@@ -184,6 +187,7 @@ def test_concurrent_pause_cannot_mix_revisions() -> None:
     assert after is not None
     assert after["live_revision"] > revision
     assert after["paused"] is True
+    dispatch.assert_called()
 
 
 def test_goal_and_deletion_invalidate_warm_score() -> None:

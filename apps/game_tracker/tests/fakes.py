@@ -23,6 +23,9 @@ class RecordingMatchChangePublisher:
 
     changes: list[PublishedMatchChange] = field(default_factory=list)
 
+    def schedule_snapshot(self, *, match_id: str, revision: int) -> None:
+        """No external jobs in application unit tests."""
+
     def publish(
         self,
         *,

@@ -1,0 +1,646 @@
+{
+    "baseline_revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+    "description": "Latest public snapshot publication with atomic revision fences and SQL-free warm public endpoints.",
+    "runtime_sha256": {
+        "apps/game_tracker/adapters/outbound/public_live_cache.py": null,
+        "apps/game_tracker/adapters/outbound/published_live_store.py": "e4e6a5e104bf170bdcb3ffb2a50b51918c2657bccd69dac39fcac26ee6b45c54",
+        "apps/game_tracker/adapters/outbound/runtime.py": "2e6658ecd84082750dcf28b8b81a2d72436306fed15038a4a7514ab6b42885cb",
+        "apps/game_tracker/application/ports.py": "42832d02a2749450fc822f92e1cf6f08e3baab45136fae044fc0ba1e2e9eac95",
+        "apps/game_tracker/composition.py": "97b50044811ca9981c4b1db3b57309efe40d93caac21867b065604649cbc9e68",
+        "apps/game_tracker/models/match_data.py": "cbd98dc84601a3a884c72beda8da1a98b468cc6f0d48ba66848d67cb163ddcfd",
+        "apps/game_tracker/services/live_updates.py": "8e3668276f9839cc03151e487cc137de65e8e2074b67e2ffb43a7f6c0eedbcf4",
+        "apps/game_tracker/services/public_live.py": "bc88138f4d42aa5da7f0178df942059404db62d7b0c06a428474bbcac5df4b58",
+        "apps/game_tracker/signals/match_data_deletion_signals.py": "5beee5f443e8da56a7ac1ba5eda97720c6149e82b18bd8af0f131aaa91ada3f6",
+        "apps/game_tracker/signals/match_signals.py": "da26fb1d6b033a70174c3234ea8251bc875b3d57e6789d82014d9ffaa3c7091d",
+        "apps/game_tracker/tasks.py": "3ef8707883e5572aa877fe7a927430a0cd8e33dff7a6eaa2458ccba68b06012e",
+        "apps/schedule/api/match_viewset_live.py": "a7db844e325daedaa1fe349404793ec59d1b071c1ac95c02d067261bf5fbb6df",
+        "loadtest/settings.py": "23e6ff1467279d789916fd052e67df4ee2087e68e65af0567344f62863461eb6"
+    },
+    "measured_runtime_sha256": {
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/public_live_cache.py": null,
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/published_live_store.py": "e4e6a5e104bf170bdcb3ffb2a50b51918c2657bccd69dac39fcac26ee6b45c54",
+        "apps/django_projects/korfbal/apps/game_tracker/adapters/outbound/runtime.py": "2e6658ecd84082750dcf28b8b81a2d72436306fed15038a4a7514ab6b42885cb",
+        "apps/django_projects/korfbal/apps/game_tracker/application/ports.py": "42832d02a2749450fc822f92e1cf6f08e3baab45136fae044fc0ba1e2e9eac95",
+        "apps/django_projects/korfbal/apps/game_tracker/composition.py": "97b50044811ca9981c4b1db3b57309efe40d93caac21867b065604649cbc9e68",
+        "apps/django_projects/korfbal/apps/game_tracker/models/match_data.py": "cbd98dc84601a3a884c72beda8da1a98b468cc6f0d48ba66848d67cb163ddcfd",
+        "apps/django_projects/korfbal/apps/game_tracker/services/live_updates.py": "8e3668276f9839cc03151e487cc137de65e8e2074b67e2ffb43a7f6c0eedbcf4",
+        "apps/django_projects/korfbal/apps/game_tracker/services/public_live.py": "bc88138f4d42aa5da7f0178df942059404db62d7b0c06a428474bbcac5df4b58",
+        "apps/django_projects/korfbal/apps/game_tracker/signals/match_data_deletion_signals.py": "5beee5f443e8da56a7ac1ba5eda97720c6149e82b18bd8af0f131aaa91ada3f6",
+        "apps/django_projects/korfbal/apps/game_tracker/signals/match_signals.py": "1c7f058a3e830266360c5637bc8211b541dacb16b53a7dfaccca2a80075daa47",
+        "apps/django_projects/korfbal/apps/game_tracker/tasks.py": "3ef8707883e5572aa877fe7a927430a0cd8e33dff7a6eaa2458ccba68b06012e",
+        "apps/django_projects/korfbal/apps/schedule/api/match_viewset_live.py": "a7db844e325daedaa1fe349404793ec59d1b071c1ac95c02d067261bf5fbb6df",
+        "apps/django_projects/korfbal/loadtest/settings.py": "23e6ff1467279d789916fd052e67df4ee2087e68e65af0567344f62863461eb6"
+    },
+    "workload_sha256": {
+        "workload.py": "0f106f8a6bbf3ca90c271053a4639bd3a172721fa4b09d0a3aa72730ee6363d7",
+        "spectator.py": "b8280a324b307f841d5dea801ed68dfe33092b2c0892551183793b5e652b00e0"
+    },
+    "commands": [
+        "corepack pnpm nx run korfbal-django:loadtest --viewers=100 --matches=1 --seconds=60 --db-pool-size=8 --reconnect --output=<new-directory>",
+        "corepack pnpm nx run korfbal-django:loadtest --viewers=100 --matches=1 --seconds=180 --db-pool-size=8 --reconnect --output=<new-directory>"
+    ],
+    "notes": [
+        "Fresh sequential before/after runs at one and three minutes per phase (20 and 60 scheduled writes). Both pairs and failures are retained; short-sample tails are sensitive to outliers.",
+        "Baseline runtime files were verified against merged main. The isolated baseline worktree has the corrected public_live cache alias and the previous opt-in profiler; the default workload/spectator modules are byte-identical. Its existing uv environment runs the exact command wrapped by the Nx target.",
+        "This comparison excludes the separate scoring optimization in PR #1070.",
+        "Final source also recognizes home_team_id/away_team_id update_fields aliases in match-save invalidation. That correctness-only signal branch is not exercised by the workload; measured source hashes are retained separately.",
+        "Both runs use the isolated public_live cache alias with production timeout/retry options. No production services or real user data were used.",
+        "The test suite ran separately from measured load. Python 3.14.7 differs from production Python 3.13; local API, worker and generator share host CPU. These are not production capacity limits.",
+        "The workload includes summary, events, shots and statistics reads plus SSE setup; these remain database-backed. Request counts can differ as clients coalesce pending refreshes.",
+        "A missed write slot means the generator skipped an arrival because the preceding action had not finished; it is not a failed or lost committed command.",
+        "The 30-second bound applies to snapshot freshness on reads. Existing best-effort SSE delivery is unchanged; this change does not introduce a separate live worker fleet or claim 1000/10000-user capacity."
+    ],
+    "runs": {
+        "before": {
+            "phases": [
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.02,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 20,
+                            "p50_ms": 0.66,
+                            "p95_ms": 2.11,
+                            "p99_ms": 26.94,
+                            "max_ms": 26.94
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 142.55,
+                            "p95_ms": 3181.21,
+                            "p99_ms": 3440.54,
+                            "max_ms": 3534.44
+                        },
+                        "live": {
+                            "count": 536,
+                            "p50_ms": 989.24,
+                            "p95_ms": 2121.83,
+                            "p99_ms": 2363.81,
+                            "max_ms": 2383.6
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 623,
+                            "p50_ms": 0.63,
+                            "p95_ms": 2.13,
+                            "p99_ms": 11.09,
+                            "max_ms": 36.03
+                        },
+                        "summary": {
+                            "count": 536,
+                            "p50_ms": 881.7,
+                            "p95_ms": 2048.96,
+                            "p99_ms": 2283.92,
+                            "max_ms": 2341.27
+                        },
+                        "events": {
+                            "count": 724,
+                            "p50_ms": 800.85,
+                            "p95_ms": 1647.9,
+                            "p99_ms": 2090.24,
+                            "max_ms": 2387.38
+                        },
+                        "shots": {
+                            "count": 705,
+                            "p50_ms": 778.41,
+                            "p95_ms": 1744.32,
+                            "p99_ms": 2118.3,
+                            "max_ms": 2348.78
+                        },
+                        "stats": {
+                            "count": 707,
+                            "p50_ms": 665.67,
+                            "p95_ms": 1656.75,
+                            "p99_ms": 2016.76,
+                            "max_ms": 2332.24
+                        },
+                        "tracker_state": {
+                            "count": 20,
+                            "p50_ms": 106.27,
+                            "p95_ms": 476.23,
+                            "p99_ms": 947.6,
+                            "max_ms": 947.6
+                        },
+                        "tracker_command": {
+                            "count": 20,
+                            "p50_ms": 390.51,
+                            "p95_ms": 1437.34,
+                            "p99_ms": 2489.46,
+                            "max_ms": 2489.46
+                        },
+                        "tracker_action": {
+                            "count": 20,
+                            "p50_ms": 498.59,
+                            "p95_ms": 2385.31,
+                            "p99_ms": 2966.1,
+                            "max_ms": 2966.1
+                        },
+                        "write_start_to_sse": {
+                            "count": 1984,
+                            "p50_ms": 497.35,
+                            "p95_ms": 2385.48,
+                            "p99_ms": 4583.11,
+                            "max_ms": 4965.28
+                        }
+                    },
+                    "outcomes": {
+                        "live:200": 536,
+                        "summary:200": 536,
+                        "events:200": 724,
+                        "shots:200": 705,
+                        "stats:200": 707,
+                        "tracker_state:200": 20,
+                        "tracker_command:200": 20
+                    },
+                    "counters": {
+                        "http_requests_started": 3248,
+                        "sse_connections_ready": 200,
+                        "response_bytes": 12205156,
+                        "sse_changes": 1984,
+                        "commands_committed": 20
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 36615,
+                        "sql_execution_ms": 5884.46,
+                        "peak_connections_sampled": 35,
+                        "peak_lock_waiters_sampled": 1,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 48
+                    },
+                    "passed": false
+                }
+            ],
+            "passed": false,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "6dde7363a4e3acec397bd13343f7da1a577c50f20cfa123339a3b4a99b02c18e",
+                "application_diff_sha256": "dd770d47b5fdf39ccb9593eb6e90263497766b4ede79cc48a37206a9fbd0f395",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "after": {
+            "phases": [
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 60,
+                    "elapsed_seconds": 63.02,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 19,
+                            "p50_ms": 1.0,
+                            "p95_ms": 32.28,
+                            "p99_ms": 32.28,
+                            "max_ms": 32.28
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 623,
+                            "p50_ms": 0.66,
+                            "p95_ms": 2.07,
+                            "p99_ms": 10.3,
+                            "max_ms": 52.58
+                        },
+                        "live": {
+                            "count": 586,
+                            "p50_ms": 692.14,
+                            "p95_ms": 1045.86,
+                            "p99_ms": 1139.56,
+                            "max_ms": 1153.72
+                        },
+                        "summary": {
+                            "count": 586,
+                            "p50_ms": 863.68,
+                            "p95_ms": 1701.42,
+                            "p99_ms": 1928.76,
+                            "max_ms": 1982.1
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 204.68,
+                            "p95_ms": 1886.31,
+                            "p99_ms": 2131.31,
+                            "max_ms": 2454.45
+                        },
+                        "events": {
+                            "count": 711,
+                            "p50_ms": 848.57,
+                            "p95_ms": 1681.19,
+                            "p99_ms": 2006.62,
+                            "max_ms": 2112.41
+                        },
+                        "stats": {
+                            "count": 687,
+                            "p50_ms": 711.73,
+                            "p95_ms": 1554.59,
+                            "p99_ms": 1952.04,
+                            "max_ms": 2072.5
+                        },
+                        "shots": {
+                            "count": 688,
+                            "p50_ms": 831.69,
+                            "p95_ms": 1692.44,
+                            "p99_ms": 2001.21,
+                            "max_ms": 2104.44
+                        },
+                        "tracker_state": {
+                            "count": 19,
+                            "p50_ms": 109.17,
+                            "p95_ms": 872.4,
+                            "p99_ms": 872.4,
+                            "max_ms": 872.4
+                        },
+                        "tracker_command": {
+                            "count": 19,
+                            "p50_ms": 395.32,
+                            "p95_ms": 2810.74,
+                            "p99_ms": 2810.74,
+                            "max_ms": 2810.74
+                        },
+                        "tracker_action": {
+                            "count": 19,
+                            "p50_ms": 497.9,
+                            "p95_ms": 3683.39,
+                            "p99_ms": 3683.39,
+                            "max_ms": 3683.39
+                        },
+                        "write_start_to_sse": {
+                            "count": 1900,
+                            "p50_ms": 474.87,
+                            "p95_ms": 3676.05,
+                            "p99_ms": 3702.24,
+                            "max_ms": 3702.89
+                        }
+                    },
+                    "outcomes": {
+                        "live:200": 586,
+                        "summary:200": 586,
+                        "events:200": 711,
+                        "stats:200": 687,
+                        "shots:200": 688,
+                        "tracker_state:200": 19,
+                        "tracker_command:200": 19
+                    },
+                    "counters": {
+                        "http_requests_started": 3296,
+                        "response_bytes": 11990066,
+                        "sse_connections_ready": 200,
+                        "sse_changes": 1900,
+                        "commands_committed": 19,
+                        "missed_write_slots": 1
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 33924,
+                        "sql_execution_ms": 4804.16,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 0,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 65
+                    },
+                    "passed": false
+                }
+            ],
+            "passed": false,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "d024d9010d45497f4d275a4206696778f364bf43c6a3a26a39e8a7cf9fb4d6e9",
+                "application_diff_sha256": "a9683f593733f85201ca9e6fb79b6661225c2be4040106eb0cc5523306feb52c",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "before-long": {
+            "phases": [
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 180,
+                    "elapsed_seconds": 183.03,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 59,
+                            "p50_ms": 0.97,
+                            "p95_ms": 2.05,
+                            "p99_ms": 25.46,
+                            "max_ms": 25.46
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 240.91,
+                            "p95_ms": 3355.34,
+                            "p99_ms": 3876.79,
+                            "max_ms": 4081.44
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 1811,
+                            "p50_ms": 0.68,
+                            "p95_ms": 2.02,
+                            "p99_ms": 6.57,
+                            "max_ms": 75.67
+                        },
+                        "summary": {
+                            "count": 1334,
+                            "p50_ms": 1157.03,
+                            "p95_ms": 2555.33,
+                            "p99_ms": 3158.53,
+                            "max_ms": 3439.26
+                        },
+                        "live": {
+                            "count": 1334,
+                            "p50_ms": 1229.3,
+                            "p95_ms": 2584.61,
+                            "p99_ms": 3285.95,
+                            "max_ms": 3480.36
+                        },
+                        "stats": {
+                            "count": 1991,
+                            "p50_ms": 791.18,
+                            "p95_ms": 2093.29,
+                            "p99_ms": 3023.09,
+                            "max_ms": 3620.84
+                        },
+                        "shots": {
+                            "count": 1991,
+                            "p50_ms": 867.72,
+                            "p95_ms": 2231.01,
+                            "p99_ms": 3091.74,
+                            "max_ms": 3714.39
+                        },
+                        "events": {
+                            "count": 2052,
+                            "p50_ms": 880.4,
+                            "p95_ms": 2151.71,
+                            "p99_ms": 3150.13,
+                            "max_ms": 3752.09
+                        },
+                        "tracker_state": {
+                            "count": 59,
+                            "p50_ms": 106.13,
+                            "p95_ms": 308.75,
+                            "p99_ms": 1041.36,
+                            "max_ms": 1041.36
+                        },
+                        "tracker_command": {
+                            "count": 59,
+                            "p50_ms": 366.74,
+                            "p95_ms": 604.79,
+                            "p99_ms": 2731.97,
+                            "max_ms": 2731.97
+                        },
+                        "tracker_action": {
+                            "count": 59,
+                            "p50_ms": 471.94,
+                            "p95_ms": 864.92,
+                            "p99_ms": 3040.95,
+                            "max_ms": 3040.95
+                        },
+                        "write_start_to_sse": {
+                            "count": 5877,
+                            "p50_ms": 467.83,
+                            "p95_ms": 627.97,
+                            "p99_ms": 2958.78,
+                            "max_ms": 4908.88
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 1334,
+                        "live:200": 1334,
+                        "stats:200": 1991,
+                        "shots:200": 1991,
+                        "events:200": 2052,
+                        "tracker_state:200": 59,
+                        "tracker_command:200": 59
+                    },
+                    "counters": {
+                        "http_requests_started": 8820,
+                        "sse_connections_ready": 200,
+                        "response_bytes": 32290003,
+                        "sse_changes": 5877,
+                        "commands_committed": 59,
+                        "missed_write_slots": 1
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 103501,
+                        "sql_execution_ms": 16625.14,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 1,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 142
+                    },
+                    "passed": false
+                }
+            ],
+            "passed": false,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "6dde7363a4e3acec397bd13343f7da1a577c50f20cfa123339a3b4a99b02c18e",
+                "application_diff_sha256": "dd770d47b5fdf39ccb9593eb6e90263497766b4ede79cc48a37206a9fbd0f395",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        },
+        "after-long": {
+            "phases": [
+                {
+                    "viewers": 100,
+                    "matches": 1,
+                    "seconds": 180,
+                    "elapsed_seconds": 183.02,
+                    "write_interval_seconds": 3,
+                    "reconnect": true,
+                    "latency": {
+                        "writer_schedule_lag": {
+                            "count": 59,
+                            "p50_ms": 0.89,
+                            "p95_ms": 2.13,
+                            "p99_ms": 35.42,
+                            "max_ms": 35.42
+                        },
+                        "summary": {
+                            "count": 1384,
+                            "p50_ms": 963.12,
+                            "p95_ms": 1707.34,
+                            "p99_ms": 1903.83,
+                            "max_ms": 2025.26
+                        },
+                        "sse_ready": {
+                            "count": 200,
+                            "p50_ms": 119.42,
+                            "p95_ms": 1768.05,
+                            "p99_ms": 1970.25,
+                            "max_ms": 2138.25
+                        },
+                        "generator_event_loop_lag": {
+                            "count": 1813,
+                            "p50_ms": 0.59,
+                            "p95_ms": 1.77,
+                            "p99_ms": 4.96,
+                            "max_ms": 52.91
+                        },
+                        "live": {
+                            "count": 1384,
+                            "p50_ms": 773.49,
+                            "p95_ms": 1097.38,
+                            "p99_ms": 1300.08,
+                            "max_ms": 1410.65
+                        },
+                        "stats": {
+                            "count": 2009,
+                            "p50_ms": 700.95,
+                            "p95_ms": 1449.97,
+                            "p99_ms": 1840.8,
+                            "max_ms": 2076.68
+                        },
+                        "events": {
+                            "count": 2069,
+                            "p50_ms": 820.93,
+                            "p95_ms": 1568.45,
+                            "p99_ms": 1863.34,
+                            "max_ms": 2089.34
+                        },
+                        "shots": {
+                            "count": 2006,
+                            "p50_ms": 808.38,
+                            "p95_ms": 1598.97,
+                            "p99_ms": 1847.13,
+                            "max_ms": 2085.26
+                        },
+                        "tracker_state": {
+                            "count": 59,
+                            "p50_ms": 99.41,
+                            "p95_ms": 128.28,
+                            "p99_ms": 955.43,
+                            "max_ms": 955.43
+                        },
+                        "tracker_command": {
+                            "count": 59,
+                            "p50_ms": 358.73,
+                            "p95_ms": 627.08,
+                            "p99_ms": 2442.53,
+                            "max_ms": 2442.53
+                        },
+                        "tracker_action": {
+                            "count": 59,
+                            "p50_ms": 460.32,
+                            "p95_ms": 727.28,
+                            "p99_ms": 3398.2,
+                            "max_ms": 3398.2
+                        },
+                        "write_start_to_sse": {
+                            "count": 5900,
+                            "p50_ms": 456.22,
+                            "p95_ms": 718.16,
+                            "p99_ms": 3409.46,
+                            "max_ms": 3891.49
+                        }
+                    },
+                    "outcomes": {
+                        "summary:200": 1384,
+                        "live:200": 1384,
+                        "stats:200": 2009,
+                        "events:200": 2069,
+                        "shots:200": 2006,
+                        "tracker_state:200": 59,
+                        "tracker_command:200": 59
+                    },
+                    "counters": {
+                        "http_requests_started": 8970,
+                        "response_bytes": 32554113,
+                        "sse_connections_ready": 200,
+                        "sse_changes": 5900,
+                        "commands_committed": 59,
+                        "missed_write_slots": 1
+                    },
+                    "database": {
+                        "monitoring_errors": [],
+                        "sql_calls": 99310,
+                        "sql_execution_ms": 12917.8,
+                        "peak_connections_sampled": 34,
+                        "peak_lock_waiters_sampled": 0,
+                        "pending_jobs_before": 0,
+                        "pending_jobs_after": 0,
+                        "job_errors_after": 0,
+                        "completed_job_generations": 201
+                    },
+                    "passed": false
+                }
+            ],
+            "passed": false,
+            "environment": {
+                "revision": "104e6332b88ad9ce1bfaf939918477959e2f51c5",
+                "dirty": true,
+                "harness_sha256": "d024d9010d45497f4d275a4206696778f364bf43c6a3a26a39e8a7cf9fb4d6e9",
+                "application_diff_sha256": "759958e456678841ecb45feb38d36d567f017d20335512ce4c23ccae1f9f84b4",
+                "python": "3.14.7",
+                "django": "6.1.1",
+                "granian": "2.8.2",
+                "host_logical_cpus": 16,
+                "asgi_workers": 4,
+                "db_pool_size_per_web_worker": 8,
+                "background_jobs": true,
+                "initial_shots_per_match": 100,
+                "max_command_p95_ms": 1000,
+                "limitations": "Local synthetic traffic; host-run API/worker/generator share CPU. No TLS, proxy, WAN, media or provider traffic. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                "data_images": [
+                    "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                    "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                ]
+            }
+        }
+    }
+}

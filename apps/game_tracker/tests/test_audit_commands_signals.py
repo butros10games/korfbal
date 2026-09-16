@@ -36,7 +36,13 @@ def test_finished_transition_coalesces_and_rolls_back_intent() -> None:
     tracker.match_data.save(update_fields=["status"])
     job.refresh_from_db()
     assert job.generation > generation
-    assert BackgroundJob.objects.count() == 1
+    assert BackgroundJob.objects.filter(task=job.task).count() == 1
+    assert (
+        BackgroundJob.objects.filter(
+            task="apps.game_tracker.tasks.publish_public_live_snapshot"
+        ).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db(transaction=True)

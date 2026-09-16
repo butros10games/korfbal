@@ -1,110 +1,145 @@
-"""Cache misses remain bounded and cannot change public response ownership."""
+"""Atomic shared publication and bounded failure recovery contracts."""
 
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
 from copy import deepcopy
+from functools import partial
+import os
 import socket
 from threading import Event
-from time import monotonic
+from time import monotonic, time
+from typing import Any
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.cache import caches
 from django.test import override_settings
 from korfbal.settings import services
 import pytest
-from redis.exceptions import ConnectionError as RedisConnectionError
 
-from apps.game_tracker.adapters.outbound.public_live_cache import (
-    DjangoPublicLiveSnapshotCache,
+from apps.game_tracker.adapters.outbound.published_live_store import (
+    SharedPublishedLiveStore,
 )
+from apps.game_tracker.application.ports import PublicLiveStoreError
 
 
-def test_concurrent_misses_share_one_build() -> None:
-    """A second reader waits briefly for the process sharing its revision."""
-    started, waiting, release = Event(), Event(), Event()
-    backend = caches["public_live"]
-    original_add = backend.add
+@pytest.fixture(params=["locmem", "redis"])
+def store(request: pytest.FixtureRequest) -> Iterator[SharedPublishedLiveStore]:
+    """Exercise both cache backends.
 
-    def add(key: str, value: object, timeout: float) -> bool:
-        result = original_add(key, value, timeout=timeout)
-        if not result:
-            waiting.set()
-        return result
+    Yields:
+        Store using local memory or the explicitly configured isolated Redis.
 
-    def build() -> dict[str, object]:
-        started.set()
-        assert release.wait(timeout=2)
-        return {"score": {"home": 1}}
-
-    builder = Mock(side_effect=build)
-    adapter = DjangoPublicLiveSnapshotCache()
-    with (
-        patch(
-            "apps.game_tracker.adapters.outbound.public_live_cache.caches",
-            {"public_live": backend},
-        ),
-        patch.object(backend, "add", side_effect=add),
-        ThreadPoolExecutor(max_workers=2) as pool,
-    ):
-        first = pool.submit(adapter.get_or_build, "concurrent-public", builder)
-        try:
-            assert started.wait(timeout=2)
-            second = pool.submit(adapter.get_or_build, "concurrent-public", builder)
-            assert waiting.wait(timeout=2)
-        finally:
-            release.set()
-        assert first.result(timeout=2) == second.result(timeout=2)
-    assert builder.call_count == 1
+    """
+    config = deepcopy(settings.CACHES["public_live"])
+    if request.param == "redis":
+        url = os.environ.get("PUBLIC_LIVE_TEST_REDIS_URL")
+        if not url:
+            pytest.skip("Set PUBLIC_LIVE_TEST_REDIS_URL to an isolated Redis database")
+        config = {**services.CACHES["public_live"], "LOCATION": url}
+    with override_settings(CACHES={**settings.CACHES, "public_live": config}):
+        yield SharedPublishedLiveStore()
+        caches["public_live"].close()
 
 
-@pytest.mark.parametrize("operation", ["get", "add", "set"])
-def test_cache_failure_falls_back_to_authoritative_builder(operation: str) -> None:
-    """Redis failures never discard an otherwise successful database read."""
-    builder = Mock(return_value={"live_revision": 7})
-    with patch.object(
-        caches["public_live"], operation, side_effect=RedisConnectionError("offline")
-    ):
-        assert DjangoPublicLiveSnapshotCache().get_or_build("offline", builder) == {
-            "live_revision": 7
-        }
-    builder.assert_called_once_with()
-
-
-def test_abandoned_builder_does_not_block_readers() -> None:
-    """An expired wait budget allows a fresh read even while the lease remains."""
-    caches["public_live"].add("abandoned:building", True, timeout=2)
-    builder = Mock(return_value={"live_revision": 4})
-    with patch(
-        "apps.game_tracker.adapters.outbound.public_live_cache.monotonic",
-        side_effect=[0, 1],
-    ):
-        assert DjangoPublicLiveSnapshotCache().get_or_build("abandoned", builder) == {
-            "live_revision": 4
-        }
-    builder.assert_called_once_with()
-
-
-def test_callers_cannot_mutate_cached_payloads() -> None:
-    """Clock fields and polling resources stay local to each response."""
-    adapter = DjangoPublicLiveSnapshotCache()
-    first = adapter.get_or_build(
-        "immutable-public", lambda: {"timer": {"type": "active"}}
-    )
-    first["timer"]["server_time"] = "caller-specific"
-    first["resources"] = ["shots"]
-    unexpected_build = Mock(side_effect=AssertionError("cache miss"))
-    assert adapter.get_or_build("immutable-public", unexpected_build) == {
-        "timer": {"type": "active"}
+def envelope(revision: int) -> dict[str, Any]:
+    """Synthetic public snapshot without identifiers or private player state."""
+    return {
+        "revision": revision,
+        "created_at": time(),
+        "payload": {"live_revision": revision, "score": {"home": revision}},
+        "history": [],
     }
 
 
-@pytest.mark.parametrize("operation", ["get", "add", "set"])
-def test_stalled_redis_falls_back_promptly(operation: str) -> None:
-    """A silent Redis socket cannot retain a reader for seconds."""
-    max_fallback_seconds = 0.75
+def test_out_of_order_publication_cannot_regress(
+    store: SharedPublishedLiveStore,
+) -> None:
+    """A delayed worker cannot replace a newer completed snapshot."""
+    match_id = str(uuid4())
+    newest = 9
+    store.put(match_id, envelope(newest))
+    store.put(match_id, envelope(8))
+    result = store.get(match_id)
+    assert result is not None
+    assert result["revision"] == newest
+
+
+def test_fence_rejects_old_workers_but_accepts_current_revision(
+    store: SharedPublishedLiveStore,
+) -> None:
+    """Committed writes invalidate earlier snapshots without delaying fresh workers."""
+    match_id = str(uuid4())
+    store.put(match_id, envelope(1))
+    newest = 2
+    store.invalidate(match_id, newest)
+    store.put(match_id, envelope(1))
+    assert store.get(match_id) is None
+    store.put(match_id, envelope(2))
+    store.invalidate(match_id, 2)
+    store.invalidate(match_id, 1)
+    result = store.get(match_id)
+    assert result is not None
+    assert result["revision"] == newest
+
+
+def test_expired_or_slow_snapshot_requires_recovery(
+    store: SharedPublishedLiveStore,
+) -> None:
+    """Late completion cannot extend a snapshot's freshness window."""
+    match_id = str(uuid4())
+    value = envelope(1)
+    store.put(match_id, value)
+    with patch(
+        "apps.game_tracker.adapters.outbound.published_live_store.time",
+        return_value=value["created_at"] + 31,
+    ):
+        assert store.get(match_id) is None
+        store.put(match_id, value)
+        assert store.get(match_id) is None
+
+
+def test_deletion_fence_and_caller_isolation(store: SharedPublishedLiveStore) -> None:
+    """Deleted match state cannot be resurrected by an in-flight reader."""
+    match_id = str(uuid4())
+    value = envelope(1)
+    store.put(match_id, value)
+    result = store.get(match_id)
+    assert result is not None
+    result["payload"]["score"]["home"] = 999
+    saved = store.get(match_id)
+    assert saved is not None
+    assert saved["payload"]["score"]["home"] == 1
+    store.invalidate(match_id, 2**53 - 1)
+    store.put(match_id, value)
+    assert store.get(match_id) is None
+
+
+def test_concurrent_recovery_shares_one_build(store: SharedPublishedLiveStore) -> None:
+    """Readers waiting on a cold snapshot reuse the first completed build."""
+    started, release = Event(), Event()
+    match_id = str(uuid4())
+
+    def build() -> dict[str, Any]:
+        started.set()
+        assert release.wait(timeout=2)
+        return envelope(1)
+
+    builder = Mock(side_effect=build)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(store.recover, match_id, 0, builder)
+        assert started.wait(timeout=2)
+        second = pool.submit(store.recover, match_id, 0, builder)
+        release.set()
+        assert first.result(timeout=2) == second.result(timeout=2)
+    builder.assert_called_once_with()
+
+
+@pytest.mark.parametrize("operation", ["get", "put"])
+def test_stalled_redis_uses_bounded_socket_timeout(operation: str) -> None:
+    """An unresponsive Redis server cannot hold a public request for seconds."""
     release = Event()
-    accepted = Event()
     with socket.socket() as listener, ThreadPoolExecutor(max_workers=1) as pool:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
@@ -112,39 +147,29 @@ def test_stalled_redis_falls_back_promptly(operation: str) -> None:
 
         def stall() -> None:
             with listener.accept()[0] as peer:
-                accepted.set()
-                # Read the handshake, then deliberately send no response.
                 peer.settimeout(2)
                 peer.recv(4096)
                 release.wait(timeout=2)
 
         server = pool.submit(stall)
-        config = deepcopy(services.CACHES["public_live"])
-        config["LOCATION"] = f"redis://127.0.0.1:{listener.getsockname()[1]}/1"
+        config = {
+            **services.CACHES["public_live"],
+            "LOCATION": f"redis://127.0.0.1:{listener.getsockname()[1]}/1",
+        }
         with override_settings(CACHES={**settings.CACHES, "public_live": config}):
-            backend = caches["public_live"]
-            builder = Mock(return_value={"live_revision": 7})
+            adapter = SharedPublishedLiveStore()
+            started = monotonic()
             try:
-                with ExitStack() as patches:
-                    if operation in {"add", "set"}:
-                        patches.enter_context(
-                            patch.object(backend, "get", return_value=None)
-                        )
-                    if operation == "set":
-                        patches.enter_context(
-                            patch.object(backend, "add", return_value=True)
-                        )
-                    started = monotonic()
-                    result = DjangoPublicLiveSnapshotCache().get_or_build(
-                        "stalled", builder
-                    )
-                    elapsed = monotonic() - started
-                assert result == {"live_revision": 7}
-                builder.assert_called_once_with()
-                assert accepted.is_set()
-                # Allow scheduler headroom, but reject Redis's five-second default.
-                assert elapsed < max_fallback_seconds
+                call = (
+                    partial(adapter.get, "stalled")
+                    if operation == "get"
+                    else partial(adapter.put, "stalled", envelope(1))
+                )
+                with pytest.raises(PublicLiveStoreError):
+                    call()
+                maximum_seconds = 0.75
+                assert monotonic() - started < maximum_seconds
             finally:
                 release.set()
-                backend.close()
+                caches["public_live"].close()
                 server.result(timeout=3)

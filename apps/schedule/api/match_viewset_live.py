@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from uuid import UUID
 
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -43,6 +45,23 @@ def _parse_since_revision(raw: str | None) -> int | None:
     except (TypeError, ValueError):
         return None
     return revision if revision >= -1 else None
+
+
+def _public_match_id(
+    view: MatchViewSetContext, request: Request, kwargs: dict[str, object]
+) -> object:
+    """Skip ORM lookup only on unfiltered public routes with a valid UUID.
+
+    Raises:
+        NotFound: The route identifier is not a UUID.
+
+    """
+    if set(request.query_params) - {"since_revision", "timeout"}:
+        return view.get_object().pk
+    try:
+        return UUID(str(kwargs.get("id", "")))
+    except ValueError as exc:
+        raise NotFound("Match not found.") from exc
 
 
 class MatchLiveActionsMixin:
@@ -190,8 +209,12 @@ class MatchLiveActionsMixin:
         coach-only tracker details.
 
         """
-        match: Match = self.get_object()
-        return Response(read_public_live(match_id=match.pk), status=status.HTTP_200_OK)
+        match_id = _public_match_id(self, request, kwargs)
+        payload = read_public_live(match_id=match_id)
+        if payload is None:
+            # Preserve 404 for missing matches, null for missing tracker data.
+            self.get_object()
+        return Response(payload, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -212,19 +235,6 @@ class MatchLiveActionsMixin:
         - on change: live_state payload
 
         """
-        match: Match = self.get_object()
-        match_data = self._match_data(match)
-        if not match_data:
-            return Response(
-                {
-                    "changed": False,
-                    "server_time": timezone.now().isoformat(),
-                    "last_changed_at": timezone.now().isoformat(),
-                    "live_revision": 0,
-                },
-                status=status.HTTP_200_OK,
-            )
-
         since_revision_raw = request.query_params.get("since_revision")
 
         since_revision = _parse_since_revision(since_revision_raw)
@@ -234,5 +244,14 @@ class MatchLiveActionsMixin:
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        payload = read_public_live(match_id=match.pk, since_revision=since_revision)
+        match_id = _public_match_id(self, request, kwargs)
+        payload = read_public_live(match_id=match_id, since_revision=since_revision)
+        if payload is None:
+            self.get_object()
+            payload = {
+                "changed": False,
+                "server_time": timezone.now().isoformat(),
+                "last_changed_at": timezone.now().isoformat(),
+                "live_revision": 0,
+            }
         return Response(payload, status=status.HTTP_200_OK)

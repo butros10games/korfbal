@@ -92,6 +92,9 @@ def test_loadtest_preserves_application_service_options(
     assert module.DATABASES["default"]["OPTIONS"] == pool
     assert module.DATABASES["default"]["NAME"] == "korfbal_loadtest"
     assert module.DATABASES["default"]["HOST"] == "127.0.0.1"
+    assert (
+        module.CACHES["public_live"]["LOCATION"] == module.CACHES["default"]["LOCATION"]
+    )
     assert module.CACHES["public_live"]["LOCATION"] == "redis://127.0.0.1:54322/1"
     assert (
         module.CACHES["public_live"]["OPTIONS"]

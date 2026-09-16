@@ -54,7 +54,7 @@ def test_channels_adapter_forwards_the_publication_contract() -> None:
     with patch(
         "apps.game_tracker.adapters.outbound.runtime.publish_match_changed",
     ) as publish:
-        ChannelsMatchChangePublisher().publish(
+        ChannelsMatchChangePublisher(Mock(get=Mock(return_value=None)), Mock()).publish(
             match_id="match-id",
             revision=7,
             resources=resources,
@@ -149,3 +149,54 @@ def test_publisher_fails_open_when_group_send_raises(failure: Exception) -> None
     metric.labels.assert_called_once_with(result="failure")
     metric.labels.return_value.inc.assert_called_once_with()
     logger.exception.assert_called_once()
+
+
+def test_live_snapshot_is_ready_before_viewers_are_notified() -> None:
+    """A goal notification must not send every viewer into cache recovery."""
+    order: list[str] = []
+    warm = Mock(side_effect=lambda match_id: order.append("snapshot"))
+    with patch(
+        "apps.game_tracker.adapters.outbound.runtime.publish_match_changed",
+        side_effect=lambda **kwargs: order.append("notification"),
+    ):
+        ChannelsMatchChangePublisher(Mock(get=Mock(return_value=None)), warm).publish(
+            match_id="match-id", revision=7, resources=[LiveResource.LIVE]
+        )
+    assert order == ["snapshot", "notification"]
+    warm.assert_called_once_with("match-id")
+
+
+def test_snapshot_failure_does_not_suppress_committed_notification() -> None:
+    """Durable refresh and authoritative HTTP recovery survive a cache outage."""
+    with patch(
+        "apps.game_tracker.adapters.outbound.runtime.publish_match_changed"
+    ) as publish:
+        ChannelsMatchChangePublisher(
+            Mock(), Mock(side_effect=OSError("unavailable"))
+        ).publish(match_id="match-id", revision=7, resources=[LiveResource.LIVE])
+    publish.assert_called_once()
+
+
+def test_statistics_only_notification_does_not_rebuild_score_synchronously() -> None:
+    """Non-score changes retain durable background preparation."""
+    warm = Mock()
+    with patch("apps.game_tracker.adapters.outbound.runtime.publish_match_changed"):
+        ChannelsMatchChangePublisher(Mock(get=Mock(return_value=None)), warm).publish(
+            match_id="match-id", revision=7, resources=[LiveResource.STATS]
+        )
+    warm.assert_not_called()
+
+
+@pytest.mark.parametrize("snapshot_revision", [6, 8])
+def test_notification_omits_snapshot_from_different_revision(
+    snapshot_revision: int,
+) -> None:
+    """Never attach another revision's snapshot to this notification."""
+    store = Mock(get=Mock(return_value={"revision": snapshot_revision}))
+    with patch(
+        "apps.game_tracker.adapters.outbound.runtime.publish_match_changed"
+    ) as publish:
+        ChannelsMatchChangePublisher(store, Mock()).publish(
+            match_id="match-id", revision=7, resources=[LiveResource.LIVE]
+        )
+    assert "live" not in publish.call_args.kwargs

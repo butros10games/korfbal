@@ -1,0 +1,632 @@
+{
+    "scenario": "100 initial synthetic shots, one synthetic reserve; real command execution covers every registry command plus clock/period variants",
+    "command": "corepack pnpm nx run korfbal-django:loadtest --profile-payloads --shots=100",
+    "covered_commands": [
+        "get_non_active_players",
+        "goal_reg",
+        "new_attack",
+        "part_end",
+        "possession_change_reg",
+        "remove_last_event",
+        "shot_reg",
+        "start/pause",
+        "substitute_against_reg",
+        "substitute_reg",
+        "timeout",
+        "undo_part_transition"
+    ],
+    "samples": [
+        {
+            "kind": "bootstrap",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 37088,
+                    "after_bytes": 37023,
+                    "saved_bytes": 65,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 15371,
+                        "operations_json_bytes": 21443,
+                        "packet_bytes": 36955
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 8247,
+                    "after_bytes": 8185,
+                    "saved_bytes": 62,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 4020,
+                        "operations_json_bytes": 3956,
+                        "packet_bytes": 8117
+                    }
+                }
+            }
+        },
+        {
+            "kind": "shot_reg",
+            "command": "shot_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 940,
+                    "after_bytes": 940,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 114,
+                        "operations_json_bytes": 611,
+                        "packet_bytes": 872
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 267,
+                    "after_bytes": 267,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 2,
+                        "operations_json_bytes": 50,
+                        "packet_bytes": 199
+                    }
+                }
+            }
+        },
+        {
+            "kind": "goal_reg",
+            "command": "goal_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 1225,
+                    "after_bytes": 1168,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 149,
+                        "operations_json_bytes": 798,
+                        "packet_bytes": 1100
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 720,
+                    "after_bytes": 663,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 149,
+                        "operations_json_bytes": 294,
+                        "packet_bytes": 595
+                    }
+                }
+            }
+        },
+        {
+            "kind": "shot_reg",
+            "command": "shot_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 814,
+                    "after_bytes": 814,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 114,
+                        "operations_json_bytes": 485,
+                        "packet_bytes": 746
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 252,
+                    "after_bytes": 252,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 2,
+                        "operations_json_bytes": 35,
+                        "packet_bytes": 184
+                    }
+                }
+            }
+        },
+        {
+            "kind": "pause",
+            "command": "start/pause",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 792,
+                    "after_bytes": 735,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 214,
+                        "operations_json_bytes": 311,
+                        "packet_bytes": 667
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 772,
+                    "after_bytes": 715,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 214,
+                        "operations_json_bytes": 291,
+                        "packet_bytes": 647
+                    }
+                }
+            }
+        },
+        {
+            "kind": "resume",
+            "command": "start/pause",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 545,
+                    "after_bytes": 488,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 207,
+                        "packet_bytes": 420
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 525,
+                    "after_bytes": 468,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 187,
+                        "packet_bytes": 400
+                    }
+                }
+            }
+        },
+        {
+            "kind": "timeout",
+            "command": "timeout",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 793,
+                    "after_bytes": 736,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 209,
+                        "operations_json_bytes": 316,
+                        "packet_bytes": 668
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 773,
+                    "after_bytes": 716,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 209,
+                        "operations_json_bytes": 296,
+                        "packet_bytes": 648
+                    }
+                }
+            }
+        },
+        {
+            "kind": "resume_after_timeout",
+            "command": "start/pause",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 546,
+                    "after_bytes": 489,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 207,
+                        "packet_bytes": 421
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 526,
+                    "after_bytes": 469,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 187,
+                        "packet_bytes": 401
+                    }
+                }
+            }
+        },
+        {
+            "kind": "ball_loss",
+            "command": "possession_change_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 669,
+                    "after_bytes": 669,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 166,
+                        "operations_json_bytes": 293,
+                        "packet_bytes": 601
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 604,
+                    "after_bytes": 604,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 68,
+                        "dictionary_json_bytes": 166,
+                        "operations_json_bytes": 227,
+                        "packet_bytes": 536
+                    }
+                }
+            }
+        },
+        {
+            "kind": "interception",
+            "command": "possession_change_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 660,
+                    "after_bytes": 660,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 146,
+                        "operations_json_bytes": 302,
+                        "packet_bytes": 591
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 593,
+                    "after_bytes": 593,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 146,
+                        "operations_json_bytes": 236,
+                        "packet_bytes": 524
+                    }
+                }
+            }
+        },
+        {
+            "kind": "substitution",
+            "command": "substitute_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 738,
+                    "after_bytes": 738,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 265,
+                        "operations_json_bytes": 256,
+                        "packet_bytes": 669
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 783,
+                    "after_bytes": 783,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 329,
+                        "operations_json_bytes": 236,
+                        "packet_bytes": 714
+                    }
+                }
+            }
+        },
+        {
+            "kind": "opponent_substitution",
+            "command": "substitute_against_reg",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 637,
+                    "after_bytes": 637,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 175,
+                        "operations_json_bytes": 246,
+                        "packet_bytes": 568
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 617,
+                    "after_bytes": 617,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 175,
+                        "operations_json_bytes": 226,
+                        "packet_bytes": 548
+                    }
+                }
+            }
+        },
+        {
+            "kind": "reserve_read",
+            "command": "get_non_active_players",
+            "publications": 0
+        },
+        {
+            "kind": "new_attack",
+            "command": "new_attack",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 269,
+                    "after_bytes": 269,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 2,
+                        "operations_json_bytes": 55,
+                        "packet_bytes": 200
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 248,
+                    "after_bytes": 248,
+                    "saved_bytes": 0,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 2,
+                        "operations_json_bytes": 35,
+                        "packet_bytes": 179
+                    }
+                }
+            }
+        },
+        {
+            "kind": "undo_event",
+            "command": "remove_last_event",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 392,
+                    "after_bytes": 335,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 36,
+                        "operations_json_bytes": 74,
+                        "packet_bytes": 266
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 371,
+                    "after_bytes": 314,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 36,
+                        "operations_json_bytes": 54,
+                        "packet_bytes": 245
+                    }
+                }
+            }
+        },
+        {
+            "kind": "part_end",
+            "command": "part_end",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 560,
+                    "after_bytes": 546,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 85,
+                        "operations_json_bytes": 235,
+                        "packet_bytes": 477
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 540,
+                    "after_bytes": 526,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 85,
+                        "operations_json_bytes": 215,
+                        "packet_bytes": 457
+                    }
+                }
+            }
+        },
+        {
+            "kind": "undo_part_end",
+            "command": "undo_part_transition",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 837,
+                    "after_bytes": 780,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 118,
+                        "operations_json_bytes": 437,
+                        "packet_bytes": 711
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 818,
+                    "after_bytes": 761,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 118,
+                        "operations_json_bytes": 417,
+                        "packet_bytes": 692
+                    }
+                }
+            }
+        },
+        {
+            "kind": "resume_after_undo",
+            "command": "start/pause",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 559,
+                    "after_bytes": 502,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 217,
+                        "packet_bytes": 433
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 539,
+                    "after_bytes": 482,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 197,
+                        "packet_bytes": 413
+                    }
+                }
+            }
+        },
+        {
+            "kind": "part_end_again",
+            "command": "part_end",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 545,
+                    "after_bytes": 531,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 235,
+                        "packet_bytes": 462
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 526,
+                    "after_bytes": 512,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 71,
+                        "operations_json_bytes": 215,
+                        "packet_bytes": 443
+                    }
+                }
+            }
+        },
+        {
+            "kind": "next_part_start",
+            "command": "start/pause",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 616,
+                    "after_bytes": 559,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 110,
+                        "operations_json_bytes": 236,
+                        "packet_bytes": 490
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 596,
+                    "after_bytes": 539,
+                    "saved_bytes": 57,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 110,
+                        "operations_json_bytes": 216,
+                        "packet_bytes": 470
+                    }
+                }
+            }
+        },
+        {
+            "kind": "undo_part_start",
+            "command": "undo_part_transition",
+            "resources": {
+                "all_public": {
+                    "before_bytes": 452,
+                    "after_bytes": 438,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 36,
+                        "operations_json_bytes": 176,
+                        "packet_bytes": 369
+                    }
+                },
+                "live_summary_events": {
+                    "before_bytes": 431,
+                    "after_bytes": 417,
+                    "saved_bytes": 14,
+                    "breakdown": {
+                        "sse_envelope_bytes": 69,
+                        "dictionary_json_bytes": 36,
+                        "operations_json_bytes": 156,
+                        "packet_bytes": 348
+                    }
+                }
+            }
+        }
+    ],
+    "representative_control_frames": {
+        "ready": {
+            "sse_bytes": 168,
+            "sample_payload": {
+                "revisions": {
+                    "30000000-0000-4000-8000-000000000001": 123
+                },
+                "snapshot_matches": [
+                    "30000000-0000-4000-8000-000000000001"
+                ],
+                "live_states": {},
+                "compact": 1
+            }
+        },
+        "tournament.changed": {
+            "sse_bytes": 105,
+            "sample_payload": {
+                "tournament_id": "30000000-0000-4000-8000-000000000001",
+                "revision": 123
+            }
+        },
+        "match.changed": {
+            "sse_bytes": 116,
+            "sample_payload": {
+                "match_id": "30000000-0000-4000-8000-000000000001",
+                "revision": 123,
+                "resources": [
+                    "live"
+                ]
+            }
+        }
+    },
+    "heartbeats": {
+        "before_sse_bytes": 13,
+        "after_sse_bytes": 3,
+        "interval_seconds": 15,
+        "connections": 10000,
+        "saved_body_mbit_per_second": 0.05333333333333334
+    },
+    "limitations": [
+        "SSE body bytes only; excludes HTTP/TCP/TLS and follow-up HTTP reads. Not a latency or capacity benchmark.",
+        "Before/after encoders receive identical payloads and emission timestamps; the reference retains the old redundant timer.server_time field.",
+        "All 12 registry commands are covered, including the read-only reserve command; this is not exhaustive coverage of every argument/lineup/score permutation.",
+        "Editor/lineup/provider writes and asynchronous statistics job publications are not individually profiled.",
+        "Control frames use the included synthetic UUID and revision 123. Ready is an already-current compact reconnect with no live clock payload. Legacy match and tournament samples are invalidation-only; their downstream GET cost is excluded.",
+        "Duplicate-bootstrap savings apply when a snapshot was already queued for that joining connection; they are not an unconditional 50% startup reduction.",
+        "Compact metadata, dictionaries, snapshots, legacy compatibility and tournament invalidation payloads retain their existing formats."
+    ]
+}

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import logging
+from time import time
+from typing import Any
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -25,6 +27,8 @@ def publish_match_changed(
     match_id: str,
     revision: int,
     resources: Iterable[LiveResource | str],
+    live: dict[str, Any] | None = None,
+    public_reads: dict[str, Any] | None = None,
 ) -> None:
     """Publish one committed change without risking the database operation."""
     resource_values = sorted({str(resource) for resource in resources})
@@ -41,6 +45,11 @@ def publish_match_changed(
                 "match_id": match_id,
                 "revision": revision,
                 "resources": resource_values,
+                **({"live": live} if live is not None else {}),
+                **({"public_reads": public_reads} if public_reads else {}),
+                **(
+                    {"published_at": time()} if live is not None or public_reads else {}
+                ),
             },
         )
         SSE_PUBLICATIONS.labels(result="success").inc()

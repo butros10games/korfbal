@@ -8,6 +8,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.competition.services.match_prediction import match_prediction
+from apps.game_tracker.composition import read_public_match
 from apps.game_tracker.services.match_impacts_payload import build_match_impacts_payload
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
 from apps.kwt_common.utils.match_summary import build_match_summaries
@@ -36,6 +37,9 @@ class MatchStatsActionsMixin:
 
         """
         match: Match = self.get_object()
+        cached = read_public_match(match_id=str(match.pk), resource="summary")
+        if cached is not None:
+            return Response(cached)
         match_data = self._match_data(match)
         if not match_data:
             return Response(None, status=status.HTTP_200_OK)
@@ -64,6 +68,9 @@ class MatchStatsActionsMixin:
 
         """
         match: Match = self.get_object()
+        cached = read_public_match(match_id=str(match.pk), resource="stats")
+        if cached is not None:
+            return Response(cached)
         match_data = self._match_data(match)
         if not match_data:
             return Response(

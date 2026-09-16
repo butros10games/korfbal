@@ -1,0 +1,38 @@
+{
+    "kind": "illustrative single goal record, not a full public match update",
+    "fields": [
+        "schema",
+        "mapping",
+        "revision",
+        "base",
+        "event_id",
+        "operation",
+        "event_type",
+        "player",
+        "team",
+        "period",
+        "elapsed_ms",
+        "home_score",
+        "away_score",
+        "clock_running"
+    ],
+    "values": [1, 1, 218, 217, 93, 1, 2, 7, 0, 1, 451230, 6, 5, 1],
+    "versions": {
+        "protobuf": "7.36.1",
+        "cbor2": "6.1.4"
+    },
+    "sizes": {
+        "positional_json_bytes": 39,
+        "cbor_array_bytes": 22,
+        "protobuf_bytes": 32,
+        "cbor_base64_bytes": 32,
+        "protobuf_base64_bytes": 44
+    },
+    "limitations": [
+        "Requires a previously delivered roster/ID dictionary and protocol/mapping versions. Dictionary and schema delivery bytes excluded.",
+        "Does not include player metadata, statistics, forecasts, coordinates, substitutions, undo targets, arbitrary corrections, or bootstrap state.",
+        "Elapsed milliseconds are match-relative and accompanied by period; additional clock anchor updates are needed for running clocks.",
+        "All sizes are application payload only; SSE/WebSocket/HTTP/TCP/TLS overhead excluded.",
+        "This prototype has no production encoder/decoder, replay or migration integration. Codec round trips were checked for this one record."
+    ]
+}

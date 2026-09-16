@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import UTC, datetime
 import hashlib
@@ -22,12 +23,14 @@ from uuid import uuid4
 import aiohttp
 import psycopg
 
+from .proxy import add_proxy_arguments, caddy_config, validate_cpu_partitions
 from .workload import Workload
 
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT.parents[2]
 POSTGRES_PORT = 5432
+MAX_GENERATOR_SHARDS = 32
 MAX_WORKLOAD_SIZE = 10_000
 WRITE_INTERVAL_BOUNDS = (0.1, 300)
 MAX_LATENCY_BUDGET = 60_000
@@ -60,7 +63,7 @@ def stop_process(process: subprocess.Popen[Any]) -> None:
 
 
 def container(
-    stack: ExitStack, image: str, port: int, args: list[str]
+    stack: ExitStack, image: str, port: int, args: list[str], cpus: str | None = None
 ) -> tuple[str, str]:
     """Publish a fresh container on a random loopback port; retain no volumes."""
     name = f"korfbal-loadtest-{uuid4().hex[:12]}"
@@ -78,6 +81,7 @@ def container(
         "2",
         "--publish",
         f"127.0.0.1::{port}",
+        *(["--cpuset-cpus", cpus] if cpus else []),
         *args,
         image,
         *(
@@ -189,11 +193,19 @@ async def experiment(
     fixtures: list[dict[str, Any]],
     options: argparse.Namespace,
     db_port: str,
+    read_origins: tuple[str | None, str | None, str | None] = (None, None, None),
 ) -> dict[str, Any]:
     """Wait for ASGI readiness, then execute each configured viewer level."""
+    live_origin, sse_origin, public_origin = read_origins
     await warmup(
         origin, fixtures[0], db_port=db_port, background_jobs=options.background_jobs
     )
+    if live_origin:
+        await warmup(live_origin, fixtures[0], db_port=db_port, background_jobs=False)
+    if sse_origin:
+        await warmup(sse_origin, fixtures[0], db_port=db_port, background_jobs=False)
+    if public_origin:
+        await warmup(public_origin, fixtures[0], db_port=db_port, background_jobs=False)
     reports = []
     for viewers in options.viewers:
         print(f"Measuring {viewers} viewers / {len(fixtures)} matches...", flush=True)
@@ -218,6 +230,11 @@ async def experiment(
                 seconds=options.seconds,
                 interval=options.write_interval,
                 reconnect=options.reconnect,
+                live_origin=live_origin,
+                sse_origin=sse_origin,
+                public_origin=public_origin,
+                generator_shards=options.generator_shards,
+                compact=options.compact,
             ).run()
         finally:
             monitor_task.cancel()
@@ -239,15 +256,33 @@ async def experiment(
             "completed_job_generations": after["completed_job_generations"]
             - baseline["completed_job_generations"],
         }
-        report["passed"] = passes(report, options.max_p95_ms)
+        report["passed"] = passes(
+            report, options.max_p95_ms, options.max_live_p95_ms, options.max_push_p95_ms
+        )
         reports.append(report)
         print(json.dumps(report), flush=True)
     return {"phases": reports, "passed": all(report["passed"] for report in reports)}
 
 
-def passes(report: dict[str, Any], max_p95_ms: float) -> bool:
+def passes(
+    report: dict[str, Any],
+    max_p95_ms: float,
+    max_live_p95_ms: float | None = None,
+    max_push_p95_ms: float | None = None,
+) -> bool:
     """Reject missing samples, transport errors, stale views and missed writes."""
     counters = report["counters"]
+    if max_live_p95_ms is not None:
+        live = report["latency"].get("live", {})
+        if not live.get("count") or live.get("p95_ms", float("inf")) > max_live_p95_ms:
+            return False
+    if max_push_p95_ms is not None:
+        pushed = report["latency"].get("snapshot_publish_to_receive", {})
+        if (
+            not pushed.get("count")
+            or pushed.get("p95_ms", float("inf")) > max_push_p95_ms
+        ):
+            return False
     command_latency = report["latency"].get("tracker_command", {})
     return bool(
         command_latency.get("count", 0) > 0
@@ -285,11 +320,32 @@ def positive_int(value: str) -> int:
 def arguments() -> argparse.Namespace:
     """Parse bounded workload settings; deliberately provide no remote URL option."""
     parser = argparse.ArgumentParser(description=__doc__)
+    add_proxy_arguments(parser)
     parser.add_argument("--viewers", nargs="+", default=["10", "50", "100"])
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Use subscribed compact SSE snapshots and patches.",
+    )
+    parser.add_argument("--generator-shards", type=positive_int, default=1)
     parser.add_argument("--matches", type=positive_int, default=1)
     parser.add_argument("--shots", type=positive_int, default=100)
     parser.add_argument("--seconds", type=positive_int, default=30)
     parser.add_argument("--workers", type=positive_int, default=4)
+    parser.add_argument("--sse-workers", type=int, default=0)
+    parser.add_argument("--public-workers", type=int, default=0)
+    parser.add_argument("--public-backpressure", type=positive_int, default=16384)
+    parser.add_argument("--sse-backpressure", type=positive_int, default=8192)
+    parser.add_argument(
+        "--live-workers",
+        type=int,
+        default=0,
+        help="Optional separate live-read process pool; 0 shares the API workers.",
+    )
+    parser.add_argument("--live-threads", type=positive_int, default=2)
+    parser.add_argument("--live-backpressure", type=positive_int, default=16384)
+    parser.add_argument("--max-live-p95-ms", type=float, default=100)
+    parser.add_argument("--max-push-p95-ms", type=float, default=100)
     parser.add_argument(
         "--db-pool-size",
         type=int,
@@ -299,6 +355,11 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--write-interval", type=float, default=3)
     parser.add_argument("--max-p95-ms", type=float, default=1000)
     parser.add_argument("--reconnect", action="store_true")
+    parser.add_argument(
+        "--profile-payloads",
+        action="store_true",
+        help="Measure synthetic starting/goal/shot payload sizes instead of HTTP load.",
+    )
     parser.add_argument(
         "--profile-commands",
         action="store_true",
@@ -316,12 +377,25 @@ def arguments() -> argparse.Namespace:
         / datetime.now(UTC).strftime("%Y%m%dT%H%M%S"),
     )
     options = parser.parse_args()
+    validate_cpu_partitions(parser, options)
     try:
         options.viewers = [
             positive_int(part) for raw in options.viewers for part in raw.split(",")
         ]
     except (ValueError, argparse.ArgumentTypeError) as error:
         parser.error(str(error))
+    if options.generator_shards > MAX_GENERATOR_SHARDS:
+        parser.error("At most 32 local spectator generator processes are supported.")
+    if not 0 <= options.public_workers <= MAX_WORKLOAD_SIZE:
+        parser.error("Public worker count is outside the supported range.")
+    if not 0 <= options.sse_workers <= MAX_WORKLOAD_SIZE:
+        parser.error("SSE worker count is outside the supported range.")
+    if not 0 <= options.live_workers <= MAX_WORKLOAD_SIZE:
+        parser.error("Live worker count must be between 0 and 10000.")
+    if not 1 <= options.max_push_p95_ms <= MAX_LATENCY_BUDGET:
+        parser.error("Push p95 budget must be between 1 and 60000 ms.")
+    if not 1 <= options.max_live_p95_ms <= MAX_LATENCY_BUDGET:
+        parser.error("Live p95 budget must be between 1 and 60000 ms.")
     if not 0 <= options.db_pool_size <= MAX_WORKLOAD_SIZE:
         parser.error("DB pool size must be between 0 and 10000.")
     if (
@@ -334,6 +408,139 @@ def arguments() -> argparse.Namespace:
             "Write interval must be 0.1-300 seconds and p95 budget 1-60000 ms."
         )
     return options
+
+
+def write_command_profile(
+    output: Path,
+    fixture: dict[str, Any],
+    environment: dict[str, str],
+    metadata: dict[str, Any],
+    *,
+    payloads: bool = False,
+) -> None:
+    """Profile the seeded match using the isolated experiment environment."""
+    module = "profile_payloads" if payloads else "profile_commands"
+    with (output / "profile.log").open("w") as log:
+        profiled = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import django; django.setup(); "
+                f"from loadtest.{module} import main; main()",
+            ],
+            input=json.dumps(fixture),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            cwd=PROJECT,
+            env=environment,
+            check=True,
+        )
+    result = json.loads(profiled.stdout.splitlines()[-1])
+    result["environment"] = metadata
+    filename = "payload-profile.json" if payloads else "command-profile.json"
+    (output / filename).write_text(json.dumps(result, indent=2) + "\n")
+
+
+def start_read_pool(
+    start_process: Callable[[str, list[str]], subprocess.Popen[Any]],
+    *,
+    name: str,
+    workers: int,
+    threads: int | None = None,
+    backpressure: int | None = None,
+) -> str | None:
+    """Start optional isolated read capacity on a task-owned local port."""
+    if not workers:
+        return None
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    interface = "wsgi" if threads is not None else "asgi"
+    args = [
+        sys.executable,
+        "-m",
+        "granian",
+        "--interface",
+        interface,
+        "--no-ws",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--workers",
+        str(workers),
+    ]
+    if backpressure is not None:
+        args.extend(["--backpressure", str(backpressure)])
+    if threads is not None:
+        args.extend(["--blocking-threads", str(threads)])
+    start_process(name, [*args, f"korfbal.{interface}:application"])
+    return f"http://127.0.0.1:{port}"
+
+
+def start_proxy(
+    stack: ExitStack,
+    options: argparse.Namespace,
+    proxy_origin: str,
+    origin: str,
+    read_origins: tuple[str | None, str | None, str | None],
+) -> str:
+    """Start owned Caddy and return its immutable image identity."""
+    live_origin, sse_origin, public_origin = read_origins
+    config = options.output.resolve() / "Caddyfile"
+    config.write_text(
+        caddy_config(
+            proxy_origin,
+            origin,
+            live_origin or origin,
+            sse_origin or origin,
+            public_origin or origin,
+        )
+    )
+    name = f"korfbal-loadtest-proxy-{uuid4().hex[:12]}"
+    proxy_id = command([
+        DOCKER,
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--label",
+        "korfbal.synthetic-loadtest=true",
+        "--network",
+        "host",
+        *(["--cpuset-cpus", options.server_cpus] if options.server_cpus else []),
+        "--mount",
+        f"type=bind,source={config},target=/etc/caddy/Caddyfile,readonly",
+        "caddy:2.10.2-alpine",
+    ])
+    stack.callback(
+        subprocess.run,
+        [DOCKER, "rm", "--force", "--volumes", proxy_id],
+        stdout=subprocess.DEVNULL,
+        check=False,
+    )
+    return command([
+        DOCKER,
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        proxy_id,
+    ])
+
+
+def restrict_generator_cpus(stack: ExitStack, cpus: str | None) -> None:
+    """Pin the writer, monitor and spawned viewers after servers have started."""
+    if cpus:
+        stack.callback(os.sched_setaffinity, 0, os.sched_getaffinity(0))
+        os.sched_setaffinity(0, {int(cpu) for cpu in cpus.split(",")})
+
+
+def allocate_origin() -> str:
+    """Reserve an available loopback port for an owned service."""
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{listener.getsockname()[1]}"
 
 
 def main() -> int:
@@ -358,18 +565,36 @@ def main() -> int:
                 ["git", "diff", "HEAD", "--", "apps/django_projects/korfbal"], cwd=ROOT
             ).encode()
         ).hexdigest(),
+        "proxy": "caddy:2.10.2-alpine" if options.proxy else None,
+        "server_cpus": options.server_cpus,
+        "generator_cpus": options.generator_cpus,
+        "compact": options.compact,
+        "generator_shards": options.generator_shards,
+        "generator_source_addresses": "Separate loopback source addresses per shard",
         "python": sys.version.split()[0],
         "django": version("django"),
         "granian": version("granian"),
         "host_logical_cpus": os.cpu_count(),
         "asgi_workers": options.workers,
+        "sse_workers": options.sse_workers,
+        "sse_backpressure_per_worker": options.sse_backpressure,
+        "public_workers": options.public_workers,
+        "public_backpressure_per_worker": options.public_backpressure,
+        "live_workers": options.live_workers,
+        "live_threads_per_worker": options.live_threads,
+        "live_backpressure_per_worker": options.live_backpressure,
+        "live_interface": "wsgi" if options.live_workers else "asgi",
+        "max_live_p95_ms": options.max_live_p95_ms,
+        "max_push_p95_ms": options.max_push_p95_ms,
         "db_pool_size_per_web_worker": options.db_pool_size,
         "background_jobs": options.background_jobs,
         "initial_shots_per_match": options.shots,
         "max_command_p95_ms": options.max_p95_ms,
         "limitations": (
-            "Local synthetic traffic; host-run API/worker/generator share CPU. "
-            "No TLS, proxy, WAN, media or provider traffic. "
+            "Local synthetic traffic; API/worker/generator share one physical host. "
+            "No TLS, WAN, media or provider traffic. "
+            "Optional local Caddy uses HTTP/1.1. "
+            "CPU partitions, when specified, share host memory and networking. "
             "Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. "
             "Later phases have longer timelines and warmer caches."
         ),
@@ -386,8 +611,11 @@ def main() -> int:
                 "-e",
                 "POSTGRES_HOST_AUTH_METHOD=trust",
             ],
+            options.server_cpus,
         )
-        valkey, valkey_port = container(stack, "valkey/valkey:8.1.3-alpine", 6379, [])
+        valkey, valkey_port = container(
+            stack, "valkey/valkey:8.1.3-alpine", 6379, [], options.server_cpus
+        )
         metadata["data_images"] = [
             command([DOCKER, "inspect", "--format", "{{.Image}}", name])
             for name in (postgres, valkey)
@@ -406,6 +634,7 @@ def main() -> int:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         origin = f"http://127.0.0.1:{port}"
+        proxy_origin = allocate_origin() if options.proxy else None
         secret = secrets.token_urlsafe(48)
         environment = {
             key: os.environ[key]
@@ -424,7 +653,7 @@ def main() -> int:
             "KORFBAL_LOADTEST_SECRET": secret,
             "KORFBAL_LOADTEST_DB_PORT": db_port,
             "KORFBAL_LOADTEST_VALKEY_PORT": valkey_port,
-            "KORFBAL_LOADTEST_ORIGIN": origin,
+            "KORFBAL_LOADTEST_ORIGIN": proxy_origin or origin,
         })
         with (options.output / "setup.log").open("w") as log:
             subprocess.run(
@@ -451,37 +680,28 @@ def main() -> int:
             )
             fixtures = json.loads(raw.splitlines()[-1])
 
-        if options.profile_commands:
-            with (options.output / "profile.log").open("w") as log:
-                profiled = subprocess.run(
-                    [
-                        sys.executable,
-                        "-c",
-                        "import django; django.setup(); "
-                        "from loadtest.profile_commands import main; main()",
-                    ],
-                    input=json.dumps(fixtures[0]),
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=log,
-                    cwd=PROJECT,
-                    env=environment,
-                    check=True,
-                )
-            result = json.loads(profiled.stdout.splitlines()[-1])
-            result["environment"] = metadata
-            (options.output / "command-profile.json").write_text(
-                json.dumps(result, indent=2) + "\n"
+        if options.profile_commands or options.profile_payloads:
+            write_command_profile(
+                options.output,
+                fixtures[0],
+                environment,
+                metadata,
+                payloads=options.profile_payloads,
             )
             return 0
 
         def start_process(name: str, args: list[str]) -> subprocess.Popen[Any]:
             log = stack.enter_context((options.output / f"{name}.log").open("w"))
             process_env = dict(environment)
-            if name == "server":
+            if name in {"server", "live-server", "sse-server", "public-server"}:
                 process_env["KORFBAL_DB_POOL_MAX_SIZE"] = str(options.db_pool_size)
             process = subprocess.Popen(
-                args,
+                (
+                    ["taskset", "--cpu-list", options.server_cpus]
+                    if options.server_cpus
+                    else []
+                )
+                + args,
                 cwd=PROJECT,
                 env=process_env,
                 stdout=log,
@@ -509,6 +729,26 @@ def main() -> int:
                 "korfbal.asgi:application",
             ],
         )
+        live_origin = start_read_pool(
+            start_process,
+            name="live-server",
+            workers=options.live_workers,
+            backpressure=options.live_backpressure,
+            threads=options.live_threads,
+        )
+        sse_origin = start_read_pool(
+            start_process,
+            name="sse-server",
+            workers=options.sse_workers,
+            backpressure=options.sse_backpressure,
+        )
+        public_origin = start_read_pool(
+            start_process,
+            name="public-server",
+            workers=options.public_workers,
+            backpressure=options.public_backpressure,
+            threads=options.live_threads,
+        )
         if options.background_jobs:
             start_process(
                 "worker",
@@ -529,7 +769,26 @@ def main() -> int:
                     "loadtest@%h",
                 ],
             )
-        result = asyncio.run(experiment(origin, fixtures, options, db_port))
+        if proxy_origin:
+            metadata["proxy_image"] = start_proxy(
+                stack,
+                options,
+                proxy_origin,
+                origin,
+                (live_origin, sse_origin, public_origin),
+            )
+            origin = proxy_origin
+            live_origin = sse_origin = public_origin = None
+        restrict_generator_cpus(stack, options.generator_cpus)
+        result = asyncio.run(
+            experiment(
+                origin,
+                fixtures,
+                options,
+                db_port,
+                (live_origin, sse_origin, public_origin),
+            )
+        )
         result["environment"] = metadata
         (options.output / "results.json").write_text(
             json.dumps(result, indent=2) + "\n"

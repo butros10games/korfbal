@@ -115,7 +115,7 @@ class TournamentEventsSseConsumer(AsyncConsumer):
                 await asyncio.sleep(settings.KORFBAL_SSE_HEARTBEAT_SECONDS)
                 await self.send({
                     "type": "http.response.body",
-                    "body": b": heartbeat\n\n",
+                    "body": b":\n\n",
                     "more_body": True,
                 })
         except asyncio.CancelledError:

@@ -13,6 +13,9 @@ from apps.game_tracker.realtime.contracts import LiveResource
 class MatchChangePublisher(Protocol):
     """Publish a committed tracker revision to realtime consumers."""
 
+    def schedule_snapshot(self, *, match_id: str, revision: int) -> None:
+        """Persist snapshot publication intent inside the mutation transaction."""
+
     def publish(
         self,
         *,
@@ -55,10 +58,26 @@ class TrackerRuntime:
     publisher: MatchChangePublisher
 
 
-class PublicLiveSnapshotCache(Protocol):
-    """Reuse public snapshots identified by their committed match revision."""
+class PublicLiveStoreError(Exception):
+    """Shared snapshot storage is temporarily unavailable."""
 
-    def get_or_build(
-        self, key: str, build: Callable[[], dict[str, Any]]
-    ) -> dict[str, Any]:
-        """Return an independent payload, falling back to the authoritative read."""
+
+class PublishedLiveStore(Protocol):
+    """Latest committed public state with monotonic revision publication."""
+
+    def get(self, match_id: str) -> dict[str, Any] | None:
+        """Return a fresh shared envelope, or request authoritative recovery."""
+
+    def put(self, match_id: str, envelope: dict[str, Any]) -> None:
+        """Publish unless a newer revision or deletion fence already exists."""
+
+    def invalidate(self, match_id: str, revision: int) -> None:
+        """Fence older snapshots after a committed mutation."""
+
+    def recover(
+        self,
+        match_id: str,
+        minimum_revision: int,
+        build: Callable[[], dict[str, Any] | None],
+    ) -> dict[str, Any] | None:
+        """Coalesce misses briefly, falling back to the authoritative builder."""

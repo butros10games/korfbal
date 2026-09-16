@@ -1,0 +1,372 @@
+{
+    "profiles": [
+        {
+            "history_shots": 100,
+            "profile": {
+                "samples": [
+                    {
+                        "kind": "bootstrap",
+                        "frame_bytes": 76507,
+                        "json_bytes": 76478,
+                        "gzip_frame_bytes": 8678,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 85,
+                            "public_reads": 76282,
+                            "snapshot": 4
+                        },
+                        "public_resource_json_bytes": {
+                            "summary": 753,
+                            "stats": 6777,
+                            "events": 12291,
+                            "shots": 56421
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 2,
+                            "shots": 2
+                        },
+                        "live_summary_events_frame_bytes": 13233,
+                        "short_reference_json_bytes": 53042,
+                        "new_dictionary_entries": 222,
+                        "new_dictionary_json_bytes": 8659,
+                        "short_reference_envelope_json_bytes": 61725,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 36811,
+                            "live_summary_events": 8208
+                        }
+                    },
+                    {
+                        "kind": "shot_reg",
+                        "frame_bytes": 12882,
+                        "json_bytes": 12853,
+                        "gzip_frame_bytes": 3213,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 46,
+                            "public_reads": 12678,
+                            "published_at": 18
+                        },
+                        "public_resource_json_bytes": {
+                            "stats": 6777,
+                            "events": 1129,
+                            "shots": 4743
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 781,
+                            "shots": 3940
+                        },
+                        "live_summary_events_frame_bytes": 1308,
+                        "short_reference_json_bytes": 8803,
+                        "new_dictionary_entries": 2,
+                        "new_dictionary_json_bytes": 79,
+                        "short_reference_envelope_json_bytes": 8906,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 901,
+                            "live_summary_events": 228
+                        }
+                    },
+                    {
+                        "kind": "goal_reg",
+                        "frame_bytes": 14825,
+                        "json_bytes": 14796,
+                        "gzip_frame_bytes": 3623,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 69,
+                            "live": 471,
+                            "public_reads": 14119,
+                            "published_at": 18
+                        },
+                        "public_resource_json_bytes": {
+                            "summary": 753,
+                            "stats": 6778,
+                            "events": 1767,
+                            "shots": 4781
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 820,
+                            "shots": 3979
+                        },
+                        "live_summary_events_frame_bytes": 3206,
+                        "short_reference_json_bytes": 10366,
+                        "new_dictionary_entries": 2,
+                        "new_dictionary_json_bytes": 79,
+                        "short_reference_envelope_json_bytes": 10469,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 1185,
+                            "live_summary_events": 682
+                        }
+                    },
+                    {
+                        "kind": "shot_reg",
+                        "frame_bytes": 13001,
+                        "json_bytes": 12972,
+                        "gzip_frame_bytes": 3262,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 46,
+                            "public_reads": 12797,
+                            "published_at": 18
+                        },
+                        "public_resource_json_bytes": {
+                            "stats": 6779,
+                            "events": 1168,
+                            "shots": 4821
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 820,
+                            "shots": 4018
+                        },
+                        "live_summary_events_frame_bytes": 1347,
+                        "short_reference_json_bytes": 8844,
+                        "new_dictionary_entries": 2,
+                        "new_dictionary_json_bytes": 79,
+                        "short_reference_envelope_json_bytes": 8947,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 775,
+                            "live_summary_events": 212
+                        }
+                    }
+                ],
+                "limitations": [
+                    "Synthetic fixture; initial snapshot and three synchronous goal/shot publications, not a traffic-weighted network benchmark.",
+                    "Asynchronous statistics publications and reconnect repetitions are not included.",
+                    "UUID references are a reversible prototype using tagged JSON objects; dictionary additions are counted and must be delivered before use. A production protocol needs schema/mapping versions, replay and reset rules.",
+                    "Filtered frames assume a viewer subscribes only to live, summary and events; other tabs would need their own resources.",
+                    "Gzip figures compress each whole frame offline; they do not validate streaming compression, CPU cost or proxy flushing.",
+                    "Bootstrap live clock is delivered separately in ready and is excluded here, as are HTTP/TCP/TLS headers."
+                ],
+                "environment": {
+                    "revision": "6a949145d92b7190e3be6a8d739b5f7e59ff7f6e",
+                    "dirty": true,
+                    "harness_sha256": "27135759466950068ee6bacca6f9f68b237e502bc18949113a6cae8977ffe54e",
+                    "application_diff_sha256": "3054bb230e6d45803f15b89c09c664b4030aa6fa3ef20487f339e2a40234bba7",
+                    "proxy": null,
+                    "server_cpus": null,
+                    "generator_cpus": null,
+                    "compact": false,
+                    "generator_shards": 1,
+                    "generator_source_addresses": "Separate loopback source addresses per shard",
+                    "python": "3.14.7",
+                    "django": "6.1.1",
+                    "granian": "2.8.2",
+                    "host_logical_cpus": 16,
+                    "asgi_workers": 4,
+                    "sse_workers": 0,
+                    "sse_backpressure_per_worker": 8192,
+                    "public_workers": 0,
+                    "public_backpressure_per_worker": 16384,
+                    "live_workers": 0,
+                    "live_threads_per_worker": 2,
+                    "live_backpressure_per_worker": 16384,
+                    "live_interface": "asgi",
+                    "max_live_p95_ms": 100,
+                    "max_push_p95_ms": 100,
+                    "db_pool_size_per_web_worker": 0,
+                    "background_jobs": false,
+                    "initial_shots_per_match": 100,
+                    "max_command_p95_ms": 1000,
+                    "limitations": "Local synthetic traffic; API/worker/generator share one physical host. No TLS, WAN, media or provider traffic. Optional local Caddy uses HTTP/1.1. CPU partitions, when specified, share host memory and networking. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                    "data_images": [
+                        "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                        "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                    ]
+                }
+            }
+        },
+        {
+            "history_shots": 500,
+            "profile": {
+                "samples": [
+                    {
+                        "kind": "bootstrap",
+                        "frame_bytes": 68203,
+                        "json_bytes": 68174,
+                        "gzip_frame_bytes": 7900,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 85,
+                            "public_reads": 67978,
+                            "snapshot": 4
+                        },
+                        "public_resource_json_bytes": {
+                            "summary": 754,
+                            "stats": 6797,
+                            "events": 60396
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 2
+                        },
+                        "live_summary_events_frame_bytes": 61339,
+                        "short_reference_json_bytes": 48611,
+                        "new_dictionary_entries": 222,
+                        "new_dictionary_json_bytes": 8659,
+                        "short_reference_envelope_json_bytes": 57294,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 160766,
+                            "live_summary_events": 31490
+                        }
+                    },
+                    {
+                        "kind": "shot_reg",
+                        "frame_bytes": 31623,
+                        "json_bytes": 31594,
+                        "gzip_frame_bytes": 10433,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 46,
+                            "public_reads": 31419,
+                            "published_at": 18
+                        },
+                        "public_resource_json_bytes": {
+                            "stats": 6797,
+                            "events": 4249,
+                            "shots": 20344
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 3901,
+                            "shots": 19540
+                        },
+                        "live_summary_events_frame_bytes": 4428,
+                        "short_reference_json_bytes": 15045,
+                        "new_dictionary_entries": 402,
+                        "new_dictionary_json_bytes": 15679,
+                        "short_reference_envelope_json_bytes": 30748,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 626,
+                            "live_summary_events": 228
+                        }
+                    },
+                    {
+                        "kind": "goal_reg",
+                        "frame_bytes": 33567,
+                        "json_bytes": 33538,
+                        "gzip_frame_bytes": 10880,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 69,
+                            "live": 472,
+                            "public_reads": 32861,
+                            "published_at": 17
+                        },
+                        "public_resource_json_bytes": {
+                            "summary": 754,
+                            "stats": 6797,
+                            "events": 4888,
+                            "shots": 20382
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 3940,
+                            "shots": 19579
+                        },
+                        "live_summary_events_frame_bytes": 6328,
+                        "short_reference_json_bytes": 16609,
+                        "new_dictionary_entries": 2,
+                        "new_dictionary_json_bytes": 79,
+                        "short_reference_envelope_json_bytes": 16712,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 1459,
+                            "live_summary_events": 683
+                        }
+                    },
+                    {
+                        "kind": "shot_reg",
+                        "frame_bytes": 31740,
+                        "json_bytes": 31711,
+                        "gzip_frame_bytes": 10471,
+                        "top_level_json_bytes": {
+                            "match_id": 38,
+                            "revision": 3,
+                            "resources": 46,
+                            "public_reads": 31536,
+                            "published_at": 18
+                        },
+                        "public_resource_json_bytes": {
+                            "stats": 6797,
+                            "events": 4288,
+                            "shots": 20422
+                        },
+                        "timeline_order_json_bytes": {
+                            "events": 3940,
+                            "shots": 19618
+                        },
+                        "live_summary_events_frame_bytes": 4467,
+                        "short_reference_json_bytes": 15084,
+                        "new_dictionary_entries": 2,
+                        "new_dictionary_json_bytes": 79,
+                        "short_reference_envelope_json_bytes": 15187,
+                        "short_reference_roundtrip": true,
+                        "compact_sse_bytes": {
+                            "all_public": 594,
+                            "live_summary_events": 213
+                        }
+                    }
+                ],
+                "limitations": [
+                    "Synthetic fixture; initial snapshot and three synchronous goal/shot publications, not a traffic-weighted network benchmark.",
+                    "Asynchronous statistics publications and reconnect repetitions are not included.",
+                    "UUID references are a reversible prototype using tagged JSON objects; dictionary additions are counted and must be delivered before use. A production protocol needs schema/mapping versions, replay and reset rules.",
+                    "Filtered frames assume a viewer subscribes only to live, summary and events; other tabs would need their own resources.",
+                    "Gzip figures compress each whole frame offline; they do not validate streaming compression, CPU cost or proxy flushing.",
+                    "Bootstrap live clock is delivered separately in ready and is excluded here, as are HTTP/TCP/TLS headers."
+                ],
+                "environment": {
+                    "revision": "6a949145d92b7190e3be6a8d739b5f7e59ff7f6e",
+                    "dirty": true,
+                    "harness_sha256": "27135759466950068ee6bacca6f9f68b237e502bc18949113a6cae8977ffe54e",
+                    "application_diff_sha256": "27e44c688bcc02c8239578fe6d1bc39785c25ad50d3568f1218533dcc1ca8b91",
+                    "proxy": null,
+                    "server_cpus": null,
+                    "generator_cpus": null,
+                    "compact": false,
+                    "generator_shards": 1,
+                    "generator_source_addresses": "Separate loopback source addresses per shard",
+                    "python": "3.14.7",
+                    "django": "6.1.1",
+                    "granian": "2.8.2",
+                    "host_logical_cpus": 16,
+                    "asgi_workers": 4,
+                    "sse_workers": 0,
+                    "sse_backpressure_per_worker": 8192,
+                    "public_workers": 0,
+                    "public_backpressure_per_worker": 16384,
+                    "live_workers": 0,
+                    "live_threads_per_worker": 2,
+                    "live_backpressure_per_worker": 16384,
+                    "live_interface": "asgi",
+                    "max_live_p95_ms": 100,
+                    "max_push_p95_ms": 100,
+                    "db_pool_size_per_web_worker": 0,
+                    "background_jobs": false,
+                    "initial_shots_per_match": 500,
+                    "max_command_p95_ms": 1000,
+                    "limitations": "Local synthetic traffic; API/worker/generator share one physical host. No TLS, WAN, media or provider traffic. Optional local Caddy uses HTTP/1.1. CPU partitions, when specified, share host memory and networking. Each data container: 2 CPUs/1 GiB; PostgreSQL default 100 connections. Later phases have longer timelines and warmer caches.",
+                    "data_images": [
+                        "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+                        "sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773"
+                    ]
+                }
+            }
+        }
+    ],
+    "notes": [
+        "Actual opt-in compact SSE frames include dictionary additions and the SSE envelope.",
+        "Compact bootstrap reads use the production 1 MiB input budget. Legacy uses 256 KiB; its 500-shot frame omits shots.",
+        "Initial compact frames include live state; legacy profile excludes the separately sent ready live state.",
+        "Synthetic sizes only; asynchronous publications and reconnects are measured separately by the proxy load test."
+    ]
+}
