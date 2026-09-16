@@ -7,6 +7,7 @@ import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
+from apps.tournament.adapters.outbound.display_updates import build_display_update
 from apps.tournament.realtime_contracts import tournament_group_name
 
 
@@ -22,12 +23,21 @@ class ChannelsTournamentChangePublisher:
             channel_layer = get_channel_layer()
             if channel_layer is None:
                 return
+            display_frame = None
+            try:
+                revision, display_frame = build_display_update(tournament_id)
+            except Exception:
+                # Optional publication optimization must not suppress invalidations.
+                logger.exception(
+                    "Could not build tournament display update for %s", tournament_id
+                )
             async_to_sync(channel_layer.group_send)(
                 tournament_group_name(tournament_id),
                 {
                     "type": "tournament.changed",
                     "tournament_id": tournament_id,
                     "revision": revision,
+                    "display_frame": display_frame,
                 },
             )
         except Exception:

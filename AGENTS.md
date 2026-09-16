@@ -253,6 +253,10 @@ misleading provider 500/603 errors.
   queue per receiver, and release the shared worker after the last disconnect; viewer
   count must not multiply periodic database scans or let slow receivers block others.
 
+- Tournament SSE subscriptions do not authenticate display tokens. Push snapshot content
+  only for publicly visible, published/live/finished tournaments; private displays must
+  recover through authorized HTTP reads. Apply patches only against their exact revision.
+
 - Distinguish missing Sportlink feed membership from HTTP failure. Pace absent-result
   retries with an attempt timestamp without advancing confirmed match coverage; retain
   all owner-feed fallbacks and persist safe diagnostics before publication can fail.

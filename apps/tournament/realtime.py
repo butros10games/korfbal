@@ -27,6 +27,7 @@ class TournamentEventsSseConsumer(AsyncConsumer):
 
     tournament_ids: tuple[str, ...] = ()
     revisions: dict[str, int]
+    display_updates: bool = False
     heartbeat_task: asyncio.Task[None] | None = None
     reconciliation_task: asyncio.Task[None] | None = None
 
@@ -42,6 +43,8 @@ class TournamentEventsSseConsumer(AsyncConsumer):
             return
         try:
             self.tournament_ids = self._parse_ids()
+            params = parse_qs(self.scope.get("query_string", b"").decode())
+            self.display_updates = params.get("display", [""])[0] == "1"
         except ValueError as exc:
             await self._reject(400, str(exc))
             return
@@ -82,17 +85,30 @@ class TournamentEventsSseConsumer(AsyncConsumer):
         """Forward a committed tournament invalidation."""
         tournament_id = str(event["tournament_id"])
         revision = int(str(event["revision"]))
-        await self._send_changed_if_new(tournament_id, revision)
+        frame = event.get("display_frame")
+        await self._send_changed_if_new(
+            tournament_id, revision, frame if isinstance(frame, bytes) else None
+        )
 
     async def _send_changed_if_new(
         self,
         tournament_id: str,
         revision: int,
+        display_frame: bytes | None = None,
     ) -> None:
         """Send only revisions newer than the last one observed by this stream."""
-        if revision <= self.revisions.get(tournament_id, -1):
+        if tournament_id not in self.tournament_ids or revision <= self.revisions.get(
+            tournament_id, -1
+        ):
             return
         self.revisions[tournament_id] = revision
+        if self.display_updates and display_frame is not None:
+            await self.send({
+                "type": "http.response.body",
+                "body": display_frame,
+                "more_body": True,
+            })
+            return
         await self._send_event(
             "tournament.changed",
             {

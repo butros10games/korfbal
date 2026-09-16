@@ -6,6 +6,7 @@ import asyncio
 from http import HTTPStatus
 from inspect import unwrap
 import json
+from unittest.mock import AsyncMock
 
 from asgiref.sync import sync_to_async
 from asgiref.testing import ApplicationCommunicator
@@ -165,3 +166,33 @@ async def test_one_recovery_query_serves_a_hundred_connected_viewers(
         )
         await asyncio.gather(*(viewer.wait(timeout=5) for viewer in viewers))
     assert not realtime_reconciliation._workers
+
+
+@pytest.mark.asyncio
+async def test_display_frames_are_opt_in_and_recovery_remains_an_invalidation() -> None:
+    """Pre-encoded public bytes require opt-in; unknown tournaments never forward."""
+    tournament_id = "11111111-1111-4111-8111-111111111111"
+    consumer = TournamentEventsSseConsumer()
+    consumer.tournament_ids = (tournament_id,)
+    consumer.revisions = {tournament_id: 0}
+    consumer.send = AsyncMock()
+    event = {
+        "tournament_id": tournament_id,
+        "revision": 1,
+        "display_frame": b"event: tournament.changed\ndata: {}\n\n",
+    }
+    await consumer.tournament_changed(event)
+    assert b'"revision":1' in consumer.send.call_args.args[0]["body"]
+    consumer.display_updates = True
+    event["revision"] = 2
+    await consumer.tournament_changed(event)
+    assert consumer.send.call_args.args[0]["body"] == event["display_frame"]
+    await consumer._send_changed_if_new(tournament_id, 3)
+    assert b'"revision":3' in consumer.send.call_args.args[0]["body"]
+    consumer.send.reset_mock()
+    await consumer.tournament_changed({
+        **event,
+        "tournament_id": "other",
+        "revision": 4,
+    })
+    consumer.send.assert_not_called()
