@@ -141,7 +141,8 @@ def test_team_overview_returns_current_matches_stats_and_roster(client: Client) 
     assert payload["team"]["id_uuid"] == str(team.id_uuid)
     assert payload["matches"]["upcoming"]
     assert payload["matches"]["recent"]
-    assert payload["stats"]["general"] is not None
+    assert payload["stats"]["general"] is None
+    assert len(payload["stats"]["season"]["matches"]) == 1
     assert payload["roster"][0]["username"] == player.user.username
     assert payload["roster"][0]["roster_role"] == "main"
     assert payload["meta"]["season_id"] == str(season.id_uuid)
@@ -159,7 +160,7 @@ def test_team_overview_counts_possession_events(
     player = create_player(username="possession_player")
     _roster(team, season, player)
     for home, away in ((team, opponent), (opponent, team)):
-        match_data = _match(home, away, season, starts_in_days=-1, status="active")
+        match_data = _match(home, away, season, starts_in_days=-1, status="finished")
         part = MatchPart.objects.create(
             match_data=match_data, part_number=1, start_time=timezone.now()
         )
@@ -672,3 +673,87 @@ def test_team_catalog_search_preserves_cross_field_terms(
     assert response.status_code == HTTPStatus.OK
     assert response.json()["count"] == 1
     assert [row["id_uuid"] for row in response.json()["results"]] == [str(team.pk)]
+
+
+def test_season_statistics_use_all_finished_results_and_actual_shooting_team(
+    client: Client,
+) -> None:
+    """Pagination, recorder perspective and missing events cannot corrupt a season."""
+    season = create_season()
+    team, opponent = _teams()
+    player = create_player(username="season_stats")
+    _roster(team, season, player)
+    completed = []
+    for index in range(12):
+        home, away = (team, opponent) if index % 2 == 0 else (opponent, team)
+        data = _match(home, away, season, starts_in_days=index - 20, status="finished")
+        MatchData.objects.filter(pk=data.pk).update(home_score=20, away_score=15)
+        completed.append(data)
+    # for_team deliberately disagrees with the selected team's perspective.
+    for data in completed[:2]:
+        Shot.objects.create(
+            match_data=data, player=player, team=team, for_team=False, scored=True
+        )
+        Shot.objects.create(
+            match_data=data, player=player, team=opponent, for_team=True, scored=False
+        )
+    Shot.objects.create(match_data=completed[2], player=player, team=None, scored=True)
+    foreign_team = Team.objects.create(name="Other", club=team.club)
+    Shot.objects.create(
+        match_data=completed[2], player=player, team=foreign_team, scored=True
+    )
+    for status in ("active", "upcoming"):
+        data = _match(team, opponent, season, starts_in_days=1, status=status)
+        Shot.objects.create(match_data=data, player=player, team=team, scored=True)
+    old_season = create_season("Old", starts_in_days=-600, ends_in_days=-300)
+    data = _match(team, opponent, old_season, starts_in_days=-400, status="finished")
+    Shot.objects.create(match_data=data, player=player, team=team, scored=True)
+
+    # Shot-save signals keep tracker scores current; restore imported final scores
+    # after constructing the deliberately partial shot registration.
+    MatchData.objects.filter(pk__in=[item.pk for item in completed]).update(
+        home_score=20, away_score=15, score_source="knkv"
+    )
+    response = client.get(
+        f"/api/team/teams/{team.pk}/overview/", {"season": str(season.pk)}
+    )
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert len(payload["matches"]["recent"]) == 10
+    results = payload["stats"]["season"]["matches"]
+    assert len(results) == 12
+    assert [row["match_id"] for row in results] == [
+        str(data.match_link_id) for data in completed
+    ]
+    assert results[0]["goals_for"] == 20
+    assert results[1]["goals_for"] == 15
+    assert results[1]["goals_against"] == 20
+    assert results[0]["is_home"] is True
+    assert results[1]["is_home"] is False
+    assert sum(row["has_shots"] for row in results) == 2
+    general = payload["stats"]["general"]
+    assert (general["shots_for"], general["shots_against"]) == (2, 2)
+    assert (general["goals_for"], general["goals_against"]) == (2, 0)
+    assert general["team_goal_stats"]["Onbekend"] == {
+        "goals_by_player": 2,
+        "goals_against_player": 0,
+    }
+
+
+def test_season_statistics_empty_and_live_only(client: Client) -> None:
+    """No completed data is represented explicitly, including live player events."""
+    season = create_season()
+    team, opponent = _teams()
+    player = create_player(username="live_only")
+    _roster(team, season, player)
+    data = _match(team, opponent, season, starts_in_days=0, status="active")
+    Shot.objects.create(match_data=data, player=player, team=team, scored=True)
+    response = client.get(
+        f"/api/team/teams/{team.pk}/overview/", {"season": str(season.pk)}
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["stats"] == {
+        "general": None,
+        "season": {"matches": []},
+        "players": [],
+    }

@@ -16,7 +16,6 @@ from apps.competition.models import (
 )
 from apps.competition.services.rosters import ROSTER_FRESHNESS
 from apps.game_tracker.models import MatchData, StartingPlayerAssignment
-from apps.kwt_common.utils.general_stats import build_general_stats_sync
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.kwt_common.utils.players_stats import build_player_stats_sync
 from apps.player.models import Player
@@ -30,6 +29,7 @@ from apps.team.queries.overview import (
     team_matches,
     team_players,
 )
+from apps.team.queries.season_stats import team_season_statistics
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +64,12 @@ def build_team_overview_payload(
         ],
     )
 
-    has_matches = match_data_qs.exists() if options.include_stats else False
-    stats_general = None
-    if options.include_stats and has_matches:
-        stats_general = build_general_stats_sync(match_data_qs)
+    finished_matches = match_data_qs.filter(status="finished")
+    statistics = (
+        team_season_statistics(team, match_data_qs)
+        if options.include_stats
+        else {"general": None}
+    )
 
     roster_players: list[Player] = []
     if options.include_roster or options.include_stats:
@@ -163,8 +165,8 @@ def build_team_overview_payload(
         ]
 
     stats_players = []
-    if options.include_stats and roster_players and has_matches:
-        stats_players = build_player_stats_sync(roster_players, match_data_qs)
+    if options.include_stats and roster_players and finished_matches.exists():
+        stats_players = build_player_stats_sync(roster_players, finished_matches)
 
     private_roster = (
         _private_roster_counts(team, season)
@@ -179,7 +181,7 @@ def build_team_overview_payload(
             "recent": recent_matches,
         },
         "stats": {
-            "general": stats_general,
+            **statistics,
             "players": stats_players,
         },
         "roster": roster,
