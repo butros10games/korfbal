@@ -78,6 +78,9 @@ COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/apps/ /app/apps/
 
 USER appuser
 
+# Catch missing cache backend dependencies before publishing any runtime image.
+RUN python -c "from apps.kwt_common.adapters.outbound.redis_cache import SharedRedisCache, PrometheusRedisCache; SharedRedisCache('redis://localhost:6379/0', {}); PrometheusRedisCache('redis://localhost:6379/0', {})"
+
 EXPOSE 1664
 
 ENTRYPOINT ["python", "-m", "korfbal.worker"]

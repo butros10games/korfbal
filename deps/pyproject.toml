@@ -21,6 +21,7 @@ dependencies = [
     "django-cors-headers",
     "channels",
     "channels-redis",
+    "django-redis",
     "django-prometheus==2.6.0.dev4",
     "drf-spectacular",
     "qrcode>=8.2,<9",

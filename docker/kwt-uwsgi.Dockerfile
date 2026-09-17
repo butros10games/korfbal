@@ -78,6 +78,9 @@ ENV GRANIAN_WORKERS=4 KORFBAL_BIND_HOST=0.0.0.0
 
 USER appuser
 
+# Catch missing cache backend dependencies before publishing any runtime image.
+RUN python -c "from apps.kwt_common.adapters.outbound.redis_cache import SharedRedisCache, PrometheusRedisCache; SharedRedisCache('redis://localhost:6379/0', {}); PrometheusRedisCache('redis://localhost:6379/0', {})"
+
 EXPOSE 1664 1665 1666 1667
 
 ENTRYPOINT ["/app/entrypoint.sh"]

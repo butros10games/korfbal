@@ -64,6 +64,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   Keep app assets in collectstatic release detection and check custom asset URLs after deployment.
 
 - Don’t commit `.env` files. Use the project’s template and document required vars in PR notes.
+- The Prometheus native Redis module also imports `django_redis`; keep both packages in
+  base runtime dependencies and smoke-import cache adapters in every production image.
 - Keep packages imported during Django startup in the base runtime dependencies; Celery and
   collectstatic images must be able to initialize every installed app too.
 - Keep Korfbal Python dependencies synchronized in the root workspace `uv.lock` and the production
