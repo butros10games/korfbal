@@ -14,6 +14,7 @@ from apps.team.models import Team
 
 
 SESSION_KEY = "tracker_access"
+MAX_TOKEN_LENGTH = 128
 
 
 def has_tracker_grant(grants: Mapping[str, str], *, match: Match, team: Team) -> bool:

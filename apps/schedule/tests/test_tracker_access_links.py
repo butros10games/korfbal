@@ -36,6 +36,75 @@ from .test_match_tracker_api import (
 pytestmark = pytest.mark.django_db
 
 
+def test_native_capability_tracks_without_cookies_and_cannot_escalate(
+    invitation: tuple[MatchGraph, str],
+) -> None:
+    """Explicit native headers grant only the invited tracker, without session CSRF."""
+    graph, token = invitation
+    guest = Client(enforce_csrf_checks=True, HTTP_X_TRACKER_TOKEN=token)
+    state = guest.get(_url(graph, "state"))
+    assert state.status_code == HTTPStatus.OK
+    payload = {
+        "command": "start/pause",
+        "expected_revision": state.json()["live_revision"],
+    }
+    assert (
+        guest.post(_url(graph, "commands"), payload, content_type=JSON).status_code
+        == HTTPStatus.OK
+    )
+    assert TrackerCommand.objects.get(match_data=graph.match_data).actor is None
+    assert SESSION_KEY not in guest.session
+    assert (
+        guest.get(_url(graph, "state", team_id=graph.away_team.pk)).status_code
+        == HTTPStatus.UNAUTHORIZED
+    )
+    assert (
+        guest.get(_url(create_match_graph(prefix="Other native"), "state")).status_code
+        == HTTPStatus.UNAUTHORIZED
+    )
+    assert (
+        guest.post(_url(graph, "access"), {}, content_type=JSON).status_code
+        == HTTPStatus.FORBIDDEN
+    )
+    assert (
+        guest.post(
+            f"/api/matches/{graph.match.pk}/notes/?team={graph.home_team.pk}",
+            {},
+            content_type=JSON,
+        ).status_code
+        == HTTPStatus.UNAUTHORIZED
+    )
+
+
+@pytest.mark.parametrize("change", ["revoke", "rotate", "expire", "invalid"])
+def test_native_capability_is_revalidated_on_every_command(
+    client: Client, invitation: tuple[MatchGraph, str], change: str
+) -> None:
+    """A stale or malformed native invitation cannot keep reading or writing."""
+    graph, token = invitation
+    guest = Client(HTTP_X_TRACKER_TOKEN=token)
+    assert guest.get(_url(graph, "state")).status_code == HTTPStatus.OK
+    if change == "revoke":
+        client.delete(_url(graph, "access"))
+    elif change == "rotate":
+        client.post(_url(graph, "access"), {}, content_type=JSON)
+    elif change == "expire":
+        TrackerAccessLink.objects.update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+    else:
+        guest = Client(HTTP_X_TRACKER_TOKEN=token + "x")
+    assert guest.get(_url(graph, "state")).status_code == HTTPStatus.UNAUTHORIZED
+    with patch(COMMAND_SERVICE) as command:
+        assert (
+            guest.post(
+                _url(graph, "commands"), {"command": "start/pause"}, content_type=JSON
+            ).status_code
+            == HTTPStatus.UNAUTHORIZED
+        )
+    command.assert_not_called()
+
+
 @pytest.fixture
 def invitation(client: Client) -> tuple[MatchGraph, str]:
     """Issue a link as an authorized club member."""

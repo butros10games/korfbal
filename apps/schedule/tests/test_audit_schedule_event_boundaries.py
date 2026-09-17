@@ -12,6 +12,7 @@ from django.test.client import Client
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.models import MatchData, MatchLiveChange
 from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player_club_membership import PlayerClubMembership
 
@@ -48,27 +49,41 @@ def _login_home_club_member(
 
 
 def test_public_live_endpoints_strip_team_tracker_details(client: Client) -> None:
-    """Public reads never build private tracker data, including on a poll change."""
+    """Public snapshots expose only match-wide state, never coach-only data."""
     graph = create_match_graph(prefix="Public live allowlist")
+    MatchData.objects.filter(pk=graph.match_data.pk).update(
+        status="finished",
+        score_source="knkv",
+        home_score=4,
+        away_score=3,
+        live_revision=2,
+    )
+    MatchLiveChange.objects.create(
+        match_data=graph.match_data,
+        revision=2,
+        resources=["events"],
+    )
+
     with (
-        patch("apps.schedule.api.match_viewset_live.get_tracker_state") as private_read,
+        patch("apps.schedule.api.match_viewset_live.get_tracker_state") as tracker,
         patch(
             "apps.schedule.api.match_viewset_live.poll_tracker_state"
-        ) as private_poll,
+        ) as poll_tracker,
     ):
         full_response = client.get(f"/api/matches/{graph.match.id_uuid}/live/")
         changed_response = client.get(
             f"/api/matches/{graph.match.id_uuid}/live/poll/",
-            {"since_revision": "-1", "timeout": "1"},
+            {"since_revision": "1", "timeout": "1"},
         )
-    private_read.assert_not_called()
-    private_poll.assert_not_called()
+    tracker.assert_not_called()
+    poll_tracker.assert_not_called()
+
     assert full_response.status_code == HTTPStatus.OK
     assert changed_response.status_code == HTTPStatus.OK
+    assert changed_response.json()["resources"] == ["events"]
     for payload in (full_response.json(), changed_response.json()):
-        assert payload["score"] == {"home": 0, "away": 0}
+        assert payload["score"] == {"home": 4, "away": 3}
         assert PRIVATE_TRACKER_KEYS.isdisjoint(payload)
-    assert isinstance(changed_response.json()["resources"], list)
 
 
 def test_authorized_tracker_poll_forwards_parsed_transport_options(

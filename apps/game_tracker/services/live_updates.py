@@ -133,9 +133,13 @@ def summarize_match_changes(
         .order_by("revision")
         .values("revision", "resources", "changed_ids")
     )
-    expected_revisions = list(range(max(1, since_revision + 1), current_revision + 1))
-    actual_revisions = [int(row["revision"]) for row in rows]
-    if actual_revisions != expected_revisions:
+    # The cursor may predate the retained journal by millions of revisions.
+    # Check only the rows we have, without allocating the missing revision range.
+    first_revision = max(1, since_revision + 1)
+    if len(rows) != current_revision - first_revision + 1 or any(
+        int(row["revision"]) != first_revision + offset
+        for offset, row in enumerate(rows)
+    ):
         return MatchChangeSummary(
             frozenset(ALL_LIVE_RESOURCES),
             {},

@@ -5,27 +5,19 @@ from __future__ import annotations
 from collections.abc import Iterable
 from urllib.parse import urlencode
 
+from django.db.models import F, Subquery
 from django.urls import reverse
 
-from apps.player.models import Player, PlayerSong, PlayerSongStatus
+from apps.player.models import (
+    Player,
+    PlayerGoalSongSelection,
+    PlayerSong,
+    PlayerSongStatus,
+    TeamGoalSongSelection,
+)
 from apps.player.services.player_song_queries import player_songs_by_ids
 from apps.schedule.models import Season
 from apps.team.models import Team, TeamData
-
-
-def _normalized_ids(values: object) -> list[str]:
-    if not isinstance(values, list):
-        return []
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        normalized = value.strip()
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            result.append(normalized)
-    return result
 
 
 def _song_is_ready(song: PlayerSong) -> bool:
@@ -64,20 +56,53 @@ def build_goal_song_manifest(
 ) -> dict[str, object]:
     """Return player and team-fallback clips in deterministic selection order."""
     normalized_player_ids = list(dict.fromkeys(str(value) for value in player_ids))
-    player_selections = {
-        str(player.pk): _normalized_ids(player.goal_song_song_ids)
-        for player in Player.objects.filter(
-            id_uuid__in=normalized_player_ids
-        ).prefetch_related("goal_song_selections")
-    }
+    # Query canonical selection IDs without hydrating owners or selection models.
+    # Keep the visible-player manager: a relation join alone bypasses its policy.
+    player_selections: dict[str, list[str]] = {}
+    if normalized_player_ids:
+        selections = PlayerGoalSongSelection.objects.filter(
+            player__in=Player.objects.filter(id_uuid__in=normalized_player_ids),
+            song__player_id=F("player_id"),
+        ).values_list("player_id", "song_id")
+        for player_id, song_id in selections:
+            player_selections.setdefault(str(player_id), []).append(str(song_id))
 
-    team_data_query = TeamData.objects.filter(team=team)
-    if season is not None:
-        team_data_query = team_data_query.filter(season=season)
-    team_data = team_data_query.order_by("-season__start_date").first()
-    fallback_ids = _normalized_ids(
-        team_data.fallback_goal_song_song_ids if team_data is not None else []
+    if season is None:
+        selected_team_data = (
+            TeamData.objects
+            .filter(team=team)
+            .order_by("-season__start_date")
+            .values("pk")[:1]
+        )
+        fallback_selections = TeamGoalSongSelection.objects.filter(
+            team_data_id=Subquery(selected_team_data)
+        )
+    else:
+        # TeamData is unique per team/season; only the latest-season lookup
+        # needs to sort seasons and select an owner before inspecting songs.
+        fallback_selections = TeamGoalSongSelection.objects.filter(
+            team_data__team=team, team_data__season=season
+        )
+    fallback_rows = list(
+        fallback_selections.values_list(
+            "song_id", "song__player_id", "team_data_id", "song__team_data_id"
+        )
     )
+    fallback_ids: list[str] = []
+    if fallback_rows:
+        # Only selected fallback owners need a membership/privacy check.
+        allowed_owners = {
+            str(player_id)
+            for player_id in Player.objects.filter(
+                pk__in=[owner_id for _, owner_id, _, _ in fallback_rows],
+                team_data_as_player=fallback_rows[0][2],
+            ).values_list("pk", flat=True)
+        }
+        fallback_ids = [
+            str(song_id)
+            for song_id, owner_id, team_data_id, song_team_data_id in fallback_rows
+            if str(owner_id) in allowed_owners or song_team_data_id == team_data_id
+        ]
 
     selected_ids = {
         song_id for values in player_selections.values() for song_id in values
@@ -97,22 +122,10 @@ def build_goal_song_manifest(
         if entries:
             players[player_id] = entries
 
-    allowed_fallback_player_ids: set[str] = set()
-    if team_data is not None:
-        allowed_fallback_player_ids = {
-            str(value) for value in team_data.players.values_list("id_uuid", flat=True)
-        }
     fallback = [
         _entry(songs_by_id[song_id])
         for song_id in fallback_ids
         if song_id in songs_by_id
-        and (
-            str(songs_by_id[song_id].player_id) in allowed_fallback_player_ids
-            or (
-                team_data is not None
-                and songs_by_id[song_id].team_data_id == team_data.pk
-            )
-        )
     ]
 
     return {"version": 1, "players": players, "fallback": fallback}

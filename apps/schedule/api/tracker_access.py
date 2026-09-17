@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from apps.game_tracker.models import TrackerAccessLink
 from apps.game_tracker.services.tracker_access import (
+    MAX_TOKEN_LENGTH,
     SESSION_KEY,
     active_tracker_links,
     issue_tracker_link,
@@ -33,7 +34,7 @@ class TrackerLinkStatusSerializer(serializers.Serializer):
 class TrackerLinkRedeemSerializer(serializers.Serializer):
     """Invitation exchange input."""
 
-    token = serializers.CharField(max_length=128, trim_whitespace=False)
+    token = serializers.CharField(max_length=MAX_TOKEN_LENGTH, trim_whitespace=False)
 
 
 class TrackerAccessActionsMixin:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tracemalloc
 
 import pytest
 
@@ -10,6 +11,7 @@ from apps.game_tracker.composition import apply_tracker_command, record_match_ch
 from apps.game_tracker.models import MatchData, MatchLiveChange
 from apps.game_tracker.realtime.contracts import LiveResource
 from apps.game_tracker.services.live_updates import (
+    MatchChangeSummary,
     summarize_match_changes,
 )
 from apps.game_tracker.services.tracker_state import (
@@ -21,6 +23,9 @@ from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 UNDO_REVISION = 3
 STALE_WRITERS_REVISION = 2
+LARGE_REVISION = 1_000_000
+RETAINED_REVISIONS = 512
+RECONNECT_MEMORY_LIMIT_BYTES = 8 * 1024 * 1024
 
 
 @pytest.mark.django_db
@@ -145,3 +150,100 @@ def test_compact_tracker_poll_reuses_initial_configuration() -> None:
     assert "opponent" not in compact["patch"]
     assert "goal_types" not in compact["patch"]
     assert len(json.dumps(compact)) < len(json.dumps(full))
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("since_revision", [-1, 0])
+def test_reconnect_summary_memory_is_bounded_by_retained_history(
+    since_revision: int,
+) -> None:
+    """An old cursor must not allocate every revision that has been discarded."""
+    tracker = create_tracker_match(prefix="Bounded reconnect")
+    tracker.match_data.live_revision = LARGE_REVISION
+    MatchLiveChange.objects.bulk_create([
+        MatchLiveChange(
+            match_data=tracker.match_data,
+            revision=revision,
+            resources=["events"],
+            changed_ids={"events": [f"event-{revision}"]},
+        )
+        for revision in range(
+            LARGE_REVISION - RETAINED_REVISIONS + 1, LARGE_REVISION + 1
+        )
+    ])
+
+    tracemalloc.start()
+    try:
+        summary = summarize_match_changes(
+            tracker.match_data, since_revision=since_revision
+        )
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert summary == MatchChangeSummary(
+        frozenset(LiveResource), {}, frozenset(), False
+    )
+    assert peak_bytes < RECONNECT_MEMORY_LIMIT_BYTES
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("current", "cursor", "revisions", "complete"),
+    [
+        (0, -1, [], True),
+        (0, 0, [], True),
+        (0, 1, [], False),
+        (3, -1, [1, 2, 3], True),
+        (3, 0, [1, 2, 3], True),
+        (3, 1, [1, 2, 3, 4], True),
+        (3, 0, [2, 3], False),
+        (3, 0, [1, 3], False),
+        (3, 0, [1, 2], False),
+        (3, -1, [0, 2, 3], False),
+        (3, 0, [], False),
+        (3, 3, [1, 3], True),
+        (3, 4, [1, 2, 3], False),
+        (
+            LARGE_REVISION,
+            LARGE_REVISION - 2,
+            [LARGE_REVISION - 1, LARGE_REVISION],
+            True,
+        ),
+    ],
+)
+def test_change_summary_retains_revision_window_contract(
+    current: int, cursor: int, revisions: list[int], complete: bool
+) -> None:
+    """Initial, gapped, caught-up and future cursors keep their recovery behavior."""
+    tracker = create_tracker_match(prefix="Revision windows")
+    tracker.match_data.live_revision = current
+    MatchLiveChange.objects.bulk_create([
+        MatchLiveChange(
+            match_data=tracker.match_data,
+            revision=revision,
+            resources=["events"],
+            changed_ids={"events": [f"event-{revision}"]},
+        )
+        for revision in revisions
+    ])
+    summary = summarize_match_changes(tracker.match_data, since_revision=cursor)
+    if not complete:
+        expected = MatchChangeSummary(frozenset(LiveResource), {}, frozenset(), False)
+    else:
+        ids = {
+            f"event-{revision}"
+            for revision in revisions
+            if cursor < revision <= current
+        }
+        expected = (
+            MatchChangeSummary(
+                frozenset({LiveResource.EVENTS}),
+                {LiveResource.EVENTS: frozenset(ids)},
+                frozenset({LiveResource.EVENTS}),
+                True,
+            )
+            if ids
+            else MatchChangeSummary(frozenset(), {}, frozenset(), True)
+        )
+    assert summary == expected

@@ -18,6 +18,13 @@ def test_openapi_schema_has_no_warnings_or_errors(tmp_path: Path) -> None:
 
     schema = yaml.safe_load((tmp_path / "openapi.yaml").read_text())
     paths = schema["paths"]
+    upcoming = paths["/api/matches/upcoming-page/"]["get"]
+    assert {"page", "page_size", "followed", "team", "club", "season"} <= {
+        parameter["name"] for parameter in upcoming["parameters"]
+    }
+    assert upcoming["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/PaginatedMatchList"
+    }
     teams = paths["/api/tournaments/{tournament_id}/teams/"]
     assert (
         teams["get"]["responses"]["200"]["content"]["application/json"]["schema"][

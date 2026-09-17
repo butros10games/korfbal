@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.test.client import Client
 from django.utils import timezone
 import pytest
+from pytest_django.fixtures import DjangoAssertNumQueries
 
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData
@@ -26,6 +27,8 @@ from apps.team.models import Team
 
 DEFAULT_UPCOMING_LIMIT = 5
 MINIMUM_LIMIT = 1
+SCHEDULE_PAGE_SIZE = 25
+MAX_SCHEDULE_PAGE_SIZE = 200
 pytestmark = pytest.mark.django_db
 
 
@@ -331,6 +334,88 @@ def test_match_finished_respects_team_and_season_filters(client: Client) -> None
     ids = {item["id_uuid"] for item in payload}
     assert str(match_in_scope.id_uuid) in ids
     assert str(match_outside_season.id_uuid) not in ids
+
+
+@pytest.fixture
+def dense_schedule() -> list[Match]:
+    """Create tied kickoff times to exercise deterministic page boundaries."""
+    start = timezone.now() + timedelta(days=1)
+    season = Season.objects.create(
+        name="Dense", start_date=start.date(), end_date=start.date()
+    )
+    club = Club.objects.create(name="Dense")
+    home = Team.objects.create(name="Home", club=club)
+    away = Team.objects.create(name="Away", club=club)
+    return Match.objects.bulk_create([
+        Match(home_team=home, away_team=away, season=season, start_time=start)
+        for _ in range(205)
+    ])
+
+
+def test_upcoming_pages_are_bounded_complete_and_eager(
+    client: Client,
+    dense_schedule: list[Match],
+    django_assert_num_queries: DjangoAssertNumQueries,
+) -> None:
+    """Paging transfers each fixture once and keeps serializer reads constant."""
+    expected = sorted(str(match.pk) for match in dense_schedule)
+    seen: list[str] = []
+    page_count = (len(expected) + SCHEDULE_PAGE_SIZE - 1) // SCHEDULE_PAGE_SIZE
+    for page in range(1, page_count + 1):
+        with django_assert_num_queries(2):
+            response = client.get(
+                "/api/matches/upcoming-page/", {"page": page, "page_size": 25}
+            )
+        assert response.status_code == HTTPStatus.OK
+        payload = response.json()
+        assert payload["count"] == len(expected)
+        assert len(payload["results"]) <= SCHEDULE_PAGE_SIZE
+        assert bool(payload["next"]) == (page < page_count)
+        seen.extend(match["id_uuid"] for match in payload["results"])
+    assert seen == expected
+    assert client.get("/api/matches/next/").json()["id_uuid"] == expected[0]
+    assert len(client.get("/api/matches/upcoming/").json()) == DEFAULT_UPCOMING_LIMIT
+    with django_assert_num_queries(2):
+        oversized = client.get("/api/matches/upcoming-page/", {"page_size": 9999})
+    assert len(oversized.json()["results"]) == MAX_SCHEDULE_PAGE_SIZE
+    assert (
+        client.get("/api/matches/upcoming-page/", {"page": 999}).status_code
+        == HTTPStatus.NOT_FOUND
+    )
+
+
+def test_upcoming_pages_keep_followed_and_entity_filters(
+    client: Client, dense_schedule: list[Match]
+) -> None:
+    """Personal empty schedules stay empty and next links retain the active scope."""
+    user = get_user_model().objects.create_user(username="paged-viewer")
+    client.force_login(user)
+    assert (
+        client.get("/api/matches/upcoming-page/", {"followed": "true"}).json()[
+            "results"
+        ]
+        == []
+    )
+    home_id = dense_schedule[0].home_team_id
+    user.player.team_follow.add(home_id)
+    response = client.get(
+        "/api/matches/upcoming-page/", {"followed": "true", "page_size": 25}
+    )
+    assert response.json()["count"] == len(dense_schedule)
+    assert "followed=true" in response.json()["next"]
+    user.player.team_follow.clear()
+    assert client.get("/api/matches/upcoming-page/", {"followed": "false"}).json()[
+        "count"
+    ] == len(dense_schedule)
+    assert client.get("/api/matches/upcoming-page/", {"team": str(home_id)}).json()[
+        "count"
+    ] == len(dense_schedule)
+    assert (
+        client.get(
+            "/api/matches/upcoming-page/", {"club": str(dense_schedule[0].season_id)}
+        ).json()["results"]
+        == []
+    )
 
 
 @pytest.mark.parametrize("endpoint", ["upcoming", "finished"])

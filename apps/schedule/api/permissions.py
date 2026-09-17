@@ -10,7 +10,13 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
-from apps.game_tracker.services.tracker_access import SESSION_KEY, has_tracker_grant
+from apps.game_tracker.services.tracker_access import (
+    MAX_TOKEN_LENGTH,
+    SESSION_KEY,
+    active_tracker_links,
+    has_tracker_grant,
+    token_digest,
+)
 from apps.player.models.player import Player
 from apps.player.models.player_club_membership import PlayerClubMembership
 from apps.schedule.models import Match
@@ -119,6 +125,17 @@ class HasTrackerAccess(IsClubMemberOrCoachOrAdmin):
         match, team = _get_match_and_team(view, require_team=True)
         if not match or not team:
             return False
+        # Native invitations are explicit capabilities, never ambient cookies.
+        # Revalidate the original link on every read/write so rotation and expiry
+        # revoke native access at the same boundary as browser invitations.
+        token = request.headers.get("X-Tracker-Token")
+        if token is not None:
+            return bool(
+                0 < len(token) <= MAX_TOKEN_LENGTH
+                and active_tracker_links(match, team)
+                .filter(token_hash=token_digest(token))
+                .exists()
+            )
         if not has_tracker_grant(
             request.session.get(SESSION_KEY, {}), match=match, team=team
         ):

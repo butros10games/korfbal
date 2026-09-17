@@ -21,7 +21,10 @@ from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
 )
-from apps.kwt_common.api.pagination import ScheduleEditorPagination
+from apps.kwt_common.api.pagination import (
+    ScheduleEditorPagination,
+    StandardResultsSetPagination,
+)
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
@@ -311,6 +314,26 @@ class MatchViewSet(
         queryset = self._upcoming_queryset()[offset : offset + limit]
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @extend_schema(
+        responses=MatchSerializer(many=True),
+        parameters=[
+            OpenApiParameter("followed", OpenApiTypes.BOOL),
+            OpenApiParameter("team", OpenApiTypes.UUID, many=True),
+            OpenApiParameter("club", OpenApiTypes.UUID, many=True),
+            OpenApiParameter("season", OpenApiTypes.UUID, many=True),
+        ],
+    )
+    @action(
+        detail=False,
+        methods=("GET",),
+        url_path="upcoming-page",
+        pagination_class=StandardResultsSetPagination,
+    )
+    def upcoming_page(self, request: Request) -> Response:
+        """Return a bounded, ordered page without changing legacy upcoming reads."""
+        page = self.paginate_queryset(self._upcoming_queryset())
+        return self.get_paginated_response(self.get_serializer(page, many=True).data)
 
     @action(detail=False, methods=("GET",), url_path="recent")
     def recent(

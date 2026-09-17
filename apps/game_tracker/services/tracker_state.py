@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any, cast
 
 from django.db import models
@@ -26,13 +25,16 @@ from apps.game_tracker.models import (
 )
 from apps.game_tracker.services.live_updates import summarize_match_changes
 from apps.game_tracker.services.player_groups import RESERVE_GROUP_NAME
+from apps.game_tracker.services.tracker_clock_queries import (
+    read_clock_state as _clock_state,
+)
 from apps.game_tracker.services.tracker_commands.base import (
     TrackerCommandError,
     current_part,
-    is_paused,
     other_team,
 )
 from apps.game_tracker.services.tracker_event_queries import last_event_model
+from apps.player.models import Player
 from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import Match
 from apps.team.models.team import Team
@@ -57,42 +59,6 @@ _EMPTY_PLAYER_STATS = {
     "ball_losses": 0,
     "interceptions": 0,
 }
-
-
-def _timer_data(
-    match_data: MatchData,
-    match_part: MatchPart | None,
-) -> dict[str, Any]:
-    if match_part is None:
-        return {
-            "type": "deactivated",
-            "match_data_id": str(match_data.id_uuid),
-        }
-
-    active_pause = Pause.objects.filter(
-        match_data=match_data,
-        active=True,
-        match_part=match_part,
-    ).first()
-    pauses = Pause.objects.filter(
-        match_data=match_data,
-        active=False,
-        match_part=match_part,
-    )
-    base: dict[str, Any] = {
-        "match_data_id": str(match_data.id_uuid),
-        "time": match_part.start_time.isoformat(),
-        "length": match_data.part_length,
-        "pause_length": sum(pause.length().total_seconds() for pause in pauses),
-        "server_time": datetime.now(UTC).isoformat(),
-    }
-    if active_pause and active_pause.start_time:
-        return {
-            **base,
-            "type": "pause",
-            "calc_to": active_pause.start_time.isoformat(),
-        }
-    return {**base, "type": "active"}
 
 
 def _score(match_data: MatchData, *, team: Team, opponent: Team) -> tuple[int, int]:
@@ -162,25 +128,53 @@ def _player_stats_by_team(
     return player_stats
 
 
+def _roster_groups(match_data: MatchData, *, team: Team) -> list[PlayerGroup]:
+    """Load displayed groups and their visible player names in two reads."""
+    groups = PlayerGroup.objects.filter(match_data=match_data, team=team)
+    reserve = (
+        groups
+        .filter(starting_type__name=RESERVE_GROUP_NAME)
+        .order_by("pk")
+        .values("pk")[:1]
+    )
+    players = (
+        Player.objects
+        .select_related("user")
+        .only(
+            "id_uuid",
+            "name",
+            "archived_at",
+            "knkv_person_id",
+            "knkv_privacy",
+            "knkv_observed_at",
+            "user__username",
+        )
+        .fetch_mode(models.FETCH_RAISE)
+    )
+    return list(
+        groups
+        .filter(
+            models.Q(pk=models.Subquery(reserve))
+            | (
+                ~models.Q(starting_type__name=RESERVE_GROUP_NAME)
+                & models.Q(current_type__name__in=("Aanval", "Verdediging"))
+            )
+        )
+        .select_related("starting_type", "current_type")
+        .prefetch_related(models.Prefetch("players", queryset=players))
+        .order_by("current_type__name", "starting_type__name")
+        .fetch_mode(models.FETCH_RAISE)
+    )
+
+
 def _player_groups_payload(
     match_data: MatchData,
     *,
     team: Team,
     opponent: Team,
+    groups: list[PlayerGroup],
 ) -> list[dict[str, Any]]:
     player_stats = _player_stats_by_team(match_data, team=team, opponent=opponent)
-    player_groups = (
-        PlayerGroup.objects
-        .select_related("starting_type", "current_type")
-        .prefetch_related("players__user")
-        .filter(match_data=match_data, team=team)
-        .exclude(starting_type__name=RESERVE_GROUP_NAME)
-        .order_by("current_type__name", "starting_type__name")
-    )
-    groups_by_role = {
-        role: [group for group in player_groups if group.current_type.name == role]
-        for role in ("Aanval", "Verdediging")
-    }
     return [
         {
             "id": str(group.id_uuid),
@@ -195,25 +189,17 @@ def _player_groups_payload(
                 for player in group.players.all()
             ],
         }
-        for role in ("Aanval", "Verdediging")
-        for group in groups_by_role[role]
+        for group in groups
+        if group.starting_type.name != RESERVE_GROUP_NAME
     ]
 
 
 def _reserve_players_payload(
-    match_data: MatchData,
-    *,
-    team: Team,
+    groups: list[PlayerGroup],
 ) -> list[dict[str, Any]]:
-    reserve_group = (
-        PlayerGroup.objects
-        .prefetch_related("players__user")
-        .filter(
-            match_data=match_data,
-            team=team,
-            starting_type__name=RESERVE_GROUP_NAME,
-        )
-        .first()
+    reserve_group = next(
+        (group for group in groups if group.starting_type.name == RESERVE_GROUP_NAME),
+        None,
     )
     if reserve_group is None:
         return []
@@ -227,17 +213,13 @@ def _last_event_payload(
     match_data: MatchData,
     *,
     team: Team,
-    opponent: Team,
+    goals_for: int,
+    goals_against: int,
 ) -> dict[str, Any]:
     event = last_event_model(match_data)
     if event is None:
         return {"type": "no_event"}
     if isinstance(event, Shot):
-        goals_for, goals_against = _score(
-            match_data,
-            team=team,
-            opponent=opponent,
-        )
         return _serialize_last_event_shot(
             event,
             team=team,
@@ -384,7 +366,9 @@ def _serialize_last_event_attack(event: Attack) -> dict[str, Any]:
     }
 
 
-def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
+def get_tracker_state(
+    match: Match, *, team: Team, include_configuration: bool = True
+) -> dict[str, Any]:
     """Return a snapshot of the current tracker state.
 
     Raises:
@@ -398,7 +382,6 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
 
     match_part = current_part(match_data)
     goals_for, goals_against = _score(match_data, team=team, opponent=opponent)
-    paused = is_paused(match_data, match_part)
     substitutions_by_team = {
         row["player_group__team"]: row["count"]
         for row in (
@@ -419,16 +402,45 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
             .annotate(count=models.Count("id_uuid"))
         )
     }
+    roster_groups = _roster_groups(match_data, team=team)
     player_groups = _player_groups_payload(
         match_data,
         team=team,
         opponent=opponent,
+        groups=roster_groups,
     )
-    reserve_players = _reserve_players_payload(match_data, team=team)
-    player_ids = [
-        player["id"] for group in player_groups for player in group["players"]
-    ]
-    player_ids.extend(player["id"] for player in reserve_players)
+    reserve_players = _reserve_players_payload(roster_groups)
+    paused, timer = _clock_state(match_data, match_part)
+
+    # Compact polls retain the initial configuration in the client. Do not
+    # query or serialize audio, goal types and team labels only to discard them.
+    configuration: dict[str, Any] = {}
+    if include_configuration:
+        player_ids = [
+            player["id"] for group in player_groups for player in group["players"]
+        ]
+        player_ids.extend(player["id"] for player in reserve_players)
+        configuration = {
+            "team": {
+                "id": str(team.id_uuid),
+                "name": team.name,
+                "club": team.club.name,
+            },
+            "opponent": {
+                "id": str(opponent.id_uuid),
+                "name": opponent.name,
+                "club": opponent.club.name,
+            },
+            "goal_audio": build_goal_song_manifest(
+                player_ids=player_ids,
+                team=team,
+                season=match.season,
+            ),
+            "goal_types": [
+                {"id": str(goal_type.id_uuid), "name": goal_type.name}
+                for goal_type in GoalType.objects.order_by("name")
+            ],
+        }
 
     return {
         "match_id": str(match.id_uuid),
@@ -437,16 +449,7 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         "parts": match_data.parts,
         "current_part": match_data.current_part,
         "part_length": match_data.part_length,
-        "team": {
-            "id": str(team.id_uuid),
-            "name": team.name,
-            "club": team.club.name,
-        },
-        "opponent": {
-            "id": str(opponent.id_uuid),
-            "name": opponent.name,
-            "club": opponent.club.name,
-        },
+        **configuration,
         "score": {"for": goals_for, "against": goals_against},
         "substitutions": {
             "for": substitutions_for,
@@ -463,22 +466,14 @@ def get_tracker_state(match: Match, *, team: Team) -> dict[str, Any]:
         "start_stop_label": (
             "Pauze" if match_data.status == "active" and not paused else "Start"
         ),
-        "timer": _timer_data(match_data, match_part),
+        "timer": timer,
         "player_groups": player_groups,
         "reserve_players": reserve_players,
-        "goal_audio": build_goal_song_manifest(
-            player_ids=player_ids,
-            team=team,
-            season=match.season,
-        ),
-        "goal_types": [
-            {"id": str(goal_type.id_uuid), "name": goal_type.name}
-            for goal_type in GoalType.objects.order_by("name")
-        ],
         "last_event": _last_event_payload(
             match_data,
             team=team,
-            opponent=opponent,
+            goals_for=goals_for,
+            goals_against=goals_against,
         ),
         "last_changed_at": match_data.live_changed_at.isoformat(),
         "live_revision": match_data.live_revision,
@@ -529,7 +524,7 @@ def poll_tracker_state(
     if match_data is None:
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
     if match_data.live_revision > since_revision:
-        state = get_tracker_state(match, team=team)
+        state = get_tracker_state(match, team=team, include_configuration=not compact)
         summary = summarize_match_changes(
             MatchData.objects.get(pk=match_data.pk),
             since_revision=since_revision,

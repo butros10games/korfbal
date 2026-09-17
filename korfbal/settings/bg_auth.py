@@ -11,6 +11,8 @@ from .security import WEB_APP_ORIGIN
 
 BG_AUTH_REQUIRE_STAFF_MFA = True
 BG_AUTH_JWT_ROTATE_REFRESH = True
+# Reset emails must open the frontend, not an inferred web.<API host> domain.
+BG_AUTH_FRONTEND_BASE_URL = WEB_APP_ORIGIN
 
 SITE = "Korfbal Web Tool"
 LOGIN_FOTO: str = "images/logo/KWT_logo.png"

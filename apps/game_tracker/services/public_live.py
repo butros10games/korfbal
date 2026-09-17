@@ -13,9 +13,10 @@ from apps.game_tracker.application.ports import (
     PublicLiveStoreError,
     PublishedLiveStore,
 )
-from apps.game_tracker.models import MatchData, MatchLiveChange, Pause, Shot
+from apps.game_tracker.models import MatchData, MatchLiveChange, Shot
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.timeline_reads import consistent_timeline_read
+from apps.game_tracker.services.tracker_clock_queries import read_clock_state
 from apps.game_tracker.services.tracker_commands.base import current_part
 
 
@@ -39,22 +40,9 @@ def _build_public_snapshot(match_data: MatchData) -> dict[str, Any]:
             totals.get(match.away_team_id, 0),
         )
     part = current_part(match_data)
-    timer: dict[str, Any] = {"type": "deactivated", "match_data_id": str(match_data.pk)}
-    paused = True
-    if part is not None:
-        pauses = list(Pause.objects.filter(match_data=match_data, match_part=part))
-        active_pause = next((pause for pause in pauses if pause.active), None)
-        paused = match_data.status != "active" or active_pause is not None
-        timer.update({
-            "type": "pause" if active_pause else "active",
-            "time": part.start_time.isoformat(),
-            "length": match_data.part_length,
-            "pause_length": sum(
-                pause.length().total_seconds() for pause in pauses if not pause.active
-            ),
-        })
-        if active_pause and active_pause.start_time:
-            timer["calc_to"] = active_pause.start_time.isoformat()
+    paused, timer = read_clock_state(match_data, part)
+    # Published payloads contain only revision-stable fields. Render time is fresh.
+    timer.pop("server_time", None)
     return {
         "match_id": str(match.pk),
         "match_data_id": str(match_data.pk),
@@ -128,6 +116,22 @@ def read_published_live(
     match_key = str(match_id)
     shared = not connection.in_atomic_block
     envelope = None
+    if not shared and since_revision is not None and since_revision >= 0:
+        # Caller-owned transactions cannot use the shared cache. An unchanged
+        # response needs only one metadata read, not score/clock/history queries.
+        current = (
+            MatchData.objects
+            .filter(match_link_id=match_key)
+            .values("live_revision", "live_changed_at")
+            .first()
+        )
+        if current is not None and current["live_revision"] == since_revision:
+            return {
+                "changed": False,
+                "server_time": timezone.now().isoformat(),
+                "last_changed_at": current["live_changed_at"].isoformat(),
+                "live_revision": current["live_revision"],
+            }
     if shared:
         with suppress(PublicLiveStoreError):
             envelope = store.get(match_key)

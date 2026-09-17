@@ -13,7 +13,9 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.parametrize("endpoint", ["", "next/", "upcoming/", "recent/"])
+@pytest.mark.parametrize(
+    "endpoint", ["", "next/", "upcoming/", "upcoming-page/", "recent/"]
+)
 @pytest.mark.parametrize("parameter", ["team", "club", "season"])
 def test_match_reads_reject_malformed_uuid_filters(
     client: Client,

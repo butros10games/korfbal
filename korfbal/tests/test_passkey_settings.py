@@ -64,6 +64,7 @@ def test_passkey_defaults_follow_frontend_origin(
 
     assert configured["BG_AUTH_PASSKEY_RP_ID"] == expected_rp_id
     assert configured["BG_AUTH_PASSKEY_ORIGINS"] == expected_origin
+    assert configured["BG_AUTH_FRONTEND_BASE_URL"] == expected_origin
 
 
 def test_explicit_passkey_configuration_is_preserved(
