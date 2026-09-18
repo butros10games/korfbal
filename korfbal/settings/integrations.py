@@ -82,3 +82,6 @@ SPORTLINK_SYNC_MAX_REQUESTS = max(
 SPORTLINK_SYNC_MAX_SECONDS = max(
     1, min(240, int(env("SPORTLINK_SYNC_MAX_SECONDS", "240")))
 )
+
+# Immutable, approved offline artifact; empty retains the existing predictor.
+KORFBAL_SCORE_FORECAST_ARTIFACT = env("KORFBAL_SCORE_FORECAST_ARTIFACT", "")

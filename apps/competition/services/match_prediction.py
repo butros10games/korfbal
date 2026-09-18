@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from django.conf import settings
 from django.db.models import FETCH_RAISE, OuterRef, Subquery
 from django.utils import timezone
 
@@ -13,13 +14,49 @@ from apps.competition.models import (
     RatingConfiguration,
     ResultRevision,
 )
+from apps.competition.queries.forecast_export import features
 from apps.competition.services.context_prediction import context_prediction
 from apps.competition.services.rating_preview import exclusion, rate_class
+from apps.competition.services.score_prediction import score_prediction
 from apps.schedule.models import Match as NativeMatch
 
 
 def match_prediction(match: NativeMatch) -> dict[str, Any]:
     """Resolve exact native/provider identities without comparing unrelated classes."""
+    if not getattr(settings, "KORFBAL_SCORE_FORECAST_ARTIFACT", ""):
+        return rating_prediction(match)
+    # Score forecasts use their own training provenance, independently of whether
+    # a KNKV preseason rating configuration exists.
+    score_source = (
+        Match.objects
+        .filter(local_match=match, cup_fixture__isnull=True)
+        .select_related(
+            "pool__competition_class__edition", "home_team__group", "away_team__group"
+        )
+        .first()
+    )
+    cutoff = min(timezone.now(), match.start_time)
+    if score_source is not None:
+        row = features(score_source)
+        home_group, away_group = (
+            score_source.home_team.group,
+            score_source.away_team.group,
+        )
+        if (
+            row is not None
+            and home_group is not None
+            and away_group is not None
+            and home_group.local_team_id == match.home_team_id
+            and away_group.local_team_id == match.away_team_id
+        ):
+            prediction = score_prediction(row, min(cutoff, score_source.starts_at))
+            if prediction is not None:
+                return prediction
+    return rating_prediction(match)
+
+
+def rating_prediction(match: NativeMatch) -> dict[str, Any]:
+    """Retain the previous predictor for fallbacks and paired offline comparisons."""
     configuration = RatingConfiguration.objects.filter(
         season_id=match.season_id, active=True
     ).first()

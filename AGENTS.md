@@ -281,3 +281,7 @@ misleading provider 500/603 errors.
   during provider I/O get a successor, and ignore statistics-only revision changes.
 
 - Keep goal-song clip lengths consistent in worker preparation, selected-song URLs, and tracker manifests. Song administration must reject an unknown explicit season instead of falling back to the current season.
+
+- Score forecast artifacts must carry observed-time training cutoffs and actual availability
+  times. Keep API/browser predictive calculations aligned with the shared synthetic score
+  fixture, and keep live calibration claims separate from pre-match backtest results.

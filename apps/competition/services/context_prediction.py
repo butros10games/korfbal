@@ -5,6 +5,7 @@ from functools import cache
 import json
 import math
 from pathlib import Path
+import re
 
 
 @cache
@@ -26,6 +27,11 @@ def context_prediction(
     """Keep unseen seasons/contexts and pre-training matches on the seeded model."""
     artifact = model()
     home_rating, away_rating = ratings
+    # Native season display names include a discipline prefix after season repair.
+    # Accept only the explicit supported naming convention, never a substring year.
+    named = re.fullmatch(r"(?:Veld|Zaal) seizoen (\d{4}-\d{4})", season)
+    if named:
+        season = named[1]
     if (
         season != artifact["season"]
         or not math.isclose(rating_scale, artifact["rating_scale"])

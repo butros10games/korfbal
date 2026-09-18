@@ -71,3 +71,12 @@ def test_training_labels_cannot_leak_into_historical_match_predictions() -> None
     parameters = options()
     parameters["as_of"] -= timedelta(microseconds=1)
     assert context_prediction(**parameters) is None
+
+
+@pytest.mark.parametrize("prefix", ["Veld seizoen ", "Zaal seizoen "])
+def test_native_season_display_name_retains_exact_edition(prefix: str) -> None:
+    """Published native names must still select the same frozen edition."""
+    parameters = options()
+    expected = context_prediction(**parameters)
+    parameters["season"] = prefix + parameters["season"]
+    assert context_prediction(**parameters) == expected

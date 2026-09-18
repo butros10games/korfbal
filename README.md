@@ -479,9 +479,9 @@ one host completed all 30 writes and initial/reconnect handshakes per phase, wit
 zero public GETs, HTTP/SSE errors or stale final views:
 
 | Viewers | SSE body traffic | Publication-to-receive p95 |
-| --- | --- | --- |
-| 1,000 | 3.93 Mbit/s | 118.71 ms |
-| 10,000 | 44.84 Mbit/s | 381.19 ms |
+| ------- | ---------------- | -------------------------- |
+| 1,000   | 3.93 Mbit/s      | 118.71 ms                  |
+| 10,000  | 44.84 Mbit/s     | 381.19 ms                  |
 
 The 100 ms gate remains unmet. These single-host runs do not establish a latency
 improvement; earlier 1,000-viewer results were sometimes faster. The generator
@@ -497,14 +497,14 @@ It compares the same payloads and emission timestamps with/without the redundant
 `timer.server_time` field: existing decoders reconstruct that clock anchor from
 the frame timestamp, so it no longer needs a dictionary entry or patch operation.
 
-| Live/summary/events update | Before | After |
-| --- | --- | --- |
-| Goal | 720 B | 663 B |
-| Pause | 772 B | 715 B |
-| Resume | 525 B | 468 B |
-| Timeout | 773 B | 716 B |
-| Undo event | 371 B | 314 B |
-| Initial snapshot | 8,247 B | 8,185 B |
+| Live/summary/events update | Before  | After   |
+| -------------------------- | ------- | ------- |
+| Goal                       | 720 B   | 663 B   |
+| Pause                      | 772 B   | 715 B   |
+| Resume                     | 525 B   | 468 B   |
+| Timeout                    | 773 B   | 716 B   |
+| Undo event                 | 371 B   | 314 B   |
+| Initial snapshot           | 8,247 B | 8,185 B |
 
 Shot-only and possession updates are unchanged. Bootstrap sending also discards
 already-covered pending frames before awaiting socket writes, preventing a second
@@ -1678,3 +1678,63 @@ Apply migrations before starting the updated backend. Release the matching mobil
 Media must use a bucket separate from static files. From the configured Korfbal runtime, `python manage.py check_media_privacy` verifies the MinIO bucket policy without changing it. To remove public allow statements while retaining authenticated grants, an operator can run `python manage.py check_media_privacy --repair --probe`. The probe creates and deletes a uniquely named synthetic object; it does not read user files. Test the signed download endpoint and verify the old media hostname no longer serves raw objects after deploying the proxy configuration. Do not treat a successful local probe as production verification.
 
 Spotify track imports now require both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Metadata comes from Spotify's official API; the Celery worker uses yt-dlp, its packaged JavaScript solver, Node, and ffmpeg to find and convert one audio result. Search matching can differ from spotDL. Direct MP3 uploads remain available without Spotify credentials. The existing `SPOTDL_DOWNLOAD_TIMEOUT_SECONDS` setting continues to bound each download attempt for deployment compatibility. The worker accepts only a successful, nonempty MP3 within the upload size limit and kills decoder descendants on timeout.
+
+## Contextual score forecasts
+
+The optional score model predicts goals with separate season/discipline/phase/age/
+colour/format baselines, partially pooled class and poule pace, and team attack and
+defence. A joint Laplace approximation retains correlated parameter uncertainty;
+64 posterior rate draws drive both the API summary and the web graph. Numerical
+fitting uses the workspace's NumPy/SciPy development dependencies, never an API request.
+
+Export from an environment with read access to the competition database. Use the
+source season UUID, not its editable display name. Keep exports outside Git:
+
+```sh
+uv run python apps/django_projects/korfbal/manage.py export_score_forecasts \
+  --season <source-season-uuid> --output /secure/forecast-input.json
+
+OPENBLAS_NUM_THREADS=1 uv run python apps/django_projects/korfbal/manage.py fit_score_forecasts \
+  --input /secure/forecast-input.json --output /secure/forecast-v1.json \
+  --report /secure/forecast-validation.json \
+  --origin <first-validation-origin-ISO8601> \
+  --origin <second-validation-origin-ISO8601> \
+  --cutoff <training-cutoff-ISO8601> --approve
+```
+
+All dates must include a timezone. Origins precede the cutoff, which cannot exceed
+export time. Results are replayed from their last observed revision before each
+origin. Duration must have been observed by that origin (and by kickoff for test
+matches). Cups, awarded results, incomplete scores and unverified 0–0 records are
+excluded. Contexts need ten training matches; individual teams and poules can be
+unseen and are integrated over their priors. Actual verified 0–0 matches cannot yet
+be distinguished from placeholders by the feed and remain quarantined.
+
+The report includes score log loss, W/D/L Brier score, goal MAE, marginal interval
+coverage, calibration bins, per-context metrics and poule-cluster bootstrap paired
+differences. It compares with a Gamma-Poisson context baseline and the old fixed-total
+predictor, including exported pre-match ratings and context outcome calibration.
+Exports without the legacy forecasts cannot pass the promotion gate. `--cold-start`
+reports a separate held-out-poule experiment and cannot approve an artifact.
+
+Approval requires at least 100 tested matches across ten poules and two nonempty
+chronological origins, improvement over both baselines in both proper scores with
+95% paired bootstrap intervals below zero, and 70–95% marginal coverage for the
+nominal 80% intervals. A failed `--approve` still saves the candidate and report,
+then exits unsuccessfully. This is a conservative initial gate, not proof of accuracy
+for every competition context. Do not repeatedly tune against the same test windows.
+
+Mount a passed artifact at a **new immutable path**, configure
+`KORFBAL_SCORE_FORECAST_ARTIFACT` to that path, and restart API workers. Artifacts
+record their actual availability time and never apply to earlier kickoffs. Unsupported
+contexts, missing duration, invalid or unapproved artifacts retain the previous
+predictor. Clear the setting and restart workers to roll back. No fitted production
+artifact is bundled, and these commands do not deploy or change ratings.
+
+Limitations: historical score revisions are available, but identities, class mappings,
+and fixture schedules use current metadata snapshots; the export reports that caveat.
+Live updates condition the rate draws on goals and elapsed time under a constant-rate
+Poisson process. They are explicitly labelled unvalidated for live play. Negative
+binomial and bivariate alternatives are follow-up experiments after this baseline is
+measured. A score target beats 75% of opponent-score scenarios; it does not imply a
+75% win probability or that the target is reachable.

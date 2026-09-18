@@ -426,6 +426,7 @@ class Match(SeasonalIdentity):
         home_team_id: int
         away_team_id: int
         local_match_id: UUID | None
+        revisions: models.Manager["ResultRevision"]
 
     pool = models.ForeignKey(Pool, null=True, on_delete=models.PROTECT)
     home_team = models.ForeignKey(
