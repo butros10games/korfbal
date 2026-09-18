@@ -93,8 +93,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
 COPY scripts/python/korfbal_vision_environment.py /tmp/create_runtime.py
 RUN --mount=type=cache,target=/root/.cache/uv python /tmp/create_runtime.py /opt/vision --cpu
-ADD --checksum=sha256:d7e18b2597ae8f242f5f31ee9e90deef48dbc9edd634d9868fb6435d08c07f02 https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-x86_64-unknown-linux-musl.tar.gz /tmp/codex.tar.gz
-RUN tar -xzf /tmp/codex.tar.gz -C /tmp && install -m 755 /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex && rm /tmp/codex.tar.gz /tmp/codex-x86_64-unknown-linux-musl
+ADD https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-x86_64-unknown-linux-musl.tar.gz /tmp/codex.tar.gz
+RUN echo "d7e18b2597ae8f242f5f31ee9e90deef48dbc9edd634d9868fb6435d08c07f02  /tmp/codex.tar.gz" > /tmp/codex.sha256 && \
+    sha256sum -c /tmp/codex.sha256 && \
+    tar -xzf /tmp/codex.tar.gz -C /tmp && install -m 755 /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex && rm /tmp/codex.sha256 /tmp/codex.tar.gz /tmp/codex-x86_64-unknown-linux-musl
 COPY scripts/python/korfbal_vision.py scripts/python/korfbal_vision_environment.py scripts/python/korfbal_autotrack_dataset.py /app/scripts/python/
 COPY scripts/python/korfbal_review /app/scripts/python/korfbal_review
 # Kits preserve the repository layout, while Django imports the canonical /app/apps tree.
