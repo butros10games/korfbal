@@ -21,11 +21,52 @@ services:
             KORFBAL_SSE_WORKERS: ${KORFBAL_SSE_WORKERS:-2}
             KORFBAL_SSE_BACKPRESSURE: ${KORFBAL_SSE_BACKPRESSURE:-8192}
             KORFBAL_DB_POOL_MAX_SIZE: ${KORFBAL_WEB_DB_POOL_MAX_SIZE:-8}
+            VIDEO_ANALYSIS_ROOT: /var/lib/korfbal/video-analysis
+            VIDEO_ANALYSIS_TRAINING_POLICY: /run/korfbal/training-policy.json
             BG_AUTH_PASSKEY_RP_ID: korfbal.butrosgroot.com
             BG_AUTH_PASSKEY_ORIGINS: https://korfbal.butrosgroot.com
         restart: unless-stopped
+        volumes:
+            - video-analysis:/var/lib/korfbal/video-analysis
+            - ${KORFBAL_TRAINING_POLICY_FILE:-./training-policy.json}:/run/korfbal/training-policy.json:ro
         networks:
             - kwt-net
+
+    kwt-video-worker:
+        image: butros10/kwt-celery:latest
+        restart: unless-stopped
+        env_file: [.env]
+        environment:
+            DJANGO_ENV: production
+            DEBUG: 'false'
+            VIDEO_ANALYSIS_ROOT: /var/lib/korfbal/video-analysis
+            VIDEO_ANALYSIS_TRAINING_POLICY: /run/korfbal/training-policy.json
+            CODEX_HOME: /home/appuser/.codex
+            YOLO_CONFIG_DIR: /models/config
+        entrypoint: [celery]
+        command:
+            [
+                -A,
+                korfbal,
+                worker,
+                --queues,
+                vision,
+                --concurrency,
+                '1',
+                --loglevel,
+                info,
+                --hostname,
+                'vision@%h',
+            ]
+        working_dir: /models
+        volumes:
+            - video-analysis:/var/lib/korfbal/video-analysis
+            - ${KORFBAL_TRAINING_POLICY_FILE:-./training-policy.json}:/run/korfbal/training-policy.json:ro
+            - video-models:/models
+            - video-codex:/home/appuser/.codex
+        networks: [kwt-net]
+        mem_limit: 4g
+        cpus: 2
 
     kwt-web:
         image: butros10/kwt-web:latest
@@ -110,4 +151,7 @@ networks:
         driver: bridge
 
 volumes:
+    video-analysis:
+    video-models:
+    video-codex:
     sportlink-sessions:

@@ -1,0 +1,64 @@
+"""Wire private storage and application jobs at the app boundary."""
+
+from django.conf import settings
+from django.contrib.auth.models import User
+
+from apps.video_analysis.adapters import detector
+from apps.video_analysis.adapters.objects import WorkspaceObjects
+from apps.video_analysis.adapters.store import DatabaseStore
+from apps.video_analysis.adapters.training import (
+    accepted_policy,
+    cancel_training,
+    launch_status,
+    queue_training,
+)
+from apps.video_analysis.engine.store import Store
+from apps.video_analysis.models import Workspace
+
+
+__all__ = [
+    "accepted_policy",
+    "cancel_training",
+    "launch_status",
+    "queue_training",
+    "review_store",
+    "run_detector",
+    "sync_workspace_files",
+    "worker_store",
+]
+
+
+def review_store(
+    user: User, *, hydrate: bool = True
+) -> tuple[DatabaseStore, Workspace]:
+    """Resolve the configured staff workspace without accepting filesystem paths."""
+    workspace = Workspace.objects.get(
+        slug=getattr(settings, "VIDEO_ANALYSIS_WORKSPACE", "main")
+    )
+    return worker_store(workspace, user, hydrate=hydrate), workspace
+
+
+def worker_store(
+    workspace: Workspace, user: User | None, *, hydrate: bool = True
+) -> DatabaseStore:
+    """Bind background workers to the same authoritative review database."""
+    files = (
+        WorkspaceObjects(workspace) if settings.VIDEO_ANALYSIS_OBJECT_STORAGE else None
+    )
+    if files and hydrate:
+        files.hydrate_artifacts()
+    return DatabaseStore(workspace, user, files)
+
+
+def sync_workspace_files(workspace: Workspace) -> None:
+    """Recover controller outputs and review exports."""
+    store = worker_store(workspace, None)
+    with store.transaction():
+        if store.files:
+            store.files.publish_review(store.read())
+    store.sync_artifacts()
+
+
+def run_detector(store: Store, match_id: str, weights: str) -> None:
+    """Wire the isolated CPU inference capability."""
+    detector.propose(store, match_id, weights)

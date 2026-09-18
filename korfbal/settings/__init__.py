@@ -109,3 +109,4 @@ from .services import (
 
 # Storage
 from .storage import *
+from .video_analysis import *

@@ -1,0 +1,1 @@
+"""Video analysis adapters package."""

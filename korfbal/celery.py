@@ -20,6 +20,11 @@ app.autodiscover_tasks()
 
 # Celery Beat schedule for periodic tasks.
 app.conf.beat_schedule = {
+    "sync-video-artifacts": {
+        "task": "apps.video_analysis.tasks.sync_files",
+        "schedule": 60.0,
+        "options": {"expires": 60, "queue": "vision"},
+    },
     "dispatch-durable-jobs": {
         "task": "apps.kwt_common.tasks.dispatch_due_jobs",
         "schedule": 60.0,

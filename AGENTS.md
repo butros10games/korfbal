@@ -31,6 +31,12 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Keep interactive video reviews scoped to the selected frame/recording. Persist export intent with
+  the database change and publish on the vision queue; web reads must not restore model weights or
+  hold the workspace lock while rebuilding the full dataset.
+
+- When reusing a Python virtualenv from another worktree, run focused Korfbal tests from this Django project directory with `PYTHONPATH="$PWD"`; otherwise editable installs can import another checkout. Test paths such as `apps/video_analysis/tests` are relative to this directory.
+
 - Public club-logo URLs must be stable and versioned by the immutable storage key; expiring private-media tokens in cached catalogue responses cause repeated downloads and broken logos. Keep the public route restricted to the current club logo, never arbitrary media keys.
 
 - For eligibility, use published competition classifications for imported teams;

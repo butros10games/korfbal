@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<rect width="1280" height="720" fill="#122b34"/>
+<path d="M130 155H1150L1250 660H30Z" fill="#af926a" stroke="#f3e7ca" stroke-width="4"/>
+<path d="M640 155V660 M80 410H1200" stroke="#e8d8b7" stroke-width="3"/>
+<ellipse cx="640" cy="400" rx="160" ry="100" fill="none" stroke="#e8d8b7" stroke-width="3"/>
+<path d="M945 350V570" stroke="#d6e2e5" stroke-width="9"/>
+<path d="M910 322H980L973 365H917Z" fill="#f8d744"/>
+<g fill="#f36c3d"><circle cx="550" cy="337" r="20"/><path d="M528 360H572L581 433H519Z"/>
+<path d="M528 430L515 490M563 430L580 487" stroke="#18343e" stroke-width="14"/>
+<circle cx="330" cy="427" r="20"/><path d="M308 450H352L365 520H300Z"/>
+<path d="M313 517L300 580M350 516L360 579" stroke="#18343e" stroke-width="14"/></g>
+<g fill="#dcebf0"><circle cx="700" cy="347" r="20"/><path d="M678 370H722L735 443H670Z"/>
+<path d="M680 440L671 505M716 440L733 505" stroke="#18343e" stroke-width="14"/>
+<circle cx="1040" cy="437" r="20"/><path d="M1018 460H1062L1070 530H1010Z"/>
+<path d="M1020 528L1010 593M1058 528L1072 593" stroke="#18343e" stroke-width="14"/></g>
+<g fill="#20252d"><circle cx="1130" cy="240" r="17"/><path d="M1112 261H1148L1154 325H1106Z"/><path d="M1116 324L1109 380M1141 324L1154 380" stroke="#20252d" stroke-width="12"/></g>
+<circle cx="780" cy="280" r="12" fill="#f8efe0" stroke="#273b43" stroke-width="3"/>
+<rect x="32" y="25" width="440" height="45" rx="8" fill="#0d1f29"/>
+<text x="50" y="55" font-family="sans-serif" font-size="22" fill="white">NORTH  08 : 06  SOUTH  |  12:34</text>
+<text x="40" y="700" font-family="sans-serif" font-size="18" fill="#f5ecd9">SYNTHETIC REVIEW EXAMPLE · NOT MATCH FOOTAGE</text></svg>

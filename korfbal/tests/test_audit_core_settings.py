@@ -68,6 +68,11 @@ def test_package_exports_the_configured_celery_application() -> None:
     assert celery_app is app
     assert app.main == "korfbal"
     assert app.conf.beat_schedule == {
+        "sync-video-artifacts": {
+            "task": "apps.video_analysis.tasks.sync_files",
+            "schedule": 60.0,
+            "options": {"expires": 60, "queue": "vision"},
+        },
         "dispatch-durable-jobs": {
             "task": "apps.kwt_common.tasks.dispatch_due_jobs",
             "schedule": 60.0,

@@ -11,6 +11,7 @@ from apps.player.api.views.media import MediaDownloadAPIView
 
 
 urlpatterns = [
+    path("video-analysis/", include("apps.video_analysis.api.urls")),
     path("media/download/", MediaDownloadAPIView.as_view(), name="media-download"),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path(

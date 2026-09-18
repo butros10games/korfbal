@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.awards",
     "apps.hub",
     "apps.audit",
+    "apps.video_analysis",
     "apps.game_tracker",
     "apps.kwt_common",
     "bg_auth.apps.AuthenticationConfig",
