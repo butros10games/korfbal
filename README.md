@@ -1626,13 +1626,15 @@ loss is recovered after the bounded execution deadline. PostgreSQL advisory lock
 prevent overlapping executions of the same job. Use a direct PostgreSQL connection
 (or session pooling), not transaction-mode PgBouncer, for workers.
 
-The worker image supervises separate `celery,instant`, `projections`, `media` and
-`competition` pools. Their default concurrency is 2/2/1/1 and can be overridden with
-the `KORFBAL_*_CONCURRENCY` variables in `.env.example`. Queued private form actions
-dispatch after commit and continue draining due work without scanning team fixtures. Separate discovery/recovery and competition refresh
-checks run once a minute, retaining provider leases, deadlines and pacing. These
-jobs do not share execution slots with email or media jobs. Beat must run once per
-deployment.
+The worker image supervises separate `celery`, `instant`, `projections`, `media` and
+`competition` pools. Their default concurrency is 2/1/2/1/1 and can be overridden with
+the `KORFBAL_*_CONCURRENCY` variables in `.env.example`. The dedicated `instant` pool
+handles authentication and private KNKV form actions independently of general
+background jobs. Queued form actions dispatch after commit and continue draining
+due work without scanning team fixtures. Separate discovery/recovery and competition
+refresh checks run once a minute in the `competition` pool, retaining provider leases,
+deadlines and pacing. Background KNKV imports yield between feeds for due form
+actions. Beat must run once per deployment.
 
 Match completion and subsequent timeline/lineup corrections create eligible
 substitution jobs with the final live revision inside the same database transaction.

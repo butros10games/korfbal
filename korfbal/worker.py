@@ -7,7 +7,8 @@ import sys
 
 
 POOLS = {
-    "celery": ("celery,instant", 2),
+    "celery": ("celery", 2),
+    "instant": ("instant", 1),
     "projections": ("projections", 2),
     "media": ("media", 1),
     "competition": ("competition", 1),

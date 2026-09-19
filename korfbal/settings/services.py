@@ -105,8 +105,8 @@ CELERY_RESULT_BACKEND = (
     f"{env('CELERY_RESULT_PORT', str(VALKEY_PORT))}/0"
 )
 CELERY_ACCEPT_CONTENT = ["json"]
-# Shared authentication tasks explicitly publish to instant. Workers must consume
-# it as well as the default queue used by competition and media jobs.
+# Authentication and KNKV form actions use the dedicated instant pool.
+# Every declared queue must have a consumer in the worker supervisor.
 CELERY_TASK_QUEUES = tuple(
     Queue(name) for name in ("celery", "instant", "projections", "media", "competition")
 )

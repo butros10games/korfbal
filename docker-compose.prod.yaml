@@ -128,6 +128,7 @@ services:
         environment:
             DJANGO_ENV: production
             DEBUG: 'false'
+            KORFBAL_INSTANT_CONCURRENCY: ${KORFBAL_INSTANT_CONCURRENCY:-1}
         volumes:
             - sportlink-sessions:/run/sportlink
         networks:

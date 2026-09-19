@@ -52,7 +52,7 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 - In Caddy, use an explicit matcher for relative redirects (`redir * /admin/ 301`); otherwise `/admin/` is parsed as a matcher. Verify both `/admin` and `/admin/`, since an unmatched handler can return an empty HTTP 200.
 
-- The worker image supervises isolated `celery,instant`, `projections`, `media`, and
+- The worker image supervises isolated `celery`, `instant`, `projections`, `media`, and
   `competition` pools. Preserve `instant` for shared `bg_auth` MFA/activation tasks;
   verify every pool after changing the image entrypoint or queue routing.
 - Persist background intent inside the domain transaction with `kwt_common.services.jobs`.
