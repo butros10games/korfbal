@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.competition.application.match_forms import MatchFormError, MatchFormOptions
+from apps.competition.application.ports import FetchResult
 from apps.competition.models import (
     CompetitionClass,
     CompetitionEdition,
@@ -22,7 +23,9 @@ from apps.competition.models import (
     MatchFormSync,
     Pool,
     SyncLease,
+    SyncResource,
 )
+from apps.competition.services.history_worker import current_work_due
 from apps.competition.services.importer import Importer
 from apps.competition.services.match_form_payloads import (
     merge_substitutions,
@@ -35,6 +38,8 @@ from apps.competition.services.match_form_worker import (
 )
 from apps.competition.services.match_forms import enqueue, execute, import_is_due
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.sync import sync
+from apps.competition.services.traffic import TrafficGate
 from apps.competition.tasks import discover_match_forms, sync_match_forms
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_rosters import person
@@ -1175,11 +1180,11 @@ def test_form_drain_does_not_scan_discovery(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("result", ["succeeded", "busy"])
-def test_form_worker_continues_backlog_but_does_not_spin_on_busy_provider(
+def test_form_worker_continues_backlog_and_retries_busy_provider(
     scope: tuple[Match, MatchData, MatchFormAccess],
     result: str,
 ) -> None:
-    """Due work continues directly; a provider lease is left to recovery."""
+    """Due work continues directly; busy ownership gets a delayed instant retry."""
     source, tracker, access = scope
     enqueue(access, source.local_match_id, "import", tracker.live_revision)
     with (
@@ -1187,7 +1192,9 @@ def test_form_worker_continues_backlog_but_does_not_spin_on_busy_provider(
         patch("apps.competition.tasks.sync_match_forms.apply_async") as publish,
     ):
         assert sync_match_forms.run() == result
-        assert publish.call_count == (0 if result == "busy" else 1)
+        publish.assert_called_once_with(
+            countdown=5 if result == "busy" else 0, expires=300
+        )
 
 
 @pytest.mark.django_db
@@ -1335,3 +1342,61 @@ def test_publishing_historical_fixture_does_not_upload_old_substitutions(
     source.starts_at = timezone.now() - timedelta(days=30)
     source.save(update_fields=["starts_at"])
     assert not MatchFormSync.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ["import", "publish", "substitutions"])
+def test_background_sync_yields_to_action_arriving_during_fetch(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+    action: str,
+) -> None:
+    """A newly committed action interrupts the batch without losing its checkpoint."""
+    source, tracker, access = scope
+    SyncResource.objects.all().delete()
+    now = timezone.now()
+    SyncResource.objects.create(
+        season=source.season,
+        kind="club_program",
+        source_id="C1",
+        next_sync_at=now,
+    )
+    client = Mock()
+
+    def fetch(resource: SyncResource, gate: TrafficGate) -> FetchResult:
+        MatchFormSync.objects.create(
+            access=access,
+            match=source.local_match,
+            action=action,
+            expected_revision=tracker.live_revision,
+        )
+        return FetchResult(200, {"Club": [], "ProgramItemMatchClub": []})
+
+    client.fetch.side_effect = fetch
+    result = sync(source.season, client, budget=10)
+    assert result["requests"] == 1
+    assert result["updated"] == 1
+    assert result["deferred"] == 1
+    assert result["failed"] == 0
+    assert SyncResource.objects.filter(fetched_at__isnull=False).count() == 1
+    assert SyncLease.objects.get(key="sportlink").owner is None
+    assert current_work_due(include_results=False) is True
+
+
+@pytest.mark.django_db
+def test_future_form_retry_does_not_block_background_work(
+    scope: tuple[Match, MatchData, MatchFormAccess],
+) -> None:
+    """A deferred form retry leaves spare provider capacity available."""
+    source, tracker, access = scope
+    SyncResource.objects.all().delete()
+    MatchFormSync.objects.create(
+        access=access,
+        match=source.local_match,
+        action="import",
+        expected_revision=tracker.live_revision,
+        next_attempt_at=timezone.now() + timedelta(hours=1),
+    )
+    assert current_work_due(include_results=False) is False
+    client = Mock()
+    client.fetch.return_value = FetchResult(200, {"Club": []})
+    assert sync(source.season, client, budget=1)["updated"] == 1

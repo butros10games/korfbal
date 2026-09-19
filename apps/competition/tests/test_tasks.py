@@ -198,3 +198,17 @@ def test_heartbeat_expires_before_another_tick() -> None:
     interval = 60
     assert heartbeat["schedule"] == interval
     assert heartbeat["options"]["expires"] == interval
+
+
+@pytest.mark.parametrize(
+    ("task", "queue"),
+    [
+        ("sync_match_forms", "instant"),
+        ("sync_current_competition", "competition"),
+        ("discover_match_forms", "competition"),
+    ],
+)
+def test_knkv_action_routing(task: str, queue: str) -> None:
+    """User actions bypass background work without moving discovery into instant."""
+    route = app.amqp.router.route({}, f"apps.competition.tasks.{task}")
+    assert route["queue"].name == queue

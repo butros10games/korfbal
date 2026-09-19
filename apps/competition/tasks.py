@@ -24,13 +24,12 @@ logger = logging.getLogger(__name__)
 def sync_match_forms() -> str:
     """Drain durable, account-scoped form work including finished-match recovery."""
     result = run_match_form_queue()
-    if (
-        result != "busy"
-        and MatchFormSync.objects.filter(
-            state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
-        ).exists()
-    ):
-        sync_match_forms.apply_async(expires=300)
+    if MatchFormSync.objects.filter(
+        state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+    ).exists():
+        sync_match_forms.apply_async(
+            countdown=5 if result == "busy" else 0, expires=300
+        )
     return result
 
 

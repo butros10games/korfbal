@@ -20,7 +20,13 @@ from apps.competition.application.ports import (
     RequestBudgetError,
     TransportError,
 )
-from apps.competition.models import HistoricalResource, Match, SyncLease, SyncResource
+from apps.competition.models import (
+    HistoricalResource,
+    Match,
+    MatchFormSync,
+    SyncLease,
+    SyncResource,
+)
 from apps.competition.services.history import (
     HistoryUnavailableError,
     discover,
@@ -49,6 +55,10 @@ AUTH_REASONS = {
 def current_work_due(*, include_results: bool = True) -> bool:
     """Backfills use spare capacity after active-season discovery and due refreshes."""
     now = timezone.now()
+    if MatchFormSync.objects.filter(
+        state__in={"pending", "running"}, next_attempt_at__lte=now
+    ).exists():
+        return True
     today = timezone.localdate(now)
     resources = SyncResource.objects.filter(
         season__start_date__lte=today,

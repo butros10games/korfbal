@@ -113,6 +113,7 @@ CELERY_TASK_QUEUES = tuple(
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_TASK_ROUTES = {
+    "apps.competition.tasks.sync_match_forms": {"queue": "instant"},
     "apps.competition.tasks.*": {"queue": "competition"},
     "apps.player.tasks.download_*": {"queue": "media"},
     "apps.game_tracker.tasks.*": {"queue": "projections"},

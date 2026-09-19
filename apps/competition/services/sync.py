@@ -22,7 +22,7 @@ from apps.competition.application.ports import (
     TransportError,
 )
 from apps.competition.domain.timing import expected_finish
-from apps.competition.models import Match, SyncLease, SyncResource
+from apps.competition.models import Match, MatchFormSync, SyncLease, SyncResource
 from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.match_details import DETAIL_FIELDS
 from apps.competition.services.monitoring import bind_run_lease, progress
@@ -341,6 +341,12 @@ def _drain(
     """Fetch due shared feeds until the snapshot, worker window or quota is spent."""
     cooldown = 0
     while budget is None or summary["requests"] < budget:
+        # Finish the current feed, then release provider ownership for live actions.
+        if MatchFormSync.objects.filter(
+            state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+        ).exists():
+            summary["deferred"] = 1
+            break
         job = planner.next_job()
         if job is None:
             break
