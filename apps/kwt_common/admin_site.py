@@ -1,4 +1,4 @@
-"""Korfbal admin branding and permission-aware shortcuts."""
+"""KorfConnect admin branding and permission-aware shortcuts."""
 
 from typing import Any
 
@@ -11,8 +11,8 @@ from django.urls import reverse
 class KorfbalAdminSite(AdminSite):
     """Keep native admin permissions while organizing the operations workspace."""
 
-    site_header = "Korfbal administration"
-    site_title = "Korfbal admin"
+    site_header = "KorfConnect administration"
+    site_title = "KorfConnect admin"
     index_title = "Operations overview"
     index_template = "admin/korfbal/index.html"
 

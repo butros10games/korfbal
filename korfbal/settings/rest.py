@@ -13,8 +13,8 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Korfbal API",
-    "DESCRIPTION": "API for Korfbal application",
+    "TITLE": "KorfConnect API",
+    "DESCRIPTION": "API for KorfConnect application",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "ENUM_NAME_OVERRIDES": {

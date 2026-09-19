@@ -252,7 +252,7 @@ class Store:
     def _persist(self, data: dict[str, Any]) -> None:
         if (self.root / ".migrated-to-django").exists():
             raise ConflictError(
-                "Workspace moved to Korfbal. Open the native video analysis page."
+                "Workspace moved to KorfConnect. Open the native video analysis page."
             )
         data["revision"] += 1
         atomic_json(self.path, data)

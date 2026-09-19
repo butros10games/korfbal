@@ -175,7 +175,7 @@ def kit_instructions(snapshot: str) -> str:
     """Generate machine-neutral commands for a complete first experiment."""
     prefix = ".venv/bin/python -m scripts.python.korfbal_vision --data data"
     return (
-        "Korfbal training kit. Extract all files together. Use Linux or WSL2.\n"
+        "KorfConnect training kit. Extract all files together. Use Linux or WSL2.\n"
         "Review Ultralytics' code/weight licensing before product distribution.\n\n"
         "Check transferred files before installing dependencies:\n"
         "python -m scripts.python.korfbal_vision verify-kit .\n\n"

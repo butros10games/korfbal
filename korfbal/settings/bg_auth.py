@@ -14,10 +14,10 @@ BG_AUTH_JWT_ROTATE_REFRESH = True
 # Reset emails must open the frontend, not an inferred web.<API host> domain.
 BG_AUTH_FRONTEND_BASE_URL = WEB_APP_ORIGIN
 
-SITE = "Korfbal Web Tool"
+SITE = "KorfConnect"
 LOGIN_FOTO: str = "images/logo/KWT_logo.png"
 LOGIN_TITLE: str = "Welkom terug!"
-LOGIN_DESCRIPTION: str = "login voor KWT"
+LOGIN_DESCRIPTION: str = "Log in bij KorfConnect"
 REGISTER_TITLE: str = "Registratie"
 REGISTER_HEADING_MOBILE: str = "Welkom!"
 REGISTER_HEADING_DESKTOP: str = "Welkom!"
