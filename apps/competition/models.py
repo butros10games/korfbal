@@ -807,3 +807,61 @@ class RatingConfiguration(models.Model):
     def __str__(self) -> str:
         """Identify the configured season without loading its relation."""
         return f"{self.season_id}: allocation Elo"
+
+
+class ScoreForecastReview(models.Model):
+    """Aggregate evidence and an auditable human decision for one artifact.
+
+    The fitted coefficients and raw match export stay in protected host storage;
+    this record contains only hashes, aggregate metrics and operator provenance.
+    """
+
+    objects: ClassVar[models.Manager["ScoreForecastReview"]]
+    STATUS_CHOICES = (
+        ("collecting", "Keep collecting evidence"),
+        ("rejected", "Rejected"),
+        ("approved_pending_activation", "Approved, pending activation"),
+        ("activated", "Activated"),
+    )
+
+    artifact_sha256 = models.CharField(max_length=64, unique=True)
+    incumbent_sha256 = models.CharField(max_length=64)
+    source_reference = models.CharField(max_length=255)
+    training_cutoff = models.DateTimeField()
+    available_from = models.DateTimeField()
+    training_matches = models.PositiveIntegerField()
+    contexts = models.PositiveIntegerField()
+    automated_passed = models.BooleanField(default=False)
+    candidate_metrics = models.JSONField(default=dict)
+    incumbent_metrics = models.JSONField(default=dict)
+    head_to_head = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=32, choices=STATUS_CHOICES, default="collecting"
+    )
+    decision_note = models.TextField(blank=True)
+    decision_history = models.JSONField(default=list)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="score_forecast_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    registered_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    if TYPE_CHECKING:
+        decided_by_id: int | None
+
+    class Meta:
+        """Give deployment decisions a narrower permission than model editing."""
+
+        ordering = ("-available_from",)
+        permissions: ClassVar = [
+            ("decide_scoreforecastreview", "Can decide score forecast reviews")
+        ]
+
+    def __str__(self) -> str:
+        """Use a short immutable identity in admin lists and audit messages."""
+        return f"{self.available_from:%Y-%m-%d %H:%M} · {self.artifact_sha256[:12]}"

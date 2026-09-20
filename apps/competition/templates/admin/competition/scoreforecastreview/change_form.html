@@ -1,0 +1,185 @@
+{% extends "admin/base_site.html" %}
+{% load admin_assets %}
+{% block extrastyle %}
+    {{ block.super }}<link rel="stylesheet" href="{% admin_asset 'competition/forecast-review.css' %}">
+{% endblock %}
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a> ›
+        <a href="{% url 'admin:competition_scoreforecastreview_changelist' %}">Score forecast reviews</a> ›
+        {{ review.artifact_sha256|slice:":12" }}
+    </div>
+{% endblock %}
+{% block content %}
+    <main class="forecast-review" data-ui-ready="true">
+        <header class="review-heading">
+            <div>
+                <p class="eyebrow">Korfbal · Model governance</p>
+                <h1>Score forecast candidate</h1>
+                <p>Decide from frozen aggregate evidence. This page never changes production by itself.</p>
+            </div>
+            <span class="status status-{{ review.status }}">{{ review.get_status_display }}</span>
+        </header>
+
+        <section class="review-callout {% if review.head_to_head.verdict == 'improved' %}positive{% else %}waiting{% endif %}">
+            {% if review.head_to_head.verdict == 'improved' %}
+                <strong>Head-to-head promotion gate passed</strong>
+                <p>The candidate improved both proper scores on the same untouched matches, with poule-bootstrap uncertainty below zero.</p>
+            {% elif review.head_to_head %}
+                <strong>Head-to-head verdict: {{ review.head_to_head.verdict|cut:"_" }}</strong>
+                <p>Keep collecting evidence or reject this candidate. Approval stays unavailable unless the shared-window gate passes.</p>
+            {% else %}
+                <strong>Waiting for an untouched head-to-head round</strong>
+                <p>The candidate passed its baseline gates, but it has not yet proved better than the currently served artifact on the same matches.</p>
+            {% endif %}
+        </section>
+
+        <div class="review-stats">
+            <article>
+                <span>Training matches</span>
+                <strong>{{ review.training_matches }}</strong>
+                <small>Through {{ review.training_cutoff|date:"d M Y, H:i T" }}</small>
+            </article>
+            <article>
+                <span>Separated contexts</span>
+                <strong>{{ review.contexts }}</strong>
+                <small>Season, format, class and poule aware</small>
+            </article>
+            <article>
+                <span>Automated gates</span>
+                <strong>{{ review.automated_passed|yesno:"Passed,Failed" }}</strong>
+                <small>Brier, log-loss, coverage and poule bootstrap</small>
+            </article>
+            <article>
+                <span>Shared audit matches</span>
+                <strong>{{ review.head_to_head.evaluated_matches|default:"—" }}</strong>
+                <small>{{ review.head_to_head.evaluated_pools|default:"—" }} poules</small>
+            </article>
+        </div>
+
+        <section class="review-panel">
+            <div class="section-heading">
+                <div>
+                    <h2>Available evidence</h2>
+                    <p>These first two columns use different match populations; compare their scale, not their rank.</p>
+                </div>
+                <span>Lower is better · coverage target 70–95%</span>
+            </div>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Metric</th>
+                            <th scope="col">Current · untouched weekend</th>
+                            <th scope="col">Candidate · rolling validation</th>
+                            {% if review.head_to_head %}
+                                <th scope="col">Current · shared round</th>
+                                <th scope="col">Candidate · shared round</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row">Brier score</th>
+                            <td>{{ review.incumbent_metrics.brier|floatformat:4 }}</td>
+                            <td>{{ review.candidate_metrics.brier|floatformat:4 }}</td>
+                            {% if review.head_to_head %}
+                                <td>{{ review.head_to_head.metrics.incumbent.brier|floatformat:4 }}</td>
+                                <td>{{ review.head_to_head.metrics.candidate.brier|floatformat:4 }}</td>
+                            {% endif %}
+                        </tr>
+                        <tr>
+                            <th scope="row">Score log-loss</th>
+                            <td>{{ review.incumbent_metrics.score_log_loss|floatformat:4 }}</td>
+                            <td>{{ review.candidate_metrics.score_log_loss|floatformat:4 }}</td>
+                            {% if review.head_to_head %}
+                                <td>{{ review.head_to_head.metrics.incumbent.score_log_loss|floatformat:4 }}</td>
+                                <td>{{ review.head_to_head.metrics.candidate.score_log_loss|floatformat:4 }}</td>
+                            {% endif %}
+                        </tr>
+                        <tr>
+                            <th scope="row">Goal MAE</th>
+                            <td>{{ review.incumbent_metrics.goal_mae|floatformat:3 }}</td>
+                            <td>{{ review.candidate_metrics.goal_mae|floatformat:3 }}</td>
+                            {% if review.head_to_head %}
+                                <td>{{ review.head_to_head.metrics.incumbent.goal_mae|floatformat:3 }}</td>
+                                <td>{{ review.head_to_head.metrics.candidate.goal_mae|floatformat:3 }}</td>
+                            {% endif %}
+                        </tr>
+                        <tr>
+                            <th scope="row">80% interval coverage</th>
+                            <td>{{ review.incumbent_metrics.coverage_80|floatformat:3 }}</td>
+                            <td>{{ review.candidate_metrics.coverage_80|floatformat:3 }}</td>
+                            {% if review.head_to_head %}
+                                <td>{{ review.head_to_head.metrics.incumbent.coverage_80|floatformat:3 }}</td>
+                                <td>{{ review.head_to_head.metrics.candidate.coverage_80|floatformat:3 }}</td>
+                            {% endif %}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <div class="review-columns">
+            <section class="review-panel decision-panel">
+                <h2>Operator decision</h2>
+                {% if can_decide %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <label for="decision-note">Decision note</label>
+                        <textarea id="decision-note"
+                                  name="note"
+                                  rows="4"
+                                  required
+                                  placeholder="Why are you keeping, rejecting or approving this candidate?">{{ review.decision_note }}</textarea>
+                        <div class="decision-actions">
+                            <button type="submit" name="decision" value="collect" class="button neutral">Keep collecting evidence</button>
+                            <button type="submit" name="decision" value="reject" class="button danger">Reject candidate</button>
+                            <button type="submit"
+                                    name="decision"
+                                    value="approve"
+                                    class="button approve"
+                                    {% if not can_approve %}disabled aria-disabled="true" title="A passed head-to-head audit is required"{% endif %}>Approve for activation</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <p>You can inspect this review, but you do not have the forecast decision permission.</p>
+                {% endif %}
+                <p class="safety-note"><strong>Deployment boundary:</strong> approval records intent only. A protected host operator must still install the immutable artifact, verify health and retain the incumbent for rollback.</p>
+            </section>
+
+            <section class="review-panel provenance">
+                <h2>Provenance</h2>
+                <dl>
+                    <dt>Candidate SHA-256</dt>
+                    <dd><code>{{ review.artifact_sha256 }}</code></dd>
+                    <dt>Incumbent SHA-256</dt>
+                    <dd><code>{{ review.incumbent_sha256 }}</code></dd>
+                    <dt>Available from</dt>
+                    <dd>{{ review.available_from|date:"d M Y, H:i:s T" }}</dd>
+                    <dt>Private source reference</dt>
+                    <dd>{{ review.source_reference }}</dd>
+                    <dt>Last decision</dt>
+                    <dd>
+                        {% if review.decided_at %}
+                            {{ review.decided_at|date:"d M Y, H:i T" }} by {{ review.decided_by }}
+                        {% else %}
+                            No human decision yet
+                        {% endif %}
+                    </dd>
+                </dl>
+            </section>
+        </div>
+
+        {% if review.decision_history %}
+            <section class="review-panel">
+                <h2>Decision history</h2>
+                <ol class="decision-history">
+                    {% for event in review.decision_history reversed %}
+                        <li><strong>{{ event.status|cut:"_" }}</strong> · {{ event.decided_at }}<br><span>{{ event.note }}</span></li>
+                    {% endfor %}
+                </ol>
+            </section>
+        {% endif %}
+    </main>
+{% endblock %}

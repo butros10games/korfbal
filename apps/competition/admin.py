@@ -2,10 +2,12 @@
 
 from datetime import date
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
+from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import URLPattern, path
 from django.utils import timezone
@@ -17,6 +19,7 @@ from apps.competition.models import (
     Match,
     Pool,
     ResultRevision,
+    ScoreForecastReview,
     SeasonBinding,
     SyncLease,
     SyncResource,
@@ -49,6 +52,147 @@ class CatalogueAdmin(KorfbalModelAdmin):
     def has_delete_permission(self, request: HttpRequest, obj: object = None) -> bool:
         """Retain source history and discovery checkpoints."""
         return False
+
+
+@admin.register(ScoreForecastReview)
+class ScoreForecastReviewAdmin(KorfbalModelAdmin):
+    """Require a deliberate MFA-protected decision without deployment privileges."""
+
+    actions = None
+    list_display = (
+        "available_from",
+        "short_hash",
+        "training_matches",
+        "contexts",
+        "comparison_verdict",
+        "status",
+        "decided_by",
+    )
+    list_filter = ("status", "automated_passed")
+    ordering = ("-available_from",)
+    change_form_template = "admin/competition/scoreforecastreview/change_form.html"
+
+    @admin.display(description="Artifact")
+    def short_hash(self, review: ScoreForecastReview) -> str:
+        """Keep immutable identity readable in the list."""
+        return review.artifact_sha256[:12]
+
+    @admin.display(description="Head-to-head")
+    def comparison_verdict(self, review: ScoreForecastReview) -> str:
+        """Distinguish missing evidence from an inconclusive comparison."""
+        return review.head_to_head.get("verdict", "awaiting evidence")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Register candidates only through the provenance-checking command."""
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj: object = None) -> bool:
+        """Retain every candidate and decision for audit."""
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj: object = None) -> bool:
+        """Use the dedicated decision permission, not generic model editing."""
+        return isinstance(request.user, PermissionsMixin) and request.user.has_perm(
+            "competition.decide_scoreforecastreview"
+        )
+
+    def change_view(
+        self,
+        request: HttpRequest,
+        object_id: str,
+        form_url: str = "",
+        extra_context: dict | None = None,
+    ) -> HttpResponse:
+        """Render aggregate evidence and record one explicit operator choice.
+
+        Raises:
+            PermissionDenied: The operator cannot view or decide this review.
+
+        """
+        review = self.get_object(request, object_id)
+        if review is None:
+            return super().change_view(request, object_id, form_url, extra_context)
+        if not self.has_view_or_change_permission(request, review):
+            raise PermissionDenied
+        can_decide = self.has_change_permission(request, review)
+        if request.method == "POST":
+            if not can_decide:
+                raise PermissionDenied
+            action = request.POST.get("decision", "")
+            note = request.POST.get("note", "").strip()
+            statuses = {
+                "collect": "collecting",
+                "reject": "rejected",
+                "approve": "approved_pending_activation",
+            }
+            if action not in statuses or not note:
+                messages.error(
+                    request, "Choose a decision and provide a decision note."
+                )
+            else:
+                with transaction.atomic():
+                    locked = ScoreForecastReview.objects.select_for_update().get(
+                        pk=review.pk
+                    )
+                    if locked.status == "activated":
+                        messages.error(
+                            request, "An activated review cannot be changed here."
+                        )
+                    elif action == "approve" and (
+                        not locked.automated_passed
+                        or locked.head_to_head.get("verdict") != "improved"
+                    ):
+                        messages.error(
+                            request,
+                            "Approval requires a passed same-match head-to-head audit.",
+                        )
+                    else:
+                        now = timezone.now()
+                        locked.status = statuses[action]
+                        locked.decision_note = note
+                        locked.decision_history = [
+                            *locked.decision_history,
+                            {
+                                "action": action,
+                                "status": statuses[action],
+                                "note": note,
+                                "decided_at": now.isoformat(),
+                                "decided_by_id": request.user.pk,
+                            },
+                        ]
+                        locked.decided_at = now
+                        locked.decided_by = request.user
+                        locked.save(
+                            update_fields=(
+                                "status",
+                                "decision_note",
+                                "decision_history",
+                                "decided_at",
+                                "decided_by",
+                                "updated_at",
+                            )
+                        )
+                        messages.success(
+                            request,
+                            "Forecast decision recorded. Production was not changed.",
+                        )
+                        return redirect(request.path)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Score forecast review",
+            "opts": self.model._meta,
+            "original": review,
+            "review": review,
+            "can_decide": can_decide,
+            "can_approve": (
+                can_decide
+                and review.automated_passed
+                and review.head_to_head.get("verdict") == "improved"
+                and review.status != "activated"
+            ),
+            "has_view_permission": self.has_view_permission(request, review),
+        }
+        return TemplateResponse(request, self.change_form_template, context)
 
 
 @admin.register(Club)

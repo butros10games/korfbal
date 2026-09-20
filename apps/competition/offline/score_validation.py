@@ -1,6 +1,6 @@
 """Rolling observed-time backtests and paired promotion gates for score forecasts."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from hashlib import sha256
 import math
@@ -10,6 +10,7 @@ from scipy.special import gammaln, logsumexp
 
 from apps.competition.domain.score_forecast import (
     context_key,
+    poisson,
     rate_draws,
     summarize,
     timestamp,
@@ -26,11 +27,41 @@ MAX_COVERAGE = 0.95
 LEGACY_TOTALS = {"outdoor": 31.7, "indoor": 43.36363636363637}
 
 
+def metric_summary(draws: list[list[float]], weights: dict | None = None) -> dict:
+    """Vectorize the same normalized Poisson mixture used by the serving contract."""
+    pairs = [(poisson(home), poisson(away)) for home, away in draws]
+    home = np.zeros((len(pairs), max(len(h) for h, _ in pairs)))
+    away = np.zeros((len(pairs), max(len(a) for _, a in pairs)))
+    for index, (h, a) in enumerate(pairs):
+        home[index, : len(h)] = h
+        away[index, : len(a)] = a
+    joint = home.T @ away / len(pairs)
+    h, a = np.indices(joint.shape)
+    masks = {"home": h > a, "draw": h == a, "away": h < a}
+    if weights:
+        joint *= sum(masks[key] * weights[key] for key in masks)
+        joint /= joint.sum()
+    marginals = {"home": joint.sum(axis=1), "away": joint.sum(axis=0)}
+    return {
+        "expected_goals": {
+            side: float(np.arange(len(values)) @ values)
+            if weights
+            else float(np.mean(np.asarray(draws)[:, index]))
+            for index, (side, values) in enumerate(marginals.items())
+        },
+        "interval_80": {
+            side: [int(np.searchsorted(np.cumsum(values), q)) for q in (0.1, 0.9)]
+            for side, values in marginals.items()
+        },
+        "probabilities": {key: float(joint[mask].sum()) for key, mask in masks.items()},
+    }
+
+
 def metrics(
     draws: list[list[float]], row: dict, outcome_weights: dict[str, float] | None = None
 ) -> dict:
     """Measure joint score loss, outcome loss, coverage and goal error together."""
-    result = summarize(draws, outcome_weights)
+    result = metric_summary(draws, outcome_weights)
     observed = np.array([row["home_score"], row["away_score"]])
     rates = np.asarray(draws)
     log_density = np.sum(
@@ -149,6 +180,7 @@ def backtest(
             pooled = [[float(value), float(value)] for value in pace]
             legacy = legacy_metrics(row)
             records.append({
+                "legacy_available": "legacy_prediction" in row,
                 "context": context_key(row),
                 "pool": row["pool"],
                 "candidate": metrics(draws, row),
@@ -167,7 +199,7 @@ def backtest(
     pools, intervals = paired_intervals(records, models)
     passed = (
         not cold_start
-        and all("legacy_prediction" in row for row in rows)
+        and all(record["legacy_available"] for record in records)
         and len(records) >= MIN_TEST_MATCHES
         and len(pools) >= MIN_TEST_POOLS
         and len(cutoffs) >= MIN_ORIGINS
@@ -192,6 +224,194 @@ def backtest(
             "differences < 0 versus both baselines; marginal interval coverage 70-95%"
         ),
         "limitations": ("Retrospective current metadata; live forecasts not evaluated"),
+    }
+
+
+def forward_audit(rows: list[dict], artifact: dict, through: datetime) -> dict:
+    """Evaluate the exact served artifact after its real availability boundary.
+
+    The artifact remains frozen. Labels are reconstructed from revisions observed by
+    ``through`` while comparison baselines use only results known at the artifact's
+    training cutoff.
+
+    Raises:
+        ValueError: Artifact provenance or the requested audit window is invalid.
+
+    """
+    training_cutoff = timestamp(artifact["training_cutoff"])
+    available_from = timestamp(artifact["available_from"])
+    if (
+        artifact.get("approved") is not True
+        or artifact.get("validation", {}).get("passed") is not True
+        or training_cutoff > available_from
+        or available_from >= through
+    ):
+        raise ValueError("Artifact or forward-audit window is invalid")
+
+    training_groups: dict[str, list[dict]] = defaultdict(list)
+    for row in snapshot(rows, training_cutoff):
+        training_groups[context_key(row)].append(row)
+
+    records: list[dict] = []
+    excluded: Counter[str] = Counter()
+    candidates = [
+        row
+        for row in snapshot(rows, through)
+        if available_from <= timestamp(row["starts_at"]) < through
+    ]
+    for row in candidates:
+        if timestamp(row["duration_observed_at"]) > timestamp(row["starts_at"]):
+            excluded["duration_unknown_at_kickoff"] += 1
+            continue
+        draws = rate_draws(artifact, row)
+        if draws is None:
+            excluded["unsupported_artifact_context"] += 1
+            continue
+        group = training_groups.get(context_key(row))
+        if not group:
+            excluded["missing_training_context"] += 1
+            continue
+
+        # Match the rolling gate's uncertainty-aware pooled context comparator,
+        # but freeze it at the deployed artifact's training cutoff.
+        shape = 1 + sum(r["home_score"] + r["away_score"] for r in group)
+        rate = 0.1 + sum(2 * r["duration"] / 60 for r in group)
+        rng = np.random.default_rng(2026)
+        pace = rng.gamma(shape, 1 / rate, len(draws)) * row["duration"] / 60
+        pooled = [[float(value), float(value)] for value in pace]
+        records.append({
+            "context": context_key(row),
+            "pool": row["pool"],
+            "candidate": metrics(draws, row),
+            "context_baseline": metrics(pooled, row),
+            "legacy": legacy_metrics(row),
+        })
+
+    models = ("candidate", "context_baseline", "legacy")
+    overall = {name: aggregate([record[name] for record in records]) for name in models}
+    pools, intervals = paired_intervals(records, models)
+    return {
+        "mode": "deployed-forward-audit",
+        "artifact": {
+            "version": artifact["version"],
+            "input_sha256": artifact.get("input_sha256"),
+            "training_cutoff": artifact["training_cutoff"],
+            "available_from": artifact["available_from"],
+        },
+        "through": through.isoformat(),
+        "eligible_matches": len(candidates),
+        "evaluated_matches": len(records),
+        "evaluated_pools": len(pools),
+        "excluded": dict(excluded),
+        "metrics": overall,
+        "paired_difference_95": intervals,
+        "by_context": {
+            key: aggregate([
+                record["candidate"] for record in records if record["context"] == key
+            ])
+            for key in sorted({record["context"] for record in records})
+        },
+        "limitations": (
+            "Retrospective current metadata; labels use revisions observed by the "
+            "audit cutoff; live forecasts are not evaluated"
+        ),
+    }
+
+
+def head_to_head(
+    rows: list[dict], incumbent: dict, candidate: dict, through: datetime
+) -> dict:
+    """Compare two frozen artifacts on the same untouched matches and poules.
+
+    The comparison begins only after both artifacts existed, preventing the newer
+    candidate from benefiting from matches that were already known when it was fit.
+
+    Raises:
+        ValueError: Either artifact or the shared forward window is invalid.
+
+    """
+    for artifact in (incumbent, candidate):
+        if (
+            artifact.get("approved") is not True
+            or artifact.get("validation", {}).get("passed") is not True
+            or timestamp(artifact["training_cutoff"])
+            > timestamp(artifact["available_from"])
+        ):
+            raise ValueError(
+                "Head-to-head artifacts must be approved and chronological"
+            )
+    available_from = max(
+        timestamp(incumbent["available_from"]),
+        timestamp(candidate["available_from"]),
+    )
+    if available_from >= through:
+        raise ValueError("Head-to-head window must follow both availability times")
+
+    eligible = [
+        row
+        for row in snapshot(rows, through)
+        if available_from <= timestamp(row["starts_at"]) < through
+    ]
+    records: list[dict] = []
+    excluded: Counter[str] = Counter()
+    for row in eligible:
+        if timestamp(row["duration_observed_at"]) > timestamp(row["starts_at"]):
+            excluded["duration_unknown_at_kickoff"] += 1
+            continue
+        incumbent_draws = rate_draws(incumbent, row)
+        candidate_draws = rate_draws(candidate, row)
+        if incumbent_draws is None or candidate_draws is None:
+            excluded["not_supported_by_both"] += 1
+            continue
+        records.append({
+            "pool": row["pool"],
+            "candidate": metrics(candidate_draws, row),
+            "incumbent": metrics(incumbent_draws, row),
+        })
+
+    pools, intervals = paired_intervals(records, ("candidate", "incumbent"))
+    overall = {
+        model: aggregate([record[model] for record in records])
+        for model in ("candidate", "incumbent")
+    }
+    enough = len(records) >= MIN_TEST_MATCHES and len(pools) >= MIN_TEST_POOLS
+    coverage_ok = (
+        MIN_COVERAGE <= overall["candidate"].get("coverage_80", 0) <= MAX_COVERAGE
+    )
+    improved = (
+        enough
+        and coverage_ok
+        and all(
+            interval[1] is not None and interval[1] < 0
+            for interval in intervals.values()
+        )
+    )
+    worse = enough and all(
+        interval[0] is not None and interval[0] > 0 for interval in intervals.values()
+    )
+    verdict = "improved" if improved else "worse" if worse else "inconclusive"
+    if not enough:
+        verdict = "insufficient_evidence"
+    return {
+        "mode": "artifact-head-to-head",
+        "available_from": available_from.isoformat(),
+        "through": through.isoformat(),
+        "eligible_matches": len(eligible),
+        "evaluated_matches": len(records),
+        "evaluated_pools": len(pools),
+        "excluded": dict(excluded),
+        "metrics": overall,
+        "paired_difference_95": intervals,
+        "verdict": verdict,
+        "gate": (
+            "100 shared untouched matches across 10 poules; candidate-minus-incumbent "
+            "paired 95% upper differences < 0 for score log-loss and Brier score; "
+            "candidate marginal interval coverage 70-95%"
+        ),
+        "limitations": (
+            "Retrospective current metadata; only matches supported by both frozen "
+            "artifacts are compared; live forecasts are not evaluated"
+        ),
     }
 
 
@@ -235,10 +455,15 @@ def legacy_metrics(row: dict) -> dict:
     low, high = 0.000001, 0.999999
     for _ in range(35):
         share = (low + high) / 2
-        probabilities = summarize([[total * share, total * (1 - share)]])[
-            "probabilities"
-        ]
-        if probabilities["home"] + probabilities["draw"] / 2 < expected:
+        home, away = poisson(total * share), poisson(total * (1 - share))
+        cumulative = 0.0
+        win, draw = 0.0, 0.0
+        for goals, probability in enumerate(home):
+            opponent = away[goals] if goals < len(away) else 0.0
+            win += probability * cumulative
+            draw += probability * opponent
+            cumulative += opponent
+        if win + draw / 2 < expected:
             low = share
         else:
             high = share

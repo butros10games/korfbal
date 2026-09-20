@@ -21,9 +21,15 @@ from apps.competition.domain.score_forecast import (
 )
 from apps.competition.models import Match, RatingConfiguration, ResultRevision
 from apps.competition.offline.score_training import fit, snapshot
-from apps.competition.offline.score_validation import backtest
+from apps.competition.offline.score_validation import (
+    backtest,
+    forward_audit,
+    metric_summary,
+)
 from apps.competition.queries.forecast_export import export_rows, features
+from apps.competition.queries.forecast_legacy import predictions
 from apps.competition.services import score_prediction as serving
+from apps.competition.services.match_prediction import known_results, rating_prediction
 from apps.competition.services.published_ratings import configure_ratings
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.tests.test_rating_preview import (
@@ -31,11 +37,15 @@ from apps.competition.tests.test_rating_preview import (
     START,
     create_baseline,
 )
-from apps.schedule.models import Season
+from apps.schedule.models import (
+    Match as NativeMatch,
+    Season,
+)
 
 
 TARGET_THRESHOLD = 0.75
 EXPECTED_COMPARISONS = 4
+EXPECTED_POOLS = 3
 HTTP_OK = 200
 
 
@@ -179,6 +189,176 @@ def test_backtest_reports_coverage_and_refuses_insufficient_promotion(
     assert math.isfinite(report["metrics"]["candidate"]["score_log_loss"])
     assert "calibration" in report["metrics"]["candidate"]
     assert len(report["paired_difference_95"]) == EXPECTED_COMPARISONS
+
+
+def test_forward_audit_uses_exact_artifact_availability_window(
+    history: list[dict], tmp_path: Path
+) -> None:
+    """Forward evidence freezes training and excludes pre-availability fixtures."""
+    cutoff = START + timedelta(days=16)
+    through = START + timedelta(days=25)
+    artifact = fit(history, cutoff)
+    artifact.update(
+        approved=True,
+        available_from=(cutoff + timedelta(days=1)).isoformat(),
+        input_sha256="synthetic",
+        validation={"passed": True},
+    )
+    report = forward_audit(history, artifact, through)
+    assert report["mode"] == "deployed-forward-audit"
+    assert report["eligible_matches"] == len(history) - 16
+    assert report["evaluated_matches"] == len(history) - 16
+    assert report["evaluated_pools"] == EXPECTED_POOLS
+    assert report["metrics"]["candidate"]["matches"] == len(history) - 16
+    assert len(report["paired_difference_95"]) == EXPECTED_COMPARISONS
+
+    source = tmp_path / "source.json"
+    model = tmp_path / "artifact.json"
+    destination = tmp_path / "audit.json"
+    source.write_text(
+        json.dumps({
+            "schema": 1,
+            "rows": history,
+            "exported_at": through.isoformat(),
+        })
+    )
+    model.write_text(json.dumps(artifact))
+    call_command(
+        "audit_score_forecasts",
+        input=source,
+        artifact=model,
+        report=destination,
+        through=through,
+    )
+    assert json.loads(destination.read_text())["artifact"]["input_sha256"] == (
+        "synthetic"
+    )
+
+
+@pytest.mark.parametrize("weights", [None, {"home": 1.3, "draw": 0.6, "away": 0.8}])
+@pytest.mark.parametrize(
+    "draws", [[[8.4, 6.9]], [[2, 2], [18, 18]], [[0.01, 35], [40, 0.2]]]
+)
+def test_vectorized_metrics_preserve_serving_distribution(
+    draws: list, weights: dict | None
+) -> None:
+    """Speedups retain conditional probabilities, marginal intervals and means."""
+    original = summarize(draws, weights)
+    actual = metric_summary(draws, weights)
+    assert actual["probabilities"] == pytest.approx(
+        original["probabilities"], abs=1e-12
+    )
+    assert actual["expected_goals"] == pytest.approx(
+        original["expected_goals"], abs=1e-12
+    )
+    assert actual["interval_80"] == original["interval_80"]
+
+
+@pytest.mark.django_db
+def test_batch_legacy_matches_existing_predictor(predicted_match: Match) -> None:
+    """Batched replay retains the published predictor's result and provenance."""
+    native = predicted_match.local_match
+    assert native is not None
+    through = START + timedelta(days=30)
+    result = predictions([str(predicted_match.pk)], through, lambda message: None)
+    assert result[str(predicted_match.pk)] == rating_prediction(native)
+
+
+@pytest.mark.django_db
+def test_batch_legacy_reuses_replay_for_simultaneous_fixtures(
+    predicted_match: Match,
+) -> None:
+    """Shared class/cutoff calculations remain identical for distinct match IDs."""
+    native = predicted_match.local_match
+    assert native is not None
+    duplicate_native = NativeMatch.objects.create(
+        home_team=native.home_team,
+        away_team=native.away_team,
+        season=native.season,
+        start_time=native.start_time,
+    )
+    duplicate = deepcopy(predicted_match)
+    duplicate.pk = None
+    duplicate.external_id = "second-simultaneous-match"
+    duplicate.local_match = duplicate_native
+    duplicate.save()
+    expected = {
+        str(predicted_match.pk): rating_prediction(native),
+        str(duplicate.pk): rating_prediction(duplicate_native),
+    }
+    with patch(
+        "apps.competition.queries.forecast_legacy.known_results", wraps=known_results
+    ) as replay:
+        actual = predictions(
+            list(expected), START + timedelta(days=30), lambda message: None
+        )
+    assert actual == expected
+    assert all(value["status"] == "seeded" for value in actual.values())
+    assert replay.call_count == 1
+
+
+def test_refresh_preserves_audit_before_rejected_fit_and_refuses_overwrite(
+    history: list[dict], tmp_path: Path
+) -> None:
+    """A failed gate leaves evidence and cannot overwrite an earlier run."""
+    season_id = "00000000-0000-0000-0000-000000000001"
+    for row in history:
+        row["season"] = season_id
+    cutoff = START + timedelta(days=16)
+    through = START + timedelta(days=19)
+    artifact = fit(history, cutoff)
+    artifact.update(
+        approved=True,
+        validation={
+            "passed": True,
+            "folds": [{"cutoff": (START + timedelta(days=12)).isoformat()}],
+        },
+    )
+    model = tmp_path / "served.json"
+    model.write_text(json.dumps(artifact))
+    root = tmp_path / "run"
+
+    def invoke(command: str, *arguments: str, **options: object) -> None:
+        if command == "export_score_forecasts":
+            Path(str(options["output"])).write_text(
+                json.dumps({
+                    "schema": 1,
+                    "rows": history,
+                    "exported_at": through.isoformat(),
+                    "metadata_history": "synthetic",
+                }),
+                encoding="utf-8",
+            )
+        else:
+            if command == "fit_score_forecasts":
+                assert (root / "forward-audit.json").is_file()
+                assert (root / "head-to-head.json").is_file()
+            call_command(command, *arguments, **options)
+
+    with patch(
+        "apps.competition.management.commands.refresh_score_forecasts.call_command",
+        side_effect=invoke,
+    ):
+        call_command(
+            "refresh_score_forecasts",
+            season=season_id,
+            artifact=model,
+            output_dir=root,
+            through=through,
+            challenger=model,
+        )
+        before = (root / "forward-audit.json").read_bytes()
+        assert json.loads((root / "status.json").read_text())["status"] == "rejected"
+        assert json.loads((root / "candidate.json").read_text())["approved"] is False
+        with pytest.raises(CommandError, match="File exists"):
+            call_command(
+                "refresh_score_forecasts",
+                season=season_id,
+                artifact=model,
+                output_dir=root,
+                through=through,
+            )
+        assert (root / "forward-audit.json").read_bytes() == before
 
 
 def test_artifact_boundary_is_database_free_and_fails_closed(

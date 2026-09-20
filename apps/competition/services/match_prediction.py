@@ -1,5 +1,6 @@
 """Match-specific starting strength using only results known before kickoff."""
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -87,18 +88,25 @@ def predict_allocations(
     source: Match,
     configuration: RatingConfiguration,
     cutoff: datetime,
+    *,
+    batch: tuple[list[Allocation], Callable[[list[Allocation]], dict]] | None = None,
 ) -> dict[str, Any]:
     """Replay the exact class containing both allocated match opponents."""
     assert source.pool is not None
     assert source.pool.competition_class_id is not None
-    members = list(
-        Allocation.objects.filter(
-            source_id__in=configuration.source_ids,
-            source__season_id=match.season_id,
-            competition_class_id=source.pool.competition_class_id,
-            competition_class__edition__season_id=match.season_id,
-        ).select_related(
-            "entry__team__group", "entry__pool", "competition_class__edition"
+    members, replay = batch if batch is not None else (None, None)
+    members = (
+        members
+        if members is not None
+        else list(
+            Allocation.objects.filter(
+                source_id__in=configuration.source_ids,
+                source__season_id=match.season_id,
+                competition_class_id=source.pool.competition_class_id,
+                competition_class__edition__season_id=match.season_id,
+            ).select_related(
+                "entry__team__group", "entry__pool", "competition_class__edition"
+            )
         )
     )
     eligible = [row for row in members if not exclusion(row)]
@@ -132,15 +140,18 @@ def predict_allocations(
     # Provider home/away orientation must agree with the native match being shown.
     if not native_sides_match(match, home, away):
         return unavailable("identity_conflict")
-    history = known_results(source, configuration.effective_at, cutoff)
-    rows, _ = rate_class(
-        source.pool.competition_class_id,
-        eligible,
-        history,
-        configuration.b_scale,
-        configuration.b_k_factor,
-    )
-    ratings = {row["team"]: row for row in rows}
+    if replay is not None:
+        ratings = replay(eligible)
+    else:
+        history = known_results(source, configuration.effective_at, cutoff)
+        rows, _ = rate_class(
+            source.pool.competition_class_id,
+            eligible,
+            history,
+            configuration.b_scale,
+            configuration.b_k_factor,
+        )
+        ratings = {row["team"]: row for row in rows}
     home_rating, away_rating = (
         ratings[source.home_team.external_id],
         ratings[source.away_team.external_id],

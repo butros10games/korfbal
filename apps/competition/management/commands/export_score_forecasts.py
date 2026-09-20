@@ -9,9 +9,10 @@ from uuid import UUID
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.competition.models import Match
+from apps.competition.domain.score_forecast import timestamp
+from apps.competition.domain.score_observations import snapshot
 from apps.competition.queries.forecast_export import export_rows
-from apps.competition.services.match_prediction import rating_prediction
+from apps.competition.queries.forecast_legacy import predictions
 
 
 class Command(BaseCommand):
@@ -25,6 +26,8 @@ class Command(BaseCommand):
         """Require explicit season UUID and destination outside source control."""
         parser.add_argument("--season", required=True, type=UUID)
         parser.add_argument("--output", required=True, type=Path)
+        parser.add_argument("--legacy-from", type=timestamp)
+        parser.add_argument("--through", type=timestamp)
 
     def handle(self, *args: object, **options: object) -> None:
         """Write an export and report aggregate coverage.
@@ -34,20 +37,25 @@ class Command(BaseCommand):
 
         """
         values: dict[str, Any] = dict(options)
-        report = export_rows(str(values["season"]), timezone.now())
+        through = values.get("through") or timezone.now()
+        report = export_rows(str(values["season"]), through)
         if not report["rows"]:
             raise CommandError("No supported league fixtures for this source season")
-        sources = Match.objects.filter(
-            pk__in=[row["match"] for row in report["rows"]]
-        ).select_related("local_match__season")
-        legacy = {
-            str(source.pk): rating_prediction(source.local_match)
-            if source.local_match
-            else {"status": "unavailable", "reason": "not_published"}
-            for source in sources.iterator(chunk_size=100)
-        }
+        scored = snapshot(report["rows"], through)
+        start = values.get("legacy_from")
+        identities = [
+            row["match"]
+            for row in scored
+            if (start is None or timestamp(row["starts_at"]) >= start)
+            and timestamp(row["duration_observed_at"]) <= timestamp(row["starts_at"])
+        ]
+        self.stdout.write(
+            f"Legacy replay selected {len(identities)}/{len(report['rows'])} fixtures"
+        )
+        legacy = predictions(identities, through, self.stdout.write)
         for row in report["rows"]:
-            row["legacy_prediction"] = legacy[row["match"]]
+            if row["match"] in legacy:
+                row["legacy_prediction"] = legacy[row["match"]]
         values["output"].write_text(json.dumps(report, sort_keys=True) + "\n")
         values["output"].chmod(0o600)
         self.stdout.write(

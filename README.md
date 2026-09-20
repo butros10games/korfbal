@@ -1733,6 +1733,105 @@ contexts, missing duration, invalid or unapproved artifacts retain the previous
 predictor. Clear the setting and restart workers to roll back. No fitted production
 artifact is bundled, and these commands do not deploy or change ratings.
 
+Preserve a newly available artifact's next round as an untouched forward audit.
+Export again after results arrive, copy the exact served artifact into the offline
+environment, and record its post-availability metrics without refitting it:
+
+```sh
+uv run python apps/django_projects/korfbal/manage.py audit_score_forecasts \
+  --input /secure/forecast-input.json \
+  --artifact /secure/current-forecast.json \
+  --report /secure/current-forward-audit.json \
+  --through <result-observation-cutoff-ISO8601>
+```
+
+The audit compares the frozen artifact with the same context and legacy baselines
+used by the promotion gate. Its labels come only from revisions observed by the
+explicit cutoff, and matches before the artifact's actual availability remain excluded.
+
+For an on-demand production refresh, run the host-side launcher directly over SSH
+as the deployment user (with Docker access and the worker's UID). It creates a
+detached batch container from the currently deployed worker image, adds pinned
+NumPy/SciPy dependencies, and installs only the forecast code from the supplied
+checkout. No CI runner or external data export is involved:
+
+```sh
+python3 scripts/python/run_korfbal_forecast_worker.py \
+  --source-root . --worker korfbal-kwt-celery-worker-1 \
+  --season <source-season-uuid> --runs-root /secure/forecast-runs
+docker logs --tail 30 korfbal-forecast-batch
+docker inspect korfbal-forecast-batch --format '{{.State.Status}} {{.State.ExitCode}}'
+```
+
+The container has one CPU, 3 GiB memory, one BLAS thread, read-only database
+transactions, a 60-second SQL statement limit and a 30-minute process deadline.
+It saves the exact served artifact, input snapshot, forward audit, candidate,
+validation report and status beneath a new private run directory. The audit is
+written before fitting. `passed_gates_pending_review` means only that the automated
+baseline gates passed; it is not human approval. `rejected` retains the evidence
+with an unapproved candidate. Neither
+changes the configured production artifact. A deadline/OOM may leave the last
+stage in `status.json`; always inspect the container exit code as well.
+
+After inspecting an exited batch, rename its container to retain the logs before
+starting another. Pass `--input /secure/forecast-runs/<run>/result/input.json` to
+reuse a completed export in a new run without repeating database reads. Its original
+observation cutoff is retained. Existing run directories are never overwritten.
+Code fingerprints and the deployed base image are recorded in `build.json`.
+
+To keep collecting evidence for a prior candidate, supply it on the next result
+round. The refresh then writes `head-to-head.json` using only matches after both
+artifacts existed and supported, with candidate-minus-incumbent Brier and score
+log-loss intervals clustered by poule:
+
+```sh
+python3 scripts/python/run_korfbal_forecast_worker.py \
+  --source-root . --worker korfbal-kwt-celery-worker-1 \
+  --season <source-season-uuid> --runs-root /secure/forecast-runs \
+  --challenger /secure/forecast-runs/<prior-run>/result/candidate.json
+```
+
+Register only aggregate evidence in Django after the batch. The command checks all
+artifact hashes and provenance; raw match exports and coefficients remain in private
+host storage:
+
+```sh
+python manage.py register_score_forecast_review \
+  --incumbent /secure/forecast-runs/<current-run>/result/served-artifact.json \
+  --candidate /secure/forecast-runs/<prior-run>/result/candidate.json \
+  --validation /secure/forecast-runs/<prior-run>/result/validation.json \
+  --forward-audit /secure/forecast-runs/<current-run>/result/forward-audit.json \
+  --head-to-head /secure/forecast-runs/<current-run>/result/head-to-head.json \
+  --source-reference forecast-runs/<prior-run>/result/candidate.json
+```
+
+Authorized MFA-verified staff can then review the aggregate evidence under Django
+admin → Competition → Score forecast reviews. Every decision requires a note and the
+dedicated `decide_scoreforecastreview` permission. **Approve for activation** remains
+disabled until at least 100 shared untouched matches across ten poules show both
+proper-score 95% upper differences below zero while candidate interval coverage stays
+between 70% and 95%. Rejecting or collecting more evidence does not change production.
+Approval records intent only; installing the immutable artifact and verifying or
+rolling back production stays at the protected host boundary.
+
+After a protected operator installs the approved file at a new immutable path,
+updates `KORFBAL_SCORE_FORECAST_ARTIFACT`, recreates the API workers and verifies
+public health, record the exact configured hash in the decision audit:
+
+```sh
+python manage.py record_score_forecast_activation
+```
+
+The command cannot activate a model: it succeeds only when the configured file hash
+already has an `approved_pending_activation` review and the artifact still carries
+its passed automated evidence. Keep the prior immutable file for configuration rollback.
+
+Legacy export work is limited to eligible completed matches in the validation
+window. Class allocations and same-kickoff rating replay are reused within the
+export; absent legacy predictions on any evaluated row still prevent promotion.
+Offline metrics use a vectorized implementation checked against the serving
+distribution. Serving behavior and the promotion thresholds are unchanged.
+
 Limitations: historical score revisions are available, but identities, class mappings,
 and fixture schedules use current metadata snapshots; the export reports that caveat.
 Live updates condition the rate draws on goals and elapsed time under a constant-rate
