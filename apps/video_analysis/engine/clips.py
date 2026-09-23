@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, cast
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
 from .clip_inference import CPU_THREADS, clip_detector
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
+from .clip_positions import attach_post_distances
+from .clip_references import suggestion
 from .clip_signals import Camera, Teams, modules
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
@@ -188,13 +190,16 @@ class ClipRun:
             [x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in raw.boxes.xyxyn.tolist()
         ]
         camera = self.camera.update(image, timestamp, boxes)
+        camera["calibration"]["suggested_points"] = suggestion(
+            camera["floor"], self.options.court, camera["calibration"], boxes
+        )
         if camera["cut"]:
             self.people.reset(camera["segment"])
             self.balls.reset(camera["segment"])
-            self.teams = Teams(self.options.team_colors)
+            self.teams.reset()
             self.record["camera_cuts"] += 1
         persons = self.people.update(result, image, timestamp, camera)
-        self.teams.update(image, persons)
+        self.teams.update(image, persons, timestamp)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
             [o for o in detected if o["label"] == "ball"],
@@ -202,6 +207,7 @@ class ClipRun:
             timestamp,
             camera["motion"],
         )
+        attach_post_distances(persons, self.options.court)
         objects = persons + balls + [o for o in detected if o["label"] == "basket"]
         self.buffer.append({
             "time_seconds": round(timestamp, 6),

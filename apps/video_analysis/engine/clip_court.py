@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections import deque
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
+from .clip_positions import penalty_arcs
 from .clip_signals import modules, transform
 
 
@@ -25,6 +27,8 @@ ANCHOR_INTERVAL = 0.5
 MIN_LINE_LENGTH = 24
 LINE_DISTANCE_PIXELS = 4
 MIN_VISIBLE_SAMPLES = 12
+MIN_SUPPORTED_ARCS = 2
+MIN_ARC_PIXELS = 24
 
 
 class CourtMap:
@@ -215,6 +219,54 @@ class CourtMap:
             "segments": segments,
         }
 
+    def arc_evidence(self, features: tuple, floor: NDArray[Any]) -> dict:
+        """Check registered penalty curves against visible floor edges."""
+        gray, mask = features[:2]
+        edges = self.cv.Canny(
+            self.cv.GaussianBlur(self.cv.medianBlur(gray, 5), (5, 5), 1.2), 25, 80
+        )
+        edges[mask == 0] = 0
+        distances = self.cv.distanceTransform(255 - edges, self.cv.DIST_L2, 3)
+        inverse = self.np.linalg.inv(floor)
+        supported = 0
+        segments = []
+        for arc in penalty_arcs(self.court):
+            projected = [transform(p, inverse) for p in arc]
+            if any(p is None for p in projected):
+                continue
+            pixels = self.np.array(projected) * [640, 360]
+            samples = self.np.concatenate([
+                self.np.linspace(
+                    a, b, max(2, min(1000, int(self.np.linalg.norm(b - a))))
+                )
+                for a, b in pairwise(pixels)
+            ]).astype(int)
+            visible = samples[
+                (samples[:, 0] >= 0)
+                & (samples[:, 0] < gray.shape[1])
+                & (samples[:, 1] >= 0)
+                & (samples[:, 1] < gray.shape[0])
+            ]
+            visible = visible[mask[visible[:, 1], visible[:, 0]] > 0]
+            # Require most of the semicircle, not a tiny line intersection.
+            enough = len(visible) >= max(MIN_ARC_PIXELS, len(samples) * 0.5)
+            good = (
+                enough
+                and float(
+                    (
+                        distances[visible[:, 1], visible[:, 0]] < LINE_DISTANCE_PIXELS
+                    ).mean()
+                )
+                >= MIN_SUPPORT
+            )
+            supported += int(good)
+            if enough:
+                segments.extend(
+                    {"a": a, "b": b, "supported": bool(good), "kind": "penalty_arc"}
+                    for a, b in pairwise(projected)
+                )
+        return {"supporting_arcs": supported, "arc_segments": segments}
+
     def update(
         self, image: NDArray[Any], timestamp: float, boxes: list, cut: bool
     ) -> tuple:
@@ -275,9 +327,15 @@ class CourtMap:
                 self.footprint(candidate)
                 floor_features = self.features(image, boxes, candidate)
                 evidence.update(self.line_evidence(floor_features, candidate))
+                arcs = self.arc_evidence(floor_features, candidate)
+                evidence["supporting_arcs"] = arcs["supporting_arcs"]
+                evidence["segments"].extend(arcs["arc_segments"])
                 # Propagation requires visible template-line support; a human
                 # reference can still work when floor lines are temporarily hidden.
-                if mode == "tracked" and not evidence["supporting_lines"]:
+                if mode == "tracked" and not (
+                    evidence["supporting_lines"]
+                    or evidence["supporting_arcs"] >= MIN_SUPPORTED_ARCS
+                ):
                     candidate = None
                 else:
                     if mode == "reference":

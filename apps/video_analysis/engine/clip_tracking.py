@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .clip_contract import ClipOptions
+from .clip_identity import IDENTITY_GAP, IdentityMemory
 from .clip_signals import center, distance, floor_position, modules, transform
 
 
@@ -19,13 +20,15 @@ if TYPE_CHECKING:
 MAX_PLAYER_SPEED = 1.5
 MAX_FLOOR_SPEED = 15
 SMOOTHING_GAP = 0.3
-BALL_GAP = 0.6
+BALL_GAP = 1.5
+ACTIVE_BALL_GAP = 0.6
 MIN_AREA_RATIO = 0.2
 MAX_AREA_RATIO = 5
 INVALID_COST = 1e6
 MIN_BALL_HITS = 3
 MIN_ACTIVE_SCORE = 0.6
 MIN_ACTIVE_MARGIN = 0.12
+MIN_BALL_RECOVERY_MARGIN = 0.02
 
 
 class Tracker(Protocol):
@@ -82,9 +85,11 @@ class People:
         self.previous = {}
         self.generations = Counter()
         self.segment = 0
+        self.identities = IdentityMemory()
 
     def reset(self, segment: int) -> None:
         """Discard identities and motion history across a camera cut."""
+        self.identities.reset()
         self.trackers.clear()
         self.motion = None
         self.previous.clear()
@@ -106,7 +111,7 @@ class People:
                 track_high_thresh=self.options.confidence,
                 track_low_thresh=0.1,
                 new_track_thresh=self.options.confidence,
-                track_buffer=max(1, round(self.options.fps)),
+                track_buffer=max(1, round(self.options.fps * IDENTITY_GAP)),
                 with_reid=False,
             )
             tracker = factory(SimpleNamespace(**config))
@@ -116,6 +121,14 @@ class People:
                 tracker.gmc = self.motion
             self.trackers[label] = cast("Tracker", tracker)
         return self.trackers[label]
+
+    def advance(self, motion: NDArray[Any] | None) -> None:
+        """Advance camera motion for visible and temporarily hidden people."""
+        if motion is not None:
+            for previous in self.previous.values():
+                previous["projected"] = (
+                    transform(previous["projected"], motion) or previous["projected"]
+                )
 
     def update(
         self, raw: object, image: NDArray[Any], timestamp: float, camera: dict
@@ -130,7 +143,7 @@ class People:
         _, np = modules()
         h, w = image.shape[:2]
         objects = []
-        seen = set()
+        self.advance(camera["motion"])
         boxes = result.boxes.cpu().numpy()
         for label in ("player", "referee"):
             classes = [
@@ -151,17 +164,12 @@ class People:
                     continue
                 box = [x1, y1, x2 - x1, y2 - y1]
                 key = (label, native_id)
-                seen.add(key)
                 previous = self.previous.get(key)
                 position = floor_position(box, camera["floor"], self.options.court)
                 issue = None
                 if previous:
                     dt = timestamp - previous["time"]
-                    projected = (
-                        transform(center(previous["observed_bbox"]), camera["motion"])
-                        if camera["motion"] is not None
-                        else None
-                    )
+                    projected = previous["projected"]
                     speed = (
                         distance(projected, center(box)) / dt
                         if projected and dt > 0
@@ -197,12 +205,14 @@ class People:
                 if issue:
                     obj["issue"] = issue
                 objects.append(obj)
-                self.previous[key] = dict(obj, time=timestamp)
+                self.previous[key] = dict(obj, time=timestamp, projected=center(box))
         # Retain short gaps for association without drawing invisible people.
         self.previous = {
-            k: v for k, v in self.previous.items() if timestamp - v["time"] <= 1
+            k: v
+            for k, v in self.previous.items()
+            if timestamp - v["time"] <= IDENTITY_GAP
         }
-        return objects
+        return self.identities.update(objects, image, timestamp, camera["motion"])
 
 
 class Balls:
@@ -232,22 +242,22 @@ class Balls:
     ) -> dict[int, str]:
         """Use one-to-one assignment with motion and scale gates for tiny objects."""
         _, np = modules()
-        assignment = importlib.import_module("scipy.optimize").linear_sum_assignment
         self.tracks = {
             k: v for k, v in self.tracks.items() if timestamp - v["time"] <= BALL_GAP
         }
+        if motion is not None:
+            for prior in self.tracks.values():
+                prior["projected"] = (
+                    transform(prior["projected"], motion) or prior["projected"]
+                )
         identities = list(self.tracks)
         costs = np.full((len(identities), len(detections)), INVALID_COST)
         for i, identity in enumerate(identities):
             prior = self.tracks[identity]
             dt = timestamp - prior["time"]
-            projected = (
-                transform(center(prior["bbox"]), motion)
-                if motion is not None
-                else center(prior["bbox"])
-            )
+            projected = prior["projected"]
             expected = [
-                p + v * dt
+                p + v * min(dt, 0.3)
                 for p, v in zip(
                     projected or center(prior["bbox"]), prior["velocity"], strict=True
                 )
@@ -262,15 +272,45 @@ class Balls:
                     and MIN_AREA_RATIO < ratio < MAX_AREA_RATIO
                 ):
                     costs[i, j] = d + abs(math.log(ratio)) * 0.005
+        return self.match(costs, identities, timestamp)
+
+    def match(
+        self, costs: NDArray[Any], identities: list[str], timestamp: float
+    ) -> dict[int, str]:
+        """Reserve visible balls before recovering older lost candidates."""
+        _, np = modules()
+        assignment = importlib.import_module("scipy.optimize").linear_sum_assignment
         matched = {}
-        if costs.size:
-            rows, columns = assignment(costs)
-            matched = {
-                int(j): identities[int(i)]
-                for i, j in zip(rows, columns, strict=True)
-                if costs[i, j] < INVALID_COST
-            }
+        for recovering in (False, True):
+            rows = [
+                i
+                for i, key in enumerate(identities)
+                if (timestamp - self.tracks[key]["time"] > SMOOTHING_GAP) == recovering
+            ]
+            columns = [j for j in range(costs.shape[1]) if j not in matched]
+            if not rows or not columns:
+                continue
+            subset = costs[np.ix_(rows, columns)]
+            sources, targets = assignment(subset)
+            for i, j in zip(sources, targets, strict=True):
+                if subset[i, j] < INVALID_COST and (
+                    not recovering or self.separated(subset, int(i), int(j))
+                ):
+                    matched[columns[j]] = identities[rows[i]]
         return matched
+
+    @staticmethod
+    def separated(costs: NDArray[Any], row: int, column: int) -> bool:
+        """Do not guess which ball returned when another link is equally plausible."""
+        _, np = modules()
+        alternatives = [
+            *np.delete(costs[row], column),
+            *np.delete(costs[:, column], row),
+        ]
+        return all(
+            value - costs[row, column] >= MIN_BALL_RECOVERY_MARGIN
+            for value in alternatives
+        )
 
     def update(
         self,
@@ -293,11 +333,7 @@ class Balls:
             velocity = [0.0, 0.0]
             motion_evidence = 0.0
             if prior:
-                projected = (
-                    transform(center(prior["bbox"]), motion)
-                    if motion is not None
-                    else None
-                )
+                projected = prior["projected"] if motion is not None else None
                 dt = timestamp - prior["time"]
                 if projected is not None and dt > 0:
                     velocity = [
@@ -330,7 +366,7 @@ class Balls:
                 court_xy_m=None,
             )
             self.tracks[identity] = dict(
-                obj, velocity=velocity, time=timestamp, hits=hits
+                obj, velocity=velocity, time=timestamp, hits=hits, projected=point
             )
             objects.append(obj)
             if hits >= MIN_BALL_HITS:
@@ -343,7 +379,7 @@ class Balls:
             switching_during_gap = (
                 self.active is not None
                 and best["track_id"] != self.active
-                and timestamp - self.active_seen < BALL_GAP
+                and timestamp - self.active_seen < ACTIVE_BALL_GAP
             )
             if (
                 score >= MIN_ACTIVE_SCORE
@@ -358,6 +394,6 @@ class Balls:
                     "track_id": self.active,
                     "score": round(score, 3),
                 }
-        if timestamp - self.active_seen > BALL_GAP:
+        if timestamp - self.active_seen > ACTIVE_BALL_GAP:
             self.active = None
         return objects, active

@@ -22,12 +22,23 @@ MAX_WARP = 5
 CUT_ERROR = 0.12
 MIN_SHIRT_VALUES = 90
 MAX_SHIRT_SPREAD = 40
+MIN_SHIRT_SATURATION = 60
+MIN_SHIRT_VALUE = 30
+MIN_COLORED_SHARE = 0.3
+MIN_HUE_SHARE = 0.25
+HUE_RADIUS = 15
+MIN_BACKGROUND_VALUES = 90
+BACKGROUND_DISTANCE = 22
+MIN_NEUTRAL_LIGHTNESS = 95
+MAX_NEUTRAL_CHROMA = 18
 MIN_TEAM_SAMPLES = 40
 MIN_CLUSTER_SAMPLES = 8
-MIN_COLOR_MARGIN = 0.3
+MIN_COLOR_MARGIN = 0.55
 MAX_COLOR_DISTANCE = 55
 MIN_TEAM_VOTES = 3
 MIN_VOTE_SHARE = 0.8
+TEAM_MEMORY_SECONDS = 3.0
+TEAM_HOLD_SECONDS = 2.0
 COURT_MARGIN = 5
 
 
@@ -179,6 +190,8 @@ class Teams:
         self.cv, self.np = modules()
         self.samples = deque(maxlen=160)
         self.votes = {}
+        self.seen = {}
+        self.confirmed = {}
         self.centers = None
         if colors is not None:
             rgb = self.np.uint8([colors])
@@ -192,75 +205,192 @@ class Teams:
             max(0, int((y + bh * 0.18) * h)) : min(h, int((y + bh * 0.48) * h)),
             max(0, int((x + bw * 0.25) * w)) : min(w, int((x + bw * 0.75) * w)),
         ]
+        # The box includes arms and empty floor. Sample narrow outside strips at
+        # torso height, and remove only a consistent neighbouring background.
+        strips = [
+            image[
+                max(0, int((y + bh * 0.18) * h)) : min(h, int((y + bh * 0.48) * h)),
+                max(0, int(a * w)) : min(w, int(b * w)),
+            ].reshape(-1, 3)
+            for a, b in ((x - bw * 0.2, x), (x + bw, x + bw * 1.2))
+        ]
+        background = self.np.concatenate(strips)
+        return self.sample(crop, background)
+
+    def sample(
+        self, crop: NDArray[Any], background: NDArray[Any] | None = None
+    ) -> NDArray[Any] | None:
+        """Separate shirt hues from white numbers and mixed torso pixels."""
         if crop.size < MIN_SHIRT_VALUES:
             return None
+        pixels = self.cv.cvtColor(crop, self.cv.COLOR_BGR2HSV).reshape(-1, 3)
         lab = self.cv.cvtColor(crop, self.cv.COLOR_BGR2LAB).reshape(-1, 3).astype(float)
+        neutral = self.np.median(lab, axis=0)
+        if (
+            neutral[0] >= MIN_NEUTRAL_LIGHTNESS
+            and self.np.linalg.norm(neutral[1:] - 128) < MAX_NEUTRAL_CHROMA
+        ):
+            # Preserve a white shirt's body instead of selecting a small colourful
+            # number, sleeve or patch of floor from the same torso crop.
+            spread = self.np.median(self.np.linalg.norm(lab - neutral, axis=1))
+            return neutral if spread <= MAX_SHIRT_SPREAD else None
+        if background is not None and background.size >= MIN_BACKGROUND_VALUES:
+            surroundings = (
+                self.cv
+                .cvtColor(background.reshape(-1, 1, 3), self.cv.COLOR_BGR2LAB)
+                .reshape(-1, 3)
+                .astype(float)
+            )
+            median = self.np.median(surroundings, axis=0)
+            spread = self.np.median(self.np.linalg.norm(surroundings - median, axis=1))
+            foreground = self.np.linalg.norm(lab - median, axis=1) > BACKGROUND_DISTANCE
+            if spread < BACKGROUND_DISTANCE and foreground.mean() >= MIN_HUE_SHARE:
+                lab, pixels = lab[foreground], pixels[foreground]
+        original_size = crop.shape[0] * crop.shape[1]
+        saturated = (pixels[:, 1] >= MIN_SHIRT_SATURATION) & (
+            pixels[:, 2] >= MIN_SHIRT_VALUE
+        )
+        if saturated.mean() >= MIN_COLORED_SHARE:
+            hues = pixels[:, 0].astype(float)
+            bins = self.np.bincount((hues[saturated] // 10).astype(int), minlength=18)
+            smoothed = bins + self.np.roll(bins, 1) + self.np.roll(bins, -1)
+            peak = int(self.np.argmax(smoothed)) * 10 + 5
+            delta = self.np.abs(hues - peak)
+            keep = saturated & (self.np.minimum(delta, 180 - delta) <= HUE_RADIUS)
+            if keep.sum() >= original_size * MIN_COLORED_SHARE:
+                lab = lab[keep]
+            else:
+                return None
         color = self.np.median(lab, axis=0)
-        # Background/overlap-dominated crops should not vote for a shirt colour.
         if self.np.median(self.np.linalg.norm(lab - color, axis=1)) > MAX_SHIRT_SPREAD:
             return None
         return color
 
-    def update(self, image: NDArray[Any], objects: list[dict]) -> None:
-        """Accumulate consistent evidence before assigning a visual team group."""
+    def reset(self) -> None:
+        """Forget people at a camera cut while preserving the match's A/B palette."""
+        self.votes.clear()
+        self.seen.clear()
+        self.confirmed.clear()
+
+    def features(self, colors: NDArray[Any]) -> NDArray[Any]:
+        """Separate dark shirt hues without treating exposure as another team.
+
+        Circular hue coordinates also keep reds on either side of the HSV seam
+        together. Saturation reduces the influence of unstable near-grey hues.
+        Keep the original LAB samples for the displayed palette.
+        """
+        hsv = self.cv.cvtColor(
+            self.cv.cvtColor(self.np.uint8([colors]), self.cv.COLOR_LAB2BGR),
+            self.cv.COLOR_BGR2HSV,
+        )[0].astype(float)
+        angle = hsv[:, 0] * (2 * self.np.pi / 180)
+        radius = hsv[:, 1] * (80 / 255)
+        return self.np.column_stack((
+            self.np.cos(angle) * radius,
+            self.np.sin(angle) * radius,
+            colors[:, 0] * 0.15,
+        ))
+
+    def learn(self, samples: list) -> None:
+        """Learn two separated shirt colours without renaming established groups."""
+        if self.centers is not None:
+            return
+        self.samples.extend(c for _, c in samples if c is not None)
+        if len(self.samples) < MIN_TEAM_SAMPLES:
+            return
+        points = self.np.array(self.samples)
+        features = self.features(points)
+        first = features[0]
+        centers = self.np.array([
+            first,
+            features[self.np.argmax(self.np.linalg.norm(features - first, axis=1))],
+        ])
+        for _ in range(12):
+            assignment = self.np.argmin(
+                self.np.linalg.norm(features[:, None] - centers, axis=2),
+                axis=1,
+            )
+            if min((assignment == n).sum() for n in (0, 1)) < MIN_CLUSTER_SAMPLES:
+                return
+            centers = self.np.array([
+                self.np.median(features[assignment == n], axis=0) for n in (0, 1)
+            ])
+        spreads = [
+            self.np.median(
+                self.np.linalg.norm(features[assignment == n] - centers[n], axis=1)
+            )
+            for n in (0, 1)
+        ]
+        if self.np.linalg.norm(centers[0] - centers[1]) > max(35, 3 * max(spreads)):
+            self.centers = self.np.array([
+                self.np.median(points[assignment == n], axis=0) for n in (0, 1)
+            ])
+
+    def vote(self, color: NDArray[Any] | None) -> tuple[int, float] | None:
+        """Abstain on mixed crops and on colours outside the learned shirts."""
+        if self.centers is None or color is None:
+            return None
+        distances = self.np.linalg.norm(
+            self.features(self.centers) - self.features(self.np.array([color]))[0],
+            axis=1,
+        )
+        winner = int(self.np.argmin(distances))
+        margin = float(abs(distances[0] - distances[1]) / max(1, distances.sum()))
+        if margin < MIN_COLOR_MARGIN or distances[winner] > MAX_COLOR_DISTANCE:
+            return None
+        return winner, margin
+
+    def assign(self, obj: dict, color: NDArray[Any] | None, timestamp: float) -> None:
+        """Hold recent confirmed evidence, but suppress contradictory observations."""
+        identity = obj["track_id"]
+        self.seen[identity] = timestamp
+        obj.update(team="unknown", team_score=0.0, team_source="unknown")
+        obj.pop("team_age_seconds", None)
+        vote = self.vote(color)
+        votes = self.votes.setdefault(identity, deque(maxlen=20))
+        while votes and timestamp - votes[0][2] > TEAM_MEMORY_SECONDS:
+            votes.popleft()
+        prior = self.confirmed.get(identity)
+        if vote is not None:
+            winner, margin = vote
+            votes.append((winner, margin, timestamp))
+            share = sum(v[0] == winner for v in votes) / len(votes)
+            if len(votes) >= MIN_TEAM_VOTES and share >= MIN_VOTE_SHARE:
+                prior = (winner, share * margin, timestamp)
+                self.confirmed[identity] = prior
+            # A contradictory clear crop must not display the previous team.
+            if prior is None or prior[0] != winner:
+                self.confirmed.pop(identity, None)
+                return
+        if prior is None or timestamp - prior[2] > TEAM_HOLD_SECONDS:
+            return
+        age = max(0.0, timestamp - prior[2])
+        obj.update(
+            team=f"team_{'ab'[prior[0]]}",
+            team_score=round(prior[1] * (1 - age / (TEAM_HOLD_SECONDS * 2)), 3),
+            team_source="shirt" if age == 0 else "track_history",
+            team_age_seconds=round(age, 3),
+        )
+
+    def update(
+        self, image: NDArray[Any], objects: list[dict], timestamp: float = 0
+    ) -> None:
+        """Keep bounded shirt evidence through occlusion and brief detector gaps."""
+        expired = [
+            k for k, t in self.seen.items() if timestamp - t > TEAM_MEMORY_SECONDS
+        ]
+        for identity in expired:
+            self.seen.pop(identity, None)
+            self.votes.pop(identity, None)
+            self.confirmed.pop(identity, None)
         samples = [
             (o, self.observe(image, o["observed_bbox"]))
             for o in objects
             if o["label"] == "player" and not o.get("estimated")
         ]
-        if self.centers is None:
-            self.samples.extend(c for _, c in samples if c is not None)
-            if len(self.samples) >= MIN_TEAM_SAMPLES:
-                points = self.np.array(self.samples)
-                # Deterministic two-means with well-separated seeds.
-                first = points[0]
-                centers = self.np.array([
-                    first,
-                    points[self.np.argmax(self.np.linalg.norm(points - first, axis=1))],
-                ])
-                for _ in range(12):
-                    assignment = self.np.argmin(
-                        self.np.linalg.norm(points[:, None] - centers, axis=2), axis=1
-                    )
-                    if (
-                        min((assignment == n).sum() for n in (0, 1))
-                        < MIN_CLUSTER_SAMPLES
-                    ):
-                        break
-                    centers = self.np.array([
-                        self.np.median(points[assignment == n], axis=0) for n in (0, 1)
-                    ])
-                else:
-                    spreads = [
-                        self.np.median(
-                            self.np.linalg.norm(
-                                points[assignment == n] - centers[n], axis=1
-                            )
-                        )
-                        for n in (0, 1)
-                    ]
-                    if self.np.linalg.norm(centers[0] - centers[1]) > max(
-                        35, 3 * max(spreads)
-                    ):
-                        self.centers = centers
+        self.learn(samples)
         for obj, color in samples:
-            obj.update(team="unknown", team_score=0.0)
-            if self.centers is None or color is None:
-                continue
-            distance = self.np.linalg.norm(self.centers - color, axis=1)
-            winner = int(self.np.argmin(distance))
-            margin = float(abs(distance[0] - distance[1]) / max(1, distance.sum()))
-            if margin < MIN_COLOR_MARGIN or distance[winner] > MAX_COLOR_DISTANCE:
-                continue
-            votes = self.votes.setdefault(obj["track_id"], deque(maxlen=20))
-            votes.append(winner)
-            score = sum(v == winner for v in votes) / len(votes)
-            if len(votes) >= MIN_TEAM_VOTES and score >= MIN_VOTE_SHARE:
-                obj.update(
-                    team=f"team_{'ab'[winner]}", team_score=round(score * margin, 3)
-                )
-        current_ids = {o.get("track_id") for o in objects}
-        self.votes = {k: v for k, v in self.votes.items() if k in current_ids}
+            self.assign(obj, color, timestamp)
 
     def colors(self) -> list[list[int]] | None:
         """Expose the learned palette for the legend without naming actual clubs."""
