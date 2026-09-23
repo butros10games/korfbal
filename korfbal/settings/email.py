@@ -20,3 +20,7 @@ MAILERS = {
         },
     },
 }
+
+# Django's implicit sender is webmaster@localhost, which is unsuitable for
+# production mail sent through the configured SMTP account.
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", env("EMAIL_USER", ""))
