@@ -8,11 +8,13 @@ from django.utils import timezone
 
 from apps.video_analysis.composition import (
     queue_training,
+    run_clip,
     run_detector,
     sync_workspace_files,
     worker_store,
 )
 from apps.video_analysis.engine import vision
+from apps.video_analysis.engine.clips import receipt
 from apps.video_analysis.engine.coverage import dataset_report
 from apps.video_analysis.engine.handoff import parent_checkpoint
 from apps.video_analysis.engine.luna import analyze_frame
@@ -25,21 +27,29 @@ from apps.video_analysis.models import AnalysisJob, Workspace
 def execute(job_id: str) -> None:
     """Execute a persisted request under the shared job system's exclusive lease."""
     job = AnalysisJob.objects.select_related("workspace", "requested_by").get(pk=job_id)
-    if job.status in {"completed", "failed"}:
+    if job.status in {"completed", "failed", "cancelled", "interrupted"}:
+        return
+    if not AnalysisJob.objects.filter(
+        pk=job.pk, status__in=["queued", "running"]
+    ).update(status="running"):
         return
     job.status = "running"
-    job.save(update_fields=["status"])
-    store = worker_store(job.workspace, job.requested_by)
+    store = worker_store(job.workspace, job.requested_by, hydrate=job.kind != "clip")
     try:
         perform(job, store)
-        if job.kind != "train":
+        if job.kind not in {"train", "clip"}:
             store.sync_artifacts()
         job.status, job.message = (
             "completed",
             "GPU training queued. Follow the Cloud GPU run for training and cleanup."
             if job.kind == "train"
+            else "Clip results are available in Clip runs."
+            if job.kind == "clip"
             else "Ready. Reload the review queue or training inventory.",
         )
+        if job.kind == "clip":
+            result = receipt(store, str(job.pk))
+            job.status, job.message = result["status"], result["message"]
     except Exception:
         logging.getLogger(__name__).exception("Video analysis job %s failed", job.pk)
         job.status, job.message = (
@@ -78,17 +88,28 @@ def perform(job: AnalysisJob, store: Store) -> None:
             parent_checkpoint(store, payload["parent_run"])
         queue_training(store, str(job.pk), payload)
     elif job.kind == "propose":
-        selected = payload.get("model", "pretrained")
-        weights = "yolo26n.pt"
-        if selected != "pretrained":
-            root = vision.artifact(store, "runs", selected)
-            record = json.loads((root / "run.json").read_text())
-            if record["kind"] != "train" or record["status"] != "completed":
-                raise ValueError("Select a completed training run")
-            weights = str(root / "fit/weights/best.pt")
-        run_detector(store, payload["match_id"], weights)
+        run_detector(store, payload["match_id"], proposal_weights(store, payload))
+    elif job.kind == "clip":
+        run_clip(store, str(job.pk), payload)
     else:
         raise ValueError("Unknown analysis job")
+
+
+def proposal_weights(store: Store, payload: dict) -> str:
+    """Resolve a completed checkpoint for the existing frame-proposal workflow.
+
+    Raises:
+        ValueError: The selected model is not a completed training run.
+
+    """
+    selected = payload.get("model", "pretrained")
+    if selected == "pretrained":
+        return "yolo26n.pt"
+    root = vision.artifact(store, "runs", selected)
+    record = json.loads((root / "run.json").read_text())
+    if record["kind"] != "train" or record["status"] != "completed":
+        raise ValueError("Select a completed training run")
+    return str(root / "fit/weights/best.pt")
 
 
 @shared_task

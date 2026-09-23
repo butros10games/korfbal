@@ -23,6 +23,7 @@ from django.http import (
 from django.middleware.csrf import get_token
 from django.utils.crypto import constant_time_compare
 
+from apps.video_analysis.api.clip_views import clip_endpoint
 from apps.video_analysis.api.streaming import async_chunks
 from apps.video_analysis.composition import (
     accepted_policy,
@@ -80,7 +81,7 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
                 response = JsonResponse(
                     {
                         "error": str(error)
-                        if action in {"curation", "vision/freeze"}
+                        if action in {"curation", "vision/freeze", "clips"}
                         and isinstance(error, ValueError)
                         else "Invalid review request."
                     },
@@ -104,6 +105,8 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
     if request.method == "GET" and action == "access":
         return JsonResponse({"allowed": True})
     store, workspace = review_store(cast(User, request.user), hydrate=False)
+    if action in {"clips", "clips/result", "clips/cancel"}:
+        return clip_endpoint(request, action, store, workspace)
     if store.files and action in {
         "vision",
         "monitor",

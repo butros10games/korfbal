@@ -13,9 +13,13 @@ from apps.kwt_common.models import BackgroundJob
 
 
 MAX_ATTEMPTS = 5
-# Longer than the hard task limit, including worker shutdown margin.
-RECOVERY_SECONDS = 2100
-QUEUE_LIMITS = {"celery": 120, "projections": 300, "media": 2000}
+QUEUE_LIMITS = {
+    "celery": 120,
+    "projections": 300,
+    "media": 2000,
+    # One hour of clip inference plus input staging and terminal publication.
+    "vision": 3900,
+}
 
 
 @contextmanager

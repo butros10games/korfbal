@@ -141,6 +141,8 @@ def environment() -> dict[str, Any]:
         "numpy",
         "opencv-python",
         "opencv-python-headless",
+        "onnx",
+        "onnxruntime",
     ):
         try:
             versions[name] = importlib.metadata.version(name)

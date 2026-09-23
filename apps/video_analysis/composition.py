@@ -22,6 +22,7 @@ __all__ = [
     "launch_status",
     "queue_training",
     "review_store",
+    "run_clip",
     "run_detector",
     "sync_workspace_files",
     "worker_store",
@@ -62,3 +63,8 @@ def sync_workspace_files(workspace: Workspace) -> None:
 def run_detector(store: Store, match_id: str, weights: str) -> None:
     """Wire the isolated CPU inference capability."""
     detector.propose(store, match_id, weights)
+
+
+def run_clip(store: Store, run_id: str, payload: dict) -> None:
+    """Wire a bounded full-clip run to the isolated CPU environment."""
+    detector.clip(store, run_id, payload)

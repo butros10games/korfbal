@@ -94,9 +94,10 @@ def test_future_work_stays_in_database_until_due(handler: Mock) -> None:
     handler.assert_not_called()
 
 
-def test_broker_failure_does_not_lose_intent(handler: Mock) -> None:
+@pytest.mark.parametrize("queue", ["media", "vision"])
+def test_broker_failure_does_not_lose_intent(handler: Mock, queue: str) -> None:
     """A failed publish remains due and succeeds on the next dispatcher pass."""
-    job = enqueue(TASK, "broker", queue="media")
+    job = enqueue(TASK, "broker", queue=queue)
     with (
         patch(
             "apps.kwt_common.tasks.execute_job.apply_async", side_effect=ConnectionError
@@ -108,10 +109,30 @@ def test_broker_failure_does_not_lose_intent(handler: Mock) -> None:
     assert job.due_at <= timezone.now()
     with patch("apps.kwt_common.tasks.execute_job.apply_async") as publish:
         assert dispatch_due_jobs.run() == 1
-        assert publish.call_args.kwargs["queue"] == "media"
+        assert publish.call_args.kwargs["queue"] == queue
         assert "eta" not in publish.call_args.kwargs
     execute_job.run(job.pk)
     handler.assert_called_once()
+
+
+def test_vision_worker_and_recovery_outlast_clip_deadline(handler: Mock) -> None:
+    """Long clips must publish their receipt before the worker or recovery fires."""
+    job = enqueue(TASK, "long-clip", queue="vision")
+    with patch("apps.kwt_common.tasks.execute_job.apply_async") as publish:
+        assert dispatch_due_jobs.run() == 1
+        limits = publish.call_args.kwargs
+    assert limits["soft_time_limit"] > 3600 + 60
+    assert limits["time_limit"] > limits["soft_time_limit"]
+
+    def observe_lease() -> None:
+        job.refresh_from_db()
+        assert job.due_at > timezone.now() + timedelta(seconds=limits["time_limit"])
+
+    handler.side_effect = observe_lease
+    execute_job.run(job.pk)
+    handler.assert_called_once()
+    job.refresh_from_db()
+    assert job.due_at is None
 
 
 def test_failures_back_off_and_stop_without_storing_sensitive_messages(

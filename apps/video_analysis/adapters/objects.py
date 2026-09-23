@@ -232,7 +232,9 @@ class WorkspaceObjects:
             workspace=self.workspace, relative_path__startswith="vision/"
         )
         if metadata_only:
-            records = records.filter(relative_path__endswith=".json")
+            records = records.filter(relative_path__endswith=".json").exclude(
+                relative_path__startswith="vision/clips/"
+            )
         for record in records:
             if not self.path(record.relative_path).exists():
                 self.cache_media(record.relative_path)
