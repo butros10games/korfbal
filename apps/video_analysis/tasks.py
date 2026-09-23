@@ -1,5 +1,6 @@
 """Dedicated background entry point; web processes never load detector runtimes."""
 
+from contextlib import suppress
 import json
 import logging
 
@@ -14,6 +15,7 @@ from apps.video_analysis.composition import (
     worker_store,
 )
 from apps.video_analysis.engine import vision
+from apps.video_analysis.engine.clip_models import failure_message
 from apps.video_analysis.engine.clips import receipt
 from apps.video_analysis.engine.coverage import dataset_report
 from apps.video_analysis.engine.handoff import parent_checkpoint
@@ -56,6 +58,9 @@ def execute(job_id: str) -> None:
             "failed",
             "Analysis failed. An operator can inspect the worker logs.",
         )
+        if job.kind == "clip":
+            with suppress(OSError, ValueError):
+                job.message = failure_message(receipt(store, str(job.pk)), job.message)
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "message", "finished_at"])
 

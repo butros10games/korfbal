@@ -274,6 +274,7 @@ def train(
         store,
         "train",
         snapshot=snapshot,
+        classes=manifest["classes"],
         dataset_sha256=digest(dataset / "manifest.json"),
         coverage=coverage,
         config={

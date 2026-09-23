@@ -3,6 +3,7 @@
 from http import HTTPStatus
 import json
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 import uuid
 
@@ -13,6 +14,7 @@ import pytest
 from apps.video_analysis.adapters.detector import clip
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS
+from apps.video_analysis.engine.clip_models import MODEL_ERROR
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.models import AnalysisJob, Recording, Workspace
 from apps.video_analysis.tasks import execute
@@ -35,7 +37,11 @@ def ready(store: DatabaseStore) -> dict:
     weights.write_bytes(b"synthetic-checkpoint")
     atomic_json(
         store.root / "vision/runs/model/run.json",
-        {"kind": "train", "status": "completed"},
+        {
+            "kind": "train",
+            "status": "completed",
+            "classes": ["ball", "player", "basket", "referee"],
+        },
     )
     return {
         "request_id": str(uuid.uuid4()),
@@ -110,6 +116,88 @@ def test_launch_mfa_csrf_limits_idempotency_and_no_frame_read(
             client.get("/video-analysis/clips").json()["runs"][0]["status"] == "queued"
         )
     assert AnalysisJob.objects.count() == 1
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize(
+    "classes",
+    [None, ["player", "basket", "referee"], ["ball", "player", "basket", "referee"]],
+)
+def test_clip_model_taxonomy_is_checked_before_queueing(
+    imported: tuple[User, DatabaseStore, Store], legacy: bool, classes: list[str] | None
+) -> None:
+    """Reject the old pilot without loading weights; accept an exact frozen taxonomy."""
+    owner, store, _ = imported
+    payload = ready(store)
+    record = {"kind": "train", "status": "completed", "snapshot": "pilot"}
+    if legacy:
+        atomic_json(
+            store.root / "vision/snapshots/pilot/manifest.json", {"classes": classes}
+        )
+    else:
+        record["classes"] = classes
+    atomic_json(store.root / "vision/runs/model/run.json", record)
+    client = verified(owner)
+    csrf = client.get("/video-analysis/clips").json()["csrf"]
+    with patch("apps.video_analysis.services.jobs.enqueue") as enqueue:
+        response = client.post(
+            "/video-analysis/clips",
+            payload,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+    supported = classes is not None and "ball" in classes
+    assert response.status_code == (
+        HTTPStatus.ACCEPTED if supported else HTTPStatus.BAD_REQUEST
+    )
+    assert enqueue.called == supported
+    assert AnalysisJob.objects.exists() == supported
+    if not supported:
+        assert response.json()["error"] == MODEL_ERROR
+
+
+@pytest.mark.parametrize("code", ["incompatible_model", "private-path-or-unknown"])
+def test_clip_failure_survives_subprocess_task_and_listing(
+    imported: tuple[User, DatabaseStore, Store], code: str
+) -> None:
+    """Propagate only known public reasons and retain the model in saved recipes."""
+    owner, store, _ = imported
+    payload = ready(store)
+    job = AnalysisJob.objects.create(
+        workspace_id=store.workspace_id,
+        requested_by=owner,
+        kind="clip",
+        payload=payload,
+    )
+    root = store.root / "vision/clips" / str(job.pk)
+
+    def fail(command: list[str], **_kwargs: object) -> None:
+        atomic_json(
+            root / "run.json",
+            {
+                "status": "failed",
+                "chunks": [],
+                "failure_code": code,
+                "message": "/private/worker/secret",
+                "recipe": {"match_id": "demo", "options": payload["options"]},
+            },
+        )
+        raise subprocess.CalledProcessError(1, command)
+
+    with (
+        patch("apps.video_analysis.tasks.worker_store", return_value=store),
+        patch("apps.video_analysis.tasks.run_clip", side_effect=clip),
+        patch("apps.video_analysis.adapters.detector.subprocess.run", side_effect=fail),
+    ):
+        execute(str(job.pk))
+    job.refresh_from_db()
+    assert job.status == "failed"
+    assert "/private/" not in job.message
+    if code == "incompatible_model":
+        assert job.message == MODEL_ERROR
+    row = verified(owner).get("/video-analysis/clips").json()["runs"][0]
+    assert row["message"] == job.message
+    assert row["recipe"]["model"] == "model"
 
 
 def test_result_scoping_allowlist_and_queued_cancellation(

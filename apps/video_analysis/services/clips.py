@@ -9,6 +9,7 @@ import uuid
 from django.contrib.auth.models import User
 
 from apps.video_analysis.engine.clip_contract import ClipOptions
+from apps.video_analysis.engine.clip_models import MODEL_ERROR, supports_clips
 from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import artifact
@@ -48,6 +49,15 @@ def start(
     model = read_file(store, workspace, root / "run.json")
     if model.get("kind") != "train" or model.get("status") != "completed":
         raise ValueError("Choose a completed Korfbal training run")
+    classes = model.get("classes")
+    if classes is None and model.get("snapshot"):
+        with suppress(FileNotFoundError):
+            snapshot = artifact(store, "snapshots", model["snapshot"])
+            classes = read_file(store, workspace, snapshot / "manifest.json").get(
+                "classes"
+            )
+    if not supports_clips(classes):
+        raise ValueError(MODEL_ERROR)
     recipe = {
         "match_id": recording.source_id,
         "model": payload["model"],
@@ -74,6 +84,9 @@ def listing(store: Store, workspace: Workspace) -> dict:
             row.update(
                 read_file(store, workspace, directory(store, str(job.pk)) / "run.json")
             )
+        # Worker receipts bind the checkpoint hash; the durable recipe also names
+        # the selected training run, needed when reopening or retrying a clip.
+        row["recipe"] = {**job.payload, **row["recipe"]}
         # A hard-killed subprocess can leave a running receipt; the durable job wins.
         if job.status == "failed":
             row.update(status="failed", message=job.message)

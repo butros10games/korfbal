@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
 from .clip_inference import CPU_THREADS, clip_detector
+from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_signals import Camera, Teams, modules
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
@@ -252,8 +253,9 @@ class ClipRun:
             if expected and self.record["weights_sha256"] != expected:
                 raise ValueError("Checkpoint changed while the clip was starting")
             self.record["environment"] = environment()
-            if not {"player", "ball", "basket", "referee"} <= set(model.names.values()):
-                raise ValueError("Choose a trained four-class Korfbal detector")
+            if not supports_clips(list(model.names.values())):
+                self.record["failure_code"] = "incompatible_model"
+                raise ValueError(MODEL_ERROR)
             self.prepare_court(video, model)
             if self.stopped():
                 return
@@ -290,7 +292,10 @@ class ClipRun:
         except Exception as error:
             self.record.update(
                 status="failed",
-                message=f"Clip failed ({type(error).__name__}); partial results kept",
+                message=failure_message(
+                    self.record,
+                    f"Clip failed ({type(error).__name__}); partial results kept",
+                ),
             )
             raise
         finally:

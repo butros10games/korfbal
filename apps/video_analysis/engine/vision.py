@@ -19,6 +19,7 @@ from typing import Any
 import uuid
 
 from .boxes import iou
+from .clip_models import supports_clips
 from .curation import ready
 from .store import (
     LABELS,
@@ -137,6 +138,14 @@ def inventory(store: Store) -> dict[str, Any]:
     ]
     runs.sort(key=itemgetter("created_at"))
     snapshots.sort(key=itemgetter("created_at"))
+    snapshot_classes = {s["id"]: s.get("classes") for s in snapshots}
+    for run in runs:
+        classes = run.get("classes", snapshot_classes.get(run.get("snapshot")))
+        run["clip_compatible"] = (
+            run.get("kind") == "train"
+            and run.get("status") == "completed"
+            and supports_clips(classes)
+        )
     return {
         "drafts": {"ready": len(review_queue(store, "latest", data=data))},
         "matches": matches,
@@ -161,6 +170,7 @@ def inventory(store: Store) -> dict[str, Any]:
                     "config",
                     "checkpoint_sha256",
                     "weights_sha256",
+                    "clip_compatible",
                 }
             }
             for r in runs

@@ -10,6 +10,7 @@ import tempfile
 from django.conf import settings
 
 from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS, ClipOptions
+from apps.video_analysis.engine.clip_models import failure_message
 from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import artifact
@@ -98,7 +99,9 @@ def clip(store: Store, run_id: str, payload: dict) -> None:
             record.update(
                 status="failed",
                 finished_at=datetime.now(UTC).isoformat(),
-                message="Clip worker stopped; any published frames are retained",
+                message=failure_message(
+                    record, "Clip worker stopped; any published frames are retained"
+                ),
             )
             atomic_json(marker, record)
             raise
