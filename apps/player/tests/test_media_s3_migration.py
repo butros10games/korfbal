@@ -46,3 +46,25 @@ def test_copy_media_refuses_to_replace_different_target() -> None:
     with pytest.raises(CommandError, match="Target differs"):
         copy_media(source, target, "old", "new")
     target.upload_fileobj.assert_not_called()
+
+
+def test_copy_media_skips_source_removed_after_listing() -> None:
+    """Active media deletion must not abort the rest of the migration."""
+    source, target = _clients()
+    source.get_paginator.return_value.paginate.return_value = [
+        {
+            "Contents": [
+                {"Key": "profile_pictures/deleted.png", "Size": 3},
+                {"Key": "profile_pictures/example.png", "Size": 3},
+            ]
+        }
+    ]
+
+    def read_source(**kwargs: str) -> dict[str, io.BytesIO]:
+        if kwargs["Key"].endswith("deleted.png"):
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": io.BytesIO(b"new")}
+
+    source.get_object.side_effect = read_source
+    assert copy_media(source, target, "old", "new") == (1, 3)
+    target.upload_fileobj.assert_called_once()

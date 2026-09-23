@@ -47,11 +47,11 @@ def _copy_one(
     source_bucket: str,
     target_bucket: str,
     item: dict[str, Any],
-) -> int:
+) -> int | None:
     """Copy or verify one key without replacing different target bytes.
 
     Returns:
-        Verified object size in bytes.
+        Verified object size in bytes, or ``None`` if the source was removed.
 
     Raises:
         ClientError: S3 refuses a read or write.
@@ -60,7 +60,13 @@ def _copy_one(
     """
     key = item["Key"]
     with SpooledTemporaryFile(max_size=16 * 1024 * 1024) as temporary:
-        response = source.get_object(Bucket=source_bucket, Key=key)
+        try:
+            response = source.get_object(Bucket=source_bucket, Key=key)
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+                # A live upload may be removed after the listing was fetched.
+                return None
+            raise
         with response["Body"] as body:
             checksum, size = _digest(body, temporary)
         if size != item["Size"]:
@@ -103,7 +109,7 @@ def copy_media(
         raise ValueError("workers must be between 1 and 16")
     count = total_bytes = 0
     pages = source.get_paginator("list_objects_v2").paginate(Bucket=source_bucket)
-    pending: deque[Future[int]] = deque()
+    pending: deque[Future[int | None]] = deque()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         for page in pages:
             for item in page.get("Contents", []):
@@ -113,11 +119,15 @@ def copy_media(
                     )
                 )
                 if len(pending) >= workers * 4:
-                    total_bytes += pending.popleft().result()
-                    count += 1
+                    size = pending.popleft().result()
+                    if size is not None:
+                        total_bytes += size
+                        count += 1
         while pending:
-            total_bytes += pending.popleft().result()
-            count += 1
+            size = pending.popleft().result()
+            if size is not None:
+                total_bytes += size
+                count += 1
     return count, total_bytes
 
 
