@@ -17,6 +17,7 @@ from apps.game_tracker.services.match_events import build_match_event_history
 from apps.game_tracker.services.match_timeline_payload import (
     build_match_events,
     build_match_shots,
+    build_match_timeline_payloads,
     load_match_timeline_context,
 )
 
@@ -227,6 +228,44 @@ def read_match_shots(
                 current_identity=current_identity,
             ),
         )
+
+
+def read_recent_match_actions(
+    *, match_data_id: object, limit: int
+) -> dict[str, object]:
+    """Read bounded recent actions from one consistent match snapshot."""
+    with consistent_timeline_read():
+        match_data = MatchData.objects.get(pk=match_data_id)
+        if match_data.status == "upcoming":
+            events: list[TimelineItem] = []
+            shots: list[TimelineItem] = []
+        else:
+            events, shots = build_match_timeline_payloads(match_data)
+        return {
+            "live_revision": match_data.live_revision,
+            **recent_tracker_actions(events, shots, limit=limit),
+        }
+
+
+def recent_tracker_actions(
+    events: list[TimelineItem], shots: list[TimelineItem], *, limit: int
+) -> dict[str, list[TimelineItem]]:
+    """Return only the actions that can appear in the tracker preview."""
+    visible = [("event", item) for item in events if item.get("type") != "goal"]
+    visible.extend(("shot", item) for item in shots)
+
+    def sort_time(pair: tuple[str, TimelineItem]) -> str:
+        item = pair[1]
+        if item.get("type") == "intermission":
+            return str(item.get("end_time") or item.get("start_time") or "")
+        return str(item.get("time_iso") or "")
+
+    visible.sort(key=sort_time, reverse=True)
+    recent = visible[:limit]
+    return {
+        "events": [item for kind, item in recent if kind == "event"],
+        "shots": [item for kind, item in recent if kind == "shot"],
+    }
 
 
 def read_match_event_history(*, match_data_id: object) -> MatchEventHistorySnapshot:

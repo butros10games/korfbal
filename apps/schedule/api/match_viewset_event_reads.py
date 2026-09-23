@@ -17,6 +17,8 @@ from apps.game_tracker.services.timeline_reads import (
     read_match_event_history,
     read_match_events,
     read_match_shots,
+    read_recent_match_actions,
+    recent_tracker_actions,
 )
 from apps.schedule.models import Match
 
@@ -48,6 +50,40 @@ def _parse_since_revision(request: Request) -> int | None:
 
 class MatchEventReadActionsMixin:
     """Provide the match event reads actions."""
+
+    @action(detail=True, methods=("GET",), url_path="recent-actions")
+    def recent_actions(
+        self: MatchViewSetContext,
+        request: Request,
+        *args: object,
+        **kwargs: object,
+    ) -> Response:
+        """Return only the actions needed by the tracker preview."""
+        match: Match = self.get_object()
+        match_data = self._match_data(match)
+        if match_data is None:
+            return Response({"live_revision": 0, "events": [], "shots": []})
+
+        limit = 14
+        events = read_public_match(match_id=str(match.pk), resource="events")
+        shots = read_public_match(match_id=str(match.pk), resource="shots")
+        if events is not None and shots is not None:
+            cached_revision = events.get("live_revision")
+            if (
+                cached_revision == shots.get("live_revision")
+                and cached_revision == match_data.live_revision
+                and isinstance(events.get("events"), list)
+                and isinstance(shots.get("shots"), list)
+            ):
+                return Response({
+                    "live_revision": events["live_revision"],
+                    **recent_tracker_actions(
+                        events["events"], shots["shots"], limit=limit
+                    ),
+                })
+        return Response(
+            read_recent_match_actions(match_data_id=match_data.pk, limit=limit)
+        )
 
     @action(detail=True, methods=("GET",), url_path="events")
     def events(

@@ -43,6 +43,19 @@ PUBLIC_STATUSES = {
     Tournament.Status.LIVE,
     Tournament.Status.FINISHED,
 }
+MAX_REVISION_DIGITS = 20
+
+
+def _unchanged_snapshot(request: Request, tournament: Tournament) -> bool:
+    """Skip the complete schedule payload when the revision is already known."""
+    raw_revision = request.query_params.get("since_revision")
+    return (
+        raw_revision is not None
+        and len(raw_revision) <= MAX_REVISION_DIGITS
+        and raw_revision.isascii()
+        and raw_revision.isdecimal()
+        and int(raw_revision) == tournament.live_revision
+    )
 
 
 def _public_access_allowed(request: Request, tournament: Tournament) -> bool:
@@ -153,6 +166,11 @@ class TournamentPublicView(APIView):
         )
         if not _public_access_allowed(request, tournament):
             raise PermissionDenied("This tournament display is not public.")
+        if _unchanged_snapshot(request, tournament):
+            return Response({
+                "unchanged": True,
+                "live_revision": tournament.live_revision,
+            })
         return Response(build_tournament_snapshot(tournament))
 
 
@@ -178,12 +196,19 @@ class TournamentSnapshotView(APIView):
         tournament = Tournament.objects.select_related("display_config").get(
             pk=tournament.pk
         )
-        payload = build_tournament_snapshot(tournament)
         can_manage = can_manage_tournament(request.user, tournament)
-        payload["capabilities"] = {
+        capabilities = {
             "can_manage": can_manage,
             "display_token": str(tournament.display_token) if can_manage else None,
         }
+        if _unchanged_snapshot(request, tournament):
+            return Response({
+                "unchanged": True,
+                "live_revision": tournament.live_revision,
+                "capabilities": capabilities,
+            })
+        payload = build_tournament_snapshot(tournament)
+        payload["capabilities"] = capabilities
         return Response(payload)
 
 

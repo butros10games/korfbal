@@ -86,6 +86,48 @@ def test_tournament_patch_publishes_one_revision(
     )
 
 
+def test_snapshot_poll_skips_unchanged_payload_after_authorization(
+    client: Client,
+) -> None:
+    """Poll receipts stay small while public and manager access is rechecked."""
+    owner = get_user_model().objects.create_user(username="snapshot-poll-owner")
+    tournament = Tournament.objects.create(
+        name="Snapshot polling",
+        slug="snapshot-polling",
+        owner=owner,
+        starts_at=timezone.now(),
+        status=Tournament.Status.PUBLISHED,
+        visibility=Tournament.Visibility.UNLISTED,
+    )
+    revision = tournament.live_revision
+    public_path = f"/api/tournaments/public/{tournament.slug}/"
+    manage_path = f"/api/tournaments/{tournament.id_uuid}/snapshot/"
+
+    denied = client.get(public_path, {"since_revision": revision})
+    assert denied.status_code == HTTPStatus.FORBIDDEN
+
+    client.force_login(owner)
+    with patch(
+        "apps.tournament.api.views.tournaments.build_tournament_snapshot"
+    ) as build:
+        public = client.get(public_path, {"since_revision": revision})
+        managed = client.get(manage_path, {"since_revision": revision})
+    build.assert_not_called()
+    assert public.json() == {"unchanged": True, "live_revision": revision}
+    assert managed.json() == {
+        "unchanged": True,
+        "live_revision": revision,
+        "capabilities": {
+            "can_manage": True,
+            "display_token": str(tournament.display_token),
+        },
+    }
+
+    changed = client.get(public_path, {"since_revision": revision + 1})
+    assert changed.status_code == HTTPStatus.OK
+    assert changed.json()["tournament"]["id_uuid"] == str(tournament.pk)
+
+
 def _create_ready_round() -> tuple[
     object,
     Tournament,

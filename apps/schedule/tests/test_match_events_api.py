@@ -20,12 +20,56 @@ from apps.game_tracker.models import (
     PlayerGroup,
     Shot,
 )
+from apps.game_tracker.services.timeline_reads import recent_tracker_actions
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
 
 
 TIMELINE_IDENTITY_VERSION = 3
 pytestmark = pytest.mark.django_db
+
+
+def test_recent_tracker_actions_caps_the_combined_visible_list() -> None:
+    """Keep the wire preview within the visible row limit across resources."""
+    preview_limit = 14
+    events = [
+        {"type": "pause", "time_iso": f"2026-09-01T12:{minute:02d}:00Z"}
+        for minute in range(20)
+    ]
+    events.append({"type": "goal", "time_iso": "2026-09-01T13:00:00Z"})
+    shots = [
+        {"type": "shot", "time_iso": f"2026-09-01T12:{minute:02d}:30Z"}
+        for minute in range(20)
+    ]
+
+    preview = recent_tracker_actions(events, shots, limit=preview_limit)
+
+    assert len(preview["events"]) + len(preview["shots"]) == preview_limit
+    assert all(item["type"] != "goal" for item in preview["events"])
+    assert preview["events"][0]["time_iso"] == "2026-09-01T12:19:00Z"
+    assert preview["shots"][0]["time_iso"] == "2026-09-01T12:19:30Z"
+
+
+@pytest.mark.parametrize("event_kind", ["pause", "timeout"])
+@pytest.mark.parametrize("ended", [False, True])
+def test_recent_actions_keep_latest_intermission(event_kind: str, ended: bool) -> None:
+    """Use the same intermission timestamp as the preview before limiting rows."""
+    shots = [
+        {"type": "shot", "time_iso": f"2026-09-01T12:{minute:02d}:00Z"}
+        for minute in range(14)
+    ]
+    intermission = {
+        "type": "intermission",
+        "event_kind": event_kind,
+        "start_time": "2026-09-01T11:00:00Z" if ended else "2026-09-01T13:00:00Z",
+        "end_time": "2026-09-01T13:00:00Z" if ended else None,
+    }
+
+    preview = recent_tracker_actions([intermission], shots, limit=14)
+
+    assert preview["events"] == [intermission]
+    assert len(preview["shots"]) == len(shots) - 1
+    assert shots[0] not in preview["shots"]
 
 
 def test_match_events_halftime_substitution_is_serialized_as_rust(
@@ -254,6 +298,49 @@ def test_match_shots_includes_missed_shots_without_time_or_part(
     assert item["time"] == "?"
     assert "match_part_id" not in item
     assert "time_iso" not in item
+
+
+def test_recent_actions_bounds_the_tracker_preview(client: Client) -> None:
+    """The tracker preview transfers a bounded subset of the full timeline."""
+    total_shots = 20
+    preview_limit = 14
+    today = timezone.now().date()
+    season = Season.objects.create(name="Recent", start_date=today, end_date=today)
+    home_team = Team.objects.create(
+        name="Recent Home", club=Club.objects.create(name="Recent HC")
+    )
+    away_team = Team.objects.create(
+        name="Recent Away", club=Club.objects.create(name="Recent AC")
+    )
+    match = Match.objects.create(
+        home_team=home_team,
+        away_team=away_team,
+        season=season,
+        start_time=timezone.now(),
+    )
+    match_data = MatchData.objects.get(match_link=match)
+    match_data.status = "finished"
+    match_data.save(update_fields=["status"])
+    player = get_user_model().objects.create_user(username="recent-shooter").player
+    for _ in range(total_shots):
+        Shot.objects.create(
+            player=player,
+            match_data=match_data,
+            team=home_team,
+            scored=False,
+        )
+
+    full = client.get(f"/api/matches/{match.id_uuid}/shots/")
+    recent = client.get(f"/api/matches/{match.id_uuid}/recent-actions/")
+
+    assert full.status_code == recent.status_code == HTTPStatus.OK
+    assert len(full.json()["shots"]) == total_shots
+    assert len(recent.json()["shots"]) == preview_limit
+    assert recent.json()["events"] == []
+    assert {shot["event_id"] for shot in recent.json()["shots"]}.issubset({
+        shot["event_id"] for shot in full.json()["shots"]
+    })
+    assert recent.json()["live_revision"] == full.json()["live_revision"]
 
 
 def test_match_event_and_shot_deltas_upsert_and_delete(client: Client) -> None:
