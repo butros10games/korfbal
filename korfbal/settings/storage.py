@@ -1,4 +1,4 @@
-"""Static/media storage configuration (MinIO/S3)."""
+"""Static and private media storage configuration (S3 compatible)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,25 @@ AWS_MEDIA_CUSTOM_DOMAIN = f"media.{AWS_S3_CUSTOM_DOMAIN}"
 AWS_ACCESS_KEY_ID = env("MINIO_ACCESS_KEY", "minioadmin")
 AWS_SECRET_ACCESS_KEY = env("MINIO_SECRET_KEY", "minioadmin")
 AWS_STORAGE_BUCKET_NAME = env("STATIC_BUCKET", "static")
-AWS_MEDIA_BUCKET_NAME = env("MEDIA_BUCKET", "media")
+AWS_MEDIA_BUCKET_NAME = env("KORFBAL_MEDIA_S3_BUCKET", env("MEDIA_BUCKET", "media"))
+# Private media can move to a different S3 provider without moving public static
+# assets. Keep the MinIO values as defaults for existing installations.
+KORFBAL_MEDIA_S3_ENDPOINT_URL = env(
+    "KORFBAL_MEDIA_S3_ENDPOINT_URL", AWS_S3_ENDPOINT_URL
+)
+_separate_media_provider = KORFBAL_MEDIA_S3_ENDPOINT_URL != AWS_S3_ENDPOINT_URL
+KORFBAL_MEDIA_S3_ACCESS_KEY_ID = env(
+    "KORFBAL_MEDIA_S3_ACCESS_KEY_ID",
+    "" if _separate_media_provider else AWS_ACCESS_KEY_ID,
+    required=_separate_media_provider,
+)
+KORFBAL_MEDIA_S3_SECRET_ACCESS_KEY = env(
+    "KORFBAL_MEDIA_S3_SECRET_ACCESS_KEY",
+    "" if _separate_media_provider else AWS_SECRET_ACCESS_KEY,
+    required=_separate_media_provider,
+)
+KORFBAL_MEDIA_S3_REGION_NAME = env("KORFBAL_MEDIA_S3_REGION_NAME", "us-east-1")
+KORFBAL_MEDIA_S3_ADDRESSING_STYLE = env("KORFBAL_MEDIA_S3_ADDRESSING_STYLE", "path")
 AWS_QUERYSTRING_AUTH = env_bool("AWS_QUERYSTRING_AUTH", True)
 AWS_QUERYSTRING_EXPIRE = env_int("AWS_QUERYSTRING_EXPIRE", 3600)
 AWS_S3_CONFIG = {"retries": {"max_attempts": 5, "mode": "standard"}}
@@ -46,12 +64,21 @@ STORAGES = {
         "BACKEND": DEFAULT_STORAGE_BACKEND,
         "OPTIONS": {
             "bucket_name": AWS_MEDIA_BUCKET_NAME,
+            "endpoint_url": KORFBAL_MEDIA_S3_ENDPOINT_URL,
+            "access_key": KORFBAL_MEDIA_S3_ACCESS_KEY_ID,
+            "secret_key": KORFBAL_MEDIA_S3_SECRET_ACCESS_KEY,
+            "region_name": KORFBAL_MEDIA_S3_REGION_NAME,
+            "addressing_style": KORFBAL_MEDIA_S3_ADDRESSING_STYLE,
             # Personal data (profile pictures) should not be world-readable.
             "default_acl": "private",
             "file_overwrite": False,
             "querystring_auth": AWS_QUERYSTRING_AUTH,
             "querystring_expire": AWS_QUERYSTRING_EXPIRE,
-            "custom_domain": AWS_MEDIA_CUSTOM_DOMAIN,
+            "custom_domain": env(
+                "KORFBAL_MEDIA_S3_CUSTOM_DOMAIN",
+                "" if _separate_media_provider else AWS_MEDIA_CUSTOM_DOMAIN,
+            )
+            or None,
         },
     },
     "staticfiles": {

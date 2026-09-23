@@ -78,7 +78,9 @@ class Runpod:
 class S3Artifacts:
     """Private artifacts with expiring object-specific worker URLs."""
 
-    def __init__(self, bucket: str, endpoint: str | None = None) -> None:
+    def __init__(
+        self, bucket: str, endpoint: str | None = None, addressing_style: str = "path"
+    ) -> None:
         """Use the standard AWS credential chain on the controller only."""
         boto3 = importlib.import_module("boto3")
         config = importlib.import_module("botocore.config")
@@ -87,7 +89,7 @@ class S3Artifacts:
             endpoint_url=endpoint,
             config=config.Config(
                 signature_version="s3v4",
-                s3={"addressing_style": "path"},
+                s3={"addressing_style": addressing_style},
                 retries={"max_attempts": 2},
             ),
         )

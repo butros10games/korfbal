@@ -1,4 +1,4 @@
-"""Verify the MinIO media policy and optionally repair/probe it."""
+"""Verify the configured private media policy and optionally repair/probe it."""
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
@@ -9,7 +9,7 @@ class Command(BaseCommand):
     """Provide an explicit, repeatable media-privacy deployment check."""
 
     help = (
-        "Check the MinIO media bucket; --repair removes public grants, "
+        "Check the private media bucket; --repair removes public grants, "
         "--probe uses a synthetic object."
     )
 

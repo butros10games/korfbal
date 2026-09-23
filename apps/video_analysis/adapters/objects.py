@@ -1,4 +1,4 @@
-"""Private MinIO objects with immutable content keys and a verified local cache."""
+"""Private S3 objects with immutable content keys and a verified local cache."""
 
 from collections.abc import Iterator
 import hashlib
@@ -25,19 +25,31 @@ def workspace_root(workspace: Workspace) -> Path:
 
 
 def object_client() -> BaseClient:
-    """Reuse the deployment's private MinIO connection without exposing credentials."""
+    """Reuse the deployment's private media connection without exposing credentials."""
     return boto3.client(
         "s3",
-        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        endpoint_url=settings.KORFBAL_MEDIA_S3_ENDPOINT_URL,
+        aws_access_key_id=settings.KORFBAL_MEDIA_S3_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.KORFBAL_MEDIA_S3_SECRET_ACCESS_KEY,
+        region_name=settings.KORFBAL_MEDIA_S3_REGION_NAME,
         config=Config(
             signature_version="s3v4",
             connect_timeout=10,
             read_timeout=60,
             retries={"max_attempts": 2},
-            s3={"addressing_style": "path"},
+            s3={"addressing_style": settings.KORFBAL_MEDIA_S3_ADDRESSING_STYLE},
         ),
+    )
+
+
+def legacy_object_client() -> BaseClient:
+    """Read indexed MinIO objects until their verified Hetzner copy is recorded."""
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 
 
@@ -49,7 +61,19 @@ class WorkspaceObjects:
         self.workspace = workspace
         self.root = workspace_root(workspace)
         self.client = client if client is not None else object_client()
-        self.prefix = f"{workspace.owner_id}/{workspace.pk}"
+        self._legacy_client: BaseClient | None = None
+        self.prefix = f"video-analysis/{workspace.owner_id}/{workspace.pk}"
+
+    def read_client(self, record: StoredFile) -> BaseClient:
+        """Select the provider recorded for this object during migration."""
+        if record.bucket in {
+            settings.VIDEO_ANALYSIS_MEDIA_BUCKET,
+            settings.VIDEO_ANALYSIS_ARTIFACT_BUCKET,
+        }:
+            return self.client
+        if self._legacy_client is None:
+            self._legacy_client = legacy_object_client()
+        return self._legacy_client
 
     def path(self, relative: str) -> Path:
         """Validate canonical relative paths before any local or remote operation.
@@ -106,7 +130,12 @@ class WorkspaceObjects:
                 else settings.VIDEO_ANALYSIS_ARTIFACT_BUCKET
             )
             key = f"{self.prefix}/{checksum}/{relative}"
-            if not current or current.sha256 != checksum or current.bucket != bucket:
+            if (
+                not current
+                or current.sha256 != checksum
+                or current.bucket != bucket
+                or current.object_key != key
+            ):
                 handle.seek(0)
                 self.client.upload_fileobj(
                     handle,
@@ -174,7 +203,9 @@ class WorkspaceObjects:
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
             temporary = Path(handle.name)
             try:
-                self.client.download_fileobj(record.bucket, record.object_key, handle)
+                self.read_client(record).download_fileobj(
+                    record.bucket, record.object_key, handle
+                )
                 handle.flush()
                 with temporary.open("rb") as content:
                     checksum = hashlib.file_digest(content, "sha256").hexdigest()
@@ -193,14 +224,14 @@ class WorkspaceObjects:
         return self.record(relative).size
 
     def chunks(self, relative: str, start: int, end: int) -> Iterator[bytes]:
-        """Stream a requested range directly from private MinIO after MFA checks.
+        """Stream a requested range from the indexed private provider after MFA checks.
 
         Yields:
             Bounded response chunks.
 
         """
         record = self.record(relative)
-        response = self.client.get_object(
+        response = self.read_client(record).get_object(
             Bucket=record.bucket, Key=record.object_key, Range=f"bytes={start}-{end}"
         )
         with response["Body"] as body:

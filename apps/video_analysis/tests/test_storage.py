@@ -5,10 +5,11 @@ import io
 import json
 from pathlib import Path
 from typing import BinaryIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.core.management.base import CommandError
 import pytest
 from pytest_django.fixtures import Settings
 
@@ -77,11 +78,80 @@ def test_minio_primary_reads_and_verified_cache_recovery(
         assert store.media(relative).read_bytes() == expected
         record = StoredFile.objects.get(relative_path=relative)
         assert record.bucket == settings.VIDEO_ANALYSIS_MEDIA_BUCKET
-        assert record.object_key.startswith(f"{owner.pk}/{record.workspace.pk}/")
+        assert record.object_key.startswith(
+            f"video-analysis/{owner.pk}/{record.workspace.pk}/"
+        )
         assert record.sha256 in record.object_key
         for invalid in ("../outside", "/absolute"):
             with pytest.raises(ValueError, match="Invalid workspace"):
                 store.media(invalid)
+
+
+def test_migration_restores_legacy_object_when_local_cache_is_gone(
+    imported: tuple[User, DatabaseStore, Store], s3: MagicMock, settings: Settings
+) -> None:
+    """Existing indexed media must move even after its local cache was evicted."""
+    _, local, _ = imported
+    with patch("apps.video_analysis.adapters.objects.object_client", return_value=s3):
+        call_command("migrate_video_storage", verify=True)
+        relative = local.read()["matches"][0]["frames"][0]["image"]
+        record = StoredFile.objects.get(relative_path=relative)
+        path = local.media(relative)
+        original = path.read_bytes()
+        path.unlink()
+        record.bucket = "old-video-media"
+        record.object_key = "old-key"
+        record.save(update_fields=["bucket", "object_key"])
+        legacy = MagicMock()
+        legacy.download_fileobj.side_effect = lambda bucket, key, output: output.write(
+            original
+        )
+        legacy.get_object.return_value = {"Body": io.BytesIO(original[:4])}
+        with patch(
+            "apps.video_analysis.adapters.objects.legacy_object_client",
+            return_value=legacy,
+        ):
+            pending = WorkspaceObjects(record.workspace, s3)
+            assert b"".join(pending.chunks(relative, 0, 3)) == original[:4]
+            call_command("migrate_video_storage", verify=True)
+        record.refresh_from_db()
+        assert record.bucket == settings.VIDEO_ANALYSIS_MEDIA_BUCKET
+        assert record.object_key.startswith("video-analysis/")
+        assert path.read_bytes() == original
+        legacy.download_fileobj.assert_called_once_with(
+            "old-video-media", "old-key", ANY
+        )
+
+
+def test_migration_refuses_corrupt_legacy_bytes(
+    imported: tuple[User, DatabaseStore, Store], s3: MagicMock
+) -> None:
+    """An old object with the wrong hash must not become the new authoritative row."""
+    _, local, _ = imported
+    with patch("apps.video_analysis.adapters.objects.object_client", return_value=s3):
+        call_command("migrate_video_storage", verify=True)
+        relative = local.read()["matches"][0]["frames"][0]["image"]
+        record = StoredFile.objects.get(relative_path=relative)
+        path = local.media(relative)
+        path.unlink()
+        record.bucket = "old-video-media"
+        record.object_key = "old-key"
+        record.save(update_fields=["bucket", "object_key"])
+        legacy = MagicMock()
+        legacy.download_fileobj.side_effect = lambda bucket, key, output: output.write(
+            b"corrupt"
+        )
+        with (
+            patch(
+                "apps.video_analysis.adapters.objects.legacy_object_client",
+                return_value=legacy,
+            ),
+            pytest.raises(CommandError, match="checksum"),
+        ):
+            call_command("migrate_video_storage", verify=True)
+        record.refresh_from_db()
+        assert record.bucket == "old-video-media"
+        assert not path.exists()
 
 
 def test_corrupt_publication_rolls_back_review(

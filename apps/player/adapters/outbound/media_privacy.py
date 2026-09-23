@@ -90,20 +90,30 @@ def check_media_privacy(*, repair: bool, probe: bool) -> None:
         ValueError: Media and static files share a bucket.
 
     """
-    if settings.AWS_MEDIA_BUCKET_NAME == settings.AWS_STORAGE_BUCKET_NAME:
+    if (
+        settings.AWS_MEDIA_BUCKET_NAME == settings.AWS_STORAGE_BUCKET_NAME
+        and settings.KORFBAL_MEDIA_S3_ENDPOINT_URL == settings.AWS_S3_ENDPOINT_URL
+    ):
         raise ValueError("Media and static files must use separate buckets.")
     client = boto3.client(
         "s3",
-        endpoint_url=settings.AWS_S3_ENDPOINT_URL,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=10),
+        endpoint_url=settings.KORFBAL_MEDIA_S3_ENDPOINT_URL,
+        aws_access_key_id=settings.KORFBAL_MEDIA_S3_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.KORFBAL_MEDIA_S3_SECRET_ACCESS_KEY,
+        region_name=settings.KORFBAL_MEDIA_S3_REGION_NAME,
+        config=Config(
+            signature_version="s3v4",
+            connect_timeout=5,
+            read_timeout=10,
+            s3={"addressing_style": settings.KORFBAL_MEDIA_S3_ADDRESSING_STYLE},
+        ),
     )
     verify_media_policy(client, settings.AWS_MEDIA_BUCKET_NAME, repair=repair)
     if probe:
         anonymous = boto3.client(
             "s3",
-            endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+            endpoint_url=settings.KORFBAL_MEDIA_S3_ENDPOINT_URL,
+            region_name=settings.KORFBAL_MEDIA_S3_REGION_NAME,
             config=Config(
                 signature_version=UNSIGNED, connect_timeout=5, read_timeout=10
             ),

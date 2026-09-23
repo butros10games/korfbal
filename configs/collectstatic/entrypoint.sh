@@ -9,14 +9,12 @@ MINIO_URL="${MINIO_URL:-http://kwt-minio:9000}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 STATIC_BUCKET="${STATIC_BUCKET:-static}"
-MEDIA_BUCKET="${MEDIA_BUCKET:-media}"
 
 # Log configuration
 echo "Configuring MinIO client..."
 echo "MinIO URL: $MINIO_URL"
 echo "MinIO Alias: $MINIO_ALIAS"
 echo "Static Bucket: $STATIC_BUCKET"
-echo "Media Bucket: $MEDIA_BUCKET"
 
 # Check and create buckets if they don't exist
 python - <<'PY'
@@ -29,10 +27,7 @@ from botocore.exceptions import ClientError
 minio_url = os.environ.get("MINIO_URL", "http://kwt-minio:9000")
 minio_access_key = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
 minio_secret_key = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
-buckets = [
-    os.environ.get("STATIC_BUCKET", "static"),
-    os.environ.get("MEDIA_BUCKET", "media"),
-]
+buckets = [os.environ.get("STATIC_BUCKET", "static")]
 
 s3 = boto3.client(
     "s3",
