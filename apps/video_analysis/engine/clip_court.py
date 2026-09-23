@@ -10,13 +10,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
+from . import clip_geometry as geometry
 from .clip_positions import penalty_arcs
-from .clip_signals import modules, transform
+from .clip_signals import modules
 
 
 NEIGHBOURS = 2
-MAX_PROJECTED_EXTENT = 20
-MIN_PROJECTED_AREA = 0.01
 MIN_SPREAD_X = 100
 MIN_SPREAD_Y = 45
 MIN_MATCHES = 12
@@ -49,29 +48,8 @@ class CourtMap:
         self.reference_time = None
 
     def footprint(self, floor: NDArray[Any]) -> list:
-        """Project the physical rectangle into this image, rejecting the horizon.
-
-        Raises:
-            ValueError: Projection is degenerate or crosses the horizon.
-
-        """
-        inverse = self.np.linalg.inv(floor)
-        length, width = self.court["length"], self.court["width"]
-        points = [
-            transform(p, inverse)
-            for p in ((0, 0), (length, 0), (length, width), (0, width))
-        ]
-        if any(
-            p is None or max(abs(v) for v in p) > MAX_PROJECTED_EXTENT for p in points
-        ):
-            raise ValueError("Court projection crosses the image horizon")
-        contour = self.np.float32(points)
-        if (
-            not self.cv.isContourConvex(contour)
-            or abs(self.cv.contourArea(contour)) < MIN_PROJECTED_AREA
-        ):
-            raise ValueError("Unstable court projection")
-        return points
+        """Clip the visible court instead of requiring offscreen corners in front."""
+        return geometry.footprint(floor, self.court)
 
     def features(
         self, image: NDArray[Any], boxes: list, floor: NDArray[Any] | None = None
@@ -89,6 +67,7 @@ class CourtMap:
             a = (max(0, int(x * 640) - 4), max(0, int(y * 360) - 4))
             b = (min(639, int((x + w) * 640) + 4), min(359, int((y + h) * 360) + 4))
             self.cv.rectangle(mask, a, b, 0, -1)
+        geometry.exclude_overlays(mask)
         keys, descriptors = self.orb.detectAndCompute(gray, mask)
         return gray, mask, keys, descriptors
 
@@ -105,6 +84,7 @@ class CourtMap:
         floor, _ = self.cv.findHomography(source, target, 0)
         if floor is None or not self.np.isfinite(floor).all():
             raise ValueError("Reference landmarks do not define a court")
+        floor = geometry.orient(floor, source)
         self.footprint(floor)
         projected = self.cv.perspectiveTransform(
             target[None], self.np.linalg.inv(floor)
@@ -160,7 +140,14 @@ class CourtMap:
         if error > MAX_ERROR_PIXELS:
             return None
         scale = self.np.diag([640.0, 360.0, 1.0])
-        return self.np.linalg.inv(scale) @ warp @ scale, int(inliers.sum()), error
+        normalized = self.np.linalg.inv(scale) @ warp @ scale
+        try:
+            normalized = geometry.orient(normalized, a[keep] / [640, 360])
+        except ValueError:
+            normalized = None
+        return (
+            (normalized, int(inliers.sum()), error) if normalized is not None else None
+        )
 
     def line_evidence(self, features: tuple, floor: NDArray[Any]) -> dict:
         """Measure visible straight-line support for the projected court template."""
@@ -188,9 +175,10 @@ class CourtMap:
         segments = []
         supported = 0
         for a, b in template:
-            start, end = transform(a, inverse), transform(b, inverse)
-            if start is None or end is None:
+            visible_segment = geometry.segment(a, b, inverse)
+            if visible_segment is None:
                 continue
+            start, end = visible_segment
             visible, p, q = self.cv.clipLine(
                 (0, 0, 640, 360),
                 tuple(int(v * s) for v, s in zip(start, [640, 360], strict=True)),
@@ -231,15 +219,19 @@ class CourtMap:
         supported = 0
         segments = []
         for arc in penalty_arcs(self.court):
-            projected = [transform(p, inverse) for p in arc]
-            if any(p is None for p in projected):
+            projected = [
+                pair
+                for a, b in pairwise(arc)
+                if (pair := geometry.segment(a, b, inverse)) is not None
+            ]
+            if len(projected) < (len(arc) - 1) / 2:
                 continue
             pixels = self.np.array(projected) * [640, 360]
             samples = self.np.concatenate([
                 self.np.linspace(
                     a, b, max(2, min(1000, int(self.np.linalg.norm(b - a))))
                 )
-                for a, b in pairwise(pixels)
+                for a, b in pixels
             ]).astype(int)
             visible = samples[
                 (samples[:, 0] >= 0)
@@ -263,7 +255,7 @@ class CourtMap:
             if enough:
                 segments.extend(
                     {"a": a, "b": b, "supported": bool(good), "kind": "penalty_arc"}
-                    for a, b in pairwise(projected)
+                    for a, b in projected
                 )
         return {"supporting_arcs": supported, "arc_segments": segments}
 
@@ -271,11 +263,11 @@ class CourtMap:
         self, image: NDArray[Any], timestamp: float, boxes: list, cut: bool
     ) -> tuple:
         """Use reference images on either side of a frame; bound incremental drift."""
-        current = self.features(image, boxes)
         if cut:
             self.recent.clear()
             self.floor = None
             self.last_search = -float("inf")
+        current = self.features(image, boxes, self.floor)
         candidate = None
         mode = "unknown"
         evidence = {

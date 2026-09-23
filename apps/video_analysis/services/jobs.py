@@ -56,3 +56,22 @@ def schedule(
         once=True,
     )
     return job
+
+
+@transaction.atomic
+def continue_analysis(job_id: str) -> None:
+    """Persist the next replay section on the same exclusive durable job key."""
+    job = AnalysisJob.objects.select_for_update().get(pk=job_id)
+    if job.status != "running":
+        return
+    job.status, job.message = (
+        "queued",
+        "Next replay section queued; completed frames are ready to watch.",
+    )
+    job.save(update_fields=["status", "message"])
+    enqueue(
+        "apps.video_analysis.tasks.execute",
+        str(job.pk),
+        args=[str(job.pk)],
+        queue="vision",
+    )

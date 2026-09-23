@@ -18,6 +18,7 @@ from .clip_inference import CPU_THREADS, clip_detector
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_positions import attach_post_distances
 from .clip_references import suggestion
+from .clip_replay import top_down
 from .clip_signals import Camera, Teams, modules
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
@@ -189,7 +190,10 @@ class ClipRun:
         boxes = [
             [x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in raw.boxes.xyxyn.tolist()
         ]
-        camera = self.camera.update(image, timestamp, boxes)
+        observations = static_objects(
+            raw, 0.1, labels=("ball", "basket", "player", "referee")
+        )
+        camera = self.camera.update(image, timestamp, boxes, observations)
         camera["calibration"]["suggested_points"] = suggestion(
             camera["floor"], self.options.court, camera["calibration"], boxes
         )
@@ -217,6 +221,9 @@ class ClipRun:
             "calibration": camera["calibration"],
             "active_ball": active,
             "objects": objects,
+            "top_down": top_down(
+                objects, active, self.options.court, camera["calibration"]
+            ),
         })
         self.record["frames"] += 1
         self.record["active_ball_frames"] += int(active["status"] == "observed")
@@ -356,7 +363,9 @@ class ClipRun:
             capture.release()
 
 
-def static_objects(raw: object, confidence: float) -> list[dict]:
+def static_objects(
+    raw: object, confidence: float, *, labels: tuple[str, ...] = ("ball", "basket")
+) -> list[dict]:
     """Preserve basket and ball observations independently of people association."""
     result = cast("Any", raw)
     detected = []
@@ -368,7 +377,7 @@ def static_objects(raw: object, confidence: float) -> list[dict]:
         strict=True,
     ):
         label = result.names[int(cls)]
-        if label not in {"ball", "basket"} or score < confidence:
+        if label not in labels or score < confidence:
             continue
         x1, y1, x2, y2 = [max(0.0, min(1.0, float(v))) for v in box]
         if x2 > x1 and y2 > y1:

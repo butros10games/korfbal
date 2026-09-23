@@ -12,8 +12,9 @@ from apps.video_analysis.adapters.training import (
     launch_status,
     queue_training,
 )
+from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.store import Store
-from apps.video_analysis.models import Workspace
+from apps.video_analysis.models import StoredFile, Workspace
 
 
 __all__ = [
@@ -67,4 +68,15 @@ def run_detector(store: Store, match_id: str, weights: str) -> None:
 
 def run_clip(store: Store, run_id: str, payload: dict) -> None:
     """Wire a bounded full-clip run to the isolated CPU environment."""
+    if (
+        payload.get("recording_end")
+        and isinstance(store, DatabaseStore)
+        and store.files
+    ):
+        root = directory(store, run_id).relative_to(store.root)
+        names = [(root / name).as_posix() for name in ("run.json", "cancel.json")]
+        for relative in StoredFile.objects.filter(
+            workspace_id=store.workspace_id, relative_path__in=names
+        ).values_list("relative_path", flat=True):
+            store.media(relative)
     detector.clip(store, run_id, payload)

@@ -8,7 +8,12 @@ import uuid
 
 from django.contrib.auth.models import User
 
-from apps.video_analysis.engine.clip_contract import ClipOptions
+from apps.video_analysis.engine.clip_contract import (
+    MAX_RECORDING_SECONDS,
+    REPLAY_PART_SECONDS,
+    ClipOptions,
+    finite,
+)
 from apps.video_analysis.engine.clip_models import MODEL_ERROR, supports_clips
 from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.store import Store, atomic_json
@@ -44,6 +49,18 @@ def start(
     ).first()
     if recording is None:
         raise ValueError("Choose a recording from this workspace")
+    scope = payload.get("scope", "clip")
+    if scope not in {"clip", "recording"}:
+        raise ValueError("Choose a clip or the remaining recording")
+    end = None
+    if scope == "recording":
+        end = finite(
+            recording.metadata.get("duration_seconds"), 1, MAX_RECORDING_SECONDS
+        )
+        options = ClipOptions.parse({
+            **asdict(options),
+            "duration": min(REPLAY_PART_SECONDS, end - options.start),
+        })
     options.for_recording(recording.metadata)
     root = artifact(store, "runs", payload["model"])
     model = read_file(store, workspace, root / "run.json")
@@ -63,6 +80,8 @@ def start(
         "model": payload["model"],
         "options": asdict(options),
     }
+    if end is not None:
+        recipe["recording_end"] = end
     return schedule(workspace, actor, "clip", recipe, uuid.UUID(payload["request_id"]))
 
 
@@ -88,8 +107,8 @@ def listing(store: Store, workspace: Workspace) -> dict:
         # the selected training run, needed when reopening or retrying a clip.
         row["recipe"] = {**job.payload, **row["recipe"]}
         # A hard-killed subprocess can leave a running receipt; the durable job wins.
-        if job.status == "failed":
-            row.update(status="failed", message=job.message)
+        if job.status in {"failed", "cancelled", "interrupted"}:
+            row.update(status=job.status, message=job.message)
         runs.append(row)
     recordings = [
         {

@@ -77,12 +77,19 @@ class Camera:
             if court and court.get("anchors")
             else None
         )
+        self.automatic = (
+            importlib.import_module(f"{__package__}.clip_auto_court").AutoCourt(court)
+            if court and court.get("mode") == "automatic"
+            else None
+        )
 
     def features(self, image: NDArray[Any]) -> tuple:
         """Extract bounded-resolution camera features."""
         small = self.cv.resize(image, (640, 360))
         gray = self.cv.cvtColor(small, self.cv.COLOR_BGR2GRAY)
-        keys, descriptors = self.orb.detectAndCompute(gray, None)
+        mask = self.np.full(gray.shape, 255, dtype=self.np.uint8)
+        importlib.import_module(f"{__package__}.clip_geometry").exclude_overlays(mask)
+        keys, descriptors = self.orb.detectAndCompute(gray, mask)
         return gray, keys, descriptors
 
     def register(self, source: tuple, target: tuple) -> NDArray[Any] | None:
@@ -127,7 +134,11 @@ class Camera:
         return matrix
 
     def update(
-        self, image: NDArray[Any], timestamp: float = 0, boxes: list | None = None
+        self,
+        image: NDArray[Any],
+        timestamp: float = 0,
+        boxes: list | None = None,
+        objects: list | None = None,
     ) -> dict:
         """Return camera motion, scene boundary and an optional current floor map."""
         current = self.features(image)
@@ -144,7 +155,7 @@ class Camera:
             self.segment += 1
         if first:
             self.reference = current
-            if self.court and not self.mapping:
+            if self.court and not self.mapping and not self.automatic:
                 c = self.court
                 destination = self.np.float32([
                     [0, 0],
@@ -173,6 +184,10 @@ class Camera:
         }
         if self.mapping:
             floor, calibration = self.mapping.update(image, timestamp, boxes or [], cut)
+        if self.automatic:
+            floor, calibration = self.automatic.update(
+                image, timestamp, objects or [], cut
+            )
         return {
             "cut": cut,
             "segment": self.segment,

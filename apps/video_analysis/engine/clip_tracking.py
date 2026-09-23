@@ -177,7 +177,10 @@ class People:
                     )
                     floor_speed = (
                         distance(position, previous["court_xy_m"]) / dt
-                        if position and previous["court_xy_m"] and dt > 0
+                        if position
+                        and previous["court_xy_m"]
+                        and dt > 0
+                        and not camera.get("calibration", {}).get("estimated")
                         else 0
                     )
                     if speed > MAX_PLAYER_SPEED or floor_speed > MAX_FLOOR_SPEED:

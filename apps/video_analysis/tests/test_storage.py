@@ -15,7 +15,7 @@ from pytest_django.fixtures import Settings
 
 from apps.video_analysis.adapters.objects import WorkspaceObjects
 from apps.video_analysis.adapters.store import DatabaseStore
-from apps.video_analysis.composition import worker_store
+from apps.video_analysis.composition import run_clip, worker_store
 from apps.video_analysis.engine.media import sample_frame
 from apps.video_analysis.engine.store import Store, frame_version
 from apps.video_analysis.models import Frame, StoredFile, Workspace
@@ -243,3 +243,28 @@ def test_metadata_hydration_does_not_download_model_weights(
     assert s3.download_fileobj.call_count == 1
     files.hydrate_artifacts()
     assert weights.read_bytes() == b"synthetic checkpoint"
+
+
+def test_replay_restores_only_its_parent_and_stop_receipts(
+    imported: tuple[User, DatabaseStore, Store], s3: MagicMock
+) -> None:
+    """Restore the authoritative replay boundary without hydrating unrelated files."""
+    _, store, _ = imported
+    workspace = Workspace.objects.get(pk=store.workspace_id)
+    store.files = WorkspaceObjects(workspace, s3)
+    paths = [
+        "vision/clips/replay/run.json",
+        "vision/clips/replay/cancel.json",
+        "vision/clips/unrelated/run.json",
+    ]
+    for relative in paths:
+        path = store.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"synthetic": true}', encoding="utf-8")
+        store.publish_artifact(relative)
+        path.unlink()
+    with patch("apps.video_analysis.composition.detector.clip"):
+        run_clip(store, "replay", {"recording_end": 250})
+    assert (store.root / paths[0]).is_file()
+    assert (store.root / paths[1]).is_file()
+    assert not (store.root / paths[2]).exists()

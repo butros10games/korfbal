@@ -23,6 +23,7 @@ from apps.video_analysis.engine.luna import analyze_frame
 from apps.video_analysis.engine.media import sample_frame
 from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.models import AnalysisJob, Workspace
+from apps.video_analysis.services.jobs import continue_analysis
 
 
 @shared_task
@@ -52,6 +53,9 @@ def execute(job_id: str) -> None:
         if job.kind == "clip":
             result = receipt(store, str(job.pk))
             job.status, job.message = result["status"], result["message"]
+            if job.status == "queued" and job.payload.get("recording_end"):
+                continue_analysis(str(job.pk))
+                return
     except Exception:
         logging.getLogger(__name__).exception("Video analysis job %s failed", job.pk)
         job.status, job.message = (

@@ -13,6 +13,8 @@ MIN_CORNER_TURN = 0.005
 MAX_FRAMES = 6000
 CHUNK_FRAMES = 100
 MAX_RUNTIME_SECONDS = 3600
+MAX_RECORDING_SECONDS = 14400
+REPLAY_PART_SECONDS = 120
 MAX_ANCHORS = 16
 MAX_LANDMARKS = 16
 
@@ -115,6 +117,16 @@ def calibration(value: object) -> dict | None:
     """
     if value is None:
         return None
+    if (
+        isinstance(value, dict)
+        and set(value) == {"mode", "length", "width"}
+        and value["mode"] == "automatic"
+    ):
+        return {
+            "mode": "automatic",
+            "length": finite(value["length"], 5, 100),
+            "width": finite(value["width"], 5, 100),
+        }
     if isinstance(value, dict) and set(value) == {"anchors", "length", "width"}:
         return reference_calibration(value)
     if not isinstance(value, dict) or set(value) != {"corners", "length", "width"}:
