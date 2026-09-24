@@ -17,6 +17,7 @@ from . import (
     clip_flow,
     clip_geometry as geometry,
 )
+from .clip_auto_references import References
 from .clip_court import CourtMap
 from .clip_signals import modules
 
@@ -166,6 +167,7 @@ class Landmarks:
             self.cv.getStructuringElement(self.cv.MORPH_ELLIPSE, (kernel, kernel)),
         )
         self.ink = self.np.uint8((blackhat > MIN_INK) & (ink_mask > 0)) * 255
+        self.ink_mask = ink_mask
         self.distance = self.cv.distanceTransform(255 - self.ink, self.cv.DIST_L2, 3)
         _, _, stats, centres = self.cv.connectedComponentsWithStats(
             self.np.uint8((blackhat > MIN_SPOT_INK) & (ink_mask > 0))
@@ -193,14 +195,16 @@ class Landmarks:
         result[:2, 2] -= [cx, cy]
         return self.np.diag([2 / a, 2 / b, 1]) @ result
 
-    def circles(self) -> list:
+    def circles(self, contours: list[NDArray[Any]] | None = None) -> list:
         """Fit visible black arcs and verify support around their inferred ellipse."""
-        raw_contours, _ = self.cv.findContours(
-            self.ink, self.cv.RETR_LIST, self.cv.CHAIN_APPROX_NONE
-        )
-        contours: list[NDArray[Any]] = list(raw_contours)
+        if contours is None:
+            raw_contours, _ = self.cv.findContours(
+                self.ink, self.cv.RETR_LIST, self.cv.CHAIN_APPROX_NONE
+            )
+            measured: list[NDArray[Any]] = list(raw_contours)
+            contours = sorted(measured, key=len, reverse=True)[:40]
         found = []
-        for contour in sorted(contours, key=len, reverse=True)[:40]:
+        for contour in contours:
             if len(contour) < MIN_ARC_POINTS:
                 continue
             ellipse = self.cv.fitEllipse(contour)
@@ -252,16 +256,20 @@ class Landmarks:
                 found.append((ellipse, support))
         return found
 
-    def spot(self, ellipse: tuple) -> NDArray[Any] | None:
+    def spot(self, ellipse: tuple, *, pixel_limit: int = 0) -> NDArray[Any] | None:
         """Require a small isolated mark near the circle's perspective centre."""
         minor, major = sorted(ellipse[1])
         candidates: list = []
         matrix = self.ellipse_map(ellipse)
         for (_, _, w, h, area), centre in self.spots:
             radial = float(self.np.linalg.norm(project(matrix, [centre])[0]))
+            small = w < max(major * MAX_SPOT_WIDTH, pixel_limit) and h < max(
+                minor * MAX_SPOT_HEIGHT, pixel_limit
+            )
             if (
-                MIN_SPOT_RATIO < w / major < MAX_SPOT_WIDTH
-                and MIN_SPOT_RATIO < h / minor < MAX_SPOT_HEIGHT
+                w / major > MIN_SPOT_RATIO
+                and h / minor > MIN_SPOT_RATIO
+                and small
                 and area >= MIN_SPOT_AREA
                 and radial < MAX_SPOT_RADIAL
             ):
@@ -382,17 +390,29 @@ def estimate(image: NDArray[Any], objects: list, court: dict) -> tuple | None:
 
 
 class AutoCourt:
-    """Re-estimate visible markings and bridge only short, verified camera motion."""
+    """Reacquire verified views and bridge short gaps with floor-only motion."""
 
     def __init__(self, court: dict) -> None:
-        """Keep one recent reference; no image or mapping survives a cut."""
+        """Keep original reference images; no propagated mapping survives a cut."""
         self.court = court
         self.matcher = CourtMap(court)
+        self.references = References(self.matcher)
         self.last_search = -float("inf")
         self.last_seen = -float("inf")
         self.previous = None
         self.floor = None
         self.evidence = {}
+
+    def observe(
+        self, image: NDArray[Any], timestamp: float, objects: list
+    ) -> tuple | None:
+        """Prefer a verified original view over refitting partly hidden landmarks."""
+        found = self.references.find(image, timestamp, objects)
+        if found is None:
+            found = estimate(image, objects, self.court)
+            if found:
+                self.references.add(image, timestamp, objects, found)
+        return found
 
     def update(
         self, image: NDArray[Any], timestamp: float, objects: list, cut: bool
@@ -404,9 +424,9 @@ class AutoCourt:
         boxes = [o["bbox"] for o in objects]
         candidate = None
         evidence = {"status": "unknown", "segments": [], "estimated": True}
-        if timestamp - self.last_search >= SEARCH_INTERVAL:
+        if timestamp - self.last_search >= SEARCH_INTERVAL or self.floor is None:
             self.last_search = timestamp
-            found = estimate(image, objects, self.court)
+            found = self.observe(image, timestamp, objects)
             if found:
                 candidate, evidence = found
                 self.last_seen = timestamp

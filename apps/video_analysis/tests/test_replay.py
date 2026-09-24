@@ -95,6 +95,10 @@ def child_result(
         "segment": 0,
         "objects": [{"track_id": "player-1"}],
         "top_down": {"ball": {"near_player": "player-1"}},
+        "possession": {
+            "status": "candidate",
+            "holder_candidate": {"track_id": "player-1"},
+        },
     }
     atomic_json(chunk, {"frames": [frame]})
     result = {
@@ -106,6 +110,38 @@ def child_result(
         "video_sha256": "frozen-source",
         "team_colors": [[20, 40, 150], [30, 130, 60]],
         "video": "demo/synthetic.mp4",
+        "event_detection": {
+            "version": 1,
+            "processed_frames": 1,
+            "review_only": True,
+            "truncated": False,
+        },
+        "events": [
+            {
+                "id": "s0-shot-1",
+                "segment": 0,
+                "kind": "shot_candidate",
+                "time_seconds": frame["time_seconds"],
+                "outcome": "unknown",
+                "ball": {"track_id": "ball-1"},
+                "shooter_candidate": {"track_id": "player-1"},
+            },
+            {
+                "id": "s0-possession-1",
+                "segment": 0,
+                "kind": "ball_recovery_candidate",
+                "time_seconds": frame["time_seconds"],
+                "shot_event_id": "s0-shot-1",
+                "loss_candidate": None,
+                "gain_candidate": {"track_id": "player-1"},
+            },
+        ],
+        "possession_detection": {
+            "version": 1,
+            "processed_frames": 1,
+            "review_only": True,
+            "truncated": False,
+        },
         "chunks": [
             {
                 "name": chunk.name,
@@ -116,9 +152,10 @@ def child_result(
             }
         ],
     }
-    atomic_json(root / "run.json", result)
     assert callable(progress)
     progress(result)
+    result["events"][0]["outcome"] = "possible_goal"
+    atomic_json(root / "run.json", result)
     progress(
         result
     )  # A poll and the final receipt must not duplicate counts or chunks.
@@ -149,6 +186,25 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
         [30, 130, 60],
     ]
     assert len(record["chunks"]) == EXPECTED_SECTIONS
+    assert len(record["events"]) == EXPECTED_SECTIONS * 2
+    assert record["possession_detection"]["processed_frames"] == EXPECTED_SECTIONS
+    assert record["event_detection"]["processed_frames"] == EXPECTED_SECTIONS
+    assert record["event_detection"]["section_boundaries"] is True
+    for part, event in enumerate(
+        e for e in record["events"] if e["kind"] == "shot_candidate"
+    ):
+        assert event["id"] == f"p{part}-s0-shot-1"
+        assert event["outcome"] == "possible_goal"
+        assert event["ball"]["track_id"] == f"p{part}-ball-1"
+        assert event["shooter_candidate"]["track_id"] == f"p{part}-player-1"
+        assert event["processing_section"] == part
+    for part, event in enumerate(
+        e for e in record["events"] if e["kind"] == "ball_recovery_candidate"
+    ):
+        assert event["id"] == f"p{part}-s0-possession-1"
+        assert event["shot_event_id"] == f"p{part}-s0-shot-1"
+        assert event["gain_candidate"]["track_id"] == f"p{part}-player-1"
+        assert event["loss_candidate"] is None
     for part, chunk in enumerate(record["chunks"]):
         frame = json.loads(
             (directory(store, run_id) / chunk["name"]).read_text(encoding="utf-8")
@@ -156,6 +212,9 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
         assert frame["objects"][0]["track_id"] == f"p{part}-player-1"
         assert frame["top_down"]["ball"]["near_player"] == f"p{part}-player-1"
         assert frame["processing_section"] == part
+        assert (
+            frame["possession"]["holder_candidate"]["track_id"] == f"p{part}-player-1"
+        )
 
 
 @pytest.mark.parametrize("stop", ["cancel", "checkpoint", "source", "worker"])

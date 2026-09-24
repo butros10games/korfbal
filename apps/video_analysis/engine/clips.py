@@ -9,14 +9,18 @@ from datetime import UTC, datetime
 import importlib
 import json
 import math
+from operator import itemgetter
 from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any, cast
 
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
+from .clip_events import ShotEvents
+from .clip_identity import court_reference
 from .clip_inference import CPU_THREADS, clip_detector
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_positions import attach_post_distances
+from .clip_possession import PossessionEvents
 from .clip_references import suggestion
 from .clip_replay import top_down
 from .clip_signals import Camera, Teams, modules
@@ -79,6 +83,8 @@ class ClipRun:
         self.people = People(options)
         self.balls = Balls()
         self.teams = Teams(options.team_colors)
+        self.events = ShotEvents()
+        self.possession = PossessionEvents(options.court)
 
     def publish(self) -> None:
         """Commit immutable frame chunks before publishing their manifest entries."""
@@ -100,6 +106,14 @@ class ClipRun:
         self.record["processed_fps"] = round(
             self.record["frames"] / max(0.001, time.monotonic() - self.started), 2
         )
+        self.record.update(self.events.snapshot())
+        possession = self.possession.snapshot()
+        self.record["possession_detection"] = possession["possession_detection"]
+        self.record["event_detection"]["truncated"] |= self.possession.truncated
+        self.record["events"] = sorted(
+            self.record["events"] + possession["events"],
+            key=itemgetter("time_seconds"),
+        )
         atomic_json(self.root / "run.json", self.record)
         self.last_publish = time.monotonic()
 
@@ -119,6 +133,8 @@ class ClipRun:
     def finish(self) -> None:
         """Publish a terminal receipt even when the last chunk cannot be encoded."""
         self.record["finished_at"] = datetime.now(UTC).isoformat()
+        self.events.finish(self.record["status"])
+        self.possession.reset()
         try:
             self.publish()
         except Exception:
@@ -210,9 +226,14 @@ class ClipRun:
             persons,
             timestamp,
             camera["motion"],
+            court_key=court_reference(camera),
         )
         attach_post_distances(persons, self.options.court)
         objects = persons + balls + [o for o in detected if o["label"] == "basket"]
+        self.events.update(objects, active, timestamp, camera)
+        possession = self.possession.update(
+            objects, active, timestamp, camera, self.events.events
+        )
         self.buffer.append({
             "time_seconds": round(timestamp, 6),
             "segment": camera["segment"],
@@ -220,6 +241,7 @@ class ClipRun:
             "court_available": camera["floor"] is not None,
             "calibration": camera["calibration"],
             "active_ball": active,
+            "possession": possession,
             "objects": objects,
             "top_down": top_down(
                 objects, active, self.options.court, camera["calibration"]
@@ -321,6 +343,11 @@ class ClipRun:
             ValueError: A reference frame cannot be decoded accurately.
 
         """
+        if self.camera.automatic:
+            importlib.import_module(f"{__package__}.clip_auto_prepare").prepare(
+                self, video, model
+            )
+            return
         if not self.camera.mapping:
             return
         cv, _ = modules()

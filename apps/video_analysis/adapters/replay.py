@@ -10,6 +10,7 @@ from apps.video_analysis.engine.clip_contract import (
     REPLAY_PART_SECONDS,
     ClipOptions,
 )
+from apps.video_analysis.engine.clip_events import MAX_REPLAY_EVENTS
 from apps.video_analysis.engine.clips import directory, receipt
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import artifact, digest
@@ -47,7 +48,8 @@ def prefix_tracks(frame: dict, part: int) -> dict:
         if isinstance(value, dict):
             return {
                 k: f"p{part}-{v}"
-                if k in {"track_id", "near_player"} and isinstance(v, str)
+                if k in {"track_id", "near_player", "shot_event_id"}
+                and isinstance(v, str)
                 else visit(v)
                 for k, v in value.items()
             }
@@ -185,6 +187,42 @@ class ReplaySection:
         self.record.update({
             k: self.committed.get(k, 0) + progress.get(k, 0) for k in TOTALS
         })
+        if progress.get("event_detection"):
+            # Replace this part's mutable candidates on every progress receipt.
+            # Previously committed parts and their identities remain immutable.
+            previous = [
+                e
+                for e in self.record.get("events", [])
+                if e["processing_section"] < self.part
+            ]
+            current = [
+                {**prefix_tracks(event, self.part), "id": f"p{self.part}-{event['id']}"}
+                for event in progress.get("events", [])
+            ]
+            self.record["events"] = (previous + current)[:MAX_REPLAY_EVENTS]
+            self.record["event_detection"] = {
+                **progress["event_detection"],
+                "processed_frames": self.record.get("committed_event_frames", 0)
+                + progress["event_detection"].get("processed_frames", 0),
+                "section_boundaries": True,
+                "truncated": bool(
+                    self.record.get("event_detection", {}).get("truncated")
+                    or progress["event_detection"].get("truncated")
+                    or len(previous) + len(current) > MAX_REPLAY_EVENTS
+                ),
+            }
+        if progress.get("possession_detection"):
+            self.record["possession_detection"] = {
+                **progress["possession_detection"],
+                "processed_frames": self.record.get("committed_possession_frames", 0)
+                + progress["possession_detection"].get("processed_frames", 0),
+                "section_boundaries": True,
+                "truncated": bool(
+                    self.record.get("possession_detection", {}).get("truncated")
+                    or progress["possession_detection"].get("truncated")
+                    or self.record.get("event_detection", {}).get("truncated")
+                ),
+            }
         self.record.update(
             status="running",
             message=(
@@ -209,6 +247,12 @@ class ReplaySection:
                 next_start=options["start"] + options["duration"],
                 committed_totals={k: self.record[k] for k in TOTALS},
                 committed_team_colors=result.get("team_colors"),
+                committed_event_frames=self.record.get("event_detection", {}).get(
+                    "processed_frames", 0
+                ),
+                committed_possession_frames=self.record.get(
+                    "possession_detection", {}
+                ).get("processed_frames", 0),
             )
             done = self.record["next_start"] >= self.payload["recording_end"] - 1e-6
             self.record.update(

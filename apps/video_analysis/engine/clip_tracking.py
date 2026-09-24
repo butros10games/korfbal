@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .clip_contract import ClipOptions
-from .clip_identity import IDENTITY_GAP, IdentityMemory
+from .clip_identity import IDENTITY_GAP, IdentityMemory, court_reference
+from .clip_replay import near_player
 from .clip_signals import center, distance, floor_position, modules, transform
 
 
@@ -21,6 +22,7 @@ MAX_PLAYER_SPEED = 1.5
 MAX_FLOOR_SPEED = 15
 SMOOTHING_GAP = 0.3
 BALL_GAP = 1.5
+CONTEXT_BALL_GAP = 3.0
 ACTIVE_BALL_GAP = 0.6
 MIN_AREA_RATIO = 0.2
 MAX_AREA_RATIO = 5
@@ -215,7 +217,13 @@ class People:
             for k, v in self.previous.items()
             if timestamp - v["time"] <= IDENTITY_GAP
         }
-        return self.identities.update(objects, image, timestamp, camera["motion"])
+        return self.identities.update(
+            objects,
+            image,
+            timestamp,
+            camera["motion"],
+            court_key=court_reference(camera),
+        )
 
 
 class Balls:
@@ -241,12 +249,19 @@ class Balls:
         self.segment = segment
 
     def associate(
-        self, detections: list[dict], timestamp: float, motion: NDArray[Any] | None
+        self,
+        detections: list[dict],
+        timestamp: float,
+        motion: NDArray[Any] | None,
+        contexts: list | None = None,
+        court_key: object = None,
     ) -> dict[int, str]:
         """Use one-to-one assignment with motion and scale gates for tiny objects."""
         _, np = modules()
         self.tracks = {
-            k: v for k, v in self.tracks.items() if timestamp - v["time"] <= BALL_GAP
+            k: v
+            for k, v in self.tracks.items()
+            if timestamp - v["time"] <= CONTEXT_BALL_GAP
         }
         if motion is not None:
             for prior in self.tracks.values():
@@ -271,10 +286,35 @@ class Balls:
                     1e-9, prior["bbox"][2] * prior["bbox"][3]
                 )
                 if (
-                    d < min(0.18, 0.025 + dt * 1.2)
+                    dt <= BALL_GAP
+                    and d < min(0.18, 0.025 + dt * 1.2)
                     and MIN_AREA_RATIO < ratio < MAX_AREA_RATIO
                 ):
                     costs[i, j] = d + abs(math.log(ratio)) * 0.005
+                context = contexts[j] if contexts else None
+                # A held ball can travel with its player while hidden. Its image
+                # trajectory alone cannot predict that movement during a pan.
+                same_player = bool(
+                    context
+                    and court_key is not None
+                    and prior.get("court_key") == court_key
+                    and prior.get("near_player") == context["track_id"]
+                )
+                plausible = bool(
+                    context
+                    and prior.get("near_xy") is not None
+                    and distance(prior["near_xy"], context["court_xy_m"])
+                    <= 0.9 + 9 * dt
+                    and MIN_AREA_RATIO < ratio < MAX_AREA_RATIO
+                )
+                if (
+                    same_player
+                    and plausible
+                    and dt > SMOOTHING_GAP
+                    and prior["hits"] >= MIN_BALL_HITS
+                    and identity == self.active
+                ):
+                    costs[i, j] = min(costs[i, j], 0.003 + abs(math.log(ratio)) * 0.005)
         return self.match(costs, identities, timestamp)
 
     def match(
@@ -321,9 +361,12 @@ class Balls:
         people: list[dict],
         timestamp: float,
         motion: NDArray[Any] | None,
+        *,
+        court_key: object = None,
     ) -> tuple[list[dict], dict]:
         """Associate candidates and select a separated active hypothesis."""
-        matched = self.associate(detections, timestamp, motion)
+        contexts = [near_player(d, people) for d in detections]
+        matched = self.associate(detections, timestamp, motion, contexts, court_key)
         objects = []
         candidates = []
         for index, detection in enumerate(detections):
@@ -368,8 +411,16 @@ class Balls:
                 role="unknown",
                 court_xy_m=None,
             )
+            context = contexts[index]
             self.tracks[identity] = dict(
-                obj, velocity=velocity, time=timestamp, hits=hits, projected=point
+                obj,
+                velocity=velocity,
+                time=timestamp,
+                hits=hits,
+                projected=point,
+                near_player=context["track_id"] if context else None,
+                near_xy=context["court_xy_m"] if context else None,
+                court_key=court_key,
             )
             objects.append(obj)
             if hits >= MIN_BALL_HITS:
@@ -397,6 +448,6 @@ class Balls:
                     "track_id": self.active,
                     "score": round(score, 3),
                 }
-        if timestamp - self.active_seen > ACTIVE_BALL_GAP:
+        if timestamp - self.active_seen > CONTEXT_BALL_GAP:
             self.active = None
         return objects, active

@@ -1,5 +1,7 @@
 """Top-down observations with explicit uncertainty about elevated balls."""
 
+from operator import itemgetter
+
 from .clip_signals import center, distance
 
 
@@ -54,33 +56,43 @@ def top_down(
     if ball is None:
         return result
     result["ball_status"] = "position_unknown"
-    point = center(ball["bbox"])
-    candidates = []
-    available = {p["track_id"]: p for p in players}
-    for obj in visible:
-        if obj["track_id"] not in available:
-            continue
-        x, y, w, h = obj.get("observed_bbox", obj["bbox"])
-        if (
-            x - w * 0.15 <= point[0] <= x + w * 1.15
-            and y + h * 0.15 <= point[1] <= y + h * 0.8
-        ):
-            score = distance([(point[0] - x) / w, (point[1] - y) / h], [0.5, 0.45])
-            candidates.append((score, obj["track_id"]))
-    candidates.sort()
-    if not candidates or (
-        len(candidates) > 1
-        and candidates[1][0] - candidates[0][0] < BALL_ASSOCIATION_MARGIN
-    ):
+    player = near_player(
+        ball, [o for o in visible if o["track_id"] in {p["track_id"] for p in players}]
+    )
+    if player is None:
         return result
-    player = available[candidates[0][1]]
     result.update(
         ball_status="near_player_estimate",
         ball={
-            "xy": player["xy"],
+            "xy": player["court_xy_m"],
             "track_id": ball["track_id"],
             "near_player": player["track_id"],
             "estimated": True,
         },
     )
     return result
+
+
+def near_player(ball: dict, people: list[dict]) -> dict | None:
+    """Return a uniquely nearby mapped torso, never infer possession from overlap."""
+    point = center(ball["bbox"])
+    candidates = []
+    for obj in people:
+        if obj.get("label") != "player" or obj.get("court_xy_m") is None:
+            continue
+        x, y, w, h = obj.get("observed_bbox", obj["bbox"])
+        if (
+            w > 0
+            and h > 0
+            and x - w * 0.15 <= point[0] <= x + w * 1.15
+            and y + h * 0.15 <= point[1] <= y + h * 0.8
+        ):
+            score = distance([(point[0] - x) / w, (point[1] - y) / h], [0.5, 0.45])
+            candidates.append((score, obj))
+    candidates.sort(key=itemgetter(0))
+    if not candidates or (
+        len(candidates) > 1
+        and candidates[1][0] - candidates[0][0] < BALL_ASSOCIATION_MARGIN
+    ):
+        return None
+    return candidates[0][1]
