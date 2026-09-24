@@ -13,8 +13,15 @@ import math
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
+from . import (
+    clip_refinement_backward as backward,
+    clip_refinement_occlusion as occlusion,
+    clip_refinement_ownership as ownership,
+)
 from .clip_identity import IdentityMemory, court_reference
-from .clip_signals import modules, transform
+from .clip_refinement_spans import ObservationSpans
+from .clip_segment_reconciliation import reconcile
+from .clip_signals import Teams, modules, transform
 
 
 if TYPE_CHECKING:
@@ -74,7 +81,7 @@ def appearance_distance(a: list, b: list) -> float:
 
 
 class IdentityRefiner:
-    """Collect bounded endpoint evidence without retaining images or all frames."""
+    """Collect bounded endpoint and observation evidence without retaining images."""
 
     def __init__(self) -> None:
         """Start one independent section with an explicit camera coordinate epoch."""
@@ -83,6 +90,8 @@ class IdentityRefiner:
         self.epoch = 0
         self.warp = self.np.eye(3)
         self.truncated = False
+        self.confirmed: dict[str, dict] = {}
+        self.spans = ObservationSpans()
 
     def advance(self, camera: dict) -> NDArray[Any] | None:
         """Use a new epoch whenever camera compensation becomes unavailable."""
@@ -101,7 +110,13 @@ class IdentityRefiner:
         return inverse
 
     def observe(
-        self, image: NDArray[Any], objects: list[dict], time: float, camera: dict
+        self,
+        image: NDArray[Any],
+        objects: list[dict],
+        time: float,
+        camera: dict,
+        *,
+        shirts: Teams | None = None,
     ) -> None:
         """Retain clean clothing samples and positions in a shared camera space."""
         inverse = self.advance(camera)
@@ -112,47 +127,93 @@ class IdentityRefiner:
         objects = [obj for obj in objects if obj["label"] in {"player", "referee"}]
         for obj in (obj for obj in objects if obj["label"] == "player"):
             identity = obj["track_id"]
-            if identity not in self.tracks:
-                if len(self.tracks) >= MAX_TRACKS:
-                    self.truncated = True
-                    continue
-                self.tracks[identity] = {
-                    "id": identity,
-                    "display_id": obj.get("display_id"),
-                    "segment": camera.get("segment", 0),
-                    "start": time,
-                    "first": [],
-                    "last": [],
-                    "teams": set(),
-                }
-            track = self.tracks[identity]
-            track["end"] = time
-            if obj.get("team") in {"team_a", "team_b"}:
-                track["teams"].add(obj["team"])
             box = obj["observed_bbox"]
-            if not IdentityMemory.clear_torso(obj, objects):
-                continue
-            # Endpoint samples span time; near-identical adjacent crops add little.
-            if track["last"] and time - track["last"][-1]["time"] < SAMPLE_INTERVAL:
-                continue
-            descriptor = appearance(image, box)
+            clear = IdentityMemory.clear_torso(obj, objects)
+            descriptor = appearance(image, box) if clear else None
             x, y, w, h = box
+            body = transform([x + w / 2, y + h * 0.45], inverse)
             feet = transform([x + w / 2, y + h], inverse)
             head = transform([x + w / 2, y], inverse)
-            if descriptor is None or feet is None or head is None:
+            if body is None or feet is None or head is None:
                 continue
+            shirt = shirts.vote(shirts.observations.get(identity)) if shirts else None
             sample = {
                 "time": time,
-                "image": feet,
+                "image": body,
                 "height": math.dist(feet, head),
                 "epoch": self.epoch,
                 "court": obj.get("court_xy_m") if trusted else None,
                 "court_key": key if trusted else None,
                 "appearance": descriptor,
+                "team": obj.get("team", "unknown"),
+                "shirt_team": f"team_{'ab'[shirt[0]]}"
+                if shirt
+                else "unknown"
+                if shirts
+                else obj.get("team", "unknown"),
             }
+            self.spans.observe({
+                "id": identity,
+                "display_id": obj.get("display_id"),
+                "time": time,
+                "segment": camera.get("segment", 0),
+                "epoch": self.epoch,
+                "image": body,
+                "height": sample["height"],
+                "uncertain": bool(obj.get("identity_uncertain")),
+                "box": list(box),
+                "confidence": obj.get("confidence", 0),
+                "sample": sample if descriptor is not None else None,
+            })
+            if obj.get("identity_uncertain"):
+                continue
+            if not self.ensure_track(obj, camera, time):
+                continue
+            track = self.tracks[identity]
+            self.confirm(obj, track, time)
+            track["end"] = time
+            if obj.get("team") in {"team_a", "team_b"}:
+                track["teams"].add(obj["team"])
+            occlusion.observe(track, obj, objects, time, occluded=not clear)
+            if descriptor is None:
+                continue
+            if track["last"] and time - track["last"][-1]["time"] < SAMPLE_INTERVAL:
+                continue
             if len(track["first"]) < ENDPOINT_SAMPLES:
                 track["first"].append(sample)
             track["last"] = (track["last"] + [sample])[-ENDPOINT_SAMPLES:]
+
+    def ensure_track(self, obj: dict, camera: dict, time: float) -> bool:
+        """Bound endpoint history to established identities."""
+        identity = obj["track_id"]
+        if identity not in self.tracks:
+            if len(self.tracks) >= MAX_TRACKS:
+                self.truncated = True
+                return False
+            self.tracks[identity] = {
+                "id": identity,
+                "display_id": obj.get("display_id"),
+                "segment": camera.get("segment", 0),
+                "start": time,
+                "first": [],
+                "last": [],
+                "teams": set(),
+            }
+        return True
+
+    def confirm(self, obj: dict, track: dict, time: float) -> None:
+        """Backfill a provisional track only after online multi-frame confirmation."""
+        confirmation = obj.get("identity_confirmation")
+        if not confirmation:
+            return
+        source = self.tracks.get(confirmation["from_track_id"])
+        if (
+            source
+            and source["end"] < time
+            and source["segment"] == track["segment"]
+            and confirmation["to_track_id"] == obj["track_id"]
+        ):
+            self.confirmed[source["id"]] = dict(confirmation)
 
     def cost(self, before: dict, after: dict, *, use_appearance: bool) -> float:
         """Require forward and backward motion, clear endpoints and compatible kit."""
@@ -228,9 +289,11 @@ class IdentityRefiner:
             if stopped and stopped():
                 return None
             for after in ordered[bisect_right(starts, before["end"]) :]:
-                if after["start"] > before["end"] + MAX_GAP:
+                if after["start"] > before["end"] + occlusion.MAX_OCCLUSION_GAP:
                     break
                 cost = self.cost(before, after, use_appearance=use_appearance)
+                if use_appearance:
+                    cost = min(cost, occlusion.cost(self, before, after))
                 if math.isfinite(cost):
                     candidates.append((cost, before["id"], after["id"]))
         return candidates
@@ -248,13 +311,16 @@ class IdentityRefiner:
         }
         if candidates is None:
             return interrupted
-        links: list[dict] = []
-        aliases: dict[str, str] = {}
+        links: list[dict] = list(self.confirmed.values())
+        aliases: dict[str, str] = {
+            link["from_track_id"]: link["to_track_id"] for link in links
+        }
+        confirmed_ids = set(aliases) | set(aliases.values())
         rejected: Counter = Counter()
         for cost, source, target in sorted(candidates):
             if stopped and stopped():
                 return interrupted
-            if cost >= MAX_COST:
+            if cost >= MAX_COST or source in confirmed_ids or target in confirmed_ids:
                 continue
             if any(
                 (other_source == source or other_target == target)
@@ -281,28 +347,90 @@ class IdentityRefiner:
                 canonical = aliases[canonical]
             link["to_track_id"] = canonical
             link["display_id"] = self.tracks[canonical]["display_id"]
+        frame_links = self.spans.finish(self, links, stopped) if use_appearance else []
+        if frame_links is None:
+            return interrupted
+        frame_links = (
+            self.reconcile_frames(links, frame_links, stopped) if use_appearance else []
+        )
+        if frame_links is None:
+            return interrupted
         return {
             "version": 1,
             "status": "completed",
             "appearance": "clothing_histograms" if use_appearance else "disabled",
             "tracks": len(self.tracks),
-            "truncated": self.truncated,
+            "truncated": self.truncated or self.spans.truncated,
             "rejected": dict(rejected),
             "links": links,
+            "frame_links": frame_links,
             "review_only": True,
         }
+
+    def reconcile_frames(
+        self, links: list, frame_links: list, stopped: Callable[[], bool] | None
+    ) -> list | None:
+        """Resolve body swaps before two bounded passes over original clean views."""
+        recovered = backward.recover(self, links, frame_links, stopped)
+        if recovered is None:
+            return None
+        replaced = {(c["time_seconds"], c["from_track_id"]) for c in recovered}
+        frame_links = [
+            c
+            for c in frame_links
+            if (c["time_seconds"], c["from_track_id"]) not in replaced
+        ] + recovered
+        for _ in range(2):
+            segment_links = reconcile(self, links, frame_links, stopped)
+            if segment_links is None:
+                return None
+            known = {(c["time_seconds"], c["from_track_id"]) for c in frame_links}
+            frame_links.extend(
+                c
+                for c in segment_links
+                if (c["time_seconds"], c["from_track_id"]) not in known
+            )
+        return frame_links
 
 
 def refined_frames(frames: list[dict], report: dict) -> list[dict]:
     """Apply replay aliases to observed boxes for independent benchmark scoring."""
-    aliases = {link["from_track_id"]: link["to_track_id"] for link in report["links"]}
-    return [
-        dict(
-            frame,
-            objects=[
-                dict(obj, track_id=aliases.get(obj["track_id"], obj["track_id"]))
-                for obj in frame["objects"]
-            ],
+    if report.get("status") != "completed":
+        return frames
+    aliases = {link["from_track_id"]: link for link in report["links"]}
+    scoped = {
+        (link["time_seconds"], link["from_track_id"]): link
+        for link in report.get("frame_links", [])
+    }
+    output = []
+    for frame in frames:
+        frame_links = {
+            identity: link
+            for (time, identity), link in scoped.items()
+            if time == frame.get("time_seconds")
+        }
+        superseded = ownership.superseded_ids(frame["objects"], frame_links, aliases)
+        objects = []
+        for obj in frame["objects"]:
+            if obj["track_id"] in superseded:
+                continue
+            link = scoped.get(
+                (frame.get("time_seconds"), obj["track_id"]),
+                aliases.get(obj["track_id"]),
+            )
+            resolved = obj
+            if link:
+                resolved = dict(
+                    obj,
+                    track_id=link["to_track_id"],
+                )
+                if link.get("display_id") is not None:
+                    resolved["display_id"] = link["display_id"]
+                if link.get("team") in {"team_a", "team_b"}:
+                    resolved["team"] = link["team"]
+            objects.append(resolved)
+        ids = [obj["track_id"] for obj in objects]
+        output.append(
+            dict(frame, objects=objects) if len(ids) == len(set(ids)) else frame
         )
-        for frame in frames
-    ]
+    return output

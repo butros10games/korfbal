@@ -18,6 +18,7 @@ from .clip_identity import (
     IdentityMemory,
     court_reference,
 )
+from .clip_prediction import PositionMemory
 from .clip_replay import near_player
 from .clip_signals import center, distance, floor_position, modules, transform
 
@@ -94,13 +95,15 @@ class People:
         self.previous = {}
         self.generations = Counter()
         self.segment = 0
-        self.identities = IdentityMemory()
+        self.identities = IdentityMemory(options.court)
         self.ground = GroundContacts()
+        self.positions = PositionMemory()
 
     def reset(self, segment: int) -> None:
         """Discard identities and motion history across a camera cut."""
         self.identities.reset()
         self.ground = GroundContacts()
+        self.positions = PositionMemory()
         self.trackers.clear()
         self.motion = None
         self.previous.clear()
@@ -167,7 +170,8 @@ class People:
                 for k, v in result.names.items()
                 if v == label or (label == "player" and v == "person")
             ]
-            detections = boxes[np.isin(boxes.cls, classes)]
+            indices = np.flatnonzero(np.isin(boxes.cls, classes))
+            detections = boxes[indices]
             tracks = self.tracker(label).update(detections, image)
             for row in tracks:
                 native_id, index = int(row[4]), int(row[-1])
@@ -220,6 +224,11 @@ class People:
                     "estimated": False,
                     "court_xy_m": position,
                     "team": "unknown",
+                    **(
+                        {"observation_source": "overlap_detection"}
+                        if int(indices[index]) in getattr(result, "overlap_indices", ())
+                        else {}
+                    ),
                 }
                 if issue:
                     obj["issue"] = issue
@@ -248,13 +257,15 @@ class People:
             objects.extend(recovery(self.identities, objects))
             motion = None  # Camera motion has already been applied exactly once.
         self.ground.update(objects, timestamp, camera)
-        return self.identities.update(
+        objects = self.identities.update(
             objects,
             image,
             timestamp,
             motion,
             court_key=court_reference(camera),
         )
+        self.positions.update(objects, timestamp, camera)
+        return objects
 
 
 class Balls:

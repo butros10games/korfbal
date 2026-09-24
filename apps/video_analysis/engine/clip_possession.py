@@ -55,7 +55,7 @@ def player_candidate(
     # Distance cannot resolve who is in front when two bodies overlap the ball.
     # Outstretched/overhead boxes also frequently belong to the defender covering
     # an undetected holder. Require central-body evidence to acquire control.
-    if len(candidates) != 1:
+    if len(candidates) != 1 or candidates[0][0].get("identity_uncertain"):
         return None
     obj, relative = candidates[0]
     if not (

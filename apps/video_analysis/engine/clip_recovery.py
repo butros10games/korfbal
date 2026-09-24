@@ -57,6 +57,7 @@ class RecoveryFrame:
     detector: object
     inference_seconds: float
     stopped: Callable[[], bool]
+    other_seconds: float = 0
 
 
 class PlayerRecovery:
@@ -136,7 +137,8 @@ class PlayerRecovery:
             not missing
             or not self.crops
             or self.calls >= self.frames // 3
-            or self.seconds > frame.inference_seconds * INFERENCE_FRACTION
+            or self.seconds + frame.other_seconds
+            > frame.inference_seconds * INFERENCE_FRACTION
             or stopped()
         ):
             return recovered

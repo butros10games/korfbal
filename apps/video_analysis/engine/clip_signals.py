@@ -8,6 +8,13 @@ import math
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
+from .clip_clothing import (
+    MIN_VISIBLE,
+    foreground,
+    pixels as clothing_pixels,
+    sample as clothing_sample,
+)
+
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -25,10 +32,7 @@ MAX_SHIRT_SPREAD = 40
 MIN_SHIRT_SATURATION = 60
 MIN_SHIRT_VALUE = 30
 MIN_COLORED_SHARE = 0.3
-MIN_HUE_SHARE = 0.25
 HUE_RADIUS = 15
-MIN_BACKGROUND_VALUES = 90
-BACKGROUND_DISTANCE = 22
 MIN_NEUTRAL_LIGHTNESS = 95
 MAX_NEUTRAL_CHROMA = 18
 MIN_TEAM_SAMPLES = 40
@@ -39,6 +43,7 @@ MIN_TEAM_VOTES = 3
 MIN_VOTE_SHARE = 0.8
 TEAM_MEMORY_SECONDS = 3.0
 TEAM_HOLD_SECONDS = 2.0
+OPENING_PIXEL_SAMPLES = 256
 COURT_MARGIN = 5
 
 
@@ -207,6 +212,8 @@ class Teams:
         self.votes = {}
         self.seen = {}
         self.confirmed = {}
+        self.observations = {}
+        self.observation_pixels = {}
         self.centers = None
         if colors is not None:
             rgb = self.np.uint8([colors])
@@ -220,8 +227,17 @@ class Teams:
             max(0, int((y + bh * 0.18) * h)) : min(h, int((y + bh * 0.48) * h)),
             max(0, int((x + bw * 0.25) * w)) : min(w, int((x + bw * 0.75) * w)),
         ]
-        # The box includes arms and empty floor. Sample narrow outside strips at
-        # torso height, and remove only a consistent neighbouring background.
+        color = self.sample(crop, self.background(image, box))
+        if self.centers is not None and self.vote(color) is None:
+            supported, _ = clothing_sample(self, image, box)
+            if supported is not None:
+                return supported
+        return color
+
+    def background(self, image: NDArray[Any], box: list[float]) -> NDArray[Any]:
+        """Sample outside strips to reject a consistent neighbouring court colour."""
+        h, w = image.shape[:2]
+        x, y, bw, bh = box
         strips = [
             image[
                 max(0, int((y + bh * 0.18) * h)) : min(h, int((y + bh * 0.48) * h)),
@@ -229,8 +245,7 @@ class Teams:
             ].reshape(-1, 3)
             for a, b in ((x - bw * 0.2, x), (x + bw, x + bw * 1.2))
         ]
-        background = self.np.concatenate(strips)
-        return self.sample(crop, background)
+        return self.np.concatenate(strips)
 
     def sample(
         self, crop: NDArray[Any], background: NDArray[Any] | None = None
@@ -238,6 +253,7 @@ class Teams:
         """Separate shirt hues from white numbers and mixed torso pixels."""
         if crop.size < MIN_SHIRT_VALUES:
             return None
+        crop = foreground(self, crop, background).reshape(-1, 1, 3)
         pixels = self.cv.cvtColor(crop, self.cv.COLOR_BGR2HSV).reshape(-1, 3)
         lab = self.cv.cvtColor(crop, self.cv.COLOR_BGR2LAB).reshape(-1, 3).astype(float)
         neutral = self.np.median(lab, axis=0)
@@ -249,18 +265,6 @@ class Teams:
             # number, sleeve or patch of floor from the same torso crop.
             spread = self.np.median(self.np.linalg.norm(lab - neutral, axis=1))
             return neutral if spread <= MAX_SHIRT_SPREAD else None
-        if background is not None and background.size >= MIN_BACKGROUND_VALUES:
-            surroundings = (
-                self.cv
-                .cvtColor(background.reshape(-1, 1, 3), self.cv.COLOR_BGR2LAB)
-                .reshape(-1, 3)
-                .astype(float)
-            )
-            median = self.np.median(surroundings, axis=0)
-            spread = self.np.median(self.np.linalg.norm(surroundings - median, axis=1))
-            foreground = self.np.linalg.norm(lab - median, axis=1) > BACKGROUND_DISTANCE
-            if spread < BACKGROUND_DISTANCE and foreground.mean() >= MIN_HUE_SHARE:
-                lab, pixels = lab[foreground], pixels[foreground]
         original_size = crop.shape[0] * crop.shape[1]
         saturated = (pixels[:, 1] >= MIN_SHIRT_SATURATION) & (
             pixels[:, 2] >= MIN_SHIRT_VALUE
@@ -286,6 +290,8 @@ class Teams:
         self.votes.clear()
         self.seen.clear()
         self.confirmed.clear()
+        self.observations.clear()
+        self.observation_pixels.clear()
 
     def features(self, colors: NDArray[Any]) -> NDArray[Any]:
         """Separate dark shirt hues without treating exposure as another team.
@@ -356,8 +362,9 @@ class Teams:
         return winner, margin
 
     def assign(self, obj: dict, color: NDArray[Any] | None, timestamp: float) -> None:
-        """Hold recent confirmed evidence, but suppress contradictory observations."""
+        """Hold known teams through uncertainty without learning disputed crops."""
         identity = obj["track_id"]
+        self.transfer_confirmation(obj, color, timestamp)
         self.seen[identity] = timestamp
         obj.update(team="unknown", team_score=0.0, team_source="unknown")
         obj.pop("team_age_seconds", None)
@@ -366,7 +373,12 @@ class Teams:
         while votes and timestamp - votes[0][2] > TEAM_MEMORY_SECONDS:
             votes.popleft()
         prior = self.confirmed.get(identity)
-        if vote is not None:
+        uncertain = obj.get("identity_uncertain")
+        if uncertain and vote is not None and (prior is None or prior[0] != vote[0]):
+            self.confirmed.pop(identity, None)
+            votes.clear()
+            return
+        if vote is not None and not uncertain:
             winner, margin = vote
             votes.append((winner, margin, timestamp))
             share = sum(v[0] == winner for v in votes) / len(votes)
@@ -387,6 +399,37 @@ class Teams:
             team_age_seconds=round(age, 3),
         )
 
+    def transfer_confirmation(
+        self, obj: dict, color: NDArray[Any] | None, timestamp: float
+    ) -> None:
+        """Keep earned shirt evidence when a provisional track is confirmed."""
+        link = obj.get("identity_confirmation", {})
+        source, target = link.get("from_track_id"), obj["track_id"]
+        if (
+            obj.get("identity_uncertain")
+            or source == target
+            or link.get("to_track_id") != target
+        ):
+            return
+        prior = self.confirmed.get(source)
+        vote = self.vote(color)
+        if (
+            prior is None
+            or vote is None
+            or prior[0] != vote[0]
+            or timestamp - prior[2] > TEAM_HOLD_SECONDS
+        ):
+            return
+        existing = self.confirmed.get(target)
+        if (
+            existing is not None
+            and timestamp - existing[2] <= TEAM_HOLD_SECONDS
+            and existing[0] != prior[0]
+        ):
+            return
+        self.confirmed[target] = prior
+        self.votes[target] = deque(self.votes.get(source, ()), maxlen=20)
+
     def update(
         self, image: NDArray[Any], objects: list[dict], timestamp: float = 0
     ) -> None:
@@ -398,14 +441,62 @@ class Teams:
             self.seen.pop(identity, None)
             self.votes.pop(identity, None)
             self.confirmed.pop(identity, None)
-        samples = [
-            (o, self.observe(image, o["observed_bbox"]))
-            for o in objects
-            if o["label"] == "player" and not o.get("estimated")
-        ]
+        samples = []
+        self.observations = {}
+        self.observation_pixels = {}
+        for obj in objects:
+            if obj["label"] != "player" or obj.get("estimated"):
+                continue
+            color, evidence, values, visible = self.shirt_sample(image, obj, objects)
+            samples.append((obj, color))
+            self.observations[obj["track_id"]] = color
+            if visible >= MIN_VISIBLE:
+                self.observation_pixels[obj["track_id"]] = values[
+                    :: max(1, math.ceil(len(values) / OPENING_PIXEL_SAMPLES))
+                ].copy()
+            obj["team_evidence"] = evidence
+            # A brief guard freeze is not a new identity. Keep its earned team
+            # evidence, but discard it when the guard confirms a body handoff.
+            if obj.get("identity_issue") == "body_change":
+                self.confirmed.pop(obj["track_id"], None)
+                self.votes.pop(obj["track_id"], None)
         self.learn(samples)
         for obj, color in samples:
             self.assign(obj, color, timestamp)
+
+    def shirt_sample(self, image: NDArray[Any], obj: dict, objects: list) -> tuple:
+        """Separate visible shirts from court pixels beside overlapping bodies."""
+        others = [o["observed_bbox"] for o in objects if o is not obj]
+        color, evidence = clothing_sample(self, image, obj["observed_bbox"], others)
+        # Preserve the established whole-shirt descriptor on clear torsos;
+        # palette pixels supplement it when skin/trim obscures its vote.
+        values, visible = clothing_pixels(self, image, obj["observed_bbox"], others)
+        original = self.observe(image, obj["observed_bbox"])
+        original_vote, masked_vote = self.vote(original), self.vote(color)
+        if visible < 1 and original_vote is not None and values.size:
+            foreground = self.sample(
+                values.reshape(-1, 1, 3),
+                self.background(image, obj["observed_bbox"]),
+            )
+            foreground_vote = self.vote(foreground)
+            if (
+                visible >= MIN_VISIBLE
+                and foreground_vote is not None
+                and foreground_vote[0] == original_vote[0]
+            ):
+                color, evidence = foreground, "visible"
+                masked_vote = foreground_vote
+        if visible == 1 and original_vote is not None:
+            color, evidence = original, "visible"
+        elif (
+            original_vote is not None
+            and masked_vote is not None
+            and original_vote[0] != masked_vote[0]
+        ):
+            # The remaining sliver may be court rather than this person's
+            # shirt. Contradictory masked pixels must not erase clean history.
+            color, evidence = None, "mixed"
+        return color, evidence, values, visible
 
     def colors(self) -> list[list[int]] | None:
         """Expose the learned palette for the legend without naming actual clubs."""

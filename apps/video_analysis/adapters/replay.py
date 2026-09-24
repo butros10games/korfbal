@@ -224,25 +224,36 @@ class ReplaySection:
                 ),
             }
         if progress.get("identity_refinement"):
-            previous = [
-                link
-                for link in self.record.get("identity_refinement", {}).get("links", [])
-                if link["processing_section"] < self.part
-            ]
-            current = [
-                {
-                    **link,
-                    "from_track_id": f"p{self.part}-{link['from_track_id']}",
-                    "to_track_id": f"p{self.part}-{link['to_track_id']}",
-                    "processing_section": self.part,
-                }
-                for link in progress["identity_refinement"]["links"]
-            ]
-            self.record["identity_refinement"] = {
-                **progress["identity_refinement"],
-                "links": previous + current,
-                "section_boundaries": True,
-            }
+            refinement = {**progress["identity_refinement"], "section_boundaries": True}
+            for field in ("links", "frame_links"):
+                previous = [
+                    link
+                    for link in self.record.get("identity_refinement", {}).get(
+                        field, []
+                    )
+                    if link["processing_section"] < self.part
+                ]
+                current = [
+                    {
+                        **link,
+                        "from_track_id": f"p{self.part}-{link['from_track_id']}",
+                        "to_track_id": f"p{self.part}-{link['to_track_id']}",
+                        "processing_section": self.part,
+                        **(
+                            {
+                                "superseded_track_id": (
+                                    f"p{self.part}-" + link["superseded_track_id"]
+                                )
+                            }
+                            if link.get("superseded_track_id")
+                            else {}
+                        ),
+                    }
+                    for link in progress["identity_refinement"].get(field, [])
+                ]
+                if previous or current or field == "links":
+                    refinement[field] = previous + current
+            self.record["identity_refinement"] = refinement
         self.record.update(
             status="running",
             message=(

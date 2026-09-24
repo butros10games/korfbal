@@ -112,6 +112,15 @@ def child_result(
         "video": "demo/synthetic.mp4",
         "identity_refinement": {
             "status": "completed",
+            "frame_links": [
+                {
+                    "time_seconds": frame["time_seconds"],
+                    "from_track_id": "temporary",
+                    "superseded_track_id": "player-1",
+                    "to_track_id": "player-1",
+                    "display_id": 1,
+                }
+            ],
             "links": [
                 {
                     "from_track_id": "player-2",
@@ -209,6 +218,13 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
         }
         for part in range(EXPECTED_SECTIONS)
     ]
+    frame_links = record["identity_refinement"]["frame_links"]
+    assert len(frame_links) == EXPECTED_SECTIONS
+    for part, link in enumerate(frame_links):
+        assert link["from_track_id"] == f"p{part}-temporary"
+        assert link["to_track_id"] == f"p{part}-player-1"
+        assert link["processing_section"] == part
+        assert link["superseded_track_id"] == f"p{part}-player-1"
     for part, event in enumerate(
         e for e in record["events"] if e["kind"] == "shot_candidate"
     ):

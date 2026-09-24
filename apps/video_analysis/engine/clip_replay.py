@@ -11,7 +11,7 @@ BALL_ASSOCIATION_MARGIN = 0.25
 def top_down(
     objects: list, active_ball: dict, court: dict | None, calibration: dict
 ) -> dict:
-    """Include visible player feet; locate a ball only beside an unambiguous player.
+    """Include measured feet and marked predictions, with measured-only ball proximity.
 
     A single image ray does not locate an airborne ball on the floor. Proximity
     is an estimate, not a possession event, and never becomes a training label.
@@ -22,21 +22,28 @@ def top_down(
         else {"length": 40, "width": 20}
     )
     visible = [o for o in objects if o["label"] == "player"]
-    players = [
-        {
-            "track_id": o["track_id"],
-            "display_id": o.get("display_id"),
-            "team": o.get("team", "unknown"),
-            "xy": o["court_xy_m"],
-            "estimated": True,
-        }
-        for o in visible
-        if o.get("court_xy_m") is not None
-        and all(
+    players = []
+    for obj in visible:
+        prediction = obj.get("court_prediction") or {}
+        xy = obj.get("court_xy_m")
+        predicted = xy is None
+        if predicted:
+            xy = prediction.get("xy")
+        if xy is None or not all(
             0 <= v <= dimensions[k]
-            for v, k in zip(o["court_xy_m"], ("length", "width"), strict=True)
-        )
-    ]
+            for v, k in zip(xy, ("length", "width"), strict=True)
+        ):
+            continue
+        players.append({
+            "track_id": obj["track_id"],
+            "display_id": obj.get("display_id"),
+            "team": obj.get("team", "unknown"),
+            "xy": xy,
+            "estimated": True,
+            "court_half": obj.get("court_half", "unknown"),
+            "half_group": obj.get("half_group", "unknown"),
+            **(prediction if predicted else {}),
+        })
     result = {
         "court": dimensions,
         "status": calibration.get("status", "unknown"),
@@ -90,6 +97,8 @@ def near_player(ball: dict, people: list[dict]) -> dict | None:
             score = distance([(point[0] - x) / w, (point[1] - y) / h], [0.5, 0.45])
             candidates.append((score, obj))
     candidates.sort(key=itemgetter(0))
+    if any(obj.get("identity_uncertain") for _, obj in candidates):
+        return None
     if not candidates or (
         len(candidates) > 1
         and candidates[1][0] - candidates[0][0] < BALL_ASSOCIATION_MARGIN

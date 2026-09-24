@@ -20,6 +20,7 @@ from .clip_events import ShotEvents
 from .clip_identity import IdentityMemory, court_reference
 from .clip_inference import CPU_THREADS, clip_detector
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
+from .clip_overlap import OverlapFrame, OverlapRecovery
 from .clip_positions import attach_post_distances
 from .clip_possession import PossessionEvents
 from .clip_recovery import PlayerRecovery, RecoveryFrame
@@ -27,6 +28,7 @@ from .clip_references import suggestion
 from .clip_refinement import IdentityRefiner
 from .clip_replay import top_down
 from .clip_signals import Camera, Teams, modules
+from .clip_team_opening import OpeningTeams
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
 from .store import Store, atomic_json
@@ -86,11 +88,13 @@ class ClipRun:
         self.people = People(options)
         self.balls = Balls()
         self.teams = Teams(options.team_colors)
+        self.opening_teams = OpeningTeams()
         self.events = ShotEvents()
         self.possession = PossessionEvents(options.court)
         self.recovery = PlayerRecovery(
             options, crops=os.environ.get("KORFBAL_CLIP_RECOVERY_CROPS", "0") == "1"
         )
+        self.overlap = OverlapRecovery()
         self.refiner = IdentityRefiner()
         self.record["recipe"]["player_recovery"] = {
             "version": 1,
@@ -99,7 +103,16 @@ class ClipRun:
 
     def publish(self) -> None:
         """Commit immutable frame chunks before publishing their manifest entries."""
-        if self.buffer:
+        if self.buffer and not (
+            self.record["status"] == "running"
+            and self.opening_teams.waiting(self.buffer)
+        ):
+            self.record["team_assigned"] += self.opening_teams.finish(
+                self.buffer,
+                self.teams,
+                self.options.court,
+                confirm=self.record["status"] in {"running", "completed"},
+            )
             name = f"chunk-{len(self.record['chunks']):05d}.json"
             atomic_json(self.root / name, {"frames": self.buffer})
             self.record["chunks"].append({
@@ -119,6 +132,7 @@ class ClipRun:
         )
         self.record.update(self.events.snapshot())
         self.record["player_recovery"] = self.recovery.snapshot()
+        self.record["overlap_recovery"] = self.overlap.snapshot()
         possession = self.possession.snapshot()
         self.record["possession_detection"] = possession["possession_detection"]
         self.record["event_detection"]["truncated"] |= self.possession.truncated
@@ -233,6 +247,20 @@ class ClipRun:
     ) -> None:
         """Combine identities with independent colour, ball and floor signals."""
         raw = cast("Any", result)
+        raw = self.overlap.refine(
+            raw,
+            image,
+            self.teams,
+            OverlapFrame(
+                detector,
+                self.timings["inference"],
+                self.recovery.seconds,
+                self.stopped,
+                timestamp,
+            ),
+        )
+        raw = cast("Any", raw)
+        result = raw
         boxes = [
             [x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in raw.boxes.xyxyn.tolist()
         ]
@@ -261,9 +289,11 @@ class ClipRun:
                     detector,
                     self.timings["inference"],
                     self.stopped,
+                    other_seconds=self.overlap.seconds,
                 ),
             )
 
+        self.people.identities.shirts.centers = self.teams.centers
         persons = self.people.update(
             result,
             image,
@@ -272,7 +302,8 @@ class ClipRun:
             recovery=recover if detector is not None else None,
         )
         self.teams.update(image, persons, timestamp)
-        self.refiner.observe(image, persons, timestamp, camera)
+        self.opening_teams.observe(self.teams, persons, timestamp, camera["segment"])
+        self.refiner.observe(image, persons, timestamp, camera, shirts=self.teams)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
             [o for o in detected if o["label"] == "ball"],
@@ -369,14 +400,14 @@ class ClipRun:
                 if self.stopped():
                     break
                 started = time.monotonic()
-                recovery_before = self.recovery.seconds
+                recovery_before = self.recovery.seconds + self.overlap.seconds
                 self.step(image, timestamp, result, model)
                 self.timings["tracking"] += (
                     time.monotonic()
                     - started
-                    - (self.recovery.seconds - recovery_before)
+                    - (self.recovery.seconds + self.overlap.seconds - recovery_before)
                 )
-                self.timings["recovery"] = self.recovery.seconds
+                self.timings["recovery"] = self.recovery.seconds + self.overlap.seconds
             if self.record["status"] == "running":
                 if not self.record["frames"]:
                     raise ValueError("No frames were decoded")
