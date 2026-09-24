@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 MAX_SAMPLES = 96
 MAX_SECONDS = 120
 SAMPLE_INTERVAL = 0.8
+CONTEXT_SECONDS = 12
 WINDOW_SAMPLES = 21
 MIN_IMAGES = 5
 MIN_PIXEL_OBSERVATIONS = 2
@@ -44,6 +45,23 @@ class TemporalReference:
         self.mapping = mapping
         self.stopped = stopped or (lambda: False)
         self.samples: deque = deque(maxlen=WINDOW_SAMPLES)
+
+    def consider(self, image: NDArray[Any], timestamp: float, objects: list) -> None:
+        """Prefer measured references, then collect complementary masked pixels."""
+        if self.mapping.references.find(image, timestamp, objects):
+            self.prepare()
+            self.samples.clear()
+            return
+        found = estimate(image, objects, self.mapping.court)
+        if found:
+            self.mapping.references.add(image, timestamp, objects, found)
+            self.prepare()
+            self.samples.clear()
+        else:
+            self.add(image, timestamp, objects)
+            if len(self.samples) == WINDOW_SAMPLES:
+                self.prepare()
+                self.samples.clear()
 
     def add(self, image: NDArray[Any], timestamp: float, objects: list) -> None:
         """Separate unmatched camera views instead of blending across cuts."""
@@ -157,47 +175,37 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
     temporal = TemporalReference(
         mapping, lambda: run.stopped() or time.monotonic() - started > MAX_SECONDS
     )
-    interval = max(SAMPLE_INTERVAL, run.options.duration / MAX_SAMPLES)
     sampled = 0
+    context_sampled = 0
     try:
-        for index in range(MAX_SAMPLES):
-            timestamp = run.options.start + interval * index
-            if (
-                timestamp >= run.options.start + run.options.duration
-                or time.monotonic() - started > MAX_SECONDS
-                or run.stopped()
-            ):
-                break
-            snapshot = sample(run, capture, model, timestamp)
-            if snapshot is None:
-                continue
-            sampled += 1
-            actual, image, objects = snapshot
-            run.record["message"] = (
-                f"Preparing court references ({sampled} frames checked)"
-            )
-            if time.monotonic() - run.last_publish >= PROGRESS_SECONDS:
-                run.publish()
-            if mapping.references.find(image, actual, objects):
+        for context, timestamps in preparation_windows(run):
+            # Non-adjacent windows are separate observations, even when the wall
+            # looks similar. Every saved reference still needs its own floor fit.
+            temporal.samples.clear()
+            for timestamp in timestamps:
+                if temporal.stopped():
+                    break
+                snapshot = sample(run, capture, model, timestamp)
+                if snapshot is None:
+                    continue
+                sampled += 1
+                context_sampled += int(context)
+                if temporal.stopped():
+                    break
+                actual, image, objects = snapshot
+                run.record["message"] = (
+                    f"Preparing court references ({sampled} frames checked)"
+                )
+                if time.monotonic() - run.last_publish >= PROGRESS_SECONDS:
+                    run.publish()
+                temporal.consider(image, actual, objects)
+            if not temporal.stopped():
                 temporal.prepare()
-                temporal.samples.clear()
-                continue
-            found = estimate(image, objects, mapping.court)
-            if found:
-                mapping.references.add(image, actual, objects, found)
-                temporal.prepare()
-                temporal.samples.clear()
-            else:
-                temporal.add(image, actual, objects)
-                if len(temporal.samples) == WINDOW_SAMPLES:
-                    temporal.prepare()
-                    temporal.samples.clear()
-        if not run.stopped() and time.monotonic() - started <= MAX_SECONDS:
-            temporal.prepare()
     finally:
         capture.release()
         run.record["automatic_court_preparation"] = {
             "sampled_frames": sampled,
+            "context_frames": context_sampled,
             "references": len(mapping.references.items),
             "observations": [
                 {"time": r["time"], **r["evidence"]} for r in mapping.references.items
@@ -207,6 +215,36 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
             "max_seconds": MAX_SECONDS,
         }
         run.publish()
+
+
+def preparation_windows(run: ClipRun) -> list[tuple[bool, list[float]]]:
+    """Spend remaining sample budget on nearby clear views of the same recording.
+
+    Analyze the requested interval first. Context supplies calibration only and
+    never extends the analyzed clip, joins camera cuts, or changes annotations.
+    """
+    start, duration = run.options.start, run.options.duration
+    end = start + duration
+    interval = max(SAMPLE_INTERVAL, duration / MAX_SAMPLES)
+    primary = [
+        start + i * interval for i in range(MAX_SAMPLES) if i * interval < duration
+    ]
+    windows = [(False, primary)]
+    remaining = MAX_SAMPLES - len(primary)
+    recording_end = run.match.get("duration_seconds", end)
+    ranges = [
+        (max(0, start - CONTEXT_SECONDS), start),
+        (end, min(recording_end, end + CONTEXT_SECONDS)),
+    ]
+    available = sum(max(0, b - a) for a, b in ranges)
+    if remaining and available:
+        interval = max(SAMPLE_INTERVAL, available / remaining)
+        for a, b in ranges:
+            times = [a + i * interval for i in range(remaining) if a + i * interval < b]
+            remaining -= len(times)
+            if times:
+                windows.append((True, times))
+    return windows
 
 
 def sample(

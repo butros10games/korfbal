@@ -17,7 +17,7 @@ from . import (
     clip_flow,
     clip_geometry as geometry,
 )
-from .clip_auto_references import References
+from .clip_auto_references import MIN_EDGE_SUPPORT, References
 from .clip_court import CourtMap
 from .clip_signals import modules
 
@@ -414,6 +414,42 @@ class AutoCourt:
                 self.references.add(image, timestamp, objects, found)
         return found
 
+    def propagate(
+        self, image: NDArray[Any], boxes: list, timestamp: float
+    ) -> tuple | None:
+        """Bridge a short pan with floor motion verified independently of people."""
+        if (
+            self.floor is None
+            or not self.previous
+            or timestamp - self.last_seen > MAX_HOLD
+        ):
+            return None
+        try:
+            current = self.matcher.features(image, boxes, self.floor)
+            match = clip_flow.register(self.previous, current)
+            if match is None:
+                # Descriptor matching can recover corners that sparse flow loses.
+                # Require separate floor-edge agreement before accepting its warp.
+                match = self.matcher.register(current, self.previous)
+                if (
+                    match
+                    and self.references.floor_agreement(
+                        self.previous, current, match[0]
+                    )
+                    < MIN_EDGE_SUPPORT
+                ):
+                    match = None
+        except (ValueError, self.matcher.np.linalg.LinAlgError):
+            return None
+        if match is None:
+            return None
+        return self.floor @ match[0], {
+            **self.evidence,
+            "status": "automatic_tracked",
+            "seconds_since_observation": round(timestamp - self.last_seen, 2),
+            "inliers": match[1],
+        }
+
     def update(
         self, image: NDArray[Any], timestamp: float, objects: list, cut: bool
     ) -> tuple:
@@ -424,28 +460,25 @@ class AutoCourt:
         boxes = [o["bbox"] for o in objects]
         candidate = None
         evidence = {"status": "unknown", "segments": [], "estimated": True}
-        if timestamp - self.last_search >= SEARCH_INTERVAL or self.floor is None:
+        searched = timestamp - self.last_search >= SEARCH_INTERVAL or self.floor is None
+        if searched:
             self.last_search = timestamp
             found = self.observe(image, timestamp, objects)
             if found:
                 candidate, evidence = found
                 self.last_seen = timestamp
-        if (
-            candidate is None
-            and self.floor is not None
-            and self.previous
-            and timestamp - self.last_seen <= MAX_HOLD
-        ):
-            current = self.matcher.features(image, boxes, self.floor)
-            match = clip_flow.register(self.previous, current)
-            if match:
-                candidate = self.floor @ match[0]
-                evidence = {
-                    **self.evidence,
-                    "status": "automatic_tracked",
-                    "seconds_since_observation": round(timestamp - self.last_seen, 2),
-                    "inliers": match[1],
-                }
+        if candidate is None and (tracked := self.propagate(image, boxes, timestamp)):
+            candidate, evidence = tracked
+        # A failed motion step does not mean the original view is unavailable.
+        # Retry it now, rather than clearing the map and recovering one frame later.
+        # Reacquisition still checks independent floor evidence and never carries
+        # the previous camera's mapping over a cut.
+        if candidate is None and not searched:
+            self.last_search = timestamp
+            found = self.observe(image, timestamp, objects)
+            if found:
+                candidate, evidence = found
+                self.last_seen = timestamp
         if candidate is not None:
             try:
                 features = self.matcher.features(image, boxes, candidate)

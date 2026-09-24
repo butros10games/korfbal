@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .clip_contract import ClipOptions
+from .clip_ground import GroundContacts
 from .clip_identity import (
     COURT_IDENTITY_GAP,
     IDENTITY_GAP,
@@ -94,10 +95,12 @@ class People:
         self.generations = Counter()
         self.segment = 0
         self.identities = IdentityMemory()
+        self.ground = GroundContacts()
 
     def reset(self, segment: int) -> None:
         """Discard identities and motion history across a camera cut."""
         self.identities.reset()
+        self.ground = GroundContacts()
         self.trackers.clear()
         self.motion = None
         self.previous.clear()
@@ -244,6 +247,7 @@ class People:
             self.identities.advance(timestamp, motion, COURT_IDENTITY_GAP)
             objects.extend(recovery(self.identities, objects))
             motion = None  # Camera motion has already been applied exactly once.
+        self.ground.update(objects, timestamp, camera)
         return self.identities.update(
             objects,
             image,
