@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import importlib
 import math
 
+from .clip_recovery_metrics import recovery_metrics
 from .vision import iou
 
 
@@ -171,6 +172,7 @@ def score_clip(
     *,
     scope: str,
     tolerance: float = 0.041,
+    recovery_windows: list[dict] | None = None,
 ) -> dict:
     """Score class-aware IoU ≥ 0.5 matches on reviewed tracking keyframes.
 
@@ -193,6 +195,7 @@ def score_clip(
         raise ValueError("Choose a timestamp tolerance between zero and 0.1 seconds")
     score = IdentityScore()
     used_frames = set()
+    observations = []
     for ref in references:
         nearest = min(
             range(len(predictions)),
@@ -219,4 +222,14 @@ def score_clip(
         for index, obj in enumerate(expected):
             other = observed[matched[index]] if index in matched else None
             score.observe(obj, other, ref.get("segment", 0), ref["time_seconds"])
-    return score.report(scope)
+            observations.append({
+                "identity": obj["track_id"],
+                "label": obj["label"],
+                "segment": ref.get("segment", 0),
+                "time": ref["time_seconds"],
+                "track": other["track_id"] if other else None,
+            })
+    return {
+        **score.report(scope),
+        "recovery": recovery_metrics(recovery_windows or [], observations),
+    }

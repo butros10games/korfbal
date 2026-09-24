@@ -33,14 +33,14 @@ def validate_periods(raw: object, duration: float) -> list[dict[str, float]]:
     return periods
 
 
-def sample_times(periods: list[dict[str, float]], interval: int) -> list[float]:
+def sample_times(periods: list[dict[str, float]], interval: int | None) -> list[float]:
     """Sample each active period independently; gaps never yield images.
 
     Raises:
         ValueError: If the interval or image count is outside policy limits.
 
     """
-    if interval not in {10, 20, 30}:
+    if interval is None or interval not in {10, 20, 30}:
         raise ValueError("Choose a 10, 20 or 30 second image interval")
     times = [
         round(period["start"] + index * interval, 3)

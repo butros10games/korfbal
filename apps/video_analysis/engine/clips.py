@@ -24,6 +24,7 @@ from .clip_positions import attach_post_distances
 from .clip_possession import PossessionEvents
 from .clip_recovery import PlayerRecovery, RecoveryFrame
 from .clip_references import suggestion
+from .clip_refinement import IdentityRefiner
 from .clip_replay import top_down
 from .clip_signals import Camera, Teams, modules
 from .clip_tracking import Balls, People
@@ -90,6 +91,7 @@ class ClipRun:
         self.recovery = PlayerRecovery(
             options, crops=os.environ.get("KORFBAL_CLIP_RECOVERY_CROPS", "0") == "1"
         )
+        self.refiner = IdentityRefiner()
         self.record["recipe"]["player_recovery"] = {
             "version": 1,
             "crop_search_enabled": self.recovery.crops,
@@ -146,8 +148,20 @@ class ClipRun:
         self.events.finish(self.record["status"])
         self.possession.reset()
         try:
+            if self.record["status"] == "completed":
+                started = time.monotonic()
+                self.record["status"] = "running"
+                self.record["identity_refinement"] = self.refiner.finish(
+                    stopped=self.stopped
+                )
+                if self.stopped():
+                    self.record.pop("identity_refinement", None)
+                else:
+                    self.record["status"] = "completed"
+                self.timings["identity_refinement"] = time.monotonic() - started
             self.publish()
         except Exception:
+            self.record.pop("identity_refinement", None)
             self.record.update(
                 status="failed",
                 message="Could not publish final frames; earlier chunks retained",
@@ -258,6 +272,7 @@ class ClipRun:
             recovery=recover if detector is not None else None,
         )
         self.teams.update(image, persons, timestamp)
+        self.refiner.observe(image, persons, timestamp, camera)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
             [o for o in detected if o["label"] == "ball"],

@@ -110,6 +110,16 @@ def child_result(
         "video_sha256": "frozen-source",
         "team_colors": [[20, 40, 150], [30, 130, 60]],
         "video": "demo/synthetic.mp4",
+        "identity_refinement": {
+            "status": "completed",
+            "links": [
+                {
+                    "from_track_id": "player-2",
+                    "to_track_id": "player-1",
+                    "display_id": 1,
+                }
+            ],
+        },
         "event_detection": {
             "version": 1,
             "processed_frames": 1,
@@ -190,6 +200,15 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
     assert record["possession_detection"]["processed_frames"] == EXPECTED_SECTIONS
     assert record["event_detection"]["processed_frames"] == EXPECTED_SECTIONS
     assert record["event_detection"]["section_boundaries"] is True
+    assert record["identity_refinement"]["links"] == [
+        {
+            "from_track_id": f"p{part}-player-2",
+            "to_track_id": f"p{part}-player-1",
+            "display_id": 1,
+            "processing_section": part,
+        }
+        for part in range(EXPECTED_SECTIONS)
+    ]
     for part, event in enumerate(
         e for e in record["events"] if e["kind"] == "shot_candidate"
     ):

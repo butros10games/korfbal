@@ -223,6 +223,26 @@ class ReplaySection:
                     or self.record.get("event_detection", {}).get("truncated")
                 ),
             }
+        if progress.get("identity_refinement"):
+            previous = [
+                link
+                for link in self.record.get("identity_refinement", {}).get("links", [])
+                if link["processing_section"] < self.part
+            ]
+            current = [
+                {
+                    **link,
+                    "from_track_id": f"p{self.part}-{link['from_track_id']}",
+                    "to_track_id": f"p{self.part}-{link['to_track_id']}",
+                    "processing_section": self.part,
+                }
+                for link in progress["identity_refinement"]["links"]
+            ]
+            self.record["identity_refinement"] = {
+                **progress["identity_refinement"],
+                "links": previous + current,
+                "section_boundaries": True,
+            }
         self.record.update(
             status="running",
             message=(
