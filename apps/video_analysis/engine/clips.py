@@ -10,17 +10,19 @@ import importlib
 import json
 import math
 from operator import itemgetter
+import os
 from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any, cast
 
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
 from .clip_events import ShotEvents
-from .clip_identity import court_reference
+from .clip_identity import IdentityMemory, court_reference
 from .clip_inference import CPU_THREADS, clip_detector
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_positions import attach_post_distances
 from .clip_possession import PossessionEvents
+from .clip_recovery import PlayerRecovery, RecoveryFrame
 from .clip_references import suggestion
 from .clip_replay import top_down
 from .clip_signals import Camera, Teams, modules
@@ -85,6 +87,13 @@ class ClipRun:
         self.teams = Teams(options.team_colors)
         self.events = ShotEvents()
         self.possession = PossessionEvents(options.court)
+        self.recovery = PlayerRecovery(
+            options, crops=os.environ.get("KORFBAL_CLIP_RECOVERY_CROPS", "0") == "1"
+        )
+        self.record["recipe"]["player_recovery"] = {
+            "version": 1,
+            "crop_search_enabled": self.recovery.crops,
+        }
 
     def publish(self) -> None:
         """Commit immutable frame chunks before publishing their manifest entries."""
@@ -107,6 +116,7 @@ class ClipRun:
             self.record["frames"] / max(0.001, time.monotonic() - self.started), 2
         )
         self.record.update(self.events.snapshot())
+        self.record["player_recovery"] = self.recovery.snapshot()
         possession = self.possession.snapshot()
         self.record["possession_detection"] = possession["possession_detection"]
         self.record["event_detection"]["truncated"] |= self.possession.truncated
@@ -200,7 +210,13 @@ class ClipRun:
         finally:
             capture.release()
 
-    def step(self, image: NDArray[Any], timestamp: float, result: object) -> None:
+    def step(
+        self,
+        image: NDArray[Any],
+        timestamp: float,
+        result: object,
+        detector: object | None = None,
+    ) -> None:
         """Combine identities with independent colour, ball and floor signals."""
         raw = cast("Any", result)
         boxes = [
@@ -218,7 +234,29 @@ class ClipRun:
             self.balls.reset(camera["segment"])
             self.teams.reset()
             self.record["camera_cuts"] += 1
-        persons = self.people.update(result, image, timestamp, camera)
+
+        def recover(memory: IdentityMemory, observed: list[dict]) -> list[dict]:
+            return self.recovery.recover(
+                memory,
+                observed,
+                RecoveryFrame(
+                    result,
+                    image,
+                    timestamp,
+                    camera,
+                    detector,
+                    self.timings["inference"],
+                    self.stopped,
+                ),
+            )
+
+        persons = self.people.update(
+            result,
+            image,
+            timestamp,
+            camera,
+            recovery=recover if detector is not None else None,
+        )
         self.teams.update(image, persons, timestamp)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
@@ -316,8 +354,14 @@ class ClipRun:
                 if self.stopped():
                     break
                 started = time.monotonic()
-                self.step(image, timestamp, result)
-                self.timings["tracking"] += time.monotonic() - started
+                recovery_before = self.recovery.seconds
+                self.step(image, timestamp, result, model)
+                self.timings["tracking"] += (
+                    time.monotonic()
+                    - started
+                    - (self.recovery.seconds - recovery_before)
+                )
+                self.timings["recovery"] = self.recovery.seconds
             if self.record["status"] == "running":
                 if not self.record["frames"]:
                     raise ValueError("No frames were decoded")

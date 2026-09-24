@@ -6,6 +6,7 @@ Exports preserve rectangular letterboxing, FP32 weights and Ultralytics decoding
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import fcntl
 import hashlib
 import importlib
@@ -24,6 +25,7 @@ from .vision import digest
 
 CPU_THREADS = 2
 EXPORT_VERSION = 1
+MAX_SESSIONS = 2
 
 
 def export_recipe(weights: Path, shape: tuple[int, int]) -> dict:
@@ -102,6 +104,7 @@ class CpuDetector:
         self.end2end = bool(getattr(model.model, "end2end", False))
         self.session: Any = None
         self.shape: tuple[int, int] | None = None
+        self.sessions: OrderedDict[tuple[int, int], tuple[Any, dict]] = OrderedDict()
         self.inference_info: dict[str, Any] = {
             "backend": "onnxruntime",
             "precision": "fp32",
@@ -110,6 +113,12 @@ class CpuDetector:
     def prepare(self, shape: tuple[int, int]) -> None:
         """Limit execution to the worker's CPU quota, including background pools."""
         if self.session is not None and self.shape == shape:
+            return
+        if shape in self.sessions:
+            self.session, info = self.sessions[shape]
+            self.sessions.move_to_end(shape)
+            self.shape = shape
+            self.inference_info.update(info)
             return
         runtime = importlib.import_module("onnxruntime")
         exported = cached_export(Path(self.ckpt_path), self.cache, shape)
@@ -127,6 +136,10 @@ class CpuDetector:
             input_shape=list(shape),
             cpu_threads=CPU_THREADS,
         )
+        self.sessions[shape] = self.session, self.inference_info.copy()
+        # Retain the normal frame and one fixed crop shape, never one per region.
+        while len(self.sessions) > MAX_SESSIONS:
+            self.sessions.popitem(last=False)
 
     def predict(self, source: object, **options: object) -> list[Any]:
         """Use the same colour order, padding, NMS and box coordinates as PyTorch."""

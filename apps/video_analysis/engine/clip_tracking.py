@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 import importlib
 import math
 from operator import itemgetter
@@ -10,7 +11,12 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .clip_contract import ClipOptions
-from .clip_identity import IDENTITY_GAP, IdentityMemory, court_reference
+from .clip_identity import (
+    COURT_IDENTITY_GAP,
+    IDENTITY_GAP,
+    IdentityMemory,
+    court_reference,
+)
 from .clip_replay import near_player
 from .clip_signals import center, distance, floor_position, modules, transform
 
@@ -133,7 +139,12 @@ class People:
                 )
 
     def update(
-        self, raw: object, image: NDArray[Any], timestamp: float, camera: dict
+        self,
+        raw: object,
+        image: NDArray[Any],
+        timestamp: float,
+        camera: dict,
+        recovery: Callable | None = None,
     ) -> list[dict]:
         """Retain observed boxes, refusing physically implausible identity links."""
         result = cast("Any", raw)
@@ -217,11 +228,27 @@ class People:
             for k, v in self.previous.items()
             if timestamp - v["time"] <= IDENTITY_GAP
         }
+        return self.reconcile(objects, image, timestamp, camera, recovery)
+
+    def reconcile(
+        self,
+        objects: list[dict],
+        image: NDArray[Any],
+        timestamp: float,
+        camera: dict,
+        recovery: Callable | None,
+    ) -> list[dict]:
+        """Add detected recovery evidence before the single identity update."""
+        motion = camera["motion"]
+        if recovery is not None:
+            self.identities.advance(timestamp, motion, COURT_IDENTITY_GAP)
+            objects.extend(recovery(self.identities, objects))
+            motion = None  # Camera motion has already been applied exactly once.
         return self.identities.update(
             objects,
             image,
             timestamp,
-            camera["motion"],
+            motion,
             court_key=court_reference(camera),
         )
 

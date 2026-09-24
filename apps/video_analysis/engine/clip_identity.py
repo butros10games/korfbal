@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 IDENTITY_GAP = 3.0
+MOTION_HISTORY_SECONDS = 1.2
 COURT_IDENTITY_GAP = 6.0
 MAX_SHIRT_DISTANCE = 25
 MIN_SIZE_RATIO = 0.65
@@ -80,6 +81,10 @@ class IdentityMemory:
         if motion is not None:
             for prior in self.tracks.values():
                 prior["point"] = transform(prior["point"], motion) or prior["point"]
+                prior["locations"] = [
+                    (t, transform(point, motion) or point)
+                    for t, point in prior["locations"]
+                ]
 
     def cost(
         self,
@@ -206,7 +211,8 @@ class IdentityMemory:
                         timestamp,
                         metric_key,
                     )
-                    if self.possible(self.tracks[k], objects[i], timestamp, court_key)
+                    if objects[i].get("recovery_target", k) == k
+                    and self.possible(self.tracks[k], objects[i], timestamp, court_key)
                     else float("inf")
                     for i in missing
                 ]
@@ -304,9 +310,14 @@ class IdentityMemory:
             for o, c in zip(objects, colors, strict=True)
         ]
         matched = self.recover(objects, colors, timestamp, court_key, metric_colors)
+        retained = []
         for index, obj in enumerate(objects):
             native = obj["track_id"]
             identity = matched.get(index)
+            if obj.get("recovery_target") and identity != obj["recovery_target"]:
+                continue
+            obj.pop("recovery_target", None)
+            retained.append(obj)
             prior = self.tracks.get(identity) if identity is not None else None
             if identity is None:
                 self.next_id += 1
@@ -372,7 +383,23 @@ class IdentityMemory:
                 "display_id": display_id,
                 "label": obj["label"],
                 "point": point,
+                "locations": [
+                    (t, p)
+                    for t, p in (prior["locations"] if prior else [])
+                    if timestamp - t <= MOTION_HISTORY_SECONDS
+                ][-15:]
+                + (
+                    [(timestamp, point)]
+                    if obj.get("observation_source") != "targeted_detection"
+                    else []
+                ),
                 "height": obj["observed_bbox"][3],
+                "width": obj["observed_bbox"][2],
+                "full_time": timestamp
+                if obj.get("observation_source") != "targeted_detection"
+                else prior["full_time"]
+                if prior
+                else timestamp,
                 "color": self.np.median(history, axis=0) if history else None,
                 "last_color": colors[index]
                 if colors[index] is not None
@@ -395,7 +422,7 @@ class IdentityMemory:
                 else prior["court_velocity"],
                 "time": timestamp,
             }
-        return objects
+        return retained
 
     @staticmethod
     def clear_torso(obj: dict, objects: list[dict]) -> bool:
