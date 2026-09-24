@@ -22,6 +22,7 @@ class Command(BaseCommand):
         parser.add_argument("--start", type=float, default=0)
         parser.add_argument("--interval", type=float, default=10)
         parser.add_argument("--count", type=int, default=24)
+        parser.add_argument("--defer-frames", action="store_true")
 
     def handle(self, *args: object, **options: object) -> None:
         """Append a recording using the same validation as legacy extraction."""
@@ -32,6 +33,7 @@ class Command(BaseCommand):
             start=float(str(options["start"])),
             interval=float(str(options["interval"])),
             count=int(str(options["count"])),
+            defer_frames=bool(options["defer_frames"]),
         )
         import_recording(store, Path(str(options["source"])), config)
         self.stdout.write("Recording imported into the native review queue.")

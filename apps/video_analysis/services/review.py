@@ -7,6 +7,7 @@ from django.db import transaction
 
 from apps.kwt_common.services.jobs import enqueue
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
+from apps.video_analysis.engine.timeline import validate_periods
 from apps.video_analysis.models import Frame, Recording, ReviewAudit, Workspace
 from apps.video_analysis.queries import frame_payload
 
@@ -108,3 +109,36 @@ def timing(workspace: Workspace, payload: dict[str, Any]) -> dict:
     locked.save(update_fields=["revision"])
     publish_later(workspace)
     return {"revision": locked.revision}
+
+
+@transaction.atomic
+def timeline(workspace: Workspace, payload: dict[str, Any]) -> dict:
+    """Save source-video active periods with optimistic workspace revisioning.
+
+    Raises:
+        ConflictError: The workspace revision changed since the editor loaded.
+        ValueError: The recording or its active periods are invalid.
+
+    """
+    locked = Workspace.objects.select_for_update().get(pk=workspace.pk)
+    if payload.get("revision") != locked.revision:
+        raise ConflictError("Timeline changed. Reload before saving your edit.")
+    recording = Recording.objects.filter(
+        workspace=workspace, source_id=payload.get("match_id")
+    ).first()
+    if recording is None or not recording.metadata.get("video"):
+        raise ValueError("Choose a recording with video")
+    periods = validate_periods(
+        payload.get("active_periods"), recording.metadata["duration_seconds"]
+    )
+    metadata = {**recording.metadata, "active_periods": periods}
+    if not metadata.get("timing_history"):
+        metadata["match_start_seconds"] = (
+            metadata.get("source_offset_seconds", 0) + periods[0]["start"]
+        )
+    recording.metadata = metadata
+    recording.save(update_fields=["metadata"])
+    locked.revision += 1
+    locked.save(update_fields=["revision"])
+    publish_later(workspace)
+    return {"revision": locked.revision, "active_periods": periods}

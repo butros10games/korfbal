@@ -13,6 +13,7 @@ import tempfile
 from typing import Any
 
 from .store import SAFE_ID, Store, blank_annotation, number
+from .timeline import is_active_time, sample_times, validate_periods
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class ImportOptions:
     interval: float = 2
     count: int = 24
     split_group: str = ""
+    defer_frames: bool = False
 
 
 def binary(name: str) -> str:
@@ -103,8 +105,12 @@ def import_recording(
         shutil.copyfile(source, video)
         with video.open("rb") as handle:
             checksum = hashlib.file_digest(handle, "sha256").hexdigest()
-        frames = _extract_frames(store, video, metadata, options)
-        if not frames:
+        frames = (
+            []
+            if options.defer_frames
+            else _extract_frames(store, video, metadata, options)
+        )
+        if not frames and not options.defer_frames:
             raise ValueError("No frames available in this interval")
         match = {
             "id": options.match_id,
@@ -112,6 +118,8 @@ def import_recording(
             "source_url": options.source_url,
             "source_offset_seconds": options.source_offset,
             "match_start_seconds": None,
+            "active_periods": [],
+            "timeline_required": options.defer_frames,
             "split_group": options.split_group or options.match_id,
             "video": str(video.relative_to(store.root)),
             "video_sha256": checksum,
@@ -124,6 +132,93 @@ def import_recording(
         shutil.rmtree(directory)
         raise
     return match
+
+
+def prepare_active_frames(
+    store: Store,
+    match_id: str,
+    interval: int,
+    expected_periods: list[dict[str, float]] | None = None,
+) -> dict[str, int]:
+    """Extract new images from saved active play, retaining all existing reviews.
+
+    The database change is made once after extraction. A concurrent timeline edit
+    invalidates this batch instead of publishing images from an old selection.
+
+    Raises:
+        ValueError: If the recording, intervals, or decoded images are invalid.
+
+    """
+    data = store.read()
+    match = next((item for item in data["matches"] if item["id"] == match_id), None)
+    if match is None or not match.get("video"):
+        raise ValueError("Choose a recording with video")
+    periods = validate_periods(match.get("active_periods"), match["duration_seconds"])
+    if expected_periods is not None and periods != expected_periods:
+        raise ValueError("Timeline changed since image preparation was requested")
+    times = sample_times(periods, interval)
+    existing = {round(frame["time_seconds"] * 1000) for frame in match["frames"]}
+    missing = [time for time in times if round(time * 1000) not in existing]
+    video = store.media(match["video"])
+    with tempfile.TemporaryDirectory(
+        prefix="active-frames-", dir=video.parent
+    ) as temporary:
+        pending = []
+        for time in missing:
+            frame_id = f"at-{round(time * 1000):09d}"
+            image = Path(temporary) / f"{frame_id}.jpg"
+            subprocess.run(
+                [
+                    binary("ffmpeg"),
+                    "-v",
+                    "error",
+                    "-ss",
+                    str(time),
+                    "-i",
+                    str(video),
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    str(image),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
+            if not image.is_file():
+                raise ValueError(f"Could not decode frame at {time} seconds")
+            pending.append((time, frame_id, image))
+        with store.transaction():
+            fresh = store.read()
+            current = next(item for item in fresh["matches"] if item["id"] == match_id)
+            if current.get("active_periods") != periods:
+                raise ValueError(
+                    "Timeline changed during preparation; start a new batch"
+                )
+            ids = {frame["id"] for frame in current["frames"]}
+            added = 0
+            for time, frame_id, image in pending:
+                if frame_id in ids:
+                    continue
+                target = video.parent / f"{frame_id}.jpg"
+                image.replace(target)
+                current["frames"].append({
+                    "id": frame_id,
+                    "time_seconds": time,
+                    "source_time_seconds": current.get("source_offset_seconds", 0)
+                    + time,
+                    "image": str(target.relative_to(store.root)),
+                    "status": "pending",
+                    "proposal": None,
+                    "correction": None,
+                    "complete": False,
+                })
+                added += 1
+            if added:
+                current["frames"].sort(key=itemgetter("time_seconds"))
+                store._persist(fresh)
+    return {"added": added, "selected": len(times)}
 
 
 def _extract_frames(
@@ -236,6 +331,8 @@ def sample_frame(store: Store, match_id: str, seconds: float) -> dict[str, Any]:
     if match is None or not match.get("video"):
         raise ValueError("Choose a match with a recording")
     time = number(seconds, 0, match["duration_seconds"])
+    if not is_active_time(match, time):
+        raise ValueError("Choose a frame inside an active-play period")
     frame_id = f"at-{round(time * 1000):09d}"
     if any(f["id"] == frame_id for f in match["frames"]):
         return {"frame_id": frame_id}

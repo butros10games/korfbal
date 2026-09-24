@@ -20,8 +20,9 @@ from apps.video_analysis.engine.clips import receipt
 from apps.video_analysis.engine.coverage import dataset_report
 from apps.video_analysis.engine.handoff import parent_checkpoint
 from apps.video_analysis.engine.luna import analyze_frame
-from apps.video_analysis.engine.media import sample_frame
+from apps.video_analysis.engine.media import prepare_active_frames, sample_frame
 from apps.video_analysis.engine.store import Store, number
+from apps.video_analysis.engine.timeline import is_active_time
 from apps.video_analysis.models import AnalysisJob, Workspace
 from apps.video_analysis.services.jobs import continue_analysis
 
@@ -79,11 +80,8 @@ def perform(job: AnalysisJob, store: Store) -> None:
     payload = job.payload
     if job.kind == "analyze":
         analyze_frame(store, payload["match_id"], payload["frame_id"], "codex")
-    elif job.kind in {"sample", "sequence"}:
-        seconds = number(payload.get("seconds"), 0, 86400)
-        offsets = range(-4, 5) if job.kind == "sequence" else [0]
-        for offset in offsets:
-            sample_frame(store, payload["match_id"], max(0, seconds + offset * 0.08))
+    elif job.kind in {"sample", "sequence", "prepare"}:
+        perform_sampling(job, store)
     elif job.kind == "freeze":
         vision.freeze(
             store,
@@ -102,6 +100,37 @@ def perform(job: AnalysisJob, store: Store) -> None:
         run_clip(store, str(job.pk), payload)
     else:
         raise ValueError("Unknown analysis job")
+
+
+def perform_sampling(job: AnalysisJob, store: Store) -> None:
+    """Run bounded frame preparation for a saved timeline or one playhead.
+
+    Raises:
+        ValueError: If the recording or requested time is invalid.
+
+    """
+    payload = job.payload
+    if job.kind == "prepare":
+        prepare_active_frames(
+            store, payload["match_id"], payload["interval"], payload["active_periods"]
+        )
+    else:
+        seconds = number(payload.get("seconds"), 0, 86400)
+        match = next(
+            (
+                item
+                for item in store.read()["matches"]
+                if item["id"] == payload["match_id"]
+            ),
+            None,
+        )
+        if match is None:
+            raise ValueError("Unknown recording")
+        offsets = range(-4, 5) if job.kind == "sequence" else [0]
+        for offset in offsets:
+            time = max(0, seconds + offset * 0.08)
+            if is_active_time(match, time):
+                sample_frame(store, payload["match_id"], time)
 
 
 def proposal_weights(store: Store, payload: dict) -> str:

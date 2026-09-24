@@ -34,7 +34,8 @@ from apps.video_analysis.composition import (
 from apps.video_analysis.engine import monitor, vision
 from apps.video_analysis.engine.server import parse_range
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
-from apps.video_analysis.models import AnalysisJob, Workspace
+from apps.video_analysis.engine.timeline import sample_times, validate_periods
+from apps.video_analysis.models import AnalysisJob, Recording, Workspace
 from apps.video_analysis.queries import registered_media, review_state
 from apps.video_analysis.services import curation, dataset, review
 from apps.video_analysis.services.jobs import schedule
@@ -81,7 +82,8 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
                 response = JsonResponse(
                     {
                         "error": str(error)
-                        if action in {"curation", "vision/freeze", "clips"}
+                        if action
+                        in {"curation", "vision/freeze", "clips", "timeline", "prepare"}
                         and isinstance(error, ValueError)
                         else "Invalid review request."
                     },
@@ -133,7 +135,11 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
     payload = json.loads(request.body)
     if not isinstance(payload, dict):
         raise TypeError("Expected object")
-    return mutate(action, payload, store, workspace, request)
+    return (
+        JsonResponse(review.timeline(workspace, payload))
+        if action == "timeline"
+        else mutate(action, payload, store, workspace, request)
+    )
 
 
 def mutate(
@@ -170,12 +176,41 @@ def mutate(
             "curated",
         )
     kind = action.removeprefix("vision/")
-    if kind in {"analyze", "sample", "sequence", "freeze", "propose"}:
+    if kind == "prepare":
+        payload = prepare_payload(workspace, payload)
+    if kind in {"analyze", "sample", "sequence", "freeze", "propose", "prepare"}:
         job = schedule(workspace, cast(User, request.user), kind, payload)
         return JsonResponse(
             {"ok": True, "job_id": str(job.pk), "queued": True}, status=202
         )
     return JsonResponse({"error": "Unknown action"}, status=404)
+
+
+def prepare_payload(workspace: Workspace, payload: dict[str, Any]) -> dict[str, Any]:
+    """Bind preparation to a saved video and bounded active intervals.
+
+    Raises:
+        ValueError: If there is no usable video or selection.
+
+    """
+    record = (
+        Recording.objects
+        .filter(workspace=workspace, source_id=payload.get("match_id"))
+        .values("source_id", "metadata")
+        .first()
+    )
+    if record is None or not record["metadata"].get("video"):
+        raise ValueError("Choose a recording with video")
+    metadata = record["metadata"]
+    periods = validate_periods(
+        metadata.get("active_periods"), metadata["duration_seconds"]
+    )
+    sample_times(periods, payload.get("interval"))
+    return {
+        "match_id": record["source_id"],
+        "interval": payload["interval"],
+        "active_periods": periods,
+    }
 
 
 @transaction.atomic
