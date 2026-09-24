@@ -22,17 +22,12 @@ from .media import sample_frame
 from .store import ConflictError, Store, frame_version, number
 
 
-WEB_ROOT = next(
-    (
-        parent
-        / "apps/node_projects/frontend/korfbal-web/src/pages/VideoAnalysis/editor"
-        for parent in Path(__file__).resolve().parents
-        if (
-            parent
-            / "apps/node_projects/frontend/korfbal-web/src/pages/VideoAnalysis/editor"
-        ).is_dir()
-    ),
-    Path(__file__).parent / "web",
+# The review interface is the KorfConnect app's /video-analysis page; this local
+# server only exposes the workspace API and media.
+APP_NOTICE = (
+    b"<!doctype html><meta charset=utf-8><title>Korfbal video review</title>"
+    b"<p>This server provides the video review API. Open Videoanalyse in the "
+    b"KorfConnect app to review footage.</p>"
 )
 MAX_BODY = 100_000
 CHUNK_SIZE = 1024 * 1024
@@ -226,8 +221,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
         elif url.path == "/media":
             relative = parse_qs(url.query).get("path", [""])[0]
             self._media(relative)
-        elif url.path in {"/", "/app.js", "/workspace.js", "/styles.css"}:
-            self._file(WEB_ROOT / ("index.html" if url.path == "/" else url.path[1:]))
+        elif url.path == "/":
+            self._headers(HTTPStatus.OK, "text/html; charset=utf-8", len(APP_NOTICE))
+            self.end_headers()
+            self.wfile.write(APP_NOTICE)
         else:
             raise ValueError("Unknown route")
 
