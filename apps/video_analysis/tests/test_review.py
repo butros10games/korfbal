@@ -257,3 +257,56 @@ def test_latest_drafts_span_batches_without_overwriting_reviews(
         ] == {"objects": []}
     Frame.objects.filter(source_id=frames[0]["id"]).update(status="approved")
     assert len(vision.review_queue(store, "latest")) == len(frames) - 1
+
+
+def test_swapping_draft_teams_changes_only_open_model_drafts(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """One switch per match fixes which shirt group is the first club."""
+    owner, _, _ = imported
+    client = verified(owner)
+    state = client.get("/video-analysis/state").json()
+    match = state["matches"][0]
+    draft = {
+        "scene": "live",
+        "event": "none",
+        "notes": "",
+        "objects": [
+            {"label": "player", "bbox": [0.1, 0.1, 0.1, 0.3], "team": "team_a"},
+            {"label": "player", "bbox": [0.4, 0.1, 0.1, 0.3], "team": "team_b"},
+            {"label": "player", "bbox": [0.6, 0.1, 0.1, 0.3], "team": "unknown"},
+            {"label": "referee", "bbox": [0.8, 0.1, 0.1, 0.3], "team": "unknown"},
+        ],
+    }
+    frames = Frame.objects.filter(recording__source_id=match["id"]).order_by("position")
+    for frame in frames:
+        frame.proposal = draft
+        frame.save(update_fields=["proposal"])
+    reviewed = frames[0]
+    reviewed.correction = draft
+    reviewed.status = "approved"
+    reviewed.save(update_fields=["correction", "status"])
+    revision = Workspace.objects.get().revision
+
+    def swap(current: int) -> HttpResponse:
+        return client.post(
+            "/video-analysis/review",
+            json.dumps({
+                "action": "swap_teams",
+                "match_id": match["id"],
+                "revision": current,
+            }),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=state["csrf"],
+        )
+
+    response = swap(revision)
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["swapped"] == frames.count() - 1
+    teams = [o["team"] for o in Frame.objects.get(pk=frames[1].pk).proposal["objects"]]
+    assert teams == ["team_b", "team_a", "unknown", "unknown"]
+    # Reviewed work already names its clubs; it is never touched.
+    kept = Frame.objects.get(pk=reviewed.pk)
+    assert kept.proposal == draft
+    assert kept.correction == draft
+    assert swap(revision).status_code == HTTPStatus.CONFLICT

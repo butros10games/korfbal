@@ -23,6 +23,8 @@ def save(workspace: Workspace, actor: User, payload: dict[str, Any]) -> dict:
         return timing(workspace, payload)
     if payload.get("action") == "review":
         return save_frame(workspace, actor, payload)
+    if payload.get("action") == "swap_teams":
+        return swap_draft_teams(workspace, payload)
     raise ValueError("Unknown review action")
 
 
@@ -109,6 +111,59 @@ def timing(workspace: Workspace, payload: dict[str, Any]) -> dict:
     locked.save(update_fields=["revision"])
     publish_later(workspace)
     return {"revision": locked.revision}
+
+
+SWAPPED_TEAMS = {"team_a": "team_b", "team_b": "team_a"}
+
+
+@transaction.atomic
+def swap_draft_teams(workspace: Workspace, payload: dict[str, Any]) -> dict:
+    """Swap club A and B on every open model draft of one recording.
+
+    Shirt colours group players consistently within a match, but which group is
+    the first club can be wrong. Human corrections and reviewed frames are never
+    changed: they already say which club each player belongs to.
+
+    Raises:
+        ConflictError: The workspace changed since the reviewer loaded it.
+        ValueError: The recording is unknown.
+
+    """
+    locked = Workspace.objects.select_for_update().get(pk=workspace.pk)
+    if payload.get("revision") != locked.revision:
+        raise ConflictError(
+            "Another review was saved. Reload before applying your edit."
+        )
+    recording = Recording.objects.filter(
+        workspace=workspace, source_id=payload.get("match_id")
+    ).first()
+    if recording is None:
+        raise ValueError("Unknown match")
+    swapped = 0
+    for frame in Frame.objects.select_for_update().filter(
+        recording=recording,
+        status="pending",
+        correction__isnull=True,
+        proposal__isnull=False,
+    ):
+        objects = frame.proposal.get("objects", [])
+        if not any(obj.get("team") in SWAPPED_TEAMS for obj in objects):
+            continue
+        frame.proposal = {
+            **frame.proposal,
+            "objects": [
+                {**obj, "team": SWAPPED_TEAMS.get(obj.get("team"), obj.get("team"))}
+                if obj.get("label") == "player"
+                else obj
+                for obj in objects
+            ],
+        }
+        frame.save(update_fields=["proposal"])
+        swapped += 1
+    locked.revision += 1
+    locked.save(update_fields=["revision"])
+    publish_later(workspace)
+    return {"revision": locked.revision, "swapped": swapped}
 
 
 @transaction.atomic
