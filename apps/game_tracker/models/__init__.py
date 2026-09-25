@@ -15,6 +15,7 @@ from .match_event_reconciliation import (
     MatchEventReconciliation,
     MatchEventReconciliationDecision,
 )
+from .match_guest_player import MatchGuestPlayer
 from .match_live_change import MatchLiveChange
 from .match_part import MatchPart
 from .match_player import MatchPlayer
@@ -41,6 +42,7 @@ __all__ = [
     "MatchEventObservation",
     "MatchEventReconciliation",
     "MatchEventReconciliationDecision",
+    "MatchGuestPlayer",
     "MatchLiveChange",
     "MatchPart",
     "MatchPlayer",

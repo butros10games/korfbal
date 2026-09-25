@@ -33,6 +33,11 @@ urlpatterns = [
         name="match-team-player-search",
     ),
     path(
+        "guest_player/<uuid:match_id>/<uuid:team_id>/",
+        _route(views.guest_player),
+        name="match-team-guest-player",
+    ),
+    path(
         "player_designation/",
         _route(views.player_designation),
         name="match-player-designation",

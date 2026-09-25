@@ -22,6 +22,9 @@ from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResourc
 from apps.game_tracker.services.event_editor import (
     apply_event_editor_command as _apply_event_editor_command,
 )
+from apps.game_tracker.services.guest_players import (
+    add_guest_player as _add_guest_player,
+)
 from apps.game_tracker.services.live_updates import (
     record_match_change as _record_change,
 )
@@ -81,6 +84,7 @@ apply_player_designation = partial(
     _apply_player_designation,
     publisher=change_publisher,
 )
+add_guest_player = partial(_add_guest_player, publisher=change_publisher)
 
 
 def apply_tracker_command(

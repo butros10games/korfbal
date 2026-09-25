@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
-from apps.game_tracker.models import GroupType, MatchData, PlayerGroup
+from apps.game_tracker.models import (
+    GroupType,
+    MatchData,
+    MatchGuestPlayer,
+    PlayerGroup,
+)
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match
 from apps.team.models import Team, TeamData
@@ -28,7 +33,11 @@ class PlayerGroupAssignmentError(ValueError):
 
 
 def club_lineup_players(*, match: Match, team: Team) -> QuerySet[Player]:
-    """Return the club's eligible picker candidates for this match's date/season."""
+    """Return the club's eligible picker candidates for this match's date/season.
+
+    Guests added for this match and team stay eligible so a removed guest can
+    be selected again; they never become candidates for any other match.
+    """
     match_date = timezone.localdate(match.start_time)
     season_rosters = TeamData.objects.filter(
         team__club_id=team.club_id,
@@ -43,7 +52,13 @@ def club_lineup_players(*, match: Match, team: Team) -> QuerySet[Player]:
         Exists(season_rosters.filter(players=OuterRef("pk")))
         | Exists(season_rosters.filter(coach=OuterRef("pk")))
         | Exists(memberships)
+        | Exists(match_guests_for(match=match, team=team).filter(player=OuterRef("pk")))
     )
+
+
+def match_guests_for(*, match: Match, team: Team) -> QuerySet[MatchGuestPlayer]:
+    """Return the guest links for one match-team selection."""
+    return MatchGuestPlayer.objects.filter(match_data__match_link=match, team=team)
 
 
 def ensure_player_groups_for_match_data(match_data: MatchData) -> None:

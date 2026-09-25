@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -21,8 +21,14 @@ from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.composition import apply_player_designation
-from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
+from apps.game_tracker.composition import add_guest_player, apply_player_designation
+from apps.game_tracker.models import (
+    MatchData,
+    MatchGuestPlayer,
+    MatchPlayer,
+    PlayerGroup,
+)
+from apps.game_tracker.services.guest_players import AddGuestPlayerCommand
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
 from apps.game_tracker.services.player_designation import (
     PLAYER_GROUP_EDIT_PERMISSION_ERROR,
@@ -32,7 +38,10 @@ from apps.game_tracker.services.player_designation import (
     PlayerDesignationValidationError,
     can_edit_player_groups,
 )
-from apps.game_tracker.services.player_groups import club_lineup_players
+from apps.game_tracker.services.player_groups import (
+    club_lineup_players,
+    match_guests_for,
+)
 from apps.game_tracker.services.player_search import player_name_match_score
 from apps.game_tracker.services.tracker_access import SESSION_KEY, has_tracker_grant
 from apps.player.models import Player
@@ -70,6 +79,26 @@ def _profile_picture_for(viewer: Player | None, target: Player) -> str:
     ):
         return target.get_profile_picture()
     return target.get_placeholder_profile_picture_url()
+
+
+def _guest_ids(match: Match, team_id: object) -> set[str]:
+    return {
+        str(player_id)
+        for player_id in MatchGuestPlayer.objects.filter(
+            match_data__match_link=match, team_id=team_id
+        ).values_list("player_id", flat=True)
+    }
+
+
+def _player_payload(
+    viewer: Player | None, player: Player, guest_ids: set[str]
+) -> dict[str, Any]:
+    return {
+        "id_uuid": str(player.id_uuid),
+        "user": {"username": player.display_name},
+        "get_profile_picture": _profile_picture_for(viewer, player),
+        "is_guest": str(player.id_uuid) in guest_ids,
+    }
 
 
 def _player_group_editor_error(
@@ -121,15 +150,12 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         .order_by("starting_type__order")
     )
     viewer = _viewer_player(request)
+    guest_ids = _guest_ids(match_model, team_id)
 
     player_groups_data: list[dict[str, Any]] = []
     for player_group in player_groups:
         players_data = [
-            {
-                "id_uuid": str(player.id_uuid),
-                "user": {"username": player.display_name},
-                "get_profile_picture": _profile_picture_for(viewer, player),
-            }
+            _player_payload(viewer, player, guest_ids)
             for player in player_group.players.all()
         ]
         player_groups_data.append(
@@ -188,25 +214,25 @@ def players_team(request: Request, match_id: str, team_id: str) -> Response:
         .values_list("players__id_uuid", flat=True)
         .distinct()
     )
+    roster_filter = Q(
+        pk__in=match_guests_for(match=match_model, team=team_model).values("player")
+    )
+    if team_data is not None:
+        roster_filter |= Q(team_data_as_player=team_data)
     players = (
         player_access_queryset()
-        .filter(team_data_as_player=team_data)
+        .filter(roster_filter)
         .exclude(id_uuid__in=excluded_ids)
-        if team_data is not None
-        else Player.objects.none()
+        .distinct()
     )
 
     viewer = _viewer_player(request)
+    guest_ids = _guest_ids(match_model, team_model.pk)
 
     return Response(
         {
             "players": [
-                {
-                    "id_uuid": str(player.id_uuid),
-                    "user": {"username": player.display_name},
-                    "get_profile_picture": _profile_picture_for(viewer, player),
-                }
-                for player in players
+                _player_payload(viewer, player, guest_ids) for player in players
             ],
         },
     )
@@ -295,16 +321,12 @@ def player_search(request: Request, match_id: str, team_id: str) -> Response:
     ]
 
     viewer = _viewer_player(request)
+    guest_ids = _guest_ids(match_model, team_model.pk)
 
     return Response(
         {
             "players": [
-                {
-                    "id_uuid": str(player.id_uuid),
-                    "user": {"username": player.display_name},
-                    "get_profile_picture": _profile_picture_for(viewer, player),
-                }
-                for player in players
+                _player_payload(viewer, player, guest_ids) for player in players
             ],
         },
     )
@@ -417,18 +439,79 @@ def player_designation(request: Request) -> Response:
             ),
         )
     except MatchRevisionConflictError as exc:
-        return Response(
-            {
-                "code": "revision_conflict",
-                "detail": str(exc),
-                "expected_revision": exc.expected_revision,
-                "live_revision": exc.live_revision,
-            },
-            status=409,
-        )
+        return _revision_conflict_response(exc)
     except PlayerDesignationPermissionError as exc:
         return Response({"error": str(exc)}, status=403)
     except PlayerDesignationValidationError as exc:
         return Response({"error": str(exc)}, status=400)
 
     return Response({"success": True, "live_revision": result.revision})
+
+
+def _revision_conflict_response(exc: MatchRevisionConflictError) -> Response:
+    return Response(
+        {
+            "code": "revision_conflict",
+            "detail": str(exc),
+            "expected_revision": exc.expected_revision,
+            "live_revision": exc.live_revision,
+        },
+        status=409,
+    )
+
+
+@_function_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@permission_classes([HasPlayerGroupSession])
+def guest_player(request: Request, match_id: str, team_id: str) -> Response:
+    """Add a club-less guest to this match's reserve group only.
+
+    Expected payload: ``{"name": "...", "expected_revision": <int>}``.
+    """
+    if not request.user.is_authenticated:
+        SessionAuthentication().enforce_csrf(request)
+    data = request.data if isinstance(request.data, Mapping) else {}
+    name = data.get("name")
+    if not isinstance(name, str):
+        return Response({"name": ["A name is required."]}, status=400)
+    expected_revision = data.get("expected_revision")
+    if (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+        or expected_revision < 0
+    ):
+        return Response(
+            {"expected_revision": ["A non-negative integer is required."]},
+            status=400,
+        )
+    get_object_or_404(Match, id_uuid=match_id)
+    try:
+        result = add_guest_player(
+            actor=request.user,
+            command=AddGuestPlayerCommand(
+                match_id=str(match_id),
+                team_id=str(team_id),
+                name=name,
+                expected_revision=expected_revision,
+            ),
+            tracker_grants=(
+                request.session.get(SESSION_KEY, {}) if request.auth is None else {}
+            ),
+        )
+    except MatchRevisionConflictError as exc:
+        return _revision_conflict_response(exc)
+    except PlayerDesignationPermissionError as exc:
+        return Response({"error": str(exc)}, status=403)
+    except PlayerDesignationValidationError as exc:
+        return Response({"error": str(exc)}, status=400)
+
+    return Response(
+        {
+            "success": True,
+            "live_revision": result.revision,
+            "player": _player_payload(
+                _viewer_player(request), result.player, {str(result.player.pk)}
+            ),
+        },
+        status=201,
+    )
