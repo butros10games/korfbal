@@ -102,6 +102,13 @@ class CpuDetector:
         self.cache = cache
         self.stride = int(model.model.stride.max())
         self.end2end = bool(getattr(model.model, "end2end", False))
+        # Pose checkpoints add pole-foot keypoints after each box's class scores.
+        shape = getattr(model.model, "kpt_shape", None)
+        self.keypoints = (
+            tuple(int(v) for v in shape)
+            if getattr(model, "task", "") == "pose" and shape
+            else None
+        )
         self.session: Any = None
         self.shape: tuple[int, int] | None = None
         self.sessions: OrderedDict[tuple[int, int], tuple[Any, dict]] = OrderedDict()
@@ -171,9 +178,18 @@ class CpuDetector:
             0.7,
             max_det=options["max_det"],
             end2end=self.end2end,
+            nc=len(self.names),
         )[0]
         boxes[:, :4] = ops.scale_boxes(shape, boxes[:, :4], source.shape)
-        return [results.Results(source, path="", names=self.names, boxes=boxes)]
+        if self.keypoints is None:
+            return [results.Results(source, path="", names=self.names, boxes=boxes)]
+        points = boxes[:, 6:].view(len(boxes), *self.keypoints)
+        points = ops.scale_coords(shape, points, source.shape)
+        return [
+            results.Results(
+                source, path="", names=self.names, boxes=boxes[:, :6], keypoints=points
+            )
+        ]
 
 
 def clip_detector(weights: str, cache: Path) -> CpuDetector | Detector:

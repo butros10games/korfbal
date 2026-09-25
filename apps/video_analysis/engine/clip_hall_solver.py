@@ -17,7 +17,10 @@ from typing import TYPE_CHECKING, Any
 from .clip_hall_court import (
     MIN_BASKET_CONFIDENCE,
     MIN_BASKET_VIEWS,
+    MIN_FLOOR_SEGMENTS,
     CourtPlacement,
+    hall_axes,
+    segment_normal,
 )
 from .clip_hall_geometry import (
     EPSILON,
@@ -35,6 +38,7 @@ from .clip_hall_geometry import (
     ratio_matches,
     rays,
     rotation_focal,
+    rotational,
     rotations,
     segments,
     spread,
@@ -59,6 +63,8 @@ MOVING_SHARE = 0.5
 MIN_OVERLAY_HITS = 3
 MAX_EDGE_PIXELS = 8.0
 COARSE_PIXELS = 25.0
+STRUCTURE_TOLERANCES = (4.0, 1.5)
+STRUCTURE_SIGMA = math.sin(math.radians(0.25))
 MAX_BRIDGE_SECONDS = 3.0
 LINK_SECONDS = 3.5
 LINK_STRIDE = 3
@@ -94,19 +100,31 @@ class Solver:
         if found["descriptors"] is None:
             return
         aspect = found["aspect"]
+        detected = [
+            o
+            for o in objects
+            if o["label"] == "basket"
+            and o.get("confidence", 0) >= MIN_BASKET_CONFIDENCE
+        ]
         baskets = [
             [
                 o["bbox"][0] + o["bbox"][2] / 2 - 0.5,
                 (o["bbox"][1] + o["bbox"][3] / 2 - 0.5) * aspect,
             ]
-            for o in objects
-            if o["label"] == "basket"
-            and o.get("confidence", 0) >= MIN_BASKET_CONFIDENCE
+            for o in detected
+        ]
+        # A pose-trained detector also gives where each korf's pole meets the floor.
+        feet = [
+            [o["post_foot"][0] - 0.5, (o["post_foot"][1] - 0.5) * aspect]
+            if isinstance(o.get("post_foot"), list)
+            else None
+            for o in detected
         ]
         self.keyframes.append({
             "time": timestamp,
             "features": found,
             "baskets": baskets,
+            "feet": feet,
             "people": [
                 [x - 0.5, (y - 0.5) * aspect, w, h * aspect] for x, y, w, h in people
             ],
@@ -135,7 +153,7 @@ class Solver:
         """Store one accepted match with a bounded, deterministic point sample."""
         _, np = modules()
         match = correspond(self.keyframes[i]["features"], self.keyframes[j]["features"])
-        if match is None:
+        if match is None or not rotational(*match):
             return False
         p, q, homography = match
         chosen = (
@@ -273,31 +291,49 @@ class Solver:
         return {"rotation": rotation, "focal": focals}
 
     def adjust(
-        self, members: list[int], edges: list[dict], state: dict, scale: float = 1.0
+        self,
+        members: list[int],
+        edges: list[dict],
+        state: dict,
+        scale: float = 1.0,
+        structure: dict | None = None,
     ) -> tuple[dict, float]:
         """Bundle-adjust keyframe rotations and focals from pairwise matches.
 
         The first keyframe fixes the rotation gauge; the court is placed later.
+        With a hall structure, every assigned line segment must also run along
+        one of three shared perpendicular directions. Wall matches alone cannot
+        see a small zoom or roll error that tilts the floor between views.
         """
         _, np = modules()
         optimize = importlib.import_module("scipy.optimize")
         sparse = importlib.import_module("scipy.sparse")
         index = {k: n for n, k in enumerate(members)}
-        size = 4 * len(members)
+        views = 4 * len(members)
+        size = views + (3 if structure else 0)
         pair_a = np.concatenate([np.full(len(e["p"]), index[e["a"]]) for e in edges])
         pair_b = np.concatenate([np.full(len(e["p"]), index[e["b"]]) for e in edges])
         pair_p = np.concatenate([e["p"] for e in edges])
         pair_q = np.concatenate([e["q"] for e in edges])
-        sparsity = sparse.lil_matrix((2 * len(pair_p) + 3, size), dtype=int)
+        lines = structure["segments"] if structure else []
+        hall = structure["axes"] if structure else np.eye(3)
+        line_k = np.array([index[k] for k, _, _ in lines], dtype=int)
+        line_axis = np.array([axis for _, _, axis in lines], dtype=int)
+        ends = np.array([segment for _, segment, _ in lines]).reshape(-1, 2, 2)
+        rows = 2 * len(pair_p) + 3 + len(lines)
+        sparsity = sparse.lil_matrix((rows, size), dtype=int)
         for row, (a, b) in enumerate(zip(pair_a, pair_b, strict=True)):
             for column in (*range(4 * a, 4 * a + 4), *range(4 * b, 4 * b + 4)):
                 sparsity[2 * row, column] = sparsity[2 * row + 1, column] = 1
         root = index[members[0]]
         for axis in range(3):
             sparsity[2 * len(pair_p) + axis, 4 * root + axis] = 1
+        for row, k in enumerate(line_k, start=2 * len(pair_p) + 3):
+            for column in (*range(4 * k, 4 * k + 4), *range(views, size)):
+                sparsity[row, column] = 1
 
         def unpack(x: NDArray[Any]) -> tuple:
-            blocks = x.reshape(-1, 4)
+            blocks = x[:views].reshape(-1, 4)
             return rotations(blocks[:, :3]), np.exp(blocks[:, 3])
 
         def residual(x: NDArray[Any]) -> NDArray[Any]:
@@ -310,16 +346,37 @@ class Solver:
             camera = np.einsum("nij,nj->ni", rotation[pair_b], directions)
             depth = np.maximum(camera[:, 2], EPSILON)
             image = focal[pair_b, None] * camera[:, :2] / depth[:, None]
-            return np.r_[
-                ((image - pair_q) * WIDTH).ravel(), x[4 * root : 4 * root + 3] * 1e4
+            parts = [
+                ((image - pair_q) * WIDTH).ravel(),
+                x[4 * root : 4 * root + 3] * 1e4,
             ]
+            if len(lines):
+                axes = hall @ rotations(x[views:])[0].T
+                normals = np.cross(
+                    np.einsum(
+                        "ni,nij->nj",
+                        np.c_[ends[:, 0] / focal[line_k, None], np.ones(len(ends))],
+                        rotation[line_k],
+                    ),
+                    np.einsum(
+                        "ni,nij->nj",
+                        np.c_[ends[:, 1] / focal[line_k, None], np.ones(len(ends))],
+                        rotation[line_k],
+                    ),
+                )
+                normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+                parts.append(
+                    np.einsum("ni,ni->n", normals, axes[line_axis]) / STRUCTURE_SIGMA
+                )
+            return np.concatenate(parts)
 
         start = np.concatenate([
             [*axis_angle(state["rotation"][k]), math.log(state["focal"][k])]
             for k in members
         ])
+        start = np.r_[start, np.zeros(size - views)]
         lower, upper = np.full(size, -np.inf), np.full(size, np.inf)
-        lower[3::4], upper[3::4] = math.log(MIN_FOCAL), math.log(MAX_FOCAL)
+        lower[3:views:4], upper[3:views:4] = math.log(MIN_FOCAL), math.log(MAX_FOCAL)
         result = optimize.least_squares(
             residual,
             np.clip(start, lower + EPSILON, upper - EPSILON),
@@ -337,6 +394,35 @@ class Solver:
             "focal": {k: float(focal[index[k]]) for k in members},
         }
         return solved, float(np.median(np.abs(residual(result.x)[: 2 * len(pair_p)])))
+
+    def structure(
+        self, members: list[int], state: dict, tolerance: float
+    ) -> dict | None:
+        """Assign every view's line segments to the hall's three directions."""
+        _, np = modules()
+        owners = [
+            (k, segment) for k in members for segment in self.keyframes[k]["segments"]
+        ]
+        if len(owners) < MIN_FLOOR_SEGMENTS:
+            return None
+        normals = np.array([
+            segment_normal(segment, state["rotation"][k], state["focal"][k])
+            for k, segment in owners
+        ])
+        axes = hall_axes(normals)
+        if axes is None:
+            return None
+        alignment = np.abs(normals @ axes.T)
+        nearest = alignment.argmin(axis=1)
+        keep = alignment.min(axis=1) < math.sin(math.radians(tolerance))
+        return {
+            "axes": axes,
+            "segments": [
+                (k, segment, int(axis))
+                for (k, segment), axis, kept in zip(owners, nearest, keep, strict=True)
+                if kept
+            ],
+        }
 
     def edge_errors(self, edges: list[dict], state: dict) -> list[float]:
         """Median reprojection error of each pairwise match, in WIDTH pixels."""
@@ -408,6 +494,13 @@ class Solver:
         if len(pruned) >= MIN_GROUP_KEYFRAMES and len(edges) > len(kept) > 0:
             members, edges = pruned, kept
             state, error = self.adjust(members, edges, state)
+        if len(pruned) >= MIN_GROUP_KEYFRAMES and kept:
+            # Tie every view to the hall's line directions, first loosely.
+            for tolerance in STRUCTURE_TOLERANCES:
+                structure = self.structure(members, state, tolerance)
+                if structure is None:
+                    break
+                state, error = self.adjust(members, edges, state, structure=structure)
         if len(pruned) < MIN_GROUP_KEYFRAMES or not kept or error > MAX_ERROR_PIXELS:
             self.diagnostics.append({
                 "members": len(members),

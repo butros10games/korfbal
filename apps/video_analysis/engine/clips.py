@@ -29,6 +29,7 @@ from .clip_signals import Camera, Teams, modules
 from .clip_team_opening import OpeningTeams
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
+from .keypoints import post_feet
 from .store import Store, atomic_json
 from .training import environment, weights_record
 from .vision import digest, identifier
@@ -474,10 +475,12 @@ def static_objects(
     result = cast("Any", raw)
     detected = []
     boxes = result.boxes.cpu().numpy()
-    for box, cls, score in zip(
-        boxes.xyxyn.tolist(),
+    corners = boxes.xyxyn.tolist()
+    for box, cls, score, foot in zip(
+        corners,
         boxes.cls.tolist(),
         boxes.conf.tolist(),
+        post_feet(result, len(corners)),
         strict=True,
     ):
         label = result.names[int(cls)]
@@ -489,6 +492,7 @@ def static_objects(
                 "label": label,
                 "bbox": [x1, y1, x2 - x1, y2 - y1],
                 "confidence": float(score),
+                **({"post_foot": foot} if label == "basket" and foot else {}),
             })
     return detected
 

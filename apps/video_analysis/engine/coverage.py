@@ -11,6 +11,7 @@ from .vision import artifact, verify_snapshot
 
 
 LABEL_FIELDS = 5
+KEYPOINT_FIELDS = 3
 ROUNDING_TOLERANCE = 1e-7
 
 
@@ -26,10 +27,11 @@ def label_rows(text: str, classes: list[str]) -> list[int]:
         if not row.strip():
             continue
         fields = row.split()
-        if len(fields) != LABEL_FIELDS:
+        # Pose snapshots append one (x, y, visibility) triple per keypoint.
+        if len(fields) < LABEL_FIELDS or (len(fields) - LABEL_FIELDS) % KEYPOINT_FIELDS:
             raise ValueError("Each label must contain a class and four coordinates")
         index = int(fields[0])
-        x, y, width, height = map(float, fields[1:])
+        x, y, width, height = map(float, fields[1:LABEL_FIELDS])
         if (
             not 0 <= index < len(classes)
             or not all(math.isfinite(v) for v in (x, y, width, height))

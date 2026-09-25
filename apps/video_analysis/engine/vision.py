@@ -33,6 +33,8 @@ from .store import (
 )
 
 
+KEYPOINTS = ("post_foot",)
+POSE_YAML = "kpt_shape: [1, 3]\nflip_idx: [0]\n"
 PROFILES = {"people": ("player", "referee", "basket"), "all": LABELS}
 MATCH_IOU = 0.5
 TEAM_TRANSFER_IOU = 0.7
@@ -241,6 +243,12 @@ def freeze(
         data, mapping = store.read(), assignments(store)
         selected = select_frames(data, mapping, profile, selection)
         classes = PROFILES[profile]
+        # Any labelled pole foot turns the snapshot into a keypoint dataset.
+        pose = "basket" in classes and any(
+            isinstance(obj.get("post_foot"), list)
+            for _, frame in selected
+            for obj in validate_annotation(frame["correction"])["objects"]
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="snapshot-", dir=target.parent
@@ -284,6 +292,7 @@ def freeze(
                     lines.append(
                         f"{classes.index(obj['label'])} {x + w / 2:.8f} "
                         f"{y + h / 2:.8f} {w:.8f} {h:.8f}"
+                        + (keypoint(obj) if pose else "")
                     )
                 label.write_text("\n".join(lines) + "\n")
                 records.append({
@@ -314,6 +323,7 @@ def freeze(
                 "schema_version": 1,
                 "profile": profile,
                 "classes": list(classes),
+                **({"task": "pose", "keypoints": list(KEYPOINTS)} if pose else {}),
                 "created_at": datetime.now(UTC).isoformat(),
                 "review_revision": data["revision"],
                 "selection": selection,
@@ -330,9 +340,22 @@ def freeze(
                 + "names: "
                 + json.dumps(list(classes))
                 + "\n"
+                + (POSE_YAML if pose else "")
             )
             root.rename(target)
     return manifest
+
+
+def keypoint(obj: dict[str, Any]) -> str:
+    """Pole foot of a basket as a visible keypoint; anything else is unlabelled.
+
+    Visibility 0 carries no training loss, so a basket reviewed before pole feet
+    existed (or with a hidden foot) does not teach the model that there is none.
+    """
+    foot = obj.get("post_foot")
+    if obj["label"] == "basket" and isinstance(foot, list):
+        return f" {foot[0]:.8f} {foot[1]:.8f} 2"
+    return " 0 0 0"
 
 
 def verify_snapshot(root: Path) -> dict[str, Any]:

@@ -33,6 +33,7 @@ MIN_IMAGES = 5
 MIN_PIXEL_OBSERVATIONS = 2
 REFERENCE_TIME_TOLERANCE = 0.1
 PROGRESS_SECONDS = 5
+SAMPLE_QUALITY = 92
 BRIDGE_INTERVAL = 0.15
 MAX_BRIDGE_FRAMES = 12
 MAX_BRIDGED_GAPS = 12
@@ -166,7 +167,12 @@ class TemporalReference:
 
 
 def prepare(run: ClipRun, video: Path, model: object) -> None:
-    """Find clear references on either side of playback frames without another job."""
+    """Find clear references on either side of playback frames without another job.
+
+    Sampled views first calibrate the fixed-camera model. The slower landmark
+    references then run only for samples the camera model did not calibrate,
+    with their own time budget, so they no longer cut sampling short.
+    """
     mapping = run.camera.automatic
     if mapping is None:
         return
@@ -175,39 +181,33 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
         str(video), cv.CAP_FFMPEG, [cv.CAP_PROP_N_THREADS, CPU_THREADS]
     )
     started = time.monotonic()
-    temporal = TemporalReference(
-        mapping, lambda: run.stopped() or time.monotonic() - started > MAX_SECONDS
-    )
     sampled = 0
     context_sampled = 0
     camera_model: dict = {"groups": []}
+    windows: list[list[tuple]] = []
+    landmarks = {"samples": 0, "runtime_seconds": 0.0}
     try:
         for context, timestamps in preparation_windows(run):
-            # Non-adjacent windows are separate observations, even when the wall
-            # looks similar. Every saved reference still needs its own floor fit.
-            temporal.samples.clear()
+            windows.append([])
             for timestamp in timestamps:
-                if temporal.stopped():
+                if run.stopped() or time.monotonic() - started > MAX_SECONDS:
                     break
                 snapshot = sample(run, capture, model, timestamp)
                 if snapshot is None:
                     continue
                 sampled += 1
                 context_sampled += int(context)
-                if temporal.stopped():
-                    break
                 actual, image, objects = snapshot
                 mapping.hall.solver.add_keyframe(image, actual, objects)
+                windows[-1].append((actual, encode(image), objects))
                 run.record["message"] = (
                     f"Preparing court references ({sampled} frames checked)"
                 )
                 if time.monotonic() - run.last_publish >= PROGRESS_SECONDS:
                     run.publish()
-                temporal.consider(image, actual, objects)
-            if not temporal.stopped():
-                temporal.prepare()
         bridge(run, capture, mapping)
         camera_model = calibrate_camera(mapping, run.stopped)
+        landmarks = landmark_references(run, mapping, windows, started)
     finally:
         capture.release()
         run.record["automatic_court_preparation"] = {
@@ -221,8 +221,52 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
             "max_samples": MAX_SAMPLES,
             "max_seconds": MAX_SECONDS,
             "camera_model": camera_model,
+            "landmark_references": landmarks,
         }
         run.publish()
+
+
+def encode(image: NDArray[Any]) -> bytes:
+    """Hold a sampled view compactly until the landmark pass needs it."""
+    cv, _ = modules()
+    return cv.imencode(".jpg", image, [cv.IMWRITE_JPEG_QUALITY, SAMPLE_QUALITY])[
+        1
+    ].tobytes()
+
+
+def landmark_references(
+    run: ClipRun, mapping: AutoCourt, windows: list, started: float
+) -> dict:
+    """Fit landmark references only where the camera model left views uncalibrated.
+
+    This shares the preparation deadline: nothing new starts after it.
+    """
+    cv, np = modules()
+    began = time.monotonic()
+    covered = {
+        round(mapping.hall.solver.keyframes[k]["time"], 3)
+        for group in mapping.hall.groups
+        for k in group["members"]
+    }
+    temporal = TemporalReference(
+        mapping, lambda: run.stopped() or time.monotonic() - started > MAX_SECONDS
+    )
+    used = 0
+    for window in windows:
+        # Non-adjacent windows are separate observations, even when the wall
+        # looks similar. Every saved reference still needs its own floor fit.
+        temporal.samples.clear()
+        for timestamp, picture, objects in window:
+            if temporal.stopped():
+                break
+            if round(timestamp, 3) in covered:
+                continue
+            image = cv.imdecode(np.frombuffer(picture, np.uint8), cv.IMREAD_COLOR)
+            temporal.consider(image, timestamp, objects)
+            used += 1
+        if not temporal.stopped():
+            temporal.prepare()
+    return {"samples": used, "runtime_seconds": round(time.monotonic() - began, 3)}
 
 
 def bridge(run: ClipRun, capture: object, mapping: AutoCourt) -> None:

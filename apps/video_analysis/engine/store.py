@@ -29,6 +29,7 @@ SCENES = ("live", "replay", "break", "unknown")
 EVENTS = ("none", "shot", "goal", "unknown")
 STATUSES = ("pending", "approved", "skipped")
 BOX_SIZE = 4
+POINT_SIZE = 2
 BOX_LIMIT = 1.000001
 MAX_OBJECTS = 80
 MAX_NOTES = 2000
@@ -122,6 +123,7 @@ def validate_objects(objects: object) -> list[dict[str, Any]]:
             item["temporal_estimate"], bool
         ):
             raise ValueError("Invalid temporal estimate flag")
+        foot = post_foot(item, [x, y, width, height])
         clean.append({
             "label": item["label"],
             "bbox": [x, y, width, height],
@@ -129,8 +131,34 @@ def validate_objects(objects: object) -> list[dict[str, Any]]:
             **({"team": team} if "team" in item else {}),
             **({"track_id": track} if track else {}),
             **({"temporal_estimate": True} if item.get("temporal_estimate") else {}),
+            **({"post_foot": foot} if foot is not None else {}),
         })
     return clean
+
+
+def post_foot(item: dict[str, Any], box: list[float]) -> list[float] | str | None:
+    """Validate where a korf's pole meets the floor, or that it cannot be seen.
+
+    Only baskets carry it. A missing value means "not reviewed", never "absent":
+    training ignores the keypoint then, so older reviews stay valid negatives-free.
+
+    Raises:
+        ValueError: The value is not a point below the basket top or "hidden".
+
+    """
+    if "post_foot" not in item:
+        return None
+    value = item["post_foot"]
+    if item["label"] != "basket":
+        raise ValueError("Only a basket has a post foot")
+    if value == "hidden":
+        return value
+    if not isinstance(value, list) or len(value) != POINT_SIZE:
+        raise ValueError("A post foot is a normalized [x, y] point or 'hidden'")
+    x, y = (number(v, 0, 1) for v in value)
+    if y < box[1]:
+        raise ValueError("A post foot lies below the top of its basket")
+    return [x, y]
 
 
 def ball_review_complete(annotation: dict[str, Any]) -> bool:

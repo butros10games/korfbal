@@ -28,6 +28,7 @@ from typing import Any, Protocol, cast
 
 from . import ball_crops, temporal
 from .coverage import dataset_report
+from .keypoints import post_feet
 from .recovery import training_lease
 from .store import (
     Store,
@@ -133,6 +134,21 @@ def detector(weights: str) -> Detector:
     return cast("Detector", module.YOLO(weights))
 
 
+def pose_model(model: Any, weights: str) -> Any:  # noqa: ANN401
+    """Continue from a box detector as a keypoint model of the same size.
+
+    The pole-foot keypoint needs a pose head; the backbone and box head of the
+    given weights are transferred, so earlier training is not thrown away.
+    """
+    if getattr(model, "task", "detect") == "pose":
+        return model
+    module = importlib.import_module("ultralytics")
+    scale = (getattr(model.model, "yaml", None) or {}).get("scale") or "n"
+    return module.YOLO(f"yolo26{scale}-pose.yaml").load(
+        getattr(model, "ckpt_path", None) or weights
+    )
+
+
 def environment() -> dict[str, Any]:
     """Record exact installed versions and source revision for reproducibility."""
     versions = {}
@@ -206,7 +222,8 @@ def predict_image(
         boxes = result.boxes.xyxyn.cpu().tolist()
         classes = result.boxes.cls.cpu().tolist()
         scores = result.boxes.conf.cpu().tolist()
-        for box, cls, score in zip(boxes, classes, scores, strict=True):
+        feet = post_feet(result, len(boxes))
+        for box, cls, score, foot in zip(boxes, classes, scores, feet, strict=True):
             label = mapping.get(int(cls))
             if label is None:
                 continue
@@ -217,6 +234,12 @@ def predict_image(
                 "label": label,
                 "bbox": [x1, y1, x2 - x1, y2 - y1],
                 "confidence": float(score),
+                # A model proposal only; reviewers confirm or move it.
+                **(
+                    {"post_foot": foot}
+                    if label == "basket" and foot and foot[1] >= y1
+                    else {}
+                ),
             })
     return validate_annotation(annotation), sorted(set(mapping.values()))
 
@@ -298,6 +321,9 @@ def train(
         started = time.monotonic()
         try:
             model = detector(weights)
+            if manifest.get("task") == "pose":
+                model = pose_model(model, weights)
+                run["task"] = "pose"
             run.update(environment=environment(), **weights_record(weights, model))
             atomic_json(root / "run.json", run)
             # Absolute paths in a run-local YAML leave the portable snapshot untouched.
@@ -306,6 +332,11 @@ def train(
                 "train": "images/train",
                 "val": "images/val",
                 "names": manifest["classes"],
+                **(
+                    {"kpt_shape": [len(manifest["keypoints"]), 3], "flip_idx": [0]}
+                    if manifest.get("task") == "pose"
+                    else {}
+                ),
             }
             atomic_json(root / "data.yaml", config)
             model.train(

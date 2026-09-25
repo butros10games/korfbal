@@ -32,6 +32,10 @@ MAX_ERROR_PIXELS = 1.5
 BOX_MARGIN = 6
 MIN_FOCAL, MAX_FOCAL = 0.25, 25.0
 DEFAULT_FOCAL = 1.0
+CLEAR_ROTATION_RESIDUAL = 0.1
+MAX_ROTATION_RESIDUAL = 1.0
+MAX_LINK_PIXELS = 1.2
+LINK_FOCALS = (0.8, 1.2, 1.8, 2.7)
 EPSILON = 1e-9
 MIN_SEGMENT_PIXELS = 40
 MAX_SEGMENTS = 200
@@ -311,6 +315,52 @@ def spread(count: int, samples: int) -> list[float]:
     if count <= samples:
         return [float(i) for i in range(count)]
     return [i * (count - 1) / (samples - 1) for i in range(samples)]
+
+
+def rotation_residual(homography: NDArray[Any]) -> float:
+    """How far a view-to-view homography is from any rotation with zoom.
+
+    Two views of one fixed camera differ by K2 R K1^-1. Views of a distant wall
+    from two nearby cameras can match well, but they are not exactly such a
+    rotation, so this separates cameras that feature counts alone cannot.
+    """
+    _, np = modules()
+    focal = np.exp(np.linspace(math.log(0.3), math.log(12), 40))[:, None]
+    zoom = np.exp(np.linspace(math.log(0.5), math.log(2), 21))[None, :]
+    f1, f2 = (focal * np.ones_like(zoom)).ravel(), (focal * zoom).ravel()
+    k1 = np.zeros((len(f1), 3, 3))
+    k1[:, 0, 0], k1[:, 1, 1], k1[:, 2, 2] = f1, f1, 1
+    inverse = np.zeros_like(k1)
+    inverse[:, 0, 0], inverse[:, 1, 1], inverse[:, 2, 2] = 1 / f2, 1 / f2, 1
+    m = inverse @ homography @ k1
+    determinant = np.linalg.det(m)
+    usable = np.abs(determinant) > EPSILON
+    m = m[usable] / np.cbrt(determinant[usable])[:, None, None]
+    errors = np.linalg.norm(m @ np.transpose(m, (0, 2, 1)) - np.eye(3), axis=(1, 2))
+    return float(errors.min()) if len(errors) else math.inf
+
+
+def rotational(p: NDArray[Any], q: NDArray[Any], homography: NDArray[Any]) -> bool:
+    """Accept a view link only if its matches fit one rotating, zooming camera.
+
+    Most links pass the cheap homography check. Borderline ones are fitted
+    directly: repeated seats or a far wall seen from a second camera can give
+    plenty of matches that still miss a pure rotation by pixels.
+    """
+    _, np = modules()
+    residual = rotation_residual(homography)
+    if residual <= CLEAR_ROTATION_RESIDUAL:
+        return True
+    if residual > MAX_ROTATION_RESIDUAL:
+        return False
+    for focal in LINK_FOCALS:
+        start = relative(homography, focal)
+        if start is None:
+            continue
+        solved = pose(rays(p, np.eye(3), focal), q, start[0], start[1])
+        if solved is not None and solved[2] <= MAX_LINK_PIXELS:
+            return True
+    return False
 
 
 def rotation_focal(edges: list[dict]) -> float:
