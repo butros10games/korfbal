@@ -1,6 +1,6 @@
 """Stage paid jobs locally; only the separate controller holds cloud credentials."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +10,7 @@ from django.conf import settings
 from apps.video_analysis.engine import monitor
 from apps.video_analysis.engine.remote.adapters import Runpod
 from apps.video_analysis.engine.remote.controller import TERMINAL, Controller, Policy
-from apps.video_analysis.engine.store import ConflictError, Store
+from apps.video_analysis.engine.store import ConflictError, Store, number
 from apps.video_analysis.engine.training import RunOptions
 
 
@@ -28,7 +28,13 @@ def configured_policy() -> Policy:
 def policy_version(policy: Policy) -> str:
     """Bind a browser submission to the limits displayed before its click."""
     return hashlib.sha256(
-        json.dumps(asdict(policy), sort_keys=True).encode()
+        json.dumps(
+            dict(
+                asdict(policy),
+                hourly_ceiling_usd=settings.VIDEO_ANALYSIS_HOURLY_CEILING_USD,
+            ),
+            sort_keys=True,
+        ).encode()
     ).hexdigest()
 
 
@@ -61,11 +67,12 @@ def launch_status(store: Store) -> dict:
         "gpu": policy.gpu,
         "max_seconds": policy.max_seconds,
         "max_hourly_usd": policy.max_hourly_usd,
+        "hourly_ceiling_usd": settings.VIDEO_ANALYSIS_HOURLY_CEILING_USD,
         "policy_version": policy_version(policy),
     }
 
 
-def accepted_policy(store: Store, version: str) -> dict:
+def accepted_policy(store: Store, version: str, max_hourly_usd: object = None) -> dict:
     """Recheck readiness and the displayed budget before accepting a paid request.
 
     Raises:
@@ -80,6 +87,14 @@ def accepted_policy(store: Store, version: str) -> dict:
         raise ConflictError(
             status["reason"] or "Training limits changed. Refresh before starting."
         )
+    if max_hourly_usd is not None:
+        policy = replace(
+            policy,
+            max_hourly_usd=number(
+                max_hourly_usd, 0.01, settings.VIDEO_ANALYSIS_HOURLY_CEILING_USD
+            ),
+        )
+    policy.validate()
     return asdict(policy)
 
 
@@ -89,7 +104,9 @@ def queue_training(store: Store, request_id: str, payload: dict) -> dict:
     return controller.enqueue(
         payload["snapshot"],
         RunOptions(device="0", epochs=payload["epochs"], imgsz=960, batch=4),
-        "run:" + payload["parent_run"] if payload.get("parent_run") else "yolo26n.pt",
+        "run:" + payload["parent_run"]
+        if payload.get("parent_run")
+        else payload.get("base_weights", "yolo26n.pt"),
         request_id=request_id,
     )
 

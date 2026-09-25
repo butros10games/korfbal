@@ -153,3 +153,27 @@ PR does not demonstrate that production workers are running the new code.
 For rollback, pause preparations and deploy the previous application version.
 Retain the added tables, media and annotations; do not reverse the migration or
 remove queue records to cancel work. A later deployment can resume the cursor.
+
+## Per-run GPU training choices
+
+The Training tab supports fresh YOLO26 nano, small and medium bases, or continuing
+an existing completed checkpoint. Changing model size starts from that size's
+pretrained weights; continuing a saved checkpoint retains its architecture.
+
+Choose **Maximum GPU-prijs per uur (USD)** for each run. The policy file supplies
+the initial value, GPU type, immutable worker image and execution deadline.
+`VIDEO_ANALYSIS_HOURLY_CEILING_USD` sets the server-owned maximum selectable price
+(default $10/hour); it does not change the default rate or start a job. The UI
+shows the selected price times the execution limit as the maximum GPU compute
+charge; storage and transfer charges are separate.
+
+The authenticated request freezes the selected rate into its job policy. The
+controller checks the actual allocated rate against that frozen limit. Policy
+version checks cover both the default policy and selectable ceiling. Retrying a
+request preserves its ID, model and price; changing a recipe requires a new ID.
+Existing requests without explicit model/price fields keep their previous defaults.
+
+Deploy API and frontend together to expose the new choices. The worker/controller
+code must include medium-model support before queueing medium jobs through the
+app. No migration is required. Previously frozen jobs keep their recorded policy.
+Reverting the frontend hides the new controls without deleting trained checkpoints.

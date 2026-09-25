@@ -27,8 +27,12 @@ from apps.video_analysis.tests.test_review import verified
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize("price", [None, 1.25])
 def test_paid_launch_requires_mfa_csrf_and_is_idempotent(
-    imported: tuple[User, DatabaseStore, Store], settings: Settings, tmp_path: Path
+    imported: tuple[User, DatabaseStore, Store],
+    settings: Settings,
+    tmp_path: Path,
+    price: float | None,
 ) -> None:
     """A response retry cannot create a second paid job or override its budget."""
     owner, store, _ = imported
@@ -52,6 +56,8 @@ def test_paid_launch_requires_mfa_csrf_and_is_idempotent(
         "policy_version": policy_version(policy),
         "policy": {"max_hourly_usd": 999},
     }
+    if price is not None:
+        payload.update(max_hourly_usd=price, base_weights="yolo26m.pt")
     url = "/video-analysis/vision/train"
     anonymous = Client()
     assert (
@@ -85,10 +91,27 @@ def test_paid_launch_requires_mfa_csrf_and_is_idempotent(
             == HTTPStatus.CONFLICT
         )
         assert post(dict(payload, epochs=True)).status_code == HTTPStatus.BAD_REQUEST
+        for bad in (0, -1, True, "1", None, 11):
+            assert (
+                post(dict(payload, max_hourly_usd=bad)).status_code
+                == HTTPStatus.BAD_REQUEST
+            )
+        assert (
+            post(dict(payload, base_weights="arbitrary.pt")).status_code
+            == HTTPStatus.BAD_REQUEST
+        )
         first = post(payload)
         assert first.status_code == HTTPStatus.ACCEPTED
         job = AnalysisJob.objects.get(pk=first.json()["job_id"])
-        assert job.payload["policy"] == asdict(policy)
+        expected = dict(asdict(policy), max_hourly_usd=price or policy.max_hourly_usd)
+        assert job.payload["policy"] == expected
+        if price is not None:
+            assert job.payload["base_weights"] == "yolo26m.pt"
+        assert post(dict(payload, max_hourly_usd=2)).status_code == HTTPStatus.CONFLICT
+        assert (
+            post(dict(payload, base_weights="yolo26s.pt")).status_code
+            == HTTPStatus.CONFLICT
+        )
         job.status = "completed"
         job.save()
         assert post(payload).json() == first.json()

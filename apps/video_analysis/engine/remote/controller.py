@@ -22,6 +22,7 @@ from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.training import (
     MAX_BATCH,
     MAX_EPOCHS,
+    PRETRAINED_WEIGHTS,
     RunOptions,
     validate_options,
 )
@@ -152,7 +153,7 @@ class Controller:
         if not 0 <= proposal_count <= MAX_PIPELINE_FRAMES:
             raise ValueError("Proposal count must be 0-1000")
         if (
-            (not parent_run and weights not in {"yolo26n.pt", "yolo26s.pt"})
+            (not parent_run and weights not in PRETRAINED_WEIGHTS)
             or options.device != "0"
             or not 1 <= options.epochs <= MAX_EPOCHS
             or not 1 <= options.batch <= MAX_BATCH

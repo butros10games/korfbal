@@ -38,6 +38,7 @@ from apps.video_analysis.engine import monitor, vision
 from apps.video_analysis.engine.server import parse_range
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
 from apps.video_analysis.engine.timeline import sample_times, validate_periods
+from apps.video_analysis.engine.training import PRETRAINED_WEIGHTS
 from apps.video_analysis.models import (
     AnalysisJob,
     ClipReview,
@@ -265,6 +266,26 @@ def prepare_payload(workspace: Workspace, payload: dict[str, Any]) -> dict[str, 
     }
 
 
+def training_selection(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize explicit model and price choices before retry comparison.
+
+    Raises:
+        ValueError: The model is unsupported or the price is explicitly empty.
+
+    """
+    weights = payload.get("base_weights", "yolo26n.pt")
+    if not isinstance(weights, str) or weights not in PRETRAINED_WEIGHTS:
+        raise ValueError("Choose a supported pretrained model")
+    if payload.get("parent_run") and weights != "yolo26n.pt":
+        raise ValueError("Choose a pretrained model or an existing checkpoint")
+    result: dict[str, Any] = {"base_weights": weights}
+    if "max_hourly_usd" in payload:
+        if payload["max_hourly_usd"] is None:
+            raise ValueError("Choose an hourly price limit")
+        result["max_hourly_usd"] = payload["max_hourly_usd"]
+    return result
+
+
 @transaction.atomic
 def start_training(
     payload: dict[str, Any], store: Store, workspace: Workspace, request: HttpRequest
@@ -283,6 +304,7 @@ def start_training(
     if type(epochs) is not int or epochs not in {5, 10, 30}:
         return JsonResponse({"error": "Choose 5, 10 or 30 epochs."}, status=400)
     recipe: dict[str, Any] = {"snapshot": payload["snapshot"], "epochs": epochs}
+    recipe.update(training_selection(payload))
     parent_run = payload.get("parent_run", "")
     if not isinstance(parent_run, str):
         raise TypeError("Invalid base model")
@@ -290,12 +312,18 @@ def start_training(
         recipe["parent_run"] = parent_run
     previous = AnalysisJob.objects.filter(pk=request_id).first()
     if previous:
+        defaults = {
+            "parent_run": "",
+            "base_weights": "yolo26n.pt",
+            "max_hourly_usd": None,
+        }
+        prior = dict(defaults, **previous.payload)
+        current = dict(defaults, **recipe)
         if (
             previous.workspace_id != workspace.pk
             or previous.requested_by_id != request.user.pk
             or previous.kind != "train"
-            or previous.payload.get("parent_run", "") != parent_run
-            or any(previous.payload.get(k) != v for k, v in recipe.items())
+            or any(prior.get(k) != v for k, v in current.items())
         ):
             raise ConflictError("Training request ID already used")
         return JsonResponse({"queued": True, "job_id": str(previous.pk)}, status=202)
@@ -305,7 +333,9 @@ def start_training(
         )
         if parent.get("kind") != "train" or parent.get("status") != "completed":
             raise ValueError("Select a completed training run")
-    recipe["policy"] = accepted_policy(store, payload["policy_version"])
+    recipe["policy"] = accepted_policy(
+        store, payload["policy_version"], recipe.get("max_hourly_usd")
+    )
     # Full image/label/checkpoint verification belongs to the queued preparation
     # job, before it can submit any paid work to the controller.
     json.loads(

@@ -106,6 +106,7 @@ MAX_LEARNING_RATE = 0.1
 MAX_FROZEN_LAYERS = 10
 MAX_CLOSE_MOSAIC = 50
 PROPOSAL_VERSION = 4
+PRETRAINED_WEIGHTS = ("yolo26n.pt", "yolo26s.pt", "yolo26m.pt")
 CLASS_ALIASES = {"person": "player", "sports ball": "ball"}
 
 
@@ -124,7 +125,7 @@ def detector(weights: str) -> Detector:
             "korfbal_vision_environment NEW_ENV --cpu. "
             "Then run with NEW_ENV/bin/python; omit --cpu for GPU training."
         ) from error
-    if weights in {"yolo26n.pt", "yolo26s.pt"}:
+    if weights in PRETRAINED_WEIGHTS:
         cache = Path.home() / ".cache" / "korfbal-vision" / "models"
         cache.mkdir(parents=True, exist_ok=True)
         weights = str(cache / weights)
