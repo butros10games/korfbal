@@ -2,13 +2,15 @@
 
 Image proximity and co-motion cannot establish possession or fault. Keep both
 players as candidates, distinguish shot recoveries, and abstain across lost data.
+After a shot, the attacking team decides whether a recovery is an offensive or
+defensive rebound; after a possible goal it is only a restart candidate.
 """
 
 from collections import deque
 from copy import deepcopy
-import math
 
-from .clip_events import MAX_ACTIVE_AGE, MAX_EVENTS, MAX_GAP, box, centre
+from .clip_ball_chain import BallFrame
+from .clip_events import MAX_EVENTS, TEAMS, box, centre
 
 
 CONTROL_SECONDS = 0.24
@@ -23,7 +25,7 @@ RELATIVE_X = (-0.15, 1.15)
 RELATIVE_Y = (-0.1, 0.8)
 CONTROL_X = (0.2, 0.8)
 CONTROL_Y = (0.15, 0.7)
-TEAMS = {"team_a", "team_b"}
+VERSION = 2
 
 
 def player_candidate(
@@ -71,6 +73,15 @@ def player_candidate(
     return player, relative
 
 
+def recovery_type(shot: dict, attacking: str, gaining: str) -> str:
+    """Classify who recovered a shot; a possible goal makes it a restart candidate."""
+    if shot["outcome"] == "possible_goal":
+        return "restart_after_possible_goal"
+    if attacking not in TEAMS:
+        return "unknown"
+    return "offensive_rebound" if attacking == gaining else "defensive_rebound"
+
+
 class PossessionEvents:
     """Require sustained control before attributing a team loss and gain."""
 
@@ -80,77 +91,19 @@ class PossessionEvents:
         self.court = court
         self.streak: deque[dict] = deque(maxlen=16)
         self.holder: dict | None = None
-        self.ball_id: str | None = None
-        self.segment: int | None = None
-        self.last_ball = -math.inf
-        self.last_active = -math.inf
-        self.frames = 0
         self.truncated = False
 
     def reset(self) -> None:
         """Break attribution without manufacturing a loss when evidence vanishes."""
         self.streak.clear()
         self.holder = None
-        self.ball_id = None
-        self.last_ball = self.last_active = -math.inf
 
-    def snapshot(self) -> dict:
-        """Keep compatible event summaries and a distinct feature coverage marker."""
-        return {
-            "possession_detection": {
-                "version": 1,
-                "review_only": True,
-                "processed_frames": self.frames,
-                "truncated": self.truncated,
-            },
-            "events": deepcopy(self.events),
-        }
-
-    def observed_ball(
-        self, objects: list[dict], active: dict, timestamp: float, camera: dict
-    ) -> dict | None:
-        """Follow the same recently active, visible ball within one camera segment."""
-        discontinuity = not 0 < timestamp - self.last_ball <= MAX_GAP
-        if camera.get("cut") or camera["segment"] != self.segment or discontinuity:
-            self.reset()
-        self.segment = camera["segment"]
-        active_id = (
-            active.get("track_id") if active.get("status") == "observed" else None
-        )
-        if active_id and self.ball_id and active_id != self.ball_id:
-            self.reset()
-        if active_id:
-            self.ball_id, self.last_active = active_id, timestamp
-        if timestamp - self.last_active > MAX_ACTIVE_AGE:
-            self.reset()
-        ball = next(
-            (
-                o
-                for o in objects
-                if o["label"] == "ball"
-                and o.get("track_id") == self.ball_id
-                and not o.get("estimated")
-            ),
-            None,
-        )
-        if ball:
-            self.last_ball = timestamp
-        return ball
-
-    def update(
-        self,
-        objects: list[dict],
-        active: dict,
-        timestamp: float,
-        camera: dict,
-        shots: list[dict],
-    ) -> dict:
+    def update(self, frame: BallFrame, shots: list[dict]) -> dict:
         """Return current visible control evidence and collect resolved transitions."""
-        self.frames += 1
-        ball = self.observed_ball(objects, active, timestamp, camera)
+        ball, timestamp = frame.ball, frame.timestamp
         if self.holder and timestamp - self.holder["last_seen"] > MAX_TRANSFER_SECONDS:
             self.holder = None
-        candidate = player_candidate(objects, ball, self.court) if ball else None
+        candidate = player_candidate(frame.objects, ball, self.court) if ball else None
         if candidate is None:
             self.streak.clear()
             return {"status": "unknown", "holder_candidate": None}
@@ -172,11 +125,11 @@ class PossessionEvents:
         )
         if not enough:
             return {"status": "unknown", "holder_candidate": None}
-        self.accept(player, timestamp, shots)
+        self.accept(player, frame, shots)
         return {
             "status": "candidate",
             "holder_candidate": player,
-            "ball": {"track_id": self.ball_id},
+            "ball": {"track_id": frame.ball_id},
             "review_required": True,
         }
 
@@ -189,8 +142,9 @@ class PossessionEvents:
             for axis, limit in enumerate((MAX_RELATIVE_X_SPREAD, MAX_RELATIVE_Y_SPREAD))
         )
 
-    def accept(self, player: dict, timestamp: float, shots: list[dict]) -> None:
+    def accept(self, player: dict, frame: BallFrame, shots: list[dict]) -> None:
         """Refresh a holder; emit only supported changes, never a teammate pass."""
+        ball_id, segment, timestamp = frame.ball_id, frame.segment, frame.timestamp
         previous = self.holder
         self.holder = {"player": deepcopy(player), "last_seen": timestamp}
         if previous is None or player["team"] not in TEAMS:
@@ -201,8 +155,8 @@ class PossessionEvents:
             (
                 s
                 for s in reversed(shots)
-                if s["ball"]["track_id"] == self.ball_id
-                and s["segment"] == self.segment
+                if s["ball"]["track_id"] == ball_id
+                and s["segment"] == segment
                 and previous["last_seen"] <= s["time_seconds"] <= timestamp
                 and timestamp - s["time_seconds"] <= SHOT_CONTEXT_SECONDS
             ),
@@ -218,26 +172,31 @@ class PossessionEvents:
         if len(self.events) >= MAX_EVENTS:
             self.truncated = True
             return
+        # Without a released shooter, the last sustained holder before the shot
+        # still identifies the attacking team, but not the shooting player.
+        from_team = (shot.get("team") if shot else None) or before["team"]
+        recovery = recovery_type(shot, from_team, player["team"]) if shot else None
         self.events.append({
-            "id": f"s{self.segment}-possession-{len(self.events) + 1}",
+            "id": f"s{segment}-possession-{len(self.events) + 1}",
             "kind": "ball_recovery_candidate"
             if shot
             else "possession_change_candidate",
-            "segment": self.segment,
+            "segment": segment,
             "time_seconds": round(self.streak[0]["time"], 6),
             "start_time_seconds": round(previous["last_seen"], 6),
             "end_time_seconds": round(timestamp, 6),
-            "ball": {"track_id": self.ball_id},
-            "from_team": before["team"],
+            "ball": {"track_id": ball_id},
+            "from_team": from_team,
             "to_team": player["team"],
             "previous_holder_candidate": deepcopy(before),
             "loss_candidate": None if shot else deepcopy(before),
             "gain_candidate": deepcopy(player),
             "shot_event_id": shot["id"] if shot else None,
+            "recovery": recovery,
             "review_required": True,
             "evidence": [
                 "sustained_unique_proximity",
                 "stable_relative_motion",
-                "after_shot" if shot else "opposing_team_control",
+                recovery or "opposing_team_control",
             ],
         })

@@ -130,7 +130,7 @@ def child_result(
             ],
         },
         "event_detection": {
-            "version": 1,
+            "version": 2,
             "processed_frames": 1,
             "review_only": True,
             "truncated": False,
@@ -144,6 +144,7 @@ def child_result(
                 "outcome": "unknown",
                 "ball": {"track_id": "ball-1"},
                 "shooter_candidate": {"track_id": "player-1"},
+                "team": "team_a",
             },
             {
                 "id": "s0-possession-1",
@@ -151,12 +152,13 @@ def child_result(
                 "kind": "ball_recovery_candidate",
                 "time_seconds": frame["time_seconds"],
                 "shot_event_id": "s0-shot-1",
+                "recovery": "offensive_rebound",
                 "loss_candidate": None,
                 "gain_candidate": {"track_id": "player-1"},
             },
         ],
         "possession_detection": {
-            "version": 1,
+            "version": 2,
             "processed_frames": 1,
             "review_only": True,
             "truncated": False,

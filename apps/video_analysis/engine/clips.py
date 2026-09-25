@@ -9,20 +9,18 @@ from datetime import UTC, datetime
 import importlib
 import json
 import math
-from operator import itemgetter
 import os
 from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any, cast
 
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
-from .clip_events import ShotEvents
 from .clip_identity import IdentityMemory, court_reference
 from .clip_inference import CPU_THREADS, clip_detector
+from .clip_match_events import MatchEvents
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_overlap import OverlapFrame, OverlapRecovery
 from .clip_positions import attach_post_distances
-from .clip_possession import PossessionEvents
 from .clip_recovery import PlayerRecovery, RecoveryFrame
 from .clip_references import suggestion
 from .clip_refinement import IdentityRefiner
@@ -89,8 +87,7 @@ class ClipRun:
         self.balls = Balls()
         self.teams = Teams(options.team_colors)
         self.opening_teams = OpeningTeams()
-        self.events = ShotEvents()
-        self.possession = PossessionEvents(options.court)
+        self.events = MatchEvents(options.court)
         self.recovery = PlayerRecovery(
             options, crops=os.environ.get("KORFBAL_CLIP_RECOVERY_CROPS", "0") == "1"
         )
@@ -133,13 +130,6 @@ class ClipRun:
         self.record.update(self.events.snapshot())
         self.record["player_recovery"] = self.recovery.snapshot()
         self.record["overlap_recovery"] = self.overlap.snapshot()
-        possession = self.possession.snapshot()
-        self.record["possession_detection"] = possession["possession_detection"]
-        self.record["event_detection"]["truncated"] |= self.possession.truncated
-        self.record["events"] = sorted(
-            self.record["events"] + possession["events"],
-            key=itemgetter("time_seconds"),
-        )
         atomic_json(self.root / "run.json", self.record)
         self.last_publish = time.monotonic()
 
@@ -160,7 +150,6 @@ class ClipRun:
         """Publish a terminal receipt even when the last chunk cannot be encoded."""
         self.record["finished_at"] = datetime.now(UTC).isoformat()
         self.events.finish(self.record["status"])
-        self.possession.reset()
         try:
             if self.record["status"] == "completed":
                 started = time.monotonic()
@@ -314,10 +303,7 @@ class ClipRun:
         )
         attach_post_distances(persons, self.options.court)
         objects = persons + balls + [o for o in detected if o["label"] == "basket"]
-        self.events.update(objects, active, timestamp, camera)
-        possession = self.possession.update(
-            objects, active, timestamp, camera, self.events.events
-        )
+        possession = self.events.update(objects, active, timestamp, camera)
         self.buffer.append({
             "time_seconds": round(timestamp, 6),
             "segment": camera["segment"],

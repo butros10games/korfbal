@@ -3,6 +3,8 @@
 Basket-relative coordinates cancel image translation and uniform zoom. They do
 not resolve depth: even an above/inside/below sequence is only a possible goal.
 No interpolated ball, court-projected ball, or scoreboard state supplies evidence.
+The shooter candidate is the sustained holder immediately before release, never
+a player who merely appears near the rising ball.
 """
 
 from collections import deque
@@ -12,13 +14,12 @@ from itertools import pairwise
 import math
 from operator import itemgetter
 
-from .clip_replay import near_player
+from .clip_ball_chain import MAX_GAP, BallFrame
 
 
-VERSION = 1
+VERSION = 2
 MAX_EVENTS = 64
 MAX_REPLAY_EVENTS = 1024
-MAX_GAP = 0.32
 HISTORY_SECONDS = 2.5
 BASKET_SCALE_RANGE = (0.5, 2.0)
 BASKET_MATCH_DISTANCE = 3
@@ -35,8 +36,9 @@ GOAL_CORRIDOR_X = 0.4
 MAX_PASSAGE_SECONDS = 0.6
 END_Y = 2.5
 MAX_ATTEMPT_SECONDS = 4
-MAX_ACTIVE_AGE = 4
 COOLDOWN_SECONDS = 0.6
+RELEASE_SECONDS = 1.5
+TEAMS = {"team_a", "team_b"}
 
 
 def box(obj: dict) -> list:
@@ -86,21 +88,18 @@ def target(
 
 
 class ShotEvents:
-    """Follow one previously active ball and retain inspectable event candidates."""
+    """Turn one ball chain's basket-relative arc into inspectable shot candidates."""
 
     def __init__(self) -> None:
         """Keep trajectories and published candidates under fixed memory limits."""
         self.events: list[dict] = []
         self.history: deque[dict] = deque(maxlen=60)
         self.pending: dict | None = None
-        self.ball_id: str | None = None
         self.basket: list | None = None
         self.segment: int | None = None
         self.last_time: float | None = None
-        self.last_active = -math.inf
         self.cooldown = -math.inf
         self.truncated = False
-        self.frames = 0
 
     def finish(self, reason: str = "clip_ended") -> None:
         """Close incomplete evidence without turning disappearance into a miss."""
@@ -109,64 +108,43 @@ class ShotEvents:
             self.pending = None
         self.history.clear()
         self.basket = None
-        self.ball_id = None
+        self.last_time = None
 
-    def snapshot(self) -> dict:
-        """Expose a versioned receipt; old runs lack this detection marker entirely."""
-        return {
-            "event_detection": {
-                "version": VERSION,
-                "review_only": True,
-                "processed_frames": self.frames,
-                "truncated": self.truncated,
-            },
-            # Measurements remain in immutable frame chunks; run listings need
-            # only the bounded event summaries, not duplicated trajectories.
-            "events": [
-                deepcopy({k: v for k, v in event.items() if k != "trajectory"})
-                for event in self.events
-            ],
-        }
+    def summaries(self) -> list[dict]:
+        """Return detached events; frame chunks already retain the trajectories."""
+        return [
+            deepcopy({k: v for k, v in event.items() if k != "trajectory"})
+            for event in self.events
+        ]
 
-    def update(
-        self, objects: list[dict], active: dict, timestamp: float, camera: dict
-    ) -> None:
-        """Consume only visible measurements; cuts and gaps break shot evidence."""
-        self.frames += 1
-        if camera.get("cut") or self.segment != camera["segment"]:
-            self.finish("camera_cut")
+    def update(self, frame: BallFrame, holder: dict | None) -> None:
+        """Record one chained ball measurement relative to an unambiguous basket."""
+        ball, timestamp = frame.ball, frame.timestamp
+        assert ball is not None
+        if self.segment != frame.segment:
             self.cooldown = -math.inf
-        self.segment = camera["segment"]
+        self.segment = frame.segment
         if self.last_time is not None and not 0 < timestamp - self.last_time <= MAX_GAP:
             self.finish("observation_gap")
-        self.bind_ball(active, timestamp)
-        balls = [o for o in objects if o["label"] == "ball" and not o.get("estimated")]
-        ball = next((o for o in balls if o.get("track_id") == self.ball_id), None)
-        if ball is None:
-            return
         baskets = [
-            o for o in objects if o["label"] == "basket" and not o.get("estimated")
+            o
+            for o in frame.objects
+            if o["label"] == "basket" and not o.get("estimated")
         ]
-        basket = target(baskets, self.basket, ball, camera.get("motion"))
+        basket = target(baskets, self.basket, ball, frame.motion)
         if basket is None:
+            # The ball chain survives; only basket-relative evidence restarts.
             self.finish("basket_unavailable")
             return
         self.last_time = timestamp
         self.basket = list(box(basket))
         bx, by, bw, bh = self.basket
         cx, cy = centre(box(ball))
-        player = near_player(ball, objects)
         sample = {
             "time_seconds": round(timestamp, 6),
             "x": (cx - bx - bw / 2) / bw,
             "y": (cy - by) / bh,
             "radius_y": box(ball)[3] / (2 * bh),
-            "near_player": {
-                k: deepcopy(player.get(k))
-                for k in ("track_id", "display_id", "team", "court_xy_m")
-            }
-            if player
-            else None,
         }
         self.history.append(sample)
         while (
@@ -175,24 +153,11 @@ class ShotEvents:
         ):
             self.history.popleft()
         if self.pending is None and timestamp >= self.cooldown:
-            self.start(sample)
+            self.start(sample, frame.ball_id, holder)
         if self.pending:
             self.advance(sample)
 
-    def bind_ball(self, active: dict, timestamp: float) -> None:
-        """Keep airborne evidence briefly, requiring a fresh active association."""
-        active_id = (
-            active.get("track_id") if active.get("status") == "observed" else None
-        )
-        if active_id:
-            self.last_active = timestamp
-        elif timestamp - self.last_active > MAX_ACTIVE_AGE:
-            self.finish("active_ball_expired")
-        if active_id and self.ball_id and active_id != self.ball_id:
-            self.finish("ball_changed")
-        self.ball_id = self.ball_id or active_id
-
-    def start(self, sample: dict) -> None:
+    def start(self, sample: dict, ball_id: str | None, holder: dict | None) -> None:
         """Require sustained ascent toward the basket, not a stationary overlap."""
         if (
             len(self.history) < MIN_OBSERVATIONS
@@ -210,13 +175,12 @@ class ShotEvents:
         if len(self.events) >= MAX_EVENTS:
             self.truncated = True
             return
-        # Proximity is not possession: require repeated unique mapped-player
-        # evidence before the ascent, and expose it only as a shooter candidate.
-        nearby = [p["near_player"] for p in past[:-2] if p["near_player"]]
+        # Only a holder whose sustained control ended shortly before the ascent
+        # can be the shooter; proximity to the flying ball is not evidence.
         shooter = (
-            nearby[-1]
-            if len(nearby) >= MIN_RISES
-            and nearby[-1]["track_id"] == nearby[-2]["track_id"]
+            deepcopy(holder["player"])
+            if holder
+            and 0 <= sample["time_seconds"] - holder["last_seen"] <= RELEASE_SECONDS
             else None
         )
         self.pending = {
@@ -226,12 +190,14 @@ class ShotEvents:
             "time_seconds": sample["time_seconds"],
             "start_time_seconds": first["time_seconds"],
             "end_time_seconds": sample["time_seconds"],
-            "ball": {"track_id": self.ball_id},
+            "ball": {"track_id": ball_id},
             "shooter_candidate": shooter,
+            "team": shooter["team"] if shooter and shooter["team"] in TEAMS else None,
             "basket_bbox": list(self.basket or []),
             "outcome": "unknown",
             "review_required": True,
-            "evidence": ["rising_toward_basket"],
+            "evidence": ["rising_toward_basket"]
+            + (["released_by_holder"] if shooter else []),
             "trajectory": [],
         }
         self.events.append(self.pending)
@@ -246,7 +212,7 @@ class ShotEvents:
             k: sample[k] for k in ("time_seconds", "x", "y", "radius_y")
         })
         del trajectory[:-40]
-        if len(trajectory) >= MIN_OBSERVATIONS:
+        if event["outcome"] == "unknown" and len(trajectory) >= MIN_OBSERVATIONS:
             # All three stages must be observed, with an unbroken descending
             # corridor. An airborne pass in front of the korf can still match.
             for index, above in enumerate(trajectory[:-2]):
@@ -266,10 +232,7 @@ class ShotEvents:
                     and all(abs(p["x"]) <= GOAL_CORRIDOR_X for p in corridor)
                 ):
                     event["outcome"] = "possible_goal"
-                    event["evidence"] = [
-                        "rising_toward_basket",
-                        "observed_above_inside_below",
-                    ]
+                    event["evidence"].append("observed_above_inside_below")
                     event["time_seconds"] = next(
                         p["time_seconds"] for p in corridor if p["y"] >= 0
                     )
