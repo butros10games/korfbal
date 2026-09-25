@@ -11,6 +11,11 @@ MAX_SAMPLE_GAP = 0.24
 MIN_HISTORY = 0.15
 MIN_SAMPLES = 3
 MAX_SPEED = 9
+# Display support, not calibrated probabilities. On two benchmark clips a
+# box-bottom contact cut off by the image edge was within 1 m of the path
+# 98% of the time; one inside another player's body 75-87% of the time.
+CLIPPED_CONTACT_CONFIDENCE = 0.6
+HIDDEN_CONTACT_CONFIDENCE = 0.35
 
 
 class PositionMemory:
@@ -48,7 +53,9 @@ class PositionMemory:
                     -5:
                 ]
             elif obj.get("ground_issue") == "occluded_ground_contact":
-                prediction = self.predict(obj, history, timestamp, camera)
+                prediction = self.predict(
+                    obj, history, timestamp, camera
+                ) or hidden_contact(obj)
                 if prediction is not None:
                     obj["court_prediction"] = prediction
 
@@ -115,3 +122,21 @@ class PositionMemory:
             "position_confidence": round(0.7 - 0.5 * age / MAX_PREDICTION_GAP, 3),
             "age_seconds": round(age, 3),
         }
+
+
+def hidden_contact(obj: dict) -> dict | None:
+    """Show a detected player whose feet are hidden at the unverified box bottom.
+
+    Motion prediction is preferred; this fallback keeps a visible, tracked
+    player on the map instead of dropping them, marked as low confidence.
+    """
+    xy = obj.get("contact_estimate_xy_m")
+    if xy is None:
+        return None
+    return {
+        "xy": list(xy),
+        "position_source": "hidden_contact",
+        "position_confidence": CLIPPED_CONTACT_CONFIDENCE
+        if obj.get("contact_clipped")
+        else HIDDEN_CONTACT_CONFIDENCE,
+    }

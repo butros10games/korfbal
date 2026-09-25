@@ -72,7 +72,21 @@ class GroundContacts:
                 ):
                     issue = "implausible_ground_motion"
             if issue:
-                obj["court_xy_m"] = None
-                obj["ground_issue"] = issue
+                withhold(obj, issue)
             elif reference:
                 self.previous[obj["track_id"]] = {"point": point, "time": timestamp}
+
+
+def withhold(obj: dict, issue: str) -> None:
+    """Remove an unreliable contact from measurements, keeping a display estimate.
+
+    The box bottom behind another body is usually within a metre of the player,
+    so the replay may show it as an estimate; it never counts as a measurement.
+    """
+    position = obj["court_xy_m"]
+    obj["court_xy_m"] = None
+    obj["ground_issue"] = issue
+    if issue == "occluded_ground_contact":
+        _, y, _, height = obj["observed_bbox"]
+        obj["contact_estimate_xy_m"] = position
+        obj["contact_clipped"] = y + height >= CLIPPED_BOTTOM

@@ -6,6 +6,7 @@ from .clip_signals import center, distance
 
 
 BALL_ASSOCIATION_MARGIN = 0.25
+COURT_MARGIN = 2.0
 
 
 def top_down(
@@ -29,8 +30,9 @@ def top_down(
         predicted = xy is None
         if predicted:
             xy = prediction.get("xy")
+        # Players often stand just over a line; calibration also has some error.
         if xy is None or not all(
-            0 <= v <= dimensions[k]
+            -COURT_MARGIN <= v <= dimensions[k] + COURT_MARGIN
             for v, k in zip(xy, ("length", "width"), strict=True)
         ):
             continue
