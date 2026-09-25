@@ -186,6 +186,21 @@ class Store:
         with self.lock:
             return json.loads(self.path.read_text())
 
+    def recording(self, match_id: str) -> dict[str, Any]:
+        """Read only the metadata needed by a video worker.
+
+        Raises:
+            ValueError: The recording is unknown.
+
+        """
+        match = next((m for m in self.read()["matches"] if m["id"] == match_id), None)
+        if match is None:
+            raise ValueError("Unknown recording")
+        return {k: v for k, v in match.items() if k != "frames"}
+
+    def publish_media(self, relative: str) -> None:
+        """Persist one extracted image when using remote storage."""
+
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """Serialize CLI and web writes across threads and processes."""

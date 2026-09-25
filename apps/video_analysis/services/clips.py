@@ -85,12 +85,21 @@ def start(
     return schedule(workspace, actor, "clip", recipe, uuid.UUID(payload["request_id"]))
 
 
-def listing(store: Store, workspace: Workspace) -> dict:
+def listing(store: Store, workspace: Workspace, selected: str = "") -> dict:
     """List recent attempts and recording metadata without loading frame labels."""
     runs = []
-    for job in AnalysisJob.objects.filter(workspace=workspace, kind="clip").order_by(
-        "-created_at"
-    )[:50]:
+    jobs = list(
+        AnalysisJob.objects.filter(workspace=workspace, kind="clip").order_by(
+            "-created_at"
+        )[:50]
+    )
+    if selected and all(str(job.pk) != selected for job in jobs):
+        chosen = AnalysisJob.objects.filter(
+            workspace=workspace, kind="clip", pk=uuid.UUID(selected)
+        ).first()
+        if chosen:
+            jobs.append(chosen)
+    for job in jobs:
         row = {
             "id": str(job.pk),
             "status": job.status,

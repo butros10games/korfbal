@@ -8,7 +8,7 @@ from django.db import transaction
 
 from apps.kwt_common.services.jobs import enqueue
 from apps.video_analysis.engine.store import ConflictError
-from apps.video_analysis.models import AnalysisJob, Workspace
+from apps.video_analysis.models import AnalysisJob, ReviewPipeline, Workspace
 
 
 @transaction.atomic
@@ -37,9 +37,12 @@ def schedule(
             ):
                 raise ConflictError("Request ID already used")
             return existing
-    if AnalysisJob.objects.filter(
-        workspace=workspace, status__in=["queued", "running"]
-    ).exists():
+    if (
+        AnalysisJob.objects.filter(
+            workspace=workspace, status__in=["queued", "running"]
+        ).exists()
+        or ReviewPipeline.objects.filter(workspace=workspace, status="running").exists()
+    ):
         raise ConflictError("An analysis job is already queued or running")
     job = AnalysisJob.objects.create(
         id=request_id or uuid.uuid4(),

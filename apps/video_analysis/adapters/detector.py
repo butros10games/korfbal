@@ -58,7 +58,6 @@ def clip(
     """Stage a fresh database projection and bound inference in a subprocess.
 
     Raises:
-        ValueError: The request or input does not satisfy this operation.
         OSError: The worker process cannot start.
         SubprocessError: The worker fails or exceeds its runtime limit.
 
@@ -66,10 +65,7 @@ def clip(
     if payload.get("recording_end"):
         ReplaySection(store, run_id, payload).run(clip)
         return
-    data = store.read()
-    match = next((m for m in data["matches"] if m["id"] == payload["match_id"]), None)
-    if match is None:
-        raise ValueError("Recording no longer exists")
+    match = store.recording(payload["match_id"])
     options = ClipOptions.parse(payload["options"])
     options.for_recording(match)
     store.media(match["video"])

@@ -36,6 +36,28 @@ class DatabaseStore(Store):
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "review.json"
 
+    def recording(self, match_id: str) -> dict[str, Any]:
+        """Load one video's metadata without materializing the frame catalogue.
+
+        Raises:
+            ValueError: The recording is outside this workspace.
+
+        """
+        row = (
+            Recording.objects
+            .filter(workspace_id=self.workspace_id, source_id=match_id)
+            .values("metadata")
+            .first()
+        )
+        if row is None:
+            raise ValueError("Unknown recording")
+        return {**row["metadata"], "id": match_id}
+
+    def publish_media(self, relative: str) -> None:
+        """Publish a new image before its review row becomes visible."""
+        if self.files:
+            self.files.publish_media(relative)
+
     def media(self, relative: str) -> Path:
         """Fetch missing worker inputs from the authoritative private bucket."""
         return (

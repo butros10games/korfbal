@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import BinaryIO
 from unittest.mock import ANY, MagicMock, patch
+import uuid
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
@@ -19,6 +20,7 @@ from apps.video_analysis.composition import run_clip, worker_store
 from apps.video_analysis.engine.media import sample_frame
 from apps.video_analysis.engine.store import Store, frame_version
 from apps.video_analysis.models import Frame, StoredFile, Workspace
+from apps.video_analysis.services import uploads
 from apps.video_analysis.tests.test_review import verified
 
 
@@ -268,3 +270,38 @@ def test_replay_restores_only_its_parent_and_stop_receipts(
     assert (store.root / paths[0]).is_file()
     assert (store.root / paths[1]).is_file()
     assert not (store.root / paths[2]).exists()
+
+
+def test_upload_chunks_restore_privately_and_cleanup_preserves_recording_media(
+    imported: tuple[User, DatabaseStore, Store],
+    s3: MagicMock,
+) -> None:
+    """Temporary cleanup is scoped to one session and never exposes uploaded parts."""
+    owner, _, _ = imported
+    workspace = Workspace.objects.get(slug="main")
+    files = WorkspaceObjects(workspace, s3)
+    store = DatabaseStore(workspace, owner, files)
+    data = b"\x00\x00\x00\x18ftyp" + b"synthetic"
+    key = uploads.begin(
+        workspace,
+        owner,
+        {"request_id": str(uuid.uuid4()), "name": "match.mp4", "size": len(data)},
+    )["id"]
+    uploads.part(workspace, owner, store, key=key, chunk=uploads.Chunk(0, data))
+    record = StoredFile.objects.get(relative_path__startswith=f"uploads/{key}/")
+    assert not (store.root / record.relative_path).exists()
+    assert store.media(record.relative_path).read_bytes() == data
+    client = verified(owner)
+    assert (
+        client.get("/video-analysis/media", {"path": record.relative_path}).status_code
+        == HTTPStatus.NOT_FOUND
+    )
+    permanent = store.root / "recording.mp4"
+    permanent.write_bytes(data)
+    files.publish_media("recording.mp4")
+    files.purge_upload(uuid.UUID(key))
+    assert not StoredFile.objects.filter(pk=record.pk).exists()
+    assert StoredFile.objects.filter(relative_path="recording.mp4").exists()
+    s3.delete_object.assert_called_once_with(
+        Bucket=record.bucket, Key=record.object_key
+    )

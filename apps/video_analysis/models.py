@@ -156,3 +156,71 @@ class StoredFile(models.Model):
     def __str__(self) -> str:
         """Return the logical filename without exposing credentials."""
         return self.relative_path
+
+
+class ReviewPipeline(models.Model):
+    """Frozen data-preparation recipe and resumable progress, separate from labels."""
+
+    objects: ClassVar[models.Manager["ReviewPipeline"]] = models.Manager()
+    workspace_id: uuid.UUID
+    requested_by_id: int | None
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL
+    )
+    recipe = models.JSONField(default=dict)
+    progress = models.JSONField(default=dict)
+    status = models.CharField(max_length=24, default="queued")
+    message = models.CharField(max_length=300, blank=True)
+    revision = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        """Identify the preparation without exposing private source URLs."""
+        return f"{self.pk}: {self.status}"
+
+
+class ClipReview(models.Model):
+    """Human inspection of an immutable tracking run; never a training annotation."""
+
+    objects: ClassVar[models.Manager["ClipReview"]] = models.Manager()
+    job_id: uuid.UUID
+    pipeline_id: uuid.UUID
+
+    pipeline = models.ForeignKey(ReviewPipeline, on_delete=models.PROTECT)
+    job = models.OneToOneField(AnalysisJob, on_delete=models.PROTECT)
+    status = models.CharField(max_length=24, default="pending")
+    notes = models.TextField(blank=True)
+    revision = models.PositiveIntegerField(default=0)
+    history = models.JSONField(default=list)
+
+    def __str__(self) -> str:
+        """Identify the immutable replay under review."""
+        return f"{self.job_id}: {self.status}"
+
+
+class VideoUpload(models.Model):
+    """Owner-scoped, expiring chunk intake before a recording is trusted."""
+
+    objects: ClassVar[models.Manager["VideoUpload"]] = models.Manager()
+    workspace_id: uuid.UUID
+    requested_by_id: int | None
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL
+    )
+    name = models.CharField(max_length=200)
+    size = models.PositiveBigIntegerField()
+    received = models.PositiveBigIntegerField(default=0)
+    parts = models.JSONField(default=list)
+    status = models.CharField(max_length=24, default="receiving")
+    expires_at = models.DateTimeField()
+
+    def __str__(self) -> str:
+        """Identify intake without disclosing the uploaded filename."""
+        return f"{self.pk}: {self.status}"

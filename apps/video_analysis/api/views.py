@@ -24,10 +24,13 @@ from django.middleware.csrf import get_token
 from django.utils.crypto import constant_time_compare
 
 from apps.video_analysis.api.clip_views import clip_endpoint
+from apps.video_analysis.api.pipeline_views import pipeline_endpoint
 from apps.video_analysis.api.streaming import async_chunks
+from apps.video_analysis.api.upload_views import upload_endpoint
 from apps.video_analysis.composition import (
     accepted_policy,
     cancel_training,
+    intake_store,
     launch_status,
     review_store,
 )
@@ -35,7 +38,14 @@ from apps.video_analysis.engine import monitor, vision
 from apps.video_analysis.engine.server import parse_range
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
 from apps.video_analysis.engine.timeline import sample_times, validate_periods
-from apps.video_analysis.models import AnalysisJob, Recording, Workspace
+from apps.video_analysis.models import (
+    AnalysisJob,
+    ClipReview,
+    Recording,
+    ReviewPipeline,
+    VideoUpload,
+    Workspace,
+)
 from apps.video_analysis.queries import registered_media, review_state
 from apps.video_analysis.services import curation, dataset, review
 from apps.video_analysis.services.jobs import schedule
@@ -68,11 +78,25 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
             try:
                 response = view(request, action)
             except Workspace.DoesNotExist:
-                response = JsonResponse(
-                    {"error": "The video workspace has not been imported yet."},
-                    status=503,
+                response = (
+                    JsonResponse({
+                        "runs": [],
+                        "clips": [],
+                        "next": None,
+                        "csrf": get_token(request),
+                    })
+                    if action == "pipeline" and request.method == "GET"
+                    else JsonResponse(
+                        {"error": "The video workspace has not been imported yet."},
+                        status=503,
+                    )
                 )
-            except FileNotFoundError:
+            except (
+                FileNotFoundError,
+                ReviewPipeline.DoesNotExist,
+                ClipReview.DoesNotExist,
+                VideoUpload.DoesNotExist,
+            ):
                 response = JsonResponse(
                     {"error": "Training artifact not found."}, status=404
                 )
@@ -83,7 +107,20 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
                     {
                         "error": str(error)
                         if action
-                        in {"curation", "vision/freeze", "clips", "timeline", "prepare"}
+                        in {
+                            "curation",
+                            "vision/freeze",
+                            "clips",
+                            "timeline",
+                            "prepare",
+                            "pipeline",
+                            "pipeline/control",
+                            "pipeline/review",
+                            "pipeline/upload",
+                            "pipeline/upload/part",
+                            "pipeline/upload/finish",
+                            "pipeline/upload/cancel",
+                        }
                         and isinstance(error, ValueError)
                         else "Invalid review request."
                     },
@@ -106,9 +143,24 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
     """
     if request.method == "GET" and action == "access":
         return JsonResponse({"allowed": True})
-    store, workspace = review_store(cast(User, request.user), hydrate=False)
-    if action in {"clips", "clips/result", "clips/cancel"}:
-        return clip_endpoint(request, action, store, workspace)
+    store, workspace = (
+        intake_store(cast(User, request.user))
+        if action in {"pipeline", "pipeline/upload"} and request.method == "POST"
+        else review_store(cast(User, request.user), hydrate=False)
+    )
+    if action.startswith("pipeline") or action in {
+        "clips",
+        "clips/result",
+        "clips/cancel",
+    }:
+        handler = (
+            upload_endpoint
+            if action.startswith("pipeline/upload")
+            else pipeline_endpoint
+            if action.startswith("pipeline")
+            else clip_endpoint
+        )
+        return handler(request, action, store, workspace)
     if store.files and action in {
         "vision",
         "monitor",

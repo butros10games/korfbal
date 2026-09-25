@@ -1,10 +1,19 @@
 """Wire private storage and application jobs at the app boundary."""
 
+import uuid
+
 from django.conf import settings
 from django.contrib.auth.models import User
 
 from apps.video_analysis.adapters import detector
 from apps.video_analysis.adapters.objects import WorkspaceObjects
+from apps.video_analysis.adapters.pipeline import (
+    extract_batch,
+    has_capacity,
+    import_source,
+    infer_batch,
+    purge_uploaded_chunks,
+)
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.adapters.training import (
     accepted_policy,
@@ -80,3 +89,41 @@ def run_clip(store: Store, run_id: str, payload: dict) -> None:
         ).values_list("relative_path", flat=True):
             store.media(relative)
     detector.clip(store, run_id, payload)
+
+
+def import_pipeline_source(store: Store, recipe: dict) -> None:
+    """Wire public recording intake to the existing private persistence adapter."""
+    import_source(store, recipe)
+
+
+def infer_pipeline_batch(
+    store: Store, model: str, frames: list[dict], output: str
+) -> dict:
+    """Wire bounded proposal inference without loading detector code in Django."""
+    return infer_batch(store, model, frames, output)
+
+
+def extract_pipeline_frames(
+    store: Store, match: dict, times: list[float]
+) -> list[dict]:
+    """Wire bounded media extraction to private durable storage."""
+    return extract_batch(store, match, times)
+
+
+def intake_store(user: User) -> tuple[DatabaseStore, Workspace]:
+    """Initialize a private workspace for the first authenticated intake command."""
+    workspace, _ = Workspace.objects.get_or_create(
+        slug=getattr(settings, "VIDEO_ANALYSIS_WORKSPACE", "main"),
+        defaults={"owner": user},
+    )
+    return worker_store(workspace, user, hydrate=False), workspace
+
+
+def pipeline_has_capacity(store: Store, *, importing: bool) -> bool:
+    """Wire the worker's local staging budget to pipeline admission."""
+    return has_capacity(store, importing=importing)
+
+
+def purge_upload(store: Store, upload_id: uuid.UUID) -> None:
+    """Wire task-owned temporary chunk cleanup to private storage."""
+    purge_uploaded_chunks(store, upload_id)

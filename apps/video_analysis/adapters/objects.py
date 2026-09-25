@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 from typing import Any
+import uuid
 
 import boto3
 from botocore.client import BaseClient
@@ -237,6 +238,10 @@ class WorkspaceObjects:
         with response["Body"] as body:
             yield from iter(lambda: body.read(1024 * 1024), b"")
 
+    def publish_media(self, relative: str) -> None:
+        """Publish one image using immutable owner-scoped media storage."""
+        self.upload(relative, media=True)
+
     def publish_review(self, data: dict[str, Any]) -> None:
         """Upload new registered media and retain a durable export of each revision."""
         registered = {f["image"] for m in data["matches"] for f in m["frames"]}
@@ -284,3 +289,24 @@ class WorkspaceObjects:
     def publish_artifact(self, relative: str) -> None:
         """Publish the changed metadata without scanning unrelated artifacts."""
         self.upload(relative)
+
+    def purge_upload(self, upload_id: uuid.UUID) -> None:
+        """Delete indexed temporary chunks under one immutable workspace owner.
+
+        Raises:
+            ValueError: An indexed object escapes its workspace or deletion failed.
+
+        """
+        relative_prefix = f"uploads/{uuid.UUID(str(upload_id))}/"
+        rows = StoredFile.objects.filter(
+            workspace=self.workspace, relative_path__startswith=relative_prefix
+        )
+        for row in rows.iterator(chunk_size=100):
+            if not (
+                row.object_key.startswith(self.prefix + "/")
+                and row.object_key.endswith("/" + row.relative_path)
+            ):
+                raise ValueError("Temporary object is outside the workspace")
+            self.read_client(row).delete_object(Bucket=row.bucket, Key=row.object_key)
+            self.path(row.relative_path).unlink(missing_ok=True)
+            row.delete()

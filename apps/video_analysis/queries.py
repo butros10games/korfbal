@@ -62,7 +62,12 @@ def review_state(workspace: Workspace, match_id: str) -> dict[str, Any]:
         selected = next((r for r in recordings if r["frame_count"]), None)
     frames = []
     if selected:
-        for frame in Frame.objects.filter(recording_id=selected["pk"]).filter(active):
+        for frame in (
+            Frame.objects
+            .filter(recording_id=selected["pk"])
+            .filter(active)
+            .order_by("metadata__time_seconds", "pk")
+        ):
             raw = frame_payload(frame)
             frames.append(dict(raw, frame_version=frame_version(raw)))
     return {

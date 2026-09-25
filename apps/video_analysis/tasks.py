@@ -25,6 +25,8 @@ from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.engine.timeline import is_active_time
 from apps.video_analysis.models import AnalysisJob, Workspace
 from apps.video_analysis.services.jobs import continue_analysis
+from apps.video_analysis.services.pipeline_worker import advance
+from apps.video_analysis.services.uploads import cleanup
 
 
 @shared_task
@@ -164,3 +166,15 @@ def sync_files() -> None:
     """Recover private artifacts produced by the separate training controller."""
     for workspace in Workspace.objects.all():
         sync_workspace_files(workspace)
+
+
+@shared_task
+def advance_pipeline(workspace_id: str) -> None:
+    """Drain one resumable unit on the capacity-limited vision worker."""
+    advance(workspace_id)
+
+
+@shared_task
+def cleanup_upload(upload_id: str) -> None:
+    """Recover expired/cancelled intake and release imported temporary chunks."""
+    cleanup(upload_id)

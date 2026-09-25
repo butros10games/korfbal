@@ -26,7 +26,10 @@ def clip_endpoint(
     """
     if request.method == "GET" and action == "clips":
         return JsonResponse(
-            dict(clips.listing(store, workspace), csrf=get_token(request))
+            dict(
+                clips.listing(store, workspace, request.GET.get("run", "")),
+                csrf=get_token(request),
+            )
         )
     if request.method == "GET" and action == "clips/result":
         return JsonResponse(

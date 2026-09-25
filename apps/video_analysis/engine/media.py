@@ -49,6 +49,8 @@ def probe(path: Path) -> dict[str, Any]:
     result = subprocess.run(
         [
             binary("ffprobe"),
+            "-protocol_whitelist",
+            "file,pipe",
             "-v",
             "error",
             "-select_streams",
