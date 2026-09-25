@@ -110,6 +110,20 @@ def child_result(
         "video_sha256": "frozen-source",
         "team_colors": [[20, 40, 150], [30, 130, 60]],
         "video": "demo/synthetic.mp4",
+        "team_resolution": {
+            "version": 1,
+            "spans": [
+                {
+                    "track_id": "player-1",
+                    "team": "team_a",
+                    "start": frame["time_seconds"],
+                    "end": frame["time_seconds"],
+                    "votes": 5,
+                    "share": 1.0,
+                }
+            ],
+            "truncated": False,
+        },
         "identity_refinement": {
             "status": "completed",
             "frame_links": [
@@ -211,6 +225,10 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
     assert record["possession_detection"]["processed_frames"] == EXPECTED_SECTIONS
     assert record["event_detection"]["processed_frames"] == EXPECTED_SECTIONS
     assert record["event_detection"]["section_boundaries"] is True
+    assert [
+        (span["track_id"], span["processing_section"])
+        for span in record["team_resolution"]["spans"]
+    ] == [(f"p{part}-player-1", part) for part in range(EXPECTED_SECTIONS)]
     assert record["identity_refinement"]["links"] == [
         {
             "from_track_id": f"p{part}-player-2",

@@ -130,6 +130,7 @@ class ClipRun:
         self.record.update(self.events.snapshot())
         self.record["player_recovery"] = self.recovery.snapshot()
         self.record["overlap_recovery"] = self.overlap.snapshot()
+        self.record["team_resolution"] = self.teams.spans.snapshot()
         atomic_json(self.root / "run.json", self.record)
         self.last_publish = time.monotonic()
 

@@ -14,6 +14,7 @@ from .clip_clothing import (
     pixels as clothing_pixels,
     sample as clothing_sample,
 )
+from .clip_team_spans import TeamSpans
 
 
 if TYPE_CHECKING:
@@ -41,8 +42,15 @@ MIN_COLOR_MARGIN = 0.55
 MAX_COLOR_DISTANCE = 55
 MIN_TEAM_VOTES = 3
 MIN_VOTE_SHARE = 0.8
-TEAM_MEMORY_SECONDS = 3.0
+# Players never change teams: a track keeps its whole shirt history, and a
+# confirmed team outlives brief occlusion as long as the identity is certain.
+TEAM_MEMORY_SECONDS = 12.0
+TEAM_HALF_LIFE_SECONDS = 20.0
+TEAM_VOTE_HISTORY = 64
 TEAM_HOLD_SECONDS = 2.0
+# A sustained run of opposite clear shirts marks a body swap, not noise.
+SWITCH_VOTES = 4
+SWITCH_SECONDS = 0.24
 OPENING_PIXEL_SAMPLES = 256
 COURT_MARGIN = 5
 
@@ -221,6 +229,7 @@ class Teams:
         self.confirmed = {}
         self.observations = {}
         self.observation_pixels = {}
+        self.spans = TeamSpans()
         self.centers = None
         if colors is not None:
             rgb = self.np.uint8([colors])
@@ -294,6 +303,7 @@ class Teams:
 
     def reset(self) -> None:
         """Forget people at a camera cut while preserving the match's A/B palette."""
+        self.spans.close_all()
         self.votes.clear()
         self.seen.clear()
         self.confirmed.clear()
@@ -369,42 +379,69 @@ class Teams:
         return winner, margin
 
     def assign(self, obj: dict, color: NDArray[Any] | None, timestamp: float) -> None:
-        """Hold known teams through uncertainty without learning disputed crops."""
+        """Accumulate a track's shirt votes; hold its team through unclear crops."""
         identity = obj["track_id"]
         self.transfer_confirmation(obj, color, timestamp)
         self.seen[identity] = timestamp
+        self.spans.observe(identity, timestamp)
         obj.update(team="unknown", team_score=0.0, team_source="unknown")
         obj.pop("team_age_seconds", None)
         vote = self.vote(color)
-        votes = self.votes.setdefault(identity, deque(maxlen=20))
-        while votes and timestamp - votes[0][2] > TEAM_MEMORY_SECONDS:
-            votes.popleft()
+        votes = self.votes.setdefault(identity, deque(maxlen=TEAM_VOTE_HISTORY))
         prior = self.confirmed.get(identity)
         uncertain = obj.get("identity_uncertain")
         if uncertain and vote is not None and (prior is None or prior[0] != vote[0]):
             self.confirmed.pop(identity, None)
+            self.spans.boundary(identity, timestamp)
             votes.clear()
             return
         if vote is not None and not uncertain:
-            winner, margin = vote
-            votes.append((winner, margin, timestamp))
-            share = sum(v[0] == winner for v in votes) / len(votes)
-            if len(votes) >= MIN_TEAM_VOTES and share >= MIN_VOTE_SHARE:
-                prior = (winner, share * margin, timestamp)
-                self.confirmed[identity] = prior
-            # A contradictory clear crop must not display the previous team.
-            if prior is None or prior[0] != winner:
-                self.confirmed.pop(identity, None)
+            votes.append((vote[0], vote[1], timestamp))
+            self.spans.vote(identity, f"team_{'ab'[vote[0]]}", timestamp)
+            if switched(votes):
+                # Keep only the opposing run: earlier votes described another body.
+                recent = list(votes)[-SWITCH_VOTES:]
+                votes.clear()
+                votes.extend(recent)
+                self.spans.boundary(identity, timestamp, resume=recent[0][2])
+            prior = self.tally(votes, timestamp)
+            if prior is None:
+                held = self.confirmed.pop(identity, None)
+                if held is not None:
+                    self.spans.boundary(identity, timestamp)
+                    if held[0] != vote[0]:
+                        obj["team_source"] = "shirt_conflict"
                 return
-        if prior is None or timestamp - prior[2] > TEAM_HOLD_SECONDS:
+            self.confirmed[identity] = prior
+            self.spans.confirm(identity, f"team_{'ab'[prior[0]]}", prior[2], votes)
+        if prior is None or (uncertain and timestamp - prior[2] > TEAM_HOLD_SECONDS):
+            return
+        if vote is not None and vote[0] != prior[0]:
+            # A clear opposing shirt is usually right about its own frame; keep
+            # the track's evidence, but do not display it over this crop.
+            obj["team_source"] = "shirt_conflict"
             return
         age = max(0.0, timestamp - prior[2])
         obj.update(
             team=f"team_{'ab'[prior[0]]}",
-            team_score=round(prior[1] * (1 - age / (TEAM_HOLD_SECONDS * 2)), 3),
-            team_source="shirt" if age == 0 else "track_history",
+            team_score=prior[1],
+            team_source="shirt"
+            if vote is not None and not uncertain
+            else ("track_history"),
             team_age_seconds=round(age, 3),
         )
+
+    def tally(self, votes: deque, timestamp: float) -> tuple[int, float, float] | None:
+        """Return a decayed majority team, its purity and latest supporting vote."""
+        weights = [0.0, 0.0]
+        for winner, _, time in votes:
+            weights[winner] += 0.5 ** ((timestamp - time) / TEAM_HALF_LIFE_SECONDS)
+        winner = int(weights[1] > weights[0])
+        share = weights[winner] / max(EPSILON, sum(weights))
+        support = [v for v in votes if v[0] == winner]
+        if len(support) < MIN_TEAM_VOTES or share < MIN_VOTE_SHARE:
+            return None
+        return winner, round(share, 3), support[-1][2]
 
     def transfer_confirmation(
         self, obj: dict, color: NDArray[Any] | None, timestamp: float
@@ -435,7 +472,7 @@ class Teams:
         ):
             return
         self.confirmed[target] = prior
-        self.votes[target] = deque(self.votes.get(source, ()), maxlen=20)
+        self.votes[target] = deque(self.votes.get(source, ()), maxlen=TEAM_VOTE_HISTORY)
 
     def update(
         self, image: NDArray[Any], objects: list[dict], timestamp: float = 0
@@ -445,6 +482,7 @@ class Teams:
             k for k, t in self.seen.items() if timestamp - t > TEAM_MEMORY_SECONDS
         ]
         for identity in expired:
+            self.spans.close(identity)
             self.seen.pop(identity, None)
             self.votes.pop(identity, None)
             self.confirmed.pop(identity, None)
@@ -467,6 +505,7 @@ class Teams:
             if obj.get("identity_issue") == "body_change":
                 self.confirmed.pop(obj["track_id"], None)
                 self.votes.pop(obj["track_id"], None)
+                self.spans.boundary(obj["track_id"], timestamp)
         self.learn(samples)
         for obj, color in samples:
             self.assign(obj, color, timestamp)
@@ -512,6 +551,25 @@ class Teams:
         return self.cv.cvtColor(self.np.uint8([self.centers]), self.cv.COLOR_LAB2RGB)[
             0
         ].tolist()
+
+
+def switched(votes: deque) -> bool:
+    """Detect a sustained, unanimous run opposing the track's earlier majority.
+
+    Compare with earlier votes rather than the displayed label: one or two
+    opposing crops already withdraw the label, and the swap must still resolve.
+    """
+    history = list(votes)
+    recent, earlier = history[-SWITCH_VOTES:], history[:-SWITCH_VOTES]
+    if len(recent) < SWITCH_VOTES or len(earlier) < MIN_TEAM_VOTES:
+        return False
+    team = recent[0][0]
+    opposing = sum(v[0] != team for v in earlier)
+    return (
+        all(v[0] == team for v in recent)
+        and opposing * 2 > len(earlier)
+        and recent[-1][2] - recent[0][2] >= SWITCH_SECONDS - EPSILON
+    )
 
 
 def floor_position(

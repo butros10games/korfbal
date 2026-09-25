@@ -254,6 +254,7 @@ class ReplaySection:
                 if previous or current or field == "links":
                     refinement[field] = previous + current
             self.record["identity_refinement"] = refinement
+        self.merge_team_resolution(progress.get("team_resolution"))
         self.record.update(
             status="running",
             message=(
@@ -263,6 +264,31 @@ class ReplaySection:
             active_part=self.part,
         )
         self.save()
+
+    def merge_team_resolution(self, progress: dict | None) -> None:
+        """Prefix section team intervals; committed sections stay immutable."""
+        if not progress:
+            return
+        resolution = self.record.get("team_resolution", {})
+        previous = [
+            span
+            for span in resolution.get("spans", [])
+            if span["processing_section"] < self.part
+        ]
+        current = [
+            {
+                **span,
+                "track_id": f"p{self.part}-{span['track_id']}",
+                "processing_section": self.part,
+            }
+            for span in progress.get("spans", [])
+        ]
+        self.record["team_resolution"] = {
+            **progress,
+            "spans": previous + current,
+            "section_boundaries": True,
+            "truncated": bool(resolution.get("truncated") or progress.get("truncated")),
+        }
 
     def finish(self, result: dict) -> None:
         """Commit a completed boundary, retaining incomplete sections on failure."""
