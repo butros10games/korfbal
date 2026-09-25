@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    ffmpeg perl-base
+    curl ffmpeg perl-base
 
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
@@ -77,6 +77,9 @@ COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/korfbal/ /app/korfb
 COPY --link --chmod=u=rwX,go=rX apps/django_projects/korfbal/apps/ /app/apps/
 
 USER appuser
+
+# Public Eyecons intake needs curl; fail the build if recording tools are missing.
+RUN curl --version && ffmpeg -version && ffprobe -version
 
 # Catch missing cache backend dependencies before publishing any runtime image.
 RUN python -c "from apps.kwt_common.adapters.outbound.redis_cache import SharedRedisCache, PrometheusRedisCache; SharedRedisCache('redis://localhost:6379/0', {}); PrometheusRedisCache('redis://localhost:6379/0', {})"
