@@ -13,7 +13,9 @@ VIDEO_ANALYSIS_ROOT = env("VIDEO_ANALYSIS_ROOT", "/var/lib/korfbal/video-analysi
 VIDEO_ANALYSIS_PYTHON = env("VIDEO_ANALYSIS_PYTHON", "/opt/vision/bin/python")
 VIDEO_ANALYSIS_TRAINING_POLICY = env("VIDEO_ANALYSIS_TRAINING_POLICY", "")
 # Per-run choices stay bounded independently of the default price in the policy file.
-VIDEO_ANALYSIS_HOURLY_CEILING_USD = float(env("VIDEO_ANALYSIS_HOURLY_CEILING_USD", "10"))
+VIDEO_ANALYSIS_HOURLY_CEILING_USD = float(
+    env("VIDEO_ANALYSIS_HOURLY_CEILING_USD", "10")
+)
 VIDEO_ANALYSIS_OBJECT_STORAGE = env_bool("VIDEO_ANALYSIS_OBJECT_STORAGE", False)
 _default_media_bucket = (
     AWS_MEDIA_BUCKET_NAME

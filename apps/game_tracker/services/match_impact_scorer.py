@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import asdict, dataclass
 import logging
 from operator import itemgetter
-from typing import Any, cast
+from typing import Any
 
 from django.db.models import Prefetch
 
@@ -74,7 +74,7 @@ class MatchTeamImpactFeatures:
     doorloop_concede_points_times_defenders: float
 
 
-def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
+def compute_match_team_impact_features(
     *,
     match_data: MatchData,
     algorithm_version: str = "v6",
@@ -128,141 +128,104 @@ def compute_match_team_impact_features(  # noqa: C901, PLR0912, PLR0915
         goal_switch_times=goal_switch_times,
     )
 
-    base: dict[str, dict[str, float | int]] = {
-        home_team_id: {
-            "goals_scored_points": 0.0,
-            "shooter_misses_weighted": 0.0,
-            "defended_shots": 0,
-            "defended_goals": 0,
-            "defended_misses": 0,
-            "doorloop_concede_points_times_defenders": 0.0,
-        },
-        away_team_id: {
-            "goals_scored_points": 0.0,
-            "shooter_misses_weighted": 0.0,
-            "defended_shots": 0,
-            "defended_goals": 0,
-            "defended_misses": 0,
-            "doorloop_concede_points_times_defenders": 0.0,
-        },
-    }
-
     goal_mult_by_player, miss_mult_by_player = _compute_shooting_efficiency_multipliers(
         shots=shots,
         algorithm_version=algorithm_version,
     )
+    ctx = _TeamFeatureContext(
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        player_team_id=player_team_id,
+        defenders_at_x=defenders_at_x,
+        totals={
+            team_id: _TeamFeatureTotals() for team_id in (home_team_id, away_team_id)
+        },
+    )
+    _accumulate_team_shot_features(ctx, shots, miss_mult_by_player)
+    _accumulate_team_goal_features(ctx, events, goal_mult_by_player)
+    return {
+        team_id: MatchTeamImpactFeatures(team_id=team_id, **asdict(values))
+        for team_id, values in ctx.totals.items()
+    }
 
+
+@dataclass
+class _TeamFeatureTotals:
+    goals_scored_points: float = 0.0
+    shooter_misses_weighted: float = 0.0
+    defended_shots: int = 0
+    defended_goals: int = 0
+    defended_misses: int = 0
+    doorloop_concede_points_times_defenders: float = 0.0
+
+
+@dataclass(frozen=True)
+class _TeamFeatureContext:
+    home_team_id: str
+    away_team_id: str
+    player_team_id: Mapping[str, str]
+    defenders_at_x: Callable[[Side, float], list[str]]
+    totals: dict[str, _TeamFeatureTotals]
+
+    def for_side(self, side: Side) -> _TeamFeatureTotals:
+        return self.totals[self.home_team_id if side == "home" else self.away_team_id]
+
+    def for_player(self, player_id: str) -> _TeamFeatureTotals | None:
+        return self.totals.get(self.player_team_id.get(player_id, ""))
+
+
+def _accumulate_team_shot_features(
+    ctx: _TeamFeatureContext,
+    shots: list[dict[str, Any]],
+    miss_mult_by_player: Mapping[str, float],
+) -> None:
     for x, shot in _iter_shot_events(shots):
         scored = bool(shot.get("scored"))
-        shooting_team_id = str(shot.get("team_id") or "").strip() or None
-
-        if not scored:
-            shooter_id = str(shot.get("player_id") or "").strip()
-            if shooter_id:
-                shooter_team_id = player_team_id.get(shooter_id)
-                if shooter_team_id in base:
-                    base[shooter_team_id]["shooter_misses_weighted"] = float(
-                        base[shooter_team_id]["shooter_misses_weighted"]
-                    ) + float(miss_mult_by_player.get(shooter_id, 1.0))
+        shooter_id = str(shot.get("player_id") or "").strip()
+        shooter_totals = ctx.for_player(shooter_id) if shooter_id else None
+        if not scored and shooter_totals:
+            shooter_totals.shooter_misses_weighted += float(
+                miss_mult_by_player.get(shooter_id, 1.0)
+            )
 
         defending_side = _defending_side_for_shot(
-            shot_team_id=shooting_team_id,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
+            shot_team_id=str(shot.get("team_id") or "").strip() or None,
+            home_team_id=ctx.home_team_id,
+            away_team_id=ctx.away_team_id,
         )
-        if not defending_side:
+        if not defending_side or not ctx.defenders_at_x(defending_side, x):
             continue
 
-        defending_team_id = home_team_id if defending_side == "home" else away_team_id
-        defenders = defenders_at_x(defending_side, x)
-        if not defenders:
-            continue
-
-        base[defending_team_id]["defended_shots"] = (
-            cast(int, base[defending_team_id]["defended_shots"]) + 1
-        )
+        defending = ctx.for_side(defending_side)
+        defending.defended_shots += 1
         if scored:
-            base[defending_team_id]["defended_goals"] = (
-                cast(int, base[defending_team_id]["defended_goals"]) + 1
-            )
+            defending.defended_goals += 1
         else:
-            base[defending_team_id]["defended_misses"] = (
-                cast(int, base[defending_team_id]["defended_misses"]) + 1
-            )
+            defending.defended_misses += 1
 
-    goal_events = _iter_goal_events(events)
-    last_team_id: str | None = None
-    streak = 0
-    last_goal_x = 0.0
 
-    for index, goal in enumerate(goal_events):
-        for_team = bool(goal.get("for_team", True))
-        scoring_team_id = str(goal.get("team_id") or "").strip() or None
-        last_team_id, streak = _next_streak_state(
-            scoring_team_id=scoring_team_id,
-            last_team_id=last_team_id,
-            streak=streak,
-        )
+def _accumulate_team_goal_features(
+    ctx: _TeamFeatureContext,
+    events: list[dict[str, Any]],
+    goal_mult_by_player: Mapping[str, float],
+) -> None:
+    for ev in _iter_weighted_goals(events, goal_mult_by_player):
+        scorer_totals = ctx.for_player(ev.scorer_id) if ev.scorer_id else None
+        if scorer_totals:
+            scorer_totals.goals_scored_points += float(ev.goal_points)
 
-        x, last_goal_x = _goal_x_for_event(
-            goal=goal,
-            index=index,
-            last_goal_x=last_goal_x,
-        )
-
-        goal_points = _compute_goal_points(
-            goal_type=str(goal.get("goal_type") or ""),
-            streak=streak,
-        )
-
-        scorer_id = str(goal.get("player_id") or "").strip() if for_team else ""
-        if scorer_id:
-            goal_points *= float(goal_mult_by_player.get(scorer_id, 1.0))
-
-        if scorer_id:
-            scorer_team_id = player_team_id.get(scorer_id)
-            if scorer_team_id in base:
-                base[scorer_team_id]["goals_scored_points"] = float(
-                    base[scorer_team_id]["goals_scored_points"]
-                ) + float(goal_points)
-
-        is_doorloop = "doorloop" in _normalise_goal_type(
-            str(goal.get("goal_type") or "")
-        )
-        if not is_doorloop:
+        if "doorloop" not in _normalise_goal_type(str(ev.goal.get("goal_type") or "")):
             continue
-
         conceding_side = _conceding_side_for_goal(
-            scoring_team_id=scoring_team_id,
-            home_team_id=home_team_id,
-            away_team_id=away_team_id,
+            scoring_team_id=ev.scoring_team_id,
+            home_team_id=ctx.home_team_id,
+            away_team_id=ctx.away_team_id,
         )
-        if not conceding_side:
-            continue
-        conceding_team_id = home_team_id if conceding_side == "home" else away_team_id
-
-        defenders = defenders_at_x(conceding_side, x)
-        if not defenders:
-            continue
-
-        base[conceding_team_id]["doorloop_concede_points_times_defenders"] = float(
-            base[conceding_team_id]["doorloop_concede_points_times_defenders"]
-        ) + float(goal_points) * float(len(defenders))
-
-    return {
-        team_id: MatchTeamImpactFeatures(
-            team_id=team_id,
-            goals_scored_points=float(values["goals_scored_points"]),
-            shooter_misses_weighted=float(values["shooter_misses_weighted"]),
-            defended_shots=int(values["defended_shots"]),
-            defended_goals=int(values["defended_goals"]),
-            defended_misses=int(values["defended_misses"]),
-            doorloop_concede_points_times_defenders=float(
-                values["doorloop_concede_points_times_defenders"]
-            ),
-        )
-        for team_id, values in base.items()
-    }
+        if conceding_side:
+            defenders = ctx.defenders_at_x(conceding_side, ev.x)
+            ctx.for_side(conceding_side).doorloop_concede_points_times_defenders += (
+                float(ev.goal_points) * len(defenders)
+            )
 
 
 MATCH_IMPACT_BREAKDOWN_CACHE_VERSION = 2
@@ -725,6 +688,43 @@ class _GoalImpactEvent:
     goal_points: float
     scoring_team_id: str | None
     x: float
+    scorer_id: str
+
+
+def _iter_weighted_goals(
+    events: list[dict[str, Any]],
+    goal_multiplier_by_scorer: Mapping[str, float] | None,
+) -> Iterator[_GoalImpactEvent]:
+    last_team_id: str | None = None
+    streak = 0
+    last_goal_x = 0.0
+    for index, goal in enumerate(_iter_goal_events(events)):
+        scoring_team_id = str(goal.get("team_id") or "").strip() or None
+        last_team_id, streak = _next_streak_state(
+            scoring_team_id=scoring_team_id,
+            last_team_id=last_team_id,
+            streak=streak,
+        )
+        x, last_goal_x = _goal_x_for_event(
+            goal=goal,
+            index=index,
+            last_goal_x=last_goal_x,
+        )
+        goal_points = _compute_goal_points(
+            goal_type=str(goal.get("goal_type") or ""),
+            streak=streak,
+        )
+        for_team = bool(goal.get("for_team", True))
+        scorer_id = str(goal.get("player_id") or "").strip() if for_team else ""
+        if scorer_id and goal_multiplier_by_scorer:
+            goal_points *= float(goal_multiplier_by_scorer.get(scorer_id, 1.0))
+        yield _GoalImpactEvent(
+            goal=goal,
+            goal_points=goal_points,
+            scoring_team_id=scoring_team_id,
+            x=x,
+            scorer_id=scorer_id,
+        )
 
 
 def _apply_scorer_goal_points(*, ctx: _GoalImpactContext, ev: _GoalImpactEvent) -> None:
@@ -773,43 +773,7 @@ def _apply_goal_impacts(
     ctx: _GoalImpactContext,
     goal_multiplier_by_scorer: dict[str, float] | None = None,
 ) -> None:
-    goal_events = _iter_goal_events(events)
-    last_team_id: str | None = None
-    streak = 0
-
-    last_goal_x = 0.0
-    for index, goal in enumerate(goal_events):
-        for_team = bool(goal.get("for_team", True))
-        scoring_team_id = str(goal.get("team_id") or "").strip() or None
-        last_team_id, streak = _next_streak_state(
-            scoring_team_id=scoring_team_id,
-            last_team_id=last_team_id,
-            streak=streak,
-        )
-
-        x, last_goal_x = _goal_x_for_event(
-            goal=goal,
-            index=index,
-            last_goal_x=last_goal_x,
-        )
-
-        goal_points = _compute_goal_points(
-            goal_type=str(goal.get("goal_type") or ""),
-            streak=streak,
-        )
-
-        scorer_id = str(goal.get("player_id") or "").strip() if for_team else ""
-        goal_multiplier = (
-            (goal_multiplier_by_scorer or {}).get(scorer_id, 1.0) if scorer_id else 1.0
-        )
-        goal_points *= goal_multiplier
-
-        ev_ctx = _GoalImpactEvent(
-            goal=goal,
-            goal_points=goal_points,
-            scoring_team_id=scoring_team_id,
-            x=x,
-        )
+    for ev_ctx in _iter_weighted_goals(events, goal_multiplier_by_scorer):
         _apply_scorer_goal_points(ctx=ctx, ev=ev_ctx)
         _apply_doorloop_concede_penalty(ctx=ctx, ev=ev_ctx)
 

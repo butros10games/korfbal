@@ -469,20 +469,6 @@ def resolve_tournament_qualifiers(
             raise FinalGroupError(str(exc)) from exc
 
 
-def qualifier_label(tournament: Tournament, source: dict[str, Any]) -> str | None:
-    """Return a stable Dutch placeholder label for one qualifier source."""
-    if not source:
-        return None
-    pools = _source_pools(tournament, source)
-    rank = source.get("rank")
-    if source.get("kind") == "pool_rank" and len(pools) == 1:
-        return f"{pools[0].name} #{rank}"
-    if source.get("kind") == "best_rank":
-        names = ", ".join(pool.name for pool in pools)
-        return f"Beste #{rank} van {names}"
-    return None
-
-
 @transaction.atomic
 def delete_final_group(
     tournament: Tournament,
