@@ -17,6 +17,7 @@ from django.http import (
     FileResponse,
     HttpRequest,
     HttpResponseBase,
+    HttpResponseRedirect,
     JsonResponse,
     StreamingHttpResponse,
 )
@@ -33,6 +34,7 @@ from apps.video_analysis.composition import (
     intake_store,
     launch_status,
     review_store,
+    snapshot_download,
 )
 from apps.video_analysis.engine import monitor, vision
 from apps.video_analysis.engine.server import parse_range
@@ -175,7 +177,7 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
         "vision/queue",
         "vision/download",
     }:
-        store.files.hydrate_artifacts(metadata_only=action != "vision/download")
+        store.files.hydrate_artifacts(metadata_only=True)
     if request.method == "GET":
         return (
             media(request, store, workspace)
@@ -413,11 +415,11 @@ def read(
             "running": bool(job and job.status in {"queued", "running"}),
             "message": job.message if job else "",
         })
-    return artifact_response(request, action, store)
+    return artifact_response(request, action, store, workspace)
 
 
 def artifact_response(
-    request: HttpRequest, action: str, store: Store
+    request: HttpRequest, action: str, store: Store, workspace: Workspace
 ) -> HttpResponseBase:
     """Read model artifacts and authenticated downloads."""
     if action == "vision/prediction":
@@ -440,6 +442,9 @@ def artifact_response(
             filename="reviewed-labels.zip",
         )
     if action == "vision/download":
+        if getattr(store, "files", None):
+            relative = snapshot_download(workspace, request.GET.get("id", ""))
+            return stored_response(request, store, relative)
         root = vision.artifact(store, "snapshots", request.GET.get("id", ""))
         vision.verify_snapshot(root)
         output = io.BytesIO()
@@ -457,6 +462,29 @@ def media(request: HttpRequest, store: Store, workspace: Workspace) -> HttpRespo
     relative = request.GET.get("path", "")
     if not registered_media(workspace, relative):
         return JsonResponse({"error": "Unknown media"}, status=404)
+    files = getattr(store, "files", None)
+    if files and request.GET.get("delivery") == "direct":
+        return stored_response(request, store, relative)
+    return stream_response(request, store, relative)
+
+
+def stored_response(
+    request: HttpRequest, store: Store, relative: str
+) -> HttpResponseBase:
+    """Prefer direct private S3 delivery; internal legacy MinIO stays proxied."""
+    files = getattr(store, "files", None)
+    url = files.media_url(relative) if files else None
+    if url:
+        response = HttpResponseRedirect(url, preserve_request=True)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+    return stream_response(request, store, relative)
+
+
+def stream_response(
+    request: HttpRequest, store: Store, relative: str
+) -> HttpResponseBase:
+    """Stream authorized ranges without materializing any local file."""
     size = store.media_size(relative)
     start, end = 0, size - 1
     status = 200

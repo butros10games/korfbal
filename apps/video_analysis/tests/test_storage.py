@@ -266,7 +266,7 @@ def test_replay_restores_only_its_parent_and_stop_receipts(
         store.publish_artifact(relative)
         path.unlink()
     with patch("apps.video_analysis.composition.detector.clip"):
-        run_clip(store, "replay", {"recording_end": 250})
+        run_clip(store, "replay", {"recording_end": 250, "model": "example"})
     assert (store.root / paths[0]).is_file()
     assert (store.root / paths[1]).is_file()
     assert not (store.root / paths[2]).exists()

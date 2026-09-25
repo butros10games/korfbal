@@ -1,8 +1,12 @@
 """Run a CPU detector in its isolated Python environment from an immutable input."""
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
+import json
 from pathlib import Path
 import threading
+from urllib.parse import urlsplit
 
 from .store import Store
 from .training import RunOptions, proposals
@@ -16,6 +20,29 @@ class ProjectionStore(Store):
         self.root = root.resolve()
         self.path = input_path
         self.lock = threading.RLock()
+
+    @contextmanager
+    def video_source(self, relative: str) -> Iterator[str]:
+        """Use only the loopback reader supplied by the trusted parent worker.
+
+        Yields:
+            A seekable source kept alive by the parent subprocess owner.
+
+        """
+        payload = json.loads(self.path.read_text())
+        source = payload.get("video_source")
+        if source and payload.get("match", {}).get("video") == relative:
+            parsed = urlsplit(source)
+            if (
+                parsed.scheme == "http"
+                and parsed.hostname == "127.0.0.1"
+                and not parsed.username
+                and not parsed.password
+            ):
+                yield source
+                return
+        with super().video_source(relative) as source:
+            yield source
 
 
 def main() -> None:

@@ -265,6 +265,16 @@ class Store:
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
+    @contextmanager
+    def video_source(self, relative: str) -> Iterator[str]:
+        """Yield a seekable input; cloud adapters stream ranges instead of caching.
+
+        Yields:
+            A media input accepted by FFmpeg/OpenCV.
+
+        """
+        yield str(self.media(relative))
+
     def media(self, relative: str) -> Path:
         """Resolve an existing media file within the dataset root.
 
@@ -314,6 +324,13 @@ class Store:
 
     def sync_artifacts(self) -> None:
         """Publish completed files when the persistence adapter uses remote storage."""
+
+    def reserve_working_bytes(self, additional: int) -> None:
+        """Hosted adapters enforce quotas; local CLI callers manage their disk."""
+
+    def artifact_location(self, relative: str) -> dict | None:
+        """Return a durable object reference when an outbound adapter provides one."""
+        return None
 
     def publish_artifact(self, relative: str) -> None:
         """Publish one changed artifact when using remote storage."""

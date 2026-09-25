@@ -161,10 +161,14 @@ def prepare_active_frames(
     times = sample_times(periods, interval)
     existing = {round(frame["time_seconds"] * 1000) for frame in match["frames"]}
     missing = [time for time in times if round(time * 1000) not in existing]
-    video = store.media(match["video"])
-    with tempfile.TemporaryDirectory(
-        prefix="active-frames-", dir=video.parent
-    ) as temporary:
+    directory = store.root / Path(match["video"]).parent
+    directory.mkdir(parents=True, exist_ok=True)
+    with (
+        store.video_source(match["video"]) as video,
+        tempfile.TemporaryDirectory(
+            prefix="active-frames-", dir=directory
+        ) as temporary,
+    ):
         pending = []
         for time in missing:
             frame_id = f"at-{round(time * 1000):09d}"
@@ -203,7 +207,7 @@ def prepare_active_frames(
             for time, frame_id, image in pending:
                 if frame_id in ids:
                     continue
-                target = video.parent / f"{frame_id}.jpg"
+                target = directory / f"{frame_id}.jpg"
                 image.replace(target)
                 current["frames"].append({
                     "id": frame_id,
@@ -338,8 +342,12 @@ def sample_frame(store: Store, match_id: str, seconds: float) -> dict[str, Any]:
     frame_id = f"at-{round(time * 1000):09d}"
     if any(f["id"] == frame_id for f in match["frames"]):
         return {"frame_id": frame_id}
-    video = store.media(match["video"])
-    with tempfile.TemporaryDirectory(prefix="frame-", dir=video.parent) as temporary:
+    directory = store.root / Path(match["video"]).parent
+    directory.mkdir(parents=True, exist_ok=True)
+    with (
+        store.video_source(match["video"]) as video,
+        tempfile.TemporaryDirectory(prefix="frame-", dir=directory) as temporary,
+    ):
         image = Path(temporary) / "sample.jpg"
         subprocess.run(
             [
@@ -367,7 +375,7 @@ def sample_frame(store: Store, match_id: str, seconds: float) -> dict[str, Any]:
             match = next(m for m in data["matches"] if m["id"] == match_id)
             if any(f["id"] == frame_id for f in match["frames"]):
                 return {"frame_id": frame_id}
-            target = video.parent / f"{frame_id}.jpg"
+            target = directory / f"{frame_id}.jpg"
             image.replace(target)
             match["frames"].append({
                 "id": frame_id,

@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import transaction
 
+from apps.video_analysis.engine.storage_workspace import reserve_space
 from apps.video_analysis.engine.store import Store
 from apps.video_analysis.file_storage import WorkspaceFiles
 from apps.video_analysis.models import Frame, Recording, ReviewAudit, Workspace
@@ -58,6 +59,20 @@ class DatabaseStore(Store):
         if self.files:
             self.files.publish_media(relative)
 
+    @contextmanager
+    def video_source(self, relative: str) -> Iterator[str]:
+        """Keep the private range reader alive for the entire decode operation.
+
+        Yields:
+            A loopback object reader, or a local source for offline workspaces.
+
+        """
+        if self.files:
+            with self.files.video_source(relative) as source:
+                yield source
+        else:
+            yield str(self.media(relative))
+
     def media(self, relative: str) -> Path:
         """Fetch missing worker inputs from the authoritative private bucket."""
         return (
@@ -85,6 +100,20 @@ class DatabaseStore(Store):
         """Publish worker outputs before marking jobs complete."""
         if self.files:
             self.files.sync_artifacts()
+
+    def reserve_working_bytes(self, additional: int) -> None:
+        """Reserve space for generated data as well as downloaded inputs."""
+        if self.files:
+            reserve_space(
+                self.root,
+                additional,
+                settings.VIDEO_ANALYSIS_WORKSPACE_MAX_BYTES,
+                settings.VIDEO_ANALYSIS_PIPELINE_WORK_FREE_BYTES,
+            )
+
+    def artifact_location(self, relative: str) -> dict | None:
+        """Resolve a published artifact for direct controller/worker transfer."""
+        return self.files.artifact_location(relative) if self.files else None
 
     def publish_artifact(self, relative: str) -> None:
         """Keep a small interactive metadata change independent of model archives."""

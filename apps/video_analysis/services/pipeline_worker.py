@@ -13,8 +13,8 @@ from apps.video_analysis.composition import (
     import_pipeline_source,
     infer_pipeline_batch,
     pipeline_has_capacity,
+    processing_store,
     run_clip,
-    worker_store,
 )
 from apps.video_analysis.engine.clip_contract import ClipOptions
 from apps.video_analysis.engine.clips import directory, receipt
@@ -70,11 +70,13 @@ def advance(workspace_id: str) -> None:
     if run is None:
         return
     try:
-        store = worker_store(run.workspace, run.requested_by, hydrate=False)
-        if not pipeline_has_capacity(store, importing=run.recipe["stage"] == "import"):
-            wait_for_capacity(run)
-            return
-        progress, done = perform(run, store)
+        with processing_store(run.workspace, run.requested_by) as store:
+            if not pipeline_has_capacity(
+                store, importing=run.recipe["stage"] == "import"
+            ):
+                wait_for_capacity(run)
+                return
+            progress, done = perform(run, store)
     except Exception:
         logging.getLogger(__name__).exception("Review pipeline %s failed", run.pk)
         with transaction.atomic():

@@ -1,5 +1,6 @@
 """Private recording intake and isolated CPU proposal generation."""
 
+from collections.abc import Generator
 from contextlib import suppress
 import hashlib
 import json
@@ -7,12 +8,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from typing import BinaryIO
+from typing import BinaryIO, cast
 import uuid
 
 from django.conf import settings
 
-from apps.video_analysis.engine.eyecons import discover, download
+from apps.video_analysis.engine.eyecons import discover, download, stream_download
 from apps.video_analysis.engine.media import (
     ImportOptions,
     binary,
@@ -21,6 +22,7 @@ from apps.video_analysis.engine.media import (
 )
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import artifact
+from apps.video_analysis.file_storage import WorkspaceFiles
 
 
 MAX_BATCH = 25
@@ -31,6 +33,9 @@ MAX_HEIGHT = 4320
 def import_source(store: Store, recipe: dict) -> None:
     """Recover this intake's private destination without touching other recordings."""
     if any(m["id"] == recipe["match_id"] for m in store.read()["matches"]):
+        return
+    if getattr(store, "files", None):
+        import_object_video(store, recipe)
         return
     destination = store.root / recipe["match_id"]
     # Only server-generated intake IDs reach this adapter. A killed copy may
@@ -55,6 +60,62 @@ def import_source(store: Store, recipe: dict) -> None:
                 defer_frames=True,
             ),
         )
+
+
+def import_object_video(store: Store, recipe: dict) -> None:
+    """Keep accepted recordings in S3; only metadata enters the database."""
+    files = cast(WorkspaceFiles, getattr(store, "files", None))
+    upload = recipe.get("upload")
+    source = {} if upload else discover(recipe["source_url"])
+    suffix = Path(upload["name"]).suffix.lower() if upload else ".mp4"
+    relative = f"{recipe['match_id']}/recording{suffix}"
+    chunks = uploaded_chunks(files, upload) if upload else stream_download(source)
+    try:
+        metadata = files.import_video(relative, chunks)
+    finally:
+        chunks.close()
+    store.add_match({
+        "id": recipe["match_id"],
+        "title": Path(upload["name"]).stem if upload else source["title"],
+        "source_url": "" if upload else source["source_url"],
+        "source_offset_seconds": 0,
+        "match_start_seconds": None,
+        "active_periods": [],
+        "timeline_required": True,
+        "split_group": f"uploaded-{metadata['video_sha256']}"
+        if upload
+        else f"eyecons-{source['external_id']}",
+        "video": relative,
+        "synthetic": False,
+        "frames": [],
+        **metadata,
+    })
+
+
+def uploaded_chunks(files: WorkspaceFiles, upload: dict) -> Generator[bytes]:
+    """Verify every original upload chunk while streaming directly into its object.
+
+    Yields:
+        Bounded chunks from the private upload session.
+
+    Raises:
+        ValueError: A chunk or the assembled recording fails verification.
+
+    """
+    total = 0
+    for part in upload["parts"]:
+        digest, count = hashlib.sha256(), 0
+        for chunk in files.chunks(part["path"], 0, part["size"] - 1):
+            count += len(chunk)
+            if count > part["size"]:
+                raise ValueError("Stored upload chunk exceeds its size")
+            digest.update(chunk)
+            yield chunk
+        if count != part["size"] or digest.hexdigest() != part["sha256"]:
+            raise ValueError("Stored upload chunk verification failed")
+        total += count
+    if total != upload["size"]:
+        raise ValueError("Uploaded recording size mismatch")
 
 
 def infer_batch(store: Store, model: str, frames: list[dict], output: str) -> dict:
@@ -98,11 +159,15 @@ def extract_batch(store: Store, match: dict, times: list[float]) -> list[dict]:
         ValueError: A timestamp could not be decoded.
 
     """
-    video = store.media(match["video"])
+    directory = store.root / Path(match["video"]).parent
+    directory.mkdir(parents=True, exist_ok=True)
     rows = []
-    with tempfile.TemporaryDirectory(
-        prefix="pipeline-frames-", dir=video.parent
-    ) as temporary:
+    with (
+        store.video_source(match["video"]) as video,
+        tempfile.TemporaryDirectory(
+            prefix="pipeline-frames-", dir=directory
+        ) as temporary,
+    ):
         for time in times:
             frame_id = f"at-{round(time * 1000):09d}"
             image = Path(temporary) / f"{frame_id}.jpg"
@@ -127,7 +192,7 @@ def extract_batch(store: Store, match: dict, times: list[float]) -> list[dict]:
             )
             if not image.is_file():
                 raise ValueError("No decodable frame in the selected section")
-            target = video.parent / image.name
+            target = directory / image.name
             image.replace(target)
             relative = target.relative_to(store.root).as_posix()
             store.publish_media(relative)
@@ -142,6 +207,8 @@ def extract_batch(store: Store, match: dict, times: list[float]) -> list[dict]:
 
 def has_capacity(store: Store, *, importing: bool) -> bool:
     """Reserve local staging space; queue work instead of filling the worker disk."""
+    if importing and getattr(store, "files", None):
+        return True  # Multipart streaming and remote probing never stage a video.
     required = (
         getattr(settings, "VIDEO_ANALYSIS_PIPELINE_IMPORT_FREE_BYTES", 13_000_000_000)
         if importing

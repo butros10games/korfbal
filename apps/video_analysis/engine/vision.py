@@ -283,6 +283,7 @@ def freeze(
                 image, label = root / image_name, root / label_name
                 image.parent.mkdir(parents=True, exist_ok=True)
                 label.parent.mkdir(parents=True, exist_ok=True)
+                store.reserve_working_bytes(source.stat().st_size + 1024**2)
                 shutil.copyfile(source, image)
                 lines = []
                 for obj in annotation["objects"]:

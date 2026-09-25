@@ -8,6 +8,7 @@ from celery import shared_task
 from django.utils import timezone
 
 from apps.video_analysis.composition import (
+    processing_store,
     queue_training,
     run_clip,
     run_detector,
@@ -40,11 +41,11 @@ def execute(job_id: str) -> None:
     ).update(status="running"):
         return
     job.status = "running"
-    store = worker_store(job.workspace, job.requested_by, hydrate=job.kind != "clip")
+    store = worker_store(job.workspace, job.requested_by, hydrate=False)
     try:
-        perform(job, store)
-        if job.kind not in {"train", "clip"}:
-            store.sync_artifacts()
+        with processing_store(job.workspace, job.requested_by) as store:
+            prepare_inputs(job, store)
+            perform(job, store)
         job.status, job.message = (
             "completed",
             "GPU training queued. Follow the Cloud GPU run for training and cleanup."
@@ -70,6 +71,19 @@ def execute(job_id: str) -> None:
                 job.message = failure_message(receipt(store, str(job.pk)), job.message)
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "message", "finished_at"])
+
+
+def prepare_inputs(job: AnalysisJob, store: Store) -> None:
+    """Materialize only the selected training dataset and optional parent model."""
+    files = getattr(store, "files", None)
+    if files and job.kind == "train":
+        files.hydrate_prefix(
+            f"vision/snapshots/{vision.identifier(job.payload['snapshot'])}"
+        )
+        if job.payload.get("parent_run"):
+            files.hydrate_prefix(
+                f"vision/runs/{vision.identifier(job.payload['parent_run'])}"
+            )
 
 
 def perform(job: AnalysisJob, store: Store) -> None:
@@ -149,7 +163,9 @@ def proposal_weights(store: Store, payload: dict) -> str:
     record = json.loads((root / "run.json").read_text())
     if record["kind"] != "train" or record["status"] != "completed":
         raise ValueError("Select a completed training run")
-    return str(root / "fit/weights/best.pt")
+    return str(
+        store.media((root / "fit/weights/best.pt").relative_to(store.root).as_posix())
+    )
 
 
 @shared_task

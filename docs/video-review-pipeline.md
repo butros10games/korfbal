@@ -85,13 +85,14 @@ packages reviewed, independent or ready without actually processing them.
   owner; request IDs cannot be rebound to another file or account.
 - Services validate MP4/WebM names, declared size (6 GB maximum), ordered chunk
   sizes and actual MP4/WebM signatures. Workers verify every chunk checksum,
-  assemble bounded streams, and probe the actual media with network protocols
-  disabled before publishing a recording (up to eight hours and 8K).
+  stream bounded multipart objects, and probe the actual media through a private
+  loopback range reader restricted to MP4/WebM containers before publishing a recording (up to eight hours and 8K).
 - Uploaded recordings use their full content checksum as the split group, so
   uploading identical bytes again cannot give them a different dataset group.
 - Chunks use private content-addressed storage and cannot be requested through
   review media routes. Cloud-backed intake evicts local chunk caches after durable
-  verification. The worker does the same while assembling the video.
+  verification. The worker combines those chunks directly into S3, without a local
+  assembled video. Public Eyecons downloads use the same streaming import path.
 - Durable cleanup removes temporary chunks after successful import or explicit
   cancellation. Unfinished sessions expire after seven days. Inputs for queued,
   paused or failed imports remain available for worker retries. Source recording
@@ -129,11 +130,29 @@ packages reviewed, independent or ready without actually processing them.
 - Frame extraction and clip staging read only the selected recording/batch. New
   images are persisted through the configured private media adapter before review
   rows appear. Pending export intent is coalesced on the existing vision queue.
-- Disk admission reserves 13 GB for import staging (up to a 6 GB download plus
-  its workspace copy) and 2 GB for processing. When space is unavailable, the
-  unit stays queued and checks again after a minute. Operators may configure
-  `VIDEO_ANALYSIS_PIPELINE_IMPORT_FREE_BYTES` and
-  `VIDEO_ANALYSIS_PIPELINE_WORK_FREE_BYTES` for their storage budget.
+- With object storage enabled, imports and FFmpeg/OpenCV video reads stream from
+  S3 and do not reserve or cache whole recordings. Offline/local workspaces retain
+  the existing 13 GB import admission policy.
+- Worker/model/dataset staging is limited by `VIDEO_ANALYSIS_WORKSPACE_MAX_BYTES`
+  (8 GB by default), with `VIDEO_ANALYSIS_PIPELINE_WORK_FREE_BYTES` (2 GB) kept free
+  before bulk downloads and dataset/package generation. Inputs are restored only
+  for the selected operation. Published bulk files are evicted after each unit;
+  JSON control metadata stays local. Modified or unpublished outputs are retained
+  for recovery if S3 fails, so this is bounded media staging, not a promise of zero
+  filesystem use. Database, logs and unrelated services still need disk capacity.
+- The worker and GPU controller share a filesystem lease while using working files.
+  Browser playback follows an MFA-authorized, non-cacheable redirect to a private
+  one-hour S3 URL. Legacy internal MinIO objects fall back to streamed proxy reads.
+  No permanent public bucket or browser S3 credentials are introduced.
+- Frozen training kits are published before queue acceptance. The current controller
+  signs their existing S3 object for the GPU instead of reading a production-local
+  archive. Old controllers retain their local kits until completion; new controllers
+  advertise `storage_protocol: 2`. Results and checkpoints are published before
+  eviction, including retained checkpoints when proposal labeling fails.
+- Successful Korfbal releases remove obsolete immutable images only for updated
+  Korfbal repositories, retaining four recent images plus the previous Compose
+  references and every image referenced by a container. Other applications,
+  volumes and failed-deployment rollback images are not pruned.
 - Admission is bounded to 100 active preparations per workspace, at most 1,000
   sparse samples and 480 clips per submitted selection. Clip review pages hold
   24 items; preparation history uses cursor pages of 50. A direct review link explicitly loads its requested clip even after
@@ -141,7 +160,7 @@ packages reviewed, independent or ready without actually processing them.
 
 ## Activation and operational checks
 
-Deploy the web, Django API and **vision worker from the same revision**, apply
+Deploy the web, Django API, **vision worker and separate GPU controller from the same revision**, apply
 `video_analysis.0003_reviewpipeline_clipreview` and
 `video_analysis.0004_videoupload`, and retain the existing durable
 job recovery scheduler. The deployed vision image already includes curl, ffmpeg

@@ -166,7 +166,7 @@ class TemporalReference:
         )
 
 
-def prepare(run: ClipRun, video: Path, model: object) -> None:
+def prepare(run: ClipRun, video: Path | str, model: object) -> None:
     """Find clear references on either side of playback frames without another job.
 
     Sampled views first calibrate the fixed-camera model. The slower landmark

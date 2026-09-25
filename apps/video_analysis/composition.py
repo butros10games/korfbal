@@ -1,8 +1,10 @@
 """Wire private storage and application jobs at the app boundary."""
 
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 import shutil
 import uuid
+import zipfile
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -23,7 +25,12 @@ from apps.video_analysis.adapters.training import (
     launch_status,
     queue_training,
 )
+from apps.video_analysis.engine import vision
 from apps.video_analysis.engine.clips import directory
+from apps.video_analysis.engine.storage_workspace import (
+    clear_incomplete_cache,
+    storage_lease,
+)
 from apps.video_analysis.engine.store import Store
 from apps.video_analysis.models import StoredFile, Workspace
 
@@ -60,17 +67,41 @@ def worker_store(
         WorkspaceObjects(workspace) if settings.VIDEO_ANALYSIS_OBJECT_STORAGE else None
     )
     if files and hydrate:
-        files.hydrate_artifacts()
+        files.hydrate_artifacts(metadata_only=True)
     return DatabaseStore(workspace, user, files)
 
 
+@contextmanager
+def processing_store(
+    workspace: Workspace, user: User | None
+) -> Iterator[DatabaseStore]:
+    """Publish work before eviction and protect in-use files from the controller.
+
+    Yields:
+        A store whose bulk working data is disposable after durable publication.
+
+    """
+    store = worker_store(workspace, user, hydrate=False)
+    with storage_lease(store.root):
+        clear_incomplete_cache(store.root)
+        if store.files:
+            store.sync_artifacts()
+            store.files.evict_bulk()
+            store.files.hydrate_artifacts(metadata_only=True)
+        try:
+            yield store
+        finally:
+            if store.files:
+                # If publication fails, retain local results for sync/retry.
+                store.sync_artifacts()
+                store.files.evict_bulk()
+
+
 def sync_workspace_files(workspace: Workspace) -> None:
-    """Recover controller outputs and review exports."""
-    store = worker_store(workspace, None)
-    with store.transaction():
+    """Recover controller outputs without re-downloading the artifact catalogue."""
+    with processing_store(workspace, None) as store:
         if store.files:
             store.files.publish_review(store.read())
-    store.sync_artifacts()
 
 
 def run_detector(store: Store, match_id: str, weights: str) -> None:
@@ -91,6 +122,14 @@ def run_clip(store: Store, run_id: str, payload: dict) -> None:
             workspace_id=store.workspace_id, relative_path__in=names
         ).values_list("relative_path", flat=True):
             store.media(relative)
+    if isinstance(store, DatabaseStore) and store.files:
+        reader = (
+            f"vision/runs/{vision.identifier(payload['model'])}/fit/weights/numbers.pt"
+        )
+        if StoredFile.objects.filter(
+            workspace_id=store.workspace_id, relative_path=reader
+        ).exists():
+            store.media(reader)
     detector.clip(store, run_id, payload)
 
 
@@ -141,3 +180,34 @@ def purge_clip(store: Store, run_id: uuid.UUID) -> None:
     for path in [root, *root.parent.glob(f"{root.name}-part-*")]:
         with suppress(FileNotFoundError):
             shutil.rmtree(path)
+
+
+def snapshot_download(workspace: Workspace, name: str) -> str:
+    """Publish a selected export once; browser downloads go directly to private S3."""
+    name = vision.identifier(name)
+    relative = f"vision/exports/{name}.zip"
+    store = worker_store(workspace, None, hydrate=False)
+    assert store.files is not None
+    if StoredFile.objects.filter(workspace=workspace, relative_path=relative).exists():
+        return relative
+    with processing_store(workspace, None) as store:
+        assert store.files is not None
+        store.files.hydrate_prefix(f"vision/snapshots/{name}")
+        root = vision.artifact(store, "snapshots", name)
+        vision.verify_snapshot(root)
+        members = [path for path in root.rglob("*") if path.is_file()]
+        store.reserve_working_bytes(
+            sum(path.stat().st_size for path in members) + 1024**2
+        )
+        output = store.root / relative
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output.with_suffix(".tmp")
+        try:
+            with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as archive:
+                for member in members:
+                    archive.write(member, str(member.relative_to(root.parent)))
+            temporary.replace(output)
+        finally:
+            temporary.unlink(missing_ok=True)
+        store.publish_artifact(relative)
+        return relative

@@ -18,6 +18,7 @@ import zipfile
 from apps.video_analysis.engine.coverage import dataset_report
 from apps.video_analysis.engine.handoff import package_snapshot
 from apps.video_analysis.engine.recovery import training_lease
+from apps.video_analysis.engine.storage_workspace import storage_lease
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.training import (
     MAX_BATCH,
@@ -65,6 +66,14 @@ class Artifacts(Protocol):
 
     def url(self, key: str, operation: str, expires: int) -> str:
         """Sign an object operation."""
+        ...
+
+    def source_url(self, source: dict, expires: int) -> str:
+        """Sign an immutable kit already published by the application."""
+        ...
+
+    def restore(self, source: dict, path: Path) -> None:
+        """Restore a verified input only when controller-side validation needs it."""
         ...
 
     def read(self, key: str, limit: int) -> bytes | None:
@@ -201,6 +210,11 @@ class Controller:
                 "cancel_requested": False,
                 "proposal_count": proposal_count,
             }
+            relative = (root / "kit.zip").relative_to(self.store.root).as_posix()
+            self.store.publish_artifact(relative)
+            location = self.store.artifact_location(relative)
+            if location:
+                job["kit_object"] = location
             self.save(job)
         return job
 
@@ -235,7 +249,7 @@ class Controller:
     def tick(self, now: float | None = None) -> None:
         """Reconcile once; disabled mode still cleans up already-owned workers."""
         now = time.time() if now is None else now
-        with training_lease(self.root):
+        with storage_lease(self.store.root), training_lease(self.root):
             jobs = self.records()
             if self.artifacts is None:
                 self.offline(jobs)
@@ -274,8 +288,14 @@ class Controller:
         assert self.artifacts is not None
         key = job["id"] + "/"
         try:
-            self.artifacts.upload(key + "kit.zip", self.root / job["id"] / "kit.zip")
             ttl = job["policy"]["max_seconds"] + 3600
+            if job.get("kit_object"):
+                kit_url = self.artifacts.source_url(job["kit_object"], ttl)
+            else:
+                self.artifacts.upload(
+                    key + "kit.zip", self.root / job["id"] / "kit.zip"
+                )
+                kit_url = self.artifacts.url(key + "kit.zip", "get_object", ttl)
             spec = {
                 "id": job["id"],
                 "snapshot": job["snapshot"],
@@ -287,7 +307,7 @@ class Controller:
                 "proposal_count": job.get("proposal_count", 0),
                 "max_seconds": job["policy"]["max_seconds"],
                 "deadline": now + job["policy"]["max_seconds"],
-                "kit_url": self.artifacts.url(key + "kit.zip", "get_object", ttl),
+                "kit_url": kit_url,
                 "result_url": self.artifacts.url(key + "result.zip", "put_object", ttl),
                 "receipt_url": self.artifacts.url(
                     key + "receipt.json", "put_object", ttl
@@ -396,6 +416,9 @@ class Controller:
         outcome = "completed" if receipt.get("status") == "completed" else "failed"
         if outcome == "completed" and job.get("proposal_count"):
             try:
+                kit_path = root / "kit.zip"
+                if not kit_path.exists() and job.get("kit_object"):
+                    self.artifacts.restore(job["kit_object"], kit_path)
                 job["imported_proposals"] = import_proposals(self.store, job, content)
             except (ValueError, KeyError, zipfile.BadZipFile):
                 outcome = "failed"

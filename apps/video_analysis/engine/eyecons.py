@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import suppress
 import json
 from pathlib import Path
 import re
@@ -132,3 +134,47 @@ def download(source: dict[str, Any], destination: Path) -> None:
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def stream_download(source: dict[str, Any]) -> Generator[bytes]:
+    """Stream a public playback source without retrying partial bytes in-place.
+
+    Yields:
+        At most one MiB per read; the multipart sink also enforces the size limit.
+
+    Raises:
+        ValueError: The upstream download fails.
+
+    """
+    with subprocess.Popen(
+        [
+            binary("curl"),
+            "--fail",
+            "--silent",
+            "--location",
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
+            "--max-time",
+            str(HTTP_TIMEOUT),
+            "--max-filesize",
+            str(MAX_DOWNLOAD_BYTES),
+            source["media_url"],
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as child:
+        try:
+            output = child.stdout
+            assert output is not None
+            yield from iter(lambda: output.read(1024**2), b"")
+            if child.wait(timeout=10):
+                raise ValueError("Public recording download failed")
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                with suppress(subprocess.TimeoutExpired):
+                    child.wait(timeout=5)
+                if child.poll() is None:
+                    child.kill()

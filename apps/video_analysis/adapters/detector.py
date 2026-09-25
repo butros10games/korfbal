@@ -26,8 +26,6 @@ def propose(store: Store, match_id: str, weights: str) -> None:
     data = store.read()
     for match in data["matches"]:
         if match["id"] == match_id:
-            if match.get("video"):
-                store.media(match["video"])
             for frame in match["frames"]:
                 store.media(frame["image"])
     with tempfile.TemporaryDirectory(prefix="inference-", dir=store.root) as directory:
@@ -68,10 +66,12 @@ def clip(
     match = store.recording(payload["match_id"])
     options = ClipOptions.parse(payload["options"])
     options.for_recording(match)
-    store.media(match["video"])
     weights = artifact(store, "runs", payload["model"]) / "fit/weights/best.pt"
     weights = store.media(weights.relative_to(store.root).as_posix())
-    with tempfile.TemporaryDirectory(prefix="clip-", dir=store.root) as temporary:
+    with (
+        store.video_source(match["video"]) as video,
+        tempfile.TemporaryDirectory(prefix="clip-", dir=store.root) as temporary,
+    ):
         source = Path(temporary) / "input.json"
         atomic_json(
             source,
@@ -79,6 +79,7 @@ def clip(
                 payload,
                 run_id=run_id,
                 weights=str(weights),
+                video_source=video,
                 match={k: v for k, v in match.items() if k != "frames"},
             ),
         )

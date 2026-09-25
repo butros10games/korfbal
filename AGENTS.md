@@ -31,6 +31,11 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 ## Gotchas
 
+- Use `processing_store` for video worker operations so S3 publication completes before
+  bulk-file eviction. Restore only selected training inputs; full artifact hydration
+  recreates the disk-growth problem. Keep the separate GPU controller on the same
+  storage protocol and workspace lease before evicting active training kits.
+
 - Keep interactive video reviews scoped to the selected frame/recording. Persist export intent with
   the database change and publish on the vision queue; web reads must not restore model weights or
   hold the workspace lock while rebuilding the full dataset.

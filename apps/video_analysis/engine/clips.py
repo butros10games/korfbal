@@ -182,7 +182,7 @@ class ClipRun:
             atomic_json(self.root / "run.json", self.record)
             raise
 
-    def frames(self, video: Path) -> Iterator[tuple[float, NDArray[Any]]]:
+    def frames(self, video: Path | str) -> Iterator[tuple[float, NDArray[Any]]]:
         """Decode sequentially, recording actual timestamps rather than guessed times.
 
         Yields:
@@ -353,69 +353,81 @@ class ClipRun:
         """
         atomic_json(self.root / "run.json", self.record)
         try:
-            if self.stopped():
-                return
-            cv, _ = modules()
-            cv.setNumThreads(CPU_THREADS)
-            torch = importlib.import_module("torch")
-            torch.set_num_threads(CPU_THREADS)
-            video = store.media(self.match["video"])
-            self.record["video_sha256"] = digest(video)
-            model = cast(
-                "Any", clip_detector(weights, store.root / "vision" / "cpu-cache")
-            )
-            self.record.update(weights_record(weights, model))
-            expected = self.record["recipe"].get("weights_sha256")
-            if expected and self.record["weights_sha256"] != expected:
-                raise ValueError("Checkpoint changed while the clip was starting")
-            self.record["environment"] = environment()
-            self.numbers, self.record["shirt_numbers"] = (
-                beside(weights)
-                if os.environ.get("KORFBAL_CLIP_NUMBERS", "1") != "0"
-                else (None, {"status": "disabled"})
-            )
-            if not supports_clips(list(model.names.values())):
-                self.record["failure_code"] = "incompatible_model"
-                raise ValueError(MODEL_ERROR)
-            self.prepare_court(video, model)
-            if self.stopped():
-                return
-            self.record["message"] = "Analyzing clip"
-            self.publish()
-            for timestamp, image in self.frames(video):
-                started = time.monotonic()
-                result = model.predict(
-                    image,
-                    device="cpu",
-                    imgsz=self.options.imgsz,
-                    conf=0.1,
-                    max_det=80,
-                    verbose=False,
-                )[0]
-                self.timings["inference"] += time.monotonic() - started
-                self.record["inference"] = getattr(
-                    model, "inference_info", {"backend": "torch", "precision": "fp32"}
-                )
-                # Ultralytics CPU setup can reset the pool after device changes.
-                torch.set_num_threads(CPU_THREADS)
-                self.record["cpu_threads"] = torch.get_num_threads()
+            with store.video_source(self.match["video"]) as video:
                 if self.stopped():
-                    break
-                started = time.monotonic()
-                recovery_before = self.recovery.seconds + self.overlap.seconds
-                self.step(image, timestamp, result, model)
-                self.timings["tracking"] += (
-                    time.monotonic()
-                    - started
-                    - (self.recovery.seconds + self.overlap.seconds - recovery_before)
+                    return
+                cv, _ = modules()
+                cv.setNumThreads(CPU_THREADS)
+                torch = importlib.import_module("torch")
+                torch.set_num_threads(CPU_THREADS)
+                self.record["video_sha256"] = (
+                    self.match["video_sha256"]
+                    if video.startswith("http://127.0.0.1:")
+                    else digest(Path(video))
                 )
-                self.timings["recovery"] = self.recovery.seconds + self.overlap.seconds
-            if self.record["status"] == "running":
-                if not self.record["frames"]:
-                    raise ValueError("No frames were decoded")
-                self.record.update(
-                    status="completed", message="Clip ready for inspection"
+                model = cast(
+                    "Any", clip_detector(weights, store.root / "vision" / "cpu-cache")
                 )
+                self.record.update(weights_record(weights, model))
+                expected = self.record["recipe"].get("weights_sha256")
+                if expected and self.record["weights_sha256"] != expected:
+                    raise ValueError("Checkpoint changed while the clip was starting")
+                self.record["environment"] = environment()
+                self.numbers, self.record["shirt_numbers"] = (
+                    beside(weights)
+                    if os.environ.get("KORFBAL_CLIP_NUMBERS", "1") != "0"
+                    else (None, {"status": "disabled"})
+                )
+                if not supports_clips(list(model.names.values())):
+                    self.record["failure_code"] = "incompatible_model"
+                    raise ValueError(MODEL_ERROR)
+                self.prepare_court(video, model)
+                if self.stopped():
+                    return
+                self.record["message"] = "Analyzing clip"
+                self.publish()
+                for timestamp, image in self.frames(video):
+                    started = time.monotonic()
+                    result = model.predict(
+                        image,
+                        device="cpu",
+                        imgsz=self.options.imgsz,
+                        conf=0.1,
+                        max_det=80,
+                        verbose=False,
+                    )[0]
+                    self.timings["inference"] += time.monotonic() - started
+                    self.record["inference"] = getattr(
+                        model,
+                        "inference_info",
+                        {"backend": "torch", "precision": "fp32"},
+                    )
+                    # Ultralytics CPU setup can reset the pool after device changes.
+                    torch.set_num_threads(CPU_THREADS)
+                    self.record["cpu_threads"] = torch.get_num_threads()
+                    if self.stopped():
+                        break
+                    started = time.monotonic()
+                    recovery_before = self.recovery.seconds + self.overlap.seconds
+                    self.step(image, timestamp, result, model)
+                    self.timings["tracking"] += (
+                        time.monotonic()
+                        - started
+                        - (
+                            self.recovery.seconds
+                            + self.overlap.seconds
+                            - recovery_before
+                        )
+                    )
+                    self.timings["recovery"] = (
+                        self.recovery.seconds + self.overlap.seconds
+                    )
+                if self.record["status"] == "running":
+                    if not self.record["frames"]:
+                        raise ValueError("No frames were decoded")
+                    self.record.update(
+                        status="completed", message="Clip ready for inspection"
+                    )
         except Exception as error:
             self.record.update(
                 status="failed",
@@ -428,7 +440,7 @@ class ClipRun:
         finally:
             self.finish()
 
-    def prepare_court(self, video: Path, model: object) -> None:
+    def prepare_court(self, video: Path | str, model: object) -> None:
         """Decode exact reference frames within the same inference deadline.
 
         Raises:

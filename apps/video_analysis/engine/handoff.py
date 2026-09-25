@@ -135,6 +135,9 @@ def package_snapshot(
         members[f"scripts/python/{name}"] = source / "scripts/python" / name
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    store.reserve_working_bytes(
+        sum(path.stat().st_size for path in members.values()) + 1024**2
+    )
     with tempfile.TemporaryDirectory(
         prefix="training-kit-", dir=output.parent
     ) as temporary:

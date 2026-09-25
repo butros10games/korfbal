@@ -1,6 +1,7 @@
 """Capabilities for private files; annotation services do not know about S3."""
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Protocol
 import uuid
@@ -9,8 +10,32 @@ import uuid
 class WorkspaceFiles(Protocol):
     """Durable media, rebuildable cache, and versioned review exports."""
 
+    def import_video(self, relative: str, chunks: Iterable[bytes]) -> dict:
+        """Stream and validate a recording without staging a local video."""
+        ...
+
+    def evict_bulk(self) -> None:
+        """Evict verified bulk files outside an active workspace lease."""
+        ...
+
+    def hydrate_prefix(self, relative: str) -> None:
+        """Restore only a selected artifact subtree."""
+        ...
+
+    def artifact_location(self, relative: str) -> dict:
+        """Return the indexed immutable object identity."""
+        ...
+
     def cache_media(self, relative: str) -> Path:
         """Materialize a verified worker input."""
+        ...
+
+    def video_source(self, relative: str) -> AbstractContextManager[str]:
+        """Read a recording through an authenticated local range bridge."""
+        ...
+
+    def media_url(self, relative: str) -> str | None:
+        """Sign a short-lived URL for authorized browser playback."""
         ...
 
     def size(self, relative: str) -> int:
