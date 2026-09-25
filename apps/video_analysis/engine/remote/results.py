@@ -62,10 +62,29 @@ def import_result(store: Store, job: dict, content: bytes) -> str:
             for relative in ("fit/weights/last.pt", "fit/results.csv"):
                 if prefix + relative in archive.namelist():
                     (staging / relative).write_bytes(archive.read(prefix + relative))
+            copy_reader(archive, prefix, run, staging)
             run.update(id=name, remote_job=job["id"], remote_training_id=run["id"])
             atomic_json(staging / "run.json", run)
             staging.rename(target)
     return name
+
+
+def copy_reader(
+    archive: zipfile.ZipFile, prefix: str, run: dict, staging: Path
+) -> None:
+    """Keep a returned shirt-number reader only when it matches its record.
+
+    Raises:
+        ValueError: If the reader bytes differ from the recorded checksum.
+
+    """
+    name = prefix + "fit/weights/numbers.pt"
+    if name not in archive.namelist():
+        return
+    reader = archive.read(name)
+    if hashlib.sha256(reader).hexdigest() != run.get("numbers", {}).get("sha256"):
+        raise ValueError("Returned number reader checksum does not match")
+    (staging / "fit/weights/numbers.pt").write_bytes(reader)
 
 
 def import_proposals(store: Store, job: dict, content: bytes) -> list[str]:

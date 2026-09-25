@@ -30,6 +30,7 @@ from .clip_team_opening import OpeningTeams
 from .clip_tracking import Balls, People
 from .detect import ProjectionStore
 from .keypoints import post_feet
+from .numbers import ShirtNumbers, beside
 from .store import Store, atomic_json
 from .training import environment, weights_record
 from .vision import digest, identifier
@@ -94,6 +95,7 @@ class ClipRun:
         )
         self.overlap = OverlapRecovery()
         self.refiner = IdentityRefiner()
+        self.numbers: ShirtNumbers | None = None
         self.record["recipe"]["player_recovery"] = {
             "version": 1,
             "crop_search_enabled": self.recovery.crops,
@@ -132,6 +134,11 @@ class ClipRun:
         self.record["player_recovery"] = self.recovery.snapshot()
         self.record["overlap_recovery"] = self.overlap.snapshot()
         self.record["team_resolution"] = self.teams.spans.snapshot()
+        if self.numbers is not None:
+            self.record["shirt_numbers"] = {
+                "status": "enabled",
+                **self.numbers.snapshot(),
+            }
         atomic_json(self.root / "run.json", self.record)
         self.last_publish = time.monotonic()
 
@@ -294,6 +301,8 @@ class ClipRun:
         )
         self.teams.update(image, persons, timestamp)
         self.opening_teams.observe(self.teams, persons, timestamp, camera["segment"])
+        if self.numbers is not None:
+            self.numbers.attach(image, persons, timestamp)
         self.refiner.observe(image, persons, timestamp, camera, shirts=self.teams)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
@@ -360,6 +369,11 @@ class ClipRun:
             if expected and self.record["weights_sha256"] != expected:
                 raise ValueError("Checkpoint changed while the clip was starting")
             self.record["environment"] = environment()
+            self.numbers, self.record["shirt_numbers"] = (
+                beside(weights)
+                if os.environ.get("KORFBAL_CLIP_NUMBERS", "1") != "0"
+                else (None, {"status": "disabled"})
+            )
             if not supports_clips(list(model.names.values())):
                 self.record["failure_code"] = "incompatible_model"
                 raise ValueError(MODEL_ERROR)

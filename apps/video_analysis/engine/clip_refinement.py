@@ -20,7 +20,7 @@ from . import (
 )
 from .clip_identity import IdentityMemory, court_reference
 from .clip_refinement_spans import ObservationSpans
-from .clip_roster import MIN_NUMBER_CONFIDENCE, Roster
+from .clip_roster import Roster
 from .clip_segment_reconciliation import reconcile
 from .clip_signals import Teams, modules, transform
 
@@ -412,15 +412,9 @@ class IdentityRefiner:
 
 
 def shirt_number(obj: dict) -> str | None:
-    """Return a confident shirt-number reading from the number model, if any."""
+    """Return the number reader's reading, already above its calibrated threshold."""
     number = obj.get("shirt_number")
-    if (
-        isinstance(number, str)
-        and number.isdigit()
-        and obj.get("shirt_number_confidence", 0) >= MIN_NUMBER_CONFIDENCE
-    ):
-        return number
-    return None
+    return number if isinstance(number, str) and number.isdigit() else None
 
 
 def refined_frames(frames: list[dict], report: dict) -> list[dict]:

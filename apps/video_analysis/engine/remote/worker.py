@@ -169,7 +169,7 @@ def run(spec: dict) -> None:
                         "runs" in path.parts
                         and (
                             path.suffix in {".json", ".csv", ".yaml"}
-                            or path.name in {"best.pt", "last.pt"}
+                            or path.name in {"best.pt", "last.pt", "numbers.pt"}
                         )
                     )
                 ):

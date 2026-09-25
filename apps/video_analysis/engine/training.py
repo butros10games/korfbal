@@ -26,7 +26,7 @@ import sys
 import time
 from typing import Any, Protocol, cast
 
-from . import ball_crops, temporal
+from . import ball_crops, numbers, temporal
 from .coverage import dataset_report
 from .keypoints import post_feet
 from .recovery import training_lease
@@ -379,6 +379,8 @@ def train(
                 checkpoint="fit/weights/best.pt",
                 checkpoint_sha256=digest(best),
             )
+            if shirt_numbers(manifest):
+                run["numbers"] = number_reader(dataset, best.parent, device, seed)
         except (Exception, KeyboardInterrupt) as error:
             run.update(
                 status="interrupted"
@@ -391,6 +393,30 @@ def train(
             run["elapsed_seconds"] = round(time.monotonic() - started, 3)
             atomic_json(root / "run.json", run)
     return run
+
+
+def shirt_numbers(manifest: dict[str, Any]) -> bool:
+    """Whether any reviewed player in the snapshot carries a shirt-number label."""
+    return any(
+        "shirt_number" in obj
+        for record in manifest["frames"]
+        for obj in record["annotation"]["objects"]
+    )
+
+
+def number_reader(
+    dataset: Path, weights: Path, device: str, seed: int
+) -> dict[str, Any]:
+    """Train the shirt-number reader beside the detector checkpoint.
+
+    The detector is already saved; a reader failure is recorded, never raised.
+    """
+    try:
+        return numbers.train_reader(
+            dataset, weights, numbers.Fit(device=device, seed=seed)
+        )
+    except (ImportError, OSError, RuntimeError, ValueError) as error:
+        return {"status": "failed", "error": f"{type(error).__name__}: {error}"}
 
 
 def proposals(
