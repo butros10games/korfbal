@@ -19,6 +19,7 @@ from . import (
 )
 from .clip_auto_references import MIN_EDGE_SUPPORT, References
 from .clip_court import CourtMap
+from .clip_hall import Hall
 from .clip_signals import modules
 
 
@@ -397,6 +398,8 @@ class AutoCourt:
         self.court = court
         self.matcher = CourtMap(court)
         self.references = References(self.matcher)
+        self.hall = Hall(court)
+        self.hall_located = False
         self.last_search = -float("inf")
         self.last_seen = -float("inf")
         self.previous = None
@@ -450,7 +453,44 @@ class AutoCourt:
             "inliers": match[1],
         }
 
+    def from_camera(
+        self, image: NDArray[Any], timestamp: float, objects: list, cut: bool
+    ) -> tuple | None:
+        """Locate a calibrated fixed-camera view, with projected-line evidence."""
+        located = self.hall.locate(image, timestamp, objects, cut)
+        if located is None:
+            return None
+        floor, evidence = located
+        self.hall_located = True
+        self.floor, self.previous = None, None
+        try:
+            features = self.matcher.features(image, [o["bbox"] for o in objects], floor)
+            evidence.update(self.matcher.line_evidence(features, floor))
+            arcs = self.matcher.arc_evidence(features, floor)
+            evidence["supporting_arcs"] = arcs["supporting_arcs"]
+            evidence["segments"].extend(arcs["arc_segments"])
+        except (ValueError, self.matcher.np.linalg.LinAlgError):
+            pass
+        return floor, evidence
+
     def update(
+        self, image: NDArray[Any], timestamp: float, objects: list, cut: bool
+    ) -> tuple:
+        """Prefer the calibrated fixed camera; otherwise use landmark references.
+
+        The camera model covers views without visible markings. Frames it cannot
+        place (other cameras, uncalibrated views) keep the landmark path, which
+        restarts cleanly instead of propagating across the camera-model frames.
+        """
+        located = self.from_camera(image, timestamp, objects, cut)
+        if located is not None:
+            return located
+        if self.hall_located:
+            self.hall_located = False
+            cut = True
+        return self.from_landmarks(image, timestamp, objects, cut)
+
+    def from_landmarks(
         self, image: NDArray[Any], timestamp: float, objects: list, cut: bool
     ) -> tuple:
         """Persist only a fresh estimate or a well-supported short propagation."""

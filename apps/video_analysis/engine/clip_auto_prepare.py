@@ -33,6 +33,9 @@ MIN_IMAGES = 5
 MIN_PIXEL_OBSERVATIONS = 2
 REFERENCE_TIME_TOLERANCE = 0.1
 PROGRESS_SECONDS = 5
+BRIDGE_INTERVAL = 0.15
+MAX_BRIDGE_FRAMES = 12
+MAX_BRIDGED_GAPS = 12
 
 
 class TemporalReference:
@@ -177,6 +180,7 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
     )
     sampled = 0
     context_sampled = 0
+    camera_model: dict = {"groups": []}
     try:
         for context, timestamps in preparation_windows(run):
             # Non-adjacent windows are separate observations, even when the wall
@@ -193,6 +197,7 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
                 if temporal.stopped():
                     break
                 actual, image, objects = snapshot
+                mapping.hall.solver.add_keyframe(image, actual, objects)
                 run.record["message"] = (
                     f"Preparing court references ({sampled} frames checked)"
                 )
@@ -201,6 +206,8 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
                 temporal.consider(image, actual, objects)
             if not temporal.stopped():
                 temporal.prepare()
+        bridge(run, capture, mapping)
+        camera_model = calibrate_camera(mapping, run.stopped)
     finally:
         capture.release()
         run.record["automatic_court_preparation"] = {
@@ -213,8 +220,45 @@ def prepare(run: ClipRun, video: Path, model: object) -> None:
             "runtime_seconds": round(time.monotonic() - started, 3),
             "max_samples": MAX_SAMPLES,
             "max_seconds": MAX_SECONDS,
+            "camera_model": camera_model,
         }
         run.publish()
+
+
+def bridge(run: ClipRun, capture: object, mapping: AutoCourt) -> None:
+    """Decode extra views where adjacent samples no longer overlap.
+
+    A fast pan between the korfs can fall between samples. Intermediate frames
+    need only whole-image features, so the detector is not run on them.
+    """
+    cv, _ = modules()
+    decoder = cast("Any", capture)
+    solver = mapping.hall.solver
+    for start, end in solver.gaps()[:MAX_BRIDGED_GAPS]:
+        steps = min(MAX_BRIDGE_FRAMES, max(1, int((end - start) / BRIDGE_INTERVAL)))
+        for n in range(1, steps + 1):
+            if run.stopped():
+                return
+            timestamp = start + (end - start) * n / (steps + 1)
+            decoder.set(cv.CAP_PROP_POS_MSEC, timestamp * 1000)
+            ok, image = decoder.read()
+            if ok:
+                solver.add_keyframe(image, decoder.get(cv.CAP_PROP_POS_MSEC) / 1000, [])
+
+
+def calibrate_camera(mapping: AutoCourt, stopped: Callable[[], bool]) -> dict:
+    """Solve every sampled view with every court observation in one pass.
+
+    This runs after sampling, outside the sampling deadline: it is what lets one
+    observation calibrate the clip's other views, both before and after it.
+    """
+    started = time.monotonic()
+    try:
+        summary = mapping.hall.calibrate(stopped)
+    except (ValueError, ArithmeticError) as error:
+        summary = {"groups": [], "error": type(error).__name__}
+    summary["runtime_seconds"] = round(time.monotonic() - started, 3)
+    return summary
 
 
 def preparation_windows(run: ClipRun) -> list[tuple[bool, list[float]]]:

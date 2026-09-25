@@ -156,8 +156,6 @@ class Camera:
             / 255
         )
         cut = bool(not first and motion is None and error > CUT_ERROR)
-        if cut:
-            self.segment += 1
         if first:
             self.reference = current
             if self.court and not self.mapping and not self.automatic:
@@ -193,6 +191,15 @@ class Camera:
             floor, calibration = self.automatic.update(
                 image, timestamp, objects or [], cut
             )
+            # A fast pan can defeat frame-to-frame matching; the calibrated camera
+            # still recognizes the same view and supplies its rotation motion.
+            continuous = calibration.pop("continuous", False)
+            camera_motion = calibration.pop("camera_motion", None)
+            if motion is None and continuous:
+                motion = camera_motion
+                cut = False
+        if cut:
+            self.segment += 1
         return {
             "cut": cut,
             "segment": self.segment,
