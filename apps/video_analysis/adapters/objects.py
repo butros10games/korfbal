@@ -12,6 +12,7 @@ import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
 from django.conf import settings
+from django.db.models import Q, QuerySet
 
 from apps.video_analysis.models import StoredFile, Workspace
 
@@ -291,22 +292,37 @@ class WorkspaceObjects:
         self.upload(relative)
 
     def purge_upload(self, upload_id: uuid.UUID) -> None:
-        """Delete indexed temporary chunks under one immutable workspace owner.
+        """Delete indexed temporary chunks under one immutable workspace owner."""
+        relative_prefix = f"uploads/{uuid.UUID(str(upload_id))}/"
+        self._purge(
+            StoredFile.objects.filter(
+                workspace=self.workspace, relative_path__startswith=relative_prefix
+            )
+        )
+
+    def purge_clip(self, run_id: uuid.UUID) -> None:
+        """Delete one clip run's indexed artifacts, including replay section parts."""
+        name = str(uuid.UUID(str(run_id)))
+        self._purge(
+            StoredFile.objects.filter(workspace=self.workspace).filter(
+                Q(relative_path__startswith=f"vision/clips/{name}/")
+                | Q(relative_path__startswith=f"vision/clips/{name}-part-")
+            )
+        )
+
+    def _purge(self, rows: QuerySet[StoredFile]) -> None:
+        """Delete indexed objects, their cache files and their mappings.
 
         Raises:
-            ValueError: An indexed object escapes its workspace or deletion failed.
+            ValueError: An indexed object escapes its workspace.
 
         """
-        relative_prefix = f"uploads/{uuid.UUID(str(upload_id))}/"
-        rows = StoredFile.objects.filter(
-            workspace=self.workspace, relative_path__startswith=relative_prefix
-        )
         for row in rows.iterator(chunk_size=100):
             if not (
                 row.object_key.startswith(self.prefix + "/")
                 and row.object_key.endswith("/" + row.relative_path)
             ):
-                raise ValueError("Temporary object is outside the workspace")
+                raise ValueError("Stored object is outside the workspace")
             self.read_client(row).delete_object(Bucket=row.bucket, Key=row.object_key)
             self.path(row.relative_path).unlink(missing_ok=True)
             row.delete()

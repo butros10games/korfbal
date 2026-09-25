@@ -305,3 +305,36 @@ def test_upload_chunks_restore_privately_and_cleanup_preserves_recording_media(
     s3.delete_object.assert_called_once_with(
         Bucket=record.bucket, Key=record.object_key
     )
+
+
+def test_clip_purge_removes_run_and_replay_parts_only(
+    imported: tuple[User, DatabaseStore, Store],
+    s3: MagicMock,
+) -> None:
+    """Deleting one clip never touches another run's private objects."""
+    owner, _, _ = imported
+    workspace = Workspace.objects.get(slug="main")
+    files = WorkspaceObjects(workspace, s3)
+    store = DatabaseStore(workspace, owner, files)
+    target, other = uuid.uuid4(), uuid.uuid4()
+    paths = [
+        f"vision/clips/{target}/run.json",
+        f"vision/clips/{target}-part-0000/chunk-00000.json",
+        f"vision/clips/{other}/run.json",
+    ]
+    for relative in paths:
+        (store.root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (store.root / relative).write_text("{}")
+        files.publish_artifact(relative)
+    records = {row.relative_path: row for row in StoredFile.objects.all()}
+    files.purge_clip(target)
+    assert set(
+        StoredFile.objects.filter(
+            relative_path__startswith="vision/clips/"
+        ).values_list("relative_path", flat=True)
+    ) == {paths[2]}
+    assert (store.root / paths[2]).is_file()
+    assert not (store.root / paths[0]).exists()
+    assert sorted(
+        call.kwargs["Key"] for call in s3.delete_object.call_args_list
+    ) == sorted(records[path].object_key for path in paths[:2])

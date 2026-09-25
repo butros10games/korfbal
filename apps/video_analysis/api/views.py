@@ -153,6 +153,7 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
         "clips",
         "clips/result",
         "clips/cancel",
+        "clips/delete",
     }:
         handler = (
             upload_endpoint

@@ -1,4 +1,4 @@
-"""Native clip launch, result authorization, cancellation and failure receipts."""
+"""Native clip launch, result authorization, cancellation, deletion and failures."""
 
 from http import HTTPStatus
 import json
@@ -16,7 +16,13 @@ from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS
 from apps.video_analysis.engine.clip_models import MODEL_ERROR
 from apps.video_analysis.engine.store import Store, atomic_json
-from apps.video_analysis.models import AnalysisJob, Recording, Workspace
+from apps.video_analysis.models import (
+    AnalysisJob,
+    ClipReview,
+    Recording,
+    ReviewPipeline,
+    Workspace,
+)
 from apps.video_analysis.tasks import execute
 from apps.video_analysis.tests.test_review import verified
 
@@ -335,3 +341,64 @@ def test_timestamped_references_are_bound_to_recording_and_idempotent_recipe(
         court["anchors"][0]["time"] = 60
         assert submit() == HTTPStatus.BAD_REQUEST
     assert AnalysisJob.objects.count() == 1
+
+
+def test_delete_removes_finished_runs_but_keeps_active_and_reviewed_clips(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Old runs and replay parts can be removed; active work and verdicts cannot."""
+    owner, store, _ = imported
+    workspace = Workspace.objects.get(slug="main")
+    client = verified(owner)
+    csrf = client.get("/video-analysis/clips").json()["csrf"]
+
+    def delete(job: AnalysisJob) -> int:
+        return client.post(
+            "/video-analysis/clips/delete",
+            {"run_id": str(job.pk)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        ).status_code
+
+    def run(status: str) -> AnalysisJob:
+        job = AnalysisJob.objects.create(
+            workspace=workspace, requested_by=owner, kind="clip", status=status
+        )
+        atomic_json(store.root / "vision/clips" / str(job.pk) / "run.json", {})
+        return job
+
+    finished = run("completed")
+    part = store.root / "vision/clips" / f"{finished.pk}-part-0000" / "run.json"
+    atomic_json(part, {})
+    neighbour = run("failed")
+    assert delete(finished) == HTTPStatus.OK
+    assert not AnalysisJob.objects.filter(pk=finished.pk).exists()
+    assert not (store.root / "vision/clips" / str(finished.pk)).exists()
+    assert not part.parent.exists()
+    assert (store.root / "vision/clips" / str(neighbour.pk) / "run.json").is_file()
+    assert delete(finished) == HTTPStatus.NOT_FOUND
+
+    active = run("running")
+    assert delete(active) == HTTPStatus.CONFLICT
+    assert (store.root / "vision/clips" / str(active.pk) / "run.json").is_file()
+
+    pipeline = ReviewPipeline.objects.create(workspace=workspace, requested_by=owner)
+    untouched = run("completed")
+    ClipReview.objects.create(pipeline=pipeline, job=untouched)
+    assert delete(untouched) == HTTPStatus.OK
+    assert not ClipReview.objects.filter(job_id=untouched.pk).exists()
+    reviewed = run("completed")
+    ClipReview.objects.create(
+        pipeline=pipeline, job=reviewed, history=[{"status": "needs_work"}]
+    )
+    assert delete(reviewed) == HTTPStatus.CONFLICT
+    assert AnalysisJob.objects.filter(pk=reviewed.pk).exists()
+
+    foreign = AnalysisJob.objects.create(
+        workspace=Workspace.objects.create(slug="other", owner=owner),
+        requested_by=owner,
+        kind="clip",
+        status="completed",
+    )
+    assert delete(foreign) == HTTPStatus.NOT_FOUND
+    assert AnalysisJob.objects.filter(pk=foreign.pk).exists()

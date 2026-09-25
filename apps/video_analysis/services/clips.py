@@ -7,7 +7,9 @@ from pathlib import Path
 import uuid
 
 from django.contrib.auth.models import User
+from django.db import transaction
 
+from apps.video_analysis.composition import purge_clip
 from apps.video_analysis.engine.clip_contract import (
     MAX_RECORDING_SECONDS,
     REPLAY_PART_SECONDS,
@@ -16,9 +18,15 @@ from apps.video_analysis.engine.clip_contract import (
 )
 from apps.video_analysis.engine.clip_models import MODEL_ERROR, supports_clips
 from apps.video_analysis.engine.clips import directory
-from apps.video_analysis.engine.store import Store, atomic_json
+from apps.video_analysis.engine.store import ConflictError, Store, atomic_json
 from apps.video_analysis.engine.vision import artifact
-from apps.video_analysis.models import AnalysisJob, Recording, StoredFile, Workspace
+from apps.video_analysis.models import (
+    AnalysisJob,
+    ClipReview,
+    Recording,
+    StoredFile,
+    Workspace,
+)
 from apps.video_analysis.services.jobs import schedule
 
 
@@ -170,3 +178,32 @@ def cancel(store: Store, workspace: Workspace, run_id: str) -> None:
         AnalysisJob.objects.filter(pk=job.pk, status="queued").update(
             status="cancelled", message="Stopped before analysis started"
         )
+
+
+@transaction.atomic
+def delete(store: Store, workspace: Workspace, run_id: str) -> None:
+    """Remove a finished clip run and its artifacts; human clip verdicts are kept.
+
+    Raises:
+        FileNotFoundError: The clip is outside this workspace.
+        ConflictError: The run is still active or has a recorded clip review.
+
+    """
+    job = (
+        AnalysisJob.objects
+        .select_for_update()
+        .filter(workspace=workspace, pk=uuid.UUID(run_id), kind="clip")
+        .first()
+    )
+    if job is None:
+        raise FileNotFoundError("Clip not found")
+    if job.status in {"queued", "running"}:
+        raise ConflictError("Stop the clip before deleting it")
+    review = ClipReview.objects.select_for_update().filter(job=job).first()
+    if review and review.history:
+        raise ConflictError("This clip has a recorded clip review and is kept")
+    # Files go first: a failed object deletion rolls back and the run can be retried.
+    purge_clip(store, job.pk)
+    if review:
+        review.delete()
+    job.delete()

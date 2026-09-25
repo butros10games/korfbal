@@ -1,6 +1,8 @@
 # Recording intake and review preparation
 
-The app route is `/video-analysis?tab=wachtrij` (staff with current MFA).
+Intake and preparation live on the **Overzicht** tab of `/video-analysis` (staff
+with current MFA). Frame labels, image triage (**Beelden**) and audit are modes of
+the **Beoordelen** tab; former `?tab=wachtrij`, `beelden` and `audit` links redirect.
 
 ## Reviewer workflow
 
@@ -39,6 +41,11 @@ The app route is `/video-analysis?tab=wachtrij` (staff with current MFA).
    never bulk-approves frames or turns unreviewed observations into negatives.
    A clip with defects stays in the queue as **Correctie nodig**. Approving a clip
    returns to the queue; editing frames does not rewrite old tracking output.
+
+The **Clips** history hides failed runs and runs replaced by a newer completed
+analysis of the same interval; **Oudere analyses tonen** reveals them.
+**Verwijderen** removes a finished run's job record and stored artifacts, including
+replay sections. Active runs and clips with a recorded inspection verdict are kept.
 
 The browser can close after queue submission, including a completed file upload.
 Reloading before completion currently requires choosing the file as a new upload;

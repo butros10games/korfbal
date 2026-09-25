@@ -44,3 +44,7 @@ class WorkspaceFiles(Protocol):
     def purge_upload(self, upload_id: uuid.UUID) -> None:
         """Remove only temporary chunks for a server-selected upload session."""
         ...
+
+    def purge_clip(self, run_id: uuid.UUID) -> None:
+        """Remove every stored artifact of one server-selected clip run."""
+        ...

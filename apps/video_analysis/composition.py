@@ -1,5 +1,7 @@
 """Wire private storage and application jobs at the app boundary."""
 
+from contextlib import suppress
+import shutil
 import uuid
 
 from django.conf import settings
@@ -30,6 +32,7 @@ __all__ = [
     "accepted_policy",
     "cancel_training",
     "launch_status",
+    "purge_clip",
     "queue_training",
     "review_store",
     "run_clip",
@@ -127,3 +130,14 @@ def pipeline_has_capacity(store: Store, *, importing: bool) -> bool:
 def purge_upload(store: Store, upload_id: uuid.UUID) -> None:
     """Wire task-owned temporary chunk cleanup to private storage."""
     purge_uploaded_chunks(store, upload_id)
+
+
+def purge_clip(store: Store, run_id: uuid.UUID) -> None:
+    """Wire clip artifact deletion to private storage and the local cache."""
+    files = getattr(store, "files", None)
+    if files:
+        files.purge_clip(run_id)
+    root = directory(store, str(run_id))
+    for path in [root, *root.parent.glob(f"{root.name}-part-*")]:
+        with suppress(FileNotFoundError):
+            shutil.rmtree(path)

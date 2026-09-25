@@ -37,15 +37,20 @@ def clip_endpoint(
                 store, workspace, request.GET.get("run", ""), request.GET.get("chunk")
             )
         )
-    if request.method != "POST" or action not in {"clips", "clips/cancel"}:
+    if request.method != "POST" or action not in {
+        "clips",
+        "clips/cancel",
+        "clips/delete",
+    }:
         return JsonResponse({"error": "Method not allowed"}, status=405)
     if len(request.body) > MAX_BODY or request.content_type != "application/json":
         return JsonResponse({"error": "Expected a bounded JSON body"}, status=400)
     payload = json.loads(request.body)
     if not isinstance(payload, dict):
         raise TypeError("Expected object")
-    if action == "clips/cancel":
-        clips.cancel(store, workspace, payload["run_id"])
+    if action in {"clips/cancel", "clips/delete"}:
+        operation = clips.cancel if action == "clips/cancel" else clips.delete
+        operation(store, workspace, payload["run_id"])
         return JsonResponse({"ok": True})
     job = clips.start(store, workspace, cast(User, request.user), payload)
     return JsonResponse({"job_id": str(job.pk), "queued": True}, status=202)
