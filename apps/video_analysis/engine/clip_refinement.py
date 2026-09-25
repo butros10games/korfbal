@@ -20,6 +20,7 @@ from . import (
 )
 from .clip_identity import IdentityMemory, court_reference
 from .clip_refinement_spans import ObservationSpans
+from .clip_roster import MIN_NUMBER_CONFIDENCE, Roster
 from .clip_segment_reconciliation import reconcile
 from .clip_signals import Teams, modules, transform
 
@@ -86,6 +87,7 @@ class IdentityRefiner:
     def __init__(self) -> None:
         """Start one independent section with an explicit camera coordinate epoch."""
         _, self.np = modules()
+        self.roster = Roster()
         self.tracks: dict[str, dict] = {}
         self.epoch = 0
         self.warp = self.np.eye(3)
@@ -124,6 +126,13 @@ class IdentityRefiner:
             return
         key = court_reference(camera)
         trusted = key is not None and not camera.get("calibration", {}).get("estimated")
+        # The fixed-camera model places every main-camera view in one court
+        # frame. Online association keeps treating it as an estimate; the roster
+        # only uses it to reject impossible runs between numbered pieces.
+        placed = trusted or (
+            key is not None
+            and camera.get("calibration", {}).get("status") == "automatic_camera"
+        )
         objects = [obj for obj in objects if obj["label"] in {"player", "referee"}]
         for obj in (obj for obj in objects if obj["label"] == "player"):
             identity = obj["track_id"]
@@ -152,6 +161,13 @@ class IdentityRefiner:
                 if shirts
                 else obj.get("team", "unknown"),
             }
+            self.roster.observe(
+                identity,
+                time,
+                obj.get("court_xy_m") if placed else None,
+                "unknown" if obj.get("identity_uncertain") else sample["shirt_team"],
+                shirt_number(obj),
+            )
             self.spans.observe({
                 "id": identity,
                 "display_id": obj.get("display_id"),
@@ -355,7 +371,7 @@ class IdentityRefiner:
         )
         if frame_links is None:
             return interrupted
-        return {
+        report = {
             "version": 1,
             "status": "completed",
             "appearance": "clothing_histograms" if use_appearance else "disabled",
@@ -366,6 +382,8 @@ class IdentityRefiner:
             "frame_links": frame_links,
             "review_only": True,
         }
+        # Join the refined identities into clip-long players by shirt number.
+        return self.roster.finish(report, stopped) or interrupted
 
     def reconcile_frames(
         self, links: list, frame_links: list, stopped: Callable[[], bool] | None
@@ -391,6 +409,18 @@ class IdentityRefiner:
                 if (c["time_seconds"], c["from_track_id"]) not in known
             )
         return frame_links
+
+
+def shirt_number(obj: dict) -> str | None:
+    """Return a confident shirt-number reading from the number model, if any."""
+    number = obj.get("shirt_number")
+    if (
+        isinstance(number, str)
+        and number.isdigit()
+        and obj.get("shirt_number_confidence", 0) >= MIN_NUMBER_CONFIDENCE
+    ):
+        return number
+    return None
 
 
 def refined_frames(frames: list[dict], report: dict) -> list[dict]:

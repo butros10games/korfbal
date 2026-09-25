@@ -30,6 +30,7 @@ EVENTS = ("none", "shot", "goal", "unknown")
 STATUSES = ("pending", "approved", "skipped")
 BOX_SIZE = 4
 POINT_SIZE = 2
+SHIRT_NUMBER = re.compile(r"[0-9]{1,2}")
 BOX_LIMIT = 1.000001
 MAX_OBJECTS = 80
 MAX_NOTES = 2000
@@ -124,6 +125,7 @@ def validate_objects(objects: object) -> list[dict[str, Any]]:
         ):
             raise ValueError("Invalid temporal estimate flag")
         foot = post_foot(item, [x, y, width, height])
+        shirt = shirt_number(item)
         clean.append({
             "label": item["label"],
             "bbox": [x, y, width, height],
@@ -132,8 +134,32 @@ def validate_objects(objects: object) -> list[dict[str, Any]]:
             **({"track_id": track} if track else {}),
             **({"temporal_estimate": True} if item.get("temporal_estimate") else {}),
             **({"post_foot": foot} if foot is not None else {}),
+            **({"shirt_number": shirt} if shirt is not None else {}),
         })
     return clean
+
+
+def shirt_number(item: dict[str, Any]) -> str | None:
+    """Validate a player's readable shirt number, or that it cannot be read.
+
+    Only players carry it. A missing value means "not reviewed", so a frame
+    whose back is turned away never teaches a number model "no number".
+
+    Raises:
+        ValueError: The value is not one or two digits or "hidden".
+
+    """
+    if "shirt_number" not in item:
+        return None
+    value = item["shirt_number"]
+    if item["label"] != "player":
+        raise ValueError("Only a player has a shirt number")
+    if value == "hidden":
+        return value
+    if not isinstance(value, str) or not SHIRT_NUMBER.fullmatch(value):
+        raise ValueError("A shirt number is one or two digits or 'hidden'")
+    # "07" and "7" are the same shirt for a number model.
+    return str(int(value))
 
 
 def post_foot(item: dict[str, Any], box: list[float]) -> list[float] | str | None:
