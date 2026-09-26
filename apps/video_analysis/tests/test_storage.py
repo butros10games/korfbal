@@ -338,3 +338,39 @@ def test_clip_purge_removes_run_and_replay_parts_only(
     assert sorted(
         call.kwargs["Key"] for call in s3.delete_object.call_args_list
     ) == sorted(records[path].object_key for path in paths[:2])
+
+
+def test_periodic_sync_defers_a_file_another_writer_is_changing(
+    imported: tuple[User, DatabaseStore, Store], s3: MagicMock
+) -> None:
+    """A controller rewrite during a job's final sync must not fail that job."""
+    _, local, _ = imported
+    files = WorkspaceObjects(Workspace.objects.get(pk=local.workspace_id), s3)
+    busy = files.path("vision/remote/job/job.json")
+    done = files.path("vision/runs/example/run.json")
+    for path in (busy, done):
+        path.parent.mkdir(parents=True)
+        path.write_text('{"status":"running"}')
+    upload = s3.upload_fileobj.side_effect
+
+    def rewrite_during_upload(
+        handle: BinaryIO, bucket: str, key: str, **kw: object
+    ) -> None:
+        upload(handle, bucket, key, **kw)
+        if key.endswith("job.json"):
+            busy.write_text('{"status":"completed", "later": true}')
+
+    s3.upload_fileobj.side_effect = rewrite_during_upload
+    files.sync_artifacts()
+    published = set(StoredFile.objects.values_list("relative_path", flat=True))
+    assert "vision/runs/example/run.json" in published
+    assert "vision/remote/job/job.json" not in published
+    s3.upload_fileobj.side_effect = upload
+    files.sync_artifacts()
+    assert StoredFile.objects.filter(
+        relative_path="vision/remote/job/job.json"
+    ).exists()
+    s3.upload_fileobj.side_effect = rewrite_during_upload
+    busy.write_text('{"status":"rewritten"}')
+    with pytest.raises(ValueError, match="changed during publication"):
+        files.publish_artifact("vision/remote/job/job.json")

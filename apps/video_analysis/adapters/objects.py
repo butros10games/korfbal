@@ -4,6 +4,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 import hashlib
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import tempfile
@@ -28,6 +29,13 @@ from apps.video_analysis.engine.storage_workspace import (
     storage_lease,
 )
 from apps.video_analysis.models import StoredFile, Workspace
+
+
+logger = logging.getLogger(__name__)
+
+
+class PublicationRaceError(ValueError):
+    """Another process rewrote a file while it was being published."""
 
 
 def workspace_root(workspace: Workspace) -> Path:
@@ -163,7 +171,8 @@ class WorkspaceObjects:
         """Publish an immutable payload, verifying its bytes before indexing it.
 
         Raises:
-            ValueError: Media changed or publication raced a writer.
+            ValueError: Media changed.
+            PublicationRaceError: Another process rewrote the file meanwhile.
 
         """
         path = self.path(relative)
@@ -209,7 +218,7 @@ class WorkspaceObjects:
             self._verify(bucket, key, checksum, stat.st_size)
             after = path.stat()
             if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
-                raise ValueError(
+                raise PublicationRaceError(
                     "File changed during publication; retry after the writer finishes"
                 )
         record, _ = StoredFile.objects.update_or_create(
@@ -459,7 +468,12 @@ class WorkspaceObjects:
                 self.cache_media(record.relative_path)
 
     def sync_artifacts(self) -> None:
-        """Publish stable files; atomic producer writes permit safe periodic retries."""
+        """Publish stable files; atomic producer writes permit safe periodic retries.
+
+        A file another process (such as the training controller) is still
+        writing is left for the next periodic pass instead of failing the job
+        whose own outputs were already published.
+        """
         for path in sorted((self.root / "vision").rglob("*")):
             relative = path.relative_to(self.root)
             if (
@@ -467,7 +481,10 @@ class WorkspaceObjects:
                 and not any(part.startswith(".") for part in relative.parts)
                 and path.suffix not in {".tmp", ".lock"}
             ):
-                self.upload(relative.as_posix())
+                try:
+                    self.upload(relative.as_posix())
+                except (PublicationRaceError, FileNotFoundError):
+                    logger.info("Deferred publication of %s to the next sync", relative)
 
     def publish_artifact(self, relative: str) -> None:
         """Publish the changed metadata without scanning unrelated artifacts."""

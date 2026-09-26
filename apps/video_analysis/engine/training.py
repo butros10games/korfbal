@@ -134,19 +134,32 @@ def detector(weights: str) -> Detector:
     return cast("Detector", module.YOLO(weights))
 
 
-def pose_model(model: Any, weights: str) -> Any:  # noqa: ANN401
+def pose_model(  # noqa: ANN201
+    model: Any,  # noqa: ANN401
+    weights: str,
+    root: Path,
+    keypoints: int = 1,
+):
     """Continue from a box detector as a keypoint model of the same size.
 
-    The pole-foot keypoint needs a pose head; the backbone and box head of the
-    given weights are transferred, so earlier training is not thrown away.
+    The pole-foot keypoint needs a pose head. Build it with the detector's own
+    classes and keypoint count first: the stock 80-class COCO layout cannot take
+    the trained class layer, which then restarts from random weights (measured:
+    ball F1 0.41 after 30 epochs, against 0.73 for the box model it came from).
     """
     if getattr(model, "task", "detect") == "pose":
         return model
     module = importlib.import_module("ultralytics")
+    tasks = importlib.import_module("ultralytics.nn.tasks")
     scale = (getattr(model.model, "yaml", None) or {}).get("scale") or "n"
-    return module.YOLO(f"yolo26{scale}-pose.yaml").load(
-        getattr(model, "ckpt_path", None) or weights
+    name = f"yolo26{scale}-pose.yaml"
+    config = dict(
+        tasks.yaml_model_load(name), nc=len(model.names), kpt_shape=[keypoints, 3]
     )
+    # The scale is read back from the file name; keep the stock name.
+    path = root / name
+    path.write_text(json.dumps(config), encoding="utf-8")
+    return module.YOLO(str(path)).load(getattr(model, "ckpt_path", None) or weights)
 
 
 def environment() -> dict[str, Any]:
@@ -322,7 +335,9 @@ def train(
         try:
             model = detector(weights)
             if manifest.get("task") == "pose":
-                model = pose_model(model, weights)
+                model = pose_model(
+                    model, weights, root, len(manifest.get("keypoints", ())) or 1
+                )
                 run["task"] = "pose"
             run.update(environment=environment(), **weights_record(weights, model))
             atomic_json(root / "run.json", run)

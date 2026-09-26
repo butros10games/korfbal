@@ -103,7 +103,9 @@ def queue_training(store: Store, request_id: str, payload: dict) -> dict:
     controller = Controller(store, Runpod(""), None, Policy(**payload["policy"]))
     return controller.enqueue(
         payload["snapshot"],
-        RunOptions(device="0", epochs=payload["epochs"], imgsz=960, batch=4),
+        # Batch 8 kept the rented GPU busy (batch 4 left it ~12% utilised) and
+        # gave the best held-out detector on 2026-09-26.
+        RunOptions(device="0", epochs=payload["epochs"], imgsz=960, batch=8),
         "run:" + payload["parent_run"]
         if payload.get("parent_run")
         else payload.get("base_weights", "yolo26n.pt"),

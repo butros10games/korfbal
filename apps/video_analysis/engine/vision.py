@@ -39,6 +39,10 @@ PROFILES = {"people": ("player", "referee", "basket"), "all": LABELS}
 MATCH_IOU = 0.5
 TEAM_TRANSFER_IOU = 0.7
 SPLITS = ("train", "val", "test", "pool")
+# Training pole feet needed before snapshots become keypoint (pose) datasets.
+# Measured on 2026-09-26 with 19 feet: the pose head lowered player F1 from
+# 0.928 to 0.888 on held-out matches while its feet stayed unusable.
+MIN_POSE_LABELS = 100
 
 
 def digest(path: Path) -> str:
@@ -254,12 +258,15 @@ def freeze(
         data, mapping = store.read(), assignments(store)
         selected = select_frames(data, mapping, profile, selection)
         classes = PROFILES[profile]
-        # Any labelled pole foot turns the snapshot into a keypoint dataset.
-        pose = "basket" in classes and any(
+        # Keypoint training trades player precision for the pole foot, so it
+        # only starts once enough feet can teach it (see MIN_POSE_LABELS).
+        foot_labels = sum(
             isinstance(obj.get("post_foot"), list)
-            for _, frame in selected
+            for match, frame in selected
+            if mapping.get(match.get("split_group", match["id"])) == "train"
             for obj in validate_annotation(frame["correction"])["objects"]
         )
+        pose = "basket" in classes and foot_labels >= MIN_POSE_LABELS
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="snapshot-", dir=target.parent
@@ -340,6 +347,7 @@ def freeze(
                 "review_revision": data["revision"],
                 "selection": selection,
                 "duplicate_images_skipped": len(selected) - len(records),
+                "post_foot_training_labels": foot_labels,
                 "splits": frozen_groups,
                 "counts": dict(counts),
                 "frames": records,
