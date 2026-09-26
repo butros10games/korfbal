@@ -26,7 +26,7 @@ import sys
 import time
 from typing import Any, Protocol, cast
 
-from . import ball_crops, numbers, temporal
+from . import ball_crops, label_check, numbers, temporal
 from .coverage import dataset_report
 from .keypoints import post_feet
 from .recovery import training_lease
@@ -381,6 +381,9 @@ def train(
             )
             if shirt_numbers(manifest):
                 run["numbers"] = number_reader(dataset, best.parent, device, seed)
+            run["label_check"] = check_labels(
+                dataset, manifest, root, best, config_options
+            )
         except (Exception, KeyboardInterrupt) as error:
             run.update(
                 status="interrupted"
@@ -393,6 +396,51 @@ def train(
             run["elapsed_seconds"] = round(time.monotonic() - started, 3)
             atomic_json(root / "run.json", run)
     return run
+
+
+def check_labels(
+    dataset: Path,
+    manifest: dict[str, Any],
+    root: Path,
+    weights: Path,
+    options: RunOptions,
+) -> dict[str, Any]:
+    """Rank the snapshot's approved labels by the new checkpoint's disagreement.
+
+    The detector is already saved; a failed check is recorded, never raised.
+    """
+    try:
+        model = detector(str(weights))
+        report = label_check.check(
+            dataset,
+            manifest,
+            lambda image: predict_image(
+                model,
+                image,
+                options.device,
+                options.imgsz,
+                label_check.PREDICT_CONFIDENCE,
+            )[0],
+        )
+        atomic_json(root / "label_check.json", report)
+    # An inference failure, including an incompatible checkpoint, keeps the run.
+    except (
+        AttributeError,
+        ImportError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as error:
+        return {"status": "failed", "error": f"{type(error).__name__}: {error}"}
+    return {
+        "status": "completed",
+        "version": report["version"],
+        "frames": len(report["frames"]),
+        "flagged": sum(f["score"] >= label_check.FLAG_SCORE for f in report["frames"]),
+        "sha256": digest(root / "label_check.json"),
+    }
 
 
 def shirt_numbers(manifest: dict[str, Any]) -> bool:

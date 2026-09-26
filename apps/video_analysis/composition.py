@@ -33,6 +33,7 @@ from apps.video_analysis.engine.storage_workspace import (
 )
 from apps.video_analysis.engine.store import Store
 from apps.video_analysis.models import StoredFile, Workspace
+from apps.video_analysis.services import label_check
 
 
 __all__ = [
@@ -102,6 +103,7 @@ def sync_workspace_files(workspace: Workspace) -> None:
     with processing_store(workspace, None) as store:
         if store.files:
             store.files.publish_review(store.read())
+        label_check.apply(workspace, store)
 
 
 def run_detector(store: Store, match_id: str, weights: str) -> None:

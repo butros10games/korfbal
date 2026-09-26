@@ -56,7 +56,11 @@ def save_frame(workspace: Workspace, actor: User, payload: dict[str, Any]) -> di
         )
     Store._review({"frames": [raw]}, payload)
     frame.metadata = {
-        **{k: v for k, v in frame.metadata.items() if k != "annotation_provenance"},
+        **{
+            k: v
+            for k, v in frame.metadata.items()
+            if k not in {"annotation_provenance", "label_check"}
+        },
         "reviewed_at": raw["reviewed_at"],
     }
     for key in ("correction", "history", "status", "complete"):

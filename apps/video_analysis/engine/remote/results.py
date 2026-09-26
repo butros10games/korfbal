@@ -63,6 +63,7 @@ def import_result(store: Store, job: dict, content: bytes) -> str:
                 if prefix + relative in archive.namelist():
                     (staging / relative).write_bytes(archive.read(prefix + relative))
             copy_reader(archive, prefix, run, staging)
+            copy_label_check(archive, prefix, run, staging)
             run.update(id=name, remote_job=job["id"], remote_training_id=run["id"])
             atomic_json(staging / "run.json", run)
             staging.rename(target)
@@ -85,6 +86,24 @@ def copy_reader(
     if hashlib.sha256(reader).hexdigest() != run.get("numbers", {}).get("sha256"):
         raise ValueError("Returned number reader checksum does not match")
     (staging / "fit/weights/numbers.pt").write_bytes(reader)
+
+
+def copy_label_check(
+    archive: zipfile.ZipFile, prefix: str, run: dict, staging: Path
+) -> None:
+    """Keep the returned label ranking only when it matches its record.
+
+    Raises:
+        ValueError: If the ranking differs from the recorded checksum.
+
+    """
+    name = prefix + "label_check.json"
+    if name not in archive.namelist():
+        return
+    report = archive.read(name)
+    if hashlib.sha256(report).hexdigest() != run.get("label_check", {}).get("sha256"):
+        raise ValueError("Returned label check checksum does not match")
+    (staging / "label_check.json").write_bytes(report)
 
 
 def import_proposals(store: Store, job: dict, content: bytes) -> list[str]:
