@@ -10,6 +10,7 @@ from apps.video_analysis.engine.store import ConflictError, Store, frame_version
 from apps.video_analysis.engine.timeline import validate_periods
 from apps.video_analysis.models import Frame, Recording, ReviewAudit, Workspace
 from apps.video_analysis.queries import frame_payload
+from apps.video_analysis.services import blind_check
 
 
 def save(workspace: Workspace, actor: User, payload: dict[str, Any]) -> dict:
@@ -25,6 +26,8 @@ def save(workspace: Workspace, actor: User, payload: dict[str, Any]) -> dict:
         return save_frame(workspace, actor, payload)
     if payload.get("action") == "swap_teams":
         return swap_draft_teams(workspace, payload)
+    if payload.get("action") == "blind":
+        return blind_check.save(workspace, actor, payload)
     raise ValueError("Unknown review action")
 
 

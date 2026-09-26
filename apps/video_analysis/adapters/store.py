@@ -226,7 +226,13 @@ class DatabaseStore(Store):
         """Preserve triage decisions when older background work saves annotations."""
         if frame.metadata.get("dataset_decision") == "removed":
             return
-        for key in ("dataset_decision", "dataset_revision", "curation", "label_check"):
+        for key in (
+            "dataset_decision",
+            "dataset_revision",
+            "curation",
+            "label_check",
+            "blind_check",
+        ):
             if key in frame.metadata:
                 values["metadata"][key] = frame.metadata[key]
         if not any(getattr(frame, key) != value for key, value in values.items()):

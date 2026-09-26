@@ -7,6 +7,7 @@ from typing import Any
 from django.contrib.auth.models import User
 import pytest
 
+from apps.video_analysis import queries
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine import label_check as engine
 from apps.video_analysis.engine.store import Store, atomic_json, frame_version
@@ -377,3 +378,21 @@ def test_review_queues_respect_frame_removal_and_restoration(
     assert {
         item["frame_id"] for item in restored["items"] if item["kind"] == "check"
     } == {kept.source_id, removed.source_id}
+
+
+def test_mixed_queue_caps_well_covered_recordings(
+    imported: tuple[User, DatabaseStore, Store], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording with enough approved frames only offers doubtful drafts."""
+    owner, _, _ = imported
+    monkeypatch.setattr(queries, "MATCH_FRAME_CAP", 1)
+    covered = Recording.objects.get()
+    frames = list(Frame.objects.filter(recording=covered).order_by("position"))
+    approve(frames[0], annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=1.0)))
+    sure = annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=0.9))
+    doubtful = annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=0.4))
+    for frame, draft in zip(frames[1:3], [sure, doubtful], strict=True):
+        frame.proposal = draft
+        frame.save(update_fields=["proposal"])
+    items = verified(owner).get("/video-analysis/queue").json()["items"]
+    assert [i["frame_id"] for i in items] == [frames[2].source_id]

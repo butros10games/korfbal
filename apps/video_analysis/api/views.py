@@ -50,6 +50,7 @@ from apps.video_analysis.models import (
     Workspace,
 )
 from apps.video_analysis.queries import (
+    blind_queue,
     check_queue,
     registered_media,
     review_queue,
@@ -191,6 +192,8 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
             else JsonResponse(
                 check_queue(workspace)
                 if request.GET.get("kind") == "check"
+                else blind_queue(workspace)
+                if request.GET.get("kind") == "blind"
                 else review_queue(workspace)
             )
             if action == "queue"

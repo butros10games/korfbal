@@ -19,6 +19,7 @@ from itertools import zip_longest
 import json
 import math
 from operator import itemgetter
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -56,6 +57,7 @@ class RunOptions:
     epochs: int = 30
     imgsz: int = 960
     batch: int = 2
+    # -1 uses one loader per CPU of the training machine (at most MAX_WORKERS).
     workers: int = 2
     cache: str = "off"
     optimizer: str = "auto"
@@ -300,6 +302,12 @@ def train(
             "Training bounds: epochs 1-300, batch -1 or 1-64, image size 320-1920"
         )
     validate_options(config_options)
+    # Resolved on the machine that trains: rented GPUs differ in CPU count.
+    workers = (
+        config_options.workers
+        if config_options.workers >= 0
+        else min(MAX_WORKERS, os.cpu_count() or 2)
+    )
     if batch == -1 and device == "cpu":
         raise ValueError(
             "Automatic batch sizing requires a CUDA device; use --batch 2 on CPU"
@@ -320,7 +328,7 @@ def train(
             "batch": batch,
             "seed": seed,
             "device": device,
-            "workers": config_options.workers,
+            "workers": workers,
             "cache": config_options.cache,
             "amp": True,
             "patience": patience,
@@ -362,7 +370,7 @@ def train(
                 device=device,
                 seed=seed,
                 deterministic=True,
-                workers=config_options.workers,
+                workers=workers,
                 cache=False if config_options.cache == "off" else config_options.cache,
                 amp=True,
                 project=str(root),
@@ -724,12 +732,12 @@ def validate_options(options: RunOptions) -> None:
         raise ValueError("Confidence must be between 0.01 and 1")
     if not MIN_IMAGE_SIZE <= options.imgsz <= MAX_IMAGE_SIZE:
         raise ValueError("Image size must be between 320 and 1920")
-    if not 0 <= options.workers <= MAX_WORKERS or options.cache not in {
+    if not -1 <= options.workers <= MAX_WORKERS or options.cache not in {
         "off",
         "disk",
         "ram",
     }:
-        raise ValueError("Use workers 0-16 and cache off, disk or ram")
+        raise ValueError("Use workers -1 (automatic) to 16 and cache off, disk or ram")
     if (
         type(options.ball_tiles) is not bool
         or type(options.evaluate_temporal) is not bool

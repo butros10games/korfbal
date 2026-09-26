@@ -14,7 +14,8 @@ def frame_payload(frame: Frame) -> dict[str, Any]:
     metadata = {
         k: v
         for k, v in frame.metadata.items()
-        if k not in {"dataset_decision", "dataset_revision", "label_check"}
+        if k
+        not in {"dataset_decision", "dataset_revision", "label_check", "blind_check"}
     }
     return dict(
         metadata,
@@ -84,6 +85,16 @@ def review_state(workspace: Workspace, match_id: str) -> dict[str, Any]:
                         and flag.get("frame_version") == version
                         else {}
                     ),
+                    # Only the status: the blind labels stay out of the editor.
+                    **(
+                        {
+                            "blind_check": {
+                                "status": frame.metadata["blind_check"].get("status")
+                            }
+                        }
+                        if frame.metadata.get("blind_check")
+                        else {}
+                    ),
                 )
             )
     return {
@@ -104,6 +115,9 @@ def review_state(workspace: Workspace, match_id: str) -> dict[str, Any]:
 # Frames per match before switching: one hall, lighting and kit at a time.
 QUEUE_BATCH = 8
 QUEUE_BATCHES = 6
+# Approved frames after which a recording adds little new variety: beyond it the
+# mixed queue only serves its label checks and doubtful drafts.
+MATCH_FRAME_CAP = 100
 PEOPLE = frozenset({"player", "referee"})
 # Matches reviewWorkflow.crowding: 20% of the smaller box hides a limb.
 MIN_OVERLAP = 0.2
@@ -139,8 +153,9 @@ def review_queue(workspace: Workspace) -> dict[str, Any]:
     """Mix recordings in short same-match batches, least-covered recordings first.
 
     Approved frames the latest model disagrees with come first in their batch,
-    then open frames by draft, model doubt and crowding. Each call re-plans from
-    current counts, so finishing a batch naturally moves to another match.
+    then open frames by draft, model doubt and crowding. Recordings with
+    MATCH_FRAME_CAP approved frames only offer checks and doubtful drafts. Each
+    call re-plans from current counts, so finishing a batch moves to another match.
     """
     active = Q(metadata__dataset_decision__isnull=True) | ~Q(
         metadata__dataset_decision="removed"
@@ -198,7 +213,10 @@ def review_queue(workspace: Workspace) -> dict[str, Any]:
         )
         .values_list("source_id", "done")
     )
-    for items in candidates.values():
+    for match_id, items in candidates.items():
+        if approved.get(match_id, 0) >= MATCH_FRAME_CAP:
+            # key[2] is minus the draft's doubtful-box count; checks lead with -1.
+            items[:] = [e for e in items if e[1]["kind"] == "check" or e[0][2] < 0]
         items.sort(key=itemgetter(0))
     planned = dict.fromkeys(candidates, 0)
     queue = []
@@ -251,4 +269,24 @@ def check_queue(workspace: Workspace) -> dict[str, Any]:
         items.extend(
             item for _, item in sorted(per_match[match_id], key=lambda e: -e[0])
         )
+    return {"items": items, "remaining": 0}
+
+
+def blind_queue(workspace: Workspace) -> dict[str, Any]:
+    """Frames still waiting for a blind check, grouped per recording."""
+    items = [
+        {
+            "match_id": frame.recording.source_id,
+            "frame_id": frame.source_id,
+            "kind": "blind",
+            "time_seconds": frame.metadata.get("time_seconds", 0),
+        }
+        for frame in Frame.objects
+        .filter(
+            recording__workspace=workspace,
+            metadata__blind_check__status="open",
+        )
+        .select_related("recording")
+        .order_by("recording__source_id", "position")
+    ]
     return {"items": items, "remaining": 0}
