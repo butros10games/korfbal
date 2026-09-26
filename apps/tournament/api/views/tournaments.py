@@ -23,6 +23,7 @@ from apps.tournament.api.serializers import (
 from apps.tournament.composition import touch_tournament
 from apps.tournament.models import (
     Tournament,
+    TournamentDisplayConfig,
     TournamentField,
     TournamentMatch,
     TournamentMember,
@@ -32,6 +33,7 @@ from apps.tournament.services.snapshot import build_tournament_snapshot
 
 from .common import (
     get_tournament,
+    lock_tournament,
     require_authentication,
     require_manager,
     resolve_qualifiers,
@@ -111,6 +113,8 @@ class TournamentViewSet(
             )
             .order_by("-starts_at", "name")
         )
+        if self.action in {"update", "partial_update"}:
+            queryset = queryset.select_for_update(of=("self",))
         user = self.request.user
         public = Q(
             visibility=Tournament.Visibility.PUBLIC,
@@ -142,6 +146,8 @@ class TournamentViewSet(
         response = super().update(request, *args, **kwargs)
         resolve_qualifiers(tournament)
         touch_tournament(tournament)
+        tournament.refresh_from_db()
+        response.data = self.get_serializer(tournament).data
         return response
 
 
@@ -216,9 +222,10 @@ class TournamentPublishView(APIView):
     """Publish a complete generated tournament."""
 
     @extend_schema(request=None, responses={200: TournamentSerializer})
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Publish a tournament after teams and matches exist."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         if not tournament.teams.filter(withdrawn=False).exists():
             return Response(
@@ -254,12 +261,16 @@ class TournamentDisplayConfigView(APIView):
         request=TournamentDisplayConfigSerializer,
         responses={200: TournamentDisplayConfigSerializer},
     )
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str) -> Response:
         """Update presentation rotation and branding fields."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
+        config = get_object_or_404(
+            TournamentDisplayConfig.objects.select_for_update(), tournament=tournament
+        )
         serializer = TournamentDisplayConfigSerializer(
-            tournament.display_config,
+            config,
             data=request.data,
             partial=True,
         )

@@ -35,18 +35,6 @@ def latest_report(store: Store) -> tuple[str, dict[str, Any]] | None:
     return run_id, json.loads(path.read_text())
 
 
-def current_flag(frame: Frame) -> dict[str, Any] | None:
-    """Return the flag for exactly this frame version; None once saved again."""
-    flag = frame.metadata.get("label_check")
-    if (
-        flag
-        and frame.status == "approved"
-        and flag.get("frame_version") == frame_version(frame_payload(frame))
-    ):
-        return flag
-    return None
-
-
 def apply(workspace: Workspace, store: Store) -> int:
     """Mirror the newest ranking into frame flags; returns the number changed."""
     found = latest_report(store)

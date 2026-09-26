@@ -16,7 +16,7 @@ from apps.kwt_common.models import BackgroundJob
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine.store import ConflictError, Store
 from apps.video_analysis.models import Recording, ReviewPipeline, VideoUpload, Workspace
-from apps.video_analysis.services import pipeline_worker, uploads
+from apps.video_analysis.services import pipeline, pipeline_worker, uploads
 from apps.video_analysis.tests.test_review import verified
 
 
@@ -95,6 +95,31 @@ def test_file_declarations_and_account_scope(
         uploads.begin(
             workspace, other, {"request_id": key, "name": "match.mp4", "size": 4}
         )
+
+
+@pytest.mark.parametrize("peer", [False, True], ids=["same-account", "staff-peer"])
+def test_preparation_cannot_reuse_an_open_upload_request_id(
+    imported: tuple[User, DatabaseStore, Store], peer: bool
+) -> None:
+    """A colliding URL intake cannot take an upload's ID and break its completion."""
+    owner, store, _ = imported
+    workspace = Workspace.objects.get(slug="main")
+    data = b"\0\0\0\x18ftyp" + b"synthetic-video"
+    key = start(owner, workspace, data)
+    actor = User.objects.create_user(username="peer", is_staff=True) if peer else owner
+
+    with pytest.raises(ConflictError, match="upload"):
+        pipeline.submit(
+            workspace,
+            actor,
+            store,
+            {"request_id": key, "source_url": "https://eyecons.com/videos/match"},
+        )
+
+    assert not ReviewPipeline.objects.filter(pk=key).exists()
+    uploads.part(workspace, owner, store, key=key, chunk=uploads.Chunk(0, data))
+    assert uploads.finish(workspace, owner, key)["status"] == "queued"
+    assert ReviewPipeline.objects.get(pk=key).recipe["source_type"] == "upload"
 
 
 def test_chunks_are_sequential_and_expire(

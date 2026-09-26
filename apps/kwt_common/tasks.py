@@ -62,25 +62,36 @@ def execute_job(job_id: int) -> None:
         transaction.on_commit(lambda: publish_job(job_id), robust=True)
 
 
+@transaction.atomic
+def _claim_job(job_id: int) -> BackgroundJob | None:
+    """Claim due work, retaining a successor's deadline after worker death."""
+    job = BackgroundJob.objects.select_for_update().filter(pk=job_id).first()
+    now = timezone.now()
+    if job is None or job.due_at is None or job.due_at > now:
+        return None
+    if job.next_due_at is not None:
+        job.due_at, job.next_due_at = job.next_due_at, None
+        job.attempts = 0
+        job.published_until = None
+        if job.due_at > now:
+            job.save()
+            return None
+    if job.attempts >= MAX_ATTEMPTS:
+        job.due_at = None
+        job.error = "WorkerLost"
+        job.save()
+        return None
+    job.attempts += 1
+    job.due_at = now + timedelta(seconds=QUEUE_LIMITS.get(job.queue, 2000) + 100)
+    job.save()
+    return job
+
+
 def _execute_job(job_id: int) -> None:
     """Run latest committed input; persist retries and completion, not results."""
     with _exclusive(job_id) as acquired:
-        if not acquired:
+        if not acquired or (job := _claim_job(job_id)) is None:
             return
-        with transaction.atomic():
-            job = BackgroundJob.objects.select_for_update().filter(pk=job_id).first()
-            if job is None or job.due_at is None or job.due_at > timezone.now():
-                return
-            if job.attempts >= MAX_ATTEMPTS:
-                job.due_at = None
-                job.error = "WorkerLost"
-                job.save()
-                return
-            job.attempts += 1
-            job.due_at = timezone.now() + timedelta(
-                seconds=QUEUE_LIMITS.get(job.queue, 2000) + 100
-            )
-            job.save()
         try:
             current_app.tasks[job.task].run(*job.args, **job.kwargs)
         except Exception as exc:
@@ -91,11 +102,14 @@ def _execute_job(job_id: int) -> None:
                 latest.error = type(exc).__name__
                 latest.attempts = 0 if newer else job.attempts
                 latest.due_at = (
-                    timezone.now()
-                    + timedelta(seconds=0 if newer else min(30 * 2**job.attempts, 900))
-                    if newer or job.attempts < MAX_ATTEMPTS
+                    (latest.next_due_at or timezone.now())
+                    if newer
+                    else timezone.now()
+                    + timedelta(seconds=min(30 * 2**job.attempts, 900))
+                    if job.attempts < MAX_ATTEMPTS
                     else None
                 )
+                latest.next_due_at = None
                 latest.published_until = None
                 latest.save()
             raise
@@ -104,8 +118,11 @@ def _execute_job(job_id: int) -> None:
                 latest = BackgroundJob.objects.select_for_update().get(pk=job_id)
                 latest.completed_generation = job.generation
                 latest.due_at = (
-                    timezone.now() if latest.generation != job.generation else None
+                    (latest.next_due_at or timezone.now())
+                    if latest.generation != job.generation
+                    else None
                 )
+                latest.next_due_at = None
                 if latest.due_at is None:
                     latest.args, latest.kwargs = [], {}
                 latest.attempts = 0

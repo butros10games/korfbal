@@ -266,6 +266,43 @@ def test_mixed_queue_balances_recordings_in_same_match_batches(
     assert {i["frame_id"] for i in items} >= {"fresh-0", first.source_id}
 
 
+def test_mixed_queue_does_not_count_removed_approvals(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Removed labels cannot make an uncovered recording wait behind covered ones."""
+    owner, _, _ = imported
+    uncovered = Recording.objects.get()
+    labels = annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=1.0))
+    removed = list(uncovered.frames.order_by("position")[:2])
+    for frame in removed:
+        approve(frame, labels)
+        frame.metadata["dataset_decision"] = "removed"
+        frame.save(update_fields=["metadata"])
+    covered = Recording.objects.create(
+        workspace=uncovered.workspace,
+        source_id="covered",
+        metadata={"title": "Covered"},
+    )
+    for index, status in enumerate(("approved", "pending")):
+        Frame.objects.create(
+            recording=covered,
+            source_id=f"covered-{index}",
+            position=index,
+            metadata={"image": f"covered/{index}.jpg"},
+            status=status,
+            correction=labels if status == "approved" else None,
+            complete=status == "approved",
+        )
+
+    queue = verified(owner).get("/video-analysis/queue").json()
+
+    assert queue["approved"] == {uncovered.source_id: 0, covered.source_id: 1}
+    assert queue["items"][0]["match_id"] == uncovered.source_id
+    assert not {frame.source_id for frame in removed} & {
+        item["frame_id"] for item in queue["items"]
+    }
+
+
 def test_check_queue_spans_recordings_grouped_per_recording(
     imported: tuple[User, DatabaseStore, Store],
 ) -> None:
@@ -308,3 +345,35 @@ def test_check_queue_spans_recordings_grouped_per_recording(
         ("other", "o1"),
         ("other", "o0"),
     ]
+
+
+@pytest.mark.parametrize("query", ["", "?kind=check"], ids=["mixed", "checks"])
+def test_review_queues_respect_frame_removal_and_restoration(
+    imported: tuple[User, DatabaseStore, Store], query: str
+) -> None:
+    """Removal hides a flagged frame; restoring it retains the outstanding check."""
+    owner, _, _ = imported
+    kept, removed = Frame.objects.order_by("position")[:2]
+    labels = annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=1.0))
+    for frame, decision in ((kept, "kept"), (removed, "removed")):
+        approve(frame, labels)
+        frame.metadata["label_check"] = {
+            "run": "r",
+            "score": SCORE,
+            "reasons": [],
+            "frame_version": frame_version(frame_payload(frame)),
+        }
+        frame.metadata["dataset_decision"] = decision
+        frame.save(update_fields=["metadata"])
+    client = verified(owner)
+    queue = client.get(f"/video-analysis/queue{query}").json()
+    assert {item["frame_id"] for item in queue["items"] if item["kind"] == "check"} == {
+        kept.source_id
+    }
+
+    removed.metadata.pop("dataset_decision")
+    removed.save(update_fields=["metadata"])
+    restored = client.get(f"/video-analysis/queue{query}").json()
+    assert {
+        item["frame_id"] for item in restored["items"] if item["kind"] == "check"
+    } == {kept.source_id, removed.source_id}

@@ -56,6 +56,7 @@ from apps.tournament.services.snapshot import build_tournament_snapshot
 from .common import (
     editing_error_response,
     get_tournament,
+    lock_tournament,
     require_manager,
     resolve_qualifiers,
 )
@@ -118,7 +119,7 @@ class TournamentGenerationApplyView(APIView):
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Generate and atomically apply the reviewed schedule parameters."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         params, plan = _validated_generation(request, tournament)
         try:
@@ -142,6 +143,7 @@ class TournamentScheduleImportView(APIView):
     @extend_schema(
         request=TournamentScheduleImportSerializer, responses={200: OpenApiTypes.OBJECT}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create missing teams and fields and apply the supplied schedule.
 
@@ -149,7 +151,7 @@ class TournamentScheduleImportView(APIView):
             ValidationError: If the imported rows are internally inconsistent.
 
         """
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentScheduleImportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -219,9 +221,10 @@ class TournamentPoolListCreateView(APIView):
     @extend_schema(
         request=TournamentPoolWriteSerializer, responses={201: OpenApiTypes.OBJECT}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create a pool and assign its ordered teams."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentPoolWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -242,12 +245,15 @@ class TournamentPoolDetailView(APIView):
     def _objects(
         self, tournament_id: str, pool_id: str
     ) -> tuple[Tournament, TournamentPool]:
-        tournament = get_tournament(tournament_id)
-        return tournament, get_object_or_404(tournament.pools, id_uuid=pool_id)
+        tournament = lock_tournament(tournament_id)
+        return tournament, get_object_or_404(
+            tournament.pools.select_for_update(), id_uuid=pool_id
+        )
 
     @extend_schema(
         request=TournamentPoolWriteSerializer, responses={200: OpenApiTypes.OBJECT}
     )
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str, pool_id: str) -> Response:
         """Replace a pool's details or presentation order."""
         tournament, pool = self._objects(tournament_id, pool_id)
@@ -286,6 +292,7 @@ class TournamentPoolDetailView(APIView):
         return Response(build_tournament_snapshot(tournament))
 
     @extend_schema(request=None, responses={204: None})
+    @transaction.atomic
     def delete(self, request: Request, tournament_id: str, pool_id: str) -> Response:
         """Delete a pool while its match schedule is empty."""
         tournament, pool = self._objects(tournament_id, pool_id)
@@ -304,6 +311,7 @@ class TournamentPoolsGenerateView(APIView):
     @extend_schema(
         request=PoolGenerationRequestSerializer, responses={200: OpenApiTypes.OBJECT}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Replace draft pools with a generated allocation for review.
 
@@ -311,7 +319,7 @@ class TournamentPoolsGenerateView(APIView):
             ValidationError: If the requested pool allocation is invalid.
 
         """
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = PoolGenerationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -336,7 +344,7 @@ class TournamentMatchListCreateView(APIView):
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create one conflict-free pool match."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentMatchWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -361,8 +369,10 @@ class TournamentMatchDetailView(APIView):
     def _objects(
         self, tournament_id: str, match_id: str
     ) -> tuple[Tournament, TournamentMatch]:
-        tournament = get_tournament(tournament_id)
-        return tournament, get_object_or_404(tournament.matches, id_uuid=match_id)
+        tournament = lock_tournament(tournament_id)
+        return tournament, get_object_or_404(
+            tournament.matches.select_for_update(), id_uuid=match_id
+        )
 
     @extend_schema(
         request=TournamentMatchWriteSerializer, responses={200: OpenApiTypes.OBJECT}
@@ -412,7 +422,7 @@ class TournamentMatchesGenerateView(APIView):
             ValidationError: If the pool or timing configuration is invalid.
 
         """
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = MatchGenerationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

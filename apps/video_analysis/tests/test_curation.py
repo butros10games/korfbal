@@ -10,6 +10,7 @@ from django.core.management import call_command
 from django.test import Client
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine import curation, vision
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
@@ -73,6 +74,22 @@ def test_audit_preserves_labels_and_rejects_stale_writers(
     frame.correction["notes"] = "New human correction"
     frame.save()
     assert not service.listing(workspace, store, {"id": frame.pk})["frame"]["ready"]
+
+
+def test_curation_schedules_export_without_changing_annotation_version(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Curated training selections are exported even if no labels are edited."""
+    owner, store, frame, workspace = prepared(imported)
+    item = service.listing(workspace, store, {"id": frame.pk})["frame"]
+
+    result = service.save(workspace, store, owner, payload(item))["frame"]
+
+    assert result["frame_version"] == item["frame_version"]
+    job = BackgroundJob.objects.get(task="apps.video_analysis.tasks.publish_reviews")
+    assert job.args == [str(workspace.pk)]
+    assert job.queue == "vision"
+    assert job.due_at is not None
 
 
 def test_held_out_selection_and_incomplete_reference_are_blocked(
@@ -187,6 +204,47 @@ def test_curated_selection_preserves_validation_and_requires_current_audits() ->
     assert [
         f["id"] for _, f in vision.select_frames(data, mapping, "people", "all")
     ] == ["chosen", "other", "held"]
+
+
+@pytest.mark.parametrize(
+    ("split", "synthetic"),
+    [("pool", False), ("val", False), ("test", False), ("train", True)],
+)
+def test_stale_selected_audit_outside_training_does_not_block_curated_snapshot(
+    split: str,
+    synthetic: bool,
+) -> None:
+    """Moving a previously selected match out of training drops its audit gate."""
+    frame = {
+        "id": "frame",
+        "status": "approved",
+        "complete": True,
+        "correction": {"objects": []},
+    }
+    chosen = dict(frame)
+    chosen["curation"] = {
+        "selected": True,
+        "complete": True,
+        "frame_version": frame_version(chosen),
+    }
+    moved = dict(frame, curation={"selected": True, "complete": False})
+    data = {
+        "matches": [
+            {"id": "train", "frames": [chosen]},
+            {"id": "held", "frames": [frame]},
+            {"id": "moved", "synthetic": synthetic, "frames": [moved]},
+        ]
+    }
+
+    selected = vision.select_frames(
+        data, {"train": "train", "held": "val", "moved": split}, "people", "curated"
+    )
+
+    assert [m["id"] for m, _ in selected] == (
+        ["train", "held"]
+        if split == "pool" or synthetic
+        else ["train", "held", "moved"]
+    )
 
 
 def test_import_benchmark_is_immutable_and_keeps_model_drafts_separate(

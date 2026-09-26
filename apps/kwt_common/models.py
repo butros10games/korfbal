@@ -17,6 +17,7 @@ class BackgroundJob(models.Model):
     generation = models.PositiveBigIntegerField(default=1)
     completed_generation = models.PositiveBigIntegerField(default=0)
     due_at = models.DateTimeField(default=timezone.now, null=True)
+    next_due_at = models.DateTimeField(null=True)
     published_until = models.DateTimeField(null=True)
     attempts = models.PositiveIntegerField(default=0)
     error = models.CharField(max_length=160, blank=True)

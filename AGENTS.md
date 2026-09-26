@@ -37,8 +37,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   storage protocol and workspace lease before evicting active training kits.
 
 - Keep interactive video reviews scoped to the selected frame/recording. Persist export intent with
-  the database change and publish on the vision queue; web reads must not restore model weights or
-  hold the workspace lock while rebuilding the full dataset.
+  every database change, including dataset membership and curation decisions, and publish on the
+  vision queue; web reads must not restore model weights or hold the workspace lock while rebuilding
+  the full dataset.
+- Frame fingerprints exclude dataset membership; every review queue, including check-only queues,
+  must explicitly filter removed frames.
 
 - When reusing a Python virtualenv from another worktree, run focused Korfbal tests from this Django project directory with `PYTHONPATH="$PWD"`; otherwise editable installs can import another checkout. Test paths such as `apps/video_analysis/tests` are relative to this directory.
 
@@ -54,6 +57,10 @@ Match tracker issues often require coordinated backend + frontend changes.
 
 - Guest lineup writes must validate player IDs against actual source-group membership
   or the club/date/season picker candidates; frontend filtering is not authorization.
+- Match-only guest players must remain scoped to their original match and team in the
+  shared designation service, including writes from club editors and administrators.
+- Lineup moves must verify actual source membership for every editor and leave a player
+  in only one group across both teams; a supplied reserve ID is not proof of membership.
 
 - In Caddy, use an explicit matcher for relative redirects (`redir * /admin/ 301`); otherwise `/admin/` is parsed as a matcher. Verify both `/admin` and `/admin/`, since an unmatched handler can return an empty HTTP 200.
 
@@ -63,6 +70,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 - Persist background intent inside the domain transaction with `kwt_common.services.jobs`.
   Broker publication, cache claims, and task ETA reservations are not durable workflow state.
   Keep recipient delivery separate from MVP publication and retain completed intent keys.
+- Keep successor deadlines separate from a running background job's recovery lease; completion,
+  failure and worker-death recovery must preserve requested delays instead of retrying immediately.
 
 - Bulk roster-link deletions bypass M2M signals. Capture and lock affected TeamData
   rows before deleting provider observations, then reconcile their roster history.
@@ -159,6 +168,24 @@ Match tracker issues often require coordinated backend + frontend changes.
 - In tournament planners, check derived match-end, changeover and rest timestamps before
   persisting a schedule. A valid input datetime can still overflow during arithmetic;
   translate that failure into a domain validation error that the API maps to 400.
+- Manual tournament scheduling must check playing and referee commitments in both directions.
+  Changes to an existing match's plan invalidate its old readiness and advance its revision.
+- Deleting a tournament field must revoke its scoped scorekeeper roles; setting their field to
+  null grants all-field access. Check resource deletions under the tournament lock and retain
+  teams with referee duties as well as playing assignments.
+- Lock tournament generation before reading its inputs, through applying the plan; acquiring the
+  lock only for writes can revive withdrawn teams or attach matches to the wrong reordered pools.
+- Lock tournament PATCH reads before loading serializer instances; saving stale instances can
+  overwrite unrelated concurrent edits and roll back the live revision.
+- Serialize tournament role grants under the tournament lock and validate user uniqueness there.
+  Lock the membership row before editing too, so a concurrent revocation cannot be reinserted by save.
+- Create and edit tournament teams and fields under the same parent lock; read the child for update
+  before serializing it so renames preserve concurrent withdrawals, deactivations, and deletions.
+- Authorize every tournament management write after acquiring the parent lock, and keep planning
+  defaults, validation, persistence, and live-revision recording in that transaction. A service-only
+  lock is too late to reject revoked managers or preserve current pool and match defaults.
+- Preserve retained tournament pool-entry IDs when editing or reseeding a pool; recreating all
+  entries silently deletes their audited standings adjustments.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
 - Add new migration test files to both `test-migrations` commands in `project.json`; the

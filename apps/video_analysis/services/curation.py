@@ -18,6 +18,7 @@ from apps.video_analysis.engine.store import (
 from apps.video_analysis.models import Frame, Recording, ReviewAudit, Workspace
 from apps.video_analysis.queries import frame_payload
 from apps.video_analysis.services.dataset import describe
+from apps.video_analysis.services.review import publish_later
 
 
 PAGE_SIZE = 24
@@ -275,6 +276,7 @@ def save(workspace: Workspace, store: Store, actor: User, payload: dict) -> dict
         revision=locked.revision,
         payload={"action": "curation", **audit},
     )
+    publish_later(workspace)
     return {
         "frame": detail(
             frame, source, predictions(store, source), vision.assignments(store)

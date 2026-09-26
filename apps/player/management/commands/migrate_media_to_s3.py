@@ -4,7 +4,7 @@ from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 import hashlib
 from tempfile import SpooledTemporaryFile
-from typing import Any, BinaryIO
+from typing import IO, Any, BinaryIO, cast
 
 import boto3
 from botocore.client import BaseClient
@@ -30,7 +30,7 @@ def _client(
     )
 
 
-def _digest(body: BinaryIO, output: BinaryIO | None = None) -> tuple[str, int]:
+def _digest(body: BinaryIO, output: IO[bytes] | None = None) -> tuple[str, int]:
     digest = hashlib.sha256()
     size = 0
     for chunk in iter(lambda: body.read(1024 * 1024), b""):
@@ -172,6 +172,6 @@ class Command(BaseCommand):
             target,
             str(options["source_bucket"]),
             settings.AWS_MEDIA_BUCKET_NAME,
-            workers=int(options["workers"]),
+            workers=int(cast("int | str", options["workers"])),
         )
         self.stdout.write(f"Verified {count} objects ({total_bytes} bytes).")

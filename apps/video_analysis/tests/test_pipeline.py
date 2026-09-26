@@ -454,8 +454,14 @@ def test_capacity_wait_and_exhausted_worker_retry_are_actionable(
     assert envelope.due_at is not None
 
 
+@pytest.mark.parametrize(
+    ("shirt", "foot"),
+    [(None, None), ("7", [0.8, 0.9]), ("hidden", "hidden")],
+)
 def test_correction_drafts_keep_resolved_clip_identity_and_team(
     prepared: tuple[User, DatabaseStore, Workspace],
+    shirt: str | None,
+    foot: list[float] | str | None,
 ) -> None:
     """Correcting replay does not begin from anonymous boxes or change raw evidence."""
     owner, store, workspace = prepared
@@ -473,7 +479,13 @@ def test_correction_drafts_keep_resolved_clip_identity_and_team(
             "track_id": "temporary",
             "team": "unknown",
             "bbox": [0.1, 0.2, 0.1, 0.3],
-        }
+            **({"shirt_number": shirt} if shirt is not None else {}),
+        },
+        {
+            "label": "basket",
+            "bbox": [0.75, 0.2, 0.1, 0.1],
+            **({"post_foot": foot} if foot is not None else {}),
+        },
     ]
     original = {"frames": [{"time_seconds": 0, "objects": objects}]}
     atomic_json(folder / "chunk-00000.json", original)
@@ -503,6 +515,11 @@ def test_correction_drafts_keep_resolved_clip_identity_and_team(
     assert obj["team"] == "team_a"
     assert obj["track_id"] == f"{clip.job_id}-established"
     assert objects[0]["track_id"] == "temporary"
+    basket = drafts[0]["prediction"]["objects"][1]
+    assert obj.get("shirt_number") == shirt
+    assert basket.get("post_foot") == foot
+    assert ("shirt_number" in obj) == (shirt is not None)
+    assert ("post_foot" in basket) == (foot is not None)
 
 
 def test_preparation_history_cursor_keeps_older_work_reachable(

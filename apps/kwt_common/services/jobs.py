@@ -29,8 +29,8 @@ def enqueue(
 ) -> BackgroundJob:
     """Persist intent with its owner transaction; repeated mutations coalesce.
 
-    Running work retains its recovery deadline. A newer generation is executed
-    after it finishes, so mutations during execution cannot be lost. One-shot
+    Running work retains its recovery deadline. Requests arriving during execution
+    retain their earliest deadline and run after the current attempt finishes. One-shot
     keys are retained even after completion to make delayed duplicates harmless.
     """
     due_at = options.get("due_at") or timezone.now()
@@ -51,10 +51,15 @@ def enqueue(
         job.args, job.kwargs = args or [], kwargs or {}
         if job.due_at is None:
             job.due_at = due_at
+            job.next_due_at = None
             job.published_until = None
             job.attempts = 0
         elif job.attempts == 0:
-            job.due_at = min(job.due_at, due_at)
+            if due_at < job.due_at:
+                job.due_at = due_at
+                job.published_until = None
+        else:
+            job.next_due_at = min(job.next_due_at or due_at, due_at)
         job.save()
     transaction.on_commit(lambda: publish_job(job.pk), robust=True)
     return job

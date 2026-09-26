@@ -78,14 +78,6 @@ class ClubMembershipSerializer(serializers.Serializer):
         }
 
 
-class ClubAdminSettingsSerializer(serializers.Serializer):
-    """Response serializer for the club admin settings screen."""
-
-    club = ClubSerializer()
-    admins = ClubAdminPlayerSerializer(many=True)
-    members = ClubMembershipSerializer(many=True)
-
-
 class ClubMembershipAddSerializer(serializers.Serializer):
     """Input serializer for adding a player to a club."""
 

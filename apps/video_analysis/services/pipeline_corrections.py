@@ -63,6 +63,11 @@ def clip_drafts(
             }
             if obj.get("track_id"):
                 item["track_id"] = f"{run_id}-{obj['track_id']}"
+            item.update({
+                attribute: obj[attribute]
+                for attribute in ("shirt_number", "post_foot")
+                if attribute in obj
+            })
             objects.append(item)
         annotation = {**blank_annotation(), "scene": "live", "objects": objects}
         drafts.append({

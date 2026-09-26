@@ -186,7 +186,16 @@ def review_queue(workspace: Workspace) -> dict[str, Any]:
     approved = dict(
         Recording.objects
         .filter(workspace=workspace, source_id__in=candidates)
-        .annotate(done=Count("frames", filter=Q(frames__status="approved") & Q(active)))
+        .annotate(
+            done=Count(
+                "frames",
+                filter=Q(frames__status="approved")
+                & (
+                    Q(frames__metadata__dataset_decision__isnull=True)
+                    | ~Q(frames__metadata__dataset_decision="removed")
+                ),
+            )
+        )
         .values_list("source_id", "done")
     )
     for items in candidates.values():
@@ -218,6 +227,8 @@ def check_queue(workspace: Workspace) -> dict[str, Any]:
     """
     per_match: dict[str, list[tuple[float, dict]]] = {}
     for frame in Frame.objects.filter(
+        Q(metadata__dataset_decision__isnull=True)
+        | ~Q(metadata__dataset_decision="removed"),
         recording__workspace=workspace,
         status="approved",
         metadata__label_check__isnull=False,

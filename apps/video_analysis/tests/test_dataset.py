@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine.store import Store, frame_version
 from apps.video_analysis.models import Frame, ReviewAudit
@@ -121,3 +122,27 @@ def test_removed_approved_image_leaves_training_export(
     assert images() == []
     dataset.decide(recording.workspace, owner, dict(result["frame"], decision="kept"))
     assert len(images()) == 1
+
+
+def test_dataset_decisions_schedule_each_export_generation(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Removal and undo retain separate generations while earlier work is pending."""
+    owner, store, _ = imported
+    frame = Frame.objects.select_related("recording__workspace").first()
+    assert frame is not None
+    workspace = frame.recording.workspace
+    first = dataset.listing(workspace, "unreviewed")["frames"][0]
+    removed = dataset.decide(workspace, owner, dict(first, decision="removed"))
+
+    job = BackgroundJob.objects.get(task="apps.video_analysis.tasks.publish_reviews")
+    assert job.args == [str(store.workspace_id)]
+    assert job.queue == "vision"
+    assert job.due_at is not None
+    generation = job.generation
+
+    dataset.decide(workspace, owner, dict(removed["frame"], decision="unreviewed"))
+
+    job.refresh_from_db()
+    assert job.generation == generation + 1
+    assert job.completed_generation < job.generation

@@ -39,6 +39,7 @@ from apps.tournament.services.snapshot import build_tournament_snapshot
 from .common import (
     editing_error_response,
     get_tournament,
+    lock_tournament,
     require_manager,
     resolve_qualifiers,
 )
@@ -59,9 +60,10 @@ class TournamentTeamListCreateView(APIView):
     @extend_schema(
         request=TournamentTeamSerializer, responses={201: TournamentTeamSerializer}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Add one custom tournament team."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentTeamSerializer(
             data=request.data,
@@ -82,8 +84,8 @@ class TournamentTeamDetailView(APIView):
     def _objects(
         self, tournament_id: str, team_id: str
     ) -> tuple[Tournament, TournamentTeam]:
-        tournament = get_tournament(tournament_id)
-        team = get_object_or_404(tournament.teams, id_uuid=team_id)
+        tournament = lock_tournament(tournament_id)
+        team = get_object_or_404(tournament.teams.select_for_update(), id_uuid=team_id)
         return tournament, team
 
     @extend_schema(
@@ -107,11 +109,15 @@ class TournamentTeamDetailView(APIView):
         return Response(serializer.data)
 
     @extend_schema(request=None, responses={204: None})
+    @transaction.atomic
     def delete(self, request: Request, tournament_id: str, team_id: str) -> Response:
         """Delete a team only while no schedule references it."""
-        tournament, team = self._objects(tournament_id, team_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
-        if tournament.matches.filter(Q(home_team=team) | Q(away_team=team)).exists():
+        team = get_object_or_404(tournament.teams, id_uuid=team_id)
+        if tournament.matches.filter(
+            Q(home_team=team) | Q(away_team=team) | Q(referee_team=team)
+        ).exists():
             return Response(
                 {"detail": "Withdraw teams that already have scheduled matches."},
                 status=status.HTTP_409_CONFLICT,
@@ -131,7 +137,7 @@ class TournamentTeamSubstitutionView(APIView):
     @transaction.atomic
     def post(self, request: Request, tournament_id: str, team_id: UUID) -> Response:
         """Apply a complete, conflict-free last-minute replacement plan."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentTeamSubstitutionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -172,9 +178,10 @@ class TournamentFieldListCreateView(APIView):
     @extend_schema(
         request=TournamentFieldSerializer, responses={201: TournamentFieldSerializer}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Add a labeled tournament field."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentFieldSerializer(
             data=request.data,
@@ -195,13 +202,16 @@ class TournamentFieldDetailView(APIView):
     def _objects(
         self, tournament_id: str, field_id: str
     ) -> tuple[Tournament, TournamentField]:
-        tournament = get_tournament(tournament_id)
-        field = get_object_or_404(tournament.fields, id_uuid=field_id)
+        tournament = lock_tournament(tournament_id)
+        field = get_object_or_404(
+            tournament.fields.select_for_update(), id_uuid=field_id
+        )
         return tournament, field
 
     @extend_schema(
         request=TournamentFieldSerializer, responses={200: TournamentFieldSerializer}
     )
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str, field_id: str) -> Response:
         """Update a field label, order, or active state."""
         tournament, field = self._objects(tournament_id, field_id)
@@ -218,10 +228,12 @@ class TournamentFieldDetailView(APIView):
         return Response(serializer.data)
 
     @extend_schema(request=None, responses={204: None})
+    @transaction.atomic
     def delete(self, request: Request, tournament_id: str, field_id: str) -> Response:
         """Delete a field only while no scheduled match references it."""
-        tournament, field = self._objects(tournament_id, field_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
+        field = get_object_or_404(tournament.fields, id_uuid=field_id)
         if field.matches.exists():
             return Response(
                 {"detail": "Deactivate fields that already have scheduled matches."},
@@ -246,9 +258,10 @@ class TournamentMemberListCreateView(APIView):
     @extend_schema(
         request=TournamentMemberSerializer, responses={201: TournamentMemberSerializer}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Grant one manager or field-scoped scorekeeper role."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentMemberSerializer(
             data=request.data,
@@ -268,13 +281,16 @@ class TournamentMemberDetailView(APIView):
     def _objects(
         self, tournament_id: str, member_id: int
     ) -> tuple[Tournament, TournamentMember]:
-        tournament = get_tournament(tournament_id)
-        member = get_object_or_404(tournament.member_roles, pk=member_id)
+        tournament = lock_tournament(tournament_id)
+        member = get_object_or_404(
+            tournament.member_roles.select_for_update(), pk=member_id
+        )
         return tournament, member
 
     @extend_schema(
         request=TournamentMemberSerializer, responses={200: TournamentMemberSerializer}
     )
+    @transaction.atomic
     def patch(self, request: Request, tournament_id: str, member_id: int) -> Response:
         """Change role or assigned field."""
         tournament, member = self._objects(tournament_id, member_id)
@@ -290,6 +306,7 @@ class TournamentMemberDetailView(APIView):
         return Response(serializer.data)
 
     @extend_schema(request=None, responses={204: None})
+    @transaction.atomic
     def delete(self, request: Request, tournament_id: str, member_id: int) -> Response:
         """Revoke a role without affecting result history."""
         tournament, member = self._objects(tournament_id, member_id)
@@ -320,7 +337,7 @@ class TournamentStandingAdjustmentListCreateView(APIView):
     @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Apply a reasoned points adjustment to one pool entry."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentStandingAdjustmentSerializer(
             data=request.data,
@@ -345,10 +362,10 @@ class TournamentStandingAdjustmentDetailView(APIView):
         self, request: Request, tournament_id: str, adjustment_id: str
     ) -> Response:
         """Remove an adjustment and refresh public standings."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         adjustment = get_object_or_404(
-            TournamentStandingAdjustment,
+            TournamentStandingAdjustment.objects.select_for_update(of=("self",)),
             id_uuid=adjustment_id,
             entry__pool__tournament=tournament,
         )

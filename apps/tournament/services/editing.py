@@ -61,6 +61,7 @@ class _ResolvedMatchDraft:
     field: TournamentField
     home: TournamentTeam
     away: TournamentTeam
+    referee: TournamentTeam | None = None
 
 
 def _pool_stage(tournament: Tournament) -> TournamentStage:
@@ -186,11 +187,19 @@ def update_pool(
     pool.name = name
     pool.assigned_field = assigned_field
     pool.save(update_fields=["name", "assigned_field"])
-    pool.entries.all().delete()
-    TournamentPoolEntry.objects.bulk_create([
-        TournamentPoolEntry(pool=pool, team=team, seed_order=index)
-        for index, team in enumerate(teams, start=1)
-    ])
+    pool.entries.exclude(team_id__in=team_ids).delete()
+    existing = {entry.team_id: entry for entry in pool.entries.all()}
+    changed = []
+    added = []
+    for index, team in enumerate(teams, start=1):
+        entry = existing.get(team.pk)
+        if entry is None:
+            added.append(TournamentPoolEntry(pool=pool, team=team, seed_order=index))
+        elif entry.seed_order != index:
+            entry.seed_order = index
+            changed.append(entry)
+    TournamentPoolEntry.objects.bulk_update(changed, ["seed_order"])
+    TournamentPoolEntry.objects.bulk_create(added)
     return pool
 
 
@@ -287,6 +296,14 @@ def _ensure_available(
     draft: _ResolvedMatchDraft,
     exclude_match: TournamentMatch | None = None,
 ) -> None:
+    teams = [draft.home, draft.away]
+    if draft.referee is not None:
+        if draft.referee in teams:
+            raise TournamentEditingError(
+                "A playing team cannot referee its own match. "
+                "Reassign the referee first."
+            )
+        teams.append(draft.referee)
     ends_at = add_schedule_time(
         draft.starts_at,
         timedelta(minutes=draft.duration_minutes),
@@ -299,8 +316,9 @@ def _ensure_available(
         candidates = candidates.exclude(pk=exclude_match.pk)
     candidates = candidates.filter(
         Q(field=draft.field)
-        | Q(home_team__in=(draft.home, draft.away))
-        | Q(away_team__in=(draft.home, draft.away))
+        | Q(home_team__in=teams)
+        | Q(away_team__in=teams)
+        | Q(referee_team__in=teams)
     )
     for other in candidates:
         if other.starts_at is None:
@@ -357,22 +375,32 @@ def save_match(
             field=field,
             home=home,
             away=away,
+            referee=match.referee_team if match is not None else None,
         ),
         exclude_match=match,
     )
+    values = {
+        "stage_id": pool.stage_id,
+        "pool_id": pool.pk,
+        "home_team_id": home.pk,
+        "away_team_id": away.pk,
+        "field_id": field.pk,
+        "starts_at": draft.starts_at,
+        "duration_minutes": draft.duration_minutes,
+        "round_number": draft.round_number,
+    }
     if match is None:
         match_number = (
             tournament.matches.aggregate(value=Max("match_number"))["value"] or 0
         ) + 1
         match = TournamentMatch(tournament=tournament, match_number=match_number)
-    match.stage = pool.stage
-    match.pool = pool
-    match.home_team = home
-    match.away_team = away
-    match.field = field
-    match.starts_at = draft.starts_at
-    match.duration_minutes = draft.duration_minutes
-    match.round_number = draft.round_number
+    elif any(getattr(match, name) != value for name, value in values.items()):
+        match.field_ready_at = None
+        match.field_ready_by = None
+        match.field_ready_by_name = ""
+        match.revision += 1
+    for name, value in values.items():
+        setattr(match, name, value)
     match.save()
     return match
 

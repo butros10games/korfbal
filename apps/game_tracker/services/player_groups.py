@@ -115,41 +115,45 @@ def add_player_to_group(
     target_group: PlayerGroup,
     source_group: PlayerGroup | None = None,
 ) -> None:
-    """Add a player to a group, enforcing the reserve-group boundary.
+    """Move one actual member, keeping each player in one group per match.
 
     Raises:
-        PlayerGroupAssignmentError: If the player is assigned to a non-reserve
-            group without coming from the reserve group.
+        PlayerGroupAssignmentError: The source is false, another assignment would
+            remain, or a court move does not come from the reserve group.
 
     """
-    if target_group.starting_type.name == RESERVE_GROUP_NAME:
-        if source_group is not None and source_group.id_uuid != target_group.id_uuid:
-            source_group.players.remove(player)
-        target_group.players.add(player)
-        return
-
-    reserve_group = get_reserve_group(
-        match_data=target_group.match_data,
-        team=target_group.team,
+    current_group_ids = set(
+        PlayerGroup.objects.filter(
+            match_data=target_group.match_data, players=player
+        ).values_list("pk", flat=True)
     )
+    if source_group is not None and source_group.pk not in current_group_ids:
+        raise PlayerGroupAssignmentError("Player is not in the selected source group")
+
     effective_source_group = source_group
-    if (
-        effective_source_group is None
-        and reserve_group.players.filter(
-            id_uuid=player.id_uuid,
-        ).exists()
-    ):
-        effective_source_group = reserve_group
-
-    if (
-        effective_source_group is None
-        or effective_source_group.id_uuid != reserve_group.id_uuid
-    ):
-        raise PlayerGroupAssignmentError(
-            f"{player} is not in the reserve player group.",
+    if target_group.starting_type.name != RESERVE_GROUP_NAME:
+        reserve_group = get_reserve_group(
+            match_data=target_group.match_data,
+            team=target_group.team,
         )
+        if effective_source_group is None and reserve_group.pk in current_group_ids:
+            effective_source_group = reserve_group
+        if (
+            effective_source_group is None
+            or effective_source_group.pk != reserve_group.pk
+        ):
+            raise PlayerGroupAssignmentError(
+                f"{player} is not in the reserve player group.",
+            )
 
-    if source_group is not None and source_group.id_uuid != reserve_group.id_uuid:
-        source_group.players.remove(player)
-    reserve_group.players.remove(player)
+    allowed_group_ids = {target_group.pk}
+    if effective_source_group is not None:
+        allowed_group_ids.add(effective_source_group.pk)
+    if current_group_ids - allowed_group_ids:
+        raise PlayerGroupAssignmentError("Player is already in another player group")
+    if (
+        effective_source_group is not None
+        and effective_source_group.pk != target_group.pk
+    ):
+        effective_source_group.players.remove(player)
     target_group.players.add(player)

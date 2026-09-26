@@ -175,7 +175,7 @@ class TournamentMember(models.Model):
     role = models.CharField(max_length=16, choices=Role.choices)
     field = models.ForeignKey(
         TournamentField,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="scorekeepers",

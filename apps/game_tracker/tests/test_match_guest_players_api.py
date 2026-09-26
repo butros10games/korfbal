@@ -10,6 +10,7 @@ import pytest
 from apps.game_tracker.models import MatchGuestPlayer, MatchPlayer
 from apps.game_tracker.tests.tracker_test_helpers import (
     TrackerMatchContext,
+    connect_user_to_match_club,
     create_group_types,
     create_tracker_match,
     create_tracker_player,
@@ -133,6 +134,18 @@ def test_removed_guest_stays_selectable_only_in_its_own_match(client: Client) ->
     )
     assert other_search.json() == {"players": []}
 
+    restored = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": str(reserve.pk),
+            "players": [{"id_uuid": guest_id}],
+            "expected_revision": removed.json()["live_revision"],
+        },
+        content_type="application/json",
+    )
+    assert restored.status_code == HTTPStatus.OK
+    assert reserve.players.filter(pk=guest_id).exists()
+
 
 def test_guest_add_rejects_outsiders_and_stale_revisions(client: Client) -> None:
     """Unauthorized or stale writes create no player and keep the revision."""
@@ -201,3 +214,65 @@ def test_guest_add_respects_full_reserve(client: Client) -> None:
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert_api_error(response.json(), {"error": "Too many players selected"})
     assert not MatchGuestPlayer.objects.exists()
+
+
+@pytest.mark.parametrize("other_match", [True, False], ids=["other-match", "opponent"])
+def test_designation_rejects_a_guest_from_another_selection(
+    client: Client, other_match: bool
+) -> None:
+    """Guest IDs cannot bypass their match/team boundary through designation."""
+    tracker = create_tracker_match(prefix="Guest source")
+    create_group_types("Reserve")
+    source = get_tracker_group(tracker, "Reserve")
+    editor = login_home_club_editor(client, tracker, "guest-source-editor")
+    guest = _add_guest(client, tracker, "Eenmalige Gast").json()["player"]["id_uuid"]
+    tracker.match_data.refresh_from_db()
+    target = create_tracker_match(prefix="Guest target") if other_match else tracker
+    team = target.home_team if other_match else target.away_team
+    connect_user_to_match_club(editor, team.club, target.match)
+    reserve = get_tracker_group(target, "Reserve", team)
+    revision = target.match_data.live_revision
+
+    response = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": str(reserve.pk),
+            "players": [{"id_uuid": guest}],
+            "expected_revision": revision,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert_api_error(response.json(), {"error": "Invalid player"})
+    assert source.players.filter(pk=guest).exists()
+    assert not reserve.players.filter(pk=guest).exists()
+    assert not MatchPlayer.objects.filter(
+        match_data=target.match_data, team=team, player_id=guest
+    ).exists()
+    target.match_data.refresh_from_db()
+    assert target.match_data.live_revision == revision
+
+    # Editors can still remove an invalid assignment created before this guard.
+    reserve.players.add(guest)
+    MatchPlayer.objects.get_or_create(
+        match_data=target.match_data, player_id=guest, defaults={"team": team}
+    )
+    removed = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": None,
+            "players": [{"id_uuid": guest, "groupId": str(reserve.pk)}],
+            "expected_revision": revision,
+        },
+        content_type="application/json",
+    )
+    assert removed.status_code == HTTPStatus.OK
+    assert not reserve.players.filter(pk=guest).exists()
+    assert not MatchPlayer.objects.filter(
+        match_data=target.match_data, team=team, player_id=guest
+    ).exists()
+    assert source.players.filter(pk=guest).exists()
+    assert MatchPlayer.objects.filter(
+        match_data=tracker.match_data, team=tracker.home_team, player_id=guest
+    ).exists()

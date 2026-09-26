@@ -156,6 +156,94 @@ def test_non_reserve_move_requires_reserve_source(client: Client) -> None:
     assert not defense.players.filter(pk=player.pk).exists()
 
 
+@pytest.mark.parametrize("target_name", ["Reserve", "Aanval"])
+@pytest.mark.parametrize("initial_group", [None, "Verdediging"])
+def test_designation_rejects_a_forged_reserve_source(
+    client: Client, target_name: str, initial_group: str | None
+) -> None:
+    """A source group ID cannot stand in for actual membership, even for editors."""
+    tracker = create_tracker_match(prefix="Forged reserve")
+    create_group_types("Reserve", "Aanval", "Verdediging")
+    player = create_tracker_player(username="forged-source-player")
+    if initial_group:
+        get_tracker_group(tracker, initial_group).players.add(player)
+    source = get_tracker_group(tracker, "Reserve")
+    target = get_tracker_group(tracker, target_name)
+    before = set(player.player_groups.values_list("pk", flat=True))
+    login_home_club_editor(client, tracker, "forged-source-editor")
+    revision = tracker.match_data.live_revision
+
+    response = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": str(target.pk),
+            "players": [{"id_uuid": str(player.pk), "groupId": str(source.pk)}],
+            "expected_revision": revision,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert set(player.player_groups.values_list("pk", flat=True)) == before
+    tracker.match_data.refresh_from_db()
+    assert tracker.match_data.live_revision == revision
+
+
+@pytest.mark.parametrize("opponent", [False, True], ids=["same-team", "opponent"])
+def test_designation_cannot_duplicate_a_player_in_another_group(
+    client: Client, opponent: bool
+) -> None:
+    """Omitting the source must not leave a player in two groups or both teams."""
+    tracker = create_tracker_match(prefix="Duplicate selection")
+    create_group_types("Reserve", "Aanval")
+    team = tracker.away_team if opponent else tracker.home_team
+    source = get_tracker_group(tracker, "Aanval", team)
+    reserve = get_tracker_group(tracker, "Reserve")
+    player = create_tracker_player(username="duplicate-selection-player")
+    source.players.add(player)
+    login_home_club_editor(client, tracker, "duplicate-selection-editor")
+    revision = tracker.match_data.live_revision
+
+    response = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": str(reserve.pk),
+            "players": [{"id_uuid": str(player.pk)}],
+            "expected_revision": revision,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert list(player.player_groups.values_list("pk", flat=True)) == [source.pk]
+    tracker.match_data.refresh_from_db()
+    assert tracker.match_data.live_revision == revision
+
+
+def test_designation_can_infer_an_actual_reserve_source(client: Client) -> None:
+    """Legacy requests can omit the source when a player really is in reserve."""
+    tracker = create_tracker_match(prefix="Implicit reserve")
+    create_group_types("Reserve", "Aanval")
+    reserve = get_tracker_group(tracker, "Reserve")
+    attack = get_tracker_group(tracker, "Aanval")
+    player = create_tracker_player(username="implicit-reserve-player")
+    reserve.players.add(player)
+    login_home_club_editor(client, tracker, "implicit-reserve-editor")
+
+    response = client.post(
+        DESIGNATION_URL,
+        data={
+            "new_group_id": str(attack.pk),
+            "players": [{"id_uuid": str(player.pk)}],
+            "expected_revision": tracker.match_data.live_revision,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert list(player.player_groups.values_list("pk", flat=True)) == [attack.pk]
+
+
 def test_designation_syncs_match_player_through_final_group_removal(
     client: Client,
 ) -> None:

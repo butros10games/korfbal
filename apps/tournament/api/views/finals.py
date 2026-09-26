@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -32,7 +33,7 @@ from apps.tournament.services.finals import generate_finals
 from apps.tournament.services.generation import GenerationError
 from apps.tournament.services.snapshot import build_tournament_snapshot
 
-from .common import get_tournament, require_manager
+from .common import lock_tournament, require_manager
 
 
 class TournamentFinalsGenerateView(APIView):
@@ -41,6 +42,7 @@ class TournamentFinalsGenerateView(APIView):
     @extend_schema(
         request=FinalsGenerationSerializer, responses={200: OpenApiTypes.OBJECT}
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create and return a single-elimination finals stage.
 
@@ -48,7 +50,7 @@ class TournamentFinalsGenerateView(APIView):
             ValidationError: If pool play or qualifier counts are invalid.
 
         """
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = FinalsGenerationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -85,6 +87,7 @@ class TournamentFinalGroupListCreateView(APIView):
         request=TournamentFinalGroupWriteSerializer,
         responses={201: OpenApiTypes.OBJECT},
     )
+    @transaction.atomic
     def post(self, request: Request, tournament_id: str) -> Response:
         """Create a reviewable final group before or after pool completion.
 
@@ -92,7 +95,7 @@ class TournamentFinalGroupListCreateView(APIView):
             ValidationError: If the requested group cannot be planned safely.
 
         """
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         serializer = TournamentFinalGroupWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -125,6 +128,7 @@ class TournamentFinalGroupDetailView(APIView):
     """Remove one unstarted final group without touching pool play."""
 
     @extend_schema(request=None, responses={204: None})
+    @transaction.atomic
     def delete(
         self,
         request: Request,
@@ -132,10 +136,10 @@ class TournamentFinalGroupDetailView(APIView):
         group_id: str,
     ) -> Response:
         """Delete the bracket when none of its matches has live data."""
-        tournament = get_tournament(tournament_id)
+        tournament = lock_tournament(tournament_id)
         require_manager(request, tournament)
         group = get_object_or_404(
-            TournamentFinalGroup,
+            TournamentFinalGroup.objects.select_for_update(),
             tournament=tournament,
             id_uuid=group_id,
         )

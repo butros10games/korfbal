@@ -305,10 +305,13 @@ def _load_locked_command_state(
 
     player_ids = {selection.player_id for selection in command.players}
     try:
-        players_by_id = {
-            str(player.id_uuid): player
-            for player in Player.objects.filter(id_uuid__in=player_ids)
-        }
+        players = Player.objects.filter(id_uuid__in=player_ids)
+        if command.target_group_id is not None or command.make_captain:
+            players = players.filter(
+                Q(match_guest__isnull=True)
+                | Q(match_guest__match_data=match_data, match_guest__team=team)
+            )
+        players_by_id = {str(player.id_uuid): player for player in players}
     except (DjangoValidationError, ValueError) as exc:
         raise PlayerDesignationValidationError("Invalid player") from exc
     if len(players_by_id) != len(player_ids):

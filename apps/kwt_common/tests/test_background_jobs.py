@@ -75,6 +75,82 @@ def test_mutation_during_execution_is_processed_again(handler: Mock) -> None:
     assert handler.call_args.args == (2,)
 
 
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
+def test_successor_keeps_its_requested_deadline(handler: Mock, fails: bool) -> None:
+    """A cleanup or capacity retry must not immediately requeue itself in a loop."""
+    job = enqueue(TASK, "deferred", queue="vision")
+    deadline = timezone.now() + timedelta(hours=1)
+
+    def defer() -> None:
+        recovery_deadline = BackgroundJob.objects.get(pk=job.pk).due_at
+        enqueue(TASK, "deferred", queue="vision", due_at=deadline)
+        assert BackgroundJob.objects.get(pk=job.pk).due_at == recovery_deadline
+        if fails:
+            raise RuntimeError("Try later")
+
+    handler.side_effect = defer
+    if fails:
+        with pytest.raises(RuntimeError):
+            execute_job.run(job.pk)
+    else:
+        execute_job.run(job.pk)
+    job.refresh_from_db()
+    assert job.due_at == deadline
+    execute_job.run(job.pk)
+    handler.assert_called_once()
+
+
+@pytest.mark.parametrize("delays", [(60, 120), (120, 60), (120, 0)])
+def test_successor_coalesces_to_earliest_requested_deadline(
+    handler: Mock, delays: tuple[int, int]
+) -> None:
+    """Later scheduling cannot postpone an earlier request, including an edit now."""
+    job = enqueue(TASK, "coalesced")
+    now = timezone.now()
+
+    def defer() -> None:
+        for delay in delays:
+            enqueue(TASK, "coalesced", due_at=now + timedelta(seconds=delay))
+
+    handler.side_effect = defer
+    execute_job.run(job.pk)
+    job.refresh_from_db()
+    assert job.due_at == now + timedelta(seconds=min(delays))
+
+
+def test_worker_death_preserves_future_successor_and_resets_its_retry_budget(
+    handler: Mock,
+) -> None:
+    """Recovering a dead attempt must neither run the successor early nor exhaust it."""
+    job = enqueue(TASK, "dead-worker")
+    BackgroundJob.objects.filter(pk=job.pk).update(attempts=MAX_ATTEMPTS - 1)
+    deadline = timezone.now() + timedelta(hours=2)
+
+    def interrupted() -> None:
+        enqueue(TASK, "dead-worker", due_at=deadline)
+        raise SystemExit
+
+    handler.side_effect = interrupted
+    with pytest.raises(SystemExit):
+        execute_job.run(job.pk)
+    job.refresh_from_db()
+    assert job.due_at is not None
+    with patch("apps.kwt_common.tasks.timezone.now", return_value=job.due_at):
+        execute_job.run(job.pk)
+    handler.assert_called_once()
+    job.refresh_from_db()
+    assert job.due_at == deadline
+    assert job.attempts == 0
+    handler.side_effect = None
+    handler.reset_mock()
+    with patch("apps.kwt_common.tasks.timezone.now", return_value=deadline):
+        execute_job.run(job.pk)
+    job.refresh_from_db()
+    handler.assert_called_once()
+    assert job.due_at is None
+    assert job.completed_generation == job.generation
+
+
 def test_one_shot_delivery_survives_duplicate_requests(handler: Mock) -> None:
     """Completed notification keys remain deduplicated."""
     job = enqueue(TASK, "recipient", once=True)
@@ -253,3 +329,21 @@ def test_short_deadline_dispatches_with_eta_and_long_deadline_waits() -> None:
         BackgroundJob.objects.filter(pk=later.pk).update(due_at=deadline)
         assert dispatch_due_jobs.run() == 1
         assert publish.call_args.kwargs["eta"] == deadline
+
+
+def test_earlier_request_wakes_work_already_published_with_a_later_eta(
+    handler: Mock,
+) -> None:
+    """Urgent edits supersede a broker timer without letting its old delivery replay."""
+    with patch("apps.kwt_common.tasks.execute_job.apply_async") as publish:
+        with TestCase.captureOnCommitCallbacks(execute=True):
+            job = enqueue(TASK, "urgent", due_at=timezone.now() + timedelta(seconds=50))
+        assert "eta" in publish.call_args.kwargs
+        publish.reset_mock()
+        with TestCase.captureOnCommitCallbacks(execute=True):
+            enqueue(TASK, "urgent", args=["latest"])
+        publish.assert_called_once()
+        assert "eta" not in publish.call_args.kwargs
+    execute_job.run(job.pk)
+    execute_job.run(job.pk)
+    handler.assert_called_once_with("latest")

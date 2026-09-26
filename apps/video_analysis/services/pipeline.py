@@ -21,6 +21,7 @@ from apps.video_analysis.models import (
     ClipReview,
     Recording,
     ReviewPipeline,
+    VideoUpload,
     Workspace,
 )
 from apps.video_analysis.services.clips import read_file
@@ -132,6 +133,8 @@ def submit(
         ):
             raise ConflictError("Request ID already used for another preparation")
         return existing
+    if VideoUpload.objects.filter(pk=request_id).exists():
+        raise ConflictError("Request ID already belongs to an upload")
     if (
         ReviewPipeline.objects.filter(workspace=workspace, status__in=ACTIVE).count()
         >= MAX_PIPELINES

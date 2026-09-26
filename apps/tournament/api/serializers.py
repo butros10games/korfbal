@@ -298,10 +298,10 @@ class TournamentMemberSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "username"]
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        """Require a same-tournament field only for scorekeepers.
+        """Require a unique member and a same-tournament field only for scorekeepers.
 
         Raises:
-            serializers.ValidationError: If the selected field or role is invalid.
+            serializers.ValidationError: If the member, field, or role is invalid.
 
         """
         tournament = self.context["tournament"]
@@ -312,6 +312,18 @@ class TournamentMemberSerializer(serializers.ModelSerializer):
         if role == TournamentMember.Role.MANAGER and field:
             raise serializers.ValidationError({
                 "field": "Managers cannot be field-scoped."
+            })
+        user_id = (
+            attrs["user"].pk
+            if "user" in attrs
+            else getattr(self.instance, "user_id", None)
+        )
+        members = tournament.member_roles.filter(user_id=user_id)
+        if self.instance is not None:
+            members = members.exclude(pk=self.instance.pk)
+        if members.exists():
+            raise serializers.ValidationError({
+                "user": "This user already has a tournament role."
             })
         return attrs
 

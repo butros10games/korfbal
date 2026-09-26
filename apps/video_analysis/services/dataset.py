@@ -8,6 +8,7 @@ from django.db import transaction
 from apps.video_analysis.engine.store import ConflictError, frame_version
 from apps.video_analysis.models import Frame, Recording, ReviewAudit, Workspace
 from apps.video_analysis.queries import frame_payload
+from apps.video_analysis.services.review import publish_later
 
 
 DECISIONS = {"unreviewed", "kept", "removed"}
@@ -121,4 +122,5 @@ def decide(
         revision=locked.revision,
         payload={"action": "dataset", "previous": previous, "decision": decision},
     )
+    publish_later(workspace)
     return {"frame": describe(frame), "previous": previous}

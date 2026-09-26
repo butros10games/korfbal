@@ -27,7 +27,6 @@ import time
 from typing import Any
 
 from .clip_signals import modules
-from .store import atomic_json
 from .vision import digest
 
 
@@ -408,11 +407,6 @@ def softmax(values: Any) -> Any:  # noqa: ANN401
     _, np = modules()
     shifted = np.exp(values - values.max(axis=1, keepdims=True))
     return shifted / shifted.sum(axis=1, keepdims=True)
-
-
-def save_record(root: Path, record: dict[str, Any]) -> None:
-    """Keep the reader's provenance beside its file for clip-run receipts."""
-    atomic_json(root / "numbers.json", record)
 
 
 class ShirtNumbers:

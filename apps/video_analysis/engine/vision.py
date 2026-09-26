@@ -212,6 +212,8 @@ def select_frames(
         candidates = [
             f
             for m in data["matches"]
+            if not m.get("synthetic")
+            and mapping.get(m.get("split_group", m["id"]), "pool") == "train"
             for f in m["frames"]
             if f.get("curation", {}).get("selected")
         ]

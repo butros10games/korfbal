@@ -10,6 +10,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import Client, override_settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 import pytest
 
 from apps.tournament.composition import change_publisher
@@ -17,6 +18,7 @@ from apps.tournament.models import (
     Tournament,
     TournamentField,
     TournamentMatch,
+    TournamentMember,
     TournamentResultAudit,
     TournamentStage,
     TournamentTeam,
@@ -80,6 +82,8 @@ def test_tournament_patch_publishes_one_revision(
     tournament.refresh_from_db()
     assert tournament.name == "Updated name"
     assert tournament.live_revision == previous_revision + 1
+    assert response.json()["live_revision"] == tournament.live_revision
+    assert parse_datetime(response.json()["updated_at"]) == tournament.updated_at
     publish.assert_called_once_with(
         tournament_id=str(tournament.id_uuid),
         revision=tournament.live_revision,
@@ -803,6 +807,55 @@ def test_knockout_can_be_planned_early_and_fills_as_pools_finish(
         match["home_team"] is not None and match["away_team"] is not None
         for match in semifinals
     )
+
+
+@pytest.mark.parametrize("via_api", [True, False], ids=["api", "bulk-delete"])
+def test_deleting_field_revokes_scoped_scorekeeper_access(
+    client: Client, via_api: bool
+) -> None:
+    """Deleting a field must not turn its scorekeepers into global scorekeepers."""
+    manager, tournament, _, matches = _create_ready_round()
+    field = TournamentField.objects.create(tournament=tournament, label="Unused")
+    scorekeeper = get_user_model().objects.create_user(username="scoped-scorekeeper")
+    global_scorekeeper = get_user_model().objects.create_user(username="all-fields")
+    member = TournamentMember.objects.create(
+        tournament=tournament,
+        user=scorekeeper,
+        role=TournamentMember.Role.SCOREKEEPER,
+        field=field,
+    )
+    global_member = TournamentMember.objects.create(
+        tournament=tournament,
+        user=global_scorekeeper,
+        role=TournamentMember.Role.SCOREKEEPER,
+    )
+    client.force_login(scorekeeper)
+    url = f"/api/tournaments/matches/{matches[0].pk}/result/"
+    result = {
+        "home_score": 3,
+        "away_score": 2,
+        "status": "final",
+        "expected_revision": 0,
+    }
+    assert client.patch(url, result, content_type="application/json").status_code == (
+        HTTPStatus.FORBIDDEN
+    )
+
+    if via_api:
+        client.force_login(manager)
+        response = client.delete(f"/api/tournaments/{tournament.pk}/fields/{field.pk}/")
+        assert response.status_code == HTTPStatus.NO_CONTENT
+    else:
+        TournamentField.objects.filter(pk=field.pk).delete()
+
+    client.force_login(scorekeeper)
+    denied = client.patch(url, result, content_type="application/json")
+    assert denied.status_code == HTTPStatus.FORBIDDEN
+    assert not TournamentMember.objects.filter(pk=member.pk).exists()
+    assert TournamentMember.objects.filter(pk=global_member.pk, field=None).exists()
+    client.force_login(global_scorekeeper)
+    allowed = client.patch(url, result, content_type="application/json")
+    assert allowed.status_code == HTTPStatus.OK
 
 
 def test_scorekeeper_is_restricted_to_assigned_field(client: Client) -> None:
