@@ -27,6 +27,7 @@ from apps.game_tracker.models import (
     MatchGuestPlayer,
     MatchPlayer,
     PlayerGroup,
+    StartingPlayerAssignment,
 )
 from apps.game_tracker.services.guest_players import AddGuestPlayerCommand
 from apps.game_tracker.services.match_mutations import MatchRevisionConflictError
@@ -101,6 +102,43 @@ def _player_payload(
     }
 
 
+def _starting_players_by_group(
+    *,
+    match_data: MatchData,
+    team_id: object,
+    current_players: list[Player],
+) -> dict[str, list[Player]]:
+    """Return the immutable kick-off lineup, empty until the match has started.
+
+    Substitutions only rewrite current group membership, so most starters are
+    already loaded; only players since removed from every group need a read.
+    """
+    assignments = list(
+        StartingPlayerAssignment.objects
+        .filter(match_data=match_data, player_group__team_id=team_id)
+        .order_by("player__name", "player_id")
+        .values_list("player_group_id", "player_id")
+    )
+    players_by_id = {str(player.pk): player for player in current_players}
+    missing_ids = {
+        str(player_id)
+        for _, player_id in assignments
+        if str(player_id) not in players_by_id
+    }
+    if missing_ids:
+        players_by_id.update(
+            (str(player.pk), player)
+            for player in player_access_queryset().filter(pk__in=missing_ids)
+        )
+
+    starting: dict[str, list[Player]] = {}
+    for group_id, player_id in assignments:
+        player = players_by_id.get(str(player_id))
+        if player is not None:
+            starting.setdefault(str(group_id), []).append(player)
+    return starting
+
+
 def _player_group_editor_error(
     *,
     request: Request,
@@ -124,7 +162,8 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
 
     Response shape matches the legacy endpoint:
         {"player_groups": [
-            {"id_uuid", "starting_type": {"name"}, "players": [...]},
+            {"id_uuid", "starting_type": {"name"}, "current_type": {"name"},
+             "players": [...], "starting_players": [...]},
             ...,
         ]}
 
@@ -140,6 +179,7 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         )
         .select_related(
             "starting_type",
+            "current_type",
         )
         .prefetch_related(
             Prefetch(
@@ -151,6 +191,13 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
     )
     viewer = _viewer_player(request)
     guest_ids = _guest_ids(match_model, team_id)
+    starting_players_by_group = _starting_players_by_group(
+        match_data=match_data,
+        team_id=team_id,
+        current_players=[
+            player for group in player_groups for player in group.players.all()
+        ],
+    )
 
     player_groups_data: list[dict[str, Any]] = []
     for player_group in player_groups:
@@ -162,7 +209,14 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
             {
                 "id_uuid": str(player_group.id_uuid),
                 "starting_type": {"name": player_group.starting_type.name},
+                "current_type": {"name": player_group.current_type.name},
                 "players": players_data,
+                "starting_players": [
+                    _player_payload(viewer, player, guest_ids)
+                    for player in starting_players_by_group.get(
+                        str(player_group.id_uuid), []
+                    )
+                ],
             },
         )
 

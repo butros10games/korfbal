@@ -145,7 +145,7 @@ def test_compact_tracker_poll_reuses_initial_configuration() -> None:
     full = get_tracker_state(tracker.match, team=tracker.home_team)
 
     assert compact["changed"] is True
-    assert compact["resources"] == ["events", "live", "tracker"]
+    assert compact["resources"] == ["events", "live", "player_groups", "tracker"]
     assert "team" not in compact["patch"]
     assert "opponent" not in compact["patch"]
     assert "goal_types" not in compact["patch"]

@@ -133,10 +133,12 @@ COMMAND_DEFINITIONS = (
     CommandDefinition(
         name="start/pause",
         parse=_constant(StartPauseCommand()),
+        # Kick-off captures the starting lineup shown beside the current one.
         resources=frozenset({
             LiveResource.LIVE,
             LiveResource.TRACKER,
             LiveResource.EVENTS,
+            LiveResource.PLAYER_GROUPS,
         }),
         server_timed=True,
     ),
@@ -186,6 +188,8 @@ COMMAND_DEFINITIONS = (
             LiveResource.STATS,
             LiveResource.IMPACTS,
             LiveResource.MVP,
+            # Every second goal swaps which group defends and attacks.
+            LiveResource.PLAYER_GROUPS,
         }),
     ),
     CommandDefinition(
