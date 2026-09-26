@@ -264,3 +264,47 @@ def test_mixed_queue_balances_recordings_in_same_match_batches(
         "time_seconds": first.metadata.get("time_seconds", 0),
     }
     assert {i["frame_id"] for i in items} >= {"fresh-0", first.source_id}
+
+
+def test_check_queue_spans_recordings_grouped_per_recording(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Finishing one recording's checks leads straight to the next recording."""
+    owner, _, _ = imported
+    workspace = Workspace.objects.get()
+    labels = annotation(box("player", [0.1, 0.1, 0.1, 0.3], confidence=1.0))
+    other = Recording.objects.create(
+        workspace=workspace, source_id="other", metadata={"title": "Other"}
+    )
+
+    def flagged(frame: Frame, score: float) -> None:
+        approve(frame, labels)
+        frame.metadata = {
+            **frame.metadata,
+            "label_check": {
+                "run": "r",
+                "score": score,
+                "reasons": [],
+                "frame_version": frame_version(frame_payload(frame)),
+            },
+        }
+        frame.save(update_fields=["metadata"])
+
+    first, second = Frame.objects.exclude(recording=other).order_by("position")[:2]
+    flagged(first, 1.2)
+    flagged(second, 3.0)
+    for i, score in enumerate([1.1, 2.0, 5.0]):
+        flagged(
+            Frame.objects.create(recording=other, source_id=f"o{i}", position=i), score
+        )
+    # A frame saved since flagging no longer needs a check.
+    stale = Frame.objects.get(recording=other, source_id="o2")
+    stale.correction = annotation()
+    stale.save(update_fields=["correction"])
+    queue = verified(owner).get("/video-analysis/queue?kind=check").json()
+    assert [(i["match_id"], i["frame_id"]) for i in queue["items"]] == [
+        (first.recording.source_id, second.source_id),
+        (first.recording.source_id, first.source_id),
+        ("other", "o1"),
+        ("other", "o0"),
+    ]

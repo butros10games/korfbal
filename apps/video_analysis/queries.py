@@ -208,3 +208,36 @@ def review_queue(workspace: Workspace) -> dict[str, Any]:
         "remaining": sum(len(items) for items in candidates.values()),
         "approved": approved,
     }
+
+
+def check_queue(workspace: Workspace) -> dict[str, Any]:
+    """Every approved frame still flagged by a label check, across recordings.
+
+    Frames stay grouped per recording (one hall and kit at a time); recordings
+    with the most open checks come first, and each recording's worst frame first.
+    """
+    per_match: dict[str, list[tuple[float, dict]]] = {}
+    for frame in Frame.objects.filter(
+        recording__workspace=workspace,
+        status="approved",
+        metadata__label_check__isnull=False,
+    ).select_related("recording"):
+        flag = frame.metadata["label_check"]
+        if flag.get("frame_version") != frame_version(frame_payload(frame)):
+            continue
+        match_id = frame.recording.source_id
+        per_match.setdefault(match_id, []).append((
+            flag.get("score", 0),
+            {
+                "match_id": match_id,
+                "frame_id": frame.source_id,
+                "kind": "check",
+                "time_seconds": frame.metadata.get("time_seconds", 0),
+            },
+        ))
+    items = []
+    for match_id in sorted(per_match, key=lambda m: (-len(per_match[m]), m)):
+        items.extend(
+            item for _, item in sorted(per_match[match_id], key=lambda e: -e[0])
+        )
+    return {"items": items, "remaining": 0}

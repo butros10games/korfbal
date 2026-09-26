@@ -49,7 +49,12 @@ from apps.video_analysis.models import (
     VideoUpload,
     Workspace,
 )
-from apps.video_analysis.queries import registered_media, review_queue, review_state
+from apps.video_analysis.queries import (
+    check_queue,
+    registered_media,
+    review_queue,
+    review_state,
+)
 from apps.video_analysis.services import curation, dataset, review
 from apps.video_analysis.services.jobs import schedule
 
@@ -183,7 +188,11 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
         return (
             media(request, store, workspace)
             if action == "media"
-            else JsonResponse(review_queue(workspace))
+            else JsonResponse(
+                check_queue(workspace)
+                if request.GET.get("kind") == "check"
+                else review_queue(workspace)
+            )
             if action == "queue"
             else read(request, action, store, workspace)
         )
