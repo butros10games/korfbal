@@ -77,8 +77,13 @@ def assignments(store: Store) -> dict[str, str]:
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-def assign_split(store: Store, group: str, split: str) -> None:
-    """Assign every excerpt together; frozen benchmark groups cannot be repurposed.
+def assign_split(
+    store: Store, group: str, split: str, *, override_frozen: bool = False
+) -> None:
+    """Assign every excerpt together; frozen benchmark groups need an override.
+
+    Older snapshots keep their own frozen splits; an explicit override only
+    changes which split future snapshots use.
 
     Raises:
         ValueError: If the operation or input is invalid.
@@ -91,7 +96,7 @@ def assign_split(store: Store, group: str, split: str) -> None:
         if group not in groups:
             raise ValueError("Unknown match group")
         mapping = assignments(store)
-        if mapping.get(group, "pool") != split:
+        if mapping.get(group, "pool") != split and not override_frozen:
             for path in (store.root / "vision" / "snapshots").glob("*/manifest.json"):
                 frozen = json.loads(path.read_text())["splits"]
                 if group in frozen and frozen[group] != split:
@@ -135,6 +140,12 @@ def inventory(store: Store) -> dict[str, Any]:
         json.loads(p.read_text())
         for p in sorted((root / "snapshots").glob("*/manifest.json"))
     ]
+    # The newest snapshot's split per group: moving it changes future comparisons.
+    frozen: dict[str, str] = {}
+    for snapshot in sorted(snapshots, key=itemgetter("created_at")):
+        frozen.update(snapshot.get("splits", {}))
+    for match in matches:
+        match["frozen_split"] = frozen.get(match["group"])
     runs = [
         json.loads(p.read_text()) for p in sorted((root / "runs").glob("*/run.json"))
     ]

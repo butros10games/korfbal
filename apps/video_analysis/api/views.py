@@ -113,6 +113,7 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
                         in {
                             "curation",
                             "vision/freeze",
+                            "vision/split",
                             "clips",
                             "timeline",
                             "prepare",
@@ -218,7 +219,12 @@ def mutate(
         return JsonResponse(result)
     if action == "vision/split":
         with store.transaction():
-            vision.assign_split(store, payload["group"], payload["split"])
+            vision.assign_split(
+                store,
+                payload["group"],
+                payload["split"],
+                override_frozen=payload.get("override_frozen") is True,
+            )
             store.publish_artifact("vision/splits.json")
         return JsonResponse({"ok": True})
     if action == "vision/train":

@@ -310,3 +310,40 @@ def test_swapping_draft_teams_changes_only_open_model_drafts(
     assert kept.proposal == draft
     assert kept.correction == draft
     assert swap(revision).status_code == HTTPStatus.CONFLICT
+
+
+def test_moving_a_frozen_match_needs_an_explicit_override(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """The overview explains the frozen split and moves only after confirmation."""
+    owner, store, _ = imported
+    client = verified(owner)
+    state = client.get("/video-analysis/state").json()
+    group = state["matches"][0]["id"]
+    atomic_json(
+        store.root / "vision/snapshots/earlier/manifest.json",
+        {
+            "id": "earlier",
+            "profile": "people",
+            "counts": {"test": 1},
+            "created_at": "2026-09-01",
+            "splits": {group: "test"},
+        },
+    )
+
+    def move(**extra: object) -> HttpResponse:
+        return client.post(
+            "/video-analysis/vision/split",
+            json.dumps({"group": group, "split": "train", **extra}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=state["csrf"],
+        )
+
+    refused = move()
+    assert refused.status_code == HTTPStatus.BAD_REQUEST
+    assert "frozen" in refused.json()["error"]
+    assert move(override_frozen=True).status_code == HTTPStatus.OK
+    assert vision.assignments(store)[group] == "train"
+    listed = client.get("/video-analysis/vision").json()["matches"][0]
+    assert listed["split"] == "train"
+    assert listed["frozen_split"] == "test"
