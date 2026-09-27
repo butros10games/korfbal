@@ -41,34 +41,7 @@ def clip_drafts(
         )
         if observed is None:
             continue
-        tracked = [obj for obj in observed["objects"] if obj.get("track_id")]
-        other = [obj for obj in observed["objects"] if not obj.get("track_id")]
-        resolved = refined_frames(
-            [{**observed, "objects": tracked}], receipt.get("identity_refinement", {})
-        )[0]
-        objects = []
-        for obj in [*resolved["objects"], *other]:
-            if obj["label"] not in {"player", "referee", "ball", "basket"}:
-                continue
-            item = {
-                "label": obj["label"],
-                "bbox": obj.get("observed_bbox", obj["bbox"]),
-                "confidence": obj.get("confidence", 0),
-                "temporal_estimate": bool(
-                    obj.get("temporal_estimate") or obj.get("identity_uncertain")
-                ),
-                "team": obj.get("team", "unknown")
-                if obj["label"] == "player"
-                else "unknown",
-            }
-            if obj.get("track_id"):
-                item["track_id"] = f"{run_id}-{obj['track_id']}"
-            item.update({
-                attribute: obj[attribute]
-                for attribute in ("shirt_number", "post_foot")
-                if attribute in obj
-            })
-            objects.append(item)
+        objects = draft_objects(observed, receipt, run_id)
         annotation = {**blank_annotation(), "scene": "live", "objects": objects}
         drafts.append({
             **row,
@@ -76,3 +49,42 @@ def clip_drafts(
             "source_clip": run_id,
         })
     return drafts
+
+
+def draft_objects(
+    observed: dict, receipt: dict, run_id: str, *, identities: bool = True
+) -> list[dict]:
+    """Convert one replay frame's refined boxes into editable draft objects.
+
+    Displayed identities become run-scoped suggestions; ``identities=False``
+    leaves them out so a reviewer assigns every identity independently.
+    """
+    tracked = [obj for obj in observed["objects"] if obj.get("track_id")]
+    other = [obj for obj in observed["objects"] if not obj.get("track_id")]
+    resolved = refined_frames(
+        [{**observed, "objects": tracked}], receipt.get("identity_refinement", {})
+    )[0]
+    objects = []
+    for obj in [*resolved["objects"], *other]:
+        if obj["label"] not in {"player", "referee", "ball", "basket"}:
+            continue
+        item = {
+            "label": obj["label"],
+            "bbox": obj.get("observed_bbox", obj["bbox"]),
+            "confidence": obj.get("confidence", 0),
+            "temporal_estimate": bool(
+                obj.get("temporal_estimate") or obj.get("identity_uncertain")
+            ),
+            "team": obj.get("team", "unknown")
+            if obj["label"] == "player"
+            else "unknown",
+        }
+        if identities and obj.get("track_id"):
+            item["track_id"] = f"{run_id}-{obj['track_id']}"
+        item.update({
+            attribute: obj[attribute]
+            for attribute in ("shirt_number", "post_foot")
+            if attribute in obj
+        })
+        objects.append(item)
+    return objects
