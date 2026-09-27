@@ -1,5 +1,6 @@
 """Reject uncertain ground contacts without inventing feet or changing detections."""
 
+from .boxes import iou
 from .clip_identity import court_reference
 from .clip_signals import distance, transform
 
@@ -8,6 +9,11 @@ MAX_GAP = 0.64
 MAX_SPEED = 9
 POSITION_TOLERANCE = 0.5
 CLIPPED_BOTTOM = 0.995
+# Two boxes this overlapped, ending on nearly the same floor line, are one body
+# standing behind another (stacked dots on the map in benchmark clips).
+STACKED_IOU = 0.4
+STACKED_BOTTOM = 0.06
+SAME_HEIGHT = 0.03
 
 
 def hidden_contact(obj: dict, objects: list[dict]) -> bool:
@@ -23,9 +29,26 @@ def hidden_contact(obj: dict, objects: list[dict]) -> bool:
         if (
             ox + ow * 0.15 < foot[0] < ox + ow * 0.85
             and oy + oh * 0.2 < foot[1] < oy + oh * 0.85
-        ):
+        ) or behind(obj, other):
             return True
     return False
+
+
+def behind(obj: dict, other: dict) -> bool:
+    """Whether `obj` stands behind `other`, its box drawn down to the same floor line.
+
+    The detector completes a partly hidden body to the front player's feet, so
+    both contacts land on one spot and two dots stack on the map. The rear body
+    is the smaller (farther) box; at equal size, the less certain detection.
+    """
+    a, b = obj["observed_bbox"], other["observed_bbox"]
+    if iou(a, b) < STACKED_IOU or abs((a[1] + a[3]) - (b[1] + b[3])) > (
+        STACKED_BOTTOM * max(a[3], b[3])
+    ):
+        return False
+    if abs(a[3] - b[3]) > SAME_HEIGHT * max(a[3], b[3]):
+        return a[3] < b[3]
+    return obj.get("confidence", 0) < other.get("confidence", 0)
 
 
 class GroundContacts:
