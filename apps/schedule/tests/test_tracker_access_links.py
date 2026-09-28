@@ -593,3 +593,98 @@ def test_bearer_lineup_writes_use_the_token_identity_not_guest_cookies(
         HTTPStatus.OK if has_club_permission else HTTPStatus.FORBIDDEN
     )
     assert attack.players.exists() is has_club_permission
+
+
+@pytest.fixture
+def native_lineup(
+    invitation: tuple[MatchGraph, str],
+) -> tuple[MatchGraph, Client, PlayerGroup, PlayerGroup]:
+    """Hold the link as an explicit native header, without cookies."""
+    graph, token = invitation
+    create_group_types("Aanval", "Verdediging", "Reserve")
+    guest = Client(enforce_csrf_checks=True, HTTP_X_TRACKER_TOKEN=token)
+    reserve = PlayerGroup.objects.get(
+        match_data=graph.match_data, team=graph.home_team, starting_type__name="Reserve"
+    )
+    attack = PlayerGroup.objects.get(
+        match_data=graph.match_data, team=graph.home_team, starting_type__name="Aanval"
+    )
+    player = create_tracker_player(username="Native lineup player")
+    team_data, _ = TeamData.objects.get_or_create(
+        team=graph.home_team, season=graph.match.season
+    )
+    team_data.players.add(player)
+    reserve.players.add(player)
+    return graph, guest, reserve, attack
+
+
+def test_native_link_configures_the_lineup_without_cookies_or_csrf(
+    native_lineup: tuple[MatchGraph, Client, PlayerGroup, PlayerGroup],
+) -> None:
+    """The native header grants the invited lineup like a redeemed web session."""
+    graph, guest, reserve, attack = native_lineup
+    player = reserve.players.get()
+    for endpoint in ("players_team", "player_search"):
+        response = guest.get(
+            f"/api/match/{endpoint}/{graph.match.pk}/{graph.home_team.pk}/",
+            {"search": "Native"},
+        )
+        assert response.status_code == HTTPStatus.OK
+    payload = {
+        "players": [{"id_uuid": str(player.pk), "groupId": str(reserve.pk)}],
+        "new_group_id": str(attack.pk),
+        "expected_revision": graph.match_data.live_revision,
+    }
+    response = guest.post("/api/match/player_designation/", payload, content_type=JSON)
+    assert response.status_code == HTTPStatus.OK
+    assert attack.players.filter(pk=player.pk).exists()
+    guest_response = guest.post(
+        f"/api/match/guest_player/{graph.match.pk}/{graph.home_team.pk}/",
+        {"name": "Native gast", "expected_revision": response.json()["live_revision"]},
+        content_type=JSON,
+    )
+    assert guest_response.status_code == HTTPStatus.CREATED
+    assert SESSION_KEY not in guest.session
+
+
+@pytest.mark.parametrize(
+    "scope", ["opponent", "revoked", "expired", "rotated", "malformed"]
+)
+def test_native_link_lineup_access_cannot_escape_its_link(
+    native_lineup: tuple[MatchGraph, Client, PlayerGroup, PlayerGroup], scope: str
+) -> None:
+    """Other teams, ended links and oversized tokens get no lineup access."""
+    graph, guest, reserve, attack = native_lineup
+    team = graph.home_team
+    if scope == "opponent":
+        team = graph.away_team
+        reserve = PlayerGroup.objects.get(
+            match_data=graph.match_data, team=team, starting_type__name="Reserve"
+        )
+        attack = PlayerGroup.objects.get(
+            match_data=graph.match_data, team=team, starting_type__name="Aanval"
+        )
+        reserve.players.add(create_tracker_player(username="Opponent reserve"))
+    elif scope == "revoked":
+        TrackerAccessLink.objects.all().delete()
+    elif scope == "expired":
+        TrackerAccessLink.objects.update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+    elif scope == "rotated":
+        TrackerAccessLink.objects.update(token_hash="rotated")
+    else:
+        guest = Client(enforce_csrf_checks=True, HTTP_X_TRACKER_TOKEN="x" * 129)
+    payload = {
+        "players": [
+            {"id_uuid": str(reserve.players.first().pk), "groupId": str(reserve.pk)}
+        ],
+        "new_group_id": str(attack.pk),
+        "expected_revision": graph.match_data.live_revision,
+    }
+    response = guest.post("/api/match/player_designation/", payload, content_type=JSON)
+    assert response.status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}
+    assert not attack.players.exists()
+    assert guest.get(
+        f"/api/match/players_team/{graph.match.pk}/{team.pk}/"
+    ).status_code in {HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED}

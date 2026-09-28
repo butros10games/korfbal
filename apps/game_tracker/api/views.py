@@ -8,7 +8,7 @@ The React SPA should use these endpoints via `/api/match/...`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any, cast
 
 from django.db.models import Prefetch, Q
@@ -44,7 +44,12 @@ from apps.game_tracker.services.player_groups import (
     match_guests_for,
 )
 from apps.game_tracker.services.player_search import player_name_match_score
-from apps.game_tracker.services.tracker_access import SESSION_KEY, has_tracker_grant
+from apps.game_tracker.services.tracker_access import (
+    MAX_TOKEN_LENGTH,
+    SESSION_KEY,
+    has_tracker_grant,
+    token_digest,
+)
 from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_queries import player_access_queryset
@@ -57,12 +62,62 @@ from apps.team.models import Team, TeamData
 _function_schema = cast(Any, extend_schema)
 
 
+NATIVE_TRACKER_HEADER = "X-Tracker-Token"
+
+
+class _NativeTrackerGrant(Mapping[str, str]):
+    """A native link's digest offered for whichever match/team a write resolves.
+
+    ``has_tracker_grant`` still requires that exact team's active link to carry
+    this digest, so a token never reaches another team, match or expired link.
+    """
+
+    def __init__(self, digest: str) -> None:
+        self._digest = digest
+
+    def __getitem__(self, key: str) -> str:
+        return self._digest
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(())
+
+    def __len__(self) -> int:
+        return 1
+
+
+def _native_tracker_token(request: Request) -> str | None:
+    token = request.headers.get(NATIVE_TRACKER_HEADER)
+    return token if token and len(token) <= MAX_TOKEN_LENGTH else None
+
+
+def _tracker_grants(request: Request) -> Mapping[str, str]:
+    """Invitation capabilities of this request: a native header or a web session.
+
+    Bearer requests use the token's own permissions and never borrow cookie-based
+    capabilities without session CSRF authentication.
+    """
+    token = _native_tracker_token(request)
+    if token is not None:
+        return _NativeTrackerGrant(token_digest(token))
+    return request.session.get(SESSION_KEY, {}) if request.auth is None else {}
+
+
+def _enforce_invitation_csrf(request: Request) -> None:
+    """Anonymous cookie sessions need CSRF; explicit native headers are not ambient."""
+    if not request.user.is_authenticated and _native_tracker_token(request) is None:
+        SessionAuthentication().enforce_csrf(request)
+
+
 class HasPlayerGroupSession(BasePermission):
-    """Require a login or invitation session before resolving the lineup scope."""
+    """Require a login, invitation session or native link before resolving scope."""
 
     def has_permission(self, request: Request, view: object) -> bool:
         """Scope and expiry are checked against the resolved match/team below."""
-        return bool(request.user.is_authenticated or request.session.get(SESSION_KEY))
+        return bool(
+            request.user.is_authenticated
+            or request.session.get(SESSION_KEY)
+            or _native_tracker_token(request)
+        )
 
 
 def _viewer_player(request: Request) -> Player | None:
@@ -147,9 +202,7 @@ def _player_group_editor_error(
 ) -> Response | None:
     if can_edit_player_groups(user=request.user, match=match, team=team):
         return None
-    if request.auth is None and has_tracker_grant(
-        request.session.get(SESSION_KEY, {}), match=match, team=team
-    ):
+    if has_tracker_grant(_tracker_grants(request), match=match, team=team):
         return None
     return Response({"error": PLAYER_GROUP_EDIT_PERMISSION_ERROR}, status=403)
 
@@ -476,8 +529,7 @@ def player_designation(request: Request) -> Response:
     """
     # SessionAuthentication already checks signed-in browser users; bearer
     # clients do not need CSRF. Anonymous invitation sessions need it explicitly.
-    if not request.user.is_authenticated:
-        SessionAuthentication().enforce_csrf(request)
+    _enforce_invitation_csrf(request)
     command, error_response = _prepare_player_designation(request)
     if error_response is not None:
         return error_response
@@ -486,11 +538,7 @@ def player_designation(request: Request) -> Response:
         result = apply_player_designation(
             actor=request.user,
             command=command,
-            # Bearer requests use the token's own permissions. Do not borrow
-            # cookie-based capabilities without session CSRF authentication.
-            tracker_grants=(
-                request.session.get(SESSION_KEY, {}) if request.auth is None else {}
-            ),
+            tracker_grants=_tracker_grants(request),
         )
     except MatchRevisionConflictError as exc:
         return _revision_conflict_response(exc)
@@ -522,8 +570,7 @@ def guest_player(request: Request, match_id: str, team_id: str) -> Response:
 
     Expected payload: ``{"name": "...", "expected_revision": <int>}``.
     """
-    if not request.user.is_authenticated:
-        SessionAuthentication().enforce_csrf(request)
+    _enforce_invitation_csrf(request)
     data = request.data if isinstance(request.data, Mapping) else {}
     name = data.get("name")
     if not isinstance(name, str):
@@ -548,9 +595,7 @@ def guest_player(request: Request, match_id: str, team_id: str) -> Response:
                 name=name,
                 expected_revision=expected_revision,
             ),
-            tracker_grants=(
-                request.session.get(SESSION_KEY, {}) if request.auth is None else {}
-            ),
+            tracker_grants=_tracker_grants(request),
         )
     except MatchRevisionConflictError as exc:
         return _revision_conflict_response(exc)
