@@ -94,7 +94,7 @@ async def test_recovery_reads_once_for_all_viewers(viewer_count: int) -> None:
             await worker.subscribe(box)
         try:
             events = await asyncio.wait_for(
-                asyncio.gather(*(box.receive() for box in boxes)), 1
+                asyncio.gather(*(box.receive() for box in boxes)), 10
             )
             assert all(
                 event["revision"] == revision and "live" in event["resources"]

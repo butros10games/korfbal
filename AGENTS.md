@@ -198,9 +198,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   `MIGRATION_MODULES` there so `--nomigrations` cannot hide conflicting shipped migration leaves.
 - Size both CI test lanes explicitly and budget their workers together; leaving the migration
   lane sequential can dominate the full target even when the general suite finishes quickly.
-- Local migration tests use four workers; the `ci` configuration keeps two alongside the
-  general lane's two to fit the four-CPU quality runner. Benchmark both lanes together
-  before increasing that CI budget.
+- Locally each lane uses eight workers; the `ci` configuration keeps two each to fit the
+  four-CPU quality runner. Benchmark both lanes together before changing either budget, and
+  avoid oversubscribing the CPU: wall-clock async tests time out under contention. The
+  migration lane is the local critical path because Django's in-memory migration state
+  rendering costs about 30s per worker database plus 20-40s per test.
 - When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
   `django_db` rollback isolation and use `django_capture_on_commit_callbacks(execute=True)`;
   reserve `transaction=True` for real transaction visibility, async/SSE, and migration tests.

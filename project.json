@@ -76,7 +76,7 @@
             "executor": "nx:run-commands",
             "cache": true,
             "options": {
-                "command": "KORFBAL_TEST_DB_LANE=general uv run python scripts/python/run_pytest_target.py -- --nomigrations -q -n 2 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal"
+                "command": "KORFBAL_TEST_DB_LANE=general uv run python scripts/python/run_pytest_target.py -- --nomigrations -q -n 8 --dist loadgroup -m 'not migration_regression' apps/django_projects/korfbal"
             },
             "configurations": {
                 "ci": {
@@ -101,7 +101,7 @@
             "executor": "nx:run-commands",
             "cache": true,
             "options": {
-                "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 4 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py apps/django_projects/korfbal/apps/video_analysis/tests/test_pipeline_migration.py apps/django_projects/korfbal/apps/tournament/tests/test_member_field_migration.py"
+                "command": "KORFBAL_TEST_DB_LANE=migrations uv run python scripts/python/run_pytest_target.py -- -q -n 8 --dist load apps/django_projects/korfbal/apps/game_tracker/tests/test_tracker_command_migration.py apps/django_projects/korfbal/apps/schedule/tests/test_mvp_state_migration.py apps/django_projects/korfbal/korfbal/tests/test_audit_migrations.py apps/django_projects/korfbal/apps/competition/tests/test_migrations.py apps/django_projects/korfbal/apps/player/tests/test_data_structure_migrations.py apps/django_projects/korfbal/apps/kwt_common/tests/test_background_jobs_migration.py apps/django_projects/korfbal/apps/player/tests/test_goal_song_historical_migrations.py apps/django_projects/korfbal/apps/video_analysis/tests/test_pipeline_migration.py apps/django_projects/korfbal/apps/tournament/tests/test_member_field_migration.py"
             },
             "configurations": {
                 "ci": {
