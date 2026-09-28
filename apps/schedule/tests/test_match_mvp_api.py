@@ -26,6 +26,7 @@ from apps.player.models.player import Player
 
 pytestmark = pytest.mark.django_db
 UNKNOWN_CANDIDATE_ID = "00000000-0000-4000-8000-000000000003"
+ANONYMOUS_BALLOT_CAP = 30
 
 
 def _match(*, finished: bool = False) -> TrackerMatchContext:
@@ -238,3 +239,26 @@ def test_mvp_anonymous_vote_persists_via_cookie(client: Client) -> None:
     assert payload["open"] is False
     assert payload["published_at"] is not None
     assert payload["mvp"]["id_uuid"] == str(candidate_b.id_uuid)
+
+
+def test_mvp_anonymous_ballots_are_capped_per_address() -> None:
+    """Clearing cookies cannot mint unlimited ballots from one address."""
+    tracker = _open_voting()
+    candidate, _ = _candidates(tracker)
+
+    def fresh_ballot(address: str) -> int:
+        return (
+            Client()
+            .post(
+                _url(tracker, vote=True),
+                data={"candidate_id_uuid": str(candidate.id_uuid)},
+                content_type="application/json",
+                HTTP_X_REAL_IP=address,
+            )
+            .status_code
+        )
+
+    statuses = [fresh_ballot("198.51.100.20") for _ in range(ANONYMOUS_BALLOT_CAP)]
+    assert set(statuses) == {HTTPStatus.OK}
+    assert fresh_ballot("198.51.100.20") == HTTPStatus.TOO_MANY_REQUESTS
+    assert fresh_ballot("198.51.100.21") == HTTPStatus.OK

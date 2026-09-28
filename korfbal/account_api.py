@@ -11,10 +11,8 @@ from bg_auth.utils import send_confirmation_code
 from bg_auth.views.api.utils import json_response
 from django.contrib.auth import logout
 from django.contrib.auth.models import User
-from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.http import HttpRequest, HttpResponseBase
-from django.utils.http import urlsafe_base64_decode
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
 
@@ -38,19 +36,11 @@ def logout_account(request: HttpRequest) -> HttpResponseBase:
 @require_get
 def activate_account(request: HttpRequest, uidb64: str, token: str) -> HttpResponseBase:
     """Activate a valid emailed link and return a readable API result."""
-    user_model = User
-    try:
-        uid = urlsafe_base64_decode(uidb64).decode("utf-8")
-        user = user_model.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, user_model.DoesNotExist):
-        user = None
-    if user is None or not default_token_generator.check_token(user, token):
+    if AccountService.activate(uidb64, token) is None:
         return json_response(
             {"detail": "Activation link is invalid or has expired."},
             status=HTTPStatus.BAD_REQUEST,
         )
-    user.is_active = True
-    user.save(update_fields=["is_active"])
     return json_response({
         "status": "ok",
         "message": "Your account has been activated. You can now log in.",

@@ -4,6 +4,7 @@ from http import HTTPStatus
 from unittest.mock import Mock
 
 from bg_auth.services.account import AccountService
+from bg_auth.tokens import account_activation_token
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.core.cache import cache
@@ -41,12 +42,32 @@ def test_activation_returns_json_and_only_activates_valid_link(
     """A bad token returns 400; a valid email link activates its account with 200."""
     user = User.objects.create_user(username="activation-adapter", is_active=False)
     uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user) if valid else "invalid"
+    token = account_activation_token.make_token(user) if valid else "invalid"
     response = client.get(f"/activate/{uid}/{token}/")
     assert response.status_code == (HTTPStatus.OK if valid else HTTPStatus.BAD_REQUEST)
     assert response.json()["message"]
     user.refresh_from_db()
     assert user.is_active is valid
+
+
+def test_activation_cannot_reenable_a_deactivated_account(client: Client) -> None:
+    """Neither a reset link nor a used activation link lifts an administrator ban."""
+    user = User.objects.create_user(username="banned-adapter", is_active=False)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    activation = account_activation_token.make_token(user)
+    assert client.get(f"/activate/{uid}/{activation}/").status_code == HTTPStatus.OK
+    User.objects.filter(pk=user.pk).update(is_active=False)
+    user.refresh_from_db()
+
+    for token in (
+        activation,
+        default_token_generator.make_token(user),
+        account_activation_token.make_token(user),
+    ):
+        response = client.get(f"/activate/{uid}/{token}/")
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+    user.refresh_from_db()
+    assert user.is_active is False
 
 
 def test_invalid_activation_user_returns_bad_request(client: Client) -> None:

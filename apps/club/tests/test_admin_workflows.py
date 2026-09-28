@@ -185,7 +185,8 @@ def test_user_search_is_trimmed_ordered_and_capped(client: Client) -> None:
     admin, admin_player = _create_user_and_player("search-admin")
     club.admin.add(admin_player)
     for index in range(25, -1, -1):
-        User.objects.create_user(username=f"candidate-{index:02d}")
+        candidate = User.objects.create_user(username=f"candidate-{index:02d}")
+        Player.objects.get(user=candidate).club_follow.add(club)
     client.force_login(admin)
 
     response = client.get(

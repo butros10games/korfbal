@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, ClassVar, cast
 from urllib.parse import urlencode
 
+from bg_auth.services.account import AccountService
+from bg_auth.services.reauthentication import identity_confirmed
 from django.contrib.auth import password_validation
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -54,24 +56,108 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class PlayerAccountUpdateSerializer(serializers.Serializer):
-    """Validate mutable account fields exposed by the current-player API."""
+    """Validate mutable account fields exposed by the current-player API.
+
+    Username and email are both sign-in identifiers matched case-insensitively,
+    so neither may equal another account's username or email. Changing the email
+    moves password resets and email 2FA codes, so it re-confirms the password.
+    """
 
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField()
+    current_password = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, write_only=True
+    )
+    reauthentication_token = serializers.CharField(
+        required=False, allow_blank=True, write_only=True
+    )
+
+    def _user(self) -> User | None:
+        user = self.context.get("user")
+        return user if isinstance(user, User) else None
 
     def validate_username(self, value: str) -> str:
-        """Keep usernames non-empty and unique without changing case semantics.
+        """Keep usernames non-empty and unique as sign-in identifiers.
 
         Raises:
             serializers.ValidationError: If the username is empty or already in use.
 
         """
         username = value.strip()
-        user = self.context.get("user")
-        user_id = getattr(user, "pk", None)
-        if User.objects.exclude(pk=user_id).filter(username=username).exists():
+        user = self._user()
+        if not username:
+            raise serializers.ValidationError("A username is required.")
+        if AccountService.identifier_in_use(
+            username, exclude_user_id=getattr(user, "pk", None)
+        ):
             raise serializers.ValidationError("This username is already in use.")
         return username
+
+    def validate_email(self, value: str) -> str:
+        """Reject addresses that already identify another account.
+
+        Raises:
+            serializers.ValidationError: If another account uses the address.
+
+        """
+        email = value.strip()
+        user = self._user()
+        if AccountService.identifier_in_use(
+            email, exclude_user_id=getattr(user, "pk", None)
+        ):
+            raise serializers.ValidationError("This email address is already in use.")
+        return email
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Require the current password before an email change is started.
+
+        Raises:
+            serializers.ValidationError: The password is missing or incorrect.
+
+        """
+        user = self._user()
+        current_email = str(getattr(user, "email", "") or "")
+        attrs["email_changed"] = (
+            str(attrs["email"]).casefold() != current_email.casefold()
+        )
+        proof = {
+            "current_password": attrs.pop("current_password", ""),
+            "reauthentication_token": attrs.pop("reauthentication_token", ""),
+        }
+        if attrs["email_changed"] and not (
+            user is not None and identity_confirmed(user, proof)
+        ):
+            raise serializers.ValidationError({
+                "current_password": [
+                    "Confirm it is you with a passkey or your current password."
+                ]
+            })
+        return attrs
+
+
+class AccountDeleteSerializer(serializers.Serializer):
+    """Deleting the login is irreversible, so it re-confirms the owner."""
+
+    current_password = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, write_only=True
+    )
+    reauthentication_token = serializers.CharField(
+        required=False, allow_blank=True, write_only=True
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Accept the current password or a fresh passkey confirmation.
+
+        Raises:
+            serializers.ValidationError: If neither proof is valid.
+
+        """
+        user = self.context.get("user")
+        if not isinstance(user, User) or not identity_confirmed(user, attrs):
+            raise serializers.ValidationError({
+                "current_password": ["The current password is incorrect."]
+            })
+        return attrs
 
 
 class PlayerPasswordChangeSerializer(serializers.Serializer):

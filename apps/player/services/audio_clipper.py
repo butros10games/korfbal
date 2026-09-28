@@ -17,6 +17,8 @@ from apps.player.application.ports import CommandRunner, CommandRunOptions
 
 
 _FFMPEG_DEFAULT_QUALITY: Final[str] = "4"
+# Demuxers for current MP3 uploads/imports and legacy WAV/OGG/M4A/FLAC songs.
+INPUT_FORMAT_WHITELIST: Final[str] = "mp3,wav,ogg,mov,mp4,m4a,flac"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,13 @@ def transcode_to_mp3_clip_file(
         "-loglevel",
         "error",
         "-y",
+        # Untrusted media: read only the local file, and only through plain audio
+        # demuxers. Playlist/concat demuxers could otherwise open other files or
+        # URLs and copy their bytes into a clip the uploader can download.
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        INPUT_FORMAT_WHITELIST,
         "-ss",
         str(max(0, clip.start_seconds)),
         "-i",

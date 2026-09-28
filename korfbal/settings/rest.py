@@ -17,6 +17,8 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API for KorfConnect application",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # The contract maps every private endpoint; clients are generated offline.
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
     "ENUM_NAME_OVERRIDES": {
         "TournamentSideEnum": ["home", "away"],
         "PlayerVisibilityEnum": "apps.player.models.player.Player.Visibility",

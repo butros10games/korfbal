@@ -108,6 +108,13 @@ if DEBUG:
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Peers allowed to supply X-Real-IP / X-Forwarded-* headers. The app ports are
+# not published publicly, so only the edge proxy on a private network reaches
+# them; forwarded headers from any other peer are stripped by middleware.
+KORFBAL_TRUSTED_PROXIES = env_list(
+    "KORFBAL_TRUSTED_PROXIES",
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7",
+)
 
 SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000 if not DEBUG else 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)

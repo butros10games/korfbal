@@ -35,37 +35,40 @@ def get_club_admin_settings_data(
     return admins, memberships
 
 
-def search_club_admin_users(*, term: str) -> list[dict[str, object]]:
-    """Search users/players that can be added to club membership."""
+def search_club_admin_users(*, club: Club, term: str) -> list[dict[str, object]]:
+    """Find accounts a club admin may add as members.
+
+    Substring matches are limited to players already connected to this club
+    (members past or present, rostered players and coaches, followers). Anyone
+    else is only found by their exact username, so a club admin cannot page
+    through every account on the platform.
+    """
     if len(term) < MIN_USER_SEARCH_TERM_LENGTH:
         return []
 
-    user_model = get_user_model()
-    users = (
-        user_model.objects
-        .filter(username__icontains=term)
-        .order_by("username")
-        .only("id", "username")[:20]
+    connected = (
+        Q(member_clubs=club)
+        | Q(team_data_as_player__team__club=club)
+        | Q(team_data_as_coach__team__club=club)
+        | Q(club_follow=club)
     )
-
-    players_by_user_id = {
-        player.user_id: player
-        for player in Player.objects.filter(user__in=users).select_related("user")
-    }
-
-    results: list[dict[str, object]] = []
-    for user in users:
-        user_id = getattr(user, "id", None)
-        username = str(getattr(user, "username", ""))
-        player = players_by_user_id.get(user_id) if user_id is not None else None
-        results.append(
-            {
-                "user_id": user_id,
-                "username": username,
-                "player_id": str(player.id_uuid) if player else None,
-            },
-        )
-    return results
+    partial = Q(user__username__icontains=term) | Q(name__icontains=term)
+    players = (
+        Player.objects
+        .filter(user__isnull=False)
+        .filter(Q(user__username__iexact=term) | (connected & partial))
+        .select_related("user")
+        .distinct()
+        .order_by("user__username")[:20]
+    )
+    return [
+        {
+            "user_id": player.user_id,
+            "username": str(player.user.username),
+            "player_id": str(player.id_uuid),
+        }
+        for player in players
+    ]
 
 
 def resolve_player_for_membership(data: dict[str, Any]) -> Player | None:

@@ -432,6 +432,7 @@ def test_club_user_search_returns_player_identity(client: Client) -> None:
     club = Club.objects.create(name="Search Club")
     _login_as_admin(client, club, "club_admin")
     player = _make_player("member_user")
+    player.club_follow.add(club)
 
     response = client.get(
         f"/api/club/clubs/{club.id_uuid}/settings/user-search/",
@@ -445,6 +446,24 @@ def test_club_user_search_returns_player_identity(client: Client) -> None:
             "username": "member_user",
             "player_id": str(player.id_uuid),
         }
+    ]
+
+
+def test_club_user_search_finds_unrelated_accounts_only_by_exact_username(
+    client: Client,
+) -> None:
+    """Club admins cannot enumerate every account on the platform."""
+    club = Club.objects.create(name="Private Search Club")
+    _login_as_admin(client, club, "club_admin")
+    stranger = _make_player("stranger_user")
+    url = f"/api/club/clubs/{club.id_uuid}/settings/user-search/"
+
+    partial = client.get(url, {"search": "stranger"})
+    exact = client.get(url, {"search": "STRANGER_USER"})
+
+    assert partial.json()["results"] == []
+    assert [row["player_id"] for row in exact.json()["results"]] == [
+        str(stranger.id_uuid)
     ]
 
 

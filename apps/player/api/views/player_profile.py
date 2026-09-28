@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from bg_auth.services.email_change import request_email_change
 from django.contrib.auth import logout, update_session_auth_hash
 from django.contrib.auth.models import User
 from django.db.models import QuerySet
@@ -17,6 +18,7 @@ from apps.kwt_common.api.base import KorfbalAPIView
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.player.api.permissions import CanModifyPlayer
 from apps.player.api.serializers import (
+    AccountDeleteSerializer,
     PlayerAccountUpdateSerializer,
     PlayerPasswordChangeSerializer,
     PlayerPrivacySettingsSerializer,
@@ -151,18 +153,32 @@ class CurrentPlayerAPIView(KorfbalAPIView):
             context={"user": player.user},
         )
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        user = player.user
+        # A new address only takes effect after its owner confirms the emailed
+        # link; until then the verified address keeps receiving resets and 2FA.
         update_player_account(
             player=player,
-            username=str(serializer.validated_data["username"]),
-            email=str(serializer.validated_data["email"]),
+            username=str(data["username"]),
+            email=str(user.email),
         )
+        pending_email: str | None = None
+        if data["email_changed"]:
+            pending_email = str(data["email"])
+            if not request_email_change(request._request, user, pending_email):
+                return Response(
+                    {"detail": "The confirmation email could not be sent."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
         refreshed = player_by_id(str(player.id_uuid)) or player
-        return Response(
+        payload = dict(
             PlayerSerializer(
                 refreshed,
                 context=player_serializer_context(request, current_player=refreshed),
             ).data
         )
+        payload["pending_email"] = pending_email
+        return Response(payload)
 
 
 class CurrentUserAccountAPIView(KorfbalAPIView):
@@ -170,10 +186,16 @@ class CurrentUserAccountAPIView(KorfbalAPIView):
 
     permission_classes = (permissions.IsAuthenticated,)
 
-    @extend_schema(request=None, responses={status.HTTP_204_NO_CONTENT: None})
+    @extend_schema(
+        request=AccountDeleteSerializer,
+        responses={status.HTTP_204_NO_CONTENT: None},
+    )
     def delete(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Keep the linked player and sporting records, then end this session."""
         del args, kwargs
+        AccountDeleteSerializer(
+            data=request.data, context={"user": request.user}
+        ).is_valid(raise_exception=True)
         delete_user_account(user=cast(User, request.user))
         logout(request._request)
         return Response(status=status.HTTP_204_NO_CONTENT)

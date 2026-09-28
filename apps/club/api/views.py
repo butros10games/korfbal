@@ -7,6 +7,7 @@ from typing import Any
 
 from django.core.exceptions import ValidationError as ModelValidationError
 from django.db import models
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
@@ -193,7 +194,9 @@ class ClubViewSet(viewsets.ModelViewSet):
     def user_search(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Search users/players by username for adding club memberships."""
         term = (request.query_params.get("search") or "").strip()
-        return Response({"results": search_club_admin_users(term=term)})
+        # ``get_object`` would apply the viewset's search filter to clubs.
+        club = get_object_or_404(Club, id_uuid=kwargs.get("id_uuid"))
+        return Response({"results": search_club_admin_users(club=club, term=term)})
 
     @action(
         detail=True,

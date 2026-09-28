@@ -1,8 +1,12 @@
 """Regression tests for the public OpenAPI contract."""
 
+from http import HTTPStatus
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.test import Client
+import pytest
 import yaml
 
 
@@ -62,3 +66,16 @@ def test_openapi_schema_has_no_warnings_or_errors(tmp_path: Path) -> None:
         "type": "string",
         "format": "binary",
     }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/schema/", "/api/schema/swagger-ui/"])
+def test_served_schema_is_staff_only(client: Client, path: str) -> None:
+    """The contract maps every private endpoint, so it is not public."""
+    assert client.get(path).status_code in {
+        HTTPStatus.UNAUTHORIZED,
+        HTTPStatus.FORBIDDEN,
+    }
+    staff = get_user_model().objects.create_user(username="schema-staff", is_staff=True)
+    client.force_login(staff)
+    assert client.get(path).status_code == HTTPStatus.OK

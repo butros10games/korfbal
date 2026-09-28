@@ -38,6 +38,7 @@ if KORFBAL_ENABLE_PROMETHEUS:
     INSTALLED_APPS.append("django_prometheus")
 
 MIDDLEWARE = [
+    "apps.kwt_common.middleware.trusted_proxy.trusted_proxy_middleware",
     "korfbal.api_errors.ApiErrorResponseMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -102,7 +103,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-        "OPTIONS": {"min_length": 6},
+        "OPTIONS": {"min_length": 8},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",

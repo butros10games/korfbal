@@ -68,6 +68,34 @@ def test_every_audio_route_rejects_active_extension(
     assert not PlayerSong.objects.filter(player=user.player).exists()
 
 
+@pytest.mark.parametrize(
+    ("content", "accepted"),
+    [
+        (b"ID3\x04\x00synthetic", True),
+        (b"\xff\xfb\x90\x64synthetic", True),
+        (b"#EXTM3U\n#EXT-X-TARGETDURATION:1\nfile:///etc/passwd\n", False),
+        (b"<html>synthetic</html>", False),
+    ],
+)
+def test_audio_uploads_are_checked_by_content(
+    client: Client, content: bytes, accepted: bool
+) -> None:
+    """An .mp3 name and audio MIME type cannot smuggle a playlist to ffmpeg."""
+    user = User.objects.create_user(username="sniffed-upload")
+    client.force_login(user)
+    with patch("apps.player.composition.song_jobs.player_song"):
+        response = client.post(
+            "/api/player/me/songs/",
+            {
+                "audio_file": SimpleUploadedFile(
+                    "track.mp3", content, content_type="audio/mpeg"
+                )
+            },
+        )
+    assert (response.status_code < HTTPStatus.BAD_REQUEST) is accepted
+    assert PlayerSong.objects.filter(player=user.player).exists() is accepted
+
+
 def test_creation_service_enforces_size_before_storage_or_dispatch() -> None:
     """Calling the shared command directly cannot bypass route validation."""
     user = User.objects.create_user(username="large-upload")

@@ -10,6 +10,7 @@ from bg_audit_events import UnifiedAuditEvent
 from django.conf import settings
 from django.db.models import Q, QuerySet
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from rest_framework import permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
@@ -76,7 +77,7 @@ def _token_valid(request: Request) -> bool:
     if not expected_token:
         return False
     incoming_token = str(request.headers.get("X-Audit-Token", "")).strip()
-    return incoming_token == expected_token
+    return constant_time_compare(incoming_token, expected_token)
 
 
 def _normalize_datetime(value: str | None) -> datetime | None:

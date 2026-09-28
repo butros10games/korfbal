@@ -69,6 +69,16 @@ urlpatterns = [
         name="auth-passkey-authentication-verify",
     ),
     path(
+        "auth/passkeys/reauthentication/options/",
+        cast(ViewType, views.api.passkey_reauthentication_options),
+        name="auth-passkey-reauthentication-options",
+    ),
+    path(
+        "auth/passkeys/reauthentication/verify/",
+        cast(ViewType, views.api.verify_passkey_reauthentication),
+        name="auth-passkey-reauthentication-verify",
+    ),
+    path(
         "auth/passkeys/<uuid:passkey_id>/",
         cast(ViewType, views.api.delete_passkey),
         name="auth-passkey-delete",
@@ -111,6 +121,12 @@ urlpatterns = [
         "auth/password-reset/confirm/<uidb64>/<token>/",
         cast(ViewType, views.api.password_reset_confirm_api),
         name="auth-password-reset-confirm",
+    ),
+    # Account email changes apply only after the new mailbox confirms them.
+    path(
+        "auth/email-change/confirm/",
+        cast(ViewType, views.api.confirm_email_change_api),
+        name="auth-email-change-confirm",
     ),
     # Logout
     path("auth/logout/", account_api.logout_account, name="auth-logout"),

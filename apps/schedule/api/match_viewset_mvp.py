@@ -7,6 +7,7 @@ import json
 from uuid import UUID, uuid4
 
 from django.core import signing
+from django_ratelimit.core import is_ratelimited
 from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -85,6 +86,15 @@ def _authenticated_player(request: Request) -> Player | None:
     return None
 
 
+# Spectators in one sports hall often share a public address, so this caps
+# ballot stuffing without blocking a normal crowd.
+ANONYMOUS_BALLOTS_PER_ADDRESS = "30/h"
+
+
+class AnonymousBallotLimitError(Exception):
+    """Too many new anonymous ballots for one match from one address."""
+
+
 def _mvp_candidate(candidate_id: str) -> Player | None:
     """Resolve a candidate without passing malformed UUIDs into the ORM."""
     try:
@@ -92,6 +102,28 @@ def _mvp_candidate(candidate_id: str) -> Player | None:
     except ValueError:
         return None
     return Player.objects.filter(id_uuid=candidate_uuid).first()
+
+
+def _requested_candidate(request: Request) -> Player | Response:
+    """Resolve the voted-for player or the 400 response explaining why not."""
+    if not isinstance(request.data, Mapping):
+        return Response(
+            {"detail": "Invalid JSON body."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    candidate_id = request.data.get("candidate_id_uuid")
+    if not isinstance(candidate_id, str) or not candidate_id:
+        return Response(
+            {"detail": "Missing 'candidate_id_uuid'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    candidate = _mvp_candidate(candidate_id)
+    if not candidate:
+        return Response(
+            {"detail": "Unknown candidate."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return candidate
 
 
 def _cast_mvp_vote_for_request(
@@ -115,6 +147,15 @@ def _cast_mvp_vote_for_request(
     match_key = str(match.id_uuid)
     anon_voter_token = anon_tokens.get(match_key)
     if not anon_voter_token:
+        # Clearing cookies mints a new ballot; bound those per address and match.
+        if is_ratelimited(
+            request._request,
+            group=f"korfbal.mvp_anonymous_ballot:{match_key}",
+            key="ip",
+            rate=ANONYMOUS_BALLOTS_PER_ADDRESS,
+            increment=True,
+        ):
+            raise AnonymousBallotLimitError
         anon_voter_token = str(uuid4())
         anon_tokens[match_key] = anon_voter_token
 
@@ -196,25 +237,9 @@ class MatchMvpActionsMixin:
                 status=status.HTTP_409_CONFLICT,
             )
 
-        if not isinstance(request.data, Mapping):
-            return Response(
-                {"detail": "Invalid JSON body."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        candidate_id = request.data.get("candidate_id_uuid")
-        if not isinstance(candidate_id, str) or not candidate_id:
-            return Response(
-                {"detail": "Missing 'candidate_id_uuid'."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        candidate = _mvp_candidate(candidate_id)
-        if not candidate:
-            return Response(
-                {"detail": "Unknown candidate."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        candidate = _requested_candidate(request)
+        if isinstance(candidate, Response):
+            return candidate
 
         player = _authenticated_player(request)
 
@@ -225,6 +250,11 @@ class MatchMvpActionsMixin:
                 match_data=match_data,
                 player=player,
                 candidate=candidate,
+            )
+        except AnonymousBallotLimitError:
+            return Response(
+                {"detail": "Too many votes from this network. Sign in to vote."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         except ValueError as exc:
             return Response(
