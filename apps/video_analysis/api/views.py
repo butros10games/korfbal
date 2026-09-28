@@ -56,7 +56,7 @@ from apps.video_analysis.queries import (
     review_queue,
     review_state,
 )
-from apps.video_analysis.services import curation, dataset, review
+from apps.video_analysis.services import curation, dataset, match_links, review
 from apps.video_analysis.services.jobs import schedule
 
 
@@ -221,14 +221,16 @@ def mutate(
     request: HttpRequest,
 ) -> HttpResponseBase:
     """Apply short writes or persist background work."""
-    if action in {"dataset", "review", "curation"}:
-        if action == "curation":
-            result = curation.save(workspace, store, cast(User, request.user), payload)
-        elif action == "dataset":
-            result = dataset.decide(workspace, cast(User, request.user), payload)
-        else:
-            result = review.save(workspace, cast(User, request.user), payload)
-        return JsonResponse(result)
+    handlers = {
+        "match-link": lambda: match_links.save(workspace, payload),
+        "curation": lambda: curation.save(
+            workspace, store, cast(User, request.user), payload
+        ),
+        "dataset": lambda: dataset.decide(workspace, cast(User, request.user), payload),
+        "review": lambda: review.save(workspace, cast(User, request.user), payload),
+    }
+    if action in handlers:
+        return JsonResponse(handlers[action]())
     if action == "vision/split":
         with store.transaction():
             vision.assign_split(
@@ -374,18 +376,18 @@ def read(
     request: HttpRequest, action: str, store: Store, workspace: Workspace
 ) -> HttpResponseBase:
     """Read annotations and allowlisted monitoring; never expose worker payloads."""
-    if action in {"curation", "dataset"}:
-        result = (
-            curation.listing(workspace, store, request.GET.dict())
-            if action == "curation"
-            else dataset.listing(
-                workspace,
-                request.GET.get("decision", "unreviewed"),
-                int(request.GET.get("after", "0")),
-                request.GET.get("recording", ""),
-            )
-        )
-        return JsonResponse(dict(result, csrf=get_token(request)))
+    handlers = {
+        "matches": lambda: match_links.search(request.GET.get("q", "")),
+        "curation": lambda: curation.listing(workspace, store, request.GET.dict()),
+        "dataset": lambda: dataset.listing(
+            workspace,
+            request.GET.get("decision", "unreviewed"),
+            int(request.GET.get("after", "0")),
+            request.GET.get("recording", ""),
+        ),
+    }
+    if action in handlers:
+        return JsonResponse(dict(handlers[action](), csrf=get_token(request)))
     if action == "state":
         if request.GET.get("scope") == "recording":
             data = review_state(workspace, request.GET.get("match", ""))
@@ -395,7 +397,12 @@ def read(
                 for frame in match["frames"]:
                     frame["frame_version"] = frame_version(frame)
         return JsonResponse(
-            dict(data, csrf=get_token(request), provider="codex", luna_available=True)
+            dict(
+                match_links.attach(workspace, data),
+                csrf=get_token(request),
+                provider="codex",
+                luna_available=True,
+            )
         )
     if action == "vision":
         status = launch_status(store)

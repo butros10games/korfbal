@@ -38,6 +38,7 @@ class Recording(models.Model):
     match = models.ForeignKey(
         "schedule.Match", null=True, blank=True, on_delete=models.SET_NULL
     )
+    match_id: str | None
     metadata = models.JSONField(default=dict)
     position = models.PositiveIntegerField(default=0)
 
