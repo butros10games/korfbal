@@ -34,6 +34,11 @@ from .match_viewset_events import MatchEventsActionsMixin
 from .match_viewset_live import MatchLiveActionsMixin
 from .match_viewset_mvp import MatchMvpActionsMixin
 from .match_viewset_stats import MatchStatsActionsMixin
+from .match_viewset_video import (
+    MatchVideoActionsMixin,
+    MatchVideoResponseSerializer,
+    MatchVideoUpdateSerializer,
+)
 from .serializers import MatchSerializer, MatchWriteSerializer
 from .tracker_access import TrackerAccessActionsMixin
 from .validation import (
@@ -74,8 +79,14 @@ def _uuid_path_parameter(name: str) -> OpenApiParameter:
     tracker_state=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
     tracker_command=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
     tracker_poll=extend_schema(parameters=[_uuid_path_parameter("team_id")]),
+    video=extend_schema(
+        parameters=[_uuid_path_parameter("id")],
+        request=MatchVideoUpdateSerializer,
+        responses={200: MatchVideoResponseSerializer},
+    ),
 )
 class MatchViewSet(
+    MatchVideoActionsMixin,
     MatchMvpActionsMixin,
     MatchStatsActionsMixin,
     MatchLiveActionsMixin,

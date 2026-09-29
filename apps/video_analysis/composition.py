@@ -32,7 +32,7 @@ from apps.video_analysis.engine.storage_workspace import (
     storage_lease,
 )
 from apps.video_analysis.engine.store import Store
-from apps.video_analysis.models import StoredFile, Workspace
+from apps.video_analysis.models import Recording, StoredFile, Workspace
 from apps.video_analysis.services import label_check
 
 
@@ -41,6 +41,7 @@ __all__ = [
     "cancel_training",
     "delete_superseded_video",
     "launch_status",
+    "match_video_urls",
     "purge_clip",
     "queue_training",
     "repackage_recording",
@@ -233,3 +234,29 @@ def delete_superseded_video(workspace: Workspace, key: str) -> None:
     """Delete a replaced recording object that nothing refers to anymore."""
     if settings.VIDEO_ANALYSIS_OBJECT_STORAGE:
         repackaging.delete_unreferenced(WorkspaceObjects(workspace), key)
+
+
+class _StoredPlaybackUrls:
+    """Sign browser playback of a recording's private stored video."""
+
+    def playback_url(self, recording: Recording) -> str | None:
+        """Return a reusable signed URL, or None without object storage.
+
+        Returns:
+            The signed URL, or None.
+
+        """
+        video = recording.metadata.get("video")
+        if not (settings.VIDEO_ANALYSIS_OBJECT_STORAGE and video):
+            return None
+        return WorkspaceObjects(recording.workspace).media_url(video)
+
+
+def match_video_urls() -> _StoredPlaybackUrls:
+    """Wire playback signing for match-page videos.
+
+    Returns:
+        The playback URL adapter.
+
+    """
+    return _StoredPlaybackUrls()

@@ -30,6 +30,7 @@ class Recording(models.Model):
 
     objects: ClassVar[models.Manager["Recording"]] = models.Manager()
     workspace_id: uuid.UUID
+    publication: "MatchVideoPublication"
 
     workspace = models.ForeignKey(
         Workspace, on_delete=models.CASCADE, related_name="recordings"
@@ -226,3 +227,29 @@ class VideoUpload(models.Model):
     def __str__(self) -> str:
         """Identify intake without disclosing the uploaded filename."""
         return f"{self.pk}: {self.status}"
+
+
+class MatchVideoPublication(models.Model):
+    """Publication and period sync of a recording shown on its match page.
+
+    ``anchors`` maps a tracked match part UUID to the video second where that
+    part starts, so every tracked gebeurtenis can be placed on the video.
+    """
+
+    objects: ClassVar[models.Manager["MatchVideoPublication"]] = models.Manager()
+    recording_id: int
+
+    recording = models.OneToOneField(
+        Recording, on_delete=models.CASCADE, related_name="publication"
+    )
+    published = models.BooleanField(default=False)
+    anchors = models.JSONField(default=dict)
+    revision = models.PositiveIntegerField(default=0)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        """Identify the publication without exposing storage details."""
+        return f"{self.recording_id}: {'published' if self.published else 'draft'}"
