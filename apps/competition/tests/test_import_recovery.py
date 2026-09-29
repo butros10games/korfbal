@@ -25,6 +25,7 @@ from apps.competition.services.polling import PollJob, next_result_check
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import checkpoint, preview_sync, sync
 from apps.competition.services.traffic import TrafficGate
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_feed_coverage import seed
 from apps.competition.tests.test_match_details import timing
 from apps.schedule.models import Season
@@ -44,7 +45,10 @@ def test_error_retains_stage_partial_progress_and_safe_details(season: Season) -
         ),
         pytest.raises(RuntimeError, match="private-token"),
     ):
-        observe_run(season, lambda: sync(season, client))
+        observe_run(
+            season,
+            lambda: sync(season, client, schedule_changes=RecordingScheduleChanges()),
+        )
     run = SyncRun.objects.get()
     assert run.status == "error"
     assert run.summary["updated"] == 1
@@ -61,7 +65,7 @@ def test_malformed_feed_retains_failure_after_successful_retry(season: Season) -
     client.fetch.return_value = FetchResult(200, {"Club": [{"private": "secret"}]})
 
     def run() -> dict[str, object]:
-        summary = sync(season, client)
+        summary = sync(season, client, schedule_changes=RecordingScheduleChanges())
         return {**summary, "status": outcome(summary)}
 
     observe_run(season, run)
@@ -202,14 +206,19 @@ def test_absent_results_back_off_across_runs_without_claiming_coverage(
 
     client.fetch.side_effect = fetch
     with patch("apps.competition.services.traffic.time.sleep"):
-        sync(season, client, budget=1)
+        sync(season, client, budget=1, schedule_changes=RecordingScheduleChanges())
         assert Match.objects.get().missing_result_attempts == 0
-        sync(season, client, budget=1)
+        sync(season, client, budget=1, schedule_changes=RecordingScheduleChanges())
         match = Match.objects.get()
         assert match.results_checked_at is None
         assert match.results_attempted_at is not None
         assert match.missing_result_attempts == 1
-        assert sync(season, client)["requests"] == 0
+        assert (
+            sync(season, client, schedule_changes=RecordingScheduleChanges())[
+                "requests"
+            ]
+            == 0
+        )
     preview = preview_sync(season)
     assert preview["missing_provider_results"] == 1
     assert preview["overdue_pending_matches"] == 1
@@ -233,7 +242,7 @@ def test_empty_feed_keeps_fallback_and_failed_fallback_stays_due(
         if fallback == "success"
         else FetchResult(500),
     ]
-    summary = sync(season, client)
+    summary = sync(season, client, schedule_changes=RecordingScheduleChanges())
     match = Match.objects.get()
     assert client.fetch.call_count == len({"home", "away"})
     assert match.missing_result_attempts == 0
@@ -286,7 +295,9 @@ def test_cup_timing_import_accepts_untimed_penalties_and_optional_extra_time(
     ]
     client = Mock()
     client.fetch.return_value = FetchResult(200, body)
-    summary = sync(season, client, budget=1)
+    summary = sync(
+        season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+    )
     match.refresh_from_db()
     assert summary["failed"] == 0
     assert match.playing_time_minutes == body["Duration"]

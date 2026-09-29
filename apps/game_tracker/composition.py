@@ -8,6 +8,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from apps.competition.services.match_prediction import match_prediction
 from apps.game_tracker.adapters.outbound.published_live_store import (
     SharedPublishedLiveStore,
 )
@@ -16,7 +17,7 @@ from apps.game_tracker.adapters.outbound.runtime import (
     ChannelsMatchChangePublisher,
 )
 from apps.game_tracker.adapters.outbound.shared_compact import SharedCompactStore
-from apps.game_tracker.application.ports import TrackerRuntime
+from apps.game_tracker.application.ports import PublicMatchReadRuntime, TrackerRuntime
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.event_editor import (
@@ -44,6 +45,11 @@ from apps.game_tracker.services.public_match_reads import (
     resource_key,
 )
 from apps.game_tracker.services.tracker_http import execute_tracker_command
+from apps.game_tracker.services.tracker_state import (
+    get_tracker_state as _get_tracker_state,
+    poll_tracker_state as _poll_tracker_state,
+)
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import Match
 from apps.team.models import Team
 
@@ -58,10 +64,13 @@ def invalidate_public_match_reads(match_id: str, revision: int) -> None:
         published_match_store.invalidate(resource_key(match_id, resource), revision)
 
 
-prepare_public_match_reads = partial(
-    publish_public_match_reads, store=published_match_store
+public_match_reads = PublicMatchReadRuntime(
+    store=published_match_store, forecast=match_prediction
 )
-read_public_match = partial(read_public_match_resource, store=published_match_store)
+prepare_public_match_reads = partial(
+    publish_public_match_reads, reads=public_match_reads
+)
+read_public_match = partial(read_public_match_resource, reads=public_match_reads)
 
 change_publisher = ChannelsMatchChangePublisher(
     published_live_store,
@@ -75,7 +84,10 @@ tracker_runtime = TrackerRuntime(
     now=timezone.now,
     jobs=tracker_jobs,
     publisher=change_publisher,
+    goal_audio=build_goal_song_manifest,
 )
+get_tracker_state = partial(_get_tracker_state, goal_audio=build_goal_song_manifest)
+poll_tracker_state = partial(_poll_tracker_state, goal_audio=build_goal_song_manifest)
 apply_event_editor_command = partial(
     _apply_event_editor_command,
     publisher=change_publisher,

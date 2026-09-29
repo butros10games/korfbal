@@ -28,6 +28,7 @@ from apps.competition.services.polling import (
 from apps.competition.services.resources import ENDPOINTS
 from apps.competition.services.sync import checkpoint, sync
 from apps.competition.services.traffic import TrafficGate
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload, team_payload
 from apps.schedule.models import Season
 
@@ -156,7 +157,9 @@ def test_oauth_and_get_share_budget(season: Season) -> None:
         patch.object(client.session, "get") as get,
         patch("apps.competition.services.traffic.time.sleep"),
     ):
-        result = sync(season, client, budget=1)
+        result = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert post.call_count == 1
     get.assert_not_called()
     assert result["http_requests"] == 1

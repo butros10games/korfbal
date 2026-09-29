@@ -16,7 +16,7 @@ from apps.game_tracker.services.event_reconciliation import (
     pending_reconciliations,
     resolve_reconciliation,
 )
-from apps.schedule.api.validation import UUID_URL_REGEX
+from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.schedule.models import Match
 
 from .constants import MATCH_TRACKER_DATA_NOT_FOUND

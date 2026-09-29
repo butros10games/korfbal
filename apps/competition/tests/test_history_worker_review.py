@@ -31,6 +31,7 @@ from apps.competition.services.history_worker import (
 )
 from apps.competition.services.importer import Importer
 from apps.competition.services.traffic import LeaseLostError, TrafficGate
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_history import (
     FakeClient,
     dataservice_row,
@@ -87,7 +88,7 @@ def test_bulk_reuse_preserves_missing_result_enrichment(
     if missing_score:
         payload["MatchResult"][0]["HomeResult"]["Score"] = None
     client = FakeClient([FetchResult(200, payload), FetchResult(200, old_match())])
-    summary = run_history(lambda: client, budget=3, publish=False)
+    summary = run_history(lambda: client, budget=3, publish_with=None)
     assert summary["http_requests"] == 1 + missing_score
     assert Match.objects.get().home_score == old_match()["HomeResult"]["Score"]
     detail.refresh_from_db()
@@ -111,7 +112,7 @@ def test_rejected_access_requires_explicit_retry(
     """Rejected resources stop the batch and remain blocked until an explicit retry."""
     resource = seed(history_season, "app", "match", "M1")
     seed(history_season, "app", "match", "M2")
-    summary = run_history(lambda: FakeClient([response]), publish=False)
+    summary = run_history(lambda: FakeClient([response]), publish_with=None)
     assert summary["blocked"] == 1
     resource.refresh_from_db()
     assert resource.state == "blocked"
@@ -148,7 +149,10 @@ def test_lifecycle_results_take_priority_before_feed_discovery_deadline() -> Non
         fetched_at=now - timedelta(days=1), next_sync_at=now + timedelta(days=1)
     )
     factory = Mock()
-    assert run_history(factory)["reason"] == "current_work_due"
+    assert (
+        run_history(factory, publish_with=RecordingScheduleChanges())["reason"]
+        == "current_work_due"
+    )
     factory.assert_not_called()
 
 
@@ -157,7 +161,7 @@ def test_connection_cleanup_failure_still_releases_lease() -> None:
     client = Mock()
     client.close.side_effect = RuntimeError("synthetic close failure")
     with pytest.raises(RuntimeError, match="synthetic close failure"):
-        run_history(lambda: client, publish=False)
+        run_history(lambda: client, publish_with=None)
     assert SyncLease.objects.get().owner is None
 
 
@@ -167,14 +171,14 @@ def test_rejected_refresh_is_not_retried_by_resuming_batch(
     """An invalid OAuth refresh cannot consume another wire request on every run."""
     resource = seed(history_season, "app", "match", "M1")
     failed = run_history(
-        lambda: FakeClient([AuthenticationRequiredError()]), publish=False
+        lambda: FakeClient([AuthenticationRequiredError()]), publish_with=None
     )
     assert failed["reason"] == "reauth_required"
     assert failed["blocked"] == 1
     resource.refresh_from_db()
     assert resource.state == "blocked"
     assert resource.reason == "reauth_required"
-    assert run_history(lambda: FakeClient([]), publish=False)["http_requests"] == 0
+    assert run_history(lambda: FakeClient([]), publish_with=None)["http_requests"] == 0
 
 
 @pytest.mark.parametrize("operation", ["local", "not_modified", "checkpoint"])

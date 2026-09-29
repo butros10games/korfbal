@@ -32,6 +32,7 @@ from apps.competition.services import score_prediction as serving
 from apps.competition.services.match_prediction import known_results, rating_prediction
 from apps.competition.services.published_ratings import configure_ratings
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_rating_preview import (
     PARAMETERS,
     START,
@@ -53,7 +54,7 @@ HTTP_OK = 200
 def predicted_match(season: Season) -> Match:
     """Publish synthetic identities for the summary integration contract."""
     baseline = create_baseline(season)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     configure_ratings(season, [baseline.pk], PARAMETERS, apply=True)
     return Match.objects.select_related("local_match").get()
 

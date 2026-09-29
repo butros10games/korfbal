@@ -17,6 +17,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
 )
 from apps.player.models import Player
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.team.models import Team
 
 
@@ -117,7 +118,10 @@ def test_roster_preserves_roles_names_scope_and_first_reserve(
     tracker, expected = roster
     team = tracker.home_team if side == "home" else tracker.away_team
     state = tracker_state.get_tracker_state(
-        tracker.match, team=team, include_configuration=configuration
+        tracker.match,
+        team=team,
+        include_configuration=configuration,
+        goal_audio=build_goal_song_manifest,
     )
     assert [group["id"] for group in state["player_groups"]] == [
         str(group.pk) for group, _ in expected[side]["groups"]
@@ -143,7 +147,10 @@ def test_roster_does_not_hydrate_players_from_discarded_groups(
     load_player = Mock(wraps=Player.from_db.__func__)
     with patch.object(Player, "from_db", classmethod(load_player)):
         tracker_state.get_tracker_state(
-            tracker.match, team=tracker.home_team, include_configuration=False
+            tracker.match,
+            team=tracker.home_team,
+            include_configuration=False,
+            goal_audio=build_goal_song_manifest,
         )
     expected_count = sum(len(players) for _, players in expected["home"]["groups"])
     expected_count += len(expected["home"]["reserves"])
@@ -165,7 +172,10 @@ def test_active_and_reserve_rosters_share_two_selects(players_per_group: int) ->
         _group(tracker, tracker.home_team, role, role, players)
     with CaptureQueriesContext(connection) as queries:
         state = tracker_state.get_tracker_state(
-            tracker.match, team=tracker.home_team, include_configuration=False
+            tracker.match,
+            team=tracker.home_team,
+            include_configuration=False,
+            goal_audio=build_goal_song_manifest,
         )
     roster_queries = [
         q
@@ -192,7 +202,10 @@ def test_roster_without_a_reserve_group(role: str | None) -> None:
     if role is not None:
         _group(tracker, tracker.home_team, role, role, [])
     state = tracker_state.get_tracker_state(
-        tracker.match, team=tracker.home_team, include_configuration=False
+        tracker.match,
+        team=tracker.home_team,
+        include_configuration=False,
+        goal_audio=build_goal_song_manifest,
     )
     assert len(state["player_groups"]) == int(role == "Aanval")
     assert state["reserve_players"] == []
@@ -224,7 +237,10 @@ def test_latest_goal_reuses_snapshot_score(side: str, source: str) -> None:
     team = tracker.home_team if side == "home" else tracker.away_team
     with patch.object(tracker_state, "_score", wraps=tracker_state._score) as score:
         state = tracker_state.get_tracker_state(
-            tracker.match, team=team, include_configuration=False
+            tracker.match,
+            team=team,
+            include_configuration=False,
+            goal_audio=build_goal_song_manifest,
         )
     expected = (9, 7) if imported else (2, 1)
     if side == "away":
@@ -248,7 +264,10 @@ def test_latest_missed_shot_does_not_read_score_again() -> None:
     )
     with patch.object(tracker_state, "_score", wraps=tracker_state._score) as score:
         state = tracker_state.get_tracker_state(
-            tracker.match, team=tracker.home_team, include_configuration=False
+            tracker.match,
+            team=tracker.home_team,
+            include_configuration=False,
+            goal_audio=build_goal_song_manifest,
         )
     assert state["last_event"]["type"] == "shot"
     assert "goals_for" not in state["last_event"]

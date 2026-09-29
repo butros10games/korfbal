@@ -13,6 +13,7 @@ from apps.competition.services.importer import Importer, enqueue
 from apps.competition.services.polling import PollJob, PollPlanner
 from apps.competition.services.sync import checkpoint, preview_sync, sync
 from apps.competition.services.traffic import TrafficGate
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.schedule.models import Season
 
@@ -83,7 +84,9 @@ def test_four_club_requests_replace_twelve_pool_checks(season: Season) -> None:
 
     client.fetch.side_effect = fetch
     with patch("apps.competition.services.traffic.time.sleep"):
-        summary = sync(season, client, budget=30)
+        summary = sync(
+            season, client, budget=30, schedule_changes=RecordingScheduleChanges()
+        )
     assert summary["http_requests"] == len({
         row["HomeTeam"]["Club"]["ClubId"] for row in rows
     })

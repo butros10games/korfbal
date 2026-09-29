@@ -7,12 +7,13 @@ can score any later tracking run on the same interval without favouring the
 run that seeded the boxes.
 """
 
+from dataclasses import dataclass
 import math
 from typing import Any
 
 from django.db import transaction
 
-from apps.video_analysis.composition import extract_pipeline_frames
+from apps.video_analysis.application.ports import FrameExtractor
 from apps.video_analysis.engine.clip_evaluation import score_clip
 from apps.video_analysis.engine.clip_refinement import refined_frames
 from apps.video_analysis.engine.store import (
@@ -74,8 +75,21 @@ def sample_times(options: dict, every: float) -> list[float]:
     return [round(start + n * every, 3) for n in range(count)]
 
 
+@dataclass(frozen=True, slots=True)
+class BenchmarkRequest:
+    """Name a new benchmark over a completed clip run, labelled every ``every`` s."""
+
+    run_id: str
+    name: str
+    every: float = DEFAULT_EVERY
+
+
 def create(
-    store: Store, workspace: Workspace, run_id: str, name: str, every: float
+    store: Store,
+    workspace: Workspace,
+    request: BenchmarkRequest,
+    *,
+    extract_frames: FrameExtractor,
 ) -> dict[str, Any]:
     """Extract review frames over a clip with identity-free drafts.
 
@@ -83,6 +97,7 @@ def create(
         ValueError: The benchmark name exists or frames already use these times.
 
     """
+    run_id, name, every = request.run_id, request.name, request.every
     receipt, frames = clip_frames(store, workspace, run_id)
     job = receipt["job"]
     if Frame.objects.filter(
@@ -101,7 +116,7 @@ def create(
     )
     if taken:
         raise ValueError(f"Frames already exist at {', '.join(sorted(taken))}")
-    rows = extract_pipeline_frames(
+    rows = extract_frames(
         store, {**recording.metadata, "id": recording.source_id}, times
     )
     drafts = {}

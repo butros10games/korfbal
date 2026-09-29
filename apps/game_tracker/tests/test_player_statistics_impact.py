@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from asgiref.sync import async_to_sync
 import pytest
 
 from apps.game_tracker.models import (
@@ -21,12 +20,12 @@ from apps.game_tracker.models import (
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
 )
+from apps.game_tracker.services.player_statistics import build_player_stats
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_match_part,
     create_tracker_match,
     create_tracker_player,
 )
-from apps.kwt_common.utils.players_stats import build_player_stats
 from apps.player.models import Player
 
 
@@ -75,7 +74,7 @@ def test_build_player_stats_recomputes_outdated_match_impacts() -> None:
     )
 
     # build_player_stats should recompute the match impacts to latest and return them.
-    rows = async_to_sync(build_player_stats)(
+    rows = build_player_stats(
         [player],
         MatchData.objects.filter(id_uuid=match_data.id_uuid),
     )
@@ -123,7 +122,7 @@ def test_build_player_stats_aggregates_stored_goal_wpa() -> None:
         time=part_start + timedelta(seconds=3590),
     )
 
-    rows = async_to_sync(build_player_stats)(
+    rows = build_player_stats(
         [player],
         MatchData.objects.filter(id_uuid=match_data.id_uuid),
     )
@@ -179,7 +178,7 @@ def test_build_player_stats_five_misses_uses_latest_weights() -> None:
         },
     )
 
-    rows = async_to_sync(build_player_stats)(
+    rows = build_player_stats(
         [player],
         MatchData.objects.filter(id_uuid=match_data.id_uuid),
     )
@@ -216,7 +215,7 @@ def test_same_named_accountless_players_have_separate_statistics() -> None:
             scored=scored,
             time=part.start_time + timedelta(minutes=1),
         )
-    rows = async_to_sync(build_player_stats)(
+    rows = build_player_stats(
         [first, second], MatchData.objects.filter(pk=tracker.match_data.pk)
     )
     by_id = {row["id_uuid"]: row for row in rows}

@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponseBase, JsonResponse
 from django.middleware.csrf import get_token
 
+from apps.video_analysis import composition
 from apps.video_analysis.engine.store import Store
 from apps.video_analysis.models import Workspace
 from apps.video_analysis.services import clips
@@ -49,8 +50,12 @@ def clip_endpoint(
     if not isinstance(payload, dict):
         raise TypeError("Expected object")
     if action in {"clips/cancel", "clips/delete"}:
-        operation = clips.cancel if action == "clips/cancel" else clips.delete
-        operation(store, workspace, payload["run_id"])
+        if action == "clips/cancel":
+            clips.cancel(store, workspace, payload["run_id"])
+        else:
+            clips.delete(
+                store, workspace, payload["run_id"], purge_clip=composition.purge_clip
+            )
         return JsonResponse({"ok": True})
     job = clips.start(store, workspace, cast(User, request.user), payload)
     return JsonResponse({"job_id": str(job.pk), "queued": True}, status=202)

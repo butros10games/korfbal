@@ -41,6 +41,7 @@ from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.sync import sync
 from apps.competition.services.traffic import TrafficGate
 from apps.competition.tasks import discover_match_forms, sync_match_forms
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_rosters import person
 from apps.game_tracker.composition import apply_tracker_command
@@ -201,7 +202,7 @@ def scope(
     """Publish a synthetic fixture and bind its local account."""
     importer = Importer(season, timezone.now())
     importer.match(match_payload(), result=False)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source = Match.objects.select_related("local_match__home_team").get(
         external_id="M1"
     )
@@ -1056,7 +1057,7 @@ def test_discovery_handles_upcoming_and_finished_matches_for_one_account(
     )
     payload["Pool"] = {**payload["Pool"], "PoolId": 11}
     Importer(finished.season, timezone.now()).match(payload, result=False)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     upcoming = Match.objects.get(external_id="M2")
     MatchData.objects.update_or_create(
         match_link=upcoming.local_match, defaults={"status": "upcoming"}
@@ -1096,7 +1097,7 @@ def test_idle_discovery_query_count_does_not_grow_with_matches(
         )
         payload["Pool"] = {**payload["Pool"], "PoolId": 11}
         Importer(source.season, now).match(payload, result=False)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     Pool.objects.filter(external_id="11").update(
         competition_class_id=source.pool.competition_class_id
     )
@@ -1372,7 +1373,9 @@ def test_background_sync_yields_to_action_arriving_during_fetch(
         return FetchResult(200, {"Club": [], "ProgramItemMatchClub": []})
 
     client.fetch.side_effect = fetch
-    result = sync(source.season, client, budget=10)
+    result = sync(
+        source.season, client, budget=10, schedule_changes=RecordingScheduleChanges()
+    )
     assert result["requests"] == 1
     assert result["updated"] == 1
     assert result["deferred"] == 1
@@ -1399,4 +1402,9 @@ def test_future_form_retry_does_not_block_background_work(
     assert current_work_due(include_results=False) is False
     client = Mock()
     client.fetch.return_value = FetchResult(200, {"Club": []})
-    assert sync(source.season, client, budget=1)["updated"] == 1
+    assert (
+        sync(
+            source.season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )["updated"]
+        == 1
+    )

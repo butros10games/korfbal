@@ -99,6 +99,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   `deps/uv.lock`; do not recreate a project-local lock beside `manage.py`.
 - WebSocket/live features: prefer minimal changes; add/extend tests when behavior changes.
 - API and outbound-provider modules are adapters; application/domain/services/tasks/signals must not import them or HTTP framework modules.
+- Application, domain, query and service modules receive capabilities; only API views, tasks,
+  signals, management commands and other composition roots import `composition.py`.
+- Import another app only through its declared public interface in
+  `apps/kwt_common/tests/test_app_dependencies.py`. Keep the application-layer app graph
+  acyclic (break cycles with ports bound in composition) and `kwt_common` free of domain logic.
 - Keep tracker command metadata in `services/tracker_commands/registry.py`, mutation behavior
   in its family handlers, read snapshots in `services/tracker_state.py`, and the shared
   lock/idempotency/publication envelope in `services/tracker_http.py`.

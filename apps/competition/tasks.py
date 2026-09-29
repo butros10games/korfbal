@@ -8,12 +8,20 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient
-from apps.competition.composition import competition_client, run_match_form_queue
+from apps.competition.composition import (
+    competition_client,
+    run_match_form_queue,
+    schedule_change_dispatcher,
+)
 from apps.competition.models import MatchFormSync, SyncLease, SyncResource
 from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.resources import MAX_FEED_FAILURES
-from apps.competition.services.sync import SyncUnavailableError, preview_sync, sync
+from apps.competition.services.sync import (
+    SyncUnavailableError,
+    preview_sync,
+    sync_leased,
+)
 from apps.schedule.models import Season
 
 
@@ -106,9 +114,10 @@ def _run_scheduled(season: Season) -> dict[str, object]:
             "backlog": backlog,
         }
     try:
-        summary = sync(
+        summary = sync_leased(
             season,
-            client_factory=_scheduled_client,
+            _scheduled_client,
+            schedule_changes=schedule_change_dispatcher(),
             budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None,
             max_seconds=settings.SPORTLINK_SYNC_MAX_SECONDS,
         )

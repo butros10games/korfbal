@@ -1,7 +1,7 @@
 """Persistent preparation boundaries, retry safety and human-only review approval."""
 
 from http import HTTPStatus
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from django.contrib.auth.models import User
@@ -9,6 +9,7 @@ import pytest
 
 from apps.kwt_common.models import BackgroundJob
 from apps.video_analysis.adapters.store import DatabaseStore
+from apps.video_analysis.application.ports import PipelineRuntime
 from apps.video_analysis.engine.store import (
     ConflictError,
     Store,
@@ -26,6 +27,7 @@ from apps.video_analysis.models import (
 from apps.video_analysis.queries import frame_payload
 from apps.video_analysis.services import pipeline, pipeline_worker
 from apps.video_analysis.services.pipeline_corrections import clip_drafts
+from apps.video_analysis.tests.runtime import pipeline_runtime
 from apps.video_analysis.tests.test_review import verified
 
 
@@ -160,7 +162,9 @@ def test_worker_yields_to_manual_jobs_and_honors_pause(
     job.status = "completed"
     job.save()
 
-    def unit(current: ReviewPipeline, _store: Store) -> tuple[dict, bool]:
+    def unit(
+        current: ReviewPipeline, _store: Store, _runtime: PipelineRuntime
+    ) -> tuple[dict, bool]:
         pipeline.control(
             workspace,
             {"id": str(current.pk), "revision": current.revision, "action": "pause"},
@@ -168,7 +172,7 @@ def test_worker_yields_to_manual_jobs_and_honors_pause(
         return {"frames_done": 5}, False
 
     with patch.object(pipeline_worker, "perform", side_effect=unit):
-        pipeline_worker.advance(str(workspace.pk))
+        pipeline_worker.advance(str(workspace.pk), pipeline_runtime())
     run.refresh_from_db()
     assert run.status == "paused"
     assert run.progress == {
@@ -197,7 +201,7 @@ def test_failed_unit_retains_cursor_for_retry(
     with patch.object(
         pipeline_worker, "perform", side_effect=RuntimeError("worker failure")
     ):
-        pipeline_worker.advance(str(workspace.pk))
+        pipeline_worker.advance(str(workspace.pk), pipeline_runtime())
     run.refresh_from_db()
     assert run.status == "failed"
     assert run.progress == {"frames_done": 25}
@@ -350,13 +354,9 @@ def test_pipeline_advances_all_units_and_retains_clip_attempts(
             {"status": "completed", "chunks": []},
         )
 
-    with (
-        patch.object(pipeline_worker, "extract_pipeline_frames", side_effect=extract),
-        patch.object(pipeline_worker, "infer_pipeline_batch", side_effect=infer),
-        patch.object(pipeline_worker, "run_clip", side_effect=clip),
-    ):
-        for _ in range(3):
-            pipeline_worker.advance(str(workspace.pk))
+    runtime = pipeline_runtime(extract_frames=extract, infer_batch=infer, run_clip=clip)
+    for _ in range(3):
+        pipeline_worker.advance(str(workspace.pk), runtime)
     run.refresh_from_db()
     assert run.status == "ready"
     assert run.progress["frames_done"] == len(run.recipe["plan"]["times"])
@@ -368,7 +368,7 @@ def test_pipeline_advances_all_units_and_retains_clip_attempts(
     assert not sampled.filter(complete=True).exists()
     assert not sampled.exclude(status="pending").exists()
     before = AnalysisJob.objects.count()
-    pipeline_worker.advance(str(workspace.pk))
+    pipeline_worker.advance(str(workspace.pk), runtime)
     assert AnalysisJob.objects.count() == before
 
 
@@ -379,14 +379,14 @@ def test_clip_retry_preserves_failed_attempt_and_reuses_completed_one(
     owner, store, workspace = prepared
     run = pipeline.submit(workspace, owner, store, request())
     recording = Recording.objects.get(source_id="demo")
-    section = run.recipe["plan"]["clips"][0]
-    with (
-        patch.object(
-            pipeline_worker, "run_clip", side_effect=RuntimeError("interrupted")
-        ),
-        pytest.raises(RuntimeError, match="interrupted"),
-    ):
-        pipeline_worker.prepare_clip(run, store, recording, section, 0)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        pipeline_worker.prepare_clip(
+            run,
+            store,
+            recording,
+            0,
+            run_clip=Mock(side_effect=RuntimeError("interrupted")),
+        )
     failed = AnalysisJob.objects.get()
     assert failed.status == "failed"
 
@@ -396,9 +396,9 @@ def test_clip_retry_preserves_failed_attempt_and_reuses_completed_one(
             {"status": "completed", "chunks": []},
         )
 
-    with patch.object(pipeline_worker, "run_clip", side_effect=clip) as inference:
-        pipeline_worker.prepare_clip(run, store, recording, section, 0)
-        pipeline_worker.prepare_clip(run, store, recording, section, 0)
+    inference = Mock(side_effect=clip)
+    pipeline_worker.prepare_clip(run, store, recording, 0, run_clip=inference)
+    pipeline_worker.prepare_clip(run, store, recording, 0, run_clip=inference)
     inference.assert_called_once()
     assert ClipReview.objects.get().job_id != failed.pk
     assert AnalysisJob.objects.filter(pk=failed.pk, status="failed").exists()
@@ -426,11 +426,10 @@ def test_capacity_wait_and_exhausted_worker_retry_are_actionable(
     """A full disk waits; an exhausted execution envelope can be resumed explicitly."""
     owner, store, workspace = prepared
     run = pipeline.submit(workspace, owner, store, request())
-    with (
-        patch.object(pipeline_worker, "pipeline_has_capacity", return_value=False),
-        patch.object(pipeline_worker, "perform") as perform,
-    ):
-        pipeline_worker.advance(str(workspace.pk))
+    with patch.object(pipeline_worker, "perform") as perform:
+        pipeline_worker.advance(
+            str(workspace.pk), pipeline_runtime(has_capacity=Mock(return_value=False))
+        )
     perform.assert_not_called()
     run.refresh_from_db()
     assert run.status == "queued"

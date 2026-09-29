@@ -14,6 +14,7 @@ from apps.competition.services.lineups import queue_lineups
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.season_repair import repair
 from apps.competition.services.seasons import INDOOR
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_logos import BUCKET
 from apps.competition.tests.test_rosters import person
@@ -42,7 +43,7 @@ def test_lineups_reuse_people_without_roster_or_appearance(season: Season) -> No
     """A match substitute belongs in selection, never regular roster or minutes."""
     importer = Importer(season, timezone.now())
     importer.match(match_payload(), result=True)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     importer.apply("team_roster", "T1", {"TeamPersonOverview": [person("P1")]})
     payload = lineup()
     payload["AwayTeamPerson"].append({
@@ -97,7 +98,7 @@ def test_private_match_person_erases_roster_and_selection(season: Season) -> Non
     now = timezone.now()
     importer = Importer(season, now)
     importer.match(match_payload(), result=True)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     importer.apply("team_roster", "T1", {"TeamPersonOverview": [person("P1")]})
     importer.apply("match_lineup", "M1", lineup())
     private = lineup()
@@ -181,7 +182,7 @@ def test_lineup_season_isolation_and_photo_reuse(season: Season) -> None:
     payload["HomeTeam"]["SportId"] = INDOOR
     payload["AwayTeam"]["SportId"] = INDOOR
     importer.match(payload, result=True)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     repair(season, season.start_date.year)
     data = lineup()
     data["HomeTeamPerson"][0]["Photo"] = {"Bucket": BUCKET, "Hash": "A" * 32}

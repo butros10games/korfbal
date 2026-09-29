@@ -19,6 +19,7 @@ from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
 )
 from apps.game_tracker.services.tracker_state import get_tracker_state
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.api.views import MatchViewSet
 from apps.schedule.models import Match
 
@@ -130,7 +131,9 @@ def test_public_live_fields_match_the_tracker_clock_and_score(
         home_score=8,
         away_score=6,
     )
-    reference = get_tracker_state(graph.match, team=graph.home_team)
+    reference = get_tracker_state(
+        graph.match, team=graph.home_team, goal_audio=build_goal_song_manifest
+    )
     response = client.get(
         f"/api/matches/{graph.match.id_uuid}/{endpoint}/", {"since_revision": -1}
     )

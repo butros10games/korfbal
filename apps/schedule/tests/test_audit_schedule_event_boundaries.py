@@ -89,7 +89,7 @@ def test_public_live_endpoints_strip_team_tracker_details(client: Client) -> Non
 def test_authorized_tracker_poll_forwards_parsed_transport_options(
     client: Client,
 ) -> None:
-    """The private long-poll adapter preserves cursor, timeout, and compact mode."""
+    """The private poll adapter forwards cursor and compact mode; timeout is legacy."""
     graph = create_match_graph(prefix="Tracker poll transport")
     _login_home_club_member(client, graph)
     expected = {"changed": False, "live_revision": 7}
@@ -112,7 +112,6 @@ def test_authorized_tracker_poll_forwards_parsed_transport_options(
         graph.match,
         team=graph.home_team,
         since_revision=7,
-        timeout_seconds=12,
         compact=True,
     )
 

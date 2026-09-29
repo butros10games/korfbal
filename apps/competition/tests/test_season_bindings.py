@@ -19,6 +19,7 @@ from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.season_repair import preview, repair
 from apps.competition.services.seasons import INDOOR, OUTDOOR, native_season_filter
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload, team_payload
 from apps.competition.tests.test_rosters import person
 from apps.game_tracker.models import MatchData
@@ -38,7 +39,7 @@ def setup_variants(season: Season) -> tuple[Importer, Team, Team]:
     indoor = importer.team(indoor_payload)
     indoor.group = outdoor.group
     indoor.save()
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     return importer, outdoor, indoor
 
 
@@ -171,7 +172,7 @@ def test_indoor_poule_and_match_move_without_losing_ids_or_scores(
     payload["Pool"]["ClassName"] = "1e klasse"
     importer = Importer(season, timezone.now())
     importer.apply("club_results", "C", {"MatchResult": [payload]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source = Match.objects.get()
     native_id = source.local_match_id
     pool_id = Pool.objects.get().local_pool_id
@@ -190,7 +191,7 @@ def test_indoor_poule_and_match_move_without_losing_ids_or_scores(
     score.refresh_from_db()
     assert (score.pk, score.home_score, score.away_score) == saved
     # A subsequent normal publication must not relink to the fetch scope.
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source.refresh_from_db()
     assert source.local_match_id == native_id
     assert source.local_match.season_id == target

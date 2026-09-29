@@ -16,6 +16,7 @@ from apps.game_tracker.composition import read_public_live
 from apps.game_tracker.models import MatchData, MatchPart, Pause, Shot
 from apps.game_tracker.services.tracker_commands.base import current_part
 from apps.game_tracker.services.tracker_state import get_tracker_state
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.tests.match_api_test_support import (
     add_roster_player,
     create_match_graph,
@@ -52,7 +53,9 @@ def test_public_clock_matches_tracker_without_private_queries(state: str) -> Non
                 start_time=timezone.now(),
                 active=True,
             )
-    expected = get_tracker_state(graph.match, team=graph.home_team)
+    expected = get_tracker_state(
+        graph.match, team=graph.home_team, goal_audio=build_goal_song_manifest
+    )
     with CaptureQueriesContext(connection) as queries:
         actual = read_public_live(match_id=graph.match.pk)
     assert actual is not None

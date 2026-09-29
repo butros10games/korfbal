@@ -31,9 +31,11 @@ from apps.competition.services.history_checkpoint import checkpoint
 from apps.competition.services.history_dataservice import reconcile_pool_coverage
 from apps.competition.services.history_worker import run_history
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload, team_payload
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.tracker_state import get_tracker_state
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import Season
 
 
@@ -124,16 +126,16 @@ def test_match_pool_chain_reuses_native_source_models(old_season: Season) -> Non
     """Historical data creates no present-day discovery work and resumes in two runs."""
     seed(old_season, "app", "match", "M1")
     first = FakeClient([FetchResult(200, old_match())])
-    assert run_history(lambda: first, budget=1, publish=False)["http_requests"] == 1
+    assert run_history(lambda: first, budget=1, publish_with=None)["http_requests"] == 1
     assert not SyncResource.objects.exists()
     second = FakeClient([FetchResult(200, old_pool())])
-    run_history(lambda: second, budget=1, publish=False)
+    run_history(lambda: second, budget=1, publish_with=None)
     pool = HistoricalResource.objects.get(kind="pool")
     assert pool.coverage == "complete"
     assert Match.objects.count() == 1
     assert Pool.objects.count() == 1
     assert not SyncResource.objects.exists()
-    assert run_history(lambda: FakeClient([]), publish=False)["http_requests"] == 0
+    assert run_history(lambda: FakeClient([]), publish_with=None)["http_requests"] == 0
 
 
 @pytest.mark.django_db
@@ -173,7 +175,7 @@ def test_wrong_season_rolls_back_and_blocks(old_season: Season) -> None:
     """Current-season data cannot silently populate an old season."""
     resource = seed(old_season, "app", "match", "M1")
     client = FakeClient([FetchResult(200, match_payload())])
-    run_history(lambda: client, publish=False)
+    run_history(lambda: client, publish_with=None)
     resource.refresh_from_db()
     assert resource.reason == "season_mismatch"
     assert resource.state == "blocked"
@@ -186,7 +188,7 @@ def test_failures_backoff_without_global_rate_fallback(old_season: Season) -> No
     """A temporary failure does not consume every retry in one batch."""
     resource = seed(old_season, "app", "match", "M1")
     client = FakeClient([TransportError("unavailable")])
-    run_history(lambda: client, publish=False)
+    run_history(lambda: client, publish_with=None)
     resource.refresh_from_db()
     assert resource.attempts == 1
     assert resource.state == "pending"
@@ -200,7 +202,7 @@ def test_429_stops_batch_and_persists_conservative_policy(old_season: Season) ->
     resource = seed(old_season, "app", "match", "M1")
     seed(old_season, "app", "match", "M2")
     client = FakeClient([FetchResult(429, retry_after=300)])
-    result = run_history(lambda: client, publish=False)
+    result = run_history(lambda: client, publish_with=None)
     assert result["http_requests"] == 1
     assert TrafficState.objects.get().rate_limited
     assert SyncLease.objects.get().expires_at > timezone.now() + timedelta(seconds=290)
@@ -220,7 +222,10 @@ def test_live_work_has_priority_and_credentials_are_lazy(old_season: Season) -> 
     )
     SyncResource.objects.create(season=live, kind="clubs", next_sync_at=timezone.now())
     factory = Mock()
-    assert run_history(factory)["reason"] == "current_work_due"
+    assert (
+        run_history(factory, publish_with=RecordingScheduleChanges())["reason"]
+        == "current_work_due"
+    )
     factory.assert_not_called()
 
 
@@ -375,7 +380,7 @@ def test_factory_failure_releases_provider_lease() -> None:
         raise ValueError("synthetic invalid configuration")
 
     with pytest.raises(ValueError, match="synthetic"):
-        run_history(fail)
+        run_history(fail, publish_with=RecordingScheduleChanges())
     assert SyncLease.objects.get().owner is None
 
 
@@ -517,10 +522,12 @@ def test_archive_publishes_distinct_score_attribution(old_season: Season) -> Non
             "matches": [row],
         },
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     match = Match.objects.get().local_match
     assert MatchData.objects.get(match_link=match).score_source == "archive"
-    assert get_tracker_state(match, team=match.home_team)["score"] == {
+    assert get_tracker_state(
+        match, team=match.home_team, goal_audio=build_goal_song_manifest
+    )["score"] == {
         "for": 0,
         "against": 10,
     }

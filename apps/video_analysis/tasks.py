@@ -188,13 +188,13 @@ def sync_files() -> None:
 @shared_task
 def advance_pipeline(workspace_id: str) -> None:
     """Drain one resumable unit on the capacity-limited vision worker."""
-    advance(workspace_id)
+    advance(workspace_id, composition.pipeline_runtime())
 
 
 @shared_task
 def cleanup_upload(upload_id: str) -> None:
     """Recover expired/cancelled intake and release imported temporary chunks."""
-    cleanup(upload_id)
+    cleanup(upload_id, purge_upload=composition.purge_upload)
 
 
 @shared_task

@@ -1,12 +1,13 @@
 """Minimal visible roster snapshots and dated memberships from one team feed."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.competition.domain.rosters import ROSTER_FRESHNESS
 from apps.competition.models import (
     MatchMembership,
     RosterMembership,
@@ -25,7 +26,6 @@ SOURCE_ID_LIMIT = 80
 NAME_LIMIT = 255
 SHIRT_LIMIT = 10
 VISIBLE_LEVELS = {"OPEN", "NORMAL", "LIMITED"}
-ROSTER_FRESHNESS = timedelta(days=8)
 
 
 @transaction.atomic

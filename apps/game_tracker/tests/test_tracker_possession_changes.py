@@ -34,6 +34,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
 )
 from apps.player.models import Player
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
 type PossessionTracker = tuple[TrackerMatchContext, Player, Player]
@@ -282,7 +283,9 @@ def test_possession_changes_flow_through_tracker_timeline_stats_and_undo(
         },
     )
 
-    state = get_tracker_state(tracker.match, team=tracker.home_team)
+    state = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
     players = {
         player["id"]: player
         for group in state["player_groups"]
@@ -372,7 +375,9 @@ def test_possession_changes_can_keep_the_kind_when_the_player_is_unknown(
     ]
     assert [change.player_id for change in changes] == [None, None]
 
-    state = get_tracker_state(tracker.match, team=tracker.home_team)
+    state = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
     players = {
         player["id"]: player
         for group in state["player_groups"]

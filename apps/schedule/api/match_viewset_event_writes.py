@@ -30,7 +30,7 @@ from apps.game_tracker.services.match_timeline_payload import (
     serialize_pause_event,
     serialize_substitute_event,
 )
-from apps.schedule.api.validation import UUID_URL_REGEX
+from apps.kwt_common.api.params import UUID_URL_REGEX
 
 from .constants import MATCH_TRACKER_DATA_NOT_FOUND
 from .event_editor_commands import apply_command, mutation_payload

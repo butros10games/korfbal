@@ -5,7 +5,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
 
-from apps.video_analysis.composition import worker_store
+from apps.video_analysis.composition import extract_pipeline_frames, worker_store
 from apps.video_analysis.models import Workspace
 from apps.video_analysis.services import identity_benchmark
 
@@ -35,7 +35,12 @@ class Command(BaseCommand):
         store = worker_store(workspace, None, hydrate=False)
         if options["operation"] == "create":
             created = identity_benchmark.create(
-                store, workspace, options["run"][0], options["name"], options["every"]
+                store,
+                workspace,
+                identity_benchmark.BenchmarkRequest(
+                    options["run"][0], options["name"], options["every"]
+                ),
+                extract_frames=extract_pipeline_frames,
             )
             self.stdout.write(json.dumps(created, indent=2))
             return

@@ -17,6 +17,7 @@ from apps.competition.services.schedule_notifications import (
     notify_schedule_change,
     schedule_changed,
 )
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
 from apps.kwt_common.models import BackgroundJob
@@ -36,40 +37,37 @@ def test_publication_announces_future_changes_once_and_protects_tracking(
         AwayResult=None,
         MatchDateTime=(timezone.now() + timedelta(days=4)).isoformat(),
     )
-    with patch(
-        "apps.competition.services.publishing.schedule_change_dispatcher"
-    ) as factory:
-        dispatch = factory.return_value
-        Importer(season, timezone.now()).apply(
-            "club_results", "C", {"MatchResult": [payload]}
-        )
-        publish_catalogue()
-        dispatch.assert_not_called()
-        payload["MatchDateTime"] = (timezone.now() + timedelta(days=5)).isoformat()
-        Importer(season, timezone.now()).apply(
-            "club_results", "C", {"MatchResult": [payload]}
-        )
-        publish_catalogue()
-        assert dispatch.call_count == 1
-        publish_catalogue()
-        assert dispatch.call_count == 1
-        payload["Status"] = "CANCELLED"
-        Importer(season, timezone.now()).apply(
-            "club_results", "C", {"MatchResult": [payload]}
-        )
-        publish_catalogue()
-        assert dispatch.call_count == len(["rescheduled", "cancelled"])
-        assert dispatch.call_args.kwargs["cancelled"] is True
-        source = Match.objects.select_related("local_match__tracker_data").get()
-        tracker = source.local_match.tracker_data
-        tracker.live_revision = 1
-        tracker.save(update_fields=["live_revision"])
-        payload["Status"] = "SCHEDULED"
-        Importer(season, timezone.now()).apply(
-            "club_results", "C", {"MatchResult": [payload]}
-        )
-        publish_catalogue()
-        assert dispatch.call_count == len(["rescheduled", "cancelled"])
+    dispatch = RecordingScheduleChanges()
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    publish_catalogue(schedule_changes=dispatch)
+    assert not dispatch.calls
+    payload["MatchDateTime"] = (timezone.now() + timedelta(days=5)).isoformat()
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    publish_catalogue(schedule_changes=dispatch)
+    assert len(dispatch.calls) == 1
+    publish_catalogue(schedule_changes=dispatch)
+    assert len(dispatch.calls) == 1
+    payload["Status"] = "CANCELLED"
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    publish_catalogue(schedule_changes=dispatch)
+    assert len(dispatch.calls) == len(["rescheduled", "cancelled"])
+    assert dispatch.calls[-1]["cancelled"] is True
+    source = Match.objects.select_related("local_match__tracker_data").get()
+    tracker = source.local_match.tracker_data
+    tracker.live_revision = 1
+    tracker.save(update_fields=["live_revision"])
+    payload["Status"] = "SCHEDULED"
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [payload]}
+    )
+    publish_catalogue(schedule_changes=dispatch)
+    assert len(dispatch.calls) == len(["rescheduled", "cancelled"])
 
 
 @pytest.mark.django_db
@@ -78,7 +76,7 @@ def test_notifications_deduplicate_team_and_club_followers(season: Season) -> No
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     match = Match.objects.select_related("local_match__home_team").get().local_match
     user = get_user_model().objects.create_user(username="synthetic-follower")
     player = Player.objects.get(user=user)
@@ -142,7 +140,7 @@ def test_superseded_notification_is_not_delivered(season: Season) -> None:
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source = Match.objects.get()
     send = Mock()
     notify_schedule_change(
@@ -163,16 +161,14 @@ def test_repeated_schedule_state_and_job_redelivery_notify_only_latest_event(
     payload = match_payload()
     start = timezone.now() + timedelta(days=5)
     payload.update(Status="SCHEDULED", HomeResult=None, AwayResult=None)
-    with patch(
-        "apps.competition.services.publishing.schedule_change_dispatcher"
-    ) as factory:
-        for offset in [0, 1, 2, 1]:
-            payload["MatchDateTime"] = (start + timedelta(hours=offset)).isoformat()
-            Importer(season, timezone.now()).apply(
-                "club_results", "C", {"MatchResult": [payload]}
-            )
-            publish_catalogue()
-    jobs = [call.kwargs for call in factory.return_value.call_args_list]
+    dispatch = RecordingScheduleChanges()
+    for offset in [0, 1, 2, 1]:
+        payload["MatchDateTime"] = (start + timedelta(hours=offset)).isoformat()
+        Importer(season, timezone.now()).apply(
+            "club_results", "C", {"MatchResult": [payload]}
+        )
+        publish_catalogue(schedule_changes=dispatch)
+    jobs = dispatch.calls
     assert len(jobs) == len(["B", "C", "B"])
     source = Match.objects.select_related("local_match").get()
     user = get_user_model().objects.create_user(username="repeat-follower")
@@ -192,7 +188,7 @@ def test_repeated_schedule_state_and_job_redelivery_notify_only_latest_event(
     # Publication has already loaded the pending event when the worker claims it.
     Match.objects.filter(pk=source.pk).update(updated_at=timezone.now())
     with patch.object(Publisher, "result", claim_during_publication):
-        publish_catalogue()
+        publish_catalogue(schedule_changes=RecordingScheduleChanges())
     notify_schedule_change(**jobs[-1], send_payload=send)
     send.assert_called_once()
     source.refresh_from_db()

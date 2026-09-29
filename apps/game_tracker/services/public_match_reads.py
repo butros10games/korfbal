@@ -7,9 +7,14 @@ from typing import Any
 
 from django.db import connection
 
-from apps.competition.services.match_prediction import match_prediction
-from apps.game_tracker.application.ports import PublicLiveStoreError, PublishedLiveStore
+from apps.game_tracker.application.ports import (
+    MatchForecaster,
+    PublicLiveStoreError,
+    PublicMatchReadRuntime,
+    PublishedLiveStore,
+)
 from apps.game_tracker.models import MatchData, MatchLiveChange
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
 from apps.game_tracker.services.timeline_reads import (
     MATCH_TIMELINE_IDENTITY_VERSION,
@@ -17,7 +22,6 @@ from apps.game_tracker.services.timeline_reads import (
     read_match_events,
     read_match_shots,
 )
-from apps.kwt_common.utils.match_summary import build_match_summaries
 
 
 PUBLIC_MATCH_RESOURCES = ("summary", "stats", "events", "shots")
@@ -28,7 +32,9 @@ def resource_key(match_id: str, resource: str) -> str:
     return f"{match_id}:{resource}"
 
 
-def build_public_match_reads(match_id: str) -> dict[str, dict[str, Any]]:
+def build_public_match_reads(
+    match_id: str, *, forecast: MatchForecaster
+) -> dict[str, dict[str, Any]]:
     """Build all public resources once from a consistent, non-locking snapshot."""
     started = time()
     with consistent_timeline_read():
@@ -46,7 +52,7 @@ def build_public_match_reads(match_id: str) -> dict[str, dict[str, Any]]:
             return {}
         match = data.match_link
         summary = build_match_summaries([data])[0]
-        summary["prediction"] = match_prediction(match)
+        summary["prediction"] = forecast(match)
         payloads = {
             "summary": summary,
             "stats": build_match_stats_payload(match=match, match_data=data),
@@ -113,10 +119,12 @@ def build_public_match_reads(match_id: str) -> dict[str, dict[str, Any]]:
     }
 
 
-def publish_public_match_reads(*, match_id: str, store: PublishedLiveStore) -> None:
+def publish_public_match_reads(*, match_id: str, reads: PublicMatchReadRuntime) -> None:
     """Publish shared resources before notifying their readers."""
-    for resource, envelope in build_public_match_reads(match_id).items():
-        store.put(resource_key(match_id, resource), envelope)
+    for resource, envelope in build_public_match_reads(
+        match_id, forecast=reads.forecast
+    ).items():
+        reads.store.put(resource_key(match_id, resource), envelope)
 
 
 def render_public_match_read(
@@ -161,11 +169,12 @@ def read_public_match_resource(
     *,
     match_id: str,
     resource: str,
-    store: PublishedLiveStore,
+    reads: PublicMatchReadRuntime,
     since_revision: int | None = None,
     identity_version: str | None = None,
 ) -> dict[str, Any] | None:
     """Read a shared response, coalescing cold misses outside caller transactions."""
+    store = reads.store
     if connection.in_atomic_block or resource not in PUBLIC_MATCH_RESOURCES:
         return None
     key = resource_key(match_id, resource)
@@ -177,7 +186,7 @@ def read_public_match_resource(
     ):
 
         def build() -> dict[str, Any] | None:
-            envelopes = build_public_match_reads(match_id)
+            envelopes = build_public_match_reads(match_id, forecast=reads.forecast)
             for name, value in envelopes.items():
                 with suppress(PublicLiveStoreError):
                     store.put(resource_key(match_id, name), value)

@@ -11,6 +11,7 @@ from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.rosters import queue_rosters
 from apps.competition.services.season_repair import repair
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.competition.tests.test_lineups import lineup
 from apps.competition.tests.test_rosters import person
@@ -110,7 +111,7 @@ def test_match_private_counts_are_not_added_to_team_roster(season: Season) -> No
     """Keep each match's anonymous selection size separate from team membership."""
     importer = Importer(season, timezone.now())
     importer.match(match_payload(), result=True)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     data = lineup()
     data["HomeTeamPerson"] = [person("PRIVATE", "PRIVATE")]
     data["AwayTeamPerson"] = []
@@ -195,7 +196,7 @@ def test_shared_private_sentinel_counts_each_match_side(season: Season) -> None:
     """Never collapse anonymous selections into one person or across sides."""
     importer = Importer(season, timezone.now())
     importer.match(match_payload(), result=True)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     data = lineup()
     anonymous = person("PRIVATE", "PRIVATE")
     data["HomeTeamPerson"] = [anonymous, anonymous, anonymous]

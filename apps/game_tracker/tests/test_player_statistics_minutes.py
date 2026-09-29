@@ -10,18 +10,17 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from asgiref.sync import async_to_sync
 import pytest
 from pytest_django.fixtures import Settings
 
 from apps.game_tracker.models import MatchData, PlayerMatchMinutes, Shot
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
+from apps.game_tracker.services.player_statistics import build_player_stats
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_match_part,
     create_tracker_match,
     create_tracker_player,
 )
-from apps.kwt_common.utils.players_stats import build_player_stats
 
 
 @pytest.mark.django_db
@@ -76,7 +75,7 @@ def test_build_player_stats_minutes_missing_returns_null(
         defaults={"minutes_played": Decimal("10.00")},
     )
 
-    rows = async_to_sync(build_player_stats)(
+    rows = build_player_stats(
         [player_a, player_b],
         MatchData.objects.filter(id_uuid=match_data.id_uuid),
     )

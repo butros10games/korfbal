@@ -22,6 +22,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_player,
 )
 from apps.kwt_common.models import BackgroundJob
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.team.models import Team
 
 
@@ -223,7 +224,9 @@ def test_timeout_command_can_register_opponent_timeout_and_counts_in_state() -> 
 
     assert Timeout.objects.filter(match_data=match_data, team=away_team).count() == 1
 
-    state = get_tracker_state(match, team=home_team)
+    state = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert state["timeouts"]["for"] == 0
     assert state["timeouts"]["against"] == 1
     assert state["timeouts"]["max"] == MAX_TIMEOUTS
@@ -369,7 +372,9 @@ def test_tracker_rejects_a_team_outside_the_match() -> None:
     )
 
     with pytest.raises(TrackerCommandError) as exc:
-        get_tracker_state(tracker.match, team=unrelated_team)
+        get_tracker_state(
+            tracker.match, team=unrelated_team, goal_audio=build_goal_song_manifest
+        )
 
     assert exc.value.code == "invalid_team"
 
@@ -588,7 +593,9 @@ def test_last_event_tracks_and_undoes_period_transitions() -> None:
     ended = command("part_end")
     assert ended["last_event"]["transition"] == "end"
     command("start/pause")
-    second = get_tracker_state(tracker.match, team=tracker.home_team)
+    second = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
     assert second["last_event"]["transition"] == "start"
     assert second["last_event"]["part_number"] == data.parts
     back = command("remove_last_event")

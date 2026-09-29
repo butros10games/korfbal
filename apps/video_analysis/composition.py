@@ -25,6 +25,7 @@ from apps.video_analysis.adapters.training import (
     launch_status,
     queue_training,
 )
+from apps.video_analysis.application.ports import PipelineRuntime
 from apps.video_analysis.engine import vision
 from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.storage_workspace import (
@@ -42,7 +43,9 @@ __all__ = [
     "delete_superseded_video",
     "launch_status",
     "match_video_urls",
+    "pipeline_runtime",
     "purge_clip",
+    "purge_upload",
     "queue_training",
     "repackage_recording",
     "review_store",
@@ -171,9 +174,26 @@ def pipeline_has_capacity(store: Store, *, importing: bool) -> bool:
     return has_capacity(store, importing=importing)
 
 
-def purge_upload(store: Store, upload_id: uuid.UUID) -> None:
+def purge_upload(workspace: Workspace, upload_id: uuid.UUID) -> None:
     """Wire task-owned temporary chunk cleanup to private storage."""
-    purge_uploaded_chunks(store, upload_id)
+    purge_uploaded_chunks(worker_store(workspace, None, hydrate=False), upload_id)
+
+
+def pipeline_runtime() -> PipelineRuntime:
+    """Bind review preparation to private storage and the isolated vision runtime.
+
+    Returns:
+        The production pipeline capabilities.
+
+    """
+    return PipelineRuntime(
+        processing_store=processing_store,
+        has_capacity=pipeline_has_capacity,
+        import_source=import_pipeline_source,
+        infer_batch=infer_pipeline_batch,
+        extract_frames=extract_pipeline_frames,
+        run_clip=run_clip,
+    )
 
 
 def purge_clip(store: Store, run_id: uuid.UUID) -> None:

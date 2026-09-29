@@ -1,4 +1,4 @@
-"""Module contains `players_stats` function that returns player stats in a match.
+"""Team and season player statistics aggregated from persisted tracker rows.
 
 Team/season pages should report impact scores consistent with the Match page.
 
@@ -12,12 +12,10 @@ When persisted rows are missing or outdated, we opportunistically recompute them
 from __future__ import annotations
 
 from collections.abc import Iterable
-import json
 import logging
 import operator
 from typing import Any, TypedDict, cast
 
-from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.cache import cache
 from django.core.cache.backends.dummy import DummyCache
@@ -289,7 +287,7 @@ def _minutes_played_by_player_id(
     return _persisted_minutes_by_player_id(players=players, match_qs=match_qs)
 
 
-def build_player_stats_sync(
+def build_player_stats(
     players: list[Any], match_dataset: Iterable[Any]
 ) -> list[PlayerStatRow]:
     """Compute player statistics for a synchronous request handler.
@@ -412,26 +410,3 @@ def build_player_stats_sync(
     ]
 
     return sorted(player_rows, key=operator.itemgetter("goals_for"), reverse=True)
-
-
-async def build_player_stats(
-    players: list[Any], match_dataset: Iterable[Any]
-) -> list[PlayerStatRow]:
-    """Compute player statistics without blocking an asynchronous caller."""
-    return await sync_to_async(build_player_stats_sync)(players, match_dataset)
-
-
-async def players_stats(players: list[Any], match_dataset: Iterable[Any]) -> str:
-    """Return statistics of players in a match as websocket-friendly JSON.
-
-    Returns:
-        str: JSON string of player stats.
-
-    """
-    player_rows = await build_player_stats(players, match_dataset)
-    return json.dumps(
-        {
-            "command": "stats",
-            "data": {"type": "player_stats", "stats": {"player_stats": player_rows}},
-        },
-    )

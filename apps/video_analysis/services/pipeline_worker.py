@@ -8,13 +8,10 @@ import uuid
 from django.db import transaction
 from django.utils import timezone
 
-from apps.video_analysis.composition import (
-    extract_pipeline_frames,
-    import_pipeline_source,
-    infer_pipeline_batch,
-    pipeline_has_capacity,
-    processing_store,
-    run_clip,
+from apps.video_analysis.application.ports import (
+    ClipRunner,
+    FrameExtractor,
+    PipelineRuntime,
 )
 from apps.video_analysis.engine.clip_contract import ClipOptions
 from apps.video_analysis.engine.clips import directory, receipt
@@ -65,19 +62,19 @@ def claim(workspace_id: str) -> ReviewPipeline | None:
     return run
 
 
-def advance(workspace_id: str) -> None:
+def advance(workspace_id: str, runtime: PipelineRuntime) -> None:
     """Retry worker death safely and yield between units so review stays interactive."""
     run = claim(workspace_id)
     if run is None:
         return
     try:
-        with processing_store(run.workspace, run.requested_by) as store:
-            if not pipeline_has_capacity(
+        with runtime.processing_store(run.workspace, run.requested_by) as store:
+            if not runtime.has_capacity(
                 store, importing=run.recipe["stage"] == "import"
             ):
                 wait_for_capacity(run)
                 return
-            progress, done = perform(run, store)
+            progress, done = perform(run, store, runtime)
     except Exception:
         logging.getLogger(__name__).exception("Review pipeline %s failed", run.pk)
         with transaction.atomic():
@@ -123,7 +120,9 @@ def advance(workspace_id: str) -> None:
         wake(workspace_id)
 
 
-def perform(run: ReviewPipeline, store: Store) -> tuple[dict, bool]:
+def perform(
+    run: ReviewPipeline, store: Store, runtime: PipelineRuntime
+) -> tuple[dict, bool]:
     """Publish frame drafts first, then short tracking clips.
 
     Raises:
@@ -132,7 +131,7 @@ def perform(run: ReviewPipeline, store: Store) -> tuple[dict, bool]:
     """
     recipe, progress = run.recipe, dict(run.progress)
     if recipe["stage"] == "import":
-        import_pipeline_source(store, recipe)
+        runtime.import_source(store, recipe)
         return progress, True
     recording = Recording.objects.get(
         workspace=run.workspace, source_id=recipe["match_id"]
@@ -146,7 +145,9 @@ def perform(run: ReviewPipeline, store: Store) -> tuple[dict, bool]:
     offset = progress.get("frames_done", 0)
     if offset < len(times):
         selected = times[offset : offset + BATCH_SIZE]
-        ids = prepare_frames(run, store, recording, selected)
+        ids = prepare_frames(
+            run, store, recording, selected, extract_frames=runtime.extract_frames
+        )
         candidates = []
         for frame in Frame.objects.filter(recording=recording, source_id__in=ids):
             if (
@@ -167,7 +168,7 @@ def perform(run: ReviewPipeline, store: Store) -> tuple[dict, bool]:
             missing = [row for row in candidates if row["id"] not in seeded]
             if missing:
                 drafts.extend(
-                    infer_pipeline_batch(store, recipe["model"], missing, output)[
+                    runtime.infer_batch(store, recipe["model"], missing, output)[
                         "frames"
                     ]
                 )
@@ -177,7 +178,7 @@ def perform(run: ReviewPipeline, store: Store) -> tuple[dict, bool]:
     clips = recipe["plan"]["clips"]
     index = progress.get("clips_done", 0)
     if index < len(clips):
-        prepare_clip(run, store, recording, clips[index], index)
+        prepare_clip(run, store, recording, index, run_clip=runtime.run_clip)
         progress["clips_done"] = index + 1
     return progress, progress.get("clips_done", 0) == len(clips)
 
@@ -235,7 +236,12 @@ def publish_proposals(run: ReviewPipeline, result: dict, output: str) -> None:
 
 
 def prepare_clip(
-    run: ReviewPipeline, store: Store, recording: Recording, section: dict, index: int
+    run: ReviewPipeline,
+    store: Store,
+    recording: Recording,
+    index: int,
+    *,
+    run_clip: ClipRunner,
 ) -> None:
     """Publish one replay and make it available for explicit inspection.
 
@@ -243,6 +249,7 @@ def prepare_clip(
         ValueError: The replay did not finish.
 
     """
+    section = run.recipe["plan"]["clips"][index]
     prior = (
         AnalysisJob.objects
         .filter(
@@ -315,7 +322,12 @@ def prepare_clip(
 
 
 def prepare_frames(
-    run: ReviewPipeline, store: Store, recording: Recording, times: list[float]
+    run: ReviewPipeline,
+    store: Store,
+    recording: Recording,
+    times: list[float],
+    *,
+    extract_frames: FrameExtractor,
 ) -> list[str]:
     """Prepare only missing selected images, independently of catalogue size."""
     ids = [f"at-{round(time * 1000):09d}" for time in times]
@@ -330,7 +342,7 @@ def prepare_frames(
         if frame_id not in existing
     ]
     if missing:
-        rows = extract_pipeline_frames(store, recording.metadata, missing)
+        rows = extract_frames(store, recording.metadata, missing)
         save_frames(run, recording, rows)
     return ids
 

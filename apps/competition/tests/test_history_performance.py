@@ -154,7 +154,7 @@ def test_overlapping_graph_request_count_does_not_scale_with_fixtures(
                 sport="KORFBALL-VE-WK",
             )
 
-    result = run_history(lambda: client, budget=1000, publish=False)
+    result = run_history(lambda: client, budget=1000, publish_with=None)
 
     expected_calls = (
         {"match": 1, "pool": 1}
@@ -175,7 +175,10 @@ def test_overlapping_graph_request_count_does_not_scale_with_fixtures(
     }
     assert ResultRevision.objects.count() == count
 
-    assert run_history(lambda: client, budget=1000, publish=False)["http_requests"] == 0
+    assert (
+        run_history(lambda: client, budget=1000, publish_with=None)["http_requests"]
+        == 0
+    )
     assert len(client.calls) == sum(expected_calls.values())
     assert ResultRevision.objects.count() == count
 
@@ -202,7 +205,7 @@ def test_split_year_bulk_windows_precede_remaining_match_requests(
         {"rows": client.dataservice_rows, "wire_start": initial.start_date},
     )
 
-    result = run_history(lambda: client, budget=1000, publish=False)
+    result = run_history(lambda: client, budget=1000, publish_with=None)
 
     expected_calls = {"match": 1, "pool_window": 2, "standing": 1, "members": 1}
     assert Counter(kind for kind, _ in client.calls) == expected_calls
@@ -218,4 +221,7 @@ def test_split_year_bulk_windows_precede_remaining_match_requests(
         (f"ds:{index}", index % 20, (index + 3) % 20) for index in range(1, count + 1)
     }
     assert ResultRevision.objects.count() == count
-    assert run_history(lambda: client, budget=1000, publish=False)["http_requests"] == 0
+    assert (
+        run_history(lambda: client, budget=1000, publish_with=None)["http_requests"]
+        == 0
+    )

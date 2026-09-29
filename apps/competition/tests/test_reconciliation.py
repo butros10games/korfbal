@@ -33,6 +33,7 @@ from apps.competition.services.reconciliation import (
     normalized,
     reconcile,
 )
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import (
@@ -415,7 +416,11 @@ def test_publication_applies_reviewed_overrides_in_one_pass(
     SyncLease.objects.create(
         key="sportlink", owner=owner, expires_at=timezone.now() + timedelta(minutes=1)
     )
-    result = publish_catalogue(lease_owner=owner, overrides=graph["overrides"])
+    result = publish_catalogue(
+        lease_owner=owner,
+        overrides=graph["overrides"],
+        schedule_changes=RecordingScheduleChanges(),
+    )
     assert result["links"]["explicit"] == 1
     assert not result["blocked"]
     assert Match.objects.get().local_match == graph["local"]

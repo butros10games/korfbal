@@ -5,7 +5,7 @@ from http import HTTPStatus
 from pathlib import Path
 import shutil
 import subprocess
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from django.contrib.auth.models import User
@@ -13,10 +13,12 @@ from django.utils import timezone
 import pytest
 
 from apps.kwt_common.models import BackgroundJob
+from apps.video_analysis import composition
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.engine.store import ConflictError, Store
 from apps.video_analysis.models import Recording, ReviewPipeline, VideoUpload, Workspace
 from apps.video_analysis.services import pipeline, pipeline_worker, uploads
+from apps.video_analysis.tests.runtime import pipeline_runtime
 from apps.video_analysis.tests.test_review import verified
 
 
@@ -54,11 +56,11 @@ def test_retry_finish_and_cleanup_preserve_the_import(
     assert run.recipe["upload"]["parts"][0]["size"] == len(data)
     with pytest.raises(ConflictError):
         uploads.cancel(workspace, owner, key)
-    uploads.cleanup(key)
+    uploads.cleanup(key, purge_upload=composition.purge_upload)
     assert VideoUpload.objects.get(pk=key).parts
     run.status = "awaiting_cuts"
     run.save()
-    uploads.cleanup(key)
+    uploads.cleanup(key, purge_upload=composition.purge_upload)
     assert VideoUpload.objects.get(pk=key).status == "consumed"
     assert not (store.root / "uploads" / key).exists()
     assert uploads.finish(workspace, owner, key)["status"] == "consumed"
@@ -149,7 +151,9 @@ def test_chunks_are_sequential_and_expire(
     )
     with pytest.raises(ConflictError):
         uploads.finish(workspace, owner, key)
-    uploads.cleanup(key)
+    purge = Mock()
+    uploads.cleanup(key, purge_upload=purge)
+    purge.assert_called_once_with(workspace, uuid.UUID(key))
     assert VideoUpload.objects.get(pk=key).status == "expired"
     assert BackgroundJob.objects.filter(
         key=f"apps.video_analysis.tasks.cleanup_upload:{key}"
@@ -189,8 +193,9 @@ def test_real_uploaded_video_reaches_cutting_and_rejects_corrupt_media(
     key = start(owner, workspace, data)
     uploads.part(workspace, owner, store, key=key, chunk=uploads.Chunk(0, data))
     uploads.finish(workspace, owner, key)
-    with patch.object(pipeline_worker, "pipeline_has_capacity", return_value=True):
-        pipeline_worker.advance(str(workspace.pk))
+    pipeline_worker.advance(
+        str(workspace.pk), pipeline_runtime(has_capacity=Mock(return_value=True))
+    )
     run = ReviewPipeline.objects.get(pk=key)
     assert run.status == "awaiting_cuts"
     recording = Recording.objects.get(source_id=run.recipe["match_id"])
@@ -206,8 +211,9 @@ def test_real_uploaded_video_reaches_cutting_and_rejects_corrupt_media(
     bad = start(owner, workspace, corrupt)
     uploads.part(workspace, owner, store, key=bad, chunk=uploads.Chunk(0, corrupt))
     uploads.finish(workspace, owner, bad)
-    with patch.object(pipeline_worker, "pipeline_has_capacity", return_value=True):
-        pipeline_worker.advance(str(workspace.pk))
+    pipeline_worker.advance(
+        str(workspace.pk), pipeline_runtime(has_capacity=Mock(return_value=True))
+    )
     assert ReviewPipeline.objects.get(pk=bad).status == "failed"
     assert not Recording.objects.filter(
         source_id=f"intake-{uuid.UUID(bad).hex}"

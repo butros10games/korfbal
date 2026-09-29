@@ -19,6 +19,7 @@ from apps.game_tracker.services.tracker_state import (
     poll_tracker_state,
 )
 from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
 UNDO_REVISION = 3
@@ -129,7 +130,9 @@ def test_change_summary_preserves_resources_and_entity_ids() -> None:
 def test_compact_tracker_poll_reuses_initial_configuration() -> None:
     """Repeated tracker updates omit teams, IDs, and goal type configuration."""
     tracker = create_tracker_match(prefix="Compact tracker")
-    initial = get_tracker_state(tracker.match, team=tracker.home_team)
+    initial = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
 
     apply_tracker_command(
         tracker.match,
@@ -141,8 +144,11 @@ def test_compact_tracker_poll_reuses_initial_configuration() -> None:
         team=tracker.home_team,
         since_revision=initial["live_revision"],
         compact=True,
+        goal_audio=build_goal_song_manifest,
     )
-    full = get_tracker_state(tracker.match, team=tracker.home_team)
+    full = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
 
     assert compact["changed"] is True
     assert compact["resources"] == ["events", "live", "player_groups", "tracker"]

@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 import shutil
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
@@ -28,6 +28,7 @@ from apps.video_analysis.models import (
     Workspace,
 )
 from apps.video_analysis.services import pipeline_worker, repackaging
+from apps.video_analysis.tests.runtime import pipeline_runtime
 from apps.video_analysis.tests.test_object_video import client  # noqa: F401 - fixture
 
 
@@ -223,11 +224,10 @@ def test_import_and_command_queue_durable_repackaging(
     run = ReviewPipeline.objects.create(
         workspace=workspace, recipe={"match_id": "demo", "stage": "import"}
     )
-    with (
-        patch.object(pipeline_worker, "pipeline_has_capacity", return_value=True),
-        patch.object(pipeline_worker, "perform", return_value=({}, True)),
-    ):
-        pipeline_worker.advance(str(workspace.pk))
+    with patch.object(pipeline_worker, "perform", return_value=({}, True)):
+        pipeline_worker.advance(
+            str(workspace.pk), pipeline_runtime(has_capacity=Mock(return_value=True))
+        )
     run.refresh_from_db()
     assert run.status == "awaiting_cuts"
     key = (

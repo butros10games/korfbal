@@ -30,10 +30,10 @@ from apps.club.services.admin import (
     search_club_admin_users,
 )
 from apps.club.services.eligibility_dashboard import build_club_eligibility_dashboard
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
+from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
-from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.schedule.queries.seasons import (
     requested_or_default_season,
     season_options_payload,

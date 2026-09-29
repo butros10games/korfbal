@@ -7,6 +7,7 @@ from typing import Any, cast
 from django.db import models
 from django.utils import timezone
 
+from apps.game_tracker.application.ports import GoalAudioManifest
 from apps.game_tracker.domain.match_limits import (
     MAX_SUBSTITUTIONS_PER_TEAM,
     MAX_TIMEOUTS_PER_TEAM,
@@ -35,7 +36,6 @@ from apps.game_tracker.services.tracker_commands.base import (
 )
 from apps.game_tracker.services.tracker_event_queries import last_event_model
 from apps.player.models import Player
-from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import Match
 from apps.team.models.team import Team
 
@@ -367,7 +367,11 @@ def _serialize_last_event_attack(event: Attack) -> dict[str, Any]:
 
 
 def get_tracker_state(
-    match: Match, *, team: Team, include_configuration: bool = True
+    match: Match,
+    *,
+    team: Team,
+    goal_audio: GoalAudioManifest,
+    include_configuration: bool = True,
 ) -> dict[str, Any]:
     """Return a snapshot of the current tracker state.
 
@@ -431,7 +435,7 @@ def get_tracker_state(
                 "name": opponent.name,
                 "club": opponent.club.name,
             },
-            "goal_audio": build_goal_song_manifest(
+            "goal_audio": goal_audio(
                 player_ids=player_ids,
                 team=team,
                 season=match.season,
@@ -505,26 +509,30 @@ def poll_tracker_state(
     *,
     team: Team,
     since_revision: int,
-    timeout_seconds: int = 25,
+    goal_audio: GoalAudioManifest,
     compact: bool = False,
 ) -> dict[str, Any]:
     """Return changed tracker state without occupying a request worker.
 
-    The timeout remains for wire compatibility. SSE and interval polling own
-    waiting, so blocking a Django request here would only consume a worker.
+    SSE and interval polling own waiting; the API still accepts and ignores the
+    legacy ``timeout`` parameter, since blocking here would only hold a worker.
 
     Raises:
         TrackerCommandError: If tracker data does not exist for the match.
 
     """
-    del timeout_seconds
     other_team(match, team)
 
     match_data = MatchData.objects.filter(match_link=match).first()
     if match_data is None:
         raise TrackerCommandError(MATCH_TRACKER_DATA_NOT_FOUND, code="not_found")
     if match_data.live_revision > since_revision:
-        state = get_tracker_state(match, team=team, include_configuration=not compact)
+        state = get_tracker_state(
+            match,
+            team=team,
+            goal_audio=goal_audio,
+            include_configuration=not compact,
+        )
         summary = summarize_match_changes(
             MatchData.objects.get(pk=match_data.pk),
             since_revision=since_revision,

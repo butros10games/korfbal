@@ -18,9 +18,9 @@ from apps.game_tracker.services.tracker_access import (
     issue_tracker_link,
     token_digest,
 )
+from apps.kwt_common.api.params import UUID_URL_REGEX
 
 from .permissions import IsClubMemberOrCoachOrAdmin, _get_match_and_team
-from .validation import UUID_URL_REGEX
 
 
 class TrackerLinkStatusSerializer(serializers.Serializer):

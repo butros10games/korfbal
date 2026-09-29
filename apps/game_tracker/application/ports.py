@@ -5,9 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from apps.game_tracker.realtime.contracts import LiveResource
+
+
+if TYPE_CHECKING:
+    from apps.schedule.models import Match, Season
+    from apps.team.models import Team
 
 
 class MatchChangePublisher(Protocol):
@@ -49,6 +54,15 @@ class TrackerJobDispatcher(Protocol):
         """Schedule minutes-played recomputation."""
 
 
+class GoalAudioManifest(Protocol):
+    """Resolve ready goal-song clips for the tracked roster (owned by player)."""
+
+    def __call__(
+        self, *, player_ids: Iterable[str], team: Team, season: Season | None
+    ) -> dict[str, object]:
+        """Return player and team-fallback clips in selection order."""
+
+
 @dataclass(frozen=True, slots=True)
 class TrackerRuntime:
     """Runtime capabilities required by tracker command execution."""
@@ -56,6 +70,14 @@ class TrackerRuntime:
     now: Callable[[], datetime]
     jobs: TrackerJobDispatcher
     publisher: MatchChangePublisher
+    goal_audio: GoalAudioManifest
+
+
+class MatchForecaster(Protocol):
+    """Predict a match outcome for public summaries (owned by competition)."""
+
+    def __call__(self, match: Match) -> dict[str, Any]:
+        """Return the public prediction payload for a native match."""
 
 
 class PublicLiveStoreError(Exception):
@@ -81,3 +103,11 @@ class PublishedLiveStore(Protocol):
         build: Callable[[], dict[str, Any] | None],
     ) -> dict[str, Any] | None:
         """Coalesce misses briefly, falling back to the authoritative builder."""
+
+
+@dataclass(frozen=True, slots=True)
+class PublicMatchReadRuntime:
+    """Shared public read storage plus the forecast shown in match summaries."""
+
+    store: PublishedLiveStore
+    forecast: MatchForecaster

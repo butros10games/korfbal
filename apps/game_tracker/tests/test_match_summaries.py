@@ -9,11 +9,11 @@ from datetime import timedelta
 import pytest
 
 from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
-from apps.kwt_common.utils.match_summary import build_match_summaries
 
 
 @pytest.mark.django_db

@@ -18,9 +18,11 @@ from apps.club.models import Club as AppClub
 from apps.competition.models import Club, Match, SyncLease, Team, TeamGroup
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import Publisher, publish_catalogue
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData, Shot
 from apps.game_tracker.services.tracker_state import get_tracker_state
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.schedule.models import (
     Match as AppMatch,
     Season,
@@ -46,7 +48,7 @@ def test_imported_records_use_native_admin_search_and_detail_pages(
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    first = publish_catalogue()
+    first = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert first["counts"]["clubs_created"] == MATCH_SIDES
     assert first["counts"]["teams_created"] == MATCH_SIDES
     source = Match.objects.get()
@@ -64,7 +66,9 @@ def test_imported_records_use_native_admin_search_and_detail_pages(
         TeamGroup.objects.filter(local_team_data__isnull=False).count() == MATCH_SIDES
     )
     assert SeasonPool.objects.get().teams.count() == MATCH_SIDES
-    assert get_tracker_state(match, team=match.away_team)["score"] == {
+    assert get_tracker_state(
+        match, team=match.away_team, goal_audio=build_goal_song_manifest
+    )["score"] == {
         "for": 10,
         "against": 0,
     }
@@ -86,7 +90,7 @@ def test_imported_records_use_native_admin_search_and_detail_pages(
         "home": 0,
         "away": 10,
     }
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert (
         AppClub.objects.count(),
         AppTeam.objects.count(),
@@ -116,7 +120,7 @@ def test_global_team_shared_across_sports_and_season_rosters(season: Season) -> 
         end_date=season.end_date + timedelta(days=365),
     )
     Importer(later, timezone.now()).team(payload)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert AppTeam.objects.count() == 1
     assert AppTeam.objects.get().name == "J1"
     assert TeamData.objects.count() == MATCH_SIDES
@@ -136,7 +140,7 @@ def test_existing_global_identity_and_roster_are_preserved() -> None:
     payload["Club"] = {"ClubId": "C", "ClubName": context.club.name}
     payload["TeamName"] = f"{context.club.name} {context.team.name}"
     Importer(context.season, timezone.now()).team(payload)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert TeamGroup.objects.get().local_team_data_id == context.team_data.pk
     assert AppTeam.objects.count() == 1
     assert list(context.team_data.players.all()) == [context.player]
@@ -148,13 +152,13 @@ def test_results_refresh_without_overwriting_tracker_activity(season: Season) ->
     """Retain native tracker authority after a command."""
     data = match_payload()
     Importer(season, timezone.now()).apply("club_results", "C", {"MatchResult": [data]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     changed = deepcopy(data)
     changed["HomeResult"]["Score"] = 12
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [changed]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     tracker = MatchData.objects.get()
     assert tracker.home_score == changed["HomeResult"]["Score"]
     local_score = 15
@@ -165,7 +169,7 @@ def test_results_refresh_without_overwriting_tracker_activity(season: Season) ->
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [changed]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     tracker.refresh_from_db()
     assert tracker.home_score == local_score
 
@@ -176,7 +180,7 @@ def test_same_name_provider_clubs_require_review(season: Season) -> None:
     del season
     Club.objects.create(external_id="A", name="Example", city="Town A")
     Club.objects.create(external_id="B", name="Example", city="Town B")
-    report = publish_catalogue()
+    report = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert not AppClub.objects.exists()
     assert len(report["blocked"]) == MATCH_SIDES
 
@@ -188,7 +192,7 @@ def test_publishing_respects_the_active_import_lease() -> None:
         key="sportlink", owner=uuid4(), expires_at=timezone.now() + timedelta(minutes=1)
     )
     with pytest.raises(ValueError, match="running"):
-        publish_catalogue()
+        publish_catalogue(schedule_changes=RecordingScheduleChanges())
 
 
 @pytest.mark.django_db
@@ -208,7 +212,7 @@ def test_untouched_native_fixture_receives_official_result(season: Season) -> No
         away_team=sides[1],
         start_time=source.starts_at,
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source.refresh_from_db()
     assert source.local_match_id == native.pk
     assert not source.local_created
@@ -224,12 +228,12 @@ def test_manual_score_edit_is_retained_without_a_tracker_revision(
     """Admin changes cannot be silently overwritten by later provider observations."""
     data = match_payload()
     Importer(season, timezone.now()).apply("club_results", "C", {"MatchResult": [data]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     local_score = 15
     MatchData.objects.update(home_score=local_score)
     data["HomeResult"]["Score"] = 20
     Importer(season, timezone.now()).apply("club_results", "C", {"MatchResult": [data]})
-    report = publish_catalogue()
+    report = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert MatchData.objects.get().home_score == local_score
     assert report["blocked"][0]["reason"] == "local_score_changed"
 
@@ -242,7 +246,7 @@ def test_pool_editor_retains_imported_sport_when_older_clients_omit_it(
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     pool = SeasonPool.objects.get()
     client = APIClient()
     client.force_authenticate(
@@ -276,11 +280,11 @@ def test_unchanged_import_does_not_republish_but_fixture_changes_do(
         {"MatchResult": [row]} if result else {"ProgramItemMatchClub": [{"Match": row}]}
     )
     Importer(season, now).apply(kind, "CT1", payload)
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     original = Match.objects.get()
     Importer(season, now + timedelta(seconds=1)).apply(kind, "CT1", payload)
     with CaptureQueriesContext(connection) as queries:
-        publication = publish_catalogue()
+        publication = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     writes = [
         query["sql"]
         for query in queries
@@ -291,7 +295,7 @@ def test_unchanged_import_does_not_republish_but_fixture_changes_do(
     assert Match.objects.get().published_at == original.published_at
     row["MatchDateTime"] = "2026-09-06T13:30:00+0200"
     Importer(season, now + timedelta(seconds=2)).apply(kind, "CT1", payload)
-    publication = publish_catalogue()
+    publication = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     changed = Match.objects.get()
     assert publication["counts"]["matches_updated"] == 1
     assert changed.updated_at > original.updated_at
@@ -314,8 +318,8 @@ def test_clean_publication_skips_native_catalogue_reads(season: Season) -> None:
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    publish_catalogue()
-    publisher = Publisher()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    publisher = Publisher(RecordingScheduleChanges())
     with CaptureQueriesContext(connection) as queries:
         publisher.teams()
         publisher.matches()
@@ -330,13 +334,13 @@ def test_linked_score_correction_skips_fixture_candidate_scan(season: Season) ->
     row = match_payload()
     observed = timezone.now()
     Importer(season, observed).apply("club_results", "C", {"MatchResult": [row]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     row["HomeResult"]["Score"] = 12
     Importer(season, observed + timedelta(seconds=1)).apply(
         "club_results", "C", {"MatchResult": [row]}
     )
     with CaptureQueriesContext(connection) as queries:
-        Publisher().matches()
+        Publisher(RecordingScheduleChanges()).matches()
     assert MatchData.objects.get().home_score == row["HomeResult"]["Score"]
     assert not any(
         f'FROM "{AppMatch._meta.db_table}"' in query["sql"] for query in queries
@@ -353,7 +357,7 @@ def test_pending_fixture_lookup_preserves_ambiguity_guards(
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [payload]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     native = AppMatch.objects.get()
     if duplicate_native:
         AppMatch.objects.create(
@@ -367,7 +371,7 @@ def test_pending_fixture_lookup_preserves_ambiguity_guards(
         "club_results", "C", {"MatchResult": [payload]}
     )
     source = Match.objects.get(external_id="second-source")
-    publisher = Publisher()
+    publisher = Publisher(RecordingScheduleChanges())
     publisher.matches()
     source.refresh_from_db()
     assert source.local_match_id is None
@@ -383,7 +387,7 @@ def test_pending_fixture_loads_only_relevant_native_candidates(season: Season) -
     Importer(season, timezone.now()).apply(
         "club_results", "C", {"MatchResult": [match_payload()]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     native = AppMatch.objects.get()
     for days in range(1, 11):
         AppMatch.objects.create(
@@ -394,7 +398,7 @@ def test_pending_fixture_loads_only_relevant_native_candidates(season: Season) -
         )
     source = Match.objects.get()
     Match.objects.filter(pk=source.pk).update(local_match=None, published_at=None)
-    publisher = Publisher()
+    publisher = Publisher(RecordingScheduleChanges())
     # Preserve the classmethod descriptor for Django's signature inspection.
     load = Mock(wraps=AppMatch.from_db.__func__)
     with patch.object(AppMatch, "from_db", classmethod(load)):

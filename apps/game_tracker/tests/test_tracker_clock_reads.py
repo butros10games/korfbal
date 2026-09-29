@@ -17,6 +17,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_match_part,
     create_tracker_match,
 )
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
 pytestmark = pytest.mark.django_db
@@ -29,7 +30,9 @@ def _read_clock(
     client: Client, tracker: TrackerMatchContext, surface: str
 ) -> dict[str, Any]:
     if surface == "tracker":
-        return get_tracker_state(tracker.match, team=tracker.home_team)
+        return get_tracker_state(
+            tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+        )
     response = client.get(f"/api/matches/{tracker.match.pk}/{surface}/")
     assert response.status_code == HTTPStatus.OK
     return response.json()
@@ -193,7 +196,9 @@ def test_tracker_pause_flag_and_timer_observe_the_same_pause() -> None:
         "apps.game_tracker.services.tracker_state._player_groups_payload",
         side_effect=pause_during_roster,
     ):
-        state = get_tracker_state(tracker.match, team=tracker.home_team)
+        state = get_tracker_state(
+            tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+        )
     assert state["timer"]["type"] == "pause"
     assert state["paused"] is True
     assert state["start_stop_label"] == "Start"

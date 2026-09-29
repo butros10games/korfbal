@@ -12,7 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.kwt_common.services.jobs import enqueue
-from apps.video_analysis.composition import purge_upload, worker_store
+from apps.video_analysis.application.ports import UploadPurger
 from apps.video_analysis.engine.store import ConflictError, Store
 from apps.video_analysis.models import ReviewPipeline, VideoUpload, Workspace
 from apps.video_analysis.services.pipeline import ACTIVE, MAX_PIPELINES, wake
@@ -232,7 +232,7 @@ def cancel(workspace: Workspace, actor: User, key: str) -> dict:
 
 
 @transaction.atomic
-def cleanup(key: str) -> None:
+def cleanup(key: str, *, purge_upload: UploadPurger) -> None:
     """Release temporary chunks after successful import, cancellation or expiration."""
     row = VideoUpload.objects.select_for_update().filter(pk=uuid.UUID(str(key))).first()
     if row is None or row.status == "consumed":
@@ -248,7 +248,7 @@ def cleanup(key: str) -> None:
     ):
         cleanup_later(row, timezone.now() + timedelta(days=1))
         return
-    purge_upload(worker_store(row.workspace, None, hydrate=False), row.pk)
+    purge_upload(row.workspace, row.pk)
     row.status = (
         "consumed"
         if row.status == "queued"

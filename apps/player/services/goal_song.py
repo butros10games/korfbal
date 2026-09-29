@@ -226,7 +226,24 @@ def apply_goal_song_song_ids(
 ) -> list[str]:
     """Apply goal-song selection ids to the player in memory."""
     ordered = validate_goal_song_ids(player=player, ids=ids)
+    return apply_goal_song_selection(player=player, ids=ids, ordered=ordered)
 
+
+def apply_goal_song_selection(
+    *,
+    player: Player,
+    ids: list[str],
+    ordered: list[PlayerSong],
+) -> list[str]:
+    """Apply an already validated selection; the first song drives legacy playback.
+
+    Every route that edits a player's selection (the player's own settings and
+    team moderation) shares this rule after validating ``ordered``.
+
+    Returns:
+        The model fields to save.
+
+    """
     update_fields: list[str] = ["goal_song_song_ids"]
     player.goal_song_song_ids = ids
 

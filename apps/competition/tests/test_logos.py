@@ -19,6 +19,7 @@ from apps.competition.services.importer import Importer
 from apps.competition.services.logos import cache_logo, logo_name, publish_logo
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.sync import sync
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.schedule.models import Season
 
 
@@ -54,7 +55,7 @@ def test_discovery_cache_and_native_publication(season: Season) -> None:
     importer.apply("clubs", "", {"Club": [payload()]})
     assert SyncResource.objects.filter(kind="club_logo").count() == 1
     cache_logo("logo-club", image_payload())
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     source = Club.objects.get()
     local = AppClub.objects.get()
     assert local.logo.name == source.cached_logo == source.published_logo
@@ -72,7 +73,7 @@ def test_user_upload_survives_import_and_corrections(season: Season) -> None:
     """Both preexisting and later manual images remain authoritative."""
     importer = Importer(season, timezone.now())
     importer.apply("clubs", "", {"Club": [payload()]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     local = AppClub.objects.get()
     local.logo = "club_pictures/my-upload.png"
     local.save()
@@ -146,7 +147,7 @@ def test_changed_logo_download_updates_previous_import(season: Season) -> None:
     """The adapter and importer replace a badge when its hash changes."""
     importer = Importer(season, timezone.now())
     importer.apply("clubs", "", {"Club": [payload()]})
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     cache_logo("logo-club", image_payload())
     previous = AppClub.objects.get().logo.name
     changed = payload()
@@ -228,7 +229,7 @@ def test_logo_auth_rejection_is_local_but_rate_limit_is_global(
     )
     client = Mock()
     client.fetch.return_value = FetchResult(status_code, retry_after=RETRY_SECONDS)
-    result = sync(season, client, budget=1)
+    result = sync(season, client, budget=1, schedule_changes=RecordingScheduleChanges())
     assert result["failed"] == 1
     lease = SyncLease.objects.get(key="sportlink")
     if status_code == HTTPStatus.TOO_MANY_REQUESTS:

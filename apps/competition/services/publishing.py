@@ -11,7 +11,6 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.club.models import Club as AppClub
-from apps.competition.composition import schedule_change_dispatcher
 from apps.competition.models import (
     Club,
     Match,
@@ -35,7 +34,10 @@ from apps.competition.services.reconciliation import (
     team_label,
 )
 from apps.competition.services.rosters import publish_pending_rosters
-from apps.competition.services.schedule_notifications import schedule_changed
+from apps.competition.services.schedule_notifications import (
+    ScheduleChangeDispatcher,
+    schedule_changed,
+)
 from apps.competition.services.seasons import SeasonResolver
 from apps.game_tracker.models import MatchData, MatchPart, Shot
 from apps.schedule.models import (
@@ -79,8 +81,12 @@ def pool_memberships() -> dict[int, set[Any]]:
 class Publisher:
     """Resolve and create identities in dependency order using shared lookup indexes."""
 
-    def __init__(self) -> None:
-        """Collect publication counts and reviewable conflicts."""
+    def __init__(self, schedule_changes: ScheduleChangeDispatcher | None) -> None:
+        """Collect publication counts and reviewable conflicts.
+
+        ``schedule_changes`` is None only for repairs that never publish fixtures.
+        """
+        self.schedule_changes = schedule_changes
         self.counts: Counter[str] = Counter()
         self.blocked: list[dict[str, Any]] = []
 
@@ -388,7 +394,12 @@ class Publisher:
             )
 
     def schedule(self, row: Match, *, accepted: bool) -> tuple[str, ...]:
-        """Version changed schedules without rearming a concurrently claimed event."""
+        """Version changed schedules without rearming a concurrently claimed event.
+
+        Raises:
+            RuntimeError: A repair-only publisher reached fixture publication.
+
+        """
         schedule = {"starts_at": row.starts_at.isoformat(), "status": row.status}
         if schedule == row.published_schedule:
             return ()
@@ -398,8 +409,10 @@ class Publisher:
             and row.local_created
             and schedule_changed(row.published_schedule, schedule)
         ):
+            if self.schedule_changes is None:
+                raise RuntimeError("Fixture publication needs a schedule dispatcher")
             row.schedule_notification_id = uuid4()
-            schedule_change_dispatcher()(
+            self.schedule_changes(
                 notification_id=str(row.schedule_notification_id),
                 match_id=str(row.local_match_id),
                 starts_at=schedule["starts_at"],
@@ -466,6 +479,7 @@ class Publisher:
 @transaction.atomic
 def publish_catalogue(
     *,
+    schedule_changes: ScheduleChangeDispatcher,
     lease_owner: UUID | None = None,
     overrides: dict[tuple[str, int], str] | None = None,
 ) -> dict[str, Any]:
@@ -493,7 +507,7 @@ def publish_catalogue(
             SOURCE_MODELS[decision.kind].objects.filter(
                 pk=decision.source_id
             ).update(**{LOCAL_FIELDS[decision.kind] + "_id": decision.local_id})
-    publisher = Publisher()
+    publisher = Publisher(schedule_changes)
     if merged_groups:
         publisher.counts["source_groups_merged"] = merged_groups
     publisher.clubs()

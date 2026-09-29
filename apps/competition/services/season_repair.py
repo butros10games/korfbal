@@ -101,7 +101,7 @@ def repair(
         map_pool(row)
     repair_allocations(scope, blocked, changed)
     repair_matches(scope, resolver, blocked, changed)
-    publisher = Publisher()
+    publisher = Publisher(schedule_changes=None)
     publisher.team_variants(force=True, scope=scope)
     for group_id in (
         Team.objects.filter(season=scope).values_list("group_id", flat=True).distinct()

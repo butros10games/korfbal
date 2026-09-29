@@ -12,6 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
+from apps.kwt_common.api.params import uuid_query_values
 from apps.player.services.player_overview import (
     build_player_overview_payload,
     build_player_stats_payload,
@@ -19,7 +20,6 @@ from apps.player.services.player_overview import (
     player_seasons_queryset,
     resolve_season,
 )
-from apps.schedule.api.validation import uuid_query_values
 
 from .common import (
     PLAYER_NOT_FOUND_DETAIL,

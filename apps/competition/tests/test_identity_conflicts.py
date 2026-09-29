@@ -11,6 +11,7 @@ from apps.competition.services.identities import (
 )
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.schedule.models import Season, SeasonPool
 from apps.team.models import (
     Team as AppTeam,
@@ -56,7 +57,7 @@ def test_new_joint_variants_share_one_group(season: Season) -> None:
                 ]
             },
         )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert TeamGroup.objects.count() == 1
     assert AppTeam.objects.count() == 1
     assert TeamData.objects.count() == 1
@@ -101,7 +102,7 @@ def test_existing_unlinked_alias_merges_without_replacing_roster(
         starts_at=timezone.now(),
         status="SCHEDULED",
     )
-    result = publish_catalogue()
+    result = publish_catalogue(schedule_changes=RecordingScheduleChanges())
     fixture.refresh_from_db()
     assert fixture.local_match_id is not None
     assert fixture.local_match.home_team_id == local_team.pk
@@ -112,7 +113,7 @@ def test_existing_unlinked_alias_merges_without_replacing_roster(
     assert TeamData.objects.get(team=local_team).pk == roster.pk
     assert result["counts"]["source_groups_merged"] == 1
     assert not result["blocked"]
-    assert not publish_catalogue()["blocked"]
+    assert not publish_catalogue(schedule_changes=RecordingScheduleChanges())["blocked"]
 
 
 @pytest.mark.django_db
@@ -130,7 +131,7 @@ def test_distinct_existing_native_teams_are_not_merged(season: Season) -> None:
             local_team=local,
             local_team_data=TeamData.objects.create(team=local, season=season),
         )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     assert AppTeam.objects.count() == TeamGroup.objects.count() == DISTINCT_IDENTITIES
 
 
@@ -142,7 +143,7 @@ def test_unnamed_poules_remain_distinct_and_gain_metadata(season: Season) -> Non
         season=season, external_id="101222", sport="ZA", local_pool=legacy
     )
     second = Pool.objects.create(season=season, external_id="101234", sport="ZA")
-    assert not publish_catalogue()["blocked"]
+    assert not publish_catalogue(schedule_changes=RecordingScheduleChanges())["blocked"]
     legacy.refresh_from_db()
     second.refresh_from_db()
     assert legacy.name == "KNKV-poule 101222"
@@ -151,7 +152,7 @@ def test_unnamed_poules_remain_distinct_and_gain_metadata(season: Season) -> Non
     second.name = "A1"
     second.class_name = "Senioren"
     second.save()
-    assert not publish_catalogue()["blocked"]
+    assert not publish_catalogue(schedule_changes=RecordingScheduleChanges())["blocked"]
     second.local_pool.refresh_from_db()
     assert second.local_pool.name == "Senioren A1"
     assert SeasonPool.objects.count() == DISTINCT_IDENTITIES
@@ -166,9 +167,9 @@ def test_same_named_source_poules_do_not_merge(season: Season) -> None:
         Pool.objects.create(
             season=season, external_id=identifier, name="A1", sport="ZA"
         )
-    assert not publish_catalogue()["blocked"]
+    assert not publish_catalogue(schedule_changes=RecordingScheduleChanges())["blocked"]
     assert SeasonPool.objects.count() == DISTINCT_IDENTITIES
-    assert not publish_catalogue()["blocked"]
+    assert not publish_catalogue(schedule_changes=RecordingScheduleChanges())["blocked"]
 
 
 @pytest.mark.django_db

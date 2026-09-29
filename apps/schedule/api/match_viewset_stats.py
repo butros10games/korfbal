@@ -9,9 +9,9 @@ from rest_framework.response import Response
 
 from apps.competition.services.match_prediction import match_prediction
 from apps.game_tracker.composition import read_public_match
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.services.match_impacts_payload import build_match_impacts_payload
 from apps.game_tracker.services.match_stats_payload import build_match_stats_payload
-from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.schedule.models import Match
 
 from .match_viewset_contracts import MatchViewSetContext

@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
+from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.player.api.permissions import CanModifyPlayer
 from apps.player.api.serializers import (
     AccountDeleteSerializer,
@@ -39,7 +40,6 @@ from apps.player.services.player_teams import (
     followed_teams_for_player,
     grouped_teams_for_player,
 )
-from apps.schedule.api.validation import UUID_URL_REGEX
 from apps.team.api.serializers import TeamSerializer
 
 from .common import (

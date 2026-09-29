@@ -13,18 +13,19 @@ from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.composition import apply_tracker_command, read_public_live
-from apps.game_tracker.services.tracker_commands import TrackerCommandError
-from apps.game_tracker.services.tracker_state import (
+from apps.game_tracker.composition import (
+    apply_tracker_command,
     get_tracker_state,
     poll_tracker_state,
+    read_public_live,
 )
+from apps.game_tracker.services.tracker_commands import TrackerCommandError
+from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.schedule.models import Match
 from apps.team.models.team import Team
 
 from .match_viewset_contracts import MatchViewSetContext
 from .permissions import HasTrackerAccess
-from .validation import UUID_URL_REGEX
 
 
 def _tracker_read_error(exc: TrackerCommandError) -> Response:
@@ -161,8 +162,9 @@ class MatchLiveActionsMixin:
         match: Match = self.get_object()
         team = get_object_or_404(Team.objects.select_related("club"), id_uuid=team_id)
 
+        # The legacy ``timeout`` parameter is accepted and ignored: waiting is
+        # owned by SSE and client polling intervals, never by a request worker.
         since_revision_raw = request.query_params.get("since_revision")
-        timeout_raw = request.query_params.get("timeout")
 
         since_revision = _parse_since_revision(since_revision_raw)
         if since_revision is None:
@@ -172,17 +174,11 @@ class MatchLiveActionsMixin:
             )
 
         try:
-            timeout_seconds = int(timeout_raw) if timeout_raw else 25
-        except ValueError:
-            timeout_seconds = 25
-
-        try:
             return Response(
                 poll_tracker_state(
                     match,
                     team=team,
                     since_revision=since_revision,
-                    timeout_seconds=timeout_seconds,
                     compact=request.query_params.get("compact") == "1",
                 ),
                 status=status.HTTP_200_OK,

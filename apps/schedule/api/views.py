@@ -18,6 +18,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.game_tracker.models import MatchData
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
 )
@@ -25,8 +26,8 @@ from apps.kwt_common.api.pagination import (
     ScheduleEditorPagination,
     StandardResultsSetPagination,
 )
+from apps.kwt_common.api.params import UUID_URL_REGEX, uuid_query_values
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
-from apps.kwt_common.utils.match_summary import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Match
 
@@ -41,12 +42,7 @@ from .match_viewset_video import (
 )
 from .serializers import MatchSerializer, MatchWriteSerializer
 from .tracker_access import TrackerAccessActionsMixin
-from .validation import (
-    UUID_URL_REGEX,
-    match_summary_limit,
-    match_summary_offset,
-    uuid_query_values,
-)
+from .validation import match_summary_limit, match_summary_offset
 
 
 def _uuid_path_parameter(name: str) -> OpenApiParameter:

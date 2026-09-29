@@ -14,7 +14,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.competition.adapters.outbound.history import HistoryClient
-from apps.competition.composition import competition_client
+from apps.competition.composition import (
+    competition_client,
+    schedule_change_dispatcher,
+)
 from apps.competition.models import HistoricalResource
 from apps.competition.services.history import progress, seed
 from apps.competition.services.history_archive import import_archive
@@ -100,7 +103,9 @@ class Command(BaseCommand):
             return run_history(
                 lambda: history_client(options),
                 budget=options["max_requests"],
-                publish=not options["no_publish"],
+                publish_with=(
+                    None if options["no_publish"] else schedule_change_dispatcher()
+                ),
             )
         season = Season.objects.get(name=options["season"])
         if action == "archive":

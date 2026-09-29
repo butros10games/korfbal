@@ -11,7 +11,10 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
-from apps.competition.composition import competition_client
+from apps.competition.composition import (
+    competition_client,
+    schedule_change_dispatcher,
+)
 from apps.competition.services.monitoring import observe_run, outcome
 from apps.competition.services.sync import preview_sync, sync
 from apps.schedule.models import Season
@@ -75,7 +78,12 @@ class Command(BaseCommand):
         try:
 
             def run() -> dict[str, object]:
-                result = sync(season, client, budget=int(str(options["max_requests"])))
+                result = sync(
+                    season,
+                    client,
+                    schedule_changes=schedule_change_dispatcher(),
+                    budget=int(str(options["max_requests"])),
+                )
                 return {**result, "status": outcome(result)}
 
             summary = observe_run(season, run)

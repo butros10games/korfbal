@@ -37,6 +37,7 @@ from apps.competition.services.history_dataservice import reconcile_pool_coverag
 from apps.competition.services.polling import PollPlanner
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.resources import MAX_FEED_FAILURES
+from apps.competition.services.schedule_notifications import ScheduleChangeDispatcher
 from apps.competition.services.traffic import TrafficGate, observe_rate_limit
 from apps.schedule.models import Season
 
@@ -275,8 +276,13 @@ class HistoryBatch:
         resource.save()
         self.summary["failed"] += 1
 
-    def drain(self, *, publish: bool, owner: uuid.UUID) -> None:
-        """Limit CPU-only discoveries too; publication runs once after the batch."""
+    def drain(
+        self, *, publish_with: ScheduleChangeDispatcher | None, owner: uuid.UUID
+    ) -> None:
+        """Limit CPU-only discoveries too; publication runs once after the batch.
+
+        ``publish_with`` is None when the operator explicitly skips publication.
+        """
         budget = self.gate.budget
         assert (
             budget is not None
@@ -298,8 +304,10 @@ class HistoryBatch:
                 key="sportlink", owner=owner
             )
             reconcile_pool_coverage(self.touched)
-            if publish and self.summary["fetched"]:
-                result = publish_catalogue(lease_owner=owner)
+            if publish_with is not None and self.summary["fetched"]:
+                result = publish_catalogue(
+                    schedule_changes=publish_with, lease_owner=owner
+                )
                 self.summary["publication"] = result["counts"]
                 self.summary["publication_conflicts"] = len(result["blocked"])
             lease.expires_at = timezone.now() + timedelta(seconds=120)
@@ -309,8 +317,8 @@ class HistoryBatch:
 def run_history(
     client_factory: Callable[[], HistoricalClient],
     *,
+    publish_with: ScheduleChangeDispatcher | None,
     budget: int = 20,
-    publish: bool = True,
 ) -> dict:
     """Resume a bounded slice of historical work under the shared provider lease.
 
@@ -334,7 +342,7 @@ def run_history(
     try:
         client = client_factory()
         batch = HistoryBatch(client, TrafficGate(budget, owner))
-        batch.drain(publish=publish, owner=owner)
+        batch.drain(publish_with=publish_with, owner=owner)
         batch.summary["http_requests"] = batch.gate.requests
         return batch.summary
     finally:

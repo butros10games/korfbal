@@ -18,6 +18,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
 @pytest.mark.django_db
@@ -210,7 +211,9 @@ def test_commit_sequence_keeps_last_event_order_stable() -> None:
         },
     )
 
-    state = get_tracker_state(match, team=home_team)
+    state = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert state["last_event"]["type"] == "pause"
     assert state["last_event"]["event_kind"] == "timeout"
 
@@ -262,7 +265,9 @@ def test_against_event_accepts_defender_from_tracked_team_roster(
     defender = create_tracker_player(username="goal_against_defender")
     defense_group.players.add(defender)
 
-    state = get_tracker_state(tracker.match, team=tracker.home_team)
+    state = get_tracker_state(
+        tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+    )
     assert any(
         player["id"] == str(defender.id_uuid)
         for group in state["player_groups"]

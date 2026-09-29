@@ -1,4 +1,4 @@
-"""Helpers to transform match data objects into API friendly dictionaries."""
+"""Public match summary rows, owned by the match tracker."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from uuid import UUID
 
 from django.utils.timezone import localtime
 
+from apps.game_tracker.domain.match_clock import format_part_length
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
-from apps.kwt_common.utils.time_utils import get_time_display
 
 
 MatchSummary = dict[str, Any]
@@ -75,7 +75,7 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
             },
             "current_part": entry.current_part,
             "parts": entry.parts,
-            "time_display": get_time_display(entry),
+            "time_display": format_part_length(entry.part_length),
         })
 
     return summaries

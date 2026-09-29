@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from apps.awards.models import MatchMvp
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup, Shot
-from apps.kwt_common.utils.match_summary import build_match_summaries
+from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.player.models.player import Player
 from apps.schedule.models import Season
 from apps.schedule.queries.seasons import (

@@ -9,6 +9,7 @@ from django.conf import settings
 from django.http import HttpResponseRedirect
 from rest_framework.request import Request
 
+from apps.kwt_common.api.params import uuid_query_values
 from apps.player.models.player import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.player.services.player_queries import (
@@ -17,7 +18,6 @@ from apps.player.services.player_queries import (
     player_for_user_id,
     viewer_player_for_user_id,
 )
-from apps.schedule.api.validation import uuid_query_values
 
 
 TEST_PUSH_ERROR_LIMIT: Final[int] = 10

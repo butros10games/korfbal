@@ -9,15 +9,15 @@ from typing import Any
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from apps.competition.domain.rosters import ROSTER_FRESHNESS
 from apps.competition.models import (
     MatchMembership,
     RosterMembership,
     Team as SourceTeam,
 )
-from apps.competition.services.rosters import ROSTER_FRESHNESS
 from apps.game_tracker.models import MatchData, StartingPlayerAssignment
-from apps.kwt_common.utils.match_summary import build_match_summaries
-from apps.kwt_common.utils.players_stats import build_player_stats_sync
+from apps.game_tracker.queries.match_summaries import build_match_summaries
+from apps.game_tracker.services.player_statistics import build_player_stats
 from apps.player.models import Player
 from apps.player.privacy import can_view_by_visibility
 from apps.schedule.models import Season
@@ -166,7 +166,7 @@ def build_team_overview_payload(
 
     stats_players = []
     if options.include_stats and roster_players and finished_matches.exists():
-        stats_players = build_player_stats_sync(roster_players, finished_matches)
+        stats_players = build_player_stats(roster_players, finished_matches)
 
     private_roster = (
         _private_roster_counts(team, season)

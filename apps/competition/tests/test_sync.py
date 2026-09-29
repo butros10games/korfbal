@@ -20,6 +20,7 @@ from apps.competition.services.polling import PollJob
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.sync import checkpoint, preview_sync, sync
 from apps.competition.services.traffic import TrafficGate
+from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import (
@@ -42,8 +43,12 @@ def test_resume_etag_and_not_modified(season: Season) -> None:
     client = Mock(spec=SportlinkClient)
     client.fetch.return_value = FetchResult(200, {"Club": []}, '"v1"')
     with patch("apps.competition.services.traffic.time.sleep"):
-        first = sync(season, client, budget=1)
-        second = sync(season, client, budget=1)
+        first = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
+        second = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert first["updated"] == 1
     assert second["requests"] == 0
     resource = SyncResource.objects.get()
@@ -52,7 +57,9 @@ def test_resume_etag_and_not_modified(season: Season) -> None:
     resource.save()
     client.fetch.return_value = FetchResult(304)
     with patch("apps.competition.services.traffic.time.sleep"):
-        third = sync(season, client, budget=1)
+        third = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert third["unchanged"] == 1
     resource.refresh_from_db()
     assert resource.etag == '"v1"'
@@ -64,7 +71,9 @@ def test_auth_and_rate_limit_stop_entire_run(season: Season, status: int) -> Non
     """Do not hammer other queued resources when a session/rate limit fails."""
     client = Mock(spec=SportlinkClient)
     client.fetch.return_value = FetchResult(status, retry_after=120)
-    result = sync(season, client, budget=10)
+    result = sync(
+        season, client, budget=10, schedule_changes=RecordingScheduleChanges()
+    )
     assert result["requests"] == 1
     assert result["failed"] == 1
     assert SyncLease.objects.get().expires_at > timezone.now()
@@ -79,7 +88,9 @@ def test_malformed_payload_does_not_checkpoint(season: Season) -> None:
         200, {"Club": [{"ClubId": "1", "ClubName": "Test"}, {}]}
     )
     with patch("apps.competition.services.traffic.time.sleep"):
-        result = sync(season, client, budget=1)
+        result = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert result["failed"] == 1
     assert SyncResource.objects.get().fetched_at is None
     assert not Club.objects.exists()
@@ -155,7 +166,11 @@ def test_concurrent_import_is_rejected(season: Season) -> None:
         key="sportlink", expires_at=timezone.now() + timedelta(minutes=5)
     )
     with pytest.raises(ValueError, match="Another import"):
-        sync(season, Mock(spec=SportlinkClient))
+        sync(
+            season,
+            Mock(spec=SportlinkClient),
+            schedule_changes=RecordingScheduleChanges(),
+        )
 
 
 @pytest.mark.django_db
@@ -244,7 +259,7 @@ def test_sync_publishes_reschedule_then_final_score(
     Importer(season, now - timedelta(days=1)).apply(
         "club_results", "CT1", {"MatchResult": [row]}
     )
-    publish_catalogue()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
     native = AppMatch.objects.get()
     native_id = native.pk
     now += timedelta(seconds=1)
@@ -274,7 +289,9 @@ def test_sync_publishes_reschedule_then_final_score(
 
     client.fetch.side_effect = fetch
     with patch("apps.competition.services.traffic.time.sleep"):
-        moved = sync(season, client, budget=1)
+        moved = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert moved["http_requests"] == 1
     native.refresh_from_db()
     assert native.start_time == kickoff
@@ -290,7 +307,9 @@ def test_sync_publishes_reschedule_then_final_score(
         ),
         patch("apps.competition.services.traffic.time.sleep"),
     ):
-        finished = sync(season, client, budget=1)
+        finished = sync(
+            season, client, budget=1, schedule_changes=RecordingScheduleChanges()
+        )
     assert finished["http_requests"] == 1
     assert finished["failed"] == 0
     assert finished["new_final_results"] == 1

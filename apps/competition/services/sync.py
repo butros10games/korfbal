@@ -35,6 +35,7 @@ from apps.competition.services.polling import (
 )
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.resources import ENDPOINTS, MAX_FEED_FAILURES
+from apps.competition.services.schedule_notifications import ScheduleChangeDispatcher
 from apps.competition.services.traffic import TrafficGate, observe_rate_limit
 from apps.schedule.models import Season
 
@@ -198,23 +199,49 @@ def record_failure(resource: SyncResource, code: str, delay: int = 60) -> None:
 
 def sync(
     season: Season,
-    client: CompetitionClient | None = None,
+    client: CompetitionClient,
     *,
-    client_factory: Callable[[], CompetitionClient] | None = None,
+    schedule_changes: ScheduleChangeDispatcher,
     budget: int | None = 100,
     max_seconds: int | None = None,
 ) -> dict[str, int]:
     """Drain due competition feeds with shared pacing and a bounded worker turn."""
-    return _sync(season, client, client_factory, RunOptions(budget, max_seconds))
+    return _sync(
+        season,
+        client,
+        None,
+        RunOptions(budget, max_seconds, schedule_changes=schedule_changes),
+    )
+
+
+def sync_leased(
+    season: Season,
+    client_factory: Callable[[], CompetitionClient],
+    *,
+    schedule_changes: ScheduleChangeDispatcher,
+    budget: int | None = 100,
+    max_seconds: int | None = None,
+) -> dict[str, int]:
+    """Sync like ``sync``, opening the client only after the lease is acquired."""
+    return _sync(
+        season,
+        None,
+        client_factory,
+        RunOptions(budget, max_seconds, schedule_changes=schedule_changes),
+    )
 
 
 @dataclass(frozen=True)
 class RunOptions:
-    """Bound a run and optionally restrict it to missing match metadata."""
+    """Bound a run and optionally restrict it to missing match metadata.
+
+    Detail-only backfills never publish, so they run without a schedule dispatcher.
+    """
 
     budget: int | None = 100
     max_seconds: int | None = None
     details_only: bool = False
+    schedule_changes: ScheduleChangeDispatcher | None = None
 
 
 def sync_details(
@@ -294,9 +321,12 @@ def _sync(
         )
         summary["request_spacing_seconds"] = gate.spacing
         cooldown = _drain(planner, client, gate, budget, summary)
-        if summary["updated"] and not options.details_only:
+        schedule_changes = options.schedule_changes
+        if summary["updated"] and schedule_changes and not options.details_only:
             progress("publishing", summary)
-            publication = publish_catalogue(lease_owner=owner)
+            publication = publish_catalogue(
+                schedule_changes=schedule_changes, lease_owner=owner
+            )
             summary["publication_blocked"] = len(publication["blocked"])
     finally:
         try:

@@ -9,7 +9,7 @@ import uuid
 from django.contrib.auth.models import User
 from django.db import transaction
 
-from apps.video_analysis.composition import purge_clip
+from apps.video_analysis.application.ports import ClipPurger
 from apps.video_analysis.engine.clip_contract import (
     MAX_RECORDING_SECONDS,
     REPLAY_PART_SECONDS,
@@ -181,7 +181,9 @@ def cancel(store: Store, workspace: Workspace, run_id: str) -> None:
 
 
 @transaction.atomic
-def delete(store: Store, workspace: Workspace, run_id: str) -> None:
+def delete(
+    store: Store, workspace: Workspace, run_id: str, *, purge_clip: ClipPurger
+) -> None:
     """Remove a finished clip run and its artifacts; human clip verdicts are kept.
 
     Raises:

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from apps.game_tracker.services.match_impact import MatchTeamImpactFeatures
-from apps.kwt_common.management.commands import fit_match_impact_v6
-from apps.kwt_common.management.commands.audit_impact_scores import (
+from apps.game_tracker.management.commands import fit_match_impact_v6
+from apps.game_tracker.management.commands.audit_impact_scores import (
     spearman_rho,
     team_page_heuristic_impact,
 )
+from apps.game_tracker.services.match_impact import MatchTeamImpactFeatures
 
 
 def test_spearman_rho_handles_ties_and_rejects_mismatched_samples() -> None:

@@ -319,7 +319,7 @@ def execute_tracker_command(
         if replay:
             if receipt is not None and receipt.response_payload:
                 return json.loads(json.dumps(receipt.response_payload))
-            return get_tracker_state(match, team=team)
+            return get_tracker_state(match, team=team, goal_audio=runtime.goal_audio)
         event_time = (
             runtime.now()
             if definition.server_timed
@@ -380,7 +380,7 @@ def execute_tracker_command(
                 changed_ids=changed_ids,
                 publisher=runtime.publisher,
             )
-        result = get_tracker_state(match, team=team)
+        result = get_tracker_state(match, team=team, goal_audio=runtime.goal_audio)
         result["resources"] = sorted(resource.value for resource in affected_resources)
         if receipt is not None:
             committed_revision = result.get("live_revision")

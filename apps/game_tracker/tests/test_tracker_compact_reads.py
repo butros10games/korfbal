@@ -2,7 +2,7 @@
 
 from http import HTTPStatus
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.db import connection
 from django.test.client import Client
@@ -23,6 +23,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     login_home_club_editor,
 )
 from apps.player.models import PlayerSong, PlayerSongStatus
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.team.models import TeamData
 
 
@@ -37,7 +38,17 @@ CONFIGURATION_KEYS = {
     "live_revision",
     "last_changed_at",
 }
-MANIFEST_SERVICE = "apps.game_tracker.services.tracker_state.build_goal_song_manifest"
+SONG_SELECTION_TABLES = (
+    "player_playergoalsongselection",
+    "player_teamgoalsongselection",
+)
+
+
+def _reads_song_selections(queries: CaptureQueriesContext) -> bool:
+    """Report whether the goal-audio manifest was queried during a request."""
+    return any(
+        table in row["sql"] for row in queries for table in SONG_SELECTION_TABLES
+    )
 
 
 @pytest.fixture
@@ -92,18 +103,19 @@ def test_compact_poll_preserves_patch_without_reading_configuration(
 ) -> None:
     """Every dynamic field matches the full read without rebuilding audio/types."""
     team = tracker.home_team if perspective == "home" else tracker.away_team
-    full = get_tracker_state(tracker.match, team=team)
+    full = get_tracker_state(
+        tracker.match, team=team, goal_audio=build_goal_song_manifest
+    )
     assert full["goal_audio"]["players"]
     assert full["goal_audio"]["fallback"]
-    with (
-        patch(MANIFEST_SERVICE) as manifest,
-        CaptureQueriesContext(connection) as queries,
-    ):
+    manifest = Mock(side_effect=build_goal_song_manifest)
+    with CaptureQueriesContext(connection) as queries:
         compact = poll_tracker_state(
             tracker.match,
             team=team,
             since_revision=since_revision,
             compact=True,
+            goal_audio=manifest,
         )
     captured = list(queries)
     manifest.assert_not_called()
@@ -126,10 +138,12 @@ def test_full_tracker_api_retains_audio_and_configuration(
 ) -> None:
     """The default HTTP contract still includes ready player/fallback clips."""
     login_home_club_editor(client, tracker, f"full-{action}-reader")
-    response = client.get(
-        f"/api/matches/{tracker.match.pk}/tracker/{tracker.home_team.pk}/{action}/",
-        {"since_revision": 0},
-    )
+    with CaptureQueriesContext(connection) as queries:
+        response = client.get(
+            f"/api/matches/{tracker.match.pk}/tracker/{tracker.home_team.pk}/{action}/",
+            {"since_revision": 0},
+        )
+    assert _reads_song_selections(queries)
     assert response.status_code == HTTPStatus.OK
     state = response.json()
     assert state.keys() >= CONFIGURATION_KEYS
@@ -146,7 +160,7 @@ def test_compact_tracker_api_skips_configuration(
 ) -> None:
     """The opt-in query parameter selects the cheaper read after authorization."""
     login_home_club_editor(client, tracker, "compact-api-reader")
-    with patch(MANIFEST_SERVICE) as manifest:
+    with CaptureQueriesContext(connection) as queries:
         response = client.get(
             f"/api/matches/{tracker.match.pk}/tracker/{tracker.home_team.pk}/poll/",
             {"since_revision": 0, "compact": "1"},
@@ -154,7 +168,7 @@ def test_compact_tracker_api_skips_configuration(
     assert response.status_code == HTTPStatus.OK
     assert response.json()["patch"]["status"] == "active"
     assert not CONFIGURATION_KEYS.intersection(response.json()["patch"])
-    manifest.assert_not_called()
+    assert not _reads_song_selections(queries)
 
 
 @pytest.mark.parametrize("compact", [False, True])
@@ -170,6 +184,7 @@ def test_idle_tracker_poll_does_not_build_a_snapshot(
             team=tracker.home_team,
             since_revision=tracker.match_data.live_revision,
             compact=compact,
+            goal_audio=build_goal_song_manifest,
         )
     assert result["changed"] is False
     assert result["live_revision"] == tracker.match_data.live_revision

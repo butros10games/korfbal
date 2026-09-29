@@ -11,10 +11,10 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.kwt_common.api.pagination import ScheduleEditorPagination
+from apps.kwt_common.api.params import UUID_URL_REGEX, uuid_query_values
 from apps.schedule.models import Match, Season, SeasonPool
 
 from .serializers import SeasonPoolSerializer, SeasonSerializer
-from .validation import UUID_URL_REGEX, uuid_query_values
 
 
 class SeasonViewSet(viewsets.ModelViewSet):

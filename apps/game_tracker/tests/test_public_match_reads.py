@@ -8,6 +8,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 import pytest
 
+from apps.competition.services.match_prediction import match_prediction
 from apps.game_tracker.composition import (
     prepare_public_match_reads,
     published_match_store,
@@ -108,7 +109,7 @@ def test_deletion_fences_delayed_publication(client: Client) -> None:
     """A previously built envelope cannot resurrect a deleted match."""
     graph = create_match_graph(prefix="Shared deletion")
     match_id = str(graph.match.pk)
-    old = build_public_match_reads(match_id)
+    old = build_public_match_reads(match_id, forecast=match_prediction)
     graph.match_data.delete()
     for resource, envelope in old.items():
         key = resource_key(match_id, resource)
@@ -164,7 +165,7 @@ def test_active_timeline_recovery_matches_authoritative_reads(client: Client) ->
         time=part.start_time,
     )
     match_id = str(graph.match.pk)
-    old = build_public_match_reads(match_id)
+    old = build_public_match_reads(match_id, forecast=match_prediction)
     assert old["summary"]["payload"]["score"]["home"] == 1
     revision = old["events"]["revision"]
     shot.delete()

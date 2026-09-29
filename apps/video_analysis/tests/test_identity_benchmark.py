@@ -73,14 +73,18 @@ def fake_extract(_store: Store, match: dict, times: list[float]) -> list[dict]:
 
 @pytest.fixture
 def benchmark(
-    imported: tuple[User, DatabaseStore, Store], monkeypatch: pytest.MonkeyPatch
+    imported: tuple[User, DatabaseStore, Store],
 ) -> tuple[DatabaseStore, Workspace, str]:
     """Label a two-player benchmark created from an identity-stable run."""
     owner, store, _ = imported
-    monkeypatch.setattr(identity_benchmark, "extract_pipeline_frames", fake_extract)
     workspace = Workspace.objects.get()
     source = clip_run(store, owner, swap_at=None)
-    created = identity_benchmark.create(store, workspace, source, "bench", 2.0)
+    created = identity_benchmark.create(
+        store,
+        workspace,
+        identity_benchmark.BenchmarkRequest(source, "bench", 2.0),
+        extract_frames=fake_extract,
+    )
     assert created == {"name": "bench", "match_id": "demo", "frames": 2}
     for frame in Frame.objects.filter(metadata__identity_benchmark__name="bench"):
         assert frame.proposal is not None
@@ -138,7 +142,12 @@ def test_unlabelled_people_and_off_grid_spacing_are_rejected(
     with pytest.raises(ValueError, match="whole number of frames"):
         identity_benchmark.sample_times(OPTIONS, 1.0)
     with pytest.raises(ValueError, match="already exists"):
-        identity_benchmark.create(store, workspace, source, "bench", 2.0)
+        identity_benchmark.create(
+            store,
+            workspace,
+            identity_benchmark.BenchmarkRequest(source, "bench", 2.0),
+            extract_frames=fake_extract,
+        )
 
 
 def test_sample_times_stay_inside_the_clip() -> None:

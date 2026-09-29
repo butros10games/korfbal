@@ -14,7 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.schedule.api.validation import UUID_URL_REGEX
+from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.tournament.api.permissions import can_manage_tournament, is_authenticated
 from apps.tournament.api.serializers import (
     TournamentDisplayConfigSerializer,

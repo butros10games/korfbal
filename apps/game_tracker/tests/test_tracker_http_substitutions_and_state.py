@@ -16,6 +16,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
+from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
 MAX_WISSELS = 8
@@ -55,7 +56,9 @@ def test_tracker_state_includes_substitutions_total() -> None:
     pg_attack.players.add(player_out)
     pg_reserve.players.add(player_in)
 
-    initial_state = get_tracker_state(match, team=home_team)
+    initial_state = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert initial_state["substitutions_total"] == 0
     assert initial_state["substitutions"]["for"] == 0
     assert initial_state["substitutions"]["against"] == 0
@@ -114,7 +117,9 @@ def test_substitute_reg_enforces_max_wissels_per_team() -> None:
         for _ in range(MAX_WISSELS)
     )
 
-    state_after = get_tracker_state(match, team=home_team)
+    state_after = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert state_after["substitutions"]["for"] == MAX_WISSELS
 
     with pytest.raises(TrackerCommandError):
@@ -148,7 +153,9 @@ def test_substitute_against_reg_registers_opponent_wissel_without_players() -> N
         group_type=group_types["Reserve"],
     )
 
-    initial_state = get_tracker_state(match, team=home_team)
+    initial_state = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert initial_state["substitutions"]["against"] == 0
 
     next_state = apply_tracker_command(
@@ -197,7 +204,9 @@ def test_substitute_against_reg_enforces_max_wissels_for_opponent() -> None:
         for _ in range(MAX_WISSELS)
     )
 
-    state_after = get_tracker_state(match, team=home_team)
+    state_after = get_tracker_state(
+        match, team=home_team, goal_audio=build_goal_song_manifest
+    )
     assert state_after["substitutions"]["against"] == MAX_WISSELS
 
     with pytest.raises(TrackerCommandError):
@@ -237,7 +246,9 @@ def test_get_tracker_state_query_count_does_not_scale_with_players() -> None:
     reserve_group.players.add(create_tracker_player(username="state_reserve_1"))
 
     with CaptureQueriesContext(connection) as baseline_queries:
-        get_tracker_state(tracker.match, team=tracker.home_team)
+        get_tracker_state(
+            tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+        )
 
     for suffix in range(2, 5):
         attack_group.players.add(
@@ -251,6 +262,8 @@ def test_get_tracker_state_query_count_does_not_scale_with_players() -> None:
         )
 
     with CaptureQueriesContext(connection) as expanded_queries:
-        get_tracker_state(tracker.match, team=tracker.home_team)
+        get_tracker_state(
+            tracker.match, team=tracker.home_team, goal_audio=build_goal_song_manifest
+        )
 
     assert len(expanded_queries) == len(baseline_queries)
