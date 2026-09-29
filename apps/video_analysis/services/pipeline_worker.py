@@ -29,6 +29,7 @@ from apps.video_analysis.models import (
     Workspace,
 )
 from apps.video_analysis.queries import frame_payload
+from apps.video_analysis.services import repackaging
 from apps.video_analysis.services.clips import read_file
 from apps.video_analysis.services.pipeline import ACTIVE, BATCH_SIZE, wake
 from apps.video_analysis.services.pipeline_corrections import clip_drafts
@@ -114,6 +115,11 @@ def advance(workspace_id: str) -> None:
             upload = VideoUpload.objects.filter(pk=current.pk).first()
             if upload:
                 cleanup_later(upload, timezone.now())
+            recording = Recording.objects.filter(
+                workspace=run.workspace, source_id=run.recipe["match_id"]
+            ).first()
+            if recording and recording.metadata.get("video"):
+                repackaging.schedule(run.workspace_id, recording.metadata["video"])
         wake(workspace_id)
 
 

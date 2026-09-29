@@ -36,6 +36,11 @@ Match tracker issues often require coordinated backend + frontend changes.
   recreates the disk-growth problem. Keep the separate GPU controller on the same
   storage protocol and workspace lease before evicting active training kits.
 
+- Reuse one signed media URL per immutable object (`media_url` caches it); a fresh signature per
+  request defeats the browser cache, and reopening a full match then costs seconds instead of <1 s.
+  Recording repackaging swaps only the stored object; keep `Recording.metadata["video_sha256"]`
+  as the source identity used by dataset splits and replays.
+
 - Keep interactive video reviews scoped to the selected frame/recording. Persist export intent with
   every database change, including dataset membership and curation decisions, and publish on the
   vision queue; web reads must not restore model weights or hold the workspace lock while rebuilding

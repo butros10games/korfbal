@@ -29,6 +29,7 @@ class Recording(models.Model):
     """A source recording optionally linked to the canonical sporting match."""
 
     objects: ClassVar[models.Manager["Recording"]] = models.Manager()
+    workspace_id: uuid.UUID
 
     workspace = models.ForeignKey(
         Workspace, on_delete=models.CASCADE, related_name="recordings"

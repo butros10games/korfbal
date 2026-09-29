@@ -16,6 +16,7 @@ import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q, QuerySet
 
 from apps.video_analysis.adapters.object_video import (
@@ -32,6 +33,11 @@ from apps.video_analysis.models import StoredFile, Workspace
 
 
 logger = logging.getLogger(__name__)
+
+# One signed URL per object is reused so browsers can cache the immutable bytes.
+MEDIA_URL_SECONDS = 6 * 3600
+MEDIA_URL_REUSE_SECONDS = 5 * 3600
+MEDIA_CACHE_CONTROL = f"private, max-age={MEDIA_URL_SECONDS}, immutable"
 
 
 class PublicationRaceError(ValueError):
@@ -400,16 +406,27 @@ class WorkspaceObjects:
             settings.VIDEO_ANALYSIS_ARTIFACT_BUCKET,
         }:
             return None
-        url = self.read_client(record).generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": record.bucket,
-                "Key": record.object_key,
-                "ResponseContentType": mimetypes.guess_type(relative)[0]
-                or "application/octet-stream",
-            },
-            ExpiresIn=3600,
+        # Object keys are immutable, so one URL per object is safe to share.
+        cache_key = (
+            "video-media-url:"
+            + hashlib.sha256(
+                f"{record.bucket}/{record.object_key}".encode()
+            ).hexdigest()
         )
+        url = cache.get(cache_key)
+        if url is None:
+            url = self.read_client(record).generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": record.bucket,
+                    "Key": record.object_key,
+                    "ResponseContentType": mimetypes.guess_type(relative)[0]
+                    or "application/octet-stream",
+                    "ResponseCacheControl": MEDIA_CACHE_CONTROL,
+                },
+                ExpiresIn=MEDIA_URL_SECONDS,
+            )
+            cache.set(cache_key, url, MEDIA_URL_REUSE_SECONDS)
         return url if urlsplit(url).scheme == "https" else None
 
     def size(self, relative: str) -> int:

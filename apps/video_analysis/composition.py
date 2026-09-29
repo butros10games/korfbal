@@ -9,7 +9,7 @@ import zipfile
 from django.conf import settings
 from django.contrib.auth.models import User
 
-from apps.video_analysis.adapters import detector
+from apps.video_analysis.adapters import detector, repackaging
 from apps.video_analysis.adapters.objects import WorkspaceObjects
 from apps.video_analysis.adapters.pipeline import (
     extract_batch,
@@ -39,9 +39,11 @@ from apps.video_analysis.services import label_check
 __all__ = [
     "accepted_policy",
     "cancel_training",
+    "delete_superseded_video",
     "launch_status",
     "purge_clip",
     "queue_training",
+    "repackage_recording",
     "review_store",
     "run_clip",
     "run_detector",
@@ -213,3 +215,21 @@ def snapshot_download(workspace: Workspace, name: str) -> str:
             temporary.unlink(missing_ok=True)
         store.publish_artifact(relative)
         return relative
+
+
+def repackage_recording(workspace: Workspace, relative: str) -> str | None:
+    """Regroup one stored recording losslessly when object storage is enabled.
+
+    Returns:
+        The superseded object key, or None when nothing was replaced.
+
+    """
+    if not settings.VIDEO_ANALYSIS_OBJECT_STORAGE:
+        return None
+    return repackaging.repackage_video(WorkspaceObjects(workspace), relative)
+
+
+def delete_superseded_video(workspace: Workspace, key: str) -> None:
+    """Delete a replaced recording object that nothing refers to anymore."""
+    if settings.VIDEO_ANALYSIS_OBJECT_STORAGE:
+        repackaging.delete_unreferenced(WorkspaceObjects(workspace), key)

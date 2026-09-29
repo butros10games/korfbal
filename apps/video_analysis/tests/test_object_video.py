@@ -20,7 +20,7 @@ import pytest
 from pytest_django.fixtures import Settings
 
 from apps.video_analysis.adapters.object_video import PART_BYTES, upload_video
-from apps.video_analysis.adapters.objects import WorkspaceObjects
+from apps.video_analysis.adapters.objects import MEDIA_CACHE_CONTROL, WorkspaceObjects
 from apps.video_analysis.adapters.pipeline import import_source
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.composition import processing_store
@@ -63,10 +63,19 @@ def client() -> MagicMock:
     def upload(handle: BinaryIO, bucket: str, key: str, **kwargs: object) -> None:
         objects[bucket, key] = handle.read()
 
+    def download(bucket: str, key: str, handle: BinaryIO) -> None:
+        handle.write(objects[bucket, key])
+
+    def delete(**kwargs: str) -> None:
+        objects.pop((kwargs["Bucket"], kwargs["Key"]), None)
+
     client.upload_part.side_effect = put
     client.complete_multipart_upload.side_effect = complete
     client.get_object.side_effect = get
     client.upload_fileobj.side_effect = upload
+    client.download_fileobj.side_effect = download
+    client.delete_object.side_effect = delete
+    client.objects = objects
     return client
 
 
@@ -220,7 +229,14 @@ def test_direct_playback_authorizes_before_signing(
             ).status_code
             == HTTPStatus.NOT_FOUND
         )
+        # A stable URL lets the browser reuse cached ranges of immutable media.
+        again = browser.get(
+            "/video-analysis/media", {"path": relative, "delivery": "direct"}
+        )
+        assert again["Location"] == response["Location"]
         client.generate_presigned_url.assert_called_once()
+        params = client.generate_presigned_url.call_args.kwargs["Params"]
+        assert params["ResponseCacheControl"] == MEDIA_CACHE_CONTROL
 
 
 def test_materialization_refuses_over_budget_without_downloading(

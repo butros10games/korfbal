@@ -7,6 +7,7 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
+from apps.video_analysis import composition
 from apps.video_analysis.composition import (
     processing_store,
     queue_training,
@@ -25,6 +26,7 @@ from apps.video_analysis.engine.media import prepare_active_frames, sample_frame
 from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.engine.timeline import is_active_time
 from apps.video_analysis.models import AnalysisJob, Workspace
+from apps.video_analysis.services import repackaging
 from apps.video_analysis.services.jobs import continue_analysis
 from apps.video_analysis.services.pipeline_worker import advance
 from apps.video_analysis.services.uploads import cleanup
@@ -194,3 +196,17 @@ def advance_pipeline(workspace_id: str) -> None:
 def cleanup_upload(upload_id: str) -> None:
     """Recover expired/cancelled intake and release imported temporary chunks."""
     cleanup(upload_id)
+
+
+@shared_task
+def repackage_recording(workspace_id: str, relative: str) -> None:
+    """Regroup one stored recording losslessly so browsers open it quickly."""
+    workspace = Workspace.objects.get(pk=workspace_id)
+    if superseded := composition.repackage_recording(workspace, relative):
+        repackaging.retire(workspace_id, superseded)
+
+
+@shared_task
+def delete_superseded_video(workspace_id: str, key: str) -> None:
+    """Delete a replaced recording object once nothing refers to it."""
+    composition.delete_superseded_video(Workspace.objects.get(pk=workspace_id), key)
