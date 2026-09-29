@@ -9,15 +9,15 @@ import subprocess
 import sys
 from typing import Any
 
-from apps.video_analysis.engine.store import Store, frame_version
-from apps.video_analysis.engine.training import (
+from ..store import Store, frame_version
+from ..training import (
     MAX_PROPOSALS,
     RunOptions,
     proposals,
     select_candidates,
     train,
 )
-from apps.video_analysis.engine.vision import digest
+from ..vision import digest
 
 
 MAX_PIPELINE_FRAMES = 1000

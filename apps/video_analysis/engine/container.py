@@ -11,7 +11,7 @@ from pathlib import Path
 import struct
 import subprocess
 
-from apps.video_analysis.engine.media import binary
+from .media import binary
 
 
 CHUNK_MICROSECONDS = 1_000_000

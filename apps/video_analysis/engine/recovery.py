@@ -44,7 +44,7 @@ def resume(store: Store, run_id: str, device: str = "cpu") -> dict[str, Any]:
 
     """
     # Import through the module to keep the optional detector lazily loaded.
-    training = importlib.import_module("scripts.python.korfbal_review.training")
+    training = importlib.import_module(".training", __package__)
 
     root = artifact(store, "runs", run_id)
     with training_lease(root):

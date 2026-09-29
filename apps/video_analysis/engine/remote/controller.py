@@ -15,20 +15,19 @@ from typing import Any, Protocol
 import uuid
 import zipfile
 
-from apps.video_analysis.engine.coverage import dataset_report
-from apps.video_analysis.engine.handoff import package_snapshot
-from apps.video_analysis.engine.recovery import training_lease
-from apps.video_analysis.engine.storage_workspace import storage_lease
-from apps.video_analysis.engine.store import Store, atomic_json
-from apps.video_analysis.engine.training import (
+from ..coverage import dataset_report
+from ..handoff import package_snapshot
+from ..recovery import training_lease
+from ..storage_workspace import storage_lease
+from ..store import Store, atomic_json
+from ..training import (
     MAX_BATCH,
     MAX_EPOCHS,
     PRETRAINED_WEIGHTS,
     RunOptions,
     validate_options,
 )
-from apps.video_analysis.engine.vision import artifact, digest, identifier
-
+from ..vision import artifact, digest, identifier
 from .adapters import ProviderHTTPError
 from .pipeline import MAX_PIPELINE_FRAMES
 from .results import import_proposals, import_result

@@ -9,8 +9,8 @@ from pathlib import Path
 import tempfile
 import zipfile
 
-from apps.video_analysis.engine.store import Store, atomic_json, validate_annotation
-from apps.video_analysis.engine.vision import artifact, digest, identifier
+from ..store import Store, atomic_json, validate_annotation
+from ..vision import artifact, digest, identifier
 
 
 MAX_EXPANDED_BYTES = 1024**3

@@ -14,10 +14,9 @@ import tempfile
 import time
 import zipfile
 
-from apps.video_analysis.engine.handoff import verify_kit
-from apps.video_analysis.engine.store import atomic_json
-from apps.video_analysis.engine.vision import digest
-
+from ..handoff import verify_kit
+from ..store import atomic_json
+from ..vision import digest
 from .transport import request
 
 
