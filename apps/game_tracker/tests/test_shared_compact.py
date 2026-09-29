@@ -27,6 +27,10 @@ from apps.game_tracker.adapters.outbound.shared_compact import (
 )
 
 
+# Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
+pytestmark = pytest.mark.service_backed
+
+
 FIXTURE = json.loads(
     (
         Path(__file__).resolve().parents[6] / "fixtures/korfbal/compact-sse.json"

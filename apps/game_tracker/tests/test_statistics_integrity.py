@@ -41,7 +41,7 @@ from apps.team.models import Team, TeamRosterMembership
 from apps.team.tests.team_test_support import TeamTestContext, build_team_context
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.service_backed]
 
 
 @pytest.fixture

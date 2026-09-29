@@ -27,7 +27,7 @@ from apps.schedule.tests.match_api_test_support import (
 
 assert tasks.publish_public_live_snapshot.name
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.service_backed]
 MAX_COLD_SELECTS = 5
 
 

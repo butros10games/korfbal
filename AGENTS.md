@@ -215,6 +215,10 @@ Match tracker issues often require coordinated backend + frontend changes.
   avoid oversubscribing the CPU: wall-clock async tests time out under contention. The
   migration lane is the local critical path because Django's in-memory migration state
   rendering costs about 30s per worker database plus 20-40s per test.
+- Mark tests that need PostgreSQL, Redis or a Celery broker with `pytest.mark.service_backed`
+  (a guard test enforces this). The PostgreSQL lane runs them with `KORFBAL_REQUIRE_SERVICES=1`,
+  where a skip fails; process-spawning Celery worker tests also carry `celery_worker` and run in
+  their own pytest process because Celery caches broker/eager settings on first use.
 - When a test only needs to execute `transaction.on_commit()` callbacks, keep normal
   `django_db` rollback isolation and use `django_capture_on_commit_callbacks(execute=True)`;
   reserve `transaction=True` for real transaction visibility, async/SSE, and migration tests.

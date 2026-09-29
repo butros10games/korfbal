@@ -24,6 +24,10 @@ from apps.game_tracker.adapters.outbound.published_live_store import (
 from apps.game_tracker.application.ports import PublicLiveStoreError
 
 
+# Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
+pytestmark = pytest.mark.service_backed
+
+
 @pytest.fixture(params=["locmem", "redis"])
 def store(request: pytest.FixtureRequest) -> Iterator[SharedPublishedLiveStore]:
     """Exercise both cache backends.

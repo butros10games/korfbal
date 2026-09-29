@@ -1,4 +1,8 @@
-"""Real PostgreSQL/Valkey/prefork recovery; enabled with KORFBAL_TEST_BROKER_URL."""
+"""Real PostgreSQL/Valkey/prefork recovery; enabled with KORFBAL_TEST_BROKER_URL.
+
+Celery caches its broker and eager settings on first use, so this test runs in
+its own pytest process in the service lane (see korfbal-postgres.yml).
+"""
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -18,6 +22,10 @@ import pytest
 
 from apps.kwt_common.models import BackgroundJob
 from apps.kwt_common.services.jobs import enqueue
+
+
+# Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
+pytestmark = [pytest.mark.service_backed, pytest.mark.celery_worker]
 
 
 @contextmanager

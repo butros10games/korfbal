@@ -39,6 +39,10 @@ from apps.tournament.models import (
 from apps.tournament.services.editing import create_pool, update_pool_order
 
 
+# Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
+pytestmark = pytest.mark.service_backed
+
+
 def _writer_backend_id() -> int:
     """Identify the competing connection and bound any unexpected lock wait."""
     with connection.cursor() as cursor:

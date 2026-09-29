@@ -35,7 +35,7 @@ from apps.player.models import Player
 from apps.schedule.models import Match
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.service_backed]
 
 
 @dataclass

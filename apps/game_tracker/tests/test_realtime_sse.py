@@ -26,6 +26,10 @@ from apps.game_tracker.realtime.publisher import match_group_name
 from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 
+# Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
+pytestmark = pytest.mark.service_backed
+
+
 def _sse_scope(query_string: bytes = b"") -> dict[str, object]:
     return {
         "type": "http",

@@ -29,6 +29,7 @@ from apps.tournament.services.editing import create_pool
 
 
 pytestmark = [
+    pytest.mark.service_backed,
     pytest.mark.django_db(transaction=True),
     pytest.mark.skipif(
         connection.vendor != "postgresql", reason="Requires PostgreSQL row locks"
