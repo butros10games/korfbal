@@ -117,47 +117,6 @@ def _push_url(match: Match) -> str:
     return f"/matches/{match.id_uuid}"
 
 
-def send_payload_to_users(
-    *,
-    user_ids: list[int],
-    payload: WebPushPayload,
-    send_web_push: WebPushSender,
-    send_expo_push: ExpoPushSender,
-    send_web_push_batch: WebPushBatchSender | None = None,
-) -> None:
-    """Fan a notification out to active web and Expo subscriptions."""
-    if not user_ids:
-        return
-
-    subscriptions = PlayerPushSubscription.objects.filter(
-        user_id__in=user_ids,
-        is_active=True,
-    )
-    expo_tokens: list[str] = []
-    web_subscriptions: list[PlayerPushSubscription] = []
-
-    for subscription in subscriptions:
-        if subscription.platform == "expo":
-            expo_tokens.append(subscription.endpoint)
-        elif send_web_push_batch is not None:
-            web_subscriptions.append(subscription)
-        else:
-            send_web_push(sub=subscription, payload=payload)
-
-    if web_subscriptions and send_web_push_batch is not None:
-        send_web_push_batch(subs=web_subscriptions, payload=payload)
-
-    if expo_tokens:
-        send_expo_push(
-            tokens=expo_tokens,
-            payload=ExpoPushPayload(
-                title=payload.title,
-                body=payload.body,
-                url=payload.url,
-            ),
-        )
-
-
 @transaction.atomic
 def handle_finished_match(
     *,

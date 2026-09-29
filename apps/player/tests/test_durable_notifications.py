@@ -80,3 +80,51 @@ def test_delivery_failure_does_not_prevent_mvp_scheduling() -> None:
     ).exists()
     delivery.refresh_from_db()
     assert delivery.due_at > timezone.now()
+
+
+def test_finished_match_delivers_to_each_active_participant_destination() -> None:
+    """Inactive subscriptions and non-participants never receive a delivery."""
+    tracker = create_tracker_match(prefix="Durable routing")
+    tracker.match_data.status = "finished"
+    tracker.match_data.save(update_fields=["status"])
+    participant = create_tracker_player(username="durable-routing-participant")
+    outsider = create_tracker_player(username="durable-routing-outsider")
+    MatchPlayer.objects.create(
+        match_data=tracker.match_data, player=participant, team=tracker.home_team
+    )
+    web = PlayerPushSubscription.objects.create(
+        user_id=participant.user_id, endpoint="https://example.com/web", subscription={}
+    )
+    PlayerPushSubscription.objects.create(
+        user_id=participant.user_id,
+        endpoint="ExponentPushToken[participant]",
+        subscription={},
+        platform="expo",
+    )
+    PlayerPushSubscription.objects.create(
+        user_id=participant.user_id,
+        endpoint="https://example.com/inactive",
+        subscription={},
+        is_active=False,
+    )
+    PlayerPushSubscription.objects.create(
+        user_id=outsider.user_id,
+        endpoint="https://example.com/outsider",
+        subscription={},
+    )
+
+    handle_match_finished.run(
+        match_id=str(tracker.match.pk), match_data_id=str(tracker.match_data.pk)
+    )
+    with (
+        patch("apps.player.tasks.send_web_push") as send_web,
+        patch("apps.player.tasks.expo_push_client") as expo,
+    ):
+        for job in BackgroundJob.objects.filter(task=DELIVERY_TASK):
+            execute_job.run(job.pk)
+
+    send_web.assert_called_once()
+    assert send_web.call_args.kwargs["sub"] == web
+    expo.send_messages.assert_called_once()
+    [message] = expo.send_messages.call_args.args[0]
+    assert message["to"] == "ExponentPushToken[participant]"

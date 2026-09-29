@@ -47,25 +47,6 @@ def team_label(name: str, club_name: str) -> str:
     return name.removeprefix(prefix)
 
 
-def joint_team_matches(
-    source_name: str, source_club: str, local_club: str, local_team: str
-) -> bool:
-    """Recognize an exact joint-team identity registered under either partner."""
-    local_partners = {normalized(part) for part in local_club.split("/")}
-    if len(local_partners) <= 1 or "" in local_partners:
-        return False
-    suffix = " " + normalized(local_team)
-    source_name = normalized(source_name)
-    if not source_name.endswith(suffix):
-        return False
-    source_partners = {
-        normalized(part) for part in source_name.removesuffix(suffix).split("/")
-    }
-    return (
-        source_partners == local_partners and normalized(source_club) in source_partners
-    )
-
-
 class JointTeamIndex:
     """Look up exact partner sets and designations without pairwise comparisons."""
 

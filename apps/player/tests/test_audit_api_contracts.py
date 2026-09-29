@@ -13,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.kwt_common.models import BackgroundJob
 from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
@@ -267,6 +268,7 @@ def test_song_retry_hides_other_users_song_and_rejects_ready_song(
     ready_response = client.post(f"/api/player/me/songs/{song.id_uuid}/retry/")
     assert ready_response.status_code == HTTPStatus.CONFLICT
     assert_api_error(ready_response.json(), {"detail": "Song is already ready"})
+    assert not BackgroundJob.objects.exists()
 
 
 @pytest.mark.django_db

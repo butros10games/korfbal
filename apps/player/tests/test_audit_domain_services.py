@@ -25,13 +25,10 @@ from apps.player.services.goal_song import (
     ParsedGoalSongPatchPayload,
     update_goal_song_settings,
 )
-from apps.player.services.match_notifications import send_payload_to_users
 from apps.player.services.player_songs import (
-    PlayerSongAlreadyReadyError,
     PlayerSongClipRequest,
     create_player_song,
     resolve_player_song_clip,
-    retry_owned_player_song_download,
 )
 from apps.player.services.song_processing import process_cached_song_download
 from apps.player.services.web_push import WebPushPayload, send_to_model_subscription
@@ -91,63 +88,6 @@ def test_retryable_web_push_failure_propagates_without_deactivation() -> None:
     assert error.value is failure
     subscription.refresh_from_db()
     assert subscription.is_active is True
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("batched", [False, True])
-def test_match_notification_routes_active_web_and_expo_destinations(
-    batched: bool,
-) -> None:
-    recipient = create_tracker_player(username="notification-recipient")
-    ignored = create_tracker_player(username="notification-ignored")
-    web = PlayerPushSubscription.objects.create(
-        user_id=recipient.user_id,
-        endpoint="https://push.example.invalid/web",
-        subscription={"endpoint": "https://push.example.invalid/web"},
-    )
-    PlayerPushSubscription.objects.create(
-        user_id=recipient.user_id,
-        endpoint="ExponentPushToken[recipient]",
-        subscription={"endpoint": "ExponentPushToken[recipient]"},
-        platform="expo",
-    )
-    PlayerPushSubscription.objects.create(
-        user_id=recipient.user_id,
-        endpoint="https://push.example.invalid/inactive",
-        subscription={"endpoint": "https://push.example.invalid/inactive"},
-        is_active=False,
-    )
-    PlayerPushSubscription.objects.create(
-        user_id=ignored.user_id,
-        endpoint="https://push.example.invalid/other-user",
-        subscription={"endpoint": "https://push.example.invalid/other-user"},
-    )
-    send_web = Mock()
-    send_batch = Mock() if batched else None
-    send_expo = Mock()
-    payload = WebPushPayload(title="Final", body="12 - 10", url="/matches/1")
-
-    send_payload_to_users(
-        user_ids=[recipient.user_id],
-        payload=payload,
-        send_web_push=send_web,
-        send_expo_push=send_expo,
-        send_web_push_batch=send_batch,
-    )
-
-    if send_batch is not None:
-        send_batch.assert_called_once_with(subs=[web], payload=payload)
-        send_web.assert_not_called()
-    else:
-        send_web.assert_called_once_with(sub=web, payload=payload)
-    send_expo.assert_called_once()
-    assert send_expo.call_args.kwargs["tokens"] == ["ExponentPushToken[recipient]"]
-    expo_payload = send_expo.call_args.kwargs["payload"]
-    assert (expo_payload.title, expo_payload.body, expo_payload.url) == (
-        "Final",
-        "12 - 10",
-        "/matches/1",
-    )
 
 
 def test_web_push_payload_serializes_only_populated_optional_fields() -> None:
@@ -316,26 +256,6 @@ def test_spotify_song_creation_is_idempotent_for_one_player(
     assert CachedSong.objects.count() == 1
     assert PlayerSong.objects.filter(player=player).count() == 1
     assert jobs.player_song.call_count == EXPECTED_DISPATCH_COUNT
-
-
-@pytest.mark.django_db
-def test_ready_song_cannot_be_retried() -> None:
-    player = create_tracker_player(username="ready-retry-command")
-    song = PlayerSong.objects.create(
-        player=player,
-        status=PlayerSongStatus.READY,
-        audio_file="player_songs/ready.mp3",
-    )
-    jobs = Mock()
-
-    with pytest.raises(PlayerSongAlreadyReadyError):
-        retry_owned_player_song_download(
-            player=player,
-            song_id=str(song.id_uuid),
-            jobs=jobs,
-        )
-
-    jobs.player_song.assert_not_called()
 
 
 @pytest.mark.django_db

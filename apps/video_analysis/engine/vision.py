@@ -466,11 +466,6 @@ def start_run(
     return root, record
 
 
-def proposal_report(store: Store, run: str) -> dict[str, Any]:
-    """Combine technical batches, keeping the newest proposal per frame."""
-    return {"frames": deepcopy(list(proposal_index(store, run).values()))}
-
-
 def proposal_index(store: Store, run: str) -> dict[tuple[str, str], dict]:
     """Invalidate parsed proposals when either manifests or predictions change."""
     paths = (

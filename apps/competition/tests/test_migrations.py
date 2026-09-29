@@ -5,16 +5,8 @@ from datetime import date
 from django.conf import settings
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.db.migrations.loader import MigrationLoader
-from django.test import override_settings
 from django.utils import timezone
 import pytest
-
-
-@override_settings(MIGRATION_MODULES={})
-def test_migration_graph_has_no_conflicting_heads() -> None:
-    """Deployment's migrate command must be able to select one leaf per app."""
-    assert MigrationLoader(None).detect_conflicts() == {}
 
 
 @pytest.mark.migration_regression

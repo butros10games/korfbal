@@ -5,11 +5,9 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
-from django.db import transaction
 from django.utils import timezone
 import pytest
 
-from apps.game_tracker.adapters.outbound.runtime import CeleryTrackerJobDispatcher
 from apps.game_tracker.models import PlayerMatchMinutes, Shot
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.game_tracker.services import match_minutes
@@ -21,26 +19,6 @@ from apps.game_tracker.tests.tracker_test_helpers import (
     create_tracker_match,
     create_tracker_player,
 )
-from apps.kwt_common.models import BackgroundJob
-
-
-@pytest.mark.django_db(transaction=True)
-def test_recompute_intent_rolls_back_with_mutation() -> None:
-    """The durable dispatch rolls back with its owner; write failures propagate."""
-    dispatch = CeleryTrackerJobDispatcher().recompute_impacts
-    with transaction.atomic():
-        dispatch(
-            match_data_id="rollback",
-            countdown_seconds=7,
-        )
-        assert BackgroundJob.objects.exists()
-        transaction.set_rollback(True)
-    assert not BackgroundJob.objects.exists()
-    dispatch(
-        match_data_id="commit",
-        countdown_seconds=0,
-    )
-    assert BackgroundJob.objects.get().args == ["commit"]
 
 
 @pytest.mark.django_db

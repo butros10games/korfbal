@@ -8,6 +8,7 @@ import tempfile
 import uuid
 
 from django.conf import settings
+from django.db import transaction
 
 from apps.video_analysis.adapters.objects import WorkspaceObjects
 from apps.video_analysis.engine.container import (
@@ -16,6 +17,7 @@ from apps.video_analysis.engine.container import (
     verify_repackaged,
 )
 from apps.video_analysis.models import StoredFile
+from apps.video_analysis.services import repackaging
 
 
 logger = logging.getLogger(__name__)
@@ -100,10 +102,18 @@ def repackage_video(files: WorkspaceObjects, relative: str) -> str | None:
     if _checksum(files, record.bucket, key) != (size, checksum):
         files.client.delete_object(Bucket=record.bucket, Key=key)
         raise ValueError("Object storage verification failed")
-    # Conditional: a concurrent replacement keeps its own object.
-    replaced = StoredFile.objects.filter(
-        pk=record.pk, object_key=record.object_key
-    ).update(object_key=key, sha256=checksum, size=size, source_mtime_ns=0)
+    # Commit the replacement and its durable cleanup intent together. Keep the
+    # expensive media and storage work outside this short transaction.
+    try:
+        with transaction.atomic():
+            replaced = StoredFile.objects.filter(
+                pk=record.pk, object_key=record.object_key
+            ).update(object_key=key, sha256=checksum, size=size, source_mtime_ns=0)
+            if replaced:
+                repackaging.retire(files.workspace.pk, record.object_key)
+    except Exception:
+        delete_unreferenced(files, key)
+        raise
     if not replaced:
         files.client.delete_object(Bucket=record.bucket, Key=key)
         return None

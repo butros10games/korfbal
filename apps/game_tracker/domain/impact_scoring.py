@@ -654,22 +654,6 @@ def next_streak_state(
     return scoring_team_id, 1
 
 
-def advance_score_state(
-    *,
-    home_score: int,
-    away_score: int,
-    scoring_team_id: str | None,
-    home_team_id: str,
-    away_team_id: str,
-) -> tuple[int, int]:
-    """Apply a goal to a home/away score pair."""
-    if scoring_team_id == home_team_id:
-        return home_score + 1, away_score
-    if scoring_team_id == away_team_id:
-        return home_score, away_score + 1
-    return home_score, away_score
-
-
 def opposing_side(
     *,
     team_id: str | None,

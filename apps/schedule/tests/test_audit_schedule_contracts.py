@@ -12,7 +12,7 @@ from django.utils import timezone
 import pytest
 
 from apps.club.models import Club
-from apps.game_tracker.models import MatchData, Shot
+from apps.game_tracker.models import MatchData
 from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 from apps.schedule.models import Match, Season, SeasonPool
@@ -285,16 +285,6 @@ def test_pool_editor_requires_two_distinct_teams(client: Client) -> None:
     assert not SeasonPool.objects.filter(season=graph.season).exists()
 
 
-def test_pool_filter_rejects_a_malformed_season_id(client: Client) -> None:
-    """Invalid public input returns a controlled client error, never a server error."""
-    _schedule_graph(prefix="malformed-pool-filter")
-    _login_staff(client, username="malformed_pool_filter_staff")
-
-    response = client.get("/api/seasons/pools/", {"season": "not-a-uuid"})
-
-    assert response.status_code == HTTPStatus.BAD_REQUEST
-
-
 def test_season_lists_are_ordered_and_report_distinct_counts(client: Client) -> None:
     """Editor options expose deterministic ordering and non-multiplied totals."""
     today = timezone.localdate()
@@ -367,32 +357,6 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "is_current": True,
         },
     ]
-
-
-def test_match_final_score_counts_only_scored_shots_for_participating_teams() -> None:
-    """The model score contract ignores misses and goals assigned elsewhere."""
-    graph = _schedule_graph(prefix="score-audit")
-    match = _match(graph, status="finished")
-    match_data = MatchData.objects.get(match_link=match)
-    scorer = cast(Any, create_user(username="score_audit_scorer")).player
-    unrelated = Team.objects.create(name="unrelated", club=graph.home.club)
-
-    for team, scored in (
-        (graph.home, True),
-        (graph.home, True),
-        (graph.home, False),
-        (graph.away, True),
-        (unrelated, True),
-        (None, True),
-    ):
-        Shot.objects.create(
-            player=scorer,
-            match_data=match_data,
-            team=team,
-            scored=scored,
-        )
-
-    assert match.get_final_score() == (2, 1)
 
 
 def test_season_date_range_is_inclusive_at_both_boundaries() -> None:

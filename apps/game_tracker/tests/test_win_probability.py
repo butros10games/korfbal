@@ -69,13 +69,16 @@ def test_possession_is_more_valuable_late_in_a_tied_match() -> None:
     assert possession_swing(30) > 0
 
 
-def test_goal_wpa_is_zero_sum_between_scorer_and_responsible_defender() -> None:
+@pytest.mark.parametrize("scoring_team", ["home", "away"])
+def test_goal_wpa_is_zero_sum_between_scorer_and_responsible_defender(
+    scoring_team: str,
+) -> None:
     """The same goal helps the scorer exactly as much as it hurts the defender."""
     shots = [
         {
             "event_id": "goal-event",
             "player_id": "scorer",
-            "team_id": "home",
+            "team_id": scoring_team,
             "shot_type": "Afstand schot",
             "scored": True,
             "for_team": True,
@@ -84,7 +87,7 @@ def test_goal_wpa_is_zero_sum_between_scorer_and_responsible_defender() -> None:
         {
             "event_id": "goal-event",
             "player_id": "defender",
-            "team_id": "home",
+            "team_id": scoring_team,
             "shot_type": "Afstand schot",
             "scored": True,
             "for_team": False,
@@ -96,7 +99,7 @@ def test_goal_wpa_is_zero_sum_between_scorer_and_responsible_defender() -> None:
             "type": "goal",
             "event_id": "goal-event",
             "player_id": "scorer",
-            "team_id": "home",
+            "team_id": scoring_team,
             "elapsed_seconds": 3590,
             "time": "60",
         }

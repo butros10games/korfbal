@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
 from django.core.management import call_command
-from django.db import transaction
 from django.test import override_settings
 import pytest
 
@@ -82,14 +81,6 @@ def test_media_dispatch_is_durable_even_with_eager_settings(
     assert job.args == ["song-id"]
     assert job.queue == "media"
     assert job.completed_generation == 0
-
-
-@pytest.mark.django_db
-def test_media_dispatch_rolls_back_with_its_transaction() -> None:
-    with transaction.atomic():
-        CelerySongDownloadDispatcher().cached_song("song-id")
-        transaction.set_rollback(True)
-    assert not BackgroundJob.objects.exists()
 
 
 def test_requests_expo_adapter_uses_provider_contract() -> None:

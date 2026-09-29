@@ -169,6 +169,9 @@ def test_stored_recording_is_replaced_once(
     assert record.object_key.startswith(files.prefix + "/")
     assert record.object_key.endswith(RELATIVE)
     assert repackage_video(files, RELATIVE) is None
+    job = BackgroundJob.objects.get(task=repackaging.DELETE)
+    assert job.args == [str(files.workspace.pk), "original"]
+    assert job.generation == 1
     assert not list(files.root.rglob("*.mp4"))
     # Running readers keep the superseded object until it is retired.
     assert ("media", "original") in client.objects
@@ -177,6 +180,35 @@ def test_stored_recording_is_replaced_once(
     client.objects["media", files.prefix + "/old"] = data
     assert delete_unreferenced(files, files.prefix + "/old")
     assert ("media", files.prefix + "/old") not in client.objects
+
+
+def test_cleanup_intent_failure_rolls_back_replacement_and_retry_recovers(
+    stored: tuple[WorkspaceObjects, bytes],
+    client: MagicMock,  # noqa: F811 - fixture
+) -> None:
+    """A failed cleanup enqueue cannot strand the original object on retry."""
+    files, original = stored
+    retire = repackaging.retire
+
+    def interrupted_retirement(workspace_id: object, key: str) -> None:
+        retire(workspace_id, key)
+        raise RuntimeError("Interrupted cleanup scheduling")
+
+    with (
+        patch.object(repackaging, "retire", side_effect=interrupted_retirement),
+        pytest.raises(RuntimeError, match="Interrupted cleanup scheduling"),
+    ):
+        repackage_video(files, RELATIVE)
+
+    assert StoredFile.objects.get(relative_path=RELATIVE).object_key == "original"
+    assert not BackgroundJob.objects.filter(task=repackaging.DELETE).exists()
+    assert client.objects == {("media", "original"): original}
+
+    assert repackage_video(files, RELATIVE) == "original"
+    assert repackage_video(files, RELATIVE) is None
+    job = BackgroundJob.objects.get(task=repackaging.DELETE)
+    assert job.args == [str(files.workspace.pk), "original"]
+    assert job.generation == 1
 
 
 def test_import_and_command_queue_durable_repackaging(

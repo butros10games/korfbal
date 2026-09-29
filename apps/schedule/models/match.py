@@ -9,9 +9,7 @@ from uuid import UUID
 from bg_uuidv7 import uuidv7
 from django.conf import settings
 from django.db import models
-from django.db.models import Count, Q
-
-from apps.game_tracker.models import Shot
+from django.db.models import Q
 
 from .constants import team_model_string
 
@@ -98,25 +96,3 @@ class Match(models.Model):
         # The legacy Django-rendered `match_detail` route was removed when the
         # project migrated to a React SPA. Match links should point into the SPA.
         return f"{settings.WEB_APP_ORIGIN}/matches/{self.id_uuid}"
-
-    def get_final_score(self) -> tuple[int, int]:
-        """Compute the final score based on recorded shots.
-
-        Relies on `game_tracker.Shot` records tied to this match's `MatchData`
-        entries instead of any denormalized score fragments on `MatchData`.
-
-        Returns:
-            tuple[int, int]: (home_score, away_score)
-
-        """
-        # NOTE: Historically this method performed multiple queries per call.
-        # Keep it correct but make it cheap-ish: a single aggregate query.
-        totals = Shot.objects.filter(
-            match_data__match_link=self,
-            scored=True,
-            team__isnull=False,
-        ).aggregate(
-            home=Count("id_uuid", filter=Q(team=self.home_team)),
-            away=Count("id_uuid", filter=Q(team=self.away_team)),
-        )
-        return (int(totals.get("home") or 0), int(totals.get("away") or 0))

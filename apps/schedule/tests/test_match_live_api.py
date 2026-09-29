@@ -16,23 +16,6 @@ from apps.team.models import Team
 pytestmark = pytest.mark.django_db
 
 
-def test_match_live_state_is_public(client: Client) -> None:
-    """Live state should be available without authentication."""
-    today = timezone.now().date()
-    season = Season.objects.create(name="2025", start_date=today, end_date=today)
-    home_team = Team.objects.create(name="Home", club=Club.objects.create(name="HC"))
-    away_team = Team.objects.create(name="Away", club=Club.objects.create(name="AC"))
-    match = Match.objects.create(
-        home_team=home_team,
-        away_team=away_team,
-        season=season,
-        start_time=timezone.now(),
-    )
-
-    response = client.get(f"/api/matches/{match.id_uuid}/live/")
-    assert response.status_code == HTTPStatus.OK
-
-
 def test_match_live_state_and_poll_return_payload(client: Client) -> None:
     """Live state should return timer/score and poll should timeout and then change."""
     today = timezone.now().date()

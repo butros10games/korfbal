@@ -26,7 +26,6 @@ from apps.video_analysis.engine.media import prepare_active_frames, sample_frame
 from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.engine.timeline import is_active_time
 from apps.video_analysis.models import AnalysisJob, Workspace
-from apps.video_analysis.services import repackaging
 from apps.video_analysis.services.jobs import continue_analysis
 from apps.video_analysis.services.pipeline_worker import advance
 from apps.video_analysis.services.uploads import cleanup
@@ -202,8 +201,7 @@ def cleanup_upload(upload_id: str) -> None:
 def repackage_recording(workspace_id: str, relative: str) -> None:
     """Regroup one stored recording losslessly so browsers open it quickly."""
     workspace = Workspace.objects.get(pk=workspace_id)
-    if superseded := composition.repackage_recording(workspace, relative):
-        repackaging.retire(workspace_id, superseded)
+    composition.repackage_recording(workspace, relative)
 
 
 @shared_task

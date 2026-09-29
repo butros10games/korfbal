@@ -14,7 +14,6 @@ from apps.game_tracker.domain.command_time import (
 from apps.game_tracker.domain.impact_scoring import (
     MatchImpactContribution,
     ShootingEfficiencyMultipliers,
-    advance_score_state,
     aggregate_win_probability_added,
     compute_v7_contributions,
     compute_v8_contributions,
@@ -160,27 +159,6 @@ def test_shot_scoring_ignores_unattributed_rows_without_affecting_valid_rows() -
 
 @pytest.mark.parametrize(
     ("scoring_team_id", "expected"),
-    [("home", (9, 7)), ("away", (8, 8)), ("spectator-team", (8, 7))],
-)
-def test_only_a_participating_scoring_team_can_mutate_the_score(
-    scoring_team_id: str,
-    expected: tuple[int, int],
-) -> None:
-    """Home and away advance independently while foreign teams are no-ops."""
-    assert (
-        advance_score_state(
-            home_score=8,
-            away_score=7,
-            scoring_team_id=scoring_team_id,
-            home_team_id="home",
-            away_team_id="away",
-        )
-        == expected
-    )
-
-
-@pytest.mark.parametrize(
-    ("scoring_team_id", "expected"),
     [("away", ("away", 1)), (None, (None, 1))],
 )
 def test_scoring_streak_resets_when_the_scoring_team_changes_or_is_unknown(
@@ -265,49 +243,6 @@ def test_fast_goal_scan_ignores_mixed_naive_and_aware_timestamps() -> None:
     assert contributions[0].points == pytest.approx(0.18)
     assert contributions[0].transition_bonus == pytest.approx(0.0)
     assert contributions[0].linked_goal_event_id is None
-
-
-def test_away_goal_wpa_is_zero_sum_from_each_players_perspective() -> None:
-    """Away scoring attribution correctly inverts home win expectancy."""
-    contributions = compute_v8_contributions(
-        [
-            {
-                "event_id": "away-goal",
-                "player_id": "away-scorer",
-                "team_id": "away",
-                "shot_type": "Afstand schot",
-                "scored": True,
-                "for_team": True,
-            },
-            {
-                "event_id": "away-goal",
-                "player_id": "home-defender",
-                "team_id": "away",
-                "shot_type": "Afstand schot",
-                "scored": True,
-                "for_team": False,
-            },
-        ],
-        [
-            {
-                "type": "goal",
-                "event_id": "away-goal",
-                "team_id": "away",
-                "elapsed_seconds": 3590,
-            }
-        ],
-        match_duration_minutes=60,
-        home_team_id="home",
-        away_team_id="away",
-    )
-    by_player = {item.player_id: item for item in contributions}
-
-    assert by_player["away-scorer"].win_probability_added > 0
-    assert by_player["home-defender"].win_probability_added < 0
-    assert (
-        by_player["away-scorer"].win_probability_added
-        + by_player["home-defender"].win_probability_added
-    ) == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("non_finite_elapsed", [float("nan"), float("inf")])

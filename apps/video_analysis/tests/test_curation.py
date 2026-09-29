@@ -273,7 +273,7 @@ def test_import_benchmark_is_immutable_and_keeps_model_drafts_separate(
     ]
     assert item["has_prediction"]
     assert not item["reference_changed"]
-    assert vision.proposal_report(store, "latest") == {"frames": []}
+    assert vision.proposal_index(store, "latest") == {}
     with pytest.raises(ValueError, match="already exists"):
         call_command("import_video_benchmark", str(path), name="fixed-comparison")
 

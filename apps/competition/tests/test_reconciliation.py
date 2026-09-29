@@ -30,7 +30,7 @@ from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.reconciliation import (
     JointTeamIndex,
-    joint_team_matches,
+    normalized,
     reconcile,
 )
 from apps.competition.tests.test_importer import match_payload
@@ -331,6 +331,25 @@ def test_joint_team_links_without_reassigning_clubs(
         response = client.get(f"/api/competition/{endpoint}/?local_club={joint.pk}")
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] == 1
+
+
+def joint_team_matches(
+    source_name: str, source_club: str, local_club: str, local_team: str
+) -> bool:
+    """Pairwise reference for JointTeamIndex: an exact partner set and designation."""
+    local_partners = {normalized(part) for part in local_club.split("/")}
+    if len(local_partners) <= 1 or "" in local_partners:
+        return False
+    suffix = " " + normalized(local_team)
+    source_name = normalized(source_name)
+    if not source_name.endswith(suffix):
+        return False
+    source_partners = {
+        normalized(part) for part in source_name.removesuffix(suffix).split("/")
+    }
+    return (
+        source_partners == local_partners and normalized(source_club) in source_partners
+    )
 
 
 @pytest.mark.parametrize(

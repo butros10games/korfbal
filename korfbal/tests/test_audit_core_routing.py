@@ -22,6 +22,20 @@ from korfbal import asgi
         ("/api/auth/login/", "auth-login"),
         ("/api/auth/logout/", "auth-logout"),
         ("/api/auth/password-reset/request/", "auth-password-reset-request"),
+        ("/auth/register/", "auth-register"),
+        ("/api/auth/register/", "auth-register"),
+        ("/auth/jwt/login/", "auth-jwt-login"),
+        ("/api/auth/jwt/login/", "auth-jwt-login"),
+        ("/auth/jwt/refresh/", "auth-jwt-refresh"),
+        ("/api/auth/jwt/refresh/", "auth-jwt-refresh"),
+        (
+            "/auth/passkeys/authentication/options/",
+            "auth-passkey-authentication-options",
+        ),
+        (
+            "/api/auth/passkeys/registration/options/",
+            "auth-passkey-registration-options",
+        ),
     ],
 )
 def test_spa_auth_endpoints_have_primary_and_legacy_routes(

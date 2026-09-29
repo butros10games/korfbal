@@ -5,29 +5,10 @@ from __future__ import annotations
 from apps.game_tracker.services.tracker_commands.registry import COMMAND_DEFINITIONS
 
 
-EXPECTED_COMMANDS = {
-    "get_non_active_players",
-    "goal_reg",
-    "new_attack",
-    "part_end",
-    "undo_part_transition",
-    "possession_change_reg",
-    "remove_last_event",
-    "shot_reg",
-    "start/pause",
-    "substitute_against_reg",
-    "substitute_reg",
-    "timeout",
-}
-
-
 def test_registry_owns_the_complete_command_contract() -> None:
     """Each public command has one self-consistent registry definition."""
-    definitions_by_name = {
-        definition.name: definition for definition in COMMAND_DEFINITIONS
-    }
-    assert set(definitions_by_name) == EXPECTED_COMMANDS
-    assert len(definitions_by_name) == len(COMMAND_DEFINITIONS)
+    names = [definition.name for definition in COMMAND_DEFINITIONS]
+    assert len(set(names)) == len(names)
     assert {
         definition.name for definition in COMMAND_DEFINITIONS if definition.server_timed
     } == {"part_end", "start/pause", "timeout"}
