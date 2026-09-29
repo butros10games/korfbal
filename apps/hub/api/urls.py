@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from django.urls import path
 
+from .contact import ContactRequestView
 from .views import CatalogDataView, HubIndexView, UpdateFeedView
 
 
@@ -17,4 +18,5 @@ urlpatterns = [
     path("index/", HubIndexView.as_view(), name="index"),
     path("catalog_data/", CatalogDataView.as_view(), name="api_catalog_data"),
     path("updates/", UpdateFeedView.as_view(), name="hub-updates"),
+    path("contact/", ContactRequestView.as_view(), name="hub-contact"),
 ]
