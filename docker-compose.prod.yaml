@@ -24,7 +24,8 @@ services:
             VIDEO_ANALYSIS_ROOT: /var/lib/korfbal/video-analysis
             VIDEO_ANALYSIS_TRAINING_POLICY: /run/korfbal/training-policy.json
             BG_AUTH_PASSKEY_RP_ID: korfbal.butrosgroot.com
-            BG_AUTH_PASSKEY_ORIGINS: https://korfbal.butrosgroot.com
+            # korfconnect.nl uses the original RP ID through /.well-known/webauthn.
+            BG_AUTH_PASSKEY_ORIGINS: https://korfbal.butrosgroot.com,https://korfconnect.nl
         restart: unless-stopped
         volumes:
             - video-analysis:/var/lib/korfbal/video-analysis

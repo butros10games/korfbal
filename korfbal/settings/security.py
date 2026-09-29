@@ -12,6 +12,9 @@ CSRF_FAILURE_VIEW = "korfbal.api_errors.csrf_failure"
 
 KORFBAL_ORIGIN = "https://api.korfbal.butrosgroot.com"
 WEB_KORFBAL_ORIGIN = "https://korfbal.butrosgroot.com"
+# KorfConnect domain served by the same deployment alongside the original one.
+KORFCONNECT_ORIGIN = "https://api.korfconnect.nl"
+WEB_KORFCONNECT_ORIGIN = "https://korfconnect.nl"
 KWT_ORIGIN = "https://api.korfbal.localhost"
 WEB_KWT_ORIGIN = "https://korfbal.localhost"
 
@@ -61,16 +64,24 @@ WEB_APP_ORIGIN = env(
     WEB_KWT_ORIGIN if DEBUG else WEB_KORFBAL_ORIGIN,
 ).rstrip("/")
 
-default_hosts = "korfbal.butrosgroot.com,api.korfbal.butrosgroot.com"
+default_hosts = (
+    "korfbal.butrosgroot.com,api.korfbal.butrosgroot.com,"
+    "korfconnect.nl,www.korfconnect.nl,api.korfconnect.nl"
+)
 ALLOWED_HOSTS = sorted_hosts(env_list("ALLOWED_HOSTS", default_hosts))
 
 _default_csrf_trusted = ",".join([
     KORFBAL_ORIGIN,
     *origin_variants(WEB_KORFBAL_ORIGIN),
+    KORFCONNECT_ORIGIN,
+    *origin_variants(WEB_KORFCONNECT_ORIGIN),
 ])
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", _default_csrf_trusted)
 
-_default_cors_allowed = ",".join(origin_variants(WEB_KORFBAL_ORIGIN))
+_default_cors_allowed = ",".join([
+    *origin_variants(WEB_KORFBAL_ORIGIN),
+    *origin_variants(WEB_KORFCONNECT_ORIGIN),
+])
 CORS_ALLOWED_ORIGINS = sorted_hosts(
     env_list("CORS_ALLOWED_ORIGINS", _default_cors_allowed),
 )
@@ -134,4 +145,9 @@ _csrf_cookie_domain = env("CSRF_COOKIE_DOMAIN", _cookie_domain_default).strip()
 _session_cookie_domain = env("SESSION_COOKIE_DOMAIN", _cookie_domain_default).strip()
 CSRF_COOKIE_DOMAIN = _csrf_cookie_domain or None
 SESSION_COOKIE_DOMAIN = _session_cookie_domain or None
+# Parent domains the deployment answers on. A cookie scoped to one of them is
+# re-scoped to the domain of the requesting host, because browsers reject a
+# `.korfbal.butrosgroot.com` cookie set by `api.korfconnect.nl`.
+_default_cookie_domains = "" if DEBUG else ".korfbal.butrosgroot.com,.korfconnect.nl"
+KORFBAL_COOKIE_DOMAINS = env_list("KORFBAL_COOKIE_DOMAINS", _default_cookie_domains)
 X_FRAME_OPTIONS = env("X_FRAME_OPTIONS", "SAMEORIGIN")
