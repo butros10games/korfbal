@@ -230,7 +230,10 @@ def test_import_and_command_queue_durable_repackaging(
         pipeline_worker.advance(str(workspace.pk))
     run.refresh_from_db()
     assert run.status == "awaiting_cuts"
-    key = f"{repackaging.REPACKAGE}:{workspace.pk}:demo/recording.mp4"
+    key = (
+        f"{repackaging.REPACKAGE}:"
+        f"{repackaging.identity(workspace.pk, 'demo/recording.mp4')}"
+    )
     job = BackgroundJob.objects.get(key=key)
     assert (job.queue, job.args) == (
         "vision",
@@ -245,9 +248,16 @@ def test_import_and_command_queue_durable_repackaging(
 def test_superseded_object_is_retired_after_a_day() -> None:
     """Deletion is a one-shot job delayed past running readers."""
     before = timezone.now()
-    repackaging.retire("workspace", "old-key")
-    job = BackgroundJob.objects.get(key=f"{repackaging.DELETE}:workspace:old-key")
+    workspace = "30b9e1fc-3a68-42f1-9fb9-af63e35011f7"
+    # Real content-addressed keys: the raw key made job names exceed 255 chars.
+    key = f"video-analysis/1/{workspace}/{'f' * 64}/intake-{'c' * 32}/recording.mp4"
+    repackaging.retire(workspace, key)
+    job = BackgroundJob.objects.get(task=repackaging.DELETE)
+    assert job.args == [workspace, key]
+    assert len(job.key) <= BackgroundJob._meta.get_field("key").max_length
     assert job.due_at >= before + repackaging.SUPERSEDED_GRACE
+    repackaging.retire(workspace, key)
+    assert BackgroundJob.objects.filter(task=repackaging.DELETE).count() == 1
 
 
 def test_corrupt_download_keeps_the_original(

@@ -72,6 +72,8 @@ Match tracker issues often require coordinated backend + frontend changes.
 - The worker image supervises isolated `celery`, `instant`, `projections`, `media`, and
   `competition` pools. Preserve `instant` for shared `bg_auth` MFA/activation tasks;
   verify every pool after changing the image entrypoint or queue routing.
+- `BackgroundJob.key` is `varchar(255)` and SQLite tests do not enforce it; hash unbounded identities
+  such as storage object keys or paths into the job key, and assert the length in tests.
 - Persist background intent inside the domain transaction with `kwt_common.services.jobs`.
   Broker publication, cache claims, and task ETA reservations are not durable workflow state.
   Keep recipient delivery separate from MVP publication and retain completed intent keys.
