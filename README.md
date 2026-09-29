@@ -8,6 +8,9 @@ Django backend for the Korfbal Web Tool.
 
 The public UI is owned by the SPA; this Django project does not host app templates.
 
+See [Korfbal architecture](../../../docs/korfbal/architecture.md) for package ownership,
+the tracker command and live-update flows, background jobs and validation commands.
+
 ## Requirements
 
 - Python 3.12+
