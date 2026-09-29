@@ -1,6 +1,7 @@
 """Player API views, split by domain responsibility."""
 
 from .goal_song import CurrentPlayerGoalSongAPIView
+from .live_activities import CurrentPlayerLiveActivitiesAPIView
 from .overview import (
     PlayerConnectedClubRecentResultsAPIView,
     PlayerOverviewAPIView,
@@ -41,6 +42,7 @@ __all__ = [
     "CurrentPlayerAPIView",
     "CurrentPlayerFollowedTeamsAPIView",
     "CurrentPlayerGoalSongAPIView",
+    "CurrentPlayerLiveActivitiesAPIView",
     "CurrentPlayerPasswordAPIView",
     "CurrentPlayerPrivacySettingsAPIView",
     "CurrentPlayerPushSubscriptionsAPIView",

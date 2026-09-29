@@ -28,6 +28,9 @@ dependencies = [
     "reportlab>=5.0.1,<6",
     "pywebpush",
     "requests",
+    # Live Activity pushes go straight to APNs (HTTP/2 + ES256 provider tokens).
+    "httpx[http2]",
+    "pyjwt[crypto]",
     "yt-dlp[default]>=2026.8.19",
 ]
 

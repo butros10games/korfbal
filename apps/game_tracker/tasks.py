@@ -13,6 +13,8 @@ from apps.game_tracker.services.match_impact import (
     persist_match_impact_rows_with_breakdowns,
 )
 from apps.game_tracker.services.match_minutes import persist_match_minutes
+from apps.kwt_common.services.jobs import enqueue
+from apps.player.services.live_activities import has_active_live_activities
 
 
 def _recompute(match_data_id: str, persist: Callable[..., int]) -> dict[str, int | str]:
@@ -51,3 +53,10 @@ def publish_public_live_snapshot(match_id: str) -> None:
     """Warm shared state; durable generations recover concurrent edits."""
     publish(match_id=match_id)
     prepare_public_match_reads(match_id=match_id)
+    # Phones showing this match on the Lock Screen get the committed score.
+    if has_active_live_activities(match_id):
+        enqueue(
+            "apps.player.tasks.push_match_live_activities",
+            f"live-activity:{match_id}",
+            args=[match_id],
+        )

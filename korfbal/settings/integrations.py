@@ -30,6 +30,17 @@ WEBPUSH_VAPID_PRIVATE_KEY = env("WEBPUSH_VAPID_PRIVATE_KEY", "")
 WEBPUSH_VAPID_SUBJECT = env("WEBPUSH_VAPID_SUBJECT", "mailto:butrosgroot@gmail.com")
 WEBPUSH_TTL_SECONDS = env_int("WEBPUSH_TTL_SECONDS", 60 * 60)
 
+# --- iOS Live Activities (Dynamic Island) ---
+# ActivityKit pushes bypass Expo's push service and go straight to APNs with an
+# ES256 provider token. Create the key under Apple Developer > Keys (APNs) and
+# paste the .p8 contents (newlines may be escaped as \n).
+APNS_TEAM_ID = env("APNS_TEAM_ID", "")
+APNS_KEY_ID = env("APNS_KEY_ID", "")
+APNS_PRIVATE_KEY = env("APNS_PRIVATE_KEY", "")
+APNS_BUNDLE_ID = env("APNS_BUNDLE_ID", "korfbal.butrosgroot.com")
+# Development builds signed with a development profile use the sandbox host.
+APNS_USE_SANDBOX = env("APNS_USE_SANDBOX", "false").lower() == "true"
+
 PROMETHEUS_LATENCY_BUCKETS = (
     0.1,
     0.2,

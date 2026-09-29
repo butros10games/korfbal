@@ -14,6 +14,7 @@ from apps.player.composition import (
     download_song,
     expo_push_client,
     prepare_player_song_clip,
+    push_live_activities_for_match,
     send_web_push,
 )
 from apps.player.models.player_song import PlayerSong
@@ -157,6 +158,12 @@ def notify_official_schedule_change(
         cancelled=cancelled,
         send_payload=_send_payload,
     )
+
+
+@shared_task(ignore_result=True)
+def push_match_live_activities(match_id: str) -> None:
+    """Push the latest published score to every Live Activity for the match."""
+    push_live_activities_for_match(match_id=match_id)
 
 
 @shared_task(ignore_result=True)

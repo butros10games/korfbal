@@ -7,6 +7,7 @@ from .views import (
     CurrentPlayerAPIView,
     CurrentPlayerFollowedTeamsAPIView,
     CurrentPlayerGoalSongAPIView,
+    CurrentPlayerLiveActivitiesAPIView,
     CurrentPlayerPasswordAPIView,
     CurrentPlayerPrivacySettingsAPIView,
     CurrentPlayerPushSubscriptionsAPIView,
@@ -64,6 +65,11 @@ urlpatterns = [
         "me/push-subscriptions/",
         CurrentPlayerPushSubscriptionsAPIView.as_view(),
         name="player-push-subscriptions",
+    ),
+    path(
+        "me/live-activities/",
+        CurrentPlayerLiveActivitiesAPIView.as_view(),
+        name="player-live-activities",
     ),
     path(
         "me/push-subscriptions/test/",

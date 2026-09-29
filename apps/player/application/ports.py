@@ -113,6 +113,34 @@ class ExpoPushClient(Protocol):
         """Send a batch of Expo messages."""
 
 
+class LiveActivityDeliveryError(RuntimeError):
+    """APNs rejected a Live Activity push."""
+
+    def __init__(self, *, status_code: int, reason: str, permanent: bool) -> None:
+        """Record the response; ``permanent`` means the token is dead."""
+        super().__init__(f"APNs {status_code}: {reason or 'unknown'}")
+        self.status_code = status_code
+        self.reason = reason
+        self.permanent = permanent
+
+
+class LiveActivityPushClient(Protocol):
+    """Deliver ActivityKit payloads to one activity token."""
+
+    @property
+    def configured(self) -> bool:
+        """Return whether provider credentials are available."""
+        ...
+
+    def send(self, *, token: str, payload: dict[str, Any]) -> None:
+        """Send one payload.
+
+        Raises:
+            LiveActivityDeliveryError: If APNs rejects delivery.
+
+        """
+
+
 class SpotifyResponse(Protocol):
     """Provider response consumed by Spotify use cases."""
 

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 from django.conf import settings
 
+from apps.game_tracker.composition import read_public_live
+from apps.player.adapters.outbound.apns import ApnsLiveActivityClient
 from apps.player.adapters.outbound.command_runner import SubprocessCommandRunner
 from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
 from apps.player.adapters.outbound.media_privacy import (
@@ -25,6 +28,9 @@ from apps.player.adapters.outbound.web_push_batch import (
 from apps.player.application.ports import AudioRuntime
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.expo_push import send_expo_push_tokens
+from apps.player.services.live_activities import (
+    push_live_activities_for_match as _push_live_activities_for_match,
+)
 from apps.player.services.player_audio import (
     ensure_goal_song_clip as _ensure_goal_song_clip,
     prepare_player_song_clip as _prepare_player_song_clip,
@@ -50,6 +56,7 @@ from apps.player.services.web_push import (
     WebPushPayload,
     send_to_model_subscription,
 )
+from apps.schedule.models.match import Match
 
 
 check_media_privacy = _check_media_privacy
@@ -59,6 +66,7 @@ audio_runtime = AudioRuntime(storage=audio_storage, commands=command_runner)
 song_jobs = CelerySongDownloadDispatcher()
 web_push_client = PyWebPushClient()
 expo_push_client = RequestsExpoPushClient()
+live_activity_push_client = ApnsLiveActivityClient.from_settings()
 spotify_client = RequestsSpotifyClient()
 create_spotify_authorization = _create_spotify_authorization
 complete_spotify_authorization = partial(
@@ -68,6 +76,30 @@ complete_spotify_authorization = partial(
 play_spotify = partial(_play_spotify, client=spotify_client)
 pause_spotify = partial(_pause_spotify, client=spotify_client)
 send_expo_push = partial(send_expo_push_tokens, client=expo_push_client)
+
+
+def _read_match_team_names(match_id: str) -> tuple[str, str] | None:
+    match = (
+        Match.objects
+        .select_related("home_team", "away_team")
+        .filter(pk=match_id)
+        .first()
+    )
+    if match is None:
+        return None
+    return str(match.home_team.name), str(match.away_team.name)
+
+
+def _read_live_snapshot(match_id: str) -> dict[str, Any] | None:
+    return read_public_live(match_id=match_id)
+
+
+push_live_activities_for_match = partial(
+    _push_live_activities_for_match,
+    client=live_activity_push_client,
+    read_snapshot=_read_live_snapshot,
+    read_team_names=_read_match_team_names,
+)
 download_song = partial(
     _download_song,
     command_runner=command_runner,

@@ -724,6 +724,23 @@ class PlayerPushSubscriptionCreateSerializer(serializers.Serializer):
         return payload
 
 
+class MatchLiveActivityRegisterSerializer(serializers.Serializer):
+    """Input serializer for registering an iOS Live Activity push token."""
+
+    match_id = serializers.UUIDField()
+    push_token = serializers.RegexField(
+        r"^[0-9a-fA-F]{16,512}$",
+        max_length=512,
+        error_messages={"invalid": "Push token must be an ActivityKit hex token."},
+    )
+
+
+class MatchLiveActivityEndSerializer(serializers.Serializer):
+    """Input serializer for ending an iOS Live Activity."""
+
+    push_token = serializers.CharField(max_length=512)
+
+
 class PlayerPushSubscriptionDeactivateSerializer(serializers.Serializer):
     """Input serializer for deactivating a stored subscription."""
 
