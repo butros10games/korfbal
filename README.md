@@ -13,8 +13,8 @@ the tracker command and live-update flows, background jobs and validation comman
 
 ## Requirements
 
-- Python 3.12+
-- `uv`
+- CPython 3.12+ (production and vision images use Python 3.14.7)
+- `uv` 0.12.21
 
 ## Local setup (minimal)
 
@@ -27,7 +27,7 @@ This is the quickest “I want tests + API running” setup.
 
 2. Install deps:
 
-- `uv sync`
+- `uv sync --package KWT --dev`
 
 3. Run migrations:
 
@@ -39,9 +39,33 @@ This is the quickest “I want tests + API running” setup.
 
 5. Run server:
 
-- `uv run python apps/django_projects/korfbal/manage.py runserver 0.0.0.0:8000`
+- From `apps/django_projects/korfbal/`: `uv run granian --interface asgi --host 0.0.0.0 --port 8000 korfbal.asgi:application`
 
 The API will typically be served behind nginx at `https://api.korfbal.<domain>/api/`.
+
+## Dependency updates
+
+The workspace and `deps/pyproject.toml` declare the same base dependencies and
+role groups. `uwsgi` is the existing deployment group name; it installs Granian.
+Local `dev` includes both `uwsgi` and `worker`, while production web and
+collectstatic exclude the worker-only `yt-dlp` toolchain. Every workspace phone
+field uses `phonenumberslite` so both phone distributions cannot share an environment.
+The locks target CPython, matching workspace CI and the deployed containers.
+
+Update `deps/uv.lock` first, then update the same packages in the root `uv.lock`.
+Keep shared versions identical; the dependency parity regression checks both
+manifests and locks. Refresh the standalone image inputs after updating:
+
+```bash
+uv export --project apps/django_projects/korfbal/deps --frozen --only-group forecast --no-emit-project --output-file apps/django_projects/korfbal/deps/forecast-requirements.txt
+uv export --project apps/django_projects/korfbal/deps --frozen --only-group controller --no-emit-project --output-file apps/django_projects/korfbal/deps/controller-requirements.txt
+```
+
+The separate `apps/video_analysis/engine/runtime/pyproject.toml` and `uv.lock`
+freeze CPU/CUDA training dependencies without installing them in Django. Update
+that lock with its manifest, including the NumPy/SciPy versions shared with the
+forecast group. Training kits carry both files. The environment helper installs
+with `uv sync --frozen` and selects official CPU PyTorch wheels for `--cpu`.
 
 ## Isolated backend experiments
 
@@ -862,7 +886,7 @@ a halfway reconnect, with 30 seconds per viewer level. They are short local
 samples, not production capacity guarantees. Percentiles below include successful
 command responses only; the failure counts are essential to interpreting them.
 These samples used Python 3.14.7 and Django 6.1.1; the production image currently
-pins Python 3.13. Repeat on the production runtime and hardware before sizing it.
+pins Python 3.14.7. Repeat on the production runtime and hardware before sizing it.
 
 | Spectators | Unpooled HTTP errors | Pooled HTTP errors | Command p95, unpooled | Command p95, pooled |
 | ---------- | -------------------- | ------------------ | --------------------- | ------------------- |

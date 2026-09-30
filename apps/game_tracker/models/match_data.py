@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
 from bg_uuidv7 import uuidv7
@@ -10,11 +10,15 @@ from django.db import models
 from django.utils import timezone
 
 
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
+
 class MatchData(models.Model):
     """Model for MatchData."""
 
     objects: ClassVar[models.Manager[MatchData]]
-    player_groups: models.Manager[Any]
+    player_groups: RelatedManager[Any]
     match_link_id: UUID
 
     STATUS_CHOICES: ClassVar[list[tuple[str, str]]] = [

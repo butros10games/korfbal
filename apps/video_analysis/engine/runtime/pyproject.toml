@@ -1,0 +1,41 @@
+[project]
+name = "korfbal-vision-runtime"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "ultralytics==8.4.167",
+    "numpy==2.5.3",
+    "scipy==1.18.1",
+    "lap==0.5.13",
+    "opencv-python-headless==5.0.0.93",
+]
+
+[project.optional-dependencies]
+cpu = [
+    "torch==2.14.0",
+    "torchvision==0.29.0",
+    "onnx==1.23.1",
+    "onnxruntime==1.30.0",
+    "onnxslim==0.1.97",
+]
+cuda = ["torch==2.14.0", "torchvision==0.29.0"]
+
+[tool.korfbal-runtime]
+python-version = "3.14.7"
+
+[tool.uv]
+environments = ["platform_python_implementation == 'CPython'"]
+# Both OpenCV distributions expose cv2; servers use the headless replacement.
+exclude-dependencies = [
+    { package = { name = "ultralytics" }, dependencies = ["opencv-python"] },
+]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "cpu" }]
+torchvision = [{ index = "pytorch-cpu", extra = "cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

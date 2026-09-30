@@ -1,16 +1,22 @@
 """Authoritative review records; model output and human edits remain separate."""
 
-from typing import ClassVar
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, ClassVar
 import uuid
 
 from django.conf import settings
 from django.db import models
 
 
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
+
 class Workspace(models.Model):
     """Private staff-operated workspace with an immutable storage identity."""
 
-    objects: ClassVar[models.Manager["Workspace"]] = models.Manager()
+    objects: ClassVar[models.Manager[Workspace]] = models.Manager["Workspace"]()
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     slug = models.SlugField(unique=True)
@@ -28,14 +34,14 @@ class Workspace(models.Model):
 class Recording(models.Model):
     """A source recording optionally linked to the canonical sporting match."""
 
-    objects: ClassVar[models.Manager["Recording"]] = models.Manager()
+    objects: ClassVar[models.Manager[Recording]] = models.Manager["Recording"]()
     workspace_id: uuid.UUID
-    publication: "MatchVideoPublication"
+    publication: MatchVideoPublication
 
     workspace = models.ForeignKey(
         Workspace, on_delete=models.CASCADE, related_name="recordings"
     )
-    frames: models.Manager["Frame"]
+    frames: RelatedManager[Frame]
     source_id = models.CharField(max_length=100)
     match = models.ForeignKey(
         "schedule.Match", null=True, blank=True, on_delete=models.SET_NULL
@@ -62,7 +68,7 @@ class Recording(models.Model):
 class Frame(models.Model):
     """One sampled frame and its current review, retaining the original proposal."""
 
-    objects: ClassVar[models.Manager["Frame"]] = models.Manager()
+    objects: ClassVar[models.Manager[Frame]] = models.Manager["Frame"]()
 
     recording = models.ForeignKey(
         Recording, on_delete=models.CASCADE, related_name="frames"
@@ -94,7 +100,7 @@ class Frame(models.Model):
 class ReviewAudit(models.Model):
     """Append-only attribution for native human review changes."""
 
-    objects: ClassVar[models.Manager["ReviewAudit"]] = models.Manager()
+    objects: ClassVar[models.Manager[ReviewAudit]] = models.Manager["ReviewAudit"]()
 
     frame_id: int
     frame = models.ForeignKey(Frame, on_delete=models.PROTECT)
@@ -113,7 +119,7 @@ class ReviewAudit(models.Model):
 class AnalysisJob(models.Model):
     """Durable work request; execution belongs to background workers."""
 
-    objects: ClassVar[models.Manager["AnalysisJob"]] = models.Manager()
+    objects: ClassVar[models.Manager[AnalysisJob]] = models.Manager["AnalysisJob"]()
     workspace_id: uuid.UUID
     requested_by_id: int | None
 
@@ -137,7 +143,7 @@ class AnalysisJob(models.Model):
 class StoredFile(models.Model):
     """Verified private object behind a workspace-relative logical filename."""
 
-    objects: ClassVar[models.Manager["StoredFile"]] = models.Manager()
+    objects: ClassVar[models.Manager[StoredFile]] = models.Manager["StoredFile"]()
     workspace = models.ForeignKey(Workspace, on_delete=models.PROTECT)
     relative_path = models.CharField(max_length=1000)
     bucket = models.CharField(max_length=63)
@@ -164,7 +170,9 @@ class StoredFile(models.Model):
 class ReviewPipeline(models.Model):
     """Frozen data-preparation recipe and resumable progress, separate from labels."""
 
-    objects: ClassVar[models.Manager["ReviewPipeline"]] = models.Manager()
+    objects: ClassVar[models.Manager[ReviewPipeline]] = models.Manager[
+        "ReviewPipeline"
+    ]()
     workspace_id: uuid.UUID
     requested_by_id: int | None
 
@@ -189,7 +197,7 @@ class ReviewPipeline(models.Model):
 class ClipReview(models.Model):
     """Human inspection of an immutable tracking run; never a training annotation."""
 
-    objects: ClassVar[models.Manager["ClipReview"]] = models.Manager()
+    objects: ClassVar[models.Manager[ClipReview]] = models.Manager["ClipReview"]()
     job_id: uuid.UUID
     pipeline_id: uuid.UUID
 
@@ -208,7 +216,7 @@ class ClipReview(models.Model):
 class VideoUpload(models.Model):
     """Owner-scoped, expiring chunk intake before a recording is trusted."""
 
-    objects: ClassVar[models.Manager["VideoUpload"]] = models.Manager()
+    objects: ClassVar[models.Manager[VideoUpload]] = models.Manager["VideoUpload"]()
     workspace_id: uuid.UUID
     requested_by_id: int | None
 
@@ -239,7 +247,9 @@ class MatchVideoPublication(models.Model):
     each split): ``{"video_seconds": ..., "skipped_seconds": ...}``.
     """
 
-    objects: ClassVar[models.Manager["MatchVideoPublication"]] = models.Manager()
+    objects: ClassVar[models.Manager[MatchVideoPublication]] = models.Manager[
+        "MatchVideoPublication"
+    ]()
     recording_id: int
 
     recording = models.OneToOneField(

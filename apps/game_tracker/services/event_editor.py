@@ -214,7 +214,7 @@ class EventEditorResult:
 class EventEditorValidationError(Exception):
     """Provider-neutral validation details for the inbound API adapter."""
 
-    errors: dict[str, object]
+    errors: dict[str, str]
 
 
 class _CommandOutcome(Enum):

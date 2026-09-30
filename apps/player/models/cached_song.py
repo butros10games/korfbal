@@ -40,7 +40,7 @@ class CachedSong(models.Model):
 
     status: models.CharField[str, str] = models.CharField(
         max_length=20,
-        choices=CachedSongStatus,
+        choices=CachedSongStatus.choices,
         default=CachedSongStatus.QUEUED,
     )
     error_message: models.TextField[str, str] = models.TextField(blank=True)

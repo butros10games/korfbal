@@ -38,7 +38,7 @@
             "cache": false,
             "options": {
                 "cwd": "apps/django_projects/korfbal",
-                "command": "uv run --with granian==2.8.2 --with aiohttp==3.14.3 python -m loadtest"
+                "command": "uv run python -m loadtest"
             }
         },
         "lint": {

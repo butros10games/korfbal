@@ -13,6 +13,10 @@ from django.db.models import Q
 from django.utils import timezone as django_timezone
 
 
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
+
 def default_tiebreakers() -> list[str]:
     """Return a fresh default standings rule list."""
     return ["points", "goal_difference", "goals_for", "head_to_head", "seed"]
@@ -97,13 +101,13 @@ class Tournament(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        fields: models.Manager[TournamentField]
-        member_roles: models.Manager[TournamentMember]
-        teams: models.Manager[TournamentTeam]
-        stages: models.Manager[TournamentStage]
-        final_groups: models.Manager[TournamentFinalGroup]
-        pools: models.Manager[TournamentPool]
-        matches: models.Manager[TournamentMatch]
+        fields: RelatedManager[TournamentField]
+        member_roles: RelatedManager[TournamentMember]
+        teams: RelatedManager[TournamentTeam]
+        stages: RelatedManager[TournamentStage]
+        final_groups: RelatedManager[TournamentFinalGroup]
+        pools: RelatedManager[TournamentPool]
+        matches: RelatedManager[TournamentMatch]
         display_config: TournamentDisplayConfig
 
     class Meta:
@@ -134,8 +138,8 @@ class TournamentField(models.Model):
     active = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
-        assigned_pools: models.Manager[TournamentPool]
-        matches: models.Manager[TournamentMatch]
+        assigned_pools: RelatedManager[TournamentPool]
+        matches: RelatedManager[TournamentMatch]
 
     class Meta:
         """Keep labels unique and fields presentation-ordered."""
@@ -231,8 +235,8 @@ class TournamentTeam(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:
-        pool_entries: models.Manager[TournamentPoolEntry]
-        referee_matches: models.Manager[TournamentMatch]
+        pool_entries: RelatedManager[TournamentPoolEntry]
+        referee_matches: RelatedManager[TournamentMatch]
 
     class Meta:
         """Keep custom team names unique within a tournament."""
@@ -272,7 +276,7 @@ class TournamentFinalGroup(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     if TYPE_CHECKING:
-        stages: models.Manager[TournamentStage]
+        stages: RelatedManager[TournamentStage]
 
     class Meta:
         """Keep final-group names unique and presentation ordered."""
@@ -368,8 +372,8 @@ class TournamentPool(models.Model):
     )
 
     if TYPE_CHECKING:
-        entries: models.Manager[TournamentPoolEntry]
-        matches: models.Manager[TournamentMatch]
+        entries: RelatedManager[TournamentPoolEntry]
+        matches: RelatedManager[TournamentMatch]
 
     class Meta:
         """Keep pool labels unique within a tournament."""
@@ -406,7 +410,7 @@ class TournamentPoolEntry(models.Model):
     seed_order = models.PositiveSmallIntegerField(default=1)
 
     if TYPE_CHECKING:
-        adjustments: models.Manager[TournamentStandingAdjustment]
+        adjustments: RelatedManager[TournamentStandingAdjustment]
 
     class Meta:
         """Keep each team unique within one pool."""
@@ -566,7 +570,7 @@ class TournamentMatch(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        result_audits: models.Manager[TournamentResultAudit]
+        result_audits: RelatedManager[TournamentResultAudit]
 
     class Meta:
         """Index live operations and protect match identity."""

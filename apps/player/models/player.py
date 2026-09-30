@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from bg_uuidv7 import uuidv7
 from django.conf import settings
@@ -22,14 +22,21 @@ if TYPE_CHECKING:
     from datetime import date
 
     from django.db.models import QuerySet
+    from django.db.models.fields.related_descriptors import (
+        ManyRelatedManager,
+        RelatedManager,
+    )
 
     from apps.club.models.club import Club
+    from apps.competition.models import RosterMembership
+
+    from .player_song import PlayerSong
 
 
-class VisiblePlayerManager(models.Manager):
+class VisiblePlayerManager(models.Manager["Player"]):
     """Keep withdrawn or stale source-only identities out of ordinary app queries."""
 
-    def get_queryset(self) -> models.QuerySet:
+    def get_queryset(self) -> models.QuerySet[Player]:
         """Retain the existing account privacy rules for registered players."""
         return (
             super()
@@ -48,6 +55,11 @@ class VisiblePlayerManager(models.Manager):
 
 class Player(OrderedSongSelectionModel):
     """Model for Player."""
+
+    if TYPE_CHECKING:
+        clubs: ManyRelatedManager[Club, models.Model]
+        knkv_memberships: RelatedManager[RosterMembership]
+        songs: RelatedManager[PlayerSong]
 
     class Visibility(models.TextChoices):
         """Visibility options for profile data."""
@@ -76,7 +88,7 @@ class Player(OrderedSongSelectionModel):
     knkv_privacy = models.CharField(max_length=16, blank=True)
     knkv_observed_at = models.DateTimeField(null=True, blank=True)
 
-    date_of_birth: models.DateField[date, date | None] = models.DateField(
+    date_of_birth: models.DateField[date | None, date | None] = models.DateField(
         blank=True,
         null=True,
     )
@@ -145,8 +157,8 @@ class Player(OrderedSongSelectionModel):
         """Stage an ordered selection for the next save."""
         self.set_selected_song_ids(values)
 
-    all_objects = models.Manager()
-    objects = VisiblePlayerManager()
+    all_objects: ClassVar[models.Manager[Player]] = models.Manager["Player"]()
+    objects: ClassVar[VisiblePlayerManager] = VisiblePlayerManager()
 
     class Meta:
         """Keep normal reads filtered and relation integrity unfiltered."""

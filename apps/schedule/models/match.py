@@ -15,6 +15,8 @@ from .constants import team_model_string
 
 
 if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
     from apps.awards.models import MatchMvp, MatchMvpVote
     from apps.game_tracker.models import MatchData
 
@@ -26,7 +28,7 @@ class Match(models.Model):
     # added by Django; we declare them for static type checking.
     if TYPE_CHECKING:
         mvp: MatchMvp
-        mvp_votes: models.Manager[MatchMvpVote]
+        mvp_votes: RelatedManager[MatchMvpVote]
         tracker_data: MatchData
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(

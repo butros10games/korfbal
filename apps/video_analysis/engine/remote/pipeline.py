@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tomllib
 from typing import Any
 
 from ..store import Store, frame_version
@@ -102,7 +103,14 @@ def ensure_tracking_runtime() -> None:
     """Install pinned tracking extras in older GPU images under the job deadline."""
     target = Path.cwd() / ".tracking-runtime"
     sys.path.insert(0, str(target))
-    required = {"scipy": "1.16.3", "lap": "0.5.12"}
+    manifest = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "runtime/pyproject.toml").read_text()
+    )
+    required = dict(
+        requirement.split("==", 1)
+        for requirement in manifest["project"]["dependencies"]
+        if requirement.startswith(("scipy==", "lap=="))
+    )
     for name, version in required.items():
         try:
             if importlib.metadata.version(name) == version:

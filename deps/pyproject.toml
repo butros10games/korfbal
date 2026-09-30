@@ -3,8 +3,9 @@ name = "korfbal-deps"
 version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
-    "django>=6.1,<6.2",
-    "psycopg[binary,pool]",
+    "django>=6.1.1,<6.2",
+    "asgiref>=3.12.1,<4",
+    "psycopg[binary,pool]>=3.3.6",
     "bg-audit-events",
     "bg-django-mobile-detector",
     "django-ratelimit",
@@ -22,7 +23,7 @@ dependencies = [
     "channels",
     "channels-redis",
     "django-redis",
-    "django-prometheus==2.6.0.dev4",
+    "django-prometheus==2.6.0.dev22",
     "drf-spectacular",
     "qrcode>=8.2,<9",
     "reportlab>=5.0.1,<6",
@@ -30,7 +31,7 @@ dependencies = [
     "requests",
     # Live Activity pushes go straight to APNs (HTTP/2 + ES256 provider tokens).
     "httpx[http2]",
-    "pyjwt[crypto]",
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]
@@ -39,17 +40,20 @@ worker = ["yt-dlp[default]>=2026.8.19"]
 
 uwsgi = [
     "Pillow",
-    "granian",
+    "granian>=2.8.3,<3",
     "bg-django-caching-paginator",
     "django-cryptography",
 ]
 
-dev = [
-    "Pillow",
-    "granian",
-    "bg-django-caching-paginator",
-    "django-cryptography",
-]
+# Local development exercises the same web and worker dependencies.
+dev = [{ include-group = "uwsgi" }, { include-group = "worker" }]
+
+# Standalone batch/controller images export these groups from this lock.
+forecast = ["numpy==2.5.3", "scipy==1.18.1"]
+controller = ["boto3>=1.43.105"]
+
+[tool.uv]
+environments = ["platform_python_implementation == 'CPython'"]
 
 [tool.uv.sources]
 bg-audit-events = { path = "../../../../libs/shared_python_packages/bg_audit_events", editable = true }

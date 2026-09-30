@@ -1,5 +1,7 @@
 """Season-scoped Sportlink identities and reproducible competition results."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, ClassVar
 from uuid import UUID
 
@@ -8,10 +10,14 @@ from django.db import models
 from django.utils import timezone
 
 
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
+
 class MatchFormAccess(models.Model):
     """Explicit account/team scope for the worker's private Sportlink session."""
 
-    objects: ClassVar[models.Manager["MatchFormAccess"]]
+    objects: ClassVar[models.Manager[MatchFormAccess]]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     team = models.OneToOneField("team.Team", on_delete=models.CASCADE)
     enabled = models.BooleanField(default=True)
@@ -29,7 +35,7 @@ class MatchFormAccess(models.Model):
 class MatchFormSync(models.Model):
     """Durable per-action work and receipts, without private upstream forms."""
 
-    objects: ClassVar[models.Manager["MatchFormSync"]]
+    objects: ClassVar[models.Manager[MatchFormSync]]
     access = models.ForeignKey(MatchFormAccess, on_delete=models.CASCADE)
     match = models.ForeignKey("schedule.Match", on_delete=models.CASCADE)
     action = models.CharField(
@@ -359,7 +365,7 @@ class Pool(SeasonalIdentity):
     sport = models.CharField(max_length=80, blank=True, db_index=True)
     if TYPE_CHECKING:
         competition_class_id: int | None
-        entries: models.Manager["PoolEntry"]
+        entries: RelatedManager[PoolEntry]
 
     competition_class = models.ForeignKey(
         CompetitionClass,
@@ -387,7 +393,7 @@ class Pool(SeasonalIdentity):
         """Return a recognizable poule label."""
         return f"{self.class_name} {self.name}".strip() or self.external_id
 
-    standing_rows: list["PoolEntry"]
+    standing_rows: list[PoolEntry]
 
     @property
     def member_teams(self) -> list[Team]:
@@ -426,7 +432,7 @@ class Match(SeasonalIdentity):
         home_team_id: int
         away_team_id: int
         local_match_id: UUID | None
-        revisions: models.Manager["ResultRevision"]
+        revisions: RelatedManager[ResultRevision]
 
     pool = models.ForeignKey(Pool, null=True, on_delete=models.PROTECT)
     home_team = models.ForeignKey(
@@ -816,7 +822,7 @@ class ScoreForecastReview(models.Model):
     this record contains only hashes, aggregate metrics and operator provenance.
     """
 
-    objects: ClassVar[models.Manager["ScoreForecastReview"]]
+    objects: ClassVar[models.Manager[ScoreForecastReview]]
     STATUS_CHOICES = (
         ("collecting", "Keep collecting evidence"),
         ("rejected", "Rejected"),

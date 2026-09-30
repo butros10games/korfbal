@@ -24,6 +24,7 @@ from apps.game_tracker.services.match_mutations import MatchRevisionConflictErro
 class MatchRevisionConflictApiError(APIException):
     """Translate an aggregate revision conflict to a structured HTTP 409."""
 
+    detail: dict[str, str | int]
     status_code = status.HTTP_409_CONFLICT
     default_code = "revision_conflict"
 

@@ -13,6 +13,8 @@ from .constants import team_model_string
 
 
 if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
     from .match_event_detail import (
         PossessionChangeEventDetail,
         ShotEventDetail,
@@ -112,7 +114,7 @@ class MatchEvent(models.Model):
     shot_detail: ShotEventDetail
     substitution_detail: SubstitutionEventDetail
     possession_change_detail: PossessionChangeEventDetail
-    observations: models.Manager[MatchEventObservation]
+    observations: RelatedManager[MatchEventObservation]
 
     class Meta:
         """Enforce one total event order per match."""

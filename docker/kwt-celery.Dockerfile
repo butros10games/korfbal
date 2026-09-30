@@ -2,9 +2,9 @@ FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0
 
 ## ------------------------------- Dependency Stage ------------------------------ ##
 # Install third-party dependencies before local source so library changes retain that cache.
-FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS deps
+FROM python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS deps
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 /uv /bin/uv
 
 WORKDIR /build/apps/django_projects/korfbal/deps
 
@@ -42,12 +42,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     find /app/.venv -type d -name "tests" ! -path "*/django/*" -prune -exec rm -rf {} + && \
     find /app/.venv -type d -name "test" ! -path "*/django/*" -prune -exec rm -rf {} + && \
     find /app/.venv -type d -name "examples" -prune -exec rm -rf {} + && \
-    rm -rf /app/.venv/lib/python3.13/site-packages/pip \
-    /app/.venv/lib/python3.13/site-packages/setuptools \
-    /app/.venv/lib/python3.13/site-packages/wheel
+    rm -rf /app/.venv/lib/python3.14/site-packages/pip \
+    /app/.venv/lib/python3.14/site-packages/setuptools \
+    /app/.venv/lib/python3.14/site-packages/wheel
 
 ## ------------------------------- Production Stage ------------------------------ ##
-FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS production
+FROM python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS production
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -92,10 +92,11 @@ CMD ["worker"]
 # Shared image tools; only the dedicated vision queue executes model inference.
 FROM production AS vision-tools
 USER root
-COPY --from=ghcr.io/astral-sh/uv:0.9.18@sha256:5713fa8217f92b80223bc83aac7db36ec80a84437dbc0d04bbc659cae030d8c9 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 /uv /usr/local/bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+COPY apps/django_projects/korfbal/apps/video_analysis/engine/runtime /tmp/vision-runtime
 COPY scripts/python/korfbal_vision_environment.py /tmp/create_runtime.py
-RUN --mount=type=cache,target=/root/.cache/uv python /tmp/create_runtime.py /opt/vision --cpu
+RUN --mount=type=cache,target=/root/.cache/uv python /tmp/create_runtime.py /opt/vision --cpu --project /tmp/vision-runtime
 ADD https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-x86_64-unknown-linux-musl.tar.gz /tmp/codex.tar.gz
 RUN echo "d7e18b2597ae8f242f5f31ee9e90deef48dbc9edd634d9868fb6435d08c07f02  /tmp/codex.tar.gz" > /tmp/codex.sha256 && \
     sha256sum -c /tmp/codex.sha256 && \

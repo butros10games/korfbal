@@ -1,16 +1,22 @@
 """Compatibility accessors for ordered relational song selections."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.db import models, transaction
 from django.db.models.base import ModelBase
 
 
+if TYPE_CHECKING:
+    from django.db.models.fields.related_descriptors import RelatedManager
+
+
 class OrderedSongSelectionModel(models.Model):
     """Preserve the list API while storing selections as foreign-key relations."""
 
-    goal_song_selections: models.Manager[Any]
+    goal_song_selections: RelatedManager[Any]
     selection_field: ClassVar[str]
     selection_owner: ClassVar[str]
 

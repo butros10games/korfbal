@@ -127,6 +127,10 @@ def package_snapshot(
         members[
             f"apps/django_projects/korfbal/apps/video_analysis/engine/{path.relative_to(engine)}"
         ] = path
+    for name in ("pyproject.toml", "uv.lock"):
+        members[
+            f"apps/django_projects/korfbal/apps/video_analysis/engine/runtime/{name}"
+        ] = engine / "runtime" / name
     for name in (
         "korfbal_vision.py",
         "korfbal_vision_environment.py",

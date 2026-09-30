@@ -70,6 +70,7 @@ class MatchVideoUpdateSerializer(serializers.Serializer):
 class MatchVideoConflictApiError(APIException):
     """Structured HTTP 409 so editors keep their draft and reload."""
 
+    detail: dict[str, str | int]
     status_code = status.HTTP_409_CONFLICT
     default_code = "revision_conflict"
 

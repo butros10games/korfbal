@@ -166,9 +166,9 @@ def link_players(links: list[dict[str, str]], *, apply: bool = False) -> list[di
             results.append({"account_player_id": account, "status": "already_linked"})
             continue
         _validate_source(source, target)
-        if source.profile_picture and not source.profile_picture.name.startswith(
-            PREFIX
-        ):
+        if source.profile_picture and not (
+            source.profile_picture.name or ""
+        ).startswith(PREFIX):
             raise ValueError("Imported profile has a native uploaded photo")
         results.append({
             "account_player_id": account,

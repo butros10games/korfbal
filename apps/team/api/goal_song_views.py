@@ -628,7 +628,7 @@ def _reject_selection(exc: GoalSongSelectionError) -> NoReturn:
         ValidationError: Always, carrying the offending song ids.
 
     """
-    detail: dict[str, object] = {"detail": exc.detail}
+    detail: dict[str, str | list[str]] = {"detail": exc.detail}
     if exc.missing is not None:
         detail["missing"] = exc.missing
     if exc.not_ready is not None:

@@ -3,15 +3,16 @@ name = "KWT"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "django>=6.1,<6.2",
-    "psycopg[binary,pool]",
-    "bg-django-mobile-detector",
+    "django>=6.1.1,<6.2",
+    "asgiref>=3.12.1,<4",
+    "psycopg[binary,pool]>=3.3.6",
     "bg-audit-events",
+    "bg-django-mobile-detector",
     "django-ratelimit",
     "django-storages[boto3]",
     "bg-auth",
     "bg-uuidv7",
-    "django-phonenumber-field[phonenumbers]",
+    "django-phonenumber-field[phonenumberslite]",
     "python-dotenv",
     "django_crontab",
     "valkey",
@@ -22,7 +23,7 @@ dependencies = [
     "channels",
     "channels-redis",
     "django-redis",
-    "django-prometheus==2.6.0.dev4",
+    "django-prometheus==2.6.0.dev22",
     "drf-spectacular",
     "qrcode>=8.2,<9",
     "reportlab>=5.0.1,<6",
@@ -30,23 +31,26 @@ dependencies = [
     "requests",
     # Live Activity pushes go straight to APNs (HTTP/2 + ES256 provider tokens).
     "httpx[http2]",
-    "pyjwt[crypto]",
-    "yt-dlp[default]>=2026.8.19",
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]
+# Audio downloads run in Celery alongside ffmpeg, not in web/collectstatic.
+worker = ["yt-dlp[default]>=2026.8.19"]
+
 uwsgi = [
     "Pillow",
-    "pyuwsgi",
+    "granian>=2.8.3,<3",
     "bg-django-caching-paginator",
     "django-cryptography",
 ]
-dev = [
-    "Pillow",
-    "pyuwsgi; sys_platform == 'linux'",
-    "bg-django-caching-paginator",
-    "django-cryptography",
-]
+
+# Local development exercises the same web and worker dependencies.
+dev = [{ include-group = "uwsgi" }, { include-group = "worker" }]
+
+# Standalone batch/controller images export these groups from this lock.
+forecast = ["numpy==2.5.3", "scipy==1.18.1"]
+controller = ["boto3>=1.43.105"]
 
 [tool.uv.sources]
 bg-auth = { workspace = true }
