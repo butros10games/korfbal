@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import json
+from operator import itemgetter
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -16,6 +18,7 @@ from apps.kwt_common.models import BackgroundJob
 from apps.player.application.ports import LiveActivityDeliveryError
 from apps.player.models.live_activity import MatchLiveActivity
 from apps.player.services.live_activities import (
+    LIVE_ACTIVITY_NAME,
     LiveActivityNotFoundError,
     LiveActivityPushResult,
     build_live_activity_payload,
@@ -32,6 +35,20 @@ from apps.schedule.tests.match_api_test_support import create_match_graph
 
 
 NOW = datetime(2026, 9, 29, 19, 32, 15, tzinfo=UTC)
+# The Expo app's matchLiveActivityProps.test.ts checks the same cases.
+CONTRACT = json.loads(
+    (
+        Path(__file__).resolve().parents[6] / "fixtures/korfbal/live-activity.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+def iso(value: datetime) -> str:
+    """Instants as the widget props carry them (JavaScript ``toISOString``)."""
+    utc = value.astimezone(UTC).isoformat(timespec="milliseconds")
+    return utc.replace("+00:00", "Z")
+
+
 TOKEN_A = "a" * 64
 TOKEN_B = "b" * 64
 
@@ -120,8 +137,8 @@ def test_payload_matches_expo_widgets_contract() -> None:
         "periodLabel": "2e helft",
         "clockLabel": "11'",
         "paused": False,
-        "clockStartAt": (NOW - timedelta(minutes=11)).isoformat(),
-        "clockEndAt": (NOW + timedelta(minutes=19)).isoformat(),
+        "clockStartAt": iso(NOW - timedelta(minutes=11)),
+        "clockEndAt": iso(NOW + timedelta(minutes=19)),
         "clockPausedAt": "",
     }
     assert "dismissal-date" not in aps
@@ -160,8 +177,8 @@ def test_paused_clock_carries_the_pause_instant() -> None:
         now=NOW,
     )
     assert props.paused
-    assert props.clock_paused_at == paused_at.isoformat()
-    assert props.clock_start_at == (NOW - timedelta(minutes=11)).isoformat()
+    assert props.clock_paused_at == iso(paused_at)
+    assert props.clock_start_at == iso(NOW - timedelta(minutes=11))
 
 
 def test_quiet_play_stays_fresh_until_the_period_should_have_ended() -> None:
@@ -325,3 +342,21 @@ def test_publication_enqueues_live_activity_push_only_for_watched_matches() -> N
     jobs = list(BackgroundJob.objects.filter(task=task))
     assert len(jobs) == 1
     assert jobs[0].args == [match_id]
+
+
+@pytest.mark.parametrize("case", CONTRACT["cases"], ids=itemgetter("name"))
+def test_props_match_the_shared_app_contract(case: dict[str, Any]) -> None:
+    """APNs updates and the app's own updates render identical content state."""
+    props = build_live_activity_props(
+        snapshot=case["live"],
+        home_name=case["homeName"],
+        away_name=case["awayName"],
+        now=datetime.fromisoformat(case["now"]),
+    )
+
+    assert props.to_dict() == case["props"]
+
+
+def test_activity_name_matches_the_shared_app_contract() -> None:
+    """APNs content state must name the widget the app registered."""
+    assert CONTRACT["activityName"] == LIVE_ACTIVITY_NAME

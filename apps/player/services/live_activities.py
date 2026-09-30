@@ -94,6 +94,12 @@ def _parse(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+def _instant(value: datetime) -> str:
+    """Format like JavaScript's ``toISOString`` so both sides send identical props."""
+    utc = value.astimezone(UTC).isoformat(timespec="milliseconds")
+    return utc.replace("+00:00", "Z")
+
+
 def clock_label(timer: dict[str, Any], *, now: datetime) -> str:
     """Return the match minute shown next to the score, or empty when idle."""
     started = _parse(timer.get("time"))
@@ -124,9 +130,9 @@ def clock_range(timer: dict[str, Any]) -> tuple[str, str, str]:
     end = start + timedelta(seconds=int(timer.get("length") or 0))
     paused_at = _parse(timer.get("calc_to")) if timer.get("type") == "pause" else None
     return (
-        start.isoformat(),
-        end.isoformat(),
-        paused_at.isoformat() if paused_at else "",
+        _instant(start),
+        _instant(end),
+        _instant(paused_at) if paused_at else "",
     )
 
 
