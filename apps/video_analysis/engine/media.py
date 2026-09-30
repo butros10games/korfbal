@@ -76,6 +76,45 @@ def probe(path: Path) -> dict[str, Any]:
     }
 
 
+def probe_capture(source: str) -> tuple[str, float]:
+    """Read a camera file's recorded start time and duration.
+
+    ``source`` is a local path or an HTTPS URL, so an original's metadata can
+    be read without downloading the whole file.
+
+    Returns:
+        The container's ``creation_time`` tag and the duration in seconds.
+
+    Raises:
+        ValueError: The file records no start time.
+
+    """
+    protocols = "file,https,tls,tcp" if source.startswith("https://") else "file"
+    result = subprocess.run(
+        [
+            binary("ffprobe"),
+            "-protocol_whitelist",
+            protocols,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:format_tags=creation_time",
+            "-of",
+            "json",
+            source,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+    raw = json.loads(result.stdout)["format"]
+    created = raw.get("tags", {}).get("creation_time")
+    if not created:
+        raise ValueError("The file records no start time.")
+    return created, float(raw["duration"])
+
+
 def import_recording(
     store: Store, source: Path, options: ImportOptions
 ) -> dict[str, Any]:
