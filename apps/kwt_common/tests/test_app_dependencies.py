@@ -86,6 +86,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "services.player_queries",
         "services.player_song_queries",
         "services.player_songs",
+        "services.player_teams",
         "services.upload_validation",
         "services.web_push",
     }),

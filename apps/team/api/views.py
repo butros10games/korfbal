@@ -9,6 +9,8 @@ from rest_framework import viewsets
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.params import UUID_URL_REGEX, uuid_query_value
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
+from apps.player.models.player import Player
+from apps.player.services.player_teams import connected_team_ids
 from apps.team.models.team import Team
 
 from .filters import TeamSearchFilter
@@ -56,9 +58,14 @@ class TeamViewSet(
             self.action == "list"
             and self.request.query_params.get("followed") == "true"
         ):
-            if not self.request.user.is_authenticated:
+            player = (
+                Player.objects.filter(user=self.request.user).first()
+                if self.request.user.is_authenticated
+                else None
+            )
+            if player is None:
                 return queryset.none()
-            queryset = queryset.filter(player__user=self.request.user)
+            queryset = queryset.filter(id_uuid__in=connected_team_ids(player))
         club_id = self.request.query_params.get("club")
         if not club_id:
             return queryset

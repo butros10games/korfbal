@@ -29,6 +29,7 @@ from apps.kwt_common.api.pagination import (
 from apps.kwt_common.api.params import UUID_URL_REGEX, uuid_query_values
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.player.models.player import Player
+from apps.player.services.player_teams import connected_team_ids
 from apps.schedule.models import Match
 
 from .match_viewset_event_writes import (
@@ -235,7 +236,7 @@ class MatchViewSet(
         }:
             player = self._get_player()
             if player:
-                team_ids = list(player.team_follow.values_list("id_uuid", flat=True))
+                team_ids = connected_team_ids(player)
             queryset = queryset.filter(
                 Q(home_team__id_uuid__in=team_ids) | Q(away_team__id_uuid__in=team_ids)
             )
@@ -498,7 +499,7 @@ class MatchViewSet(
         if not team_ids and followed_only:
             player = self._get_player()
             if player:
-                team_ids = list(player.team_follow.values_list("id_uuid", flat=True))
+                team_ids = connected_team_ids(player)
 
         if team_ids or followed_only:
             match_filter &= Q(match_link__home_team__id_uuid__in=team_ids) | Q(

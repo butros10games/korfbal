@@ -22,7 +22,7 @@ from apps.club.models import Club
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
 from apps.schedule.models import Match, Season
-from apps.team.models import Team
+from apps.team.models import Team, TeamData
 
 
 DEFAULT_UPCOMING_LIMIT = 5
@@ -416,6 +416,57 @@ def test_upcoming_pages_keep_followed_and_entity_filters(
         ).json()["results"]
         == []
     )
+
+
+@pytest.mark.parametrize("role", ["players", "coach"])
+def test_followed_schedule_includes_current_roster_teams(
+    client: Client, role: str
+) -> None:
+    """Players placed on a roster see their team without following it."""
+    today = timezone.localdate()
+    season = Season.objects.create(
+        name="Current",
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=30),
+    )
+    old_season = Season.objects.create(
+        name="Old",
+        start_date=today - timedelta(days=400),
+        end_date=today - timedelta(days=300),
+    )
+    club = Club.objects.create(name="Roster club")
+    own_team = Team.objects.create(name="1", club=club)
+    former_team = Team.objects.create(name="2", club=club)
+    opponent = Team.objects.create(name="Opponent", club=club)
+    now = timezone.now()
+    Match.objects.create(
+        home_team=former_team,
+        away_team=opponent,
+        season=season,
+        start_time=now + timedelta(hours=1),
+    )
+    own_match = Match.objects.create(
+        home_team=opponent,
+        away_team=own_team,
+        season=season,
+        start_time=now + timedelta(hours=2),
+    )
+    user = get_user_model().objects.create_user(username="roster-viewer")
+    getattr(TeamData.objects.create(team=own_team, season=season), role).add(
+        user.player
+    )
+    getattr(TeamData.objects.create(team=former_team, season=old_season), role).add(
+        user.player
+    )
+    client.force_login(user)
+
+    next_match = client.get("/api/matches/next/", {"followed": "true"}).json()
+    page = client.get("/api/matches/upcoming-page/", {"followed": "true"}).json()
+    teams = client.get("/api/team/teams/", {"followed": "true"}).json()
+
+    assert next_match["id_uuid"] == str(own_match.id_uuid)
+    assert [item["id_uuid"] for item in page["results"]] == [str(own_match.id_uuid)]
+    assert [item["id_uuid"] for item in teams["results"]] == [str(own_team.id_uuid)]
 
 
 @pytest.mark.parametrize("endpoint", ["upcoming", "finished"])

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from apps.player.models.player import Player
 from apps.schedule.queries.seasons import current_season
@@ -26,6 +27,24 @@ def followed_teams_for_player(player: Player) -> QuerySet[Team]:
     return (
         player.team_follow.all().select_related("club").order_by("club__name", "name")
     )
+
+
+def connected_team_ids(player: Player) -> list[UUID]:
+    """Return followed teams plus current-season teams the player plays in or coaches.
+
+    Players are often placed on a roster without following that team, so
+    "followed" views must also include their own teams.
+    """
+    team_ids = set(player.team_follow.values_list("id_uuid", flat=True))
+    season = current_season()
+    if season is not None:
+        team_ids.update(
+            TeamData.objects
+            .filter(season=season)
+            .filter(Q(players=player) | Q(coach=player))
+            .values_list("team_id", flat=True)
+        )
+    return sorted(team_ids)
 
 
 def grouped_teams_for_player(player: Player) -> PlayerTeamCollections:
