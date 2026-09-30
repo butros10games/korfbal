@@ -19,6 +19,9 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 MAX_WISSELS = 8
 
 

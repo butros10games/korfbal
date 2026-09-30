@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from django.urls import Resolver404, resolve
+from django.urls import Resolver404, resolve, reverse
 import pytest
 
 from korfbal import asgi
@@ -98,3 +98,32 @@ async def test_asgi_routes_only_the_exact_http_stream_path_to_sse(
         destinations.clear()
         await asgi.application(scope, receive, send)
         assert destinations == [expected_destination]
+
+
+@pytest.mark.parametrize(
+    ("url_name", "kwargs"),
+    [
+        ("media-download", {}),
+        ("auth-session", {}),
+        (
+            "club-logo",
+            {"club_id": "00000000-0000-4000-8000-000000000001", "version": "a" * 64},
+        ),
+        ("player-song-clip", {"song_id": "00000000-0000-4000-8000-000000000001"}),
+    ],
+)
+def test_generated_api_links_use_the_canonical_prefix(
+    url_name: str, kwargs: dict[str, str]
+) -> None:
+    """The production edge forwards only `/api/*`; generated links must use it."""
+    assert reverse(url_name, kwargs=kwargs).startswith("/api/")
+
+
+SYNTHETIC_ID = "00000000-0000-4000-8000-000000000001"
+
+
+@pytest.mark.parametrize("prefix", ["/api/match/", "/match/", "/match/api/"])
+def test_lineup_reads_share_one_view_on_every_mount(prefix: str) -> None:
+    """Mounts differ only by prefix, so authorization cannot diverge between them."""
+    path = f"players_team/{SYNTHETIC_ID}/{SYNTHETIC_ID}/"
+    assert resolve(prefix + path).func is resolve(f"/api/match/{path}").func

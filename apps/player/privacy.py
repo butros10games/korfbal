@@ -92,12 +92,6 @@ def can_view_by_visibility(
     if visibility == Player.Visibility.PUBLIC:
         return True
 
-    # 'private' is deprecated for this app: coaches and club members must still
-    # be able to view club-restricted data. Treat it as 'club' for backwards
-    # compatibility with older stored values/clients.
-    if visibility == Player.Visibility.PRIVATE:
-        visibility = Player.Visibility.CLUB
-
     # Club-restricted: require a connected viewer.
     if visibility == Player.Visibility.CLUB:
         if viewer is None:

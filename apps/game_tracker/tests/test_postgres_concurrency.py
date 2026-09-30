@@ -14,6 +14,7 @@ from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 
 
 pytestmark = [
+    pytest.mark.postgres_parity,
     pytest.mark.service_backed,
     pytest.mark.django_db(transaction=True),
     pytest.mark.skipif(

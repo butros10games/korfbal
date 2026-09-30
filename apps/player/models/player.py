@@ -66,7 +66,6 @@ class Player(OrderedSongSelectionModel):
 
         PUBLIC = "public", "Public"
         CLUB = "club", "Club"
-        PRIVATE = "private", "Private"
 
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,

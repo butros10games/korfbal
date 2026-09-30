@@ -20,7 +20,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.django_db]
 CLOCK_SELECTS = 1
 CLOCK_HISTORY_COUNT = 50
 COMPLETED_PAUSE_SECONDS = 3.875003

@@ -19,6 +19,9 @@ from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.services.player_songs import PlayerSongClip
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 @pytest.mark.django_db
 @override_settings(SECURE_SSL_REDIRECT=False)
 def test_player_song_clip_reports_unavailable_when_ffmpeg_missing(

@@ -31,6 +31,9 @@ from apps.schedule.models import Season
 from apps.team.models import TeamData
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 @pytest.mark.django_db
 def test_goal_song_manifest_preserves_player_and_fallback_selection_order() -> None:
     """The manifest should preserve configured cycling order with stable URLs."""

@@ -16,7 +16,7 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 )
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.django_db]
 LATEST_READ_MEMORY_LIMIT = 512 * 1024
 MISSING_CANDIDATES = 65
 

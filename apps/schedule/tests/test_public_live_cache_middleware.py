@@ -13,7 +13,7 @@ from apps.game_tracker.composition import publish_public_live_snapshot
 from apps.schedule.tests.match_api_test_support import create_match_graph
 
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture

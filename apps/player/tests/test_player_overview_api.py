@@ -151,7 +151,7 @@ def test_player_overview_respects_visibility_for_other_viewers(client: Client) -
         end_date=None,
     )
 
-    target.stats_visibility = Player.Visibility.PRIVATE
+    target.stats_visibility = Player.Visibility.CLUB
     target.save(update_fields=["stats_visibility"])
 
     team_data = TeamData.objects.create(team=team, season=season)

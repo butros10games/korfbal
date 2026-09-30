@@ -37,7 +37,7 @@ def pair(season: Season) -> Pair:
     source = Player.objects.get()
     user = User.objects.create_user(username="Example_P")
     target = Player.all_objects.get(user=user)
-    target.stats_visibility = "private"
+    target.stats_visibility = "club"
     target.save()
     club = Club.objects.create(name="Example Club")
     team = NativeTeam.objects.create(name="1", club=club)
@@ -69,7 +69,7 @@ def test_preview_and_merge_preserve_account_and_manual_roster(
     target.refresh_from_db()
     assert target.knkv_person_id == "P1"
     assert target.user.username == "Example_P"
-    assert target.stats_visibility == "private"
+    assert target.stats_visibility == "club"
     assert data.players.count() == 1
     assert not RosterMembership.objects.get().local_link_created
     assert link_players(links, apply=True)[0]["status"] == "already_linked"
@@ -124,12 +124,12 @@ def test_native_photo_and_profile_preferences_win(pair: Pair) -> None:
     """Existing account uploads are not overwritten by KNKV."""
     _, target, _, links = pair
     target.profile_picture = "profile_pictures/my-upload.png"
-    target.profile_picture_visibility = "private"
+    target.profile_picture_visibility = "club"
     target.save()
     link_players(links, apply=True)
     target.refresh_from_db()
     assert target.profile_picture.name == "profile_pictures/my-upload.png"
-    assert target.profile_picture_visibility == "private"
+    assert target.profile_picture_visibility == "club"
     assert not target.knkv_photo
     assert not SyncResource.objects.filter(kind="player_photo").exists()
 

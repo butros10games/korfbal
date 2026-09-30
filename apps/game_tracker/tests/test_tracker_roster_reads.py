@@ -21,7 +21,7 @@ from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.team.models import Team
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.django_db]
 ROSTER_SELECTS = 2
 
 

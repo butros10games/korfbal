@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+import math
 
 from django.db import transaction
 
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
 from apps.player.services.player_song_queries import player_songs_by_ids
+
+
+# Legacy start times translate into the first selected PlayerSong, whose clip
+# must start inside the first fifteen minutes of its source (see player_songs).
+MAX_GOAL_SONG_START_SECONDS = 899
+
+
+LEGACY_GOAL_SONG_URI_DETAIL = (
+    "goal_song_uri follows goal_song_song_ids; select an uploaded song instead"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,28 +78,46 @@ def _parse_optional_string(
     return True, None, f"{key} must be a string or null"
 
 
+def _whole_seconds(raw: float | str, key: str) -> int | str:
+    """Return truncated, zero-clamped seconds, or an error for non-finite input."""
+    if isinstance(raw, int):
+        return max(0, raw)
+    try:
+        number = float(raw)
+    except ValueError:
+        return f"{key} must be a number or null"
+    if not math.isfinite(number):
+        return f"{key} must be a finite number"
+    return max(0, int(number))
+
+
 def _parse_optional_non_negative_int(
     payload: Mapping[str, object],
     key: str,
+    *,
+    maximum: int,
 ) -> tuple[bool, int | None, str | None]:
+    """Parse a whole-second value: numbers truncate and negatives clamp to zero.
+
+    Only scalars reach numeric conversion, so arrays and objects cannot raise
+    ``TypeError`` from hashing and non-finite strings cannot raise
+    ``OverflowError`` from integer conversion.
+    """
     if key not in payload:
         return False, None, None
 
     raw = payload.get(key)
-    if raw in {None, ""}:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
         return True, None, None
-    if isinstance(raw, bool):
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
         return True, None, f"{key} must be a number or null"
 
-    try:
-        if isinstance(raw, (int, float, str)):
-            value = int(float(raw))
-        else:
-            raise TypeError
-    except (TypeError, ValueError):
-        return True, None, f"{key} must be a number or null"
-
-    return True, max(0, value), None
+    value = _whole_seconds(raw, key)
+    if isinstance(value, str):
+        return True, None, value
+    if value > maximum:
+        return True, None, f"{key} must be at most {maximum}"
+    return True, value, None
 
 
 def _parse_optional_uuid_list(
@@ -144,7 +173,9 @@ def parse_goal_song_patch_payload(
         song_start_time_provided,
         song_start_time,
         song_start_time_error,
-    ) = _parse_optional_non_negative_int(data, "song_start_time")
+    ) = _parse_optional_non_negative_int(
+        data, "song_start_time", maximum=MAX_GOAL_SONG_START_SECONDS
+    )
     if song_start_time_error:
         raise GoalSongPayloadError(song_start_time_error)
 
@@ -269,24 +300,27 @@ def update_goal_song_settings(
     player: Player,
     settings: ParsedGoalSongPatchPayload,
 ) -> None:
-    """Persist a validated goal-song settings command."""
-    update_fields: list[str] = []
-    if settings.goal_song_uri_provided:
-        player.goal_song_uri = settings.goal_song_uri or ""
-        update_fields.append("goal_song_uri")
-    if settings.song_start_time_provided:
-        player.song_start_time = settings.song_start_time
-        update_fields.append("song_start_time")
-    if settings.goal_song_ids_provided:
-        update_fields.extend(
-            apply_goal_song_song_ids(
-                player=player,
-                ids=settings.goal_song_song_ids or [],
-            )
-        )
+    """Persist the selection part of a validated goal-song settings command.
 
-    if update_fields:
+    ``goal_song_song_ids`` is the canonical configuration; ``goal_song_uri`` and
+    ``song_start_time`` only mirror its first song for older clients. A legacy
+    URI is accepted when it clears or repeats the mirrored value and rejected
+    otherwise, so it can never point playback somewhere the selection does not.
+    Legacy start times are applied to the selected song by the caller.
+
+    Raises:
+        GoalSongPayloadError: A legacy URI names audio outside the selection.
+
+    """
+    if settings.goal_song_ids_provided:
+        update_fields = apply_goal_song_song_ids(
+            player=player,
+            ids=settings.goal_song_song_ids or [],
+        )
         player.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    if settings.goal_song_uri and settings.goal_song_uri != player.goal_song_uri:
+        raise GoalSongPayloadError(LEGACY_GOAL_SONG_URI_DETAIL)
 
 
 def remove_deleted_song_from_goal_song_selection(

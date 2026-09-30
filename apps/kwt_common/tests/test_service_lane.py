@@ -54,6 +54,17 @@ def test_service_lane_runs_every_gated_module_and_forbids_skips() -> None:
     assert worker["KORFBAL_TEST_BROKER_URL"] != marked["PUBLIC_LIVE_TEST_REDIS_URL"]
 
 
+def test_parity_lane_selects_marked_tests_on_postgres() -> None:
+    """Dual-database tests are found by marker, not by a copied path list."""
+    job = yaml.safe_load(LANE.read_text())["jobs"]["concurrency"]
+    parity = next(
+        step["run"] for step in job["steps"] if "postgres_parity" in step.get("run", "")
+    )
+    assert job["env"]["DJANGO_TEST_USE_POSTGRES"] == "1"
+    assert "-m 'postgres_parity and not migration_regression'" in parity
+    assert parity.split()[-1] == str(PROJECT.relative_to(REPO) / "apps")
+
+
 def _project_conftest() -> ModuleType:
     """Return the Korfbal conftest module pytest already loaded.
 

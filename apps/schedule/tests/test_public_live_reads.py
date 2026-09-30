@@ -31,7 +31,11 @@ from .match_api_test_support import (
 )
 
 
-pytestmark = [pytest.mark.django_db, pytest.mark.service_backed]
+pytestmark = [
+    pytest.mark.postgres_parity,
+    pytest.mark.django_db,
+    pytest.mark.service_backed,
+]
 MAX_PUBLIC_LIVE_SELECTS = 10
 UNCHANGED_PUBLIC_LIVE_SELECTS = 1
 PUBLIC_KEYS = {

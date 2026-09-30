@@ -212,18 +212,18 @@ def test_privacy_settings_endpoint_get_and_patch(client: Client) -> None:
 
     response_patch = client.patch(
         "/api/player/me/privacy-settings/",
-        data=json.dumps({"stats_visibility": Player.Visibility.PRIVATE}),
+        data=json.dumps({"stats_visibility": "private"}),
         content_type="application/json",
     )
     assert response_patch.status_code == HTTPStatus.OK
     payload = response_patch.json()
-    # 'private' is coerced to 'club' (deprecated option).
+    # Older clients may still send the retired 'private' option; it means 'club'.
     assert payload["stats_visibility"] == Player.Visibility.CLUB
     assert payload["can_view_stats"] is True
 
     response_patch_teams = client.patch(
         "/api/player/me/privacy-settings/",
-        data=json.dumps({"teams_visibility": Player.Visibility.PRIVATE}),
+        data=json.dumps({"teams_visibility": "private"}),
         content_type="application/json",
     )
     assert response_patch_teams.status_code == HTTPStatus.OK

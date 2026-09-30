@@ -22,6 +22,9 @@ from apps.game_tracker.tests.tracker_test_helpers import create_tracker_match
 from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 UNDO_REVISION = 3
 STALE_WRITERS_REVISION = 2
 LARGE_REVISION = 1_000_000

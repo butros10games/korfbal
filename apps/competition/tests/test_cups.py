@@ -24,7 +24,7 @@ from apps.team.models import Team as NativeTeam
 from apps.tournament.models import Tournament, TournamentField
 
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.django_db]
 REGULAR_MINUTES = 60
 CUP_PERIODS = [
     {"Description": "1e helft", "PlayTime": 30},

@@ -26,6 +26,9 @@ from apps.player.services.goal_song_manifest import build_goal_song_manifest
 from apps.team.models import Team
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 MAX_TIMEOUTS = 2
 
 

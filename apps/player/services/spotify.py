@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from http import HTTPStatus
 import logging
+import math
 import secrets
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -345,12 +346,16 @@ def _device_id(value: object) -> str | None:
 
 
 def _position_ms(value: object) -> int:
+    """Return a non-negative position; malformed and non-finite values start at 0."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return 0
+    if isinstance(value, int):
+        return max(0, value)
     try:
-        if isinstance(value, (str, int, float)):
-            return max(0, int(float(value)))
-    except (TypeError, ValueError):
-        pass
-    return 0
+        position = float(value)
+    except ValueError:
+        return 0
+    return max(0, int(position)) if math.isfinite(position) else 0
 
 
 def _spotify_error_message(response: SpotifyResponse) -> str:

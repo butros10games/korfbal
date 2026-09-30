@@ -29,13 +29,7 @@ PROFILE_RELATION_FIELDS: Final[tuple[str, ...]] = (
 
 def player_privacy_settings(player: Player) -> dict[str, str]:
     """Return normalized privacy settings for API consumers."""
-    settings: dict[str, str] = {}
-    for field in PRIVACY_FIELDS:
-        value = str(getattr(player, field))
-        settings[field] = (
-            Player.Visibility.CLUB if value == Player.Visibility.PRIVATE else value
-        )
-    return settings
+    return {field: str(getattr(player, field)) for field in PRIVACY_FIELDS}
 
 
 def update_player_privacy_settings(
@@ -140,8 +134,9 @@ def delete_player_profile(player: Player) -> None:
     player.song_start_time = None
     player.goal_song_song_ids = []
     player.archived_at = timezone.now()
+    # Club visibility with every membership cleared below leaves no other viewer.
     for field in PRIVACY_FIELDS:
-        setattr(player, field, Player.Visibility.PRIVATE)
+        setattr(player, field, Player.Visibility.CLUB)
     player.save()
     player.team_follow.clear()
     player.club_follow.clear()

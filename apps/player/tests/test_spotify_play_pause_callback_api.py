@@ -195,6 +195,41 @@ def test_spotify_play_normalises_open_spotify_track_url(
 
 
 @pytest.mark.usefixtures("connected_spotify")
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("inf", 0), ("1e309", 0), ("nan", 0), ([1], 0), ({}, 0), (True, 0), (-5, 0)],
+)
+def test_spotify_play_starts_malformed_positions_at_zero(
+    client: Client,
+    monkeypatch: pytest.MonkeyPatch,
+    raw: object,
+    expected: int,
+) -> None:
+    """Non-finite or non-scalar positions must not raise from integer conversion."""
+    captured: dict[str, object] = {}
+
+    def _fake_put(url: str, **kwargs: object) -> _FakeResponse:
+        captured["json"] = kwargs.get("json")
+        return _FakeResponse(status_code=204)
+
+    monkeypatch.setattr(
+        "apps.player.adapters.outbound.spotify.requests.put",
+        _fake_put,
+    )
+
+    response = client.post(
+        "/api/player/spotify/play/",
+        data=json.dumps({"track_uri": "spotify:track:123", "position_ms": raw}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = captured.get("json")
+    assert isinstance(payload, dict)
+    assert payload["position_ms"] == expected
+
+
+@pytest.mark.usefixtures("connected_spotify")
 def test_spotify_play_no_active_device_returns_409(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,

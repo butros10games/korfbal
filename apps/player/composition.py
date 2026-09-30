@@ -36,6 +36,7 @@ from apps.player.services.player_audio import (
     prepare_player_song_clip as _prepare_player_song_clip,
 )
 from apps.player.services.player_songs import (
+    apply_goal_song_settings as _apply_goal_song_settings,
     create_player_song as _create_player_song,
     create_song_clip as _create_song_clip,
     resolve_player_song_clip as _resolve_player_song_clip,
@@ -113,6 +114,7 @@ prepare_player_song_clip = partial(
     _prepare_player_song_clip,
     runtime=audio_runtime,
 )
+apply_goal_song_settings = partial(_apply_goal_song_settings, jobs=song_jobs)
 create_player_song = partial(_create_player_song, jobs=song_jobs)
 create_song_clip = partial(_create_song_clip, jobs=song_jobs)
 update_owned_player_song_settings = partial(

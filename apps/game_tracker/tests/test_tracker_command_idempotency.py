@@ -24,6 +24,9 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 )
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 SECOND_REVISION = 2
 CLIENT_SEQUENCE = 17
 

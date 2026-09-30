@@ -16,7 +16,12 @@ from apps.player.application.ports import (
 from apps.player.models.cached_song import CachedSong, CachedSongStatus
 from apps.player.models.player import Player
 from apps.player.models.player_song import PlayerSong, PlayerSongStatus
-from apps.player.services.goal_song import remove_deleted_song_from_goal_song_selection
+from apps.player.services.goal_song import (
+    GoalSongSelectionError,
+    ParsedGoalSongPatchPayload,
+    remove_deleted_song_from_goal_song_selection,
+    update_goal_song_settings,
+)
 from apps.player.services.player_song_queries import (
     owned_player_song_or_none,
     player_song_by_id,
@@ -240,6 +245,50 @@ def update_owned_player_song_settings(
     ):
         enqueue_download_for_player_song(song, jobs=jobs)
     return song
+
+
+@transaction.atomic
+def apply_goal_song_settings(
+    *,
+    player: Player,
+    settings: ParsedGoalSongPatchPayload,
+    jobs: SongDownloadDispatcher,
+) -> None:
+    """Apply goal-song settings, translating legacy fields into PlayerSong state.
+
+    A legacy ``song_start_time`` changes the first selected song's clip, exactly
+    like the song settings endpoint, so the mirrored field cannot diverge from
+    the clip that is played. Without a selection there is nothing to start.
+
+    Every read happens on the locked row: the caller's instance may carry a
+    selection prefetched before a concurrent request replaced it, and editing
+    that stale first song would change a clip that is no longer played. Callers
+    must reload the player before serializing it.
+
+    Raises:
+        GoalSongSelectionError: The selected song is no longer owned.
+
+    """
+    locked_player = _lock_player(player)
+    update_goal_song_settings(player=locked_player, settings=settings)
+    first_song_id = next(
+        (value for value in locked_player.goal_song_song_ids or [] if value), None
+    )
+    if settings.song_start_time is None or first_song_id is None:
+        return
+    try:
+        update_owned_player_song_settings(
+            player=locked_player,
+            song_id=first_song_id,
+            settings=PlayerSongSettingsPatch(
+                start_time_seconds=settings.song_start_time
+            ),
+            jobs=jobs,
+        )
+    except PlayerSongNotFoundError as error:
+        raise GoalSongSelectionError(
+            "Unknown song id(s)", missing=[first_song_id]
+        ) from error
 
 
 @transaction.atomic

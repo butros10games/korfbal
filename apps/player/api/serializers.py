@@ -331,14 +331,6 @@ class PlayerSerializer(serializers.ModelSerializer):
 
         data = super().to_representation(player)
 
-        # Do not expose the deprecated 'private' option to clients.
-        if data.get("profile_picture_visibility") == Player.Visibility.PRIVATE:
-            data["profile_picture_visibility"] = Player.Visibility.CLUB
-        if data.get("stats_visibility") == Player.Visibility.PRIVATE:
-            data["stats_visibility"] = Player.Visibility.CLUB
-        if data.get("teams_visibility") == Player.Visibility.PRIVATE:
-            data["teams_visibility"] = Player.Visibility.CLUB
-
         is_self = (
             self._viewer_player is not None
             and self._viewer_player.id_uuid == player.id_uuid
@@ -603,19 +595,28 @@ class PlayerSongClipCreateSerializer(PlayerSongUpdateSerializer):
         return attrs
 
 
+# Older clients could still send the retired 'private' option; stored values were
+# migrated to 'club' (player 0033), so input is accepted and normalised the same way.
+LEGACY_PRIVATE_VISIBILITY = "private"
+_VISIBILITY_INPUT_CHOICES = [
+    *Player.Visibility.choices,
+    (LEGACY_PRIVATE_VISIBILITY, "Club (legacy private)"),
+]
+
+
 class PlayerPrivacySettingsSerializer(serializers.Serializer):
     """Input serializer for updating privacy visibility settings."""
 
     profile_picture_visibility = serializers.ChoiceField(
-        choices=Player.Visibility.choices,
+        choices=_VISIBILITY_INPUT_CHOICES,
         required=False,
     )
     stats_visibility = serializers.ChoiceField(
-        choices=Player.Visibility.choices,
+        choices=_VISIBILITY_INPUT_CHOICES,
         required=False,
     )
     teams_visibility = serializers.ChoiceField(
-        choices=Player.Visibility.choices,
+        choices=_VISIBILITY_INPUT_CHOICES,
         required=False,
     )
 
@@ -632,16 +633,12 @@ class PlayerPrivacySettingsSerializer(serializers.Serializer):
         if not attrs:
             raise serializers.ValidationError("Provide at least one privacy setting.")
 
-        # Backwards compatibility: if an older client sends 'private', treat it
-        # as 'club' (the stricter, still-useful option).
-        if attrs.get("profile_picture_visibility") == Player.Visibility.PRIVATE:
-            attrs["profile_picture_visibility"] = Player.Visibility.CLUB
-        if attrs.get("stats_visibility") == Player.Visibility.PRIVATE:
-            attrs["stats_visibility"] = Player.Visibility.CLUB
-        if attrs.get("teams_visibility") == Player.Visibility.PRIVATE:
-            attrs["teams_visibility"] = Player.Visibility.CLUB
-
-        return attrs
+        return {
+            field: Player.Visibility.CLUB
+            if value == LEGACY_PRIVATE_VISIBILITY
+            else value
+            for field, value in attrs.items()
+        }
 
 
 class PlayerPushSubscriptionSerializer(serializers.ModelSerializer):

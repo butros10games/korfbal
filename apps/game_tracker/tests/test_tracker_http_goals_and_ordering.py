@@ -21,6 +21,9 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 from apps.player.services.goal_song_manifest import build_goal_song_manifest
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 @pytest.mark.django_db
 def test_goal_reg_swaps_attack_defense_every_two_goals() -> None:
     tracker = create_tracker_match(prefix="Swap")

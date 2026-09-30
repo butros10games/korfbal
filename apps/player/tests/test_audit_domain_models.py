@@ -207,10 +207,13 @@ def test_player_visibility_policy_is_owner_first_and_fails_closed() -> None:
         return_value=True,
     ) as connected:
         assert can_view_by_visibility(
-            visibility=Player.Visibility.PRIVATE,
+            visibility=Player.Visibility.CLUB,
             viewer=viewer,
             target=owner,
         )
+    # The retired 'private' value is migrated away; if it reappears it fails closed.
+    assert not can_view_by_visibility(visibility="private", viewer=viewer, target=owner)
+    assert can_view_by_visibility(visibility="private", viewer=owner, target=owner)
 
     connected.assert_called_once_with(viewer=viewer, target=owner)
 

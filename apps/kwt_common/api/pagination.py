@@ -62,10 +62,17 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 
 class ScheduleEditorPagination(StandardResultsSetPagination):
-    """Opt existing schedule clients into bounded pages with a page parameter."""
+    """Opt existing schedule clients into bounded pages with a page parameter.
+
+    Current web and Expo clients always send ``page``. Native season editors
+    built before 2026-09-13 request complete pool/match lists without it and
+    parse a paginated envelope as its first page, so bounding the default now
+    would silently truncate their programme. Make pages the default once those
+    builds are no longer supported.
+    """
 
     def get_page_size(self, request: Request) -> int | None:
-        """Preserve legacy list responses until the caller requests pagination."""
+        """Preserve complete list responses until the caller requests pagination."""
         if "page" not in request.query_params:
             return None
         return super().get_page_size(request)

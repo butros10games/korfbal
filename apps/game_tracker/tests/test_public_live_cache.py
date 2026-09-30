@@ -25,7 +25,7 @@ from apps.game_tracker.application.ports import PublicLiveStoreError
 
 
 # Needs PostgreSQL, Redis or a broker; see the service lane in korfbal-postgres.yml.
-pytestmark = pytest.mark.service_backed
+pytestmark = [pytest.mark.postgres_parity, pytest.mark.service_backed]
 
 
 @pytest.fixture(params=["locmem", "redis"])

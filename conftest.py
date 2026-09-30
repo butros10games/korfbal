@@ -28,6 +28,7 @@ from pytest_django.fixtures import Settings
 REQUIRE_SERVICES = os.environ.get("KORFBAL_REQUIRE_SERVICES") == "1"
 SERVICE_MARKER = "service_backed"
 WORKER_MARKER = "celery_worker"
+PARITY_MARKER = "postgres_parity"
 
 
 def _clear_shared_test_backends() -> None:
@@ -53,6 +54,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         f"{WORKER_MARKER}: spawns Celery workers; runs in its own pytest process "
         "because Celery caches broker and eager settings on first use",
+    )
+    config.addinivalue_line(
+        "markers",
+        f"{PARITY_MARKER}: runs on SQLite in the general lane and again on "
+        "PostgreSQL, for transactional, locking and query-count behaviour",
     )
 
 

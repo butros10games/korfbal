@@ -16,6 +16,9 @@ from apps.game_tracker.tests.tracker_test_helpers import (
 )
 
 
+pytestmark = pytest.mark.postgres_parity
+
+
 QUERY_COUNT_TOLERANCE = 2
 
 
