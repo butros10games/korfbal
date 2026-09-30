@@ -15,6 +15,7 @@ from apps.game_tracker.services.event_editor import (
     CreatePauseEvent,
     CreatePossessionChangeEvent,
     CreateSubstitutionEvent,
+    CreateTeamSubstitutionEvent,
     CreateTimeoutEvent,
     EntityId,
     UnsetValue,
@@ -427,20 +428,65 @@ class PossessionChangeWriteSerializer(serializers.Serializer):
 
 
 class PlayerChangeWriteSerializer(serializers.Serializer):
-    """Parse substitution input into a typed editor command."""
+    """Parse substitution input into a typed editor command.
 
-    player_in_id = serializers.UUIDField()
-    player_out_id = serializers.UUIDField()
-    player_group_id = serializers.UUIDField()
+    A create names both players and their group, or only ``team_id`` to record
+    that the team substituted without naming anyone (as the tracker does for
+    the opponent).
+    """
+
+    player_in_id = serializers.UUIDField(required=False)
+    player_out_id = serializers.UUIDField(required=False)
+    player_group_id = serializers.UUIDField(required=False)
+    team_id = serializers.UUIDField(required=False)
     match_part_id = serializers.UUIDField()
     time = serializers.CharField(required=False, allow_blank=True)
     minute = serializers.IntegerField(required=False)
 
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        """Require a complete named or team-only substitution on create.
+
+        Returns:
+            The validated input.
+
+        Raises:
+            ValidationError: A create misses fields or mixes both forms.
+
+        """
+        named = ("player_in_id", "player_out_id", "player_group_id")
+        if self.partial:
+            if "team_id" in attrs:
+                raise serializers.ValidationError({
+                    "team_id": "A substitution's team follows its group."
+                })
+            return attrs
+        if "team_id" in attrs:
+            if any(field in attrs for field in named):
+                raise serializers.ValidationError({
+                    "team_id": "Give either team_id or the players, not both."
+                })
+            return attrs
+        missing = {
+            field: "This field is required." for field in named if field not in attrs
+        }
+        if missing:
+            raise serializers.ValidationError(missing)
+        return attrs
+
     def to_command(
         self, *, event_id: str | None = None
-    ) -> CreateSubstitutionEvent | UpdateSubstitutionEvent:
+    ) -> (
+        CreateSubstitutionEvent | CreateTeamSubstitutionEvent | UpdateSubstitutionEvent
+    ):
         """Return the application command represented by validated input."""
         data = cast(dict[str, object], self.validated_data)
+        if event_id is None and "team_id" in data:
+            return CreateTeamSubstitutionEvent(
+                team_id=_required_id(data, "team_id"),
+                match_part_id=_required_id(data, "match_part_id"),
+                time=_optional_text(data, "time"),
+                minute=_optional_integer(data, "minute"),
+            )
         if event_id is None:
             return CreateSubstitutionEvent(
                 player_in_id=_required_id(data, "player_in_id"),

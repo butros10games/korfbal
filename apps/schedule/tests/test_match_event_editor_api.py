@@ -12,10 +12,12 @@ from django.utils import timezone
 import pytest
 
 from apps.game_tracker.models import (
+    GroupType,
     MatchEvent,
     MatchLiveChange,
     MatchPart,
     Pause,
+    PlayerChange,
     PossessionChange,
     Shot,
     ShotEventDetail,
@@ -438,6 +440,67 @@ def test_possession_change_editor_create_flow(client: Client) -> None:
     )
     assert undone.status_code == HTTPStatus.OK
     assert not PossessionChange.objects.filter(pk=change.pk).exists()
+
+
+def test_team_substitution_needs_no_players(client: Client) -> None:
+    """Editors record an opponent substitution without naming anyone, and undo it."""
+    for index, name in enumerate(("Aanval", "Verdediging", "Reserve")):
+        GroupType.objects.get_or_create(name=name, defaults={"order": index})
+    context = create_editor_context(client, username="team-substitution")
+    graph = context.graph
+    events_url = f"/api/matches/{graph.match.id_uuid}/events"
+    payload = {
+        "team_id": str(graph.away_team.id_uuid),
+        "match_part_id": str(context.match_part.id_uuid),
+        "minute": 0,
+        "expected_revision": graph.match_data.live_revision,
+    }
+    created = client.post(f"{events_url}/substitutes/", payload, content_type=JSON)
+    assert created.status_code == HTTPStatus.CREATED
+    body = created.json()
+    assert body["event"]["type"] == "substitute"
+    change = PlayerChange.objects.get(id_uuid=body["source_id"])
+    assert change.player_in is None
+    assert change.player_out is None
+    assert change.player_group.team == graph.away_team
+    assert change.player_group.starting_type.name == "Reserve"
+
+    mixed = client.post(
+        f"{events_url}/substitutes/",
+        {
+            **payload,
+            "player_in_id": str(context.actor.id_uuid),
+            "expected_revision": body["live_revision"],
+        },
+        content_type=JSON,
+    )
+    assert mixed.status_code == HTTPStatus.BAD_REQUEST
+    incomplete = client.post(
+        f"{events_url}/substitutes/",
+        {
+            "match_part_id": str(context.match_part.id_uuid),
+            "expected_revision": body["live_revision"],
+        },
+        content_type=JSON,
+    )
+    assert incomplete.status_code == HTTPStatus.BAD_REQUEST
+    moved_team = client.patch(
+        f"{events_url}/substitutes/{body['source_id']}/",
+        {
+            "team_id": str(graph.home_team.id_uuid),
+            "expected_revision": body["live_revision"],
+        },
+        content_type=JSON,
+    )
+    assert moved_team.status_code == HTTPStatus.BAD_REQUEST
+
+    undone = client.delete(
+        f"{events_url}/substitutes/{body['source_id']}/",
+        data={"expected_revision": body["live_revision"]},
+        content_type=JSON,
+    )
+    assert undone.status_code == HTTPStatus.OK
+    assert not PlayerChange.objects.filter(pk=change.pk).exists()
 
 
 def test_possession_change_editor_delete_flow(client: Client) -> None:

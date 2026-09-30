@@ -30,6 +30,10 @@ from apps.game_tracker.services.match_mutations import (
     EditorMutationContext,
     apply_editor_mutation,
 )
+from apps.game_tracker.services.player_groups import (
+    RESERVE_GROUP_NAME,
+    ensure_player_groups_for_match_data,
+)
 from apps.player.models.player import Player
 from apps.team.models.team import Team
 
@@ -90,6 +94,19 @@ class CreateSubstitutionEvent:
     player_in_id: EntityId
     player_out_id: EntityId
     player_group_id: EntityId
+    match_part_id: EntityId
+    time: str | None
+    minute: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class CreateTeamSubstitutionEvent:
+    """Record that a team substituted, without naming the players.
+
+    The live tracker registers the opponent's substitutions this way.
+    """
+
+    team_id: EntityId
     match_part_id: EntityId
     time: str | None
     minute: int | None
@@ -199,6 +216,7 @@ type EventEditorCommand = (
     | UpdateGoalEvent
     | DeleteGoalEvent
     | CreateSubstitutionEvent
+    | CreateTeamSubstitutionEvent
     | UpdateSubstitutionEvent
     | DeleteSubstitutionEvent
     | CreatePauseEvent
@@ -604,6 +622,36 @@ def _create_substitution(
         player_group=group,
         player_in=player_in,
         player_out=player_out,
+        time=_resolve_event_time(
+            match_part=match_part,
+            time=command.time,
+            minute=command.minute,
+        ),
+    )
+
+
+@_apply_command.register
+def _create_team_substitution(
+    command: CreateTeamSubstitutionEvent,
+    match_data: MatchData,
+) -> PlayerChange:
+    match_part = _match_part(match_data, command.match_part_id)
+    team = _match_team(match_data, command.team_id)
+    # Opponents without a lineup still get their groups, as on the tracker.
+    ensure_player_groups_for_match_data(match_data)
+    reserve = PlayerGroup.objects.filter(
+        match_data=match_data,
+        team=team,
+        starting_type__name=RESERVE_GROUP_NAME,
+    ).first()
+    if reserve is None:
+        _validation_error("team_id", "This team has no lineup for the match.")
+    return PlayerChange.objects.create(
+        match_data=match_data,
+        match_part=match_part,
+        player_group=reserve,
+        player_in=None,
+        player_out=None,
         time=_resolve_event_time(
             match_part=match_part,
             time=command.time,
