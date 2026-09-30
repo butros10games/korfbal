@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from itertools import batched
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from apps.player.application.ports import ExpoPushClient
 
@@ -28,12 +29,18 @@ class ExpoPushPayload:
             dict[str, Any]: The message dict.
 
         """
-        return {
+        message: dict[str, Any] = {
             "to": token,
             "title": self.title,
             "body": self.body,
             "data": {"url": self.url},
         }
+        # iOS stacks notifications about the same page (a match's result,
+        # MVP vote and schedule changes). Senders mix relative and absolute
+        # URLs, so group on the path alone.
+        if thread := urlsplit(self.url).path:
+            message["threadId"] = thread
+        return message
 
 
 def send_expo_push_tokens(

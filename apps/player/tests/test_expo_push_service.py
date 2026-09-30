@@ -47,14 +47,32 @@ def test_send_expo_push_tokens_builds_messages_for_non_empty_tokens() -> None:
             "title": "Goal",
             "body": "Scored",
             "data": {"url": "/matches/1"},
+            "threadId": "/matches/1",
         },
         {
             "to": "token-2",
             "title": "Goal",
             "body": "Scored",
             "data": {"url": "/matches/1"},
+            "threadId": "/matches/1",
         },
     ]
+
+
+def test_notifications_about_one_page_share_an_ios_thread() -> None:
+    """Relative and absolute links to the same match stack together on iOS."""
+    relative = ExpoPushPayload(title="MVP", body="Stem", url="/matches/abc")
+    absolute = ExpoPushPayload(
+        title="Programma",
+        body="Gewijzigd",
+        url="https://korfbal.butrosgroot.com/matches/abc",
+    )
+    other = ExpoPushPayload(title="MVP", body="Stem", url="/matches/def")
+
+    assert relative.to_message("t")["threadId"] == "/matches/abc"
+    assert absolute.to_message("t")["threadId"] == "/matches/abc"
+    assert other.to_message("t")["threadId"] == "/matches/def"
+    assert "threadId" not in ExpoPushPayload(title="", body="", url="").to_message("t")
 
 
 def test_send_expo_push_tokens_is_best_effort() -> None:

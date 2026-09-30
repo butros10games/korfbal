@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 LIVE_ACTIVITY_NAME = "MatchLiveActivity"
 # A finished match stays visible on the Lock Screen for a while.
 END_DISMISSAL_SECONDS = 60 * 60
+# Pushes follow tracker changes while iOS runs the clock itself, so a quiet
+# spell is not staleness. Without news, a running period turns stale once it
+# overruns its scheduled end; a paused or idle match (time-out, half time)
+# after a longer silence. The Expo app applies the same rule locally.
+RUNNING_STALE_GRACE = timedelta(minutes=10)
+IDLE_STALE_AFTER = timedelta(minutes=30)
 HALVES = 2
 
 
@@ -169,6 +175,15 @@ def build_live_activity_props(
     )
 
 
+def live_activity_stale_at(props: LiveActivityProps, *, now: datetime) -> datetime:
+    """Return when iOS should mark the shown score as out of date."""
+    running = props.status == "active" and not props.paused
+    period_end = _parse(props.clock_end_at) if running else None
+    if period_end is not None and not props.clock_paused_at:
+        return max(period_end, now) + RUNNING_STALE_GRACE
+    return now + IDLE_STALE_AFTER
+
+
 def build_live_activity_payload(
     props: LiveActivityProps, *, event: str, now: datetime
 ) -> dict[str, Any]:
@@ -184,6 +199,8 @@ def build_live_activity_payload(
     }
     if event == "end":
         aps["dismissal-date"] = timestamp + END_DISMISSAL_SECONDS
+    else:
+        aps["stale-date"] = int(live_activity_stale_at(props, now=now).timestamp())
     return {"aps": aps}
 
 

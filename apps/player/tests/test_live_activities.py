@@ -22,6 +22,7 @@ from apps.player.services.live_activities import (
     build_live_activity_props,
     clock_label,
     end_live_activity,
+    live_activity_stale_at,
     period_label,
     push_live_activities,
     push_live_activities_for_match,
@@ -124,6 +125,7 @@ def test_payload_matches_expo_widgets_contract() -> None:
         "clockPausedAt": "",
     }
     assert "dismissal-date" not in aps
+    assert aps["stale-date"] == int((NOW + timedelta(minutes=29)).timestamp())
     ended = build_live_activity_payload(
         build_live_activity_props(
             snapshot=snapshot(status="finished"),
@@ -135,6 +137,7 @@ def test_payload_matches_expo_widgets_contract() -> None:
         now=NOW,
     )
     assert ended["aps"]["dismissal-date"] == int(NOW.timestamp()) + 3600
+    assert "stale-date" not in ended["aps"]
     final = json.loads(ended["aps"]["content-state"]["props"])
     assert not final["clockLabel"]
     assert not final["clockStartAt"]
@@ -159,6 +162,28 @@ def test_paused_clock_carries_the_pause_instant() -> None:
     assert props.paused
     assert props.clock_paused_at == paused_at.isoformat()
     assert props.clock_start_at == (NOW - timedelta(minutes=11)).isoformat()
+
+
+def test_quiet_play_stays_fresh_until_the_period_should_have_ended() -> None:
+    """A running clock is trusted to its scheduled end; silence stales sooner."""
+
+    def stale_at(**overrides: object) -> datetime:
+        props = build_live_activity_props(
+            snapshot=snapshot(**overrides), home_name="DVO", away_name="PKC", now=NOW
+        )
+        return live_activity_stale_at(props, now=NOW)
+
+    # 19 minutes remain in the half, plus the grace for a late end registration.
+    assert stale_at() == NOW + timedelta(minutes=29)
+    overrun = {**snapshot()["timer"], "time": (NOW - timedelta(minutes=40)).isoformat()}
+    assert stale_at(timer=overrun) == NOW + timedelta(minutes=10)
+    paused = {
+        **snapshot()["timer"],
+        "type": "pause",
+        "calc_to": (NOW - timedelta(minutes=2)).isoformat(),
+    }
+    assert stale_at(paused=True, timer=paused) == NOW + timedelta(minutes=30)
+    assert stale_at(timer={"type": "deactivated"}) == NOW + timedelta(minutes=30)
 
 
 @pytest.mark.django_db
