@@ -5,7 +5,9 @@ it. Editors see unpublished recordings so they can sync them first. Each tracked
 match part gets one anchor: the video second where that part starts. Because
 tracked gebeurtenissen carry wall-clock times, one anchor per part places every
 gebeurtenis on the video, including across timeouts and camera pauses between
-parts.
+parts. A camera that splits its footage into files can lose a few seconds at
+each split; editors record those as breaks (where the video skips real time,
+and by how much) so the rest of the period stays in sync.
 """
 
 from dataclasses import dataclass
@@ -19,6 +21,10 @@ from django.db.models import F
 from apps.game_tracker.models import MatchPart
 from apps.schedule.models import Match
 from apps.video_analysis.models import MatchVideoPublication, Recording, StoredFile
+
+
+MAX_BREAKS = 50
+MAX_SKIPPED_SECONDS = 3600.0
 
 
 class PlaybackUrls(Protocol):
@@ -39,6 +45,10 @@ class MatchVideoConflictError(Exception):
         self.revision = current
 
 
+class MatchVideoBreakError(ValueError):
+    """A recording break is invalid."""
+
+
 @dataclass(frozen=True)
 class MatchVideoUpdate:
     """Validated editor input; omitted fields keep their saved values."""
@@ -46,6 +56,8 @@ class MatchVideoUpdate:
     expected_revision: int
     published: bool | None = None
     anchors: dict[str, float | None] | None = None
+    breaks: list[tuple[float, float]] | None = None
+    """Replaces every break: ``(video_seconds, skipped_seconds)`` pairs."""
 
 
 def select_recording(match: Match) -> Recording | None:
@@ -119,6 +131,7 @@ def read(match: Match, *, can_edit: bool, urls: PlaybackUrls) -> dict:
                 }
                 for part in _parts(match)
             ],
+            "breaks": publication.breaks if publication else [],
         },
         "can_edit": can_edit,
     }
@@ -133,7 +146,8 @@ def update(
 
     Raises:
         LookupError: The match has no stored recording.
-        ValueError: An anchor names another match's part or leaves the video.
+        ValueError: An anchor names another match's part or leaves the video,
+            or a recording break is invalid (``MatchVideoBreakError``).
         MatchVideoConflictError: The settings changed since the editor loaded them.
 
     """
@@ -163,8 +177,42 @@ def update(
                 else:
                     anchors[part_id] = round(seconds, 3)
             publication.anchors = anchors
+        if change.breaks is not None:
+            publication.breaks = _breaks(change.breaks, duration)
         if change.published is not None:
             publication.published = change.published
         publication.revision += 1
         publication.updated_by = user if user.is_authenticated else None
         publication.save()
+
+
+def _breaks(breaks: list[tuple[float, float]], duration: float) -> list[dict]:
+    """Validate breaks and store them in video order.
+
+    Returns:
+        The stored ``{"video_seconds", "skipped_seconds"}`` rows.
+
+    Raises:
+        MatchVideoBreakError: A break leaves the video, skips an impossible
+            amount of time, or repeats a video moment.
+
+    """
+    if len(breaks) > MAX_BREAKS:
+        raise MatchVideoBreakError("Too many recording breaks.")
+    rows: dict[float, float] = {}
+    for video_seconds, skipped_seconds in breaks:
+        if not (math.isfinite(video_seconds) and 0 < video_seconds <= duration):
+            raise MatchVideoBreakError("A recording break must lie within the video.")
+        if not (
+            math.isfinite(skipped_seconds)
+            and 0 <= skipped_seconds <= MAX_SKIPPED_SECONDS
+        ):
+            raise MatchVideoBreakError("A recording break skips at most an hour.")
+        at = round(video_seconds, 3)
+        if at in rows:
+            raise MatchVideoBreakError("Two recording breaks share a moment.")
+        rows[at] = round(skipped_seconds, 3)
+    return [
+        {"video_seconds": at, "skipped_seconds": skipped}
+        for at, skipped in sorted(rows.items())
+    ]

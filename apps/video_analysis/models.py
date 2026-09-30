@@ -234,6 +234,9 @@ class MatchVideoPublication(models.Model):
 
     ``anchors`` maps a tracked match part UUID to the video second where that
     part starts, so every tracked gebeurtenis can be placed on the video.
+    ``breaks`` lists moments where the recording skipped real time within a
+    period (a camera that split its footage into files loses a few seconds at
+    each split): ``{"video_seconds": ..., "skipped_seconds": ...}``.
     """
 
     objects: ClassVar[models.Manager["MatchVideoPublication"]] = models.Manager()
@@ -244,6 +247,7 @@ class MatchVideoPublication(models.Model):
     )
     published = models.BooleanField(default=False)
     anchors = models.JSONField(default=dict)
+    breaks = models.JSONField(default=list)
     revision = models.PositiveIntegerField(default=0)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL

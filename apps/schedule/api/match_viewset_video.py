@@ -31,6 +31,13 @@ class MatchVideoPartSerializer(serializers.Serializer):
     video_seconds = serializers.FloatField(allow_null=True)
 
 
+class MatchVideoBreakSerializer(serializers.Serializer):
+    """Where the recording skips real time within a period, and by how much."""
+
+    video_seconds = serializers.FloatField()
+    skipped_seconds = serializers.FloatField()
+
+
 class MatchVideoSerializer(serializers.Serializer):
     """A playable recording and its period sync."""
 
@@ -39,6 +46,7 @@ class MatchVideoSerializer(serializers.Serializer):
     published = serializers.BooleanField()
     revision = serializers.IntegerField()
     parts = MatchVideoPartSerializer(many=True)
+    breaks = MatchVideoBreakSerializer(many=True)
 
 
 class MatchVideoResponseSerializer(serializers.Serializer):
@@ -56,6 +64,7 @@ class MatchVideoUpdateSerializer(serializers.Serializer):
     anchors = serializers.DictField(
         child=serializers.FloatField(allow_null=True), required=False
     )
+    breaks = MatchVideoBreakSerializer(many=True, required=False)
 
 
 class MatchVideoConflictApiError(APIException):
@@ -97,7 +106,7 @@ class MatchVideoActionsMixin:
             PermissionDenied: The viewer may not edit this match.
             NotFound: The match has no stored video to update.
             MatchVideoConflictApiError: Another editor saved first.
-            ValidationError: The sync point is invalid.
+            ValidationError: A sync point or recording break is invalid.
 
         """
         del args, kwargs
@@ -119,12 +128,20 @@ class MatchVideoActionsMixin:
                         expected_revision=data["expected_revision"],
                         published=data.get("published"),
                         anchors=data.get("anchors"),
+                        breaks=None
+                        if data.get("breaks") is None
+                        else [
+                            (row["video_seconds"], row["skipped_seconds"])
+                            for row in data["breaks"]
+                        ],
                     ),
                 )
             except LookupError as error:
                 raise NotFound(str(error)) from error
             except match_video.MatchVideoConflictError as conflict:
                 raise MatchVideoConflictApiError(conflict) from conflict
+            except match_video.MatchVideoBreakError as error:
+                raise ValidationError({"breaks": [str(error)]}) from error
             except ValueError as error:
                 raise ValidationError({"anchors": [str(error)]}) from error
         response = Response(

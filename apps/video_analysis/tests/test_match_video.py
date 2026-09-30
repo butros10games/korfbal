@@ -188,6 +188,50 @@ def test_clearing_an_anchor_and_rejecting_invalid_sync(client: Client) -> None:
     assert cleared.json()["video"]["parts"][0]["video_seconds"] is None
 
 
+def test_recording_breaks_replace_and_validate(client: Client) -> None:
+    """Breaks are stored in video order, replaced as a whole and kept in the video."""
+    graph = support.create_match_graph(prefix="breaks")
+    support.create_match_part(graph)
+    link_recording(graph)
+    support.login_coach(client, graph, username="breaks-coach")
+    assert client.get(url(graph)).json()["video"]["breaks"] == []
+    saved = put(
+        client,
+        graph,
+        {
+            "expected_revision": 0,
+            "breaks": [
+                {"video_seconds": 2836.0004, "skipped_seconds": 4},
+                {"video_seconds": 914.6, "skipped_seconds": 18.5},
+            ],
+        },
+    )
+    assert saved.status_code == HTTPStatus.OK
+    stored = [
+        {"video_seconds": 914.6, "skipped_seconds": 18.5},
+        {"video_seconds": 2836.0, "skipped_seconds": 4.0},
+    ]
+    assert saved.json()["video"]["breaks"] == stored
+    # Other writes keep the breaks; an explicit list replaces them.
+    kept = put(client, graph, {"expected_revision": 1, "published": True})
+    assert kept.json()["video"]["breaks"] == stored
+    for breaks in (
+        [{"video_seconds": 0, "skipped_seconds": 1}],
+        [{"video_seconds": DURATION + 1, "skipped_seconds": 1}],
+        [{"video_seconds": 10, "skipped_seconds": -1}],
+        [{"video_seconds": 10, "skipped_seconds": 3601}],
+        [
+            {"video_seconds": 10, "skipped_seconds": 1},
+            {"video_seconds": 10.0001, "skipped_seconds": 2},
+        ],
+    ):
+        response = put(client, graph, {"expected_revision": 2, "breaks": breaks})
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert "breaks" in response.json()
+    cleared = put(client, graph, {"expected_revision": 2, "breaks": []})
+    assert cleared.json()["video"]["breaks"] == []
+
+
 @pytest.mark.parametrize("identity", ["anonymous", "plain"])
 def test_non_editors_cannot_publish(client: Client, identity: str) -> None:
     """Only the existing event editors may publish or sync."""
