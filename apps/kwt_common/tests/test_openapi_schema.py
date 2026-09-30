@@ -41,6 +41,47 @@ def test_openapi_schema_has_no_warnings_or_errors(tmp_path: Path) -> None:
     }
     assert "201" in teams["post"]["responses"]
 
+    possession = paths["/api/matches/{id}/events/possession-changes/"]["post"]
+    assert possession["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/PossessionChangeCreateRequest"
+    }
+    assert (
+        "expected_revision"
+        in schema["components"]["schemas"]["PossessionChangeCreateRequest"]["required"]
+    )
+    assert possession["responses"]["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/PossessionChangeCreateResponse"
+    }
+    assert set(
+        schema["components"]["schemas"]["PossessionChangeCreateResponse"]["required"]
+    ) == {"event", "source_id", "live_revision"}
+
+    for resource, singular in (
+        ("annotations", "Annotation"),
+        ("playlists", "Playlist"),
+    ):
+        collection = paths[f"/api/matches/{{id}}/video/{resource}/"]
+        assert collection["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ] == {"$ref": f"#/components/schemas/MatchVideo{singular}Input"}
+        assert collection["post"]["responses"]["201"]["content"]["application/json"][
+            "schema"
+        ] == {"$ref": f"#/components/schemas/MatchVideo{singular}Response"}
+        detail = paths[
+            f"/api/matches/{{id}}/video/{resource}/{{{singular.lower()}_id}}/"
+        ]
+        assert detail["patch"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ] == {"$ref": f"#/components/schemas/PatchedMatchVideo{singular}Input"}
+        assert "requestBody" not in detail["delete"]
+        assert "content" not in detail["delete"]["responses"]["204"]
+
+    whistles = paths["/api/matches/{id}/video/whistles/"]["post"]
+    assert "requestBody" not in whistles
+    assert whistles["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/MatchVideoResponse"
+    }
+
     for suffix, name, fields in (
         ("readiness/", "TournamentRefereeReady", {"expected_revision"}),
         (

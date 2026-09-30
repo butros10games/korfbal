@@ -31,12 +31,24 @@ from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.player.models.player import Player
 from apps.schedule.models import Match
 
+from .match_viewset_event_writes import (
+    PossessionChangeCreateRequestSerializer,
+    PossessionChangeCreateResponseSerializer,
+)
 from .match_viewset_events import MatchEventsActionsMixin
 from .match_viewset_live import MatchLiveActionsMixin
 from .match_viewset_mvp import MatchMvpActionsMixin
 from .match_viewset_stats import MatchStatsActionsMixin
 from .match_viewset_video import (
     MatchVideoActionsMixin,
+    MatchVideoAnnotationActionsMixin,
+    MatchVideoAnnotationInputSerializer,
+    MatchVideoAnnotationResponseSerializer,
+    MatchVideoAnnotationsSerializer,
+    MatchVideoPlaylistActionsMixin,
+    MatchVideoPlaylistInputSerializer,
+    MatchVideoPlaylistResponseSerializer,
+    MatchVideoPlaylistsSerializer,
     MatchVideoResponseSerializer,
     MatchVideoUpdateSerializer,
 )
@@ -58,6 +70,11 @@ def _uuid_path_parameter(name: str) -> OpenApiParameter:
         parameters=[_uuid_path_parameter("reconciliation_id")]
     ),
     goal_detail=extend_schema(parameters=[_uuid_path_parameter("shot_id")]),
+    create_possession_change=extend_schema(
+        parameters=[_uuid_path_parameter("id")],
+        request=PossessionChangeCreateRequestSerializer,
+        responses={201: PossessionChangeCreateResponseSerializer},
+    ),
     possession_change_detail=extend_schema(
         parameters=[
             OpenApiParameter(
@@ -80,9 +97,70 @@ def _uuid_path_parameter(name: str) -> OpenApiParameter:
         request=MatchVideoUpdateSerializer,
         responses={200: MatchVideoResponseSerializer},
     ),
+    video_whistles=extend_schema(
+        parameters=[_uuid_path_parameter("id")],
+        request=None,
+        responses={202: MatchVideoResponseSerializer},
+    ),
+    video_annotations=[
+        extend_schema(
+            parameters=[_uuid_path_parameter("id")],
+            methods=["GET"],
+            responses={200: MatchVideoAnnotationsSerializer},
+        ),
+        extend_schema(
+            parameters=[_uuid_path_parameter("id")],
+            methods=["POST"],
+            request=MatchVideoAnnotationInputSerializer,
+            responses={201: MatchVideoAnnotationResponseSerializer},
+        ),
+    ],
+    video_annotation_detail=[
+        extend_schema(
+            parameters=[_uuid_path_parameter("annotation_id")],
+            methods=["PATCH"],
+            request=MatchVideoAnnotationInputSerializer,
+            responses={200: MatchVideoAnnotationResponseSerializer},
+        ),
+        extend_schema(
+            parameters=[_uuid_path_parameter("annotation_id")],
+            methods=["DELETE"],
+            request=None,
+            responses={204: None},
+        ),
+    ],
+    video_playlists=[
+        extend_schema(
+            parameters=[_uuid_path_parameter("id")],
+            methods=["GET"],
+            responses={200: MatchVideoPlaylistsSerializer},
+        ),
+        extend_schema(
+            parameters=[_uuid_path_parameter("id")],
+            methods=["POST"],
+            request=MatchVideoPlaylistInputSerializer,
+            responses={201: MatchVideoPlaylistResponseSerializer},
+        ),
+    ],
+    video_playlist_detail=[
+        extend_schema(
+            parameters=[_uuid_path_parameter("playlist_id")],
+            methods=["PATCH"],
+            request=MatchVideoPlaylistInputSerializer,
+            responses={200: MatchVideoPlaylistResponseSerializer},
+        ),
+        extend_schema(
+            parameters=[_uuid_path_parameter("playlist_id")],
+            methods=["DELETE"],
+            request=None,
+            responses={204: None},
+        ),
+    ],
 )
 class MatchViewSet(
     MatchVideoActionsMixin,
+    MatchVideoAnnotationActionsMixin,
+    MatchVideoPlaylistActionsMixin,
     MatchMvpActionsMixin,
     MatchStatsActionsMixin,
     MatchLiveActionsMixin,

@@ -258,6 +258,9 @@ class MatchVideoPublication(models.Model):
     published = models.BooleanField(default=False)
     anchors = models.JSONField(default=dict)
     breaks = models.JSONField(default=list)
+    # Referee whistles found in the sound track, to help editors sync.
+    whistles = models.JSONField(default=list)
+    whistles_status = models.CharField(max_length=8, blank=True)
     revision = models.PositiveIntegerField(default=0)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
@@ -267,3 +270,77 @@ class MatchVideoPublication(models.Model):
     def __str__(self) -> str:
         """Identify the publication without exposing storage details."""
         return f"{self.recording_id}: {'published' if self.published else 'draft'}"
+
+
+class MatchVideoAnnotation(models.Model):
+    """A tag, note or clip placed on a match video by one of its editors.
+
+    Annotations sit on the recording's own timeline (video seconds), so they
+    stay put when the period sync changes. ``visibility`` decides whether only
+    editors or everyone who may watch the video sees them.
+    """
+
+    objects: ClassVar[models.Manager[MatchVideoAnnotation]] = models.Manager[
+        "MatchVideoAnnotation"
+    ]()
+    recording_id: int
+    author_id: int | None
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recording = models.ForeignKey(
+        Recording, on_delete=models.CASCADE, related_name="annotations"
+    )
+    kind = models.CharField(max_length=8)
+    label = models.CharField(max_length=80, blank=True)
+    body = models.TextField(blank=True)
+    start_seconds = models.FloatField()
+    end_seconds = models.FloatField(null=True, blank=True)
+    player_ids = models.JSONField(default=list, blank=True)
+    drawing = models.JSONField(null=True, blank=True)
+    visibility = models.CharField(max_length=8, default="viewers")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Read in video order."""
+
+        ordering = ("start_seconds", "created_at")
+
+    def __str__(self) -> str:
+        """Identify the annotation without its text."""
+        return f"{self.kind} @ {self.start_seconds:.1f}s"
+
+
+class MatchVideoPlaylist(models.Model):
+    """A named, ordered set of saved clips on one match video."""
+
+    objects: ClassVar[models.Manager[MatchVideoPlaylist]] = models.Manager[
+        "MatchVideoPlaylist"
+    ]()
+    recording_id: int
+    author_id: int | None
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recording = models.ForeignKey(
+        Recording, on_delete=models.CASCADE, related_name="playlists"
+    )
+    title = models.CharField(max_length=80)
+    annotation_ids = models.JSONField(default=list)
+    visibility = models.CharField(max_length=8, default="viewers")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Newest first."""
+
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        """Identify the playlist by its title."""
+        return self.title

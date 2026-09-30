@@ -20,6 +20,8 @@ SPECTACULAR_SETTINGS = {
     # The contract maps every private endpoint; clients are generated offline.
     "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
     "ENUM_NAME_OVERRIDES": {
+        "MatchVideoAnnotationVisibilityEnum": ["editors", "viewers"],
+        "MatchVideoAnnotationKindEnum": ["tag", "note", "clip"],
         "TournamentSideEnum": ["home", "away"],
         "PlayerVisibilityEnum": "apps.player.models.player.Player.Visibility",
     },

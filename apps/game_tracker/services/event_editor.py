@@ -176,6 +176,18 @@ class DeleteTimeoutEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CreatePossessionChangeEvent:
+    """Create a ball loss or interception for the reporting team."""
+
+    kind: str
+    team_id: EntityId
+    player_id: EntityId | None
+    match_part_id: EntityId
+    time: str | None
+    minute: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class DeletePossessionChangeEvent:
     """Delete one player-attributed possession change."""
 
@@ -195,6 +207,7 @@ type EventEditorCommand = (
     | CreateTimeoutEvent
     | UpdateTimeoutEvent
     | DeleteTimeoutEvent
+    | CreatePossessionChangeEvent
     | DeletePossessionChangeEvent
 )
 type EditedEvent = Shot | PlayerChange | PossessionChange | Pause | Timeout
@@ -524,6 +537,35 @@ def _delete_goal(
         return _CommandOutcome.NOT_FOUND
     shot.delete()
     return None
+
+
+@_apply_command.register
+def _create_possession_change(
+    command: CreatePossessionChangeEvent,
+    match_data: MatchData,
+) -> PossessionChange:
+    if command.kind not in {PossessionChange.BALL_LOSS, PossessionChange.INTERCEPTION}:
+        _validation_error("kind", "Kind must be ball_loss or interception.")
+    match_part = _match_part(match_data, command.match_part_id)
+    team = _match_team(match_data, command.team_id)
+    player = None
+    if command.player_id is not None:
+        player = _player(command.player_id)
+        _validate_player_team(
+            match_data=match_data, player=player, team_id=team.id_uuid
+        )
+    return PossessionChange.objects.create(
+        match_data=match_data,
+        match_part=match_part,
+        team=team,
+        player=player,
+        kind=command.kind,
+        time=_resolve_event_time(
+            match_part=match_part,
+            time=command.time,
+            minute=command.minute,
+        ),
+    )
 
 
 @_apply_command.register
@@ -915,7 +957,9 @@ def apply_event_editor_command(
         revision=match_data.live_revision,
         event=(
             applied
-            if isinstance(applied, (Shot, PlayerChange, Pause, Timeout))
+            if isinstance(
+                applied, (Shot, PlayerChange, PossessionChange, Pause, Timeout)
+            )
             else None
         ),
     )

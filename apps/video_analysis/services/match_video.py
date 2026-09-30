@@ -10,7 +10,9 @@ each split; editors record those as breaks (where the video skips real time,
 and by how much) so the rest of the period stays in sync.
 """
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+import logging
 import math
 from typing import Protocol
 
@@ -19,9 +21,15 @@ from django.db import transaction
 from django.db.models import F
 
 from apps.game_tracker.models import MatchPart
+from apps.kwt_common.services.jobs import enqueue
 from apps.schedule.models import Match
 from apps.video_analysis.models import MatchVideoPublication, Recording, StoredFile
 
+
+logger = logging.getLogger(__name__)
+
+WHISTLES_TASK = "apps.video_analysis.tasks.find_match_video_whistles"
+MAX_WHISTLES = 600
 
 MAX_BREAKS = 50
 MAX_SKIPPED_SECONDS = 3600.0
@@ -132,6 +140,17 @@ def read(match: Match, *, can_edit: bool, urls: PlaybackUrls) -> dict:
                 for part in _parts(match)
             ],
             "breaks": publication.breaks if publication else [],
+            # Editors use the whistles to find period starts; viewers never need them.
+            **(
+                {
+                    "whistles": publication.whistles if publication else [],
+                    "whistles_status": publication.whistles_status
+                    if publication
+                    else "",
+                }
+                if can_edit
+                else {}
+            ),
         },
         "can_edit": can_edit,
     }
@@ -216,3 +235,83 @@ def _breaks(breaks: list[tuple[float, float]], duration: float) -> list[dict]:
         {"video_seconds": at, "skipped_seconds": skipped}
         for at, skipped in sorted(rows.items())
     ]
+
+
+class WhistleLike(Protocol):
+    """What the whistle finder reports for one whistle."""
+
+    @property
+    def seconds(self) -> float:
+        """Where the whistle starts, in video seconds."""
+        ...
+
+    @property
+    def duration(self) -> float:
+        """How long it lasts."""
+        ...
+
+    @property
+    def strength(self) -> float:
+        """How far above the recording's loud moments it is, in dB."""
+        ...
+
+
+def request_whistles(match: Match) -> None:
+    """Queue a search for referee whistles in the match video's sound.
+
+    Raises:
+        LookupError: The match has no stored recording.
+
+    """
+    recording = select_recording(match)
+    if recording is None:
+        raise LookupError("This match has no video.")
+    with transaction.atomic():
+        MatchVideoPublication.objects.get_or_create(recording=recording)
+        publication = MatchVideoPublication.objects.select_for_update().get(
+            recording=recording
+        )
+        if publication.whistles_status in {"queued", "running"}:
+            return
+        publication.whistles_status = "queued"
+        publication.save(update_fields=["whistles_status", "updated_at"])
+        enqueue(
+            WHISTLES_TASK,
+            f"recording:{recording.pk}",
+            args=[recording.pk],
+            queue="vision",
+        )
+
+
+def store_whistles(
+    recording_id: int,
+    *,
+    urls: PlaybackUrls,
+    find: Callable[[str], Sequence[WhistleLike]],
+) -> None:
+    """Find the whistles of one recording and keep them for its editors."""
+    recording = Recording.objects.get(pk=recording_id)
+    publication = MatchVideoPublication.objects.get(recording=recording)
+    publication.whistles_status = "running"
+    publication.save(update_fields=["whistles_status", "updated_at"])
+    try:
+        url = urls.playback_url(recording)
+        found = find(url) if url else None
+    except Exception:
+        logger.exception("Whistle search failed for recording %s", recording_id)
+        found = None
+    if found is None:
+        publication.whistles_status = "failed"
+        publication.save(update_fields=["whistles_status", "updated_at"])
+        return
+    strongest = sorted(found, key=lambda row: row.strength, reverse=True)[:MAX_WHISTLES]
+    publication.whistles = [
+        {
+            "seconds": row.seconds,
+            "duration": row.duration,
+            "strength": row.strength,
+        }
+        for row in sorted(strongest, key=lambda row: row.seconds)
+    ]
+    publication.whistles_status = "done"
+    publication.save(update_fields=["whistles", "whistles_status", "updated_at"])

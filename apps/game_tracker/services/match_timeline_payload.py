@@ -617,6 +617,19 @@ def _serialize_possession_change_event(
     }
 
 
+def serialize_possession_change_event(
+    match_data: MatchData,
+    event: PossessionChange,
+) -> dict[str, Any]:
+    """Serialize a possession change after a write operation.
+
+    Returns:
+        The possession change as a timeline gebeurtenis.
+
+    """
+    return _serialize_possession_change_event(match_data, event)
+
+
 def _serialize_goal_event(
     match_data: MatchData,
     event: Shot,

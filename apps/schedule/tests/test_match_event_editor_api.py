@@ -359,6 +359,87 @@ def test_goal_editor_create_update_delete_flow(client: Client) -> None:
     assert len({event["logical_event_id"] for event in shot_history}) == 1
 
 
+def test_missed_shot_create_names_its_row_for_undo(client: Client) -> None:
+    """A missed shot has no timeline gebeurtenis; the response still names it."""
+    context = create_editor_context(client, username="missed-undo")
+    graph = context.graph
+    events_url = f"/api/matches/{graph.match.id_uuid}/events"
+    created = client.post(
+        f"{events_url}/goals/",
+        data=goal_payload(
+            context, expected_revision=graph.match_data.live_revision, scored=False
+        ),
+        content_type=JSON,
+    )
+    assert created.status_code == HTTPStatus.CREATED
+    payload = created.json()
+    shot = Shot.objects.get(id_uuid=payload["source_id"])
+    assert shot.scored is False
+    undone = client.delete(
+        f"{events_url}/goals/{payload['source_id']}/",
+        data={"expected_revision": payload["live_revision"]},
+        content_type=JSON,
+    )
+    assert undone.status_code == HTTPStatus.OK
+    assert not Shot.objects.filter(pk=shot.pk).exists()
+
+
+def test_possession_change_editor_create_flow(client: Client) -> None:
+    """Editors add a ball loss for a roster player and can undo it."""
+    context = create_editor_context(client, username="possession-create")
+    graph = context.graph
+    events_url = f"/api/matches/{graph.match.id_uuid}/events"
+    payload = {
+        "kind": "ball_loss",
+        "team_id": str(graph.home_team.id_uuid),
+        "player_id": str(context.actor.id_uuid),
+        "match_part_id": str(context.match_part.id_uuid),
+        "minute": 0,
+        "expected_revision": graph.match_data.live_revision,
+    }
+    created = client.post(
+        f"{events_url}/possession-changes/", payload, content_type=JSON
+    )
+    assert created.status_code == HTTPStatus.CREATED
+    body = created.json()
+    assert body["event"]["type"] == "possession_change"
+    assert body["event"]["kind"] == "ball_loss"
+    change = PossessionChange.objects.get(id_uuid=body["source_id"])
+    assert change.player == context.actor
+
+    wrong_team = client.post(
+        f"{events_url}/possession-changes/",
+        {
+            **payload,
+            "team_id": str(graph.away_team.id_uuid),
+            "expected_revision": body["live_revision"],
+        },
+        content_type=JSON,
+    )
+    assert wrong_team.status_code == HTTPStatus.BAD_REQUEST
+
+    anonymous_player = client.post(
+        f"{events_url}/possession-changes/",
+        {
+            **payload,
+            "kind": "interception",
+            "player_id": None,
+            "expected_revision": body["live_revision"],
+        },
+        content_type=JSON,
+    )
+    assert anonymous_player.status_code == HTTPStatus.CREATED
+    assert anonymous_player.json()["event"]["player"] is None
+
+    undone = client.delete(
+        f"{events_url}/possession-changes/{body['source_id']}/",
+        data={"expected_revision": anonymous_player.json()["live_revision"]},
+        content_type=JSON,
+    )
+    assert undone.status_code == HTTPStatus.OK
+    assert not PossessionChange.objects.filter(pk=change.pk).exists()
+
+
 def test_possession_change_editor_delete_flow(client: Client) -> None:
     """Delete an incorrectly registered possession change."""
     context = create_editor_context(client, username="possession-editor")

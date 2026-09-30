@@ -25,7 +25,9 @@ from apps.video_analysis.engine.luna import analyze_frame
 from apps.video_analysis.engine.media import prepare_active_frames, sample_frame
 from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.engine.timeline import is_active_time
+from apps.video_analysis.engine.whistles import find_whistles
 from apps.video_analysis.models import AnalysisJob, Workspace
+from apps.video_analysis.services import match_video
 from apps.video_analysis.services.jobs import continue_analysis
 from apps.video_analysis.services.pipeline_worker import advance
 from apps.video_analysis.services.uploads import cleanup
@@ -208,3 +210,11 @@ def repackage_recording(workspace_id: str, relative: str) -> None:
 def delete_superseded_video(workspace_id: str, key: str) -> None:
     """Delete a replaced recording object once nothing refers to it."""
     composition.delete_superseded_video(Workspace.objects.get(pk=workspace_id), key)
+
+
+@shared_task
+def find_match_video_whistles(recording_id: int) -> None:
+    """Search a match video's sound for referee whistles, for its editors."""
+    match_video.store_whistles(
+        recording_id, urls=composition.match_video_urls(), find=find_whistles
+    )

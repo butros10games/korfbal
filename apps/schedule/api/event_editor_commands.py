@@ -91,6 +91,15 @@ def _expected_revision(request: Request) -> int:
 def mutation_payload(
     result: EventEditorResult,
     event: dict[str, object] | None,
+    *,
+    source_id: object | None = None,
 ) -> dict[str, object]:
-    """Pair the editor result with its committed aggregate revision."""
-    return {"event": event, "live_revision": result.revision}
+    """Pair the editor result with its committed aggregate revision.
+
+    ``source_id`` names the row a create wrote, so a client can undo it even
+    when the row has no timeline gebeurtenis (a missed shot).
+    """
+    payload: dict[str, object] = {"event": event, "live_revision": result.revision}
+    if source_id is not None:
+        payload["source_id"] = str(source_id)
+    return payload

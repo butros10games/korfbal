@@ -92,7 +92,12 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
     "schedule": frozenset({"queries.seasons"}),
     "team": frozenset({"api.serializers", "services.roster_history"}),
     "tournament": frozenset({"composition", "services.cups"}),
-    "video_analysis": frozenset({"composition", "services.match_video"}),
+    "video_analysis": frozenset({
+        "composition",
+        "services.match_video",
+        "services.match_video_annotations",
+        "services.match_video_playlists",
+    }),
 }
 
 # Application-layer dependencies between apps (excluding models and pure domain

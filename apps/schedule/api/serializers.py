@@ -13,6 +13,7 @@ from apps.game_tracker.services.event_editor import (
     UNSET,
     CreateGoalEvent,
     CreatePauseEvent,
+    CreatePossessionChangeEvent,
     CreateSubstitutionEvent,
     CreateTimeoutEvent,
     EntityId,
@@ -397,6 +398,31 @@ class ShotWriteSerializer(serializers.Serializer):
             minute=_patch(data, "minute"),
             scored=_patch(data, "scored"),
             for_team=_patch(data, "for_team"),
+        )
+
+
+class PossessionChangeWriteSerializer(serializers.Serializer):
+    """Parse ball-loss or interception input into a typed editor command."""
+
+    kind = serializers.ChoiceField(choices=("ball_loss", "interception"))
+    team_id = serializers.UUIDField()
+    player_id = serializers.UUIDField(required=False, allow_null=True)
+    match_part_id = serializers.UUIDField()
+    time = serializers.CharField(required=False, allow_blank=True)
+    minute = serializers.IntegerField(required=False)
+
+    def to_command(self, *, event_id: str | None = None) -> CreatePossessionChangeEvent:
+        """Return the create command; possession changes are not updated."""
+        del event_id
+        data = cast(dict[str, object], self.validated_data)
+        player_id = data.get("player_id")
+        return CreatePossessionChangeEvent(
+            kind=str(data["kind"]),
+            team_id=_required_id(data, "team_id"),
+            player_id=cast(EntityId, player_id) if player_id is not None else None,
+            match_part_id=_required_id(data, "match_part_id"),
+            time=_optional_text(data, "time"),
+            minute=_optional_integer(data, "minute"),
         )
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.request import Request
@@ -14,6 +14,7 @@ from apps.game_tracker.models import (
     MatchData,
     Pause,
     PlayerChange,
+    PossessionChange,
     Shot,
     Timeout,
 )
@@ -28,6 +29,7 @@ from apps.game_tracker.services.event_editor import (
 from apps.game_tracker.services.match_timeline_payload import (
     serialize_goal_event,
     serialize_pause_event,
+    serialize_possession_change_event,
     serialize_substitute_event,
 )
 from apps.kwt_common.api.params import UUID_URL_REGEX
@@ -39,6 +41,7 @@ from .permissions import IsCoachOrAdmin
 from .serializers import (
     PauseWriteSerializer,
     PlayerChangeWriteSerializer,
+    PossessionChangeWriteSerializer,
     ShotWriteSerializer,
     TimeoutWriteSerializer,
 )
@@ -49,6 +52,7 @@ type EventWriteSerializer = (
     | PlayerChangeWriteSerializer
     | PauseWriteSerializer
     | TimeoutWriteSerializer
+    | PossessionChangeWriteSerializer
 )
 type DeleteEventCommand = (
     DeleteGoalEvent
@@ -57,6 +61,20 @@ type DeleteEventCommand = (
     | DeleteTimeoutEvent
     | DeletePossessionChangeEvent
 )
+
+
+class PossessionChangeCreateRequestSerializer(PossessionChangeWriteSerializer):
+    """Document the aggregate revision required alongside the event input."""
+
+    expected_revision = serializers.IntegerField(min_value=0)
+
+
+class PossessionChangeCreateResponseSerializer(serializers.Serializer):
+    """A created timeline event, its source row and committed revision."""
+
+    event = serializers.JSONField()
+    source_id = serializers.UUIDField()
+    live_revision = serializers.IntegerField(min_value=0)
 
 
 def _require_match_data(view: MatchViewSetContext) -> MatchData:
@@ -140,6 +158,7 @@ class MatchEventWriteActionsMixin:
             mutation_payload(
                 result,
                 serialize_goal_event(result.match_data, shot),
+                source_id=shot.id_uuid,
             ),
             status=status.HTTP_201_CREATED,
         )
@@ -186,6 +205,32 @@ class MatchEventWriteActionsMixin:
 
     @action(
         detail=True,
+        methods=("POST",),
+        url_path="events/possession-changes",
+        permission_classes=[IsCoachOrAdmin],
+    )
+    def create_possession_change(
+        self: MatchViewSetContext,
+        request: Request,
+        *args: object,
+        **kwargs: object,
+    ) -> Response:
+        """Create a ball loss or interception for this match."""
+        match_data = _require_match_data(self)
+
+        result = _write_event(match_data, request, PossessionChangeWriteSerializer)
+        change = cast(PossessionChange, result.event)
+        return Response(
+            mutation_payload(
+                result,
+                serialize_possession_change_event(result.match_data, change),
+                source_id=change.id_uuid,
+            ),
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
         methods=("DELETE",),
         url_path=rf"events/possession-changes/(?P<event_id>{UUID_URL_REGEX})",
         permission_classes=[IsCoachOrAdmin],
@@ -228,6 +273,7 @@ class MatchEventWriteActionsMixin:
             mutation_payload(
                 result,
                 serialize_substitute_event(result.match_data, change),
+                source_id=change.id_uuid,
             ),
             status=status.HTTP_201_CREATED,
         )
@@ -363,6 +409,7 @@ class MatchEventWriteActionsMixin:
             mutation_payload(
                 result,
                 serialize_pause_event(result.match_data, timeout.pause),
+                source_id=timeout.id_uuid,
             ),
             status=status.HTTP_201_CREATED,
         )
