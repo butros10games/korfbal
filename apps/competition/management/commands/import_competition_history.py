@@ -27,7 +27,14 @@ from apps.competition.services.history_editions import (
     edition_log,
     edition_summary,
     queue_edition_lineups,
+    recheck_edition,
     seed_edition,
+)
+from apps.competition.services.history_sites import (
+    KORFBALNL,
+    UITSLAGEN,
+    seed_site,
+    site_summary,
 )
 from apps.competition.services.history_worker import run_history
 from apps.schedule.models import Season
@@ -36,7 +43,10 @@ from apps.schedule.models import Season
 class Command(BaseCommand):
     """Seed verified IDs, backfill explicit date ranges, and inspect coverage."""
 
-    help = "Historical KNKV discovery: edition, seed, run, status, log, retry, archive."
+    help = (
+        "Historical KNKV discovery: edition, site, recheck, lineups, seed, run, "
+        "status, log, retry, archive."
+    )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Expose bounded execution and protected credential file inputs."""
@@ -44,6 +54,8 @@ class Command(BaseCommand):
             "action",
             choices=(
                 "edition",
+                "site",
+                "recheck",
                 "lineups",
                 "seed",
                 "run",
@@ -58,6 +70,14 @@ class Command(BaseCommand):
             type=int,
             nargs="+",
             help="Provider edition start year(s), e.g. 2024 for 2024-2025",
+        )
+        parser.add_argument(
+            "--source",
+            choices=(KORFBALNL, UITSLAGEN),
+            help=(
+                "Public result site for the site action: korfbalnl holds editions "
+                "2016-2021, uitslagen holds 2025"
+            ),
         )
         parser.add_argument(
             "--output", type=Path, help="CSV file for the per-match import log"
@@ -125,7 +145,10 @@ class Command(BaseCommand):
 
         """
         action = options["action"]
-        if action in {"edition", "lineups", "log"} or options["edition"]:
+        if (
+            action in {"edition", "site", "recheck", "lineups", "log"}
+            or (options["edition"])
+        ):
             return edition_action(action, options)
         if action == "status":
             return progress()
@@ -214,8 +237,17 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
             )
             for edition in editions
         ]
+    if action == "site":
+        if not options["source"]:
+            raise ValueError("Select the public result site")
+        return [seed_site(options["source"], edition) for edition in editions]
+    if action == "recheck":
+        return [recheck_edition(edition) for edition in editions]
     if action == "status":
-        return [edition_summary(edition) for edition in editions]
+        return [
+            {**edition_summary(edition), "sites": site_summary(edition)}
+            for edition in editions
+        ]
     if action == "lineups":
         return [queue_edition_lineups(edition) for edition in editions]
     if action == "log" and len(editions) == 1 and options["output"]:

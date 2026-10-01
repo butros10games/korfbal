@@ -28,7 +28,12 @@ from apps.competition.services.lineups import import_lineup
 from apps.schedule.models import Season
 
 
-PROVIDERS = {"app", "dataservice", "archive"}
+# Public result sites that still hold seasons the app no longer serves: KNKV's
+# former competition site and korfbal-uitslagen.nl (see history_sites.py).
+SITE_PROVIDERS = {"korfbalnl", "uitslagen"}
+PROVIDERS = {"app", "dataservice", "archive", *SITE_PROVIDERS}
+# Matches that do not come from the provider of record carry this ID prefix.
+ARCHIVE_PREFIX = "archive:"
 KINDS = {
     "match",
     "pool",
@@ -40,6 +45,9 @@ KINDS = {
     "edition_pool",
     "edition_scan",
     "lineup",
+    "catalogue",
+    "club_matches",
+    "match_page",
 }
 # Season-scoped app discovery: a team's poules, then a poule's results. The
 # scan marker is never fetched; it records an edition's poule scan window.

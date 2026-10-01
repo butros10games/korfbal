@@ -110,6 +110,15 @@ SPORTLINK_HISTORY_REQUEST_SPACING = max(
     0, int(env("SPORTLINK_HISTORY_REQUEST_SPACING", "1"))
 )
 
+# Finished editions the app serves no (or partial) results for. A weekly task
+# reads a few of their empty checkpoints again and imports the edition once the
+# provider serves it; blank disables the recheck.
+SPORTLINK_HISTORY_RECHECK_EDITIONS = [
+    int(edition)
+    for edition in env("SPORTLINK_HISTORY_RECHECK_EDITIONS", "").split(",")
+    if edition.strip()
+]
+
 # Bound each worker turn; the shared lease skips overlapping heartbeats.
 SPORTLINK_SYNC_MAX_SECONDS = max(
     1, min(240, int(env("SPORTLINK_SYNC_MAX_SECONDS", "240")))

@@ -1,0 +1,466 @@
+"""Seasons the KNKV app no longer serves, read from two public result sites.
+
+``korfbalnl`` is KNKV's former competition site (competitie.korfbal.nl), which
+still holds November 2016 to June 2022. ``uitslagen`` is korfbal-uitslagen.nl,
+which holds 2025-2026. Both use Sportlink's poule numbers and club codes, so
+their results land in the same poules and clubs as provider data. Their matches
+keep an ``archive:`` ID: they have no lineups, and the provider's own record
+replaces them when the app serves the poule again.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Iterable
+from datetime import date, timedelta
+import re
+from typing import Any
+
+from django.db.models import Count
+from django.utils import timezone
+
+from apps.competition.models import (
+    Club,
+    HistoricalDiscovery,
+    HistoricalResource,
+    Match,
+    Team,
+)
+from apps.competition.services.history import (
+    ARCHIVE_PREFIX,
+    EDITION_KINDS,
+    SITE_PROVIDERS,
+    resource_key,
+    validate_identity,
+)
+from apps.competition.services.history_editions import (
+    SPORTS,
+    edition_scopes,
+    edition_seasons,
+    prepare_edition,
+    route,
+)
+from apps.competition.services.importer import Importer
+from apps.schedule.models import Season
+
+
+KORFBALNL, UITSLAGEN = "korfbalnl", "uitslagen"
+# Rows per korfbal-uitslagen.nl page: its API returns at most this many.
+PAGE_SIZE = 1000
+NAMESPACES = {KORFBALNL: "knkv", UITSLAGEN: "ku"}
+REFERENCES = {
+    KORFBALNL: "https://competitie.korfbal.nl/",
+    UITSLAGEN: "https://korfbal-uitslagen.nl/",
+}
+# The first checkpoint of each source and its fixed identifier (None: the edition).
+FIRST_CHECKPOINT = {KORFBALNL: ("catalogue", None), UITSLAGEN: ("match_page", "0")}
+PLAYED = "uitgespeeld"
+
+
+def edition_interval(anchor: Season) -> tuple[date, date]:
+    """Return an edition's first and last day, never later than yesterday."""
+    edition = anchor.start_date.year
+    return (
+        date(edition, 7, 1),
+        min(date(edition + 1, 6, 30), timezone.localdate() - timedelta(days=1)),
+    )
+
+
+def queue(
+    anchor: Season,
+    provider: str,
+    kind: str,
+    source_ids: Iterable[str],
+    *,
+    parent: HistoricalResource | None,
+) -> int:
+    """Queue site checkpoints in bulk; completed work is never reset.
+
+    Returns:
+        The number of newly queued checkpoints.
+
+    """
+    start, end = edition_interval(anchor)
+    keys = {}
+    for source_id in source_ids:
+        validate_identity(provider, kind, source_id)
+        keys[resource_key(anchor, provider, kind, source_id, (start, end))] = source_id
+    existing = set(
+        HistoricalResource.objects.filter(key__in=keys).values_list("key", flat=True)
+    )
+    HistoricalResource.objects.bulk_create(
+        [
+            HistoricalResource(
+                key=key,
+                season=anchor,
+                provider=provider,
+                kind=kind,
+                source_id=source_id,
+                start_date=start,
+                end_date=end,
+            )
+            for key, source_id in keys.items()
+            if key not in existing
+        ],
+        ignore_conflicts=True,
+        batch_size=1000,
+    )
+    HistoricalDiscovery.objects.bulk_create(
+        [
+            HistoricalDiscovery(
+                resource_id=pk, parent=parent, reference=REFERENCES[provider]
+            )
+            for pk in HistoricalResource.objects.filter(key__in=keys).values_list(
+                "pk", flat=True
+            )
+        ],
+        ignore_conflicts=True,
+        batch_size=1000,
+    )
+    return len(keys.keys() - existing)
+
+
+def seed_site(provider: str, edition: int) -> dict[str, Any]:
+    """Queue one edition from a public result site.
+
+    The app stays the preferred source: an edition whose app discovery is still
+    running waits, so the site only fills poules the app did not deliver.
+
+    Raises:
+        ValueError: The source is unknown or the edition is not finished.
+
+    """
+    if provider not in SITE_PROVIDERS:
+        raise ValueError("Unknown public result site")
+    anchor = prepare_edition(edition).indoor
+    result = {"edition": edition, "source": provider, "queued": 0}
+    if HistoricalResource.objects.filter(
+        season=anchor, provider="app", kind__in=EDITION_KINDS, state="pending"
+    ).exists():
+        return {**result, "reason": "app_discovery_pending"}
+    kind, source_id = FIRST_CHECKPOINT[provider]
+    result["queued"] = queue(
+        anchor, provider, kind, [source_id or str(edition)], parent=None
+    )
+    return result
+
+
+def team_name(name: str, source_club: str, club: Club | None) -> str:
+    """Name a team after its catalogue club, whatever sponsor the site lists.
+
+    Publication recognises a club's team by the club name before its designation;
+    a sponsor name from another year would otherwise publish a second team.
+    """
+    prefix = source_club.strip() + " "
+    if club is None or not club.name or not prefix.strip():
+        return name
+    return f"{club.name} {name[len(prefix) :]}" if name.startswith(prefix) else name
+
+
+def side_payload(
+    provider: str, team: dict[str, Any], club: dict[str, str], sport: str
+) -> dict[str, Any]:
+    """Build one team of a normalized result row."""
+    identifier = str(team["ref_id"])
+    if provider == KORFBALNL:
+        # Numeric Sportlink team codes are not the app's public team IDs.
+        identifier = f"{ARCHIVE_PREFIX}{NAMESPACES[provider]}:{identifier}"
+    return {
+        "PublicTeamId": identifier,
+        "TeamName": team["name"],
+        "SportId": sport,
+        "Club": {
+            "ClubId": club["ref_id"],
+            "ClubName": club["name"],
+            "City": club.get("city") or "",
+        },
+    }
+
+
+def score(value: object) -> int | None:
+    """Accept only a real, nonnegative score."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def result(sides: list[dict], scores: list[int | None]) -> dict[str, Any]:
+    """Pair both teams with their final scores."""
+    return {
+        "HomeTeam": sides[0],
+        "AwayTeam": sides[1],
+        "HomeResult": {"Score": scores[0]},
+        "AwayResult": {"Score": scores[1]},
+    }
+
+
+def payload(
+    provider: str, identifier: object, when: str, pool: dict[str, str], played: dict
+) -> dict[str, Any]:
+    """Build a final result in the provider's row shape, with an archive ID."""
+    return {
+        "PublicMatchId": f"{ARCHIVE_PREFIX}{NAMESPACES[provider]}:{identifier}",
+        "MatchDateTime": when,
+        "Status": "FINAL",
+        "AutoResult": None,
+        "Pool": pool,
+        **played,
+    }
+
+
+def korfbalnl_row(row: dict[str, Any], catalogue: dict[str, Any]) -> dict | str:
+    """Normalize one competitie.korfbal.nl match, or name the reason to skip it."""
+    if str((row.get("status") or {}).get("game") or "").casefold() != PLAYED:
+        return "not_played"
+    sport = catalogue["sports"].get((row.get("sport") or {}).get("_id"))
+    if sport not in SPORTS:
+        return "unsupported_sport"
+    clubs = [
+        catalogue["clubs"].get((row["clubs"][side] or {}).get("_id"))
+        for side in ("home", "away")
+    ]
+    if not all(clubs):
+        return "club_unknown"
+    stats = row.get("stats") or {}
+    scores = [score((stats.get(side) or {}).get("score")) for side in ("home", "away")]
+    poule = row.get("poule") or {}
+    teams = [row["teams"][side] for side in ("home", "away")]
+    if None in scores or not all(team.get("ref_id") for team in teams):
+        return "incomplete"
+    if not re.fullmatch(r"[0-9]+", str(poule.get("ref_id") or "")):
+        return "poule_unknown"
+    name, class_name = catalogue["pools"].get(str(poule["ref_id"])) or (
+        poule.get("name") or "",
+        "",
+    )
+    sides = [
+        side_payload(
+            KORFBALNL,
+            team,
+            dict(zip(("ref_id", "name", "city"), club, strict=True)),
+            sport,
+        )
+        for team, club in zip(teams, clubs, strict=True)
+    ]
+    return payload(
+        KORFBALNL,
+        row.get("ref_id") or row["_id"],
+        row["date"],
+        {"PoolId": str(poule["ref_id"]), "PoolName": name, "ClassName": class_name},
+        result(sides, scores),
+    )
+
+
+def uitslagen_row(row: dict[str, Any]) -> dict | str:
+    """Normalize one korfbal-uitslagen.nl match, or name the reason to skip it."""
+    scores = [score(row.get("home_score")), score(row.get("away_score"))]
+    if None in scores:
+        return "not_played"
+    pool = row.get("pool") or {}
+    sport = ((pool.get("phase") or {}).get("sport") or {}).get("ref_id")
+    if sport not in SPORTS:
+        return "unsupported_sport"
+    if not re.fullmatch(r"[0-9]+", str(pool.get("ref_id") or "")):
+        return "poule_unknown"
+    teams = [row.get(side) or {} for side in ("home", "away")]
+    if not all(
+        re.fullmatch(r"T[0-9]+", str(team.get("ref_id") or ""))
+        and (team.get("club") or {}).get("ref_id")
+        for team in teams
+    ):
+        return "team_unknown"
+    sides = [
+        side_payload(
+            UITSLAGEN,
+            team,
+            {"ref_id": team["club"]["ref_id"], "name": team["club"].get("name") or ""},
+            sport,
+        )
+        for team in teams
+    ]
+    return payload(
+        UITSLAGEN,
+        row["id"],
+        row["date"],
+        {
+            "PoolId": str(pool["ref_id"]),
+            "PoolName": pool.get("name") or "",
+            "ClassName": (pool.get("division") or {}).get("name") or "",
+        },
+        result(sides, scores),
+    )
+
+
+def apply_catalogue(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Keep the site's club, sport and poule names and queue one read per club."""
+    clubs = {
+        row["_id"]: [
+            row["ref_id"],
+            row.get("name") or "",
+            (row.get("address") or {}).get("city") or "",
+        ]
+        for row in data["clubs"]
+        if row.get("ref_id")
+    }
+    resource.evidence = {
+        "sports": {row["_id"]: row.get("ref_id") for row in data["sports"]},
+        "clubs": clubs,
+        "pools": {
+            str(row["ref_id"]): [
+                row.get("name") or "",
+                (row.get("division") or {}).get("name") or "",
+            ]
+            for row in data["poules"]
+            if row.get("ref_id")
+        },
+    }
+    queue(resource.season, KORFBALNL, "club_matches", sorted(clubs), parent=resource)
+    resource.coverage = "complete" if clubs else "empty"
+
+
+def covered_pools(season: Season, pool_ids: set[str]) -> set[str]:
+    """Poules of a season the provider already delivered matches for."""
+    return set(
+        Match.objects
+        .filter(season=season, pool__external_id__in=pool_ids)
+        .exclude(external_id__startswith=ARCHIVE_PREFIX)
+        .values_list("pool__external_id", flat=True)
+        .distinct()
+    )
+
+
+def import_site_rows(
+    resource: HistoricalResource, rows: list[dict | str]
+) -> dict[str, Any]:
+    """Import normalized rows into their playing seasons; the app's poules win.
+
+    Returns:
+        Imported counts per season name and skipped counts per reason.
+
+    """
+    seasons = edition_seasons(resource)
+    skipped: Counter[str] = Counter(row for row in rows if isinstance(row, str))
+    unique = {row["PublicMatchId"]: row for row in rows if isinstance(row, dict)}
+    clubs = {
+        club.external_id: club
+        for club in Club.objects.filter(
+            external_id__in={
+                row[side]["Club"]["ClubId"]
+                for row in unique.values()
+                for side in ("HomeTeam", "AwayTeam")
+            }
+        )
+    }
+    # Sportlink's public team IDs belong to one discipline; a site must not move
+    # a team. The former KNKV site's team codes cover both disciplines.
+    sports = dict(
+        Team.objects.filter(
+            external_id__in={
+                row[side]["PublicTeamId"]
+                for row in unique.values()
+                for side in ("HomeTeam", "AwayTeam")
+                if not row[side]["PublicTeamId"].startswith(ARCHIVE_PREFIX)
+            }
+        ).values_list("external_id", "sport")
+    )
+    groups: dict[Any, tuple[Season, list[dict]]] = {}
+    for row in unique.values():
+        target, _, reason = route(seasons, row)
+        if target is not None and any(
+            sports.get(row[side]["PublicTeamId"], row[side]["SportId"])
+            != row[side]["SportId"]
+            for side in ("HomeTeam", "AwayTeam")
+        ):
+            target, reason = None, "sport_mismatch"
+        if target is None:
+            skipped[reason] += 1
+            continue
+        for side in ("HomeTeam", "AwayTeam"):
+            team = row[side]
+            team["TeamName"] = team_name(
+                team["TeamName"],
+                team["Club"]["ClubName"],
+                clubs.get(team["Club"]["ClubId"]),
+            )
+        groups.setdefault(target.pk, (target, []))[1].append(row)
+    imported = {}
+    now = timezone.now()
+    for target, group in groups.values():
+        covered = covered_pools(target, {row["Pool"]["PoolId"] for row in group})
+        fresh = [row for row in group if row["Pool"]["PoolId"] not in covered]
+        skipped["app_has_poule"] += len(group) - len(fresh)
+        if fresh:
+            Importer(target, now, discover=False).apply(
+                "club_results", "", {"MatchResult": fresh}
+            )
+            imported[target.name] = len(fresh)
+    return {"imported": imported, "skipped": dict(+skipped)}
+
+
+def apply_site(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Apply one public result site response.
+
+    Raises:
+        ValueError: The checkpoint kind does not belong to a result site.
+
+    """
+    if resource.kind == "catalogue":
+        apply_catalogue(resource, data)
+        return
+    if resource.kind == "club_matches":
+        catalogue = HistoricalResource.objects.get(
+            season=resource.season, provider=KORFBALNL, kind="catalogue"
+        ).evidence
+        rows = [
+            korfbalnl_row(row, catalogue)
+            for week in data["weeks"]
+            for row in week["matches"]
+        ]
+    elif resource.kind == "match_page":
+        rows = [uitslagen_row(row) for row in data["rows"]]
+        if len(rows) >= PAGE_SIZE:
+            # Pages follow the site's match number; the last one is the cursor.
+            queue(
+                resource.season,
+                UITSLAGEN,
+                "match_page",
+                [str(data["rows"][-1]["id"])],
+                parent=resource,
+            )
+    else:
+        raise ValueError("Unsupported result site resource")
+    resource.evidence = {"rows": len(rows), **import_site_rows(resource, rows)}
+    # A site is not the provider of record: its coverage is never called complete.
+    resource.coverage = "partial" if resource.evidence["imported"] else "empty"
+
+
+def site_summary(edition: int) -> dict[str, Any]:
+    """Report site checkpoints and archive matches of one edition."""
+    scopes = edition_scopes(edition)
+    resources = HistoricalResource.objects.filter(
+        season__in=scopes, provider__in=SITE_PROVIDERS
+    )
+    checkpoints: dict[str, dict[str, int]] = {}
+    for provider, kind, state, count in (
+        resources
+        .values_list("provider", "kind", "state")
+        .annotate(n=Count("pk"))
+        .order_by("provider", "kind", "state")
+    ):
+        checkpoints.setdefault(provider, {})[f"{kind}/{state}"] = count
+    skipped: Counter[str] = Counter()
+    for evidence in resources.exclude(kind="catalogue").values_list(
+        "evidence", flat=True
+    ):
+        skipped.update(evidence.get("skipped") or {})
+    return {
+        "checkpoints": checkpoints,
+        "matches": dict(
+            Match.objects
+            .filter(season__in=scopes, external_id__startswith=ARCHIVE_PREFIX)
+            .values_list("season__name")
+            .annotate(n=Count("pk"))
+            .order_by("season__name")
+        ),
+        "skipped": dict(skipped),
+    }

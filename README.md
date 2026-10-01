@@ -1499,6 +1499,30 @@ Archive publication labels scores `archive` and cannot overwrite an existing nat
 match's scores. Final standings alone cannot reconstruct individual matches: there
 is deliberately no automatic score fabrication or general PDF scraper.
 
+#### Seasons the app does not serve
+
+The app answers nothing for some finished editions (2023-2024, 2025-2026, most of
+2021-2022 and autumn 2024, measured October 2026) although Sportlink still holds
+them. Two public result sites fill part of that, and a recheck imports an edition
+from the app itself as soon as the provider serves it again.
+
+- `import_competition_history site --source korfbalnl --edition 2021` reads KNKV's
+  former competition site (`competitie.korfbal.nl`, November 2016 to June 2022): one
+  catalogue read, then one read per club.
+- `import_competition_history site --source uitslagen --edition 2025` reads
+  korfbal-uitslagen.nl in pages of 1000 matches (autumn 2025 and indoor 2025-2026).
+- `import_competition_history recheck --edition 2023 2025` reads a few empty
+  checkpoints again. A hit reopens the whole edition. Set
+  `SPORTLINK_HISTORY_RECHECK_EDITIONS` to repeat this every Monday.
+
+Site requests run in the normal history turns with the history pacing. Both sites
+use Sportlink's poule numbers and club codes, so results land in the provider's
+poules. Only played matches are imported, as `archive:` records (score source
+`archive`, no lineups). A site never fills a poule the app delivered, and an edition
+waits while its app discovery is running. When the app later delivers the same
+fixture, its record replaces the archive record and keeps the published match.
+`status --edition` reports site progress under `sites`.
+
 Invoke `run` periodically through the existing deployment scheduler (for example,
 every 15 minutes). Credential paths may instead come from
 `SPORTLINK_HISTORY_SESSION_FILE` / `SPORTLINK_HISTORY_DATASERVICE_FILE`. Each run is

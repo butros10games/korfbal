@@ -8,9 +8,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.competition.models import HistoricalResource, SyncLease
-from apps.competition.services.history import EDITION_KINDS, apply_app
+from apps.competition.services.history import (
+    EDITION_KINDS,
+    SITE_PROVIDERS,
+    apply_app,
+)
 from apps.competition.services.history_dataservice import apply_dataservice
 from apps.competition.services.history_editions import apply_edition
+from apps.competition.services.history_sites import apply_site
 
 
 @transaction.atomic
@@ -26,6 +31,8 @@ def checkpoint(
         apply_edition(resource, data)
     elif resource.provider == "app":
         apply_app(resource, data)
+    elif resource.provider in SITE_PROVIDERS:
+        apply_site(resource, data)
     else:
         apply_dataservice(resource, data)
     if resource.state == "pending":

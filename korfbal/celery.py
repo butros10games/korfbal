@@ -3,6 +3,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 # Set the default Django settings module for the 'celery' program.
@@ -54,5 +55,10 @@ app.conf.beat_schedule = {
         "task": "apps.competition.tasks.sync_competition_history",
         "schedule": 60.0,
         "options": {"expires": 300, "queue": "competition"},
+    },
+    "recheck-competition-history": {
+        "task": "apps.competition.tasks.recheck_competition_history",
+        "schedule": crontab(minute="0", hour="4", day_of_week="monday"),
+        "options": {"expires": 3600, "queue": "competition"},
     },
 }

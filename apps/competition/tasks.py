@@ -23,6 +23,10 @@ from apps.competition.models import (
     SyncLease,
     SyncResource,
 )
+from apps.competition.services.history_editions import (
+    current_edition,
+    recheck_edition,
+)
 from apps.competition.services.history_worker import live_work_waiting, run_history
 from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
@@ -214,6 +218,23 @@ def sync_competition_history() -> dict[str, object]:
     if summary.get("reason") not in {"provider_lease_busy", "current_work_due"}:
         cache.set(HISTORY_TURN_KEY, time.time(), timeout=3600)
     return {"status": "ran", **summary}
+
+
+@shared_task(ignore_result=True)
+def recheck_competition_history() -> dict[str, object]:
+    """Queue a small recheck of editions the provider did not serve.
+
+    Only checkpoints change here; the provider turn sends the requests.
+    """
+    if not settings.SPORTLINK_SYNC_ENABLED:
+        return {"status": "disabled"}
+    editions = [
+        recheck_edition(edition)
+        for edition in settings.SPORTLINK_HISTORY_RECHECK_EDITIONS
+        if edition < current_edition()
+    ]
+    logger.info("Competition history recheck: %s", editions)
+    return {"status": "queued", "editions": editions}
 
 
 def _provider_clients() -> tuple[CompetitionClient, HistoricalClient]:

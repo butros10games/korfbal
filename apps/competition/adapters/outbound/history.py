@@ -9,6 +9,7 @@ from typing import Any
 from django.utils import timezone
 import requests
 
+from apps.competition.adapters.outbound.public_sites import PublicSiteClient
 from apps.competition.adapters.outbound.sportlink import (
     BASE_URL,
     SportlinkClient,
@@ -19,6 +20,7 @@ from apps.competition.models import HistoricalResource
 from apps.competition.services.history import (
     DATA_ROW_LIMITS,
     EDITION_KINDS,
+    SITE_PROVIDERS,
     HistoryUnavailableError,
 )
 
@@ -68,10 +70,14 @@ class HistoryClient:
         self.app = app
         self.dataservice_id = dataservice_id
         self.session = requests.Session()
+        # Opened on first use: most batches never read a public result site.
+        self.sites: PublicSiteClient | None = None
 
     def close(self) -> None:
         """Release both connections without retaining credentials in checkpoints."""
         self.session.close()
+        if self.sites:
+            self.sites.close()
         if self.app:
             self.app.close()
 
@@ -84,6 +90,9 @@ class HistoryClient:
         """
         if resource.provider == "app":
             return self.fetch_app(resource, gate)
+        if resource.provider in SITE_PROVIDERS:
+            self.sites = self.sites or PublicSiteClient()
+            return self.sites.fetch(resource, gate)
         if resource.provider != "dataservice":
             raise HistoryUnavailableError("archive_has_no_network_endpoint")
         if resource.kind == "pool":

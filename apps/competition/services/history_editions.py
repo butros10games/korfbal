@@ -29,6 +29,7 @@ from apps.competition.models import (
     Team,
 )
 from apps.competition.services.history import (
+    ARCHIVE_PREFIX,
     EDITION_KINDS,
     reference_label,
     resource_key,
@@ -48,6 +49,8 @@ SCAN_MARGIN = 200
 AUTUMN_FIRST_MONTH = 7
 # The oldest edition the app's season list offers.
 FIRST_EDITION = 2006
+# Empty checkpoints per kind that one recheck of an unserved edition reads again.
+RECHECK_SAMPLE = 10
 SPORTS = (OUTDOOR, INDOOR)
 
 
@@ -419,10 +422,71 @@ def apply_edition(resource: HistoricalResource, data: dict[str, Any]) -> None:
         raise ValueError("Sportlink returned an application error")
     seasons = edition_seasons(resource)
     marker = scan_marker(resource.season)
+    was_empty = resource.coverage == "empty"
     if resource.kind == "edition_team":
         apply_team(resource, data, seasons, scan=marker is not None)
     else:
         apply_pool(resource, data, seasons, marker)
+    if was_empty and resource.coverage != "empty":
+        reopen_edition(resource)
+
+
+def edition_discovery(anchor: Season) -> QuerySet[HistoricalResource]:
+    """Return an edition's team and poule checkpoints."""
+    return HistoricalResource.objects.filter(
+        season=anchor, provider="app", kind__in=EDITION_KINDS
+    )
+
+
+def recheck_edition(edition: int, sample: int = RECHECK_SAMPLE) -> dict[str, Any]:
+    """Read a few empty checkpoints of an edition again, oldest check first.
+
+    The provider serves nothing for some finished editions although it still
+    holds them. A recheck that finds data reopens the whole edition, so a
+    restored edition is imported without anyone watching for it. An edition
+    without checkpoints is queued like a new one.
+
+    Returns:
+        The edition and how many checkpoints were queued again.
+
+    """
+    anchor = prepare_edition(edition).indoor
+    discovery = edition_discovery(anchor)
+    if not discovery.exists():
+        seeded = seed_edition(edition)
+        return {"edition": edition, "rechecked": sum(seeded["teams_queued"].values())}
+    if discovery.filter(state="pending").exists():
+        return {"edition": edition, "rechecked": 0, "reason": "discovery_pending"}
+    empty = discovery.filter(state="fetched", coverage="empty")
+    picked = [
+        pk
+        for kind in sorted(EDITION_KINDS)
+        for pk in empty
+        .filter(kind=kind)
+        .order_by("fetched_at", "pk")
+        .values_list("pk", flat=True)[:sample]
+    ]
+    # Coverage stays "empty": apply_edition recognises the recheck by it.
+    rechecked = HistoricalResource.objects.filter(pk__in=picked).update(
+        state="pending", attempts=0, next_attempt_at=timezone.now()
+    )
+    return {"edition": edition, "rechecked": rechecked}
+
+
+def reopen_edition(resource: HistoricalResource) -> int:
+    """Queue every empty checkpoint again once the provider serves the edition."""
+    return (
+        edition_discovery(resource.season)
+        .filter(state="fetched", coverage="empty")
+        .exclude(pk=resource.pk)
+        .update(
+            state="pending",
+            coverage="unknown",
+            reason="",
+            attempts=0,
+            next_attempt_at=timezone.now(),
+        )
+    )
 
 
 def apply_team(
@@ -614,6 +678,7 @@ def import_rows(
             )
         else:
             importer.apply("club_results", "", {"MatchResult": group})
+        supersede_archive(target, [str(row["PublicMatchId"]) for row in group])
         imported[key] = {
             match.external_id: match
             for match in Match.objects.filter(
@@ -627,6 +692,56 @@ def import_rows(
         "imported": {target.name: len(group) for target, group in groups.values()},
         "skipped": dict(Counter(reason for _, reason in skipped)),
     }
+
+
+def supersede_archive(target: Season, identifiers: list[str]) -> int:
+    """Replace archive records of fixtures the provider now delivers itself.
+
+    An archive record (a public result site, see history_sites.py) is the same
+    fixture when both club teams and the kickoff agree. The provider's record
+    inherits its published native fixture, so publication updates that fixture
+    instead of reporting a second claimant.
+
+    Returns:
+        The number of archive records removed.
+
+    """
+    fields = ("pk", "home_team__group_id", "away_team__group_id", "starts_at")
+    delivered = {
+        tuple(row[1:]): row[0]
+        for row in Match.objects.filter(
+            season=target, external_id__in=identifiers, local_match=None
+        ).values_list(*fields)
+    }
+    if not delivered:
+        return 0
+    removed = 0
+    # These rows are deleted, so acquire the full lock before retiring their IDs.
+    for twin in (
+        Match.objects
+        .select_for_update(of=("self",))
+        .select_related("home_team", "away_team")
+        .filter(
+            season=target,
+            external_id__startswith=ARCHIVE_PREFIX,
+            starts_at__in={key[2] for key in delivered},
+        )
+    ):
+        key = (twin.home_team.group_id, twin.away_team.group_id, twin.starts_at)
+        if None in key or key not in delivered:
+            continue
+        successor = delivered.pop(key)
+        link = {
+            "local_match_id": twin.local_match_id,
+            "local_created": twin.local_created,
+            "published_state": twin.published_state,
+        }
+        twin.delete()
+        removed += 1
+        if link["local_match_id"] is not None:
+            # Unpublished again: the next pass adopts the fixture for the provider.
+            Match.objects.filter(pk=successor).update(**link, published_at=None)
+    return removed
 
 
 def log_matches(

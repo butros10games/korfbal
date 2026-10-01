@@ -237,6 +237,11 @@ misleading provider 500/603 errors.
   into its three playing seasons (outdoor summer/autumn, indoor, outdoor spring/summer)
   by sport and date. Discover them by scanning the edition's dense poule numbers;
   team-based discovery misses youth poules because youth team IDs change yearly.
+- Editions the app answers with nothing are filled from public result sites as
+  `archive:` matches (`history_sites.py`). Keep the app authoritative: a site must
+  not fill a poule the app delivered, and a provider record replaces its archive twin
+  (same club teams and kickoff) instead of becoming a second claimant of the fixture.
+  Read each site's published key at runtime; never commit it.
 - All Sportlink batch traffic goes through one provider turn (`provider_scheduler.py`):
   add new provider work as a source there, ranked by urgency and share, instead of a
   separate beat task that claims the lease for whole turns. Publication runs beside it
