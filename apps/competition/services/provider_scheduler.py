@@ -45,6 +45,7 @@ from apps.schedule.models import Season
 
 
 LEASE_SECONDS = 120
+URGENT_RECHECK_SECONDS = 10
 LIVE, HISTORY = "live", "history"
 
 
@@ -165,6 +166,11 @@ class ProviderTurn:
         self.history: HistoryWork | None = None
         # The request window ended with work still open: start the next turn.
         self.more_work = False
+        # Live lane: seconds between routine live requests, and the next slot.
+        self.live_spacing = 0
+        self.live_next = 0.0
+        self.live_deferred = False
+        self.urgent_checked: tuple[float, bool] | None = None
 
     def run(self) -> dict[str, object]:
         """Run the turn under the lease and release it with any cooldown.
@@ -218,13 +224,16 @@ class ProviderTurn:
             enqueue(self.season, "clubs")
             progress("planning", summary)
             planner = PollPlanner(self.season, timezone.now())
+            # Live keeps its own rhythm in a lane; the shared provider clock only
+            # enforces the smallest gap, so history can fill the time between.
+            self.live_spacing = backfill_spacing(planner)
             gate = TrafficGate(
                 self.options.live_budget,
                 owner,
                 deadline=deadline,
-                spacing=backfill_spacing(planner),
+                spacing=min(self.live_spacing, history_spacing()),
             )
-            summary["request_spacing_seconds"] = gate.spacing
+            summary["request_spacing_seconds"] = self.live_spacing
             self.live = LiveWork(planner, client, gate, summary)
         else:
             self.state.open[LIVE] = False
@@ -242,24 +251,50 @@ class ProviderTurn:
         self.state.open[HISTORY] = self.history is not None and self.history.available()
 
     def next_source(self) -> str | None:
-        """Time-critical live work first, otherwise the configured share."""
+        """Time-critical live work first, otherwise the share among ready lanes.
+
+        Routine live requests keep their own spacing; until the live lane is
+        ready again, history uses the time. With only live work left, wait for
+        its lane (or close it when the next slot falls after the window).
+        """
+        live_open, history_open = self.state.open[LIVE], self.state.open[HISTORY]
+        live_ready = live_open and time.monotonic() >= self.live_next
+        if live_open and not live_ready and history_open:
+            return LIVE if self.urgent() else HISTORY
+        if live_open and not live_ready:
+            if self.urgent():
+                return LIVE
+            if self.live_next >= self.started + self.options.request_seconds:
+                # Live work remains for the next turn.
+                self.live_deferred = True
+                self.state.open[LIVE] = False
+                return None
+            time.sleep(max(0.0, self.live_next - time.monotonic()))
+            return LIVE
         source = choose(self.state, self.options.history_share)
-        if (
-            source == HISTORY
-            and self.live is not None
-            and self.state.open[LIVE]
-            and self.live.urgent()
-        ):
+        if source == HISTORY and live_open and self.urgent():
             return LIVE
         return source
+
+    def urgent(self) -> bool:
+        """Tell whether time-critical live work waits, rechecked at most every 10 s.
+
+        The check walks the season's whole planner (about 0.2 s on production);
+        urgent work appears on a scale of minutes. A live request clears the cache.
+        """
+        if self.live is None:
+            return False
+        now = time.monotonic()
+        if self.urgent_checked is None or now - self.urgent_checked[0] >= (
+            URGENT_RECHECK_SECONDS
+        ):
+            self.urgent_checked = (now, self.live.urgent())
+        return self.urgent_checked[1]
 
     def loop(self) -> None:
         """Pick and run one request at a time until work, budget or time runs out."""
         deadline = self.started + self.options.request_seconds
-        while True:
-            if time.monotonic() >= deadline:
-                self.more_work = any(self.state.open.values())
-                break
+        while time.monotonic() < deadline:
             if match_forms_due():
                 # Finish the current request, then let the form worker in.
                 self.summary["deferred"] = 1
@@ -272,6 +307,10 @@ class ProviderTurn:
                     break
             elif not self.run_history():
                 break
+        # The window usually ends inside a request (a deadline error); any source
+        # still open chains the next turn. A cooldown or due form makes that turn
+        # return at once.
+        self.more_work = self.live_deferred or any(self.state.open.values())
 
     def run_live(self) -> bool:
         """Run one live feed.
@@ -282,6 +321,8 @@ class ProviderTurn:
         """
         assert self.live is not None
         ran, cooldown = self.live.run_next()
+        self.live_next = time.monotonic() + self.live_spacing
+        self.urgent_checked = None
         if not ran or self.live.budget_spent():
             self.state.open[LIVE] = False
         if ran:

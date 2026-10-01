@@ -7,7 +7,11 @@ from unittest.mock import Mock, patch
 from django.utils import timezone
 import pytest
 
-from apps.competition.application.ports import FetchResult, ProviderCooldownError
+from apps.competition.application.ports import (
+    FetchResult,
+    ProviderCooldownError,
+    RequestBudgetError,
+)
 from apps.competition.models import HistoricalResource, SyncLease, SyncResource
 from apps.competition.services.history import HistoryUnavailableError
 from apps.competition.services.history_editions import prepare_edition, seed_many
@@ -302,3 +306,45 @@ def test_history_source_access_problems_leave_live_work_running(
     result = turn(live_season, recorder)
     assert result["turn_requests"] == {LIVE: 2, HISTORY: 1}
     assert SyncLease.objects.get(key="sportlink").expires_at <= timezone.now()
+
+
+@pytest.mark.django_db
+def test_window_ending_inside_a_request_still_chains_the_next_turn(
+    live_season: Season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The request deadline usually hits in the gate, not at the loop's top."""
+    routine_feeds(live_season, 3)
+    calls = {"n": 0}
+    original = TrafficGate.before_request
+
+    def deadline_on_second(gate: TrafficGate) -> None:
+        calls["n"] += 1
+        if calls["n"] == len(["first", "second"]):
+            raise RequestBudgetError(timezone.now())
+        original(gate)
+
+    monkeypatch.setattr(TrafficGate, "before_request", deadline_on_second)
+    result = turn(live_season, Recorder())
+    assert result["turn_requests"][LIVE] == len(["first", "second"])
+    assert result["more_work"]
+
+
+@pytest.mark.django_db
+def test_history_fills_the_time_between_paced_live_requests(
+    settings: object, live_season: Season
+) -> None:
+    """Live keeps its own spacing; history uses the gaps instead of waiting."""
+    settings.SPORTLINK_REQUEST_SPACING = 30
+    routine_feeds(live_season, 2)
+    history_pools(4)
+    recorder = Recorder()
+    result = turn(live_season, recorder, request_seconds=20)
+    assert [source for source, _ in recorder.log] == [
+        HISTORY,
+        LIVE,
+        HISTORY,
+        HISTORY,
+        HISTORY,
+    ]
+    # The second live feed waits for its lane in the next turn.
+    assert result["more_work"]
