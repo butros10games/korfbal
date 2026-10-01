@@ -2,20 +2,63 @@
 
 from __future__ import annotations
 
+from django.db.models import Max, Min, Q
 from django.utils import timezone
 
-from apps.schedule.models import Season
+from apps.schedule.models import Match, Season
+
+
+def _playing_season(active: list[Season]) -> Season:
+    """Choose among overlapping running seasons by where matches are played.
+
+    Indoor seasons start inside the outdoor edition while outdoor fixtures are
+    still being played, so date ranges alone cannot decide which one is current.
+    Prefer the season holding the next fixture, then the most recently played one,
+    and only then the latest-starting season.
+    """
+    by_start = sorted(
+        active,
+        key=lambda season: (
+            -season.start_date.toordinal(),
+            season.end_date,
+            str(season.pk),
+        ),
+    )
+    if len(by_start) == 1:
+        return by_start[0]
+    now = timezone.now()
+    activity = {
+        row["season_id"]: row
+        for row in Match.objects
+        .filter(season__in=by_start)
+        .values("season_id")
+        .annotate(
+            next_start=Min("start_time", filter=Q(start_time__gte=now)),
+            last_start=Max("start_time", filter=Q(start_time__lt=now)),
+        )
+    }
+    upcoming = [
+        season
+        for season in by_start
+        if activity.get(season.pk, {}).get("next_start") is not None
+    ]
+    if upcoming:
+        return min(upcoming, key=lambda season: activity[season.pk]["next_start"])
+    played = [
+        season
+        for season in by_start
+        if activity.get(season.pk, {}).get("last_start") is not None
+    ]
+    if played:
+        return max(played, key=lambda season: activity[season.pk]["last_start"])
+    return by_start[0]
 
 
 def current_season() -> Season | None:
-    """Return the season containing today's local date."""
+    """Return the running season where play currently takes place."""
     today = timezone.localdate()
-    return (
-        Season.objects
-        .filter(start_date__lte=today, end_date__gte=today)
-        .order_by("-start_date", "end_date", "pk")
-        .first()
-    )
+    active = list(Season.objects.filter(start_date__lte=today, end_date__gte=today))
+    return _playing_season(active) if active else None
 
 
 def most_recent_season() -> Season | None:
@@ -45,14 +88,7 @@ def default_season(seasons: list[Season]) -> Season | None:
         season for season in seasons if season.start_date <= today <= season.end_date
     ]
     if active:
-        return min(
-            active,
-            key=lambda season: (
-                -season.start_date.toordinal(),
-                season.end_date,
-                str(season.pk),
-            ),
-        )
+        return _playing_season(active)
     previous = [season for season in seasons if season.start_date <= today]
     return (
         max(previous, key=lambda season: (season.start_date, str(season.pk)))

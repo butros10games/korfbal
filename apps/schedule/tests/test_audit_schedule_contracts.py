@@ -359,6 +359,39 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
     ]
 
 
+def test_overlapping_seasons_follow_where_matches_are_played() -> None:
+    """A newly started indoor season waits for the outdoor fixtures to finish."""
+    graph = _schedule_graph(prefix="overlap")
+    today = timezone.localdate()
+    outdoor = graph.season
+    indoor = Season.objects.create(
+        name="overlap indoor",
+        start_date=today,
+        end_date=today + timedelta(days=200),
+    )
+    _match(graph, hours_from_now=-48, status="finished")
+    _match(graph, hours_from_now=72)
+    Match.objects.create(
+        season=indoor,
+        home_team=graph.home,
+        away_team=graph.away,
+        start_time=timezone.now() + timedelta(days=30),
+    )
+
+    assert current_season() == outdoor
+    assert requested_or_default_season(None, [indoor, outdoor]) == outdoor
+    assert [
+        option["is_current"] for option in season_options_payload([indoor, outdoor])
+    ] == [False, True]
+
+    Match.objects.filter(season=outdoor).update(
+        start_time=timezone.now() - timedelta(days=1)
+    )
+
+    assert current_season() == indoor
+    assert requested_or_default_season(None, [indoor, outdoor]) == indoor
+
+
 def test_season_date_range_is_inclusive_at_both_boundaries() -> None:
     """One-day seasons are valid and are reported as current."""
     today = timezone.localdate()
