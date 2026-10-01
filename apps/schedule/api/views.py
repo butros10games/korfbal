@@ -37,6 +37,7 @@ from .match_viewset_event_writes import (
     PossessionChangeCreateResponseSerializer,
 )
 from .match_viewset_events import MatchEventsActionsMixin
+from .match_viewset_info import MatchInfoActionsMixin
 from .match_viewset_live import MatchLiveActionsMixin
 from .match_viewset_mvp import MatchMvpActionsMixin
 from .match_viewset_stats import MatchStatsActionsMixin
@@ -164,6 +165,7 @@ class MatchViewSet(
     MatchVideoPlaylistActionsMixin,
     MatchMvpActionsMixin,
     MatchStatsActionsMixin,
+    MatchInfoActionsMixin,
     MatchLiveActionsMixin,
     TrackerAccessActionsMixin,
     MatchEventsActionsMixin,

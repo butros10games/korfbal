@@ -88,6 +88,8 @@ class Club(models.Model):
     # its name comes from one of its team names.
     dissolved = models.BooleanField(default=False, db_default=False)
     city = models.CharField(max_length=255, blank=True)
+    # Provider ClubColors: home, away and reserve outfits (shirt, shorts, socks).
+    colors = models.JSONField(default=dict, blank=True)
     logo_bucket = models.CharField(max_length=80, blank=True)
     logo_hash = models.CharField(max_length=64, blank=True)
     cached_logo = models.CharField(max_length=1024, blank=True)

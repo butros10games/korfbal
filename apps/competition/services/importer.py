@@ -101,6 +101,29 @@ def club_with_name(team: dict[str, Any]) -> dict[str, Any]:
     return {**club, "Dissolved": True}
 
 
+OUTFITS = ("HomeOutfit", "AwayOutfit", "ReserveOutfit")
+OUTFIT_PARTS = ("Shirt", "Shorts", "Stocking")
+
+
+def club_colors(data: object) -> dict[str, dict[str, str]]:
+    """Keep only the outfit strings the provider filled in."""
+    if not isinstance(data, dict):
+        return {}
+    colors: dict[str, dict[str, str]] = {}
+    for outfit in OUTFITS:
+        parts = data.get(outfit)
+        if not isinstance(parts, dict):
+            continue
+        filled = {
+            part: value.strip()
+            for part in OUTFIT_PARTS
+            if isinstance(value := parts.get(part), str) and value.strip()
+        }
+        if filled:
+            colors[outfit] = filled
+    return colors
+
+
 def _self_fixture(data: dict[str, Any]) -> bool:
     """Reject provider self-fixtures before identity writes or coverage tracking."""
     same_team = str(data["HomeTeam"]["PublicTeamId"]) == str(
@@ -141,6 +164,8 @@ class Importer:
         }
         if data.get("Dissolved"):
             values["dissolved"] = True
+        if isinstance(data.get("ClubColors"), dict):
+            values["colors"] = club_colors(data["ClubColors"])
         with transaction.atomic():
             club, _ = Club.objects.select_for_update(no_key=True).get_or_create(
                 external_id=source_id, defaults=values
