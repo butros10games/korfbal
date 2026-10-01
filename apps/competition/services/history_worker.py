@@ -9,6 +9,7 @@ import time
 from typing import Any
 import uuid
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Case, IntegerField, When
 from django.utils import timezone
@@ -54,7 +55,12 @@ AUTH_REASONS = {
 
 
 def current_work_due(*, include_results: bool = True) -> bool:
-    """Backfills use spare capacity after active-season discovery and due refreshes."""
+    """Backfills yield to match forms, new season discovery and result checks.
+
+    Periodic refreshes (rosters, photos, programmes, standings) form a continuous
+    backlog in an active season; yielding to them would starve history, so
+    history shares the provider lease with them instead.
+    """
     now = timezone.now()
     if MatchFormSync.objects.filter(
         state__in={"pending", "running"}, next_attempt_at__lte=now
@@ -66,7 +72,7 @@ def current_work_due(*, include_results: bool = True) -> bool:
         season__end_date__gte=today,
         failures__lt=MAX_FEED_FAILURES,
     )
-    if resources.filter(next_sync_at__lte=now).exists():
+    if resources.filter(fetched_at__isnull=True, next_sync_at__lte=now).exists():
         return True
     if not include_results:
         return False
@@ -86,6 +92,7 @@ def next_resource() -> HistoricalResource | None:
         .annotate(
             priority=Case(
                 When(kind="pool", then=0),
+                When(kind="edition_pool", then=0),
                 When(kind="pool_window", then=1),
                 When(kind="standing", then=2),
                 When(kind="members", then=2),
@@ -314,11 +321,19 @@ class HistoryBatch:
             lease.save(update_fields=("expires_at",))
 
 
+def history_spacing() -> int:
+    """Pace history separately: it is large, but never time-critical."""
+    return min(
+        settings.SPORTLINK_REQUEST_SPACING, settings.SPORTLINK_HISTORY_REQUEST_SPACING
+    )
+
+
 def run_history(
     client_factory: Callable[[], HistoricalClient],
     *,
     publish_with: ScheduleChangeDispatcher | None,
     budget: int = 20,
+    deadline: float | None = None,
 ) -> dict:
     """Resume a bounded slice of historical work under the shared provider lease.
 
@@ -341,7 +356,8 @@ def run_history(
     client, batch = None, None
     try:
         client = client_factory()
-        batch = HistoryBatch(client, TrafficGate(budget, owner))
+        gate = TrafficGate(budget, owner, deadline=deadline, spacing=history_spacing())
+        batch = HistoryBatch(client, gate)
         batch.drain(publish_with=publish_with, owner=owner)
         batch.summary["http_requests"] = batch.gate.requests
         return batch.summary

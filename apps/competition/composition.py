@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.conf import settings
 
+from apps.competition.adapters.outbound.history import HistoryClient
 from apps.competition.adapters.outbound.match_forms import SportlinkMatchForms
 from apps.competition.adapters.outbound.notifications import dispatch_schedule_change
 from apps.competition.adapters.outbound.sportlink import SportlinkClient
@@ -20,6 +21,13 @@ def competition_client(
     """Build a session with optional automatic, persisted OAuth renewal."""
     store = TokenStore(session_file) if session_file else None
     return SportlinkClient(store.access_token if store else token, store, user_agent)
+
+
+def scheduled_history_client() -> HistoryClient:
+    """Read season-scoped history with the scheduled sync's rotating app session."""
+    return HistoryClient(
+        competition_client(session_file=Path(settings.SPORTLINK_SYNC_SESSION_FILE))
+    )
 
 
 def schedule_change_dispatcher() -> ScheduleChangeDispatcher:

@@ -22,17 +22,24 @@ from apps.kwt_common.models import BackgroundJob
 def test_finished_transition_coalesces_and_rolls_back_intent() -> None:
     """Statistics intent coalesces and generation updates roll back with mutations."""
     tracker = create_tracker_match(prefix="Finished signal")
-    job = BackgroundJob.objects.get(args=[str(tracker.match_data.pk)])
-    generation = job.generation
+    intent = BackgroundJob.objects.filter(
+        task="apps.game_tracker.tasks.recompute_match_statistics",
+        args=[str(tracker.match_data.pk)],
+    )
+    # A new match has nothing to compute; imports must not queue a job per match.
+    assert not intent.exists()
     with transaction.atomic():
         tracker.match_data.status = "finished"
         tracker.match_data.save(update_fields=["status"])
         transaction.set_rollback(True)
-    job.refresh_from_db()
-    assert job.generation == generation
+    assert not intent.exists()
     tracker.match_data.refresh_from_db()
     assert tracker.match_data.status == "upcoming"
     tracker.match_data.status = "finished"
+    tracker.match_data.save(update_fields=["status"])
+    job = intent.get()
+    generation = job.generation
+    tracker.match_data.status = "upcoming"
     tracker.match_data.save(update_fields=["status"])
     job.refresh_from_db()
     assert job.generation > generation

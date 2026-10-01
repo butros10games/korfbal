@@ -29,8 +29,26 @@ def merge_unlinked_joint_groups(*, protected_ids: set[int] | None = None) -> int
     The caller holds the provider lease and transaction. Preserve every source team
     ID and the linked global team/season roster; remove only redundant source groups.
     """
+    # Only buckets with an unlinked group can merge; leave the rest unlocked.
+    pending = set(
+        TeamGroup.objects.filter(
+            local_team__isnull=True, local_team_data__isnull=True
+        ).values_list("season_id", "club_id")
+    )
+    if not pending:
+        return 0
     buckets: dict[tuple, list[TeamGroup]] = defaultdict(list)
-    for group in TeamGroup.objects.select_for_update().select_related("club"):
+    for group in (
+        TeamGroup.objects
+        .select_for_update()
+        .select_related("club")
+        .filter(
+            season_id__in={season for season, _ in pending},
+            club_id__in={club for _, club in pending},
+        )
+    ):
+        if (group.season_id, group.club.pk) not in pending:
+            continue
         key = team_group_key(group.name, group.club.name)
         buckets[group.season_id, group.club.pk, key].append(group)
     merged = 0

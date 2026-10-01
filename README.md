@@ -1323,7 +1323,8 @@ Ratings/Elo are not part of this importer.
 Create the appropriate `schedule.Season` and its real date boundaries first. Seed
 only identifiers obtained from a provider response, a saved link, or an attributed
 archive. App IDs (`M…`, `T…`) and numeric Dataservice codes are different namespaces;
-the importer never guesses a conversion or scans numeric ID ranges.
+the importer never guesses a conversion. The only numeric range it reads is an
+edition's own poule numbers in `edition` scan mode (below).
 
 ```bash
 # A known app match reveals its poule; a known poule can also be seeded directly.
@@ -1340,11 +1341,88 @@ uv run python apps/django_projects/korfbal/manage.py import_competition_history 
   --resource 123
 ```
 
-The IDs above are examples. No working previous-season app discovery filter has
-been verified. App date-window seeds are rejected; empty/current-season responses
-are not evidence that a historical competition was fully imported. Direct match
-responses must match the supplied identity, season and interval. A poule must have
-dated results inside the selected season before its standings are imported.
+The IDs above are examples. App date-window seeds are rejected; empty/current-season
+responses are not evidence that a historical competition was fully imported. Direct
+match responses must match the supplied identity, season and interval. A poule must
+have dated results inside the selected season before its standings are imported.
+
+#### Whole editions from the app (`SeasonId`)
+
+The app's season selector (`SeasonId`, an edition's start year) works on team and
+poule competition data with the regular app session, so whole past editions can be
+imported without Dataservice access or archives:
+
+```bash
+# Queue editions 2018-2019 to 2022-2023 and 2024-2025, then let the worker run.
+uv run python apps/django_projects/korfbal/manage.py import_competition_history edition \
+  --edition 2018 2019 2020 2021 2022 2024
+
+uv run python apps/django_projects/korfbal/manage.py import_competition_history status \
+  --edition 2024
+uv run python apps/django_projects/korfbal/manage.py import_competition_history log \
+  --edition 2024 --output edition-2024.csv
+```
+
+`edition` creates or reuses the edition's three playing seasons, each bound to its
+own discipline:
+
+| Season                   | Discipline | Dates when created        |
+| ------------------------ | ---------- | ------------------------- |
+| `Voor seizoen <Y>`       | outdoor    | 1 July – 31 December Y    |
+| `Zaal seizoen <Y>-<Y+1>` | indoor     | 1 October Y – 30 June Y+1 |
+| `Na seizoen <Y+1>`       | outdoor    | 1 January – 30 June Y+1   |
+
+Existing seasons are matched by name (case-insensitively) and keep their dates.
+
+Old editions cannot be discovered from current teams alone: youth team IDs change
+every season, many senior teams did not exist yet, and a team lists only its latest
+poule of an edition. Poule numbers of one edition are dense, though (85–98% of
+sampled IDs held that edition's poules), and every poule response already contains
+all of its matches and teams. So `edition` scans poule numbers by default:
+
+1. It probes up to `PROBE_SIZE` (40) senior catalogue teams per discipline to find
+   the edition's first poules (an `edition_scan` marker records the scan).
+2. Every `edition_pool` with data for the edition widens one contiguous window to
+   that poule ± `SCAN_MARGIN` (200) IDs, filling gaps between found poules. IDs of
+   other editions return no rows for this `SeasonId`, so the window ends
+   `SCAN_MARGIN` IDs past the edition's outermost poule.
+
+This reaches youth, cup and play-off poules too, without any further team requests:
+roughly one request per poule number in the edition's range, a few thousand per
+edition. `edition --teams` instead discovers poules through teams: a probe with data
+queues the rest of its stratum (discipline × senior/youth, `--all-seeds` queues them
+all at once), team responses add play-off poules from their unbound results, and every
+team in an old poule is queued in turn. It misses youth poules.
+
+Outdoor results are routed by date: July onwards to the summer/autumn season, earlier
+to the spring/summer season. A poule playing in both halves is split, with final
+standings on the half of its last match. Rows outside their season's dates or of
+other disciplines are skipped and logged with a reason, never moved.
+
+Every match gets its own `HistoricalResource` (`kind=match`): `fetched` in its playing
+season with the score and the source poule, or `blocked` with the skip reason. `status
+--edition` summarizes the scan window or released strata, discovery and the log; `log` exports it as
+CSV. A poule is `complete` only when unfiltered official standings agree with its
+scored finals.
+
+The `sync_competition_history` beat task drains queued checkpoints every minute with
+the scheduled sync's app session, at most `SPORTLINK_HISTORY_MAX_REQUESTS` (default 300) requests per turn, `SPORTLINK_HISTORY_REQUEST_SPACING` (default 1) seconds
+apart. It yields to match-form work, result checks and never-fetched current feeds,
+but shares the lease with periodic refreshes (rosters, photos, programmes), which
+otherwise form a permanent backlog.
+
+Coverage limits observed on 1 October 2026:
+
+- The 2023-2024 and 2025-2026 editions and everything before 2018 return no data;
+  their probes finish as `empty` / `no_season_data`.
+- For 2024-2025 the outdoor summer/autumn league poules are not served, so only
+  indoor, outdoor spring/summer and cup results exist. Until 2022-2023 outdoor
+  poules ran all season and are complete.
+
+Publication is incremental: reconciliation, poule publication and joint-group merges
+only read unlinked or changed rows, so large historical catalogues do not slow down
+the live sync's publication passes. Fixtures outside the match-form windows skip
+form discovery, and a new match queues no statistics job until it has a timeline.
 
 For optional Club.Dataservice access, put **that club's** client ID in a separate
 mode-600 file. App OAuth is never sent to Dataservice. The `source-id` for a club

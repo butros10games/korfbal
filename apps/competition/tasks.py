@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+import time
 
 from celery import shared_task
 from django.conf import settings
@@ -12,8 +13,15 @@ from apps.competition.composition import (
     competition_client,
     run_match_form_queue,
     schedule_change_dispatcher,
+    scheduled_history_client,
 )
-from apps.competition.models import MatchFormSync, SyncLease, SyncResource
+from apps.competition.models import (
+    HistoricalResource,
+    MatchFormSync,
+    SyncLease,
+    SyncResource,
+)
+from apps.competition.services.history_worker import run_history
 from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.resources import MAX_FEED_FAILURES
@@ -137,3 +145,30 @@ def _run_scheduled(season: Season) -> dict[str, object]:
     if summary["reauth_required"]:
         logger.warning("Competition sync requires a renewed login session")
     return {"status": outcome(summary), **summary, "backlog": backlog}
+
+
+# Leave time for the batch's publication pass inside the task time limit.
+HISTORY_REQUEST_SECONDS = 150
+
+
+@shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
+def sync_competition_history() -> dict[str, object]:
+    """Work through queued history imports while current-season work is idle."""
+    if not settings.SPORTLINK_SYNC_ENABLED or not settings.SPORTLINK_SYNC_SESSION_FILE:
+        return {"status": "disabled", "http_requests": 0}
+    if not HistoricalResource.objects.filter(
+        state="pending", next_attempt_at__lte=timezone.now()
+    ).exists():
+        return {"status": "idle", "http_requests": 0}
+    try:
+        summary = run_history(
+            scheduled_history_client,
+            publish_with=schedule_change_dispatcher(),
+            budget=settings.SPORTLINK_HISTORY_MAX_REQUESTS,
+            deadline=time.monotonic() + HISTORY_REQUEST_SECONDS,
+        )
+    except (OSError, ValueError, TypeError):
+        logger.warning("Competition history cannot load its private OAuth session")
+        return {"status": "session_unavailable", "http_requests": 0}
+    logger.info("Competition history summary: %s", summary)
+    return {"status": "ran", **summary}

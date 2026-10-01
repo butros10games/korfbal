@@ -30,6 +30,7 @@ from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.reconciliation import (
     JointTeamIndex,
+    Reconciler,
     normalized,
     reconcile,
 )
@@ -451,3 +452,39 @@ def test_pool_index_requires_complete_unique_membership(
     assert decision["reason"] == (
         "ambiguous_or_claimed" if membership == "ambiguous" else "unmatched"
     )
+
+
+def new_links(
+    overrides: dict[tuple[str, int], str], *, incremental: bool
+) -> set[tuple[str, int, str | None]]:
+    """Return the links one reconciliation mode would apply."""
+    return {
+        (row.kind, row.source_id, row.local_id)
+        for row in Reconciler(overrides, lock=False, incremental=incremental).plan()
+        if row.reason in {"unique", "explicit"}
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("linked", ["nothing", "parents", "claimed"])
+def test_incremental_publication_plans_the_same_links(
+    graph: dict[str, Any], season: Season, linked: str
+) -> None:
+    """Publication skips linked rows without changing any new-link decision."""
+    overrides = graph["overrides"]
+    if linked != "nothing":
+        reconcile(apply=True, overrides=overrides)
+        overrides = {}
+        Match.objects.update(local_match=None)
+        Pool.objects.update(local_pool=None)
+    if linked == "claimed":
+        # Another source row already owns the local fixture.
+        row = deepcopy(graph["payload"])
+        row["PublicMatchId"] = "M-claim"
+        Importer(season, timezone.now()).apply(
+            "club_results", "DTS", {"MatchResult": [row]}
+        )
+        Match.objects.filter(external_id="M-claim").update(local_match=graph["local"])
+    full = new_links(overrides, incremental=False)
+    assert full
+    assert new_links(overrides, incremental=True) == full

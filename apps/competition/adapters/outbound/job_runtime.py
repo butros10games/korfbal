@@ -10,7 +10,11 @@ from apps.competition.models import (
     MatchFormAccess,
     MatchFormSync,
 )
-from apps.competition.services.match_form_worker import FORM_RESOURCES, discover
+from apps.competition.services.match_form_worker import (
+    FORM_RESOURCES,
+    discover,
+    form_window_contains,
+)
 from apps.competition.tasks import sync_match_forms
 from apps.game_tracker.models import MatchLiveChange
 
@@ -63,7 +67,10 @@ def queue_published_fixture(
 ) -> None:
     """Catch up imports made due by a fixture link or schedule change."""
     relevant = {"local_match", "starts_at", "pool", "home_team", "away_team"}
-    if instance.local_match_id and (
-        update_fields is None or relevant.intersection(update_fields)
+    if (
+        instance.local_match_id
+        and (update_fields is None or relevant.intersection(update_fields))
+        # Historical and distant fixtures cannot need form work yet.
+        and form_window_contains(instance.starts_at)
     ):
         discover(match_id=instance.local_match_id)

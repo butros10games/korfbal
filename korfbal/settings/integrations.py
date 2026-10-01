@@ -89,6 +89,17 @@ SPORTLINK_SYNC_MAX_REQUESTS = max(
     0, min(10000, int(env("SPORTLINK_SYNC_MAX_REQUESTS", "0")))
 )
 
+# Season-scoped history imports run in the current sync's idle time and reuse
+# its app session. Each heartbeat makes at most this many provider requests.
+SPORTLINK_HISTORY_MAX_REQUESTS = max(
+    1, min(1000, int(env("SPORTLINK_HISTORY_MAX_REQUESTS", "300")))
+)
+# Seconds between history requests; history shares the app account with the live
+# sync, so it stays paced rather than bursting thousands of requests.
+SPORTLINK_HISTORY_REQUEST_SPACING = max(
+    0, int(env("SPORTLINK_HISTORY_REQUEST_SPACING", "1"))
+)
+
 # Bound each worker turn; the shared lease skips overlapping heartbeats.
 SPORTLINK_SYNC_MAX_SECONDS = max(
     1, min(240, int(env("SPORTLINK_SYNC_MAX_SECONDS", "240")))

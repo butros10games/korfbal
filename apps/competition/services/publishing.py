@@ -7,7 +7,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import Exists, F, OuterRef, Q, QuerySet, Value
+from django.db.models.functions import Concat
 from django.utils import timezone
 
 from apps.club.models import Club as AppClub
@@ -62,20 +63,57 @@ def display_team_name(name: str, club: str) -> str:
     )
 
 
-def pool_memberships() -> dict[int, set[Any]]:
+def pool_memberships(pool_ids: list[int]) -> dict[int, set[Any]]:
     """Collect membership from both published poules and observed fixtures."""
-    teams = dict(Team.objects.values_list("pk", "group__local_team_id"))
     members: dict[int, set[Any]] = defaultdict(set)
-    for pool, team in PoolEntry.objects.values_list("pool_id", "team_id"):
-        if teams.get(team):
-            members[pool].add(teams[team])
-    for pool, home, away in Match.objects.exclude(pool=None).values_list(
-        "pool_id", "home_team_id", "away_team_id"
-    ):
-        for team_id in (home, away):
-            if teams.get(team_id):
-                members[pool].add(teams[team_id])
+    for pool, team in PoolEntry.objects.filter(
+        pool_id__in=pool_ids, team__group__local_team__isnull=False
+    ).values_list("pool_id", "team__group__local_team_id"):
+        members[pool].add(team)
+    for side in ("home_team", "away_team"):
+        for pool, team in Match.objects.filter(
+            pool_id__in=pool_ids, **{side + "__group__local_team__isnull": False}
+        ).values_list("pool_id", side + "__group__local_team_id"):
+            members[pool].add(team)
     return members
+
+
+def missing_membership(team_path: str) -> Exists:
+    """Linked team of a published poule that its native poule does not list yet."""
+    return Exists(
+        SeasonPool.teams.through.objects.filter(
+            seasonpool_id=OuterRef(OuterRef("local_pool_id")),
+            team_id=OuterRef(team_path + "__group__local_team_id"),
+        )
+    )
+
+
+def pools_to_publish() -> QuerySet[Pool]:
+    """Poules that are unpublished, still unnamed, or miss a native membership.
+
+    Everything else is already published; scanning it would make every
+    publication pass grow with the whole historical catalogue.
+    """
+    entries = PoolEntry.objects.filter(
+        pool=OuterRef("pk"), team__group__local_team__isnull=False
+    ).exclude(missing_membership("team"))
+    fixtures = [
+        Match.objects.filter(
+            pool=OuterRef("pk"), **{side + "__group__local_team__isnull": False}
+        ).exclude(missing_membership(side))
+        for side in ("home_team", "away_team")
+    ]
+    placeholder = Q(local_pool__name=Concat(Value("KNKV-poule "), "external_id"))
+    named = ~Q(name="") | ~Q(class_name="")
+    return Pool.objects.filter(
+        Q(local_pool=None)
+        | Q(local_pool__name="")
+        # A placeholder can only be renamed once the source knows a name.
+        | (placeholder & named)
+        | Exists(entries)
+        | Exists(fixtures[0])
+        | Exists(fixtures[1])
+    )
 
 
 class Publisher:
@@ -87,6 +125,7 @@ class Publisher:
         ``schedule_changes`` is None only for repairs that never publish fixtures.
         """
         self.schedule_changes = schedule_changes
+        self.fresh: set[UUID] = set()
         self.counts: Counter[str] = Counter()
         self.blocked: list[dict[str, Any]] = []
 
@@ -220,17 +259,24 @@ class Publisher:
 
     def pools(self) -> None:
         """Publish poules once and share membership through global teams."""
+        rows = list(pools_to_publish().select_related("local_pool").order_by("pk"))
+        if not rows:
+            return
         resolver = SeasonResolver()
-        members = pool_memberships()
+        members = pool_memberships([row.pk for row in rows])
         claimed = set(
             Pool.objects.exclude(local_pool=None).values_list(
                 "local_pool_id", flat=True
             )
         )
         through = SeasonPool.teams.through
-        existing_members = set(through.objects.values_list("seasonpool_id", "team_id"))
+        existing_members = set(
+            through.objects.filter(
+                seasonpool_id__in={row.local_pool.pk for row in rows if row.local_pool}
+            ).values_list("seasonpool_id", "team_id")
+        )
         additions = []
-        for row in Pool.objects.select_related("local_pool"):
+        for row in rows:
             season_id = resolver.resolve(row.season_id, row.sport)
             if season_id is None:
                 self.conflict("pool", row.pk, "season_discipline_unresolved")
@@ -253,28 +299,37 @@ class Publisher:
                 local.name = name
                 local.save(update_fields=("name",))
             if local is None:
-                local, created = SeasonPool.objects.get_or_create(
-                    season_id=season_id, name=name, sport=row.sport
-                )
-                if not created and local.pk in claimed:
-                    suffix = f" [KNKV {row.external_id}]"
-                    name = name[: 512 - len(suffix)] + suffix
-                    local, created = SeasonPool.objects.get_or_create(
-                        season_id=season_id, name=name, sport=row.sport
-                    )
-                    if not created and local.pk in claimed:
-                        self.conflict("pool", row.pk, "pool_already_claimed")
-                        continue
-                self.counts["pools_created"] += int(created)
-                row.local_pool = local
-                row.save(update_fields=("local_pool",))
-                claimed.add(local.pk)
+                local = self.claim_pool(row, season_id, name, claimed)
+                if local is None:
+                    continue
             for team_id in members[row.pk]:
                 pair = (local.pk, team_id)
                 if pair not in existing_members:
                     additions.append(through(seasonpool_id=local.pk, team_id=team_id))
                     existing_members.add(pair)
         through.objects.bulk_create(additions, ignore_conflicts=True, batch_size=1000)
+
+    def claim_pool(
+        self, row: Pool, season_id: UUID, name: str, claimed: set[UUID]
+    ) -> SeasonPool | None:
+        """Create or reuse an unclaimed native poule and link the source to it."""
+        local, created = SeasonPool.objects.get_or_create(
+            season_id=season_id, name=name, sport=row.sport
+        )
+        if not created and local.pk in claimed:
+            suffix = f" [KNKV {row.external_id}]"
+            name = name[: 512 - len(suffix)] + suffix
+            local, created = SeasonPool.objects.get_or_create(
+                season_id=season_id, name=name, sport=row.sport
+            )
+            if not created and local.pk in claimed:
+                self.conflict("pool", row.pk, "pool_already_claimed")
+                return None
+        self.counts["pools_created"] += int(created)
+        row.local_pool = local
+        row.save(update_fields=("local_pool",))
+        claimed.add(local.pk)
+        return local
 
     def match_seasons(self, rows: list[Match]) -> list[Match]:
         """Resolve discipline before matching native fixture identities."""
@@ -373,6 +428,7 @@ class Publisher:
                         start_time=row.starts_at,
                     )
                     row.local_created = True
+                    self.fresh.add(local.pk)
                     candidates[key].append(local)
                     self.counts["matches_created"] += 1
                 row.local_match = local
@@ -467,7 +523,8 @@ class Publisher:
             home_score=row.published_state["home"],
             away_score=row.published_state["away"],
         )
-        if row.local_created:
+        # Fixtures created in this pass already have this kickoff and poule.
+        if row.local_created and row.local_match_id not in self.fresh:
             AppMatch.objects.filter(pk=row.local_match_id).update(
                 start_time=row.starts_at, pool_id=pool_id
             )
@@ -501,7 +558,7 @@ def publish_catalogue(
     merged_groups = merge_unlinked_joint_groups(
         protected_ids={pk for (kind, pk) in (overrides or {}) if kind == "team"}
     )
-    decisions = Reconciler(overrides or {}, lock=True).plan()
+    decisions = Reconciler(overrides or {}, lock=True, incremental=True).plan()
     for decision in decisions:
         if decision.reason in {"unique", "explicit"}:
             SOURCE_MODELS[decision.kind].objects.filter(

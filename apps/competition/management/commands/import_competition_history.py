@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+import csv
 from datetime import date, timedelta
 import json
 import os
@@ -21,6 +22,12 @@ from apps.competition.composition import (
 from apps.competition.models import HistoricalResource
 from apps.competition.services.history import progress, seed
 from apps.competition.services.history_archive import import_archive
+from apps.competition.services.history_editions import (
+    LOG_FIELDS,
+    edition_log,
+    edition_summary,
+    seed_edition,
+)
 from apps.competition.services.history_worker import run_history
 from apps.schedule.models import Season
 
@@ -28,12 +35,32 @@ from apps.schedule.models import Season
 class Command(BaseCommand):
     """Seed verified IDs, backfill explicit date ranges, and inspect coverage."""
 
-    help = "Historical KNKV discovery: seed, run, status, retry, archive."
+    help = "Historical KNKV discovery: edition, seed, run, status, log, retry, archive."
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         """Expose bounded execution and protected credential file inputs."""
         parser.add_argument(
-            "action", choices=("seed", "run", "status", "retry", "archive")
+            "action",
+            choices=("edition", "seed", "run", "status", "log", "retry", "archive"),
+        )
+        parser.add_argument(
+            "--edition",
+            type=int,
+            nargs="+",
+            help="Provider edition start year(s), e.g. 2024 for 2024-2025",
+        )
+        parser.add_argument(
+            "--output", type=Path, help="CSV file for the per-match import log"
+        )
+        parser.add_argument(
+            "--teams",
+            action="store_true",
+            help="Discover poules through teams instead of scanning poule numbers",
+        )
+        parser.add_argument(
+            "--all-seeds",
+            action="store_true",
+            help="With --teams, queue every catalogue team instead of probing",
         )
         parser.add_argument(
             "--season", help="Existing season name; dates are never guessed"
@@ -88,6 +115,8 @@ class Command(BaseCommand):
 
         """
         action = options["action"]
+        if action in {"edition", "log"} or options["edition"]:
+            return edition_action(action, options)
         if action == "status":
             return progress()
         if action == "retry":
@@ -156,3 +185,39 @@ def history_client(options: dict[str, Any]) -> HistoryClient:
             raise ValueError("Invalid client ID")
     app = competition_client("", Path(session)) if session else None
     return HistoryClient(app, client_id)
+
+
+def edition_action(action: str, options: dict[str, Any]) -> dict | list:
+    """Queue season-scoped editions, report their progress, or export their log.
+
+    Raises:
+        ValueError: The editions or output file are missing for the action.
+
+    """
+    editions = options["edition"] or []
+    if not editions:
+        raise ValueError("Select at least one edition")
+    if action == "edition":
+        return [
+            seed_edition(
+                edition, scan=not options["teams"], all_seeds=options["all_seeds"]
+            )
+            for edition in editions
+        ]
+    if action == "status":
+        return [edition_summary(edition) for edition in editions]
+    if action == "log" and len(editions) == 1 and options["output"]:
+        return write_log(editions[0], options["output"])
+    raise ValueError("Select one edition and an output file for the log")
+
+
+def write_log(edition: int, output: Path) -> dict:
+    """Write the per-match import log of one edition as CSV."""
+    count = 0
+    with output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=LOG_FIELDS)
+        writer.writeheader()
+        for row in edition_log(edition):
+            writer.writerow(row)
+            count += 1
+    return {"edition": edition, "rows": count, "output": str(output)}

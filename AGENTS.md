@@ -232,6 +232,14 @@ OAuth session file and send `X-Navajo-Instance: KNKV` plus the endpoint-specific
 `X-Navajo-Version`; a bearer token and the `v` query parameter alone can return
 misleading provider 500/603 errors.
 
+- Past KNKV editions come from the app's `SeasonId` (edition start year) on team and
+  poule competition data; `PublicTeamId` is stable across editions. Import each edition
+  into its three playing seasons (outdoor summer/autumn, indoor, outdoor spring/summer)
+  by sport and date. Discover them by scanning the edition's dense poule numbers;
+  team-based discovery misses youth poules because youth team IDs change yearly.
+- Keep competition publication incremental: reconciliation, poule publication and
+  group merges run after every sync batch, so a catalogue-wide scan multiplies with
+  every imported edition. Compare incremental and full reconciliation decisions in tests.
 - Historical Sportlink deduplication must preserve the union of discovered date scopes;
   test narrow-then-wide discovery and bulk-before-detail request counts. Use each
   Dataservice endpoint's documented limits, and prove complete coverage separately

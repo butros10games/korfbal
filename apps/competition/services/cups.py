@@ -33,5 +33,5 @@ def import_cup_fixture(match: Match) -> CupFixture | None:
 
 def import_observed_cup_fixture(match: Match, data: dict) -> None:
     """Avoid extra relation reads for ordinary league fixtures."""
-    if data.get("Pool", {}).get("ClassName") in OBSERVED_CUPS:
+    if (data.get("Pool") or {}).get("ClassName") in OBSERVED_CUPS:
         import_cup_fixture(match)

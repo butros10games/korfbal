@@ -408,3 +408,29 @@ def test_pending_fixture_loads_only_relevant_native_candidates(season: Season) -
     assert source.local_match_id == native.pk
     assert not publisher.blocked
     assert publisher.counts["matches_updated"] == 1
+
+
+@pytest.mark.django_db
+def test_published_poule_gains_new_members_without_rescanning_others(
+    season: Season,
+) -> None:
+    """Incremental poule publication still adds members seen after publication."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    row = deepcopy(match_payload())
+    row["PublicMatchId"] = "M2"
+    row["AwayTeam"] = {
+        **row["AwayTeam"],
+        "PublicTeamId": "T3",
+        "TeamName": "Example T3",
+        "Club": {"ClubId": "CT3", "ClubName": "Club T3", "City": "Example"},
+    }
+    Importer(season, timezone.now()).apply("club_results", "C", {"MatchResult": [row]})
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert SeasonPool.objects.get().teams.count() == MATCH_SIDES + 1
+    with CaptureQueriesContext(connection) as queries:
+        Publisher(RecordingScheduleChanges()).pools()
+    # Nothing is pending: one query finds no poule to publish.
+    assert len(queries.captured_queries) == 1

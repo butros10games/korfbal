@@ -8,8 +8,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.competition.models import HistoricalResource, SyncLease
-from apps.competition.services.history import apply_app
+from apps.competition.services.history import EDITION_KINDS, apply_app
 from apps.competition.services.history_dataservice import apply_dataservice
+from apps.competition.services.history_editions import apply_edition
 
 
 @transaction.atomic
@@ -21,7 +22,9 @@ def checkpoint(
     if owner is not None:
         lease = SyncLease.objects.select_for_update().get(key="sportlink", owner=owner)
     resource.reason = ""
-    if resource.provider == "app":
+    if resource.kind in EDITION_KINDS:
+        apply_edition(resource, data)
+    elif resource.provider == "app":
         apply_app(resource, data)
     else:
         apply_dataservice(resource, data)

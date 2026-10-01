@@ -2,7 +2,9 @@
 
 from copy import deepcopy
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from django.contrib.auth.models import User
 from django.db import connection, transaction
@@ -13,6 +15,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.competition.adapters.outbound.job_runtime import queue_published_fixture
 from apps.competition.application.match_forms import MatchFormError, MatchFormOptions
 from apps.competition.application.ports import FetchResult
 from apps.competition.models import (
@@ -1489,3 +1492,26 @@ def test_future_form_retry_does_not_block_background_work(
         )["updated"]
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [
+        (timedelta(days=-400), False),
+        (timedelta(days=-1), True),
+        (timedelta(minutes=30), True),
+        (timedelta(days=3), False),
+    ],
+)
+def test_only_fixtures_inside_the_form_windows_trigger_discovery(
+    monkeypatch: pytest.MonkeyPatch, offset: timedelta, *, expected: bool
+) -> None:
+    """Historical imports must not run match-form discovery per fixture."""
+    calls = []
+    monkeypatch.setattr(
+        "apps.competition.adapters.outbound.job_runtime.discover",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    fixture = SimpleNamespace(local_match_id=uuid4(), starts_at=timezone.now() + offset)
+    queue_published_fixture(Match, fixture)
+    assert bool(calls) is expected

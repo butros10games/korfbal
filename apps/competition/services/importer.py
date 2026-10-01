@@ -111,6 +111,7 @@ class Importer:
         self._teams: dict[str, Team] = {}
         self._pools: dict[str, Pool] = {}
         self._matches: dict[tuple[str, bool], dict[str, Any]] = {}
+        self._entries: set[tuple[int, int]] = set()
 
     def club(self, data: dict[str, Any]) -> Club:
         """Upsert club catalogue fields and discover its three collection feeds."""
@@ -225,7 +226,7 @@ class Importer:
         if data.get("Pool"):
             values["pool_id"] = self.pool(data["Pool"], home.sport).pk
             for member in (home, away):
-                PoolEntry.objects.get_or_create(pool_id=values["pool_id"], team=member)
+                self.enter_pool(values["pool_id"], member)
         match, created = Match.objects.get_or_create(
             season=self.season,
             external_id=str(data["PublicMatchId"]),
@@ -255,6 +256,12 @@ class Importer:
                 match.save(update_fields=(*fields, "updated_at"))
         import_observed_cup_fixture(match, data)
         self.discover_details(match)
+
+    def enter_pool(self, pool_id: int, team: Team) -> None:
+        """Record poule membership; a poule's rows repeat pairs, so check once."""
+        if (pool_id, team.pk) not in self._entries:
+            PoolEntry.objects.get_or_create(pool_id=pool_id, team=team)
+            self._entries.add((pool_id, team.pk))
 
     def discover_details(self, match: Match) -> None:
         """Enrich live source matches, reusing opted-in lineup detail requests."""
@@ -424,6 +431,7 @@ class Importer:
         self._teams.clear()
         self._pools.clear()
         self._matches.clear()
+        self._entries.clear()
         self.observed_match_ids.clear()
         self._detail_match_ids.clear()
         if data.get("Error"):

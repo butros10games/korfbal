@@ -1,7 +1,7 @@
 """Recoverable form queue sharing the catalogue worker's OAuth/traffic lease."""
 
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 import time
 from uuid import uuid4
 
@@ -69,16 +69,27 @@ def _substitution_due(job: MatchFormSync | None, revision: int) -> bool:
     return False
 
 
+# Only fixtures inside these windows can need match-form work.
+UPCOMING_FORM_WINDOW = timedelta(hours=1)
+FINISHED_FORM_WINDOW = timedelta(days=2)
+
+
+def form_window_contains(starts_at: datetime) -> bool:
+    """Tell whether discovery could queue work for a fixture at this time."""
+    now = timezone.now()
+    return now - FINISHED_FORM_WINDOW <= starts_at <= now + UPCOMING_FORM_WINDOW
+
+
 def discover(*, match_id: object | None = None, access_id: int | None = None) -> None:
     """Queue upcoming roster imports and opted-in recent finished-match corrections."""
     now = timezone.now()
     upcoming = Q(
         starts_at__gt=now,
-        starts_at__lte=now + timedelta(hours=1),
+        starts_at__lte=now + UPCOMING_FORM_WINDOW,
         local_match__tracker_data__status="upcoming",
     )
     finished = Q(
-        starts_at__gte=now - timedelta(days=2),
+        starts_at__gte=now - FINISHED_FORM_WINDOW,
         pool__competition_class__category="a",
         local_match__tracker_data__status="finished",
     )

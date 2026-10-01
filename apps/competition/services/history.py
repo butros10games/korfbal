@@ -27,7 +27,20 @@ from apps.schedule.models import Season
 
 
 PROVIDERS = {"app", "dataservice", "archive"}
-KINDS = {"match", "pool", "window", "pool_window", "standing", "members"}
+KINDS = {
+    "match",
+    "pool",
+    "window",
+    "pool_window",
+    "standing",
+    "members",
+    "edition_team",
+    "edition_pool",
+    "edition_scan",
+}
+# Season-scoped app discovery: a team's poules, then a poule's results. The
+# scan marker is never fetched; it records an edition's poule scan window.
+EDITION_KINDS = {"edition_team", "edition_pool"}
 ROW_LIMIT = 1000
 DATA_ROW_LIMITS = {"window": 500, "pool_window": ROW_LIMIT}
 MAX_REFERENCE_LENGTH = 512
@@ -68,12 +81,17 @@ def validate_identity(provider: str, kind: str, source_id: str) -> None:
     """
     if provider not in PROVIDERS or kind not in KINDS:
         raise ValueError("Unsupported historical provider or resource")
-    if provider == "app" and kind not in {"match", "pool"}:
+    if provider == "app" and kind not in {
+        "match",
+        "pool",
+        "edition_scan",
+        *EDITION_KINDS,
+    }:
         raise ValueError("The app has no verified historical date filter")
     if not re.fullmatch(r"[A-Za-z0-9:_-]{1,80}", source_id):
         raise ValueError("Provide a provider identifier, not a URL or credential")
     if provider == "app":
-        pattern = r"M[0-9]+" if kind == "match" else r"[0-9]+"
+        pattern = {"match": r"M[0-9]+", "edition_team": r"T[0-9]+"}.get(kind, r"[0-9]+")
         if not re.fullmatch(pattern, source_id):
             raise ValueError("Use the original app match or pool identifier")
 
@@ -86,6 +104,20 @@ class SeedOptions(TypedDict, total=False):
     sport: str
     reference: str
     parent: HistoricalResource | None
+
+
+def resource_key(
+    season: Season,
+    provider: str,
+    kind: str,
+    source_id: str,
+    interval: tuple[date, date],
+) -> str:
+    """Hash one checkpoint identity; match/poule IDs are shared across windows."""
+    identity = [str(season.pk), provider, kind, source_id]
+    if kind in {"window", "pool_window"}:
+        identity += [str(interval[0]), str(interval[1])]
+    return hashlib.sha256(json.dumps(identity).encode()).hexdigest()
 
 
 def seed(
@@ -113,11 +145,7 @@ def seed(
         )
     if start >= timezone.localdate() or end >= timezone.localdate():
         raise ValueError("Historical intervals must finish before today")
-    # Match/poule identities are shared across every discovery window.
-    identity = [str(season.pk), provider, kind, source_id]
-    if kind in {"window", "pool_window"}:
-        identity += [str(start), str(end)]
-    key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+    key = resource_key(season, provider, kind, source_id, (start, end))
     with transaction.atomic():
         resource, created = (
             HistoricalResource.objects.select_for_update().get_or_create(

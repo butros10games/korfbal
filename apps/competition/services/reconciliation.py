@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.club.models.club import Club as LocalClub
@@ -114,39 +115,133 @@ def validate_existing(
 class Reconciler:
     """Resolve dependencies in memory so a preview performs no database writes."""
 
-    def __init__(self, overrides: dict[tuple[str, int], str], *, lock: bool) -> None:
-        """Read the local catalogue once; lock records only when applying links."""
+    def __init__(
+        self,
+        overrides: dict[tuple[str, int], str],
+        *,
+        lock: bool,
+        incremental: bool = False,
+    ) -> None:
+        """Read the local catalogue once; lock records only when applying links.
+
+        ``incremental`` plans only unlinked (or explicitly overridden) source rows.
+        Linked rows cannot change, so they are read as compact parent/claim links
+        and native poules/matches only for the seasons the pending rows need.
+        """
         self.overrides = overrides
+        self.incremental = incremental
         self.used: set[tuple[str, int]] = set()
         self.decisions: list[LinkDecision] = []
-        self.sources = {}
-        for kind, model in SOURCE_MODELS.items():
-            query = model.objects.order_by("pk")
-            if lock:
-                query = query.select_for_update()
-            self.sources[kind] = list(query.values())
-        self.locals = {}
-        for kind, model in {
-            "club": LocalClub,
-            "team": LocalTeam,
-            "pool": SeasonPool,
-            "match": LocalMatch,
-        }.items():
-            query = model.objects.order_by("pk")
-            if lock:
-                query = query.select_for_update()
-            self.locals[kind] = {str(row["id_uuid"]): row for row in query.values()}
+        self.sources = {
+            kind: self._source_rows(kind, lock=lock) for kind in SOURCE_MODELS
+        }
+        self.locals = {
+            "club": self._local_rows(LocalClub.objects.all(), lock=lock),
+            "team": self._local_rows(LocalTeam.objects.all(), lock=lock),
+        }
         resolver = SeasonResolver()
-        sports = (
-            dict(Team.objects.values_list("pk", "sport")) if resolver.scopes else {}
-        )
-        for kind in ("pool", "match"):
-            for row in self.sources[kind]:
-                sport = row.get("sport", sports.get(row.get("home_team_id"), ""))
-                target = resolver.resolve(row["season_id"], sport)
-                local = self.locals[kind].get(str(row[LOCAL_FIELDS[kind] + "_id"]))
-                if target is not None and (not local or local["season_id"] == target):
-                    row["season_id"] = target
+        sports = {}
+        if resolver.scopes:
+            teams = Team.objects.all()
+            if incremental:
+                teams = teams.filter(
+                    pk__in={row["home_team_id"] for row in self.sources["match"]}
+                )
+            sports = dict(teams.values_list("pk", "sport"))
+        for kind, model in (("pool", SeasonPool), ("match", LocalMatch)):
+            self._resolve_seasons(
+                kind, model.objects.all(), resolver, sports, lock=lock
+            )
+
+    def _source_rows(self, kind: str, *, lock: bool) -> list[dict[str, Any]]:
+        """Read source rows; incremental plans skip rows that are already linked."""
+        query = SOURCE_MODELS[kind].objects.order_by("pk")
+        if self.incremental:
+            query = query.filter(
+                Q(**{LOCAL_FIELDS[kind] + "__isnull": True})
+                | Q(pk__in=[pk for key, pk in self.overrides if key == kind])
+            )
+        if lock:
+            query = query.select_for_update()
+        return list(query.values())
+
+    def _resolve_seasons(
+        self,
+        kind: str,
+        query: QuerySet,
+        resolver: SeasonResolver,
+        sports: dict[int, str],
+        *,
+        lock: bool,
+    ) -> None:
+        """Map source scopes to playing seasons and read their native rows."""
+        field = LOCAL_FIELDS[kind] + "_id"
+        targets = {}
+        for row in self.sources[kind]:
+            sport = row.get("sport", sports.get(row.get("home_team_id"), ""))
+            targets[row["id"]] = resolver.resolve(row["season_id"], sport)
+        if self.incremental:
+            seasons = {
+                target or row["season_id"]
+                for row in self.sources[kind]
+                for target in [targets[row["id"]]]
+            }
+            linked = {row[field] for row in self.sources[kind] if row[field]}
+            query = query.filter(Q(season_id__in=seasons) | Q(pk__in=linked))
+        self.locals[kind] = self._local_rows(query, lock=lock)
+        for row in self.sources[kind]:
+            target = targets[row["id"]]
+            local = self.locals[kind].get(str(row[field]))
+            if target is not None and (not local or local["season_id"] == target):
+                row["season_id"] = target
+
+    @staticmethod
+    def _local_rows(query: QuerySet, *, lock: bool) -> dict[str, dict[str, Any]]:
+        """Read native rows keyed by UUID, locked when links will be applied."""
+        query = query.order_by("pk")
+        if lock:
+            query = query.select_for_update()
+        return {str(row["id_uuid"]): row for row in query.values()}
+
+    def linked(
+        self, kind: str, candidates: dict[int, list[str]]
+    ) -> dict[int, tuple[str, str]]:
+        """Read existing links that act as parents or claims for pending rows.
+
+        Returns:
+            Source ID to (claim scope, local ID) for rows not being planned.
+
+        """
+        field = LOCAL_FIELDS[kind] + "_id"
+        rows = SOURCE_MODELS[kind].objects.exclude(**{field: None})
+        if kind == "pool":
+            # Claims on candidate poules, and the poules of pending matches.
+            rows = rows.filter(
+                Q(**{field + "__in": {t for c in candidates.values() for t in c}})
+                | Q(pk__in={row["pool_id"] for row in self.sources["match"]})
+            )
+        elif kind == "match":
+            rows = rows.filter(**{
+                field + "__in": {t for c in candidates.values() for t in c}
+            })
+        scope = "season_id" if kind == "team" else field
+        return {
+            source: (str(season) if kind == "team" else "", str(local))
+            for source, season, local in rows.values_list("pk", scope, field)
+        }
+
+    def include_linked(
+        self,
+        kind: str,
+        candidates: dict[int, list[str]],
+        chosen: dict[int, str],
+        scopes: dict[int, str],
+    ) -> None:
+        """Add rows outside an incremental plan as parents and existing claims."""
+        if self.incremental:
+            for source, (scope, local) in self.linked(kind, candidates).items():
+                chosen.setdefault(source, local)
+                scopes.setdefault(source, scope)
 
     def choose(
         self, kind: str, candidates: dict[int, list[str]], allowed: dict[int, set[str]]
@@ -164,6 +259,7 @@ class Reconciler:
         scopes = {
             row["id"]: str(row["season_id"]) if kind == "team" else "" for row in rows
         }
+        self.include_linked(kind, candidates, chosen, scopes)
         owners = {(scopes[source], local): source for source, local in chosen.items()}
         for row in rows:
             key = (kind, row["id"])
@@ -272,9 +368,22 @@ class Reconciler:
             for row in self.sources["team"]
         }
         team_links = self.choose("team", team_candidates, team_allowed)
+        variants = Team.objects.all()
+        if self.incremental:
+            pools = [row["id"] for row in self.sources["pool"]]
+            variants = variants.filter(
+                Q(pk__in=PoolEntry.objects.filter(pool_id__in=pools).values("team_id"))
+                | Q(
+                    pk__in={
+                        row[side]
+                        for row in self.sources["match"]
+                        for side in ("home_team_id", "away_team_id")
+                    }
+                )
+            )
         source_teams = {
             row["id"]: team_links.get(row["group_id"])
-            for row in Team.objects.values("id", "group_id")
+            for row in variants.values("id", "group_id")
         }
         pool_links = self.pools(source_teams)
         self.matches(source_teams, pool_links)
@@ -284,13 +393,17 @@ class Reconciler:
 
     def pools(self, team_links: dict[int, str | None]) -> dict[int, str]:
         """Match poules by season, name and fully linked membership."""
+        entries = PoolEntry.objects.all()
+        through = SeasonPool.teams.through.objects.all()
+        if self.incremental:
+            pending = [row["id"] for row in self.sources["pool"]]
+            entries = entries.filter(pool_id__in=pending)
+            through = through.filter(seasonpool_id__in=list(self.locals["pool"]))
         memberships: dict[int, set[str | None]] = {}
-        for pool_id, team_id in PoolEntry.objects.values_list("pool_id", "team_id"):
+        for pool_id, team_id in entries.values_list("pool_id", "team_id"):
             memberships.setdefault(pool_id, set()).add(team_links.get(team_id))
         local_members: dict[str, set[str]] = defaultdict(set)
-        for pool_id, team_id in SeasonPool.teams.through.objects.values_list(
-            "seasonpool_id", "team_id"
-        ):
+        for pool_id, team_id in through.values_list("seasonpool_id", "team_id"):
             local_members[str(pool_id)].add(str(team_id))
         by_season: dict[Any, set[str]] = defaultdict(set)
         index: dict[tuple[Any, str, frozenset[str]], list[str]] = defaultdict(list)

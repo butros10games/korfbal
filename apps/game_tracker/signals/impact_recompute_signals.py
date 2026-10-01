@@ -21,10 +21,17 @@ from apps.game_tracker.services.live_update_signal_control import (
 def _match_data_post_save(
     sender: type[MatchData],
     instance: MatchData,
+    created: bool = False,
     update_fields: frozenset[str] | None = None,
     **kwargs: object,
 ) -> None:
-    """Include match duration/status changes, but not revision-only publication."""
+    """Include match duration/status changes, but not revision-only publication.
+
+    A new match has no timeline, players or periods, so there is nothing to compute;
+    the first timeline write or player-group membership change schedules it.
+    """
+    if created:
+        return
     if update_fields and set(update_fields) <= {"live_revision", "live_changed_at"}:
         return
     schedule_match_impact_recompute(match_data_id=str(instance.pk), countdown_seconds=2)

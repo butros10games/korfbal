@@ -16,7 +16,11 @@ from apps.competition.adapters.outbound.sportlink import (
 )
 from apps.competition.application.ports import FetchResult, RequestGate, TransportError
 from apps.competition.models import HistoricalResource
-from apps.competition.services.history import DATA_ROW_LIMITS, HistoryUnavailableError
+from apps.competition.services.history import (
+    DATA_ROW_LIMITS,
+    EDITION_KINDS,
+    HistoryUnavailableError,
+)
 
 
 LOOKBACK_WEEKS = 52
@@ -160,6 +164,8 @@ class HistoryClient:
         path, parameter, version = {
             "match": ("match/MatchResultDetails", "PublicMatchId", 8),
             "pool": ("pool/PoolCompetitionData", "PoolId", 2),
+            "edition_team": ("team/TeamCompetitionData", "PublicTeamId", 2),
+            "edition_pool": ("pool/PoolCompetitionData", "PoolId", 2),
         }[resource.kind]
         if self.app.store and self.app.store.needs_refresh():
             self.app._refresh(gate)
@@ -167,6 +173,9 @@ class HistoryClient:
         if resource.etag:
             headers["If-None-Match"] = resource.etag
         params = {parameter: resource.source_id, "v": str(version)}
+        if resource.kind in EDITION_KINDS:
+            # The app's season selector; old poules are empty without it.
+            params["SeasonId"] = str(resource.season.start_date.year)
         response = self.app._get(
             BASE_URL + path, params=params, headers=headers, gate=gate
         )
