@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import timedelta
+import time
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -17,7 +18,12 @@ from rest_framework.test import APIClient
 from apps.club.models import Club as AppClub
 from apps.competition.models import Club, Match, SyncLease, Team, TeamGroup
 from apps.competition.services.importer import Importer
-from apps.competition.services.publishing import Publisher, publish_catalogue
+from apps.competition.services.publishing import (
+    MatchBounds,
+    Publisher,
+    pending_matches,
+    publish_catalogue,
+)
 from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_importer import match_payload
 from apps.game_tracker.models import MatchData, Shot
@@ -434,3 +440,44 @@ def test_published_poule_gains_new_members_without_rescanning_others(
         Publisher(RecordingScheduleChanges()).pools()
     # Nothing is pending: one query finds no poule to publish.
     assert len(queries.captured_queries) == 1
+
+
+def import_two_matches(season: Season) -> None:
+    """Import two unpublished source fixtures."""
+    second = deepcopy(match_payload())
+    second["PublicMatchId"] = "M2"
+    second["MatchDateTime"] = "2026-09-12T13:30:00+0200"
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload(), second]}
+    )
+
+
+@pytest.mark.django_db
+def test_bounded_publication_leaves_the_rest_pending(season: Season) -> None:
+    """History publishes its backlog in chunks, oldest first."""
+    import_two_matches(season)
+    publish_catalogue(
+        schedule_changes=RecordingScheduleChanges(), bounds=MatchBounds(limit=1)
+    )
+    assert list(pending_matches().values_list("external_id", flat=True)) == ["M2"]
+    publish_catalogue(
+        schedule_changes=RecordingScheduleChanges(),
+        bounds=MatchBounds(deadline=time.monotonic() - 1),
+    )
+    assert pending_matches().count() == 1
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert not pending_matches().exists()
+
+
+@pytest.mark.django_db
+def test_season_scoped_publication_skips_other_seasons(season: Season) -> None:
+    """The live sync publishes only its own season, never the history backlog."""
+    import_two_matches(season)
+    other = Season.objects.create(
+        name="other", start_date=season.start_date, end_date=season.end_date
+    )
+    publish_catalogue(
+        schedule_changes=RecordingScheduleChanges(),
+        bounds=MatchBounds(seasons={other.pk}),
+    )
+    assert pending_matches().count() == MATCH_SIDES

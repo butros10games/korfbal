@@ -31,7 +31,7 @@ from apps.competition.services.history_editions import (
 )
 from apps.competition.services.history_worker import current_work_due, run_history
 from apps.competition.services.importer import Importer
-from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.publishing import pending_matches, publish_catalogue
 from apps.competition.services.seasons import INDOOR, OUTDOOR
 from apps.competition.tasks import sync_competition_history
 from apps.competition.tests.fakes import RecordingScheduleChanges
@@ -619,3 +619,21 @@ def test_history_yields_only_to_schedules_close_to_kickoff(
         fetched_at=past, next_sync_at=timezone.now() + timedelta(days=1)
     )
     assert current_work_due() is blocks
+
+
+@pytest.mark.django_db
+def test_history_publishes_its_backlog_before_fetching_more(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Imports pause while publication catches up, so no turn overruns."""
+    monkeypatch.setattr("apps.competition.services.history_worker.PUBLISH_BACKLOG", 1)
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
+    run([FetchResult(200, full_year_pool())])
+    assert pending_matches().count() == len(["M1", "M2"])
+    client = FakeClient([])
+    summary = run_history(
+        lambda: client, budget=5, publish_with=RecordingScheduleChanges()
+    )
+    assert summary["http_requests"] == 0
+    assert summary["unpublished"] == 0

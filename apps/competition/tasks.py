@@ -147,8 +147,10 @@ def _run_scheduled(season: Season) -> dict[str, object]:
     return {"status": outcome(summary), **summary, "backlog": backlog}
 
 
-# Leave time for the batch's publication pass inside the task time limit.
-HISTORY_REQUEST_SECONDS = 150
+# Requests stop first; publication stops before the 230 s soft time limit and
+# commits what it published.
+HISTORY_REQUEST_SECONDS = 90
+HISTORY_PUBLISH_SECONDS = 190
 
 
 @shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
@@ -160,12 +162,14 @@ def sync_competition_history() -> dict[str, object]:
         state="pending", next_attempt_at__lte=timezone.now()
     ).exists():
         return {"status": "idle", "http_requests": 0}
+    started = time.monotonic()
     try:
         summary = run_history(
             scheduled_history_client,
             publish_with=schedule_change_dispatcher(),
             budget=settings.SPORTLINK_HISTORY_MAX_REQUESTS,
-            deadline=time.monotonic() + HISTORY_REQUEST_SECONDS,
+            deadline=started + HISTORY_REQUEST_SECONDS,
+            publish_deadline=started + HISTORY_PUBLISH_SECONDS,
         )
     except (OSError, ValueError, TypeError):
         logger.warning("Competition history cannot load its private OAuth session")

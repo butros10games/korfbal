@@ -36,7 +36,11 @@ from apps.competition.services.history import (
 from apps.competition.services.history_checkpoint import checkpoint
 from apps.competition.services.history_dataservice import reconcile_pool_coverage
 from apps.competition.services.polling import PollPlanner
-from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.publishing import (
+    MatchBounds,
+    pending_matches,
+    publish_catalogue,
+)
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.schedule_notifications import ScheduleChangeDispatcher
 from apps.competition.services.traffic import TrafficGate, observe_rate_limit
@@ -44,6 +48,10 @@ from apps.schedule.models import Season
 
 
 MAX_BUDGET = 1000
+# Matches published per history turn, and the unpublished backlog at which a
+# turn stops fetching and only publishes; publication must keep pace with imports.
+PUBLISH_MATCHES = 1500
+PUBLISH_BACKLOG = 3000
 MAX_WINDOW_DAYS = 240
 RESULT_PRIORITY_CHECK_SECONDS = 30
 AUTH_REASONS = {
@@ -223,6 +231,7 @@ class HistoryBatch:
         """Bind the exclusively owned client and its wire request budget."""
         self.client, self.gate = client, gate
         self.cooldown = 0
+        self.publish_deadline: float | None = None
         self.touched: set[int] = set()
         self.summary: dict[str, Any] = {
             "http_requests": 0,
@@ -314,6 +323,11 @@ class HistoryBatch:
         assert (
             budget is not None
         )  # Historical imports always have an explicit batch cap.
+        # Fetch only while publication keeps up; otherwise this turn publishes.
+        backlog = pending_matches().count()
+        if backlog >= PUBLISH_BACKLOG:
+            budget = 0
+        self.summary["unpublished"] = backlog
         next_result_check = time.monotonic() + RESULT_PRIORITY_CHECK_SECONDS
         for _ in range(budget * 4):
             include_results = time.monotonic() >= next_result_check
@@ -331,12 +345,17 @@ class HistoryBatch:
                 key="sportlink", owner=owner
             )
             reconcile_pool_coverage(self.touched)
-            if publish_with is not None and self.summary["fetched"]:
+            if publish_with is not None and (self.summary["fetched"] or backlog):
                 result = publish_catalogue(
-                    schedule_changes=publish_with, lease_owner=owner
+                    schedule_changes=publish_with,
+                    lease_owner=owner,
+                    bounds=MatchBounds(
+                        limit=PUBLISH_MATCHES, deadline=self.publish_deadline
+                    ),
                 )
                 self.summary["publication"] = result["counts"]
                 self.summary["publication_conflicts"] = len(result["blocked"])
+                self.summary["unpublished"] = pending_matches().count()
             lease.expires_at = timezone.now() + timedelta(seconds=120)
             lease.save(update_fields=("expires_at",))
 
@@ -354,6 +373,7 @@ def run_history(
     publish_with: ScheduleChangeDispatcher | None,
     budget: int = 20,
     deadline: float | None = None,
+    publish_deadline: float | None = None,
 ) -> dict:
     """Resume a bounded slice of historical work under the shared provider lease.
 
@@ -378,6 +398,7 @@ def run_history(
         client = client_factory()
         gate = TrafficGate(budget, owner, deadline=deadline, spacing=history_spacing())
         batch = HistoryBatch(client, gate)
+        batch.publish_deadline = publish_deadline
         batch.drain(publish_with=publish_with, owner=owner)
         batch.summary["http_requests"] = batch.gate.requests
         return batch.summary

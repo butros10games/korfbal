@@ -33,7 +33,7 @@ from apps.competition.services.polling import (
     mark_checked,
     next_result_check,
 )
-from apps.competition.services.publishing import publish_catalogue
+from apps.competition.services.publishing import MatchBounds, publish_catalogue
 from apps.competition.services.resources import ENDPOINTS, MAX_FEED_FAILURES
 from apps.competition.services.schedule_notifications import ScheduleChangeDispatcher
 from apps.competition.services.traffic import TrafficGate, observe_rate_limit
@@ -324,8 +324,11 @@ def _sync(
         schedule_changes = options.schedule_changes
         if summary["updated"] and schedule_changes and not options.details_only:
             progress("publishing", summary)
+            # Only this season's fixtures: history publishes its own backlog.
             publication = publish_catalogue(
-                schedule_changes=schedule_changes, lease_owner=owner
+                schedule_changes=schedule_changes,
+                lease_owner=owner,
+                bounds=MatchBounds(seasons={season.pk}),
             )
             summary["publication_blocked"] = len(publication["blocked"])
     finally:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import dataclass
+import time
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -352,18 +354,20 @@ class Publisher:
             eligible.append(row)
         return eligible
 
-    def matches(self) -> None:
-        """Publish fixtures and results while keeping tracked history authoritative."""
-        rows = list(
-            Match.objects
-            .filter(
-                Q(local_match=None)
-                | Q(published_at=None)
-                | Q(updated_at__gt=F("published_at"))
-            )
-            .select_related("local_match")
-            .order_by("pk")
-        )
+    def matches(
+        self,
+        *,
+        limit: int | None = None,
+        seasons: set[UUID] | None = None,
+        deadline: float | None = None,
+    ) -> None:
+        """Publish fixtures and results while keeping tracked history authoritative.
+
+        ``limit``, ``seasons`` and ``deadline`` bound one pass; unpublished rows
+        stay pending for the next pass, oldest first.
+        """
+        query = pending_matches(seasons).select_related("local_match").order_by("pk")
+        rows = list(query if limit is None else query[:limit])
         if not rows:
             return
         rows = self.match_seasons(rows)
@@ -407,6 +411,9 @@ class Publisher:
                 ).values_list("local_match_id", flat=True)
             )
         for row in rows:
+            if deadline is not None and time.monotonic() >= deadline:
+                self.counts["matches_deferred"] += 1
+                continue
             home, away = teams.get(row.home_team_id), teams.get(row.away_team_id)
             if home is None or away is None:
                 self.conflict("match", row.pk, "team_unresolved")
@@ -533,12 +540,31 @@ class Publisher:
         return True
 
 
+@dataclass(frozen=True)
+class MatchBounds:
+    """Bound one publication pass; pending fixtures wait for the next pass."""
+
+    limit: int | None = None
+    seasons: set[UUID] | None = None
+    # time.monotonic() value after which remaining fixtures are deferred.
+    deadline: float | None = None
+
+
+def pending_matches(seasons: set[UUID] | None = None) -> QuerySet[Match]:
+    """Source fixtures that are unpublished or changed since publication."""
+    rows = Match.objects.filter(
+        Q(local_match=None) | Q(published_at=None) | Q(updated_at__gt=F("published_at"))
+    )
+    return rows if seasons is None else rows.filter(season_id__in=seasons)
+
+
 @transaction.atomic
 def publish_catalogue(
     *,
     schedule_changes: ScheduleChangeDispatcher,
     lease_owner: UUID | None = None,
     overrides: dict[tuple[str, int], str] | None = None,
+    bounds: MatchBounds | None = None,
 ) -> dict[str, Any]:
     """Materialize snapshots into native models without issuing provider requests.
 
@@ -577,7 +603,10 @@ def publish_catalogue(
         publish_logo(source_club)
     publisher.teams()
     publisher.pools()
-    publisher.matches()
+    bounds = bounds or MatchBounds()
+    publisher.matches(
+        limit=bounds.limit, seasons=bounds.seasons, deadline=bounds.deadline
+    )
     publish_pending_rosters()
     return {
         "counts": dict(publisher.counts),
