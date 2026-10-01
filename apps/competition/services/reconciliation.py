@@ -121,6 +121,7 @@ class Reconciler:
         *,
         lock: bool,
         incremental: bool = False,
+        skip_locked: bool = False,
     ) -> None:
         """Read the local catalogue once; lock records only when applying links.
 
@@ -130,6 +131,9 @@ class Reconciler:
         """
         self.overrides = overrides
         self.incremental = incremental
+        # Beside a running import, defer source rows it holds instead of waiting
+        # on them: they publish next pass, and lock-order cycles cannot form.
+        self.skip_locked = skip_locked
         self.used: set[tuple[str, int]] = set()
         self.decisions: list[LinkDecision] = []
         self.sources = {
@@ -162,7 +166,7 @@ class Reconciler:
                 | Q(pk__in=[pk for key, pk in self.overrides if key == kind])
             )
         if lock:
-            query = query.select_for_update()
+            query = query.select_for_update(skip_locked=self.skip_locked)
         return list(query.values())
 
     def _resolve_seasons(

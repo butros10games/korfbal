@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import signal
 import threading
 
@@ -27,6 +28,12 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         """Install signal handlers and loop until stopped."""
+        # Outside Celery nothing configures logging, and Django's defaults drop
+        # INFO: show turn summaries and HTTP reservations in the worker log.
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s: %(levelname)s/provider-manager] %(message)s",
+        )
         stopped = threading.Event()
 
         def stop(_signum: int, _frame: object) -> None:

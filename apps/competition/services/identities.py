@@ -40,7 +40,8 @@ def merge_unlinked_joint_groups(*, protected_ids: set[int] | None = None) -> int
     buckets: dict[tuple, list[TeamGroup]] = defaultdict(list)
     for group in (
         TeamGroup.objects
-        .select_for_update()
+        # Lock the groups only: the importer locks club rows in its own order.
+        .select_for_update(of=("self",))
         .select_related("club")
         .filter(
             season_id__in={season for season, _ in pending},

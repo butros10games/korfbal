@@ -2,10 +2,13 @@
 
 from copy import deepcopy
 from datetime import timedelta
+import logging
 import time
 from unittest.mock import Mock, patch
 import uuid
 
+from django.core.management import call_command
+from django.db import OperationalError
 from django.utils import timezone
 from korfbal.worker import supervised_commands
 import pytest
@@ -229,3 +232,55 @@ def test_supervisor_starts_the_manager_only_in_manager_mode(
     commands = supervised_commands()
     manager_command = ["python", "manage.py", "run_provider_manager"]
     assert (manager_command in commands) is runs_manager
+
+
+def test_manager_command_logs_turn_summaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Outside Celery the command itself must make INFO summaries visible."""
+    configured = {}
+    monkeypatch.setattr(
+        "apps.competition.management.commands.run_provider_manager.logging.basicConfig",
+        lambda **kwargs: configured.update(kwargs),
+    )
+    monkeypatch.setattr(ProviderManager, "run_forever", lambda self: None)
+    call_command("run_provider_manager")
+    assert configured["level"] == logging.INFO
+
+
+class PostgresError(Exception):
+    """Stand-in for a psycopg error carrying its SQLSTATE."""
+
+    def __init__(self, sqlstate: str) -> None:
+        """Keep the SQLSTATE the way psycopg exposes it."""
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+@pytest.mark.django_db
+def test_publication_pass_is_redone_after_a_lock_conflict(
+    season: Season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deadlock with the importer rolls back one pass; the sweep continues."""
+    import_fixtures(season, 1)
+    deadlock = OperationalError("deadlock detected")
+    deadlock.__cause__ = PostgresError("40P01")
+    original = publication_worker.publish_pass
+    calls = {"n": 0}
+
+    def flaky(*args: object) -> dict:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise deadlock
+        return original(*args)
+
+    monkeypatch.setattr(publication_worker, "publish_pass", flaky)
+    monkeypatch.setattr(publication_worker, "RETRY_SECONDS", 0)
+    result = sweep()
+    assert result["retries"] == 1
+    assert not pending_matches().exists()
+
+
+def test_other_database_errors_are_not_retried() -> None:
+    """Only deadlocks and lock timeouts are safe to redo blindly."""
+    error = OperationalError("connection lost")
+    error.__cause__ = PostgresError("08006")
+    assert not publication_worker.lock_conflict(error)

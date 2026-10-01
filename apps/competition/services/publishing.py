@@ -627,7 +627,9 @@ def publish_catalogue(
     merged_groups = merge_unlinked_joint_groups(
         protected_ids={pk for (kind, pk) in (overrides or {}) if kind == "team"}
     )
-    decisions = Reconciler(overrides or {}, lock=True, incremental=True).plan()
+    decisions = Reconciler(
+        overrides or {}, lock=True, incremental=True, skip_locked=alongside_import
+    ).plan()
     for decision in decisions:
         if decision.reason in {"unique", "explicit"}:
             SOURCE_MODELS[decision.kind].objects.filter(
