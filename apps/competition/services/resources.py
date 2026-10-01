@@ -7,6 +7,8 @@ MAX_FEED_FAILURES = 6
 ENDPOINTS = {
     "player_photo": ("", None, 1, 87600),
     "club_logo": ("", None, 1, 87600),
+    "club_contact": ("club/ClubContactData", "ClubId", 1, 168),
+    "club_sports": ("club/ClubSports", "ClubId", 0, 168),
     "clubs": ("club/Clubs", None, 1, 168),
     "club_teams": ("club/ClubTeams", "ClubId", 1, 168),
     "club_program": ("club/ClubProgram", "ClubId", 3, 24),

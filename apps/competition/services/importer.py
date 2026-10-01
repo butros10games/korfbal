@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
 from typing import Any
@@ -22,6 +23,10 @@ from apps.competition.models import (
     TeamGroup,
 )
 from apps.competition.services.classification import map_pool
+from apps.competition.services.club_details import (
+    import_club_contact,
+    import_club_sports,
+)
 from apps.competition.services.cups import import_observed_cup_fixture
 from apps.competition.services.identities import team_group_key
 from apps.competition.services.lineups import import_lineup
@@ -100,6 +105,14 @@ def club_with_name(team: dict[str, Any]) -> dict[str, Any]:
         return {**club, "ClubName": name.removesuffix(code).strip(), "Dissolved": True}
     return {**club, "Dissolved": True}
 
+
+# Responses bound to one provider identity, independent of the season.
+SOURCE_IMPORTS: dict[str, Callable[[str, dict[str, Any]], None]] = {
+    "player_photo": cache_photo,
+    "club_logo": cache_logo,
+    "club_contact": import_club_contact,
+    "club_sports": import_club_sports,
+}
 
 OUTFITS = ("HomeOutfit", "AwayOutfit", "ReserveOutfit")
 OUTFIT_PARTS = ("Shirt", "Shorts", "Stocking")
@@ -183,7 +196,15 @@ class Importer:
                     },
                 )
         for kind in (
-            ("club_teams", "club_program", "club_results") if self.discover else ()
+            (
+                "club_teams",
+                "club_program",
+                "club_results",
+                "club_contact",
+                "club_sports",
+            )
+            if self.discover
+            else ()
         ):
             enqueue(self.season, kind, club.external_id)
         if self.discover:
@@ -501,10 +522,8 @@ class Importer:
             field, import_row = collections[kind]
             for row in data[field]:
                 import_row(row)
-        elif kind == "player_photo":
-            cache_photo(source_id, data)
-        elif kind == "club_logo":
-            cache_logo(source_id, data)
+        elif kind in SOURCE_IMPORTS:
+            SOURCE_IMPORTS[kind](source_id, data)
         elif kind in {
             "match_lineup",
             "team_roster",

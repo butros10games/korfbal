@@ -90,6 +90,10 @@ class Club(models.Model):
     city = models.CharField(max_length=255, blank=True)
     # Provider ClubColors: home, away and reserve outfits (shirt, shorts, socks).
     colors = models.JSONField(default=dict, blank=True)
+    # ClubContactData without the club's own phone and email: website, founding
+    # date and main venue. ClubSports: the club's sport descriptions.
+    contact = models.JSONField(default=dict, blank=True)
+    sports = models.JSONField(default=list, blank=True)
     logo_bucket = models.CharField(max_length=80, blank=True)
     logo_hash = models.CharField(max_length=64, blank=True)
     cached_logo = models.CharField(max_length=1024, blank=True)

@@ -30,6 +30,7 @@ from apps.club.services.admin import (
     search_club_admin_users,
 )
 from apps.club.services.eligibility_dashboard import build_club_eligibility_dashboard
+from apps.competition.queries.club_info import club_info
 from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.params import UUID_URL_REGEX
@@ -110,6 +111,16 @@ class ClubViewSet(viewsets.ModelViewSet):
                 return queryset.none()
             queryset = queryset.filter(player__user=self.request.user)
         return queryset
+
+    @action(detail=True, methods=("GET",), url_path="info")
+    def info(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Return the club's KNKV website, founding date, venue, sports and kits.
+
+        Returns:
+            Response: Normalized KNKV club information; empty for unlinked clubs.
+
+        """
+        return Response(club_info(self.get_object()))
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:

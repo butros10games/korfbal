@@ -39,6 +39,8 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
     "club": frozenset({"api.serializers"}),
     "competition": frozenset({
         "domain.rosters",
+        "queries.club_info",
+        "queries.match_info",
         "services.classification",
         "services.match_prediction",
         "services.schedule_notifications",

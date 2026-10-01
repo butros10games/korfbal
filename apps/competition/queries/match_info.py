@@ -57,7 +57,8 @@ def _sections(rules: dict[str, Any]) -> list[dict[str, Any]]:
     return sections
 
 
-def _kit(club: Club) -> list[dict[str, Any]]:
+def kit(club: Club) -> list[dict[str, Any]]:
+    """Return the club's filled outfits in home, reserve, away order."""
     outfits = []
     for key, kind in OUTFIT_KINDS.items():
         parts = club.colors.get(key) or {}
@@ -92,7 +93,7 @@ def match_info(match: NativeMatch) -> dict[str, Any]:
         "venue": _venue(source.facility_details),
         "sections": _sections(source.match_rules),
         "kits": {
-            "home": _kit(source.home_team.club),
-            "away": _kit(source.away_team.club),
+            "home": kit(source.home_team.club),
+            "away": kit(source.away_team.club),
         },
     }
