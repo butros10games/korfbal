@@ -20,8 +20,10 @@ from apps.competition.models import (
     PoolEntry,
     SeasonBinding,
     SyncResource,
+    Team,
     TrafficState,
 )
+from apps.competition.services.full_year_repair import split_poules
 from apps.competition.services.history_editions import (
     current_edition,
     edition_log,
@@ -44,7 +46,11 @@ from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_history import FakeClient
 from apps.competition.tests.test_importer import team_payload
 from apps.competition.tests.test_rosters import person
-from apps.schedule.models import Season
+from apps.schedule.models import (
+    Match as AppMatch,
+    Season,
+)
+from apps.team.models import TeamData
 
 
 EDITION = 2024
@@ -101,6 +107,25 @@ def full_year_pool() -> dict:
         ],
         "PoolStanding": standing(2, "T1", "T2"),
     }
+
+
+def half_year_pools() -> list[FetchResult]:
+    """Separate autumn (7) and spring (8) poules of the same two teams."""
+    full = full_year_pool()
+    autumn, spring = full["MatchResult"]
+    return [
+        FetchResult(200, {**full, "MatchResult": [autumn]}),
+        FetchResult(
+            200,
+            {
+                **full,
+                "MatchResult": [{**spring, "Pool": {**spring["Pool"], "PoolId": 8}}],
+            },
+        ),
+    ]
+
+
+FULL_YEAR = "Veld seizoen 2024-2025"
 
 
 def run(replies: list) -> dict:
@@ -190,8 +215,8 @@ def test_edition_requests_send_the_app_season_selector() -> None:
 
 
 @pytest.mark.django_db
-def test_full_year_outdoor_poule_is_split_into_both_halves() -> None:
-    """Team -> poule discovery routes autumn and spring results separately."""
+def test_full_year_outdoor_poule_stays_whole_in_its_own_season() -> None:
+    """A poule playing both halves is one competition with one standings table."""
     seed_edition_with_team("T1", OUTDOOR)
     run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
     run([FetchResult(200, full_year_pool())])
@@ -199,17 +224,33 @@ def test_full_year_outdoor_poule_is_split_into_both_halves() -> None:
         match.external_id: match.season.name
         for match in Match.objects.select_related("season")
     }
-    assert seasons == {"M1": "Voor seizoen 2024", "M2": "Na seizoen 2025"}
+    assert seasons == {"M1": FULL_YEAR, "M2": FULL_YEAR}
     pool = HistoricalResource.objects.get(kind="edition_pool")
     assert (pool.state, pool.coverage) == ("fetched", "complete")
-    assert pool.evidence["imported"] == {"Voor seizoen 2024": 1, "Na seizoen 2025": 1}
-    # Final standings belong to the half containing the poule's last match.
+    assert pool.evidence["imported"] == {FULL_YEAR: 2}
     standings = {
         entry.pool.season.name: entry.standing.get("TotalMatches")
         for entry in PoolEntry.objects.select_related("pool__season")
     }
-    assert standings == {"Voor seizoen 2024": None, "Na seizoen 2025": 2}
-    assert Pool.objects.count() == len(["autumn", "spring"])
+    assert standings == {FULL_YEAR: 2}
+    assert Pool.objects.count() == 1
+    full = Season.objects.get(name=FULL_YEAR)
+    assert (full.start_date, full.end_date) == (date(2024, 7, 1), date(2025, 6, 30))
+    assert SeasonBinding.objects.filter(scope=full, sport=OUTDOOR, season=full).exists()
+
+
+@pytest.mark.django_db
+def test_half_year_outdoor_poules_keep_their_own_halves() -> None:
+    """Separate autumn and spring poules stay in the autumn and spring seasons."""
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}, {"PoolId": 8}]})])
+    run(half_year_pools())
+    seasons = {
+        match.external_id: match.season.name
+        for match in Match.objects.select_related("season")
+    }
+    assert seasons == {"M1": "Voor seizoen 2024", "M2": "Na seizoen 2025"}
+    assert not Season.objects.filter(name=FULL_YEAR).exists()
 
 
 @pytest.mark.django_db
@@ -327,8 +368,8 @@ def test_play_off_poules_from_unbound_results_are_discovered() -> None:
 def test_publication_places_each_half_in_its_native_season() -> None:
     """Native matches land in the playing season their source scope binds to."""
     seed_edition_with_team("T1", OUTDOOR)
-    run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
-    run([FetchResult(200, full_year_pool())])
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}, {"PoolId": 8}]})])
+    run(half_year_pools())
     publish_catalogue(schedule_changes=RecordingScheduleChanges())
     seasons = {
         match.external_id: match.local_match.season.name
@@ -360,14 +401,14 @@ def test_command_queues_editions_and_writes_the_match_log(tmp_path: Path) -> Non
     )
     rows = list(csv.DictReader(output.open(encoding="utf-8")))
     assert [(r["match_id"], r["season"], r["home_score"]) for r in rows] == [
-        ("M1", "Voor seizoen 2024", "20"),
-        ("M2", "Na seizoen 2025", "20"),
+        ("M1", FULL_YEAR, "20"),
+        ("M2", FULL_YEAR, "20"),
     ]
     status = StringIO()
     call_command(
         "import_competition_history", "status", "--edition", "2024", stdout=status
     )
-    assert '"Na seizoen 2025": 1' in status.getvalue()
+    assert f'"{FULL_YEAR}": 2' in status.getvalue()
 
 
 @pytest.mark.django_db
@@ -762,3 +803,40 @@ def test_command_queues_lineups_for_an_already_imported_edition() -> None:
             "import_competition_history", "lineups", "--edition", "2024", stdout=out
         )
         assert f'"lineups_queued": {expected}' in out.getvalue()
+
+
+@pytest.mark.django_db
+def test_repair_reimports_a_split_poule_into_the_full_year_season() -> None:
+    """Poules split by the earlier import are removed, requeued and kept whole."""
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
+    run(half_year_pools()[:1])
+    # The earlier import put the poule's spring results in the spring season.
+    spring_row = {**full_year_pool()["MatchResult"][1]}
+    importer = Importer(
+        Season.objects.get(name="Na seizoen 2025"), timezone.now(), discover=False
+    )
+    importer.pool({**spring_row["Pool"], "PoolId": "7"}, OUTDOOR)
+    importer.apply(
+        "pool_results",
+        "7",
+        {"MatchResult": [spring_row], "PoolStanding": None, "ResultsFiltered": False},
+    )
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    halves = ("Voor seizoen 2024", "Na seizoen 2025")
+    assert AppMatch.objects.filter(season__name__in=halves).count() == len(halves)
+    preview = StringIO()
+    call_command("repair_full_year_poules", "--edition", "2024", stdout=preview)
+    assert '"split_poules": 1' in preview.getvalue()
+    call_command(
+        "repair_full_year_poules", "--edition", "2024", "--apply", stdout=StringIO()
+    )
+    assert not Match.objects.exists()
+    assert not AppMatch.objects.exists()
+    assert not Team.objects.filter(season__name__in=halves).exists()
+    assert not TeamData.objects.filter(season__name__in=halves).exists()
+    assert HistoricalResource.objects.get(kind="edition_pool").state == "pending"
+    run([FetchResult(200, full_year_pool())])
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert set(AppMatch.objects.values_list("season__name", flat=True)) == {FULL_YEAR}
+    assert split_poules(EDITION) == []

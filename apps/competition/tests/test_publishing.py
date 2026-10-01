@@ -2,11 +2,13 @@
 
 from copy import deepcopy
 from datetime import timedelta
+from io import StringIO
 import time
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -547,3 +549,78 @@ def test_suspended_twin_of_a_published_final_stays_unpublished(
     assert not result["blocked"]
     assert Match.objects.get(external_id="final").local_match_id is not None
     assert AppMatch.objects.count() == 1
+
+
+MANUAL_HOME_SCORE = 5
+
+
+def manual_fixture(season: Season, offset: timedelta) -> AppMatch:
+    """Enter the imported fixture by hand, kickoff stored ``offset`` away."""
+    source = Match.objects.select_related("home_team__club", "away_team__club").get()
+    sides = []
+    for team in (source.home_team, source.away_team):
+        club, _ = AppClub.objects.get_or_create(name=team.club.name)
+        sides.append(AppTeam.objects.get_or_create(club=club, name=team.name)[0])
+    native = AppMatch.objects.create(
+        season=season,
+        home_team=sides[0],
+        away_team=sides[1],
+        start_time=source.starts_at + offset,
+    )
+    MatchData.objects.filter(match_link=native).update(
+        status="finished",
+        home_score=MANUAL_HOME_SCORE,
+        away_score=4,
+        score_source="tracker",
+    )
+    return native
+
+
+@pytest.mark.django_db
+def test_manual_fixture_an_hour_off_is_linked_not_duplicated(season: Season) -> None:
+    """Dutch local time saved as UTC still identifies the same fixture."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    native = manual_fixture(season, timedelta(hours=1))
+    result = publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert result["counts"]["matches_clock_twin"] == 1
+    assert Match.objects.get().local_match_id == native.pk
+    assert AppMatch.objects.count() == 1
+    tracker = MatchData.objects.get(match_link=native)
+    assert (tracker.score_source, tracker.home_score) == ("tracker", MANUAL_HOME_SCORE)
+
+
+@pytest.mark.django_db
+def test_other_offsets_still_create_their_own_fixture(season: Season) -> None:
+    """Only whole clock offsets of one or two hours identify a fixture."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    manual_fixture(season, timedelta(hours=3))
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert AppMatch.objects.count() == len(["manual", "imported"])
+
+
+@pytest.mark.django_db
+def test_repair_merges_an_imported_copy_into_its_manual_fixture(
+    season: Season,
+) -> None:
+    """Copies created before clock matching are merged once, keeping the tracker."""
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    copy = Match.objects.get().local_match
+    native = manual_fixture(season, -timedelta(hours=2))
+    out = StringIO()
+    call_command("repair_clock_twins", stdout=out)
+    assert '"source": "M1"' in out.getvalue()
+    assert AppMatch.objects.filter(pk=copy.pk).exists()
+    call_command("repair_clock_twins", "--apply", stdout=StringIO())
+    source = Match.objects.get()
+    assert (source.local_match_id, source.local_created) == (native.pk, False)
+    assert not AppMatch.objects.filter(pk=copy.pk).exists()
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert AppMatch.objects.count() == 1
+    assert MatchData.objects.get(match_link=native).home_score == MANUAL_HOME_SCORE

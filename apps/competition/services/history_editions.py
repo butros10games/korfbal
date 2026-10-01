@@ -78,6 +78,25 @@ def season_names(edition: int) -> tuple[str, str, str]:
     )
 
 
+def full_year_name(edition: int) -> str:
+    """Name the outdoor season of poules that play both halves of an edition."""
+    return f"Veld seizoen {edition}-{edition + 1}"
+
+
+def full_year_season(edition: int) -> Season:
+    """Create or reuse the full-year outdoor season and bind it to outdoor play.
+
+    Returns:
+        The season spanning the edition's autumn and spring halves.
+
+    """
+    season = _named_season(
+        full_year_name(edition), (date(edition, 7, 1), date(edition + 1, 6, 30))
+    )
+    _bind(season, OUTDOOR)
+    return season
+
+
 def current_edition() -> int:
     """Editions start in July; the running edition is not historical."""
     today = timezone.localdate()
@@ -163,7 +182,7 @@ def edition_seasons(resource: HistoricalResource) -> EditionSeasons:
 def edition_scopes(edition: int) -> list[Season]:
     """Return the existing playing seasons of one edition."""
     query = Q()
-    for name in season_names(edition):
+    for name in (*season_names(edition), full_year_name(edition)):
         query |= Q(name__iexact=name)
     return list(Season.objects.filter(query))
 
@@ -567,6 +586,14 @@ def import_rows(
         if latest is None or day > latest[0]:
             latest = (day, target.pk)
     pool = resource.source_id if resource.kind == "edition_pool" else ""
+    if pool and seasons.autumn.pk in groups and seasons.spring.pk in groups:
+        # One competition across both halves keeps its results and standings
+        # together in the full-year season.
+        whole = full_year_season(seasons.edition)
+        rows = groups.pop(seasons.autumn.pk)[1] + groups.pop(seasons.spring.pk)[1]
+        groups[whole.pk] = (whole, rows)
+        if latest is not None and latest[1] in {seasons.autumn.pk, seasons.spring.pk}:
+            latest = (latest[0], whole.pk)
     imported: dict[Any, dict[str, Match]] = {}
     now = timezone.now()
     for key, (target, group) in groups.items():

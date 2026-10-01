@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import timedelta
 import time
 from typing import Any
 from uuid import UUID, uuid4
@@ -116,6 +117,32 @@ def pools_to_publish() -> QuerySet[Pool]:
         | Exists(fixtures[0])
         | Exists(fixtures[1])
     )
+
+
+# Manually entered fixtures sometimes store Dutch local time as UTC: one or two
+# hours away from the official kickoff, depending on daylight saving time.
+CLOCK_SHIFTS = tuple(timedelta(hours=hours) for hours in (1, -1, 2, -2))
+
+
+def clock_twin(
+    row: Match,
+    teams: tuple[UUID, UUID],
+    candidates: dict[tuple[Any, ...], list[AppMatch]],
+    claimed: set[UUID],
+) -> list[AppMatch]:
+    """Find the one unlinked native fixture a whole clock offset away, if any.
+
+    Returns:
+        The single matching fixture, or an empty list when none or several match.
+
+    """
+    twins = [
+        match
+        for shift in CLOCK_SHIFTS
+        for match in candidates[row.season_id, *teams, row.starts_at + shift]
+        if match.pk not in claimed
+    ]
+    return twins if len(twins) == 1 else []
 
 
 class Publisher:
@@ -379,6 +406,10 @@ class Publisher:
         if len(existing) > 1 or taken:
             self.conflict("match", row.pk, "ambiguous_fixture")
             return False
+        if not existing:
+            existing = clock_twin(row, teams, candidates, claimed)
+            if existing:
+                self.counts["matches_clock_twin"] += 1
         if existing:
             local = existing[0]
         else:
@@ -481,7 +512,11 @@ class Publisher:
                     season_id__in={row.season_id for row in unlinked},
                     home_team_id__in={teams.get(row.home_team_id) for row in unlinked},
                     away_team_id__in={teams.get(row.away_team_id) for row in unlinked},
-                    start_time__in={row.starts_at for row in unlinked},
+                    start_time__in={
+                        row.starts_at + shift
+                        for row in unlinked
+                        for shift in (timedelta(0), *CLOCK_SHIFTS)
+                    },
                 )
             )
             for match in native:
