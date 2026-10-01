@@ -35,6 +35,11 @@ class Club(models.Model):
         blank=True,
         null=True,
     )
+    dissolved: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="The club no longer exists; it is kept for its historical matches.",
+    )
 
     if TYPE_CHECKING:
         teams: models.QuerySet[Team]

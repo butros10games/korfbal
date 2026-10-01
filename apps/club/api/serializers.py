@@ -20,8 +20,14 @@ class ClubSerializer(serializers.ModelSerializer):
         """Meta configuration."""
 
         model = Club
-        fields: ClassVar[list[str]] = ["id_uuid", "name", "logo", "logo_url"]
-        read_only_fields: ClassVar[list[str]] = ["id_uuid"]
+        fields: ClassVar[list[str]] = [
+            "id_uuid",
+            "name",
+            "logo",
+            "logo_url",
+            "dissolved",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id_uuid", "dissolved"]
 
     def get_logo_url(self, obj: Club) -> str | None:
         """Return the URL of the club logo.

@@ -84,6 +84,9 @@ class Club(models.Model):
 
     external_id = models.CharField(max_length=80, unique=True)
     name = models.CharField(max_length=255)
+    # KNKV lists the club without a name in old poules: it no longer exists and
+    # its name comes from one of its team names.
+    dissolved = models.BooleanField(default=False, db_default=False)
     city = models.CharField(max_length=255, blank=True)
     logo_bucket = models.CharField(max_length=80, blank=True)
     logo_hash = models.CharField(max_length=64, blank=True)

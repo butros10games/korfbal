@@ -29,7 +29,8 @@ class ClubModelAdmin(ClubModelAdminBase):
 
     ordering = ("name",)
 
-    list_display = ("name", "knkv_catalogue")
+    list_display = ("name", "dissolved", "knkv_catalogue")
+    list_filter = ("dissolved",)
     search_fields = ("name", "id_uuid")
     show_full_result_count = False
 

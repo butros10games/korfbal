@@ -146,6 +146,9 @@ class Publisher:
         for row in sources:
             if row.local_club_id:
                 continue
+            if row.dissolved:
+                self.dissolved_club(row, local_names)
+                continue
             key = normalized(row.name)
             candidates = local_names[key]
             if (
@@ -164,6 +167,22 @@ class Publisher:
             row.local_club = local
             row.save(update_fields=("local_club",))
             claimed.add(local.pk)
+
+    def dissolved_club(self, row: Club, local_names: dict[str, list[AppClub]]) -> None:
+        """Create a separate native club for a club that no longer exists."""
+        if not row.name:
+            self.conflict("club", row.pk, "club_name_missing")
+            return
+        for name in (row.name, f"{row.name} (opgeheven)"):
+            if local_names[normalized(name)]:
+                continue
+            local = AppClub.objects.create(name=name, dissolved=True)
+            local_names[normalized(name)].append(local)
+            row.local_club = local
+            row.save(update_fields=("local_club",))
+            self.counts["clubs_created"] += 1
+            return
+        self.conflict("club", row.pk, "dissolved_name_taken")
 
     def teams(self) -> None:
         """Use a global Team plus exactly one TeamData per team and season."""

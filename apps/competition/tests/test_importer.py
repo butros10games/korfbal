@@ -354,3 +354,17 @@ def test_history_import_names_a_previously_unnamed_club(season: Season) -> None:
         "club_results", "", {"MatchResult": [row]}
     )
     assert Club.objects.get(external_id="CT1").name == "Club T1"
+
+
+@pytest.mark.django_db
+def test_unnamed_club_is_stored_as_dissolved(season: Season) -> None:
+    """A club KNKV no longer names is kept, named after its team, and dissolved."""
+    row = match_payload()
+    row["HomeTeam"]["Club"]["ClubName"] = ""
+    row["HomeTeam"].update(TeamName="Keizer Karel 2", TeamCode="2")
+    Importer(season, timezone.now(), discover=False).apply(
+        "club_results", "", {"MatchResult": [row]}
+    )
+    club = Club.objects.get(external_id=row["HomeTeam"]["Club"]["ClubId"])
+    assert (club.name, club.dissolved) == ("Keizer Karel", True)
+    assert not Club.objects.get(external_id=row["AwayTeam"]["Club"]["ClubId"]).dissolved

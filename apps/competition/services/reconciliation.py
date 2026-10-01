@@ -331,7 +331,10 @@ class Reconciler:
         club_links = self.choose(
             "club",
             {
-                row["id"]: clubs_by_name[normalized(row["name"])]
+                # A dissolved club is never another club that shares its name.
+                row["id"]: []
+                if row["dissolved"]
+                else clubs_by_name[normalized(row["name"])]
                 for row in self.sources["club"]
             },
             {row["id"]: set(clubs) for row in self.sources["club"]},

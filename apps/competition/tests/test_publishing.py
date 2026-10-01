@@ -481,3 +481,23 @@ def test_season_scoped_publication_skips_other_seasons(season: Season) -> None:
         bounds=MatchBounds(seasons={other.pk}),
     )
     assert pending_matches().count() == MATCH_SIDES
+
+
+@pytest.mark.django_db
+def test_dissolved_club_gets_its_own_native_club(season: Season) -> None:
+    """A dissolved club never merges into a current club with the same name."""
+    current = AppClub.objects.create(name="Keizer Karel")
+    row = match_payload()
+    row["HomeTeam"]["Club"]["ClubName"] = ""
+    row["HomeTeam"].update(TeamName="Keizer Karel 2", TeamCode="2")
+    Importer(season, timezone.now(), discover=False).apply(
+        "club_results", "", {"MatchResult": [row]}
+    )
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    source = Club.objects.select_related("local_club").get(dissolved=True)
+    assert source.local_club_id != current.pk
+    assert (source.local_club.name, source.local_club.dissolved) == (
+        "Keizer Karel (opgeheven)",
+        True,
+    )
+    assert not AppClub.objects.get(pk=current.pk).dissolved
