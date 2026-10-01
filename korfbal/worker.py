@@ -12,6 +12,9 @@ POOLS = {
     "projections": ("projections", 2),
     "media": ("media", 1),
     "competition": ("competition", 1),
+    # Publishes imported competition data while the provider manager keeps
+    # requesting; one process, so passes never overlap.
+    "publication": ("publication", 1),
 }
 
 
@@ -40,6 +43,18 @@ def worker_commands() -> list[list[str]]:
     ]
 
 
+def supervised_commands() -> list[list[str]]:
+    """Celery pools, plus the long-running Sportlink provider manager.
+
+    ``SPORTLINK_SCHEDULER=manager`` (the default) runs every provider request in
+    one supervised loop; ``unified`` and ``legacy`` use Celery beat tasks instead.
+    """
+    commands = worker_commands()
+    if os.getenv("SPORTLINK_SCHEDULER", "manager").strip().lower() == "manager":
+        commands.append(["python", "manage.py", "run_provider_manager"])
+    return commands
+
+
 def main() -> None:
     """Forward beat/management commands; fail the container if any pool dies.
 
@@ -64,7 +79,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     try:
-        for command in worker_commands():
+        for command in supervised_commands():
             if stopping:
                 break
             processes.append(subprocess.Popen(command))

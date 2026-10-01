@@ -94,9 +94,11 @@ SPORTLINK_SYNC_MAX_REQUESTS = max(
 SPORTLINK_HISTORY_MAX_REQUESTS = max(
     1, min(1000, int(env("SPORTLINK_HISTORY_MAX_REQUESTS", "300")))
 )
-# "unified": one provider turn schedules live and history requests together.
-# "legacy": the separate live sync and history tasks (rollback switch).
-SPORTLINK_SCHEDULER = env("SPORTLINK_SCHEDULER", "unified").strip().lower()
+# "manager": a long-running supervised loop sends every provider request and a
+# separate pool publishes in parallel. "unified": the same turns as Celery beat
+# tasks with publication inside each turn. "legacy": the separate live sync and
+# history tasks. The worker supervisor reads the same variable.
+SPORTLINK_SCHEDULER = env("SPORTLINK_SCHEDULER", "manager").strip().lower()
 # History's share of requests that are not time-critical live work (0 to 1).
 SPORTLINK_HISTORY_SHARE = min(
     1.0, max(0.0, float(env("SPORTLINK_HISTORY_SHARE", "0.5")))

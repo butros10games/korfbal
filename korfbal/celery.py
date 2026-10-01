@@ -45,6 +45,11 @@ app.conf.beat_schedule = {
         "schedule": 60.0,
         "options": {"expires": 60, "queue": "competition"},
     },
+    "publish-competition-backlog": {
+        "task": "apps.competition.tasks.publish_competition_backlog",
+        "schedule": 60.0,
+        "options": {"expires": 60, "queue": "publication"},
+    },
     "sync-competition-history": {
         "task": "apps.competition.tasks.sync_competition_history",
         "schedule": 60.0,

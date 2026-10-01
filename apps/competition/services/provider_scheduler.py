@@ -20,6 +20,7 @@ from datetime import timedelta
 import time
 import uuid
 
+from django.conf import settings
 from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient, HistoricalClient
@@ -61,6 +62,10 @@ class TurnOptions:
     history_budget: int = 300
     # History's share of requests that are not time-critical live work.
     history_share: float = 0.5
+    # False when the publication pool publishes in parallel (manager mode).
+    publish: bool = True
+    # Checked between requests: a stopping process ends the turn cleanly.
+    stop: Callable[[], bool] | None = None
 
 
 @dataclass
@@ -116,6 +121,18 @@ class HistoryWork:
         if resource is None:
             return False, False
         return True, self.batch.process(resource)
+
+
+def active_live_season() -> Season | None:
+    """Return the configured live season while it is in progress."""
+    if not settings.SPORTLINK_SYNC_SEASON:
+        return None
+    today = timezone.localdate()
+    return Season.objects.filter(
+        name=settings.SPORTLINK_SYNC_SEASON,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).first()
 
 
 def history_pending() -> bool:
@@ -295,6 +312,8 @@ class ProviderTurn:
         """Pick and run one request at a time until work, budget or time runs out."""
         deadline = self.started + self.options.request_seconds
         while time.monotonic() < deadline:
+            if self.options.stop is not None and self.options.stop():
+                break
             if match_forms_due():
                 # Finish the current request, then let the form worker in.
                 self.summary["deferred"] = 1
@@ -360,7 +379,11 @@ class ProviderTurn:
         summary = self.summary
         if self.live is not None:
             self.live.finish()
-            if summary["updated"] and self.options.schedule_changes is not None:
+            if (
+                self.options.publish
+                and summary["updated"]
+                and self.options.schedule_changes is not None
+            ):
                 progress("publishing", summary)
                 assert self.season is not None
                 publication = publish_catalogue(
@@ -372,7 +395,10 @@ class ProviderTurn:
         if self.history is not None:
             batch = self.history.batch
             batch.publish(
-                publish_with=self.options.schedule_changes,
+                # Without publication only touched poule coverage is reconciled.
+                publish_with=(
+                    self.options.schedule_changes if self.options.publish else None
+                ),
                 owner=owner,
                 backlog=self.history.backlog,
             )

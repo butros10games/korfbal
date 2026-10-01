@@ -108,12 +108,21 @@ CELERY_ACCEPT_CONTENT = ["json"]
 # Authentication and KNKV form actions use the dedicated instant pool.
 # Every declared queue must have a consumer in the worker supervisor.
 CELERY_TASK_QUEUES = tuple(
-    Queue(name) for name in ("celery", "instant", "projections", "media", "competition")
+    Queue(name)
+    for name in (
+        "celery",
+        "instant",
+        "projections",
+        "media",
+        "competition",
+        "publication",
+    )
 )
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_TASK_ROUTES = {
     "apps.competition.tasks.sync_match_forms": {"queue": "instant"},
+    "apps.competition.tasks.publish_competition_backlog": {"queue": "publication"},
     "apps.competition.tasks.*": {"queue": "competition"},
     "apps.player.tasks.download_*": {"queue": "media"},
     "apps.game_tracker.tasks.*": {"queue": "projections"},

@@ -128,6 +128,8 @@ class Publisher:
         """
         self.schedule_changes = schedule_changes
         self.fresh: set[UUID] = set()
+        # Highest source fixture ID this pass selected (the sweep cursor).
+        self.last_match: int | None = None
         self.counts: Counter[str] = Counter()
         self.blocked: list[dict[str, Any]] = []
 
@@ -373,22 +375,18 @@ class Publisher:
             eligible.append(row)
         return eligible
 
-    def matches(
-        self,
-        *,
-        limit: int | None = None,
-        seasons: set[UUID] | None = None,
-        deadline: float | None = None,
-    ) -> None:
+    def matches(self, bounds: MatchBounds | None = None) -> None:
         """Publish fixtures and results while keeping tracked history authoritative.
 
         ``limit``, ``seasons`` and ``deadline`` bound one pass; unpublished rows
         stay pending for the next pass, oldest first.
         """
-        query = pending_matches(seasons).select_related("local_match").order_by("pk")
-        rows = list(query if limit is None else query[:limit])
+        bounds = bounds or MatchBounds()
+        rows = pending_rows(bounds)
         if not rows:
             return
+        self.last_match = rows[-1].pk
+        deadline = bounds.deadline
         rows = self.match_seasons(rows)
         team_ids = {
             team_id for row in rows for team_id in (row.home_team_id, row.away_team_id)
@@ -464,7 +462,9 @@ class Publisher:
             )
             accepted = self.result(row, tracker, pools.get(row.pool_id))
             schedule_fields = self.schedule(row, accepted=accepted)
-            row.published_at = timezone.now()
+            # Published as of the change read above: a concurrent import raises
+            # updated_at past it, so the fixture stays pending for the next pass.
+            row.published_at = row.updated_at
             row.save(
                 update_fields=(
                     "local_match",
@@ -567,6 +567,9 @@ class MatchBounds:
     seasons: set[UUID] | None = None
     # time.monotonic() value after which remaining fixtures are deferred.
     deadline: float | None = None
+    # Sweep cursor: only fixtures after this source ID, so fixtures that stay
+    # pending (unresolved conflicts) cannot starve the rest of a chunked sweep.
+    after: int | None = None
 
 
 def pending_matches(seasons: set[UUID] | None = None) -> QuerySet[Match]:
@@ -577,6 +580,15 @@ def pending_matches(seasons: set[UUID] | None = None) -> QuerySet[Match]:
     return rows if seasons is None else rows.filter(season_id__in=seasons)
 
 
+def pending_rows(bounds: MatchBounds) -> list[Match]:
+    """Select one bounded pass of pending fixtures, oldest first."""
+    query = pending_matches(bounds.seasons).select_related("local_match")
+    if bounds.after is not None:
+        query = query.filter(pk__gt=bounds.after)
+    query = query.order_by("pk")
+    return list(query if bounds.limit is None else query[: bounds.limit])
+
+
 @transaction.atomic
 def publish_catalogue(
     *,
@@ -584,22 +596,34 @@ def publish_catalogue(
     lease_owner: UUID | None = None,
     overrides: dict[tuple[str, int], str] | None = None,
     bounds: MatchBounds | None = None,
+    alongside_import: bool = False,
 ) -> dict[str, Any]:
     """Materialize snapshots into native models without issuing provider requests.
+
+    ``alongside_import`` publishes while the provider manager imports: passes
+    serialize on their own ``publication`` lock row instead of the provider lease
+    (whose row every request updates), and a fixture is published as of the change
+    it read, so a concurrent import keeps it pending.
 
     Raises:
         ValueError: Another importer owns the provider lease.
 
     """
-    lease, _ = SyncLease.objects.select_for_update().get_or_create(
-        key="sportlink", defaults={"expires_at": timezone.now()}
-    )
-    if (
-        lease.owner is not None
-        and lease.expires_at > timezone.now()
-        and lease.owner != lease_owner
-    ):
-        raise ValueError("An import is running; publish after its current batch")
+    if alongside_import:
+        SyncLease.objects.get_or_create(
+            key="publication", defaults={"expires_at": timezone.now()}
+        )
+        SyncLease.objects.select_for_update().get(key="publication")
+    else:
+        lease, _ = SyncLease.objects.select_for_update().get_or_create(
+            key="sportlink", defaults={"expires_at": timezone.now()}
+        )
+        if (
+            lease.owner is not None
+            and lease.expires_at > timezone.now()
+            and lease.owner != lease_owner
+        ):
+            raise ValueError("An import is running; publish after its current batch")
     merged_groups = merge_unlinked_joint_groups(
         protected_ids={pk for (kind, pk) in (overrides or {}) if kind == "team"}
     )
@@ -622,13 +646,11 @@ def publish_catalogue(
         publish_logo(source_club)
     publisher.teams()
     publisher.pools()
-    bounds = bounds or MatchBounds()
-    publisher.matches(
-        limit=bounds.limit, seasons=bounds.seasons, deadline=bounds.deadline
-    )
+    publisher.matches(bounds)
     publish_pending_rosters()
     return {
         "counts": dict(publisher.counts),
         "blocked": publisher.blocked,
         "links": dict(Counter(decision.reason for decision in decisions)),
+        "last_match": publisher.last_match,
     }

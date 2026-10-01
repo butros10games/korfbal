@@ -93,6 +93,11 @@ def test_package_exports_the_configured_celery_application() -> None:
             "schedule": 60.0,
             "options": {"expires": 60, "queue": "competition"},
         },
+        "publish-competition-backlog": {
+            "task": "apps.competition.tasks.publish_competition_backlog",
+            "schedule": 60.0,
+            "options": {"expires": 60, "queue": "publication"},
+        },
         "sync-competition-history": {
             "task": "apps.competition.tasks.sync_competition_history",
             "schedule": 60.0,

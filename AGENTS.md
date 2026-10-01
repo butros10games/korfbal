@@ -239,7 +239,9 @@ misleading provider 500/603 errors.
   team-based discovery misses youth poules because youth team IDs change yearly.
 - All Sportlink batch traffic goes through one provider turn (`provider_scheduler.py`):
   add new provider work as a source there, ranked by urgency and share, instead of a
-  separate beat task that claims the lease for whole turns.
+  separate beat task that claims the lease for whole turns. Publication runs beside it
+  (`alongside_import=True`): never lock the provider lease row there, because every
+  request updates it.
 - Keep competition publication incremental: reconciliation, poule publication and
   group merges run after every sync batch, so a catalogue-wide scan multiplies with
   every imported edition. Compare incremental and full reconciliation decisions in tests.

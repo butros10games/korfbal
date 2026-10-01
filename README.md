@@ -1003,9 +1003,11 @@ production Compose installations need the equivalent persistent directory mount.
 Never commit the session. The scheduler defaults to disabled until configured and
 skips an expired source season; update the scope at season rollover.
 
-Automatic runs are provider turns (`run_provider_turn`): one turn holds the shared
-lease, sends requests until its 150-second request window ends, publishes, and chains
-the next turn while work remains. Time-critical live work always goes first; routine
+Automatic runs are provider turns. By default (`SPORTLINK_SCHEDULER=manager`) the
+worker supervisor runs `manage.py run_provider_manager`, which holds the shared lease
+for back-to-back two-minute turns without a Celery time limit; the `publication` pool
+publishes imported data in parallel in short passes. `unified` runs one turn per beat
+task (`run_provider_turn`) with publication inside the turn. Time-critical live work always goes first; routine
 refreshes share the remaining requests with queued history imports
 (`SPORTLINK_HISTORY_SHARE`). With `SPORTLINK_SCHEDULER=legacy`, the separate live task
 drains due shared feeds until its worker window expires (`SPORTLINK_SYNC_MAX_SECONDS`,
@@ -1409,8 +1411,7 @@ season with the score and the source poule, or `blocked` with the skip reason. `
 CSV. A poule is `complete` only when unfiltered official standings agree with its
 scored finals.
 
-Queued checkpoints run in provider turns (`run_provider_turn`, every minute and
-chained while work remains). A turn holds the Sportlink lease, sends time-critical live
+Queued checkpoints run in provider turns (the provider manager by default). A turn holds the Sportlink lease, sends time-critical live
 work (fresh results, schedules within an hour of kickoff, never-fetched feeds) first,
 and otherwise alternates routine live refreshes and history by `SPORTLINK_HISTORY_SHARE`
 (default 0.5 of those requests). History makes at most `SPORTLINK_HISTORY_MAX_REQUESTS`

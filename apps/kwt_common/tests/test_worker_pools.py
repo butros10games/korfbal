@@ -18,6 +18,7 @@ def test_instant_has_dedicated_capacity(monkeypatch: pytest.MonkeyPatch) -> None
         "projections",
         "media",
         "competition",
+        "publication",
     }
     for queue, concurrency in {"celery": "2", "instant": "1"}.items():
         command = consumers[queue]

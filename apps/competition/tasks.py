@@ -29,7 +29,13 @@ from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.provider_scheduler import (
     ProviderTurn,
     TurnOptions,
+    active_live_season,
     history_pending,
+)
+from apps.competition.services.publication_worker import (
+    claim_publication,
+    publish_backlog,
+    release_publication,
 )
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import (
@@ -91,8 +97,11 @@ def sync_current_competition() -> dict[str, object]:
     """Run one bounded batch using the shared provider pacing and lease."""
     if not settings.SPORTLINK_SYNC_ENABLED:
         return {"status": "disabled", "http_requests": 0}
-    if settings.SPORTLINK_SCHEDULER == "unified":
-        return {"status": "scheduler_unified", "http_requests": 0}
+    if settings.SPORTLINK_SCHEDULER != "legacy":
+        return {
+            "status": f"scheduler_{settings.SPORTLINK_SCHEDULER}",
+            "http_requests": 0,
+        }
     if not settings.SPORTLINK_SYNC_SEASON or not settings.SPORTLINK_SYNC_SESSION_FILE:
         logger.warning("Competition sync requires a season and private session file")
         return {"status": "configuration_required", "http_requests": 0}
@@ -173,8 +182,11 @@ def sync_competition_history() -> dict[str, object]:
     """Work through queued history imports while current-season work is idle."""
     if not settings.SPORTLINK_SYNC_ENABLED or not settings.SPORTLINK_SYNC_SESSION_FILE:
         return {"status": "disabled", "http_requests": 0}
-    if settings.SPORTLINK_SCHEDULER == "unified":
-        return {"status": "scheduler_unified", "http_requests": 0}
+    if settings.SPORTLINK_SCHEDULER != "legacy":
+        return {
+            "status": f"scheduler_{settings.SPORTLINK_SCHEDULER}",
+            "http_requests": 0,
+        }
     if not HistoricalResource.objects.filter(
         state="pending", next_attempt_at__lte=timezone.now()
     ).exists():
@@ -204,18 +216,6 @@ def sync_competition_history() -> dict[str, object]:
     return {"status": "ran", **summary}
 
 
-def active_live_season() -> Season | None:
-    """Return the configured live season while it is in progress."""
-    if not settings.SPORTLINK_SYNC_SEASON:
-        return None
-    today = timezone.localdate()
-    return Season.objects.filter(
-        name=settings.SPORTLINK_SYNC_SEASON,
-        start_date__lte=today,
-        end_date__gte=today,
-    ).first()
-
-
 def _provider_clients() -> tuple[CompetitionClient, HistoricalClient]:
     """Open the private session only after the provider lease is claimed.
 
@@ -235,7 +235,10 @@ def run_provider_turn() -> dict[str, object]:
     if not settings.SPORTLINK_SYNC_ENABLED:
         return {"status": "disabled", "http_requests": 0}
     if settings.SPORTLINK_SCHEDULER != "unified":
-        return {"status": "scheduler_legacy", "http_requests": 0}
+        return {
+            "status": f"scheduler_{settings.SPORTLINK_SCHEDULER}",
+            "http_requests": 0,
+        }
     if not settings.SPORTLINK_SYNC_SESSION_FILE:
         logger.warning("Provider turns require a private session file")
         return {"status": "configuration_required", "http_requests": 0}
@@ -275,3 +278,30 @@ def _provider_turn(season: Season | None) -> dict[str, object]:
         run_provider_turn.apply_async(expires=60)
     status = outcome(result) if season is not None else "completed"
     return {**result, "status": result.get("status", status)}
+
+
+# Publication stops before the 230 s soft time limit; pending work re-queues.
+PUBLICATION_SECONDS = 200
+
+
+@shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
+def publish_competition_backlog() -> dict[str, object]:
+    """Publish imported data beside the provider manager (manager mode)."""
+    if settings.SPORTLINK_SCHEDULER != "manager":
+        return {"status": f"scheduler_{settings.SPORTLINK_SCHEDULER}"}
+    owner = claim_publication()
+    if owner is None:
+        return {"status": "busy"}
+    try:
+        result = publish_backlog(
+            schedule_changes=schedule_change_dispatcher(),
+            live_season=active_live_season(),
+            owner=owner,
+            deadline=time.monotonic() + PUBLICATION_SECONDS,
+        )
+    finally:
+        release_publication(owner)
+    logger.info("Competition publication summary: %s", result)
+    if result["more"]:
+        publish_competition_backlog.apply_async(expires=120)
+    return {"status": "published", **result}
