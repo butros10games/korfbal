@@ -20,7 +20,7 @@ from apps.competition.models import (
     SyncResource,
     Team,
 )
-from apps.competition.services.importer import Importer
+from apps.competition.services.importer import Importer, club_with_name
 from apps.schedule.models import Season
 
 
@@ -321,3 +321,36 @@ def test_program_preserves_finished_or_scored_matches(
     )
     assert Match.objects.get().starts_at == original.starts_at
     assert Match.objects.get().updated_at == original.updated_at
+
+
+@pytest.mark.parametrize(
+    ("team_name", "code", "club_name"),
+    [("Keizer Karel 2", "2", "Keizer Karel"), ("Thor (R) E1", "E1", "Thor (R)")],
+)
+def test_unnamed_clubs_take_the_name_before_the_team_code(
+    team_name: str, code: str, club_name: str
+) -> None:
+    """Dissolved clubs in old poules have no name; their teams still carry it."""
+    team = {**team_payload("T9"), "TeamName": team_name, "TeamCode": code}
+    team["Club"] = {"ClubId": "C9", "ClubName": ""}
+    assert club_with_name(team)["ClubName"] == club_name
+
+
+def test_unnamed_club_without_matching_code_stays_unnamed() -> None:
+    """No code means no safe derivation; publication keeps the conflict."""
+    team = {**team_payload("T9"), "TeamName": "Mystery", "TeamCode": "3"}
+    team["Club"] = {"ClubId": "C9", "ClubName": ""}
+    assert not club_with_name(team)["ClubName"]
+
+
+@pytest.mark.django_db
+def test_history_import_names_a_previously_unnamed_club(season: Season) -> None:
+    """A later historical response fills in an empty source club name."""
+    Club.objects.create(external_id="CT1", name="")
+    row = match_payload()
+    row["HomeTeam"]["Club"]["ClubName"] = ""
+    row["HomeTeam"].update(TeamName="Club T1 2", TeamCode="2")
+    Importer(season, timezone.now(), discover=False).apply(
+        "club_results", "", {"MatchResult": [row]}
+    )
+    assert Club.objects.get(external_id="CT1").name == "Club T1"

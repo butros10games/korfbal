@@ -84,6 +84,22 @@ def enqueue(season: Season, kind: str, source_id: str = "") -> None:
     )
 
 
+def club_with_name(team: dict[str, Any]) -> dict[str, Any]:
+    """Name an unnamed club from its team: the team name minus the team code.
+
+    Old poules can list a dissolved club without a name; its teams still carry
+    the club name before their code ("Keizer Karel 2", code "2"). Without a
+    matching code the name stays empty and publication reports the conflict.
+    """
+    club = team["Club"]
+    if (club.get("ClubName") or "").strip():
+        return club
+    name, code = team.get("TeamName") or "", (team.get("TeamCode") or "").strip()
+    if code and name.endswith(" " + code):
+        return {**club, "ClubName": name.removesuffix(code).strip()}
+    return club
+
+
 def _self_fixture(data: dict[str, Any]) -> bool:
     """Reject provider self-fixtures before identity writes or coverage tracking."""
     same_team = str(data["HomeTeam"]["PublicTeamId"]) == str(
@@ -125,6 +141,9 @@ class Importer:
             )
             if self.discover:
                 save_changed(club, values)
+            elif not club.name and values["name"]:
+                # History can name a club whose earlier response had no name.
+                save_changed(club, {"name": values["name"]})
         for kind in (
             ("club_teams", "club_program", "club_results") if self.discover else ()
         ):
@@ -142,7 +161,7 @@ class Importer:
             self._seasons_configured = True
         if source_id in self._teams:
             return self._teams[source_id]
-        club = self.club(data["Club"])
+        club = self.club(club_with_name(data))
         values = {
             "name": data["TeamName"],
             "club_id": club.pk,
