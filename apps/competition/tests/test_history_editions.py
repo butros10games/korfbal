@@ -15,6 +15,7 @@ from apps.competition.application.ports import FetchResult
 from apps.competition.models import (
     HistoricalResource,
     Match,
+    MatchMembership,
     Pool,
     PoolEntry,
     SeasonBinding,
@@ -29,7 +30,12 @@ from apps.competition.services.history_editions import (
     seed_edition,
     team_stratum,
 )
-from apps.competition.services.history_worker import current_work_due, run_history
+from apps.competition.services.history_worker import (
+    MATCH_NOT_FOUND,
+    current_work_due,
+    next_resource,
+    run_history,
+)
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import pending_matches, publish_catalogue
 from apps.competition.services.seasons import INDOOR, OUTDOOR
@@ -37,6 +43,7 @@ from apps.competition.tasks import sync_competition_history
 from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_history import FakeClient
 from apps.competition.tests.test_importer import team_payload
+from apps.competition.tests.test_rosters import person
 from apps.schedule.models import Season
 
 
@@ -672,3 +679,86 @@ def test_history_steps_aside_for_one_live_turn_after_its_own(
     assert sync_competition_history() == {"status": "yielded", "http_requests": 0}
     SyncResource.objects.all().delete()
     assert sync_competition_history()["status"] == "ran"
+
+
+def lineup_reply(identifier: str, when: str) -> FetchResult:
+    """Match details with one visible player per side."""
+    return FetchResult(
+        200,
+        {
+            **row(identifier, when),
+            "AllowsBasePlayers": True,
+            "HomeTeamPerson": [{**person("P1"), "BasePlayer": True}],
+            "AwayTeamPerson": [{**person("P2"), "BasePlayer": True}],
+        },
+    )
+
+
+@pytest.mark.django_db
+def test_lineups_wait_until_every_poule_is_imported() -> None:
+    """Imported finals queue lineups, which run only after all discovery work."""
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}, {"PoolId": 8}]})])
+    run([FetchResult(200, full_year_pool())])
+    lineups = HistoricalResource.objects.filter(kind="lineup")
+    assert sorted(lineups.values_list("source_id", flat=True)) == ["M1", "M2"]
+    # Discovery (poule 8, team T2) goes first and holds lineups back, even
+    # while it waits for a retry.
+    discovery = HistoricalResource.objects.filter(state="pending").exclude(
+        kind="lineup"
+    )
+    assert next_resource().kind != "lineup"
+    discovery.update(next_attempt_at=timezone.now() + timedelta(minutes=5))
+    assert next_resource() is None
+    discovery.update(state="fetched")
+    assert next_resource().kind == "lineup"
+    client = FakeClient([
+        lineup_reply("M1", "2024-09-14T15:00:00+0200"),
+        FetchResult(MATCH_NOT_FOUND),
+    ])
+    run_history(lambda: client, budget=2, publish_with=None)
+    assert client.calls == ["lineup", "lineup"]
+    players = MatchMembership.objects.filter(match__external_id="M1")
+    assert sorted(players.values_list("player__knkv_person_id", flat=True)) == [
+        "P1",
+        "P2",
+    ]
+    assert edition_summary(EDITION)["lineups"] == {
+        "blocked/lineup_unavailable": 1,
+        "fetched": 1,
+    }
+
+
+@pytest.mark.django_db
+def test_lineup_requests_never_send_a_season_selector() -> None:
+    """Match details answer by match ID alone, like the app requests them."""
+    resource = HistoricalResource.objects.create(
+        season=Season.objects.create(
+            name="old", start_date=date(2024, 7, 1), end_date=date(2024, 12, 31)
+        ),
+        provider="app",
+        kind="lineup",
+        source_id="M1",
+        key="lineup-M1",
+        start_date=date(2024, 7, 1),
+        end_date=date(2024, 12, 31),
+    )
+    app = Mock(store=None)
+    app._get.return_value = Mock(status_code=MATCH_NOT_FOUND, headers={})
+    assert HistoryClient(app).fetch(resource, Mock()).status == MATCH_NOT_FOUND
+    assert app._get.call_args.kwargs["params"] == {"PublicMatchId": "M1", "v": "8"}
+
+
+@pytest.mark.django_db
+def test_command_queues_lineups_for_an_already_imported_edition() -> None:
+    """Editions imported before lineups existed are backfilled once."""
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
+    run([FetchResult(200, full_year_pool())])
+    HistoricalResource.objects.filter(kind="lineup").delete()
+    for expected in (2, 0):
+        out = StringIO()
+        call_command(
+            "import_competition_history", "lineups", "--edition", "2024", stdout=out
+        )
+        assert f'"lineups_queued": {expected}' in out.getvalue()

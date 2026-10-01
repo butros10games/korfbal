@@ -609,7 +609,14 @@ class HistoricalResource(models.Model):
     class Meta:
         """Index bounded workers by ready state and newest historical interval."""
 
-        indexes: ClassVar = [models.Index(fields=("state", "next_attempt_at"))]
+        indexes: ClassVar = [
+            models.Index(fields=("state", "next_attempt_at")),
+            # Lineups queue behind discovery: select ready work per kind.
+            models.Index(
+                fields=("kind", "state", "next_attempt_at"),
+                name="history_kind_ready",
+            ),
+        ]
         constraints: ClassVar = [
             models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F("start_date")),

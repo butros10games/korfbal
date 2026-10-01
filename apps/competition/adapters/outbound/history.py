@@ -163,6 +163,7 @@ class HistoryClient:
             raise HistoryUnavailableError("app_session_required")
         path, parameter, version = {
             "match": ("match/MatchResultDetails", "PublicMatchId", 8),
+            "lineup": ("match/MatchResultDetails", "PublicMatchId", 8),
             "pool": ("pool/PoolCompetitionData", "PoolId", 2),
             "edition_team": ("team/TeamCompetitionData", "PublicTeamId", 2),
             "edition_pool": ("pool/PoolCompetitionData", "PoolId", 2),

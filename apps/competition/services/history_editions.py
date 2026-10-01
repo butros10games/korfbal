@@ -10,7 +10,7 @@ result row is routed to its playing season by sport and date.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date
 import re
@@ -678,6 +678,63 @@ def log_matches(
         update_fields=("state", "coverage", "reason", "evidence", "fetched_at"),
         batch_size=1000,
     )
+    queue_lineups(row for row in entries if row.coverage == "complete")
+
+
+def queue_lineups(entries: Iterable[HistoricalResource]) -> None:
+    """Queue one lineup request per imported final; never reset fetched lineups."""
+    lineups = [
+        HistoricalResource(
+            key=resource_key(
+                entry.season,
+                "app",
+                "lineup",
+                entry.source_id,
+                (entry.start_date, entry.end_date),
+            ),
+            season=entry.season,
+            provider="app",
+            kind="lineup",
+            source_id=entry.source_id,
+            start_date=entry.start_date,
+            end_date=entry.end_date,
+            sport=entry.sport,
+            evidence={"edition": entry.evidence.get("edition")},
+        )
+        for entry in entries
+    ]
+    HistoricalResource.objects.bulk_create(
+        lineups, ignore_conflicts=True, batch_size=1000
+    )
+
+
+def queue_edition_lineups(edition: int) -> dict[str, Any]:
+    """Queue lineups for an edition imported before lineups were requested.
+
+    Returns:
+        The edition and how many lineups were newly queued.
+
+    """
+    before = HistoricalResource.objects.filter(
+        season__in=edition_scopes(edition), provider="app", kind="lineup"
+    ).count()
+    entries = (
+        HistoricalResource.objects
+        .filter(
+            season__in=edition_scopes(edition),
+            provider="app",
+            kind="match",
+            state="fetched",
+            coverage="complete",
+        )
+        .select_related("season")
+        .iterator(chunk_size=2000)
+    )
+    queue_lineups(entries)
+    after = HistoricalResource.objects.filter(
+        season__in=edition_scopes(edition), provider="app", kind="lineup"
+    ).count()
+    return {"edition": edition, "lineups_queued": after - before}
 
 
 def is_match_identity(source_id: str) -> bool:
@@ -728,6 +785,12 @@ def edition_summary(edition: int) -> dict[str, Any]:
             _counts(matches.filter(state="fetched"), ("season__name",))
         ),
         "matches_skipped": dict(_counts(matches.filter(state="blocked"), ("reason",))),
+        "lineups": {
+            f"{state}/{reason}" if reason else state: count
+            for state, reason, count in _counts(
+                resources.filter(kind="lineup"), ("state", "reason")
+            )
+        },
     }
 
 

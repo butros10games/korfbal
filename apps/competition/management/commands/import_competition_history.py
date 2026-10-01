@@ -26,6 +26,7 @@ from apps.competition.services.history_editions import (
     LOG_FIELDS,
     edition_log,
     edition_summary,
+    queue_edition_lineups,
     seed_edition,
 )
 from apps.competition.services.history_worker import run_history
@@ -41,7 +42,16 @@ class Command(BaseCommand):
         """Expose bounded execution and protected credential file inputs."""
         parser.add_argument(
             "action",
-            choices=("edition", "seed", "run", "status", "log", "retry", "archive"),
+            choices=(
+                "edition",
+                "lineups",
+                "seed",
+                "run",
+                "status",
+                "log",
+                "retry",
+                "archive",
+            ),
         )
         parser.add_argument(
             "--edition",
@@ -115,7 +125,7 @@ class Command(BaseCommand):
 
         """
         action = options["action"]
-        if action in {"edition", "log"} or options["edition"]:
+        if action in {"edition", "lineups", "log"} or options["edition"]:
             return edition_action(action, options)
         if action == "status":
             return progress()
@@ -206,6 +216,8 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
         ]
     if action == "status":
         return [edition_summary(edition) for edition in editions]
+    if action == "lineups":
+        return [queue_edition_lineups(edition) for edition in editions]
     if action == "log" and len(editions) == 1 and options["output"]:
         return write_log(editions[0], options["output"])
     raise ValueError("Select one edition and an output file for the log")

@@ -19,10 +19,12 @@ from apps.competition.models import (
     HistoricalDiscovery,
     HistoricalResource,
     Match,
+    MatchMembership,
     Pool,
     PoolEntry,
 )
 from apps.competition.services.importer import Importer
+from apps.competition.services.lineups import import_lineup
 from apps.schedule.models import Season
 
 
@@ -37,6 +39,7 @@ KINDS = {
     "edition_team",
     "edition_pool",
     "edition_scan",
+    "lineup",
 }
 # Season-scoped app discovery: a team's poules, then a poule's results. The
 # scan marker is never fetched; it records an edition's poule scan window.
@@ -83,6 +86,7 @@ def validate_identity(provider: str, kind: str, source_id: str) -> None:
         raise ValueError("Unsupported historical provider or resource")
     if provider == "app" and kind not in {
         "match",
+        "lineup",
         "pool",
         "edition_scan",
         *EDITION_KINDS,
@@ -91,7 +95,11 @@ def validate_identity(provider: str, kind: str, source_id: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9:_-]{1,80}", source_id):
         raise ValueError("Provide a provider identifier, not a URL or credential")
     if provider == "app":
-        pattern = {"match": r"M[0-9]+", "edition_team": r"T[0-9]+"}.get(kind, r"[0-9]+")
+        pattern = {
+            "match": r"M[0-9]+",
+            "lineup": r"M[0-9]+",
+            "edition_team": r"T[0-9]+",
+        }.get(kind, r"[0-9]+")
         if not re.fullmatch(pattern, source_id):
             raise ValueError("Use the original app match or pool identifier")
 
@@ -303,6 +311,26 @@ def validate_match(row: dict[str, Any], resource: HistoricalResource) -> None:
         raise HistoryUnavailableError("sport_mismatch")
 
 
+def apply_lineup(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Store who played an imported match, with the live sync's privacy rules.
+
+    Raises:
+        HistoryUnavailableError: The response does not match the imported fixture.
+
+    """
+    try:
+        import_lineup(resource.season, resource.source_id, data, timezone.now())
+    except (ValueError, TypeError) as exc:
+        raise HistoryUnavailableError("lineup_invalid") from exc
+    resource.coverage = "complete"
+    resource.evidence = {
+        **resource.evidence,
+        "people": MatchMembership.objects.filter(
+            match__season=resource.season, match__external_id=resource.source_id
+        ).count(),
+    }
+
+
 def apply_app(resource: HistoricalResource, data: dict[str, Any]) -> None:
     """Reuse source/native models without ever queuing present-day club/team feeds.
 
@@ -310,6 +338,9 @@ def apply_app(resource: HistoricalResource, data: dict[str, Any]) -> None:
         ValueError: The supplied configuration or response is inconsistent.
 
     """
+    if resource.kind == "lineup":
+        apply_lineup(resource, data)
+        return
     importer = Importer(resource.season, timezone.now(), discover=False)
     if resource.kind == "match":
         if str(data["PublicMatchId"]) != resource.source_id:

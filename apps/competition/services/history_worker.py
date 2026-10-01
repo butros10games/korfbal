@@ -11,7 +11,7 @@ import uuid
 
 from django.conf import settings
 from django.db import OperationalError, transaction
-from django.db.models import Case, IntegerField, When
+from django.db.models import Case, IntegerField, QuerySet, When
 from django.utils import timezone
 
 from apps.competition.application.ports import (
@@ -29,6 +29,7 @@ from apps.competition.models import (
     SyncResource,
 )
 from apps.competition.services.history import (
+    KINDS,
     HistoryUnavailableError,
     discover,
     split_window,
@@ -103,11 +104,25 @@ def current_work_due(*, include_results: bool = True) -> bool:
 
 
 def next_resource() -> HistoricalResource | None:
-    """Prefer bulk poule discovery over per-match enrichment, newest scope first."""
+    """Prefer bulk poule discovery over per-match enrichment, newest scope first.
+
+    Lineups wait until no other historical work is ready, so every edition's
+    matches are imported before any lineup request is sent.
+    """
+    pending = HistoricalResource.objects.filter(state="pending")
+    ready = pending.filter(next_attempt_at__lte=timezone.now()).select_related("season")
+    found = discovery_resource(ready)
+    if found is not None or pending.filter(kind__in=DISCOVERY_KINDS).exists():
+        # A discovery checkpoint waiting for its retry still holds lineups back.
+        return found
+    return ready.filter(kind="lineup").order_by("next_attempt_at", "pk").first()
+
+
+def discovery_resource(ready: QuerySet) -> HistoricalResource | None:
+    """Return the most urgent ready checkpoint other than a lineup."""
     return (
-        HistoricalResource.objects
-        .filter(state="pending", next_attempt_at__lte=timezone.now())
-        .select_related("season")
+        ready
+        .filter(kind__in=DISCOVERY_KINDS)
         .annotate(
             priority=Case(
                 When(kind="pool", then=0),
@@ -198,6 +213,9 @@ def fetch_resource(
         )
     if result.status in {HTTPStatus.NOT_FOUND, HTTPStatus.GONE}:
         raise HistoryUnavailableError("historical_resource_unavailable")
+    if result.status == MATCH_NOT_FOUND and resource.kind == "lineup":
+        # KNKV no longer serves details for some old matches; retrying cannot help.
+        raise HistoryUnavailableError("lineup_unavailable")
     if result.status == HTTPStatus.NOT_MODIFIED and resource.fetched_at:
         with transaction.atomic():
             lease = SyncLease.objects.select_for_update().get(
@@ -217,6 +235,13 @@ def fetch_resource(
 
 # A checkpoint rolled back by a lock conflict waits this long before its retry.
 LOCK_RETRY = timedelta(seconds=30)
+
+
+# Every checkpoint kind except lineups, which wait for all of them.
+DISCOVERY_KINDS = sorted(KINDS - {"lineup"})
+
+# KNKV's validation error, e.g. MATCH_NOT_FOUND for details it no longer serves.
+MATCH_NOT_FOUND = 420
 
 
 class HistoryBatch:

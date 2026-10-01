@@ -55,7 +55,7 @@ def import_lineup(
     """
     match = (
         Match.objects
-        .select_for_update()
+        .select_for_update(no_key=True)
         .filter(season=season, external_id=source_id)
         .select_related("home_team", "away_team")
         .first()
