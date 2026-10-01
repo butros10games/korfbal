@@ -6,6 +6,7 @@ import time
 
 from celery import shared_task
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient
@@ -21,7 +22,7 @@ from apps.competition.models import (
     SyncLease,
     SyncResource,
 )
-from apps.competition.services.history_worker import run_history
+from apps.competition.services.history_worker import live_work_waiting, run_history
 from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
 from apps.competition.services.resources import MAX_FEED_FAILURES
@@ -151,6 +152,11 @@ def _run_scheduled(season: Season) -> dict[str, object]:
 # commits what it published.
 HISTORY_REQUEST_SECONDS = 90
 HISTORY_PUBLISH_SECONDS = 190
+# History and the live sync share one worker process and alternate: history
+# tasks outlive a live turn (beat expiry 300 s), and after a history turn the
+# next ones step aside this long while the live sync has due work.
+HISTORY_TURN_GAP_SECONDS = 240
+HISTORY_TURN_KEY = "competition:history:last-turn"
 
 
 @shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
@@ -162,6 +168,13 @@ def sync_competition_history() -> dict[str, object]:
         state="pending", next_attempt_at__lte=timezone.now()
     ).exists():
         return {"status": "idle", "http_requests": 0}
+    last_turn = cache.get(HISTORY_TURN_KEY)
+    if (
+        last_turn is not None
+        and time.time() - last_turn < HISTORY_TURN_GAP_SECONDS
+        and live_work_waiting()
+    ):
+        return {"status": "yielded", "http_requests": 0}
     started = time.monotonic()
     try:
         summary = run_history(
@@ -175,4 +188,6 @@ def sync_competition_history() -> dict[str, object]:
         logger.warning("Competition history cannot load its private OAuth session")
         return {"status": "session_unavailable", "http_requests": 0}
     logger.info("Competition history summary: %s", summary)
+    if summary.get("reason") not in {"provider_lease_busy", "current_work_due"}:
+        cache.set(HISTORY_TURN_KEY, time.time(), timeout=3600)
     return {"status": "ran", **summary}

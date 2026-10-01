@@ -62,6 +62,17 @@ AUTH_REASONS = {
 }
 
 
+def live_work_waiting() -> bool:
+    """Tell whether the live sync has any due feed, routine refreshes included."""
+    today = timezone.localdate()
+    return SyncResource.objects.filter(
+        season__start_date__lte=today,
+        season__end_date__gte=today,
+        failures__lt=MAX_FEED_FAILURES,
+        next_sync_at__lte=timezone.now(),
+    ).exists()
+
+
 def current_work_due(*, include_results: bool = True) -> bool:
     """Backfills yield to match forms, new discovery and time-critical checks.
 

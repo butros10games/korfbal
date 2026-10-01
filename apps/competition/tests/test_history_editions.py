@@ -637,3 +637,35 @@ def test_history_publishes_its_backlog_before_fetching_more(
     )
     assert summary["http_requests"] == 0
     assert summary["unpublished"] == 0
+
+
+@pytest.mark.django_db
+def test_history_steps_aside_for_one_live_turn_after_its_own(
+    settings: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """History and the live sync alternate on their shared worker process."""
+    settings.SPORTLINK_SYNC_ENABLED = True
+    settings.SPORTLINK_SYNC_SESSION_FILE = "/private/session.json"
+    seed_edition_with_team("T1", OUTDOOR)
+    monkeypatch.setattr(
+        "apps.competition.tasks.scheduled_history_client",
+        lambda: FakeClient([FetchResult(200, {"Pool": []})]),
+    )
+    assert sync_competition_history()["status"] == "ran"
+    current = Season.objects.create(
+        name="active",
+        start_date=timezone.localdate() - timedelta(days=30),
+        end_date=timezone.localdate() + timedelta(days=30),
+    )
+    due = timezone.now() - timedelta(minutes=1)
+    SyncResource.objects.create(
+        season=current,
+        kind="team_roster",
+        source_id="T9",
+        next_sync_at=due,
+        fetched_at=due,
+    )
+    HistoricalResource.objects.filter(kind="edition_team").update(state="pending")
+    assert sync_competition_history() == {"status": "yielded", "http_requests": 0}
+    SyncResource.objects.all().delete()
+    assert sync_competition_history()["status"] == "ran"
