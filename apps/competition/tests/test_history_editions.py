@@ -573,3 +573,22 @@ def test_scan_mode_probes_only_senior_teams(monkeypatch: pytest.MonkeyPatch) -> 
     summary = seed_edition(EDITION)
     assert summary["mode"] == "scan"
     assert queued_teams() == {"T1"}
+
+
+@pytest.mark.django_db
+def test_history_does_not_yield_to_routine_poll_refreshes() -> None:
+    """A planner with only routine refreshes leaves room for history."""
+    current = Season.objects.create(
+        name="active",
+        start_date=timezone.localdate() - timedelta(days=30),
+        end_date=timezone.localdate() + timedelta(days=30),
+    )
+    past = timezone.now() - timedelta(days=1)
+    SyncResource.objects.create(
+        season=current,
+        kind="pool_results",
+        source_id="9",
+        next_sync_at=past,
+        fetched_at=past,
+    )
+    assert not current_work_due()

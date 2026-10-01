@@ -55,7 +55,7 @@ AUTH_REASONS = {
 
 
 def current_work_due(*, include_results: bool = True) -> bool:
-    """Backfills yield to match forms, new season discovery and result checks.
+    """Backfills yield to match forms, new discovery and time-critical checks.
 
     Periodic refreshes (rosters, photos, programmes, standings) form a continuous
     backlog in an active season; yielding to them would starve history, so
@@ -76,10 +76,12 @@ def current_work_due(*, include_results: bool = True) -> bool:
         return True
     if not include_results:
         return False
-    # Result checks can be due before a collection's next discovery refresh.
+    # Only results of just-played matches and kickoff schedule checks are
+    # time-critical; the planner always has routine refreshes to offer.
     return any(
-        PollPlanner(season, now).next_job() is not None
+        job.urgent_matches or job.schedule_matches
         for season in Season.objects.filter(pk__in=resources.values("season_id"))
+        for job in PollPlanner(season, now).candidate_jobs(include_metadata=False)
     )
 
 
