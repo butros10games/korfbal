@@ -501,3 +501,49 @@ def test_dissolved_club_gets_its_own_native_club(season: Season) -> None:
         True,
     )
     assert not AppClub.objects.get(pk=current.pk).dissolved
+
+
+def import_twin(season: Season, status: str, match_id: str) -> None:
+    """Import one record of a fixture that KNKV lists twice."""
+    row = match_payload()
+    row.update(PublicMatchId=match_id, Status=status)
+    if status != "FINAL":
+        row.update(HomeResult=None, AwayResult=None)
+    Importer(season, timezone.now()).apply("club_results", "C", {"MatchResult": [row]})
+
+
+@pytest.mark.django_db
+def test_final_record_takes_over_a_fixture_from_its_suspended_twin(
+    season: Season,
+) -> None:
+    """A replayed match's result replaces the suspended original on the fixture."""
+    import_twin(season, "SUSPENDED", "suspended")
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    native = AppMatch.objects.get()
+    import_twin(season, "FINAL", "final")
+    result = publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert result["counts"]["matches_superseded"] == 1
+    assert not result["blocked"]
+    final = Match.objects.get(external_id="final")
+    suspended = Match.objects.get(external_id="suspended")
+    assert (final.local_match_id, final.local_created) == (native.pk, True)
+    assert (suspended.local_match_id, suspended.local_created) == (None, False)
+    native.tracker_data.refresh_from_db()
+    assert native.tracker_data.status == "finished"
+    assert (native.tracker_data.home_score, native.tracker_data.away_score) == (0, 10)
+    assert not pending_matches().exists()
+
+
+@pytest.mark.django_db
+def test_suspended_twin_of_a_published_final_stays_unpublished(
+    season: Season,
+) -> None:
+    """The superseded record neither steals the fixture nor waits as pending."""
+    import_twin(season, "FINAL", "final")
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    import_twin(season, "SUSPENDED", "suspended")
+    assert not pending_matches().exists()
+    result = publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert not result["blocked"]
+    assert Match.objects.get(external_id="final").local_match_id is not None
+    assert AppMatch.objects.count() == 1

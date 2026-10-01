@@ -128,6 +128,8 @@ class Publisher:
         """
         self.schedule_changes = schedule_changes
         self.fresh: set[UUID] = set()
+        # Native fixture -> (source record, status) already linked to it.
+        self.claimants: dict[UUID, tuple[int, str]] = {}
         # Highest source fixture ID this pass selected (the sweep cursor).
         self.last_match: int | None = None
         self.counts: Counter[str] = Counter()
@@ -354,6 +356,73 @@ class Publisher:
         claimed.add(local.pk)
         return local
 
+    def link_fixture(
+        self,
+        row: Match,
+        teams: tuple[UUID, UUID],
+        candidates: dict[tuple[Any, ...], list[AppMatch]],
+        claimed: set[UUID],
+        pool_id: UUID | None,
+    ) -> bool:
+        """Link an unlinked record to its native fixture, creating it if new.
+
+        Returns:
+            Whether the record is linked; otherwise the conflict is recorded.
+
+        """
+        key = (row.season_id, *teams, row.starts_at)
+        existing = candidates[key]
+        taken = len(existing) == 1 and existing[0].pk in claimed
+        if taken and self.take_over(row, existing[0].pk):
+            claimed.discard(existing[0].pk)
+            taken = False
+        if len(existing) > 1 or taken:
+            self.conflict("match", row.pk, "ambiguous_fixture")
+            return False
+        if existing:
+            local = existing[0]
+        else:
+            local = AppMatch.objects.create(
+                season_id=row.season_id,
+                home_team_id=teams[0],
+                away_team_id=teams[1],
+                pool_id=pool_id,
+                start_time=row.starts_at,
+            )
+            row.local_created = True
+            self.fresh.add(local.pk)
+            candidates[key].append(local)
+            self.counts["matches_created"] += 1
+        row.local_match = local
+        claimed.add(local.pk)
+        return True
+
+    def take_over(self, row: Match, local_id: UUID) -> bool:
+        """Move a fixture from its superseded twin to this final record.
+
+        Returns:
+            Whether the fixture is free for this record now.
+
+        """
+        claimant = self.claimants.get(local_id)
+        final = (
+            row.status == "FINAL"
+            and row.home_score is not None
+            and row.away_score is not None
+        )
+        if claimant is None or not final or claimant[1] not in SUPERSEDED_STATUSES:
+            return False
+        twin = Match.objects.select_for_update().get(pk=claimant[0])
+        # The final record inherits the twin's ownership and published result, so
+        # manual edits made since that publication still block the update.
+        row.local_created = twin.local_created
+        row.published_state = twin.published_state
+        Match.objects.filter(pk=twin.pk).update(
+            local_match=None, local_created=False, published_state={}
+        )
+        self.counts["matches_superseded"] += 1
+        return True
+
     def match_seasons(self, rows: list[Match]) -> list[Match]:
         """Resolve discipline before matching native fixture identities."""
         resolver = SeasonResolver()
@@ -422,11 +491,13 @@ class Publisher:
                     match.away_team_id,
                     match.start_time,
                 ].append(match)
-            claimed = set(
-                Match.objects.filter(
+            self.claimants = {
+                local: (source, status)
+                for source, local, status in Match.objects.filter(
                     local_match_id__in=[match.pk for match in native]
-                ).values_list("local_match_id", flat=True)
-            )
+                ).values_list("pk", "local_match_id", "status")
+            }
+            claimed = set(self.claimants)
         for row in rows:
             if deadline is not None and time.monotonic() >= deadline:
                 self.counts["matches_deferred"] += 1
@@ -435,28 +506,10 @@ class Publisher:
             if home is None or away is None:
                 self.conflict("match", row.pk, "team_unresolved")
                 continue
-            if row.local_match_id is None:
-                key = (row.season_id, home, away, row.starts_at)
-                existing = candidates[key]
-                if len(existing) > 1 or (existing and existing[0].pk in claimed):
-                    self.conflict("match", row.pk, "ambiguous_fixture")
-                    continue
-                if existing:
-                    local = existing[0]
-                else:
-                    local = AppMatch.objects.create(
-                        season_id=row.season_id,
-                        home_team_id=home,
-                        away_team_id=away,
-                        pool_id=pools.get(row.pool_id),
-                        start_time=row.starts_at,
-                    )
-                    row.local_created = True
-                    self.fresh.add(local.pk)
-                    candidates[key].append(local)
-                    self.counts["matches_created"] += 1
-                row.local_match = local
-                claimed.add(local.pk)
+            if row.local_match_id is None and not self.link_fixture(
+                row, (home, away), candidates, claimed, pools.get(row.pool_id)
+            ):
+                continue
             tracker = MatchData.objects.select_for_update().get(
                 match_link_id=row.local_match_id
             )
@@ -572,11 +625,33 @@ class MatchBounds:
     after: int | None = None
 
 
+# KNKV keeps a suspended, cancelled or postponed record beside the record that
+# settled the same fixture (same teams and kickoff); the final record wins.
+SUPERSEDED_STATUSES = frozenset({"SUSPENDED", "CANCELLED", "POSTPONED"})
+
+
+def final_twin() -> Exists:
+    """Match a linked final record of the same fixture as the outer source row."""
+    return Exists(
+        Match.objects.filter(
+            season_id=OuterRef("season_id"),
+            home_team_id=OuterRef("home_team_id"),
+            away_team_id=OuterRef("away_team_id"),
+            starts_at=OuterRef("starts_at"),
+            status="FINAL",
+            local_match__isnull=False,
+        ).exclude(pk=OuterRef("pk"))
+    )
+
+
 def pending_matches(seasons: set[UUID] | None = None) -> QuerySet[Match]:
-    """Source fixtures that are unpublished or changed since publication."""
+    """Source fixtures that are unpublished or changed since publication.
+
+    An unlinked superseded record whose fixture belongs to its final twin is done.
+    """
     rows = Match.objects.filter(
         Q(local_match=None) | Q(published_at=None) | Q(updated_at__gt=F("published_at"))
-    )
+    ).exclude(Q(local_match=None, status__in=SUPERSEDED_STATUSES) & final_twin())
     return rows if seasons is None else rows.filter(season_id__in=seasons)
 
 
