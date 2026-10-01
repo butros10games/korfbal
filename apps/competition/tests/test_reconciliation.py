@@ -466,7 +466,7 @@ def new_links(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("linked", ["nothing", "parents", "claimed"])
+@pytest.mark.parametrize("linked", ["nothing", "parents", "claimed", "clubs"])
 def test_incremental_publication_plans_the_same_links(
     graph: dict[str, Any], season: Season, linked: str
 ) -> None:
@@ -477,6 +477,9 @@ def test_incremental_publication_plans_the_same_links(
         overrides = {}
         Match.objects.update(local_match=None)
         Pool.objects.update(local_pool=None)
+    if linked == "clubs":
+        # New team groups of already linked clubs (the common live-sync case).
+        TeamGroup.objects.update(local_team=None)
     if linked == "claimed":
         # Another source row already owns the local fixture.
         row = deepcopy(graph["payload"])

@@ -337,6 +337,15 @@ class Reconciler:
             {row["id"]: set(clubs) for row in self.sources["club"]},
         )
         source_clubs = {row["id"]: row for row in self.sources["club"]}
+        if self.incremental:
+            # Pending team groups often belong to clubs that are already linked.
+            source_clubs.update(
+                (row["id"], row)
+                for row in Club.objects.filter(
+                    pk__in={row["club_id"] for row in self.sources["team"]}
+                    - source_clubs.keys()
+                ).values("id", "name")
+            )
         teams = self.locals["team"]
         teams_by_club: dict[str, set[str]] = {}
         for pk, local in teams.items():
