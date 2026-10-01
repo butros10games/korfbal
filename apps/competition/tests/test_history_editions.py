@@ -367,6 +367,7 @@ def test_command_queues_editions_and_writes_the_match_log(tmp_path: Path) -> Non
 def test_history_task_waits_without_queued_work(settings: object) -> None:
     """The heartbeat opens no session until an edition has been queued."""
     settings.SPORTLINK_SYNC_ENABLED = True
+    settings.SPORTLINK_SCHEDULER = "legacy"
     settings.SPORTLINK_SYNC_SESSION_FILE = "/missing/session.json"
     assert sync_competition_history() == {"status": "idle", "http_requests": 0}
 
@@ -377,6 +378,7 @@ def test_history_task_uses_the_history_pace(
 ) -> None:
     """Queued editions run in idle time at the configured history spacing."""
     settings.SPORTLINK_SYNC_ENABLED = True
+    settings.SPORTLINK_SCHEDULER = "legacy"
     settings.SPORTLINK_SYNC_SESSION_FILE = "/private/session.json"
     settings.SPORTLINK_HISTORY_REQUEST_SPACING = 0
     seed_edition_with_team("T1", OUTDOOR)
@@ -645,6 +647,7 @@ def test_history_steps_aside_for_one_live_turn_after_its_own(
 ) -> None:
     """History and the live sync alternate on their shared worker process."""
     settings.SPORTLINK_SYNC_ENABLED = True
+    settings.SPORTLINK_SCHEDULER = "legacy"
     settings.SPORTLINK_SYNC_SESSION_FILE = "/private/session.json"
     seed_edition_with_team("T1", OUTDOOR)
     monkeypatch.setattr(

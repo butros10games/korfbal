@@ -9,9 +9,10 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from apps.competition.application.ports import CompetitionClient
+from apps.competition.application.ports import CompetitionClient, HistoricalClient
 from apps.competition.composition import (
     competition_client,
+    provider_clients,
     run_match_form_queue,
     schedule_change_dispatcher,
     scheduled_history_client,
@@ -25,9 +26,15 @@ from apps.competition.models import (
 from apps.competition.services.history_worker import live_work_waiting, run_history
 from apps.competition.services.match_form_worker import discover
 from apps.competition.services.monitoring import observe_run, outcome, progress
+from apps.competition.services.provider_scheduler import (
+    ProviderTurn,
+    TurnOptions,
+    history_pending,
+)
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.competition.services.sync import (
     SyncUnavailableError,
+    match_forms_due,
     preview_sync,
     sync_leased,
 )
@@ -84,6 +91,8 @@ def sync_current_competition() -> dict[str, object]:
     """Run one bounded batch using the shared provider pacing and lease."""
     if not settings.SPORTLINK_SYNC_ENABLED:
         return {"status": "disabled", "http_requests": 0}
+    if settings.SPORTLINK_SCHEDULER == "unified":
+        return {"status": "scheduler_unified", "http_requests": 0}
     if not settings.SPORTLINK_SYNC_SEASON or not settings.SPORTLINK_SYNC_SESSION_FILE:
         logger.warning("Competition sync requires a season and private session file")
         return {"status": "configuration_required", "http_requests": 0}
@@ -164,6 +173,8 @@ def sync_competition_history() -> dict[str, object]:
     """Work through queued history imports while current-season work is idle."""
     if not settings.SPORTLINK_SYNC_ENABLED or not settings.SPORTLINK_SYNC_SESSION_FILE:
         return {"status": "disabled", "http_requests": 0}
+    if settings.SPORTLINK_SCHEDULER == "unified":
+        return {"status": "scheduler_unified", "http_requests": 0}
     if not HistoricalResource.objects.filter(
         state="pending", next_attempt_at__lte=timezone.now()
     ).exists():
@@ -191,3 +202,76 @@ def sync_competition_history() -> dict[str, object]:
     if summary.get("reason") not in {"provider_lease_busy", "current_work_due"}:
         cache.set(HISTORY_TURN_KEY, time.time(), timeout=3600)
     return {"status": "ran", **summary}
+
+
+def active_live_season() -> Season | None:
+    """Return the configured live season while it is in progress."""
+    if not settings.SPORTLINK_SYNC_SEASON:
+        return None
+    today = timezone.localdate()
+    return Season.objects.filter(
+        name=settings.SPORTLINK_SYNC_SEASON,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).first()
+
+
+def _provider_clients() -> tuple[CompetitionClient, HistoricalClient]:
+    """Open the private session only after the provider lease is claimed.
+
+    Raises:
+        SessionUnavailableError: Credentials are missing, insecure or malformed.
+
+    """
+    try:
+        return provider_clients()
+    except (OSError, ValueError, TypeError):
+        raise SessionUnavailableError from None
+
+
+@shared_task(ignore_result=True, soft_time_limit=230, time_limit=240)
+def run_provider_turn() -> dict[str, object]:
+    """Run one provider turn: live and history requests under one lease."""
+    if not settings.SPORTLINK_SYNC_ENABLED:
+        return {"status": "disabled", "http_requests": 0}
+    if settings.SPORTLINK_SCHEDULER != "unified":
+        return {"status": "scheduler_legacy", "http_requests": 0}
+    if not settings.SPORTLINK_SYNC_SESSION_FILE:
+        logger.warning("Provider turns require a private session file")
+        return {"status": "configuration_required", "http_requests": 0}
+    season = active_live_season()
+    if season is None:
+        return _provider_turn(None)
+    return observe_run(season, lambda: _provider_turn(season))
+
+
+def _provider_turn(season: Season | None) -> dict[str, object]:
+    """Skip cheaply when blocked or idle; otherwise run and chain the next turn."""
+    if match_forms_due():
+        return {"status": "match_form_pending", "http_requests": 0}
+    if SyncLease.objects.filter(
+        key="sportlink", expires_at__gt=timezone.now()
+    ).exists():
+        return {"status": "busy_or_cooldown", "http_requests": 0}
+    if not history_pending() and (
+        season is None
+        or not preview_sync(season, budget=None)["candidate_feed_requests"]
+    ):
+        return {"status": "idle", "http_requests": 0}
+    options = TurnOptions(
+        schedule_changes=schedule_change_dispatcher(),
+        live_budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None,
+        history_budget=settings.SPORTLINK_HISTORY_MAX_REQUESTS,
+        history_share=settings.SPORTLINK_HISTORY_SHARE,
+    )
+    try:
+        result = ProviderTurn(season, _provider_clients, options).run()
+    except SessionUnavailableError:
+        logger.warning("Provider turn cannot load its private OAuth session")
+        return {"status": "session_unavailable", "http_requests": 0}
+    logger.info("Provider turn summary: %s", result)
+    if result.get("more_work"):
+        # Keep the account busy instead of idling until the next beat tick.
+        run_provider_turn.apply_async(expires=60)
+    status = outcome(result) if season is not None else "completed"
+    return {**result, "status": result.get("status", status)}

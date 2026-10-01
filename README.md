@@ -1003,9 +1003,13 @@ production Compose installations need the equivalent persistent directory mount.
 Never commit the session. The scheduler defaults to disabled until configured and
 skips an expired source season; update the scope at season rollover.
 
-Automatic runs drain due shared feeds until the snapshot is complete or their
-worker window expires. `SPORTLINK_SYNC_MAX_SECONDS` defaults to 240 seconds (at
-most four minutes). Overlapping heartbeats skip while the shared lease is held.
+Automatic runs are provider turns (`run_provider_turn`): one turn holds the shared
+lease, sends requests until its 150-second request window ends, publishes, and chains
+the next turn while work remains. Time-critical live work always goes first; routine
+refreshes share the remaining requests with queued history imports
+(`SPORTLINK_HISTORY_SHARE`). With `SPORTLINK_SCHEDULER=legacy`, the separate live task
+drains due shared feeds until its worker window expires (`SPORTLINK_SYNC_MAX_SECONDS`,
+default 240 seconds). Overlapping heartbeats skip while the shared lease is held.
 HTTP already in progress and final publication may finish afterward. There is no default
 numeric cap on automatic requests and no two-feed maintenance allowance.
 `SPORTLINK_SYNC_MAX_REQUESTS=0` disables that optional cap; positive values up to
@@ -1405,11 +1409,14 @@ season with the score and the source poule, or `blocked` with the skip reason. `
 CSV. A poule is `complete` only when unfiltered official standings agree with its
 scored finals.
 
-The `sync_competition_history` beat task drains queued checkpoints every minute with
-the scheduled sync's app session, at most `SPORTLINK_HISTORY_MAX_REQUESTS` (default 300) requests per turn, `SPORTLINK_HISTORY_REQUEST_SPACING` (default 1) seconds
-apart. It yields to match-form work, result checks and never-fetched current feeds,
-but shares the lease with periodic refreshes (rosters, photos, programmes), which
-otherwise form a permanent backlog.
+Queued checkpoints run in provider turns (`run_provider_turn`, every minute and
+chained while work remains). A turn holds the Sportlink lease, sends time-critical live
+work (fresh results, schedules within an hour of kickoff, never-fetched feeds) first,
+and otherwise alternates routine live refreshes and history by `SPORTLINK_HISTORY_SHARE`
+(default 0.5 of those requests). History makes at most `SPORTLINK_HISTORY_MAX_REQUESTS`
+(default 300) requests per turn, `SPORTLINK_HISTORY_REQUEST_SPACING` (default 1)
+seconds apart. `SPORTLINK_SCHEDULER=legacy` switches back to the separate
+`sync_current_competition` and `sync_competition_history` tasks.
 
 Coverage limits observed on 1 October 2026:
 

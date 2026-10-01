@@ -17,6 +17,12 @@ from apps.competition.tasks import sync_current_competition
 from apps.schedule.models import Season
 
 
+@pytest.fixture(autouse=True)
+def legacy_scheduler(settings: object) -> None:
+    """Pin the legacy live sync task, kept as a rollback switch."""
+    settings.SPORTLINK_SCHEDULER = "legacy"
+
+
 @pytest.fixture
 def configured_sync(season: Season) -> Iterator[Mock]:
     """Pin one source season and a fabricated private session path.

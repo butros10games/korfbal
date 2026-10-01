@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from http import HTTPStatus
 import time
 from typing import Any
@@ -96,29 +96,8 @@ def current_work_due(*, include_results: bool = True) -> bool:
     if not include_results:
         return False
     return any(
-        time_critical_checks(PollPlanner(season, now), now)
+        PollPlanner(season, now).urgent_due()
         for season in Season.objects.filter(pk__in=resources.values("season_id"))
-    )
-
-
-# Schedule checks this close to kickoff (before or after) pause history.
-KICKOFF_WINDOW = timedelta(hours=1)
-
-
-def time_critical_checks(planner: PollPlanner, now: datetime) -> bool:
-    """Only fresh results and schedules close to kickoff are time-critical.
-
-    The planner always offers routine refreshes, and schedule checks cover every
-    fixture within two days of kickoff; yielding to those would starve history
-    for most of the week. A history turn delays other checks by minutes at most.
-    """
-    starts = {row["id"]: row["starts_at"] for row in planner.rows}
-    return any(
-        job.urgent_matches
-        or any(
-            abs(starts[match] - now) <= KICKOFF_WINDOW for match in job.schedule_matches
-        )
-        for job in planner.candidate_jobs(include_metadata=False)
     )
 
 
@@ -242,6 +221,9 @@ class HistoryBatch:
         """Bind the exclusively owned client and its wire request budget."""
         self.client, self.gate = client, gate
         self.cooldown = 0
+        # Why process() stopped the batch: budget, cooldown (429), auth (the app
+        # session renewal failed) or unavailable (this historical source only).
+        self.stop = ""
         self.publish_deadline: float | None = None
         self.touched: set[int] = set()
         self.summary: dict[str, Any] = {
@@ -264,9 +246,11 @@ class HistoryBatch:
                 0, int((exc.retry_at - timezone.now()).total_seconds()) + 1
             )
             self.summary["deferred"] += 1
+            self.stop = "budget"
             return False
         except ProviderCooldownError as exc:
             self.cooldown = exc.seconds
+            self.stop = "cooldown"
             with transaction.atomic():
                 SyncLease.objects.select_for_update().get(
                     key="sportlink", owner=self.gate.owner
@@ -283,10 +267,14 @@ class HistoryBatch:
         except AuthenticationRequiredError:
             self.block(resource, "reauth_required")
             self.summary["reason"] = "reauth_required"
+            self.stop = "auth"
             return False
         except HistoryUnavailableError as exc:
             self.block(resource, str(exc))
-            return str(exc) not in AUTH_REASONS
+            if str(exc) in AUTH_REASONS:
+                # Access to this historical source only, not the app session.
+                self.stop = "unavailable"
+                return False
         except (TransportError, ValueError, KeyError, TypeError):
             self.record_failure(resource)
         return True
@@ -351,6 +339,16 @@ class HistoryBatch:
             resource = next_resource()
             if resource is None or not self.process(resource):
                 break
+        self.publish(publish_with=publish_with, owner=owner, backlog=backlog)
+
+    def publish(
+        self,
+        *,
+        publish_with: ScheduleChangeDispatcher | None,
+        owner: uuid.UUID,
+        backlog: int,
+    ) -> None:
+        """Reconcile touched poules and publish one bounded chunk of history."""
         with transaction.atomic():
             lease = SyncLease.objects.select_for_update().get(
                 key="sportlink", owner=owner

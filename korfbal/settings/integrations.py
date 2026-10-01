@@ -94,6 +94,14 @@ SPORTLINK_SYNC_MAX_REQUESTS = max(
 SPORTLINK_HISTORY_MAX_REQUESTS = max(
     1, min(1000, int(env("SPORTLINK_HISTORY_MAX_REQUESTS", "300")))
 )
+# "unified": one provider turn schedules live and history requests together.
+# "legacy": the separate live sync and history tasks (rollback switch).
+SPORTLINK_SCHEDULER = env("SPORTLINK_SCHEDULER", "unified").strip().lower()
+# History's share of requests that are not time-critical live work (0 to 1).
+SPORTLINK_HISTORY_SHARE = min(
+    1.0, max(0.0, float(env("SPORTLINK_HISTORY_SHARE", "0.5")))
+)
+
 # Seconds between history requests; history shares the app account with the live
 # sync, so it stays paced rather than bursting thousands of requests.
 SPORTLINK_HISTORY_REQUEST_SPACING = max(

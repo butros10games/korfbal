@@ -30,6 +30,12 @@ def scheduled_history_client() -> HistoryClient:
     )
 
 
+def provider_clients() -> tuple[SportlinkClient, HistoryClient]:
+    """Open one app session for a provider turn; history reuses its client."""
+    client = competition_client(session_file=Path(settings.SPORTLINK_SYNC_SESSION_FILE))
+    return client, HistoryClient(client)
+
+
 def schedule_change_dispatcher() -> ScheduleChangeDispatcher:
     """Resolve job runtime at the composition boundary."""
     return dispatch_schedule_change

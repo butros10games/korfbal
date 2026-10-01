@@ -364,6 +364,80 @@ def backfill_spacing(planner: PollPlanner | MetadataPlanner) -> int:
     return normal
 
 
+class LiveWork:
+    """Run one live feed at a time from a season's planner snapshot."""
+
+    def __init__(
+        self,
+        planner: PollPlanner | MetadataPlanner,
+        client: CompetitionClient,
+        gate: TrafficGate,
+        summary: dict[str, int],
+    ) -> None:
+        """Bind the planner, provider client, request gate and run counters."""
+        self.planner = planner
+        self.client = client
+        self.gate = gate
+        self.summary = summary
+
+    def urgent(self) -> bool:
+        """Tell whether time-critical live work waits (never for metadata runs)."""
+        return isinstance(self.planner, PollPlanner) and self.planner.urgent_due()
+
+    def budget_spent(self) -> bool:
+        """Tell whether this run's own request cap is used up."""
+        return self.gate.budget is not None and self.gate.requests >= self.gate.budget
+
+    def run_next(self) -> tuple[bool, int]:
+        """Fetch the planner's next feed.
+
+        Returns:
+            Whether a feed was attempted, and the provider cooldown that must end
+            the run (0 to continue).
+
+        """
+        job = self.planner.next_job()
+        if job is None:
+            return False, 0
+        self.summary["requests"] += 1
+        before_requests = self.gate.requests
+        try:
+            cooldown, checked = _fetch_one(job, self.client, self.summary, self.gate)
+        except RequestBudgetError as exc:
+            self.summary["deferred"] = 1
+            return True, max(
+                1, int((exc.retry_at - timezone.now()).total_seconds()) + 1
+            )
+        finally:
+            self.summary["http_requests"] = self.gate.requests
+            progress(None, self.summary)
+            key = f"http_requests_{job.resource.kind}"
+            self.summary[key] = (
+                self.summary.get(key, 0) + self.gate.requests - before_requests
+            )
+        self.planner.completed(job, checked=checked)
+        return True, cooldown
+
+    def finish(self) -> None:
+        """Record result observations and the run's coverage metrics."""
+        planner, summary = self.planner, self.summary
+        if self.budget_spent() and planner.candidate_jobs():
+            summary["deferred"] = 1
+        if not isinstance(planner, MetadataPlanner):
+            planner.record_missing_results()
+        summary["http_requests"] = self.gate.requests
+        summary["matches_checked"] = len(planner.checked)
+        summary["schedules_checked"] = len(planner.schedule_checked)
+        summary.update(planner.result_metrics())
+
+
+def match_forms_due() -> bool:
+    """Private match-form actions take the provider lease before any batch work."""
+    return MatchFormSync.objects.filter(
+        state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
+    ).exists()
+
+
 def _drain(
     planner: PollPlanner | MetadataPlanner,
     client: CompetitionClient,
@@ -372,41 +446,17 @@ def _drain(
     summary: dict[str, int],
 ) -> int:
     """Fetch due shared feeds until the snapshot, worker window or quota is spent."""
+    work = LiveWork(planner, client, gate, summary)
     cooldown = 0
     while budget is None or summary["requests"] < budget:
         # Finish the current feed, then release provider ownership for live actions.
-        if MatchFormSync.objects.filter(
-            state__in={"pending", "running"}, next_attempt_at__lte=timezone.now()
-        ).exists():
+        if match_forms_due():
             summary["deferred"] = 1
             break
-        job = planner.next_job()
-        if job is None:
+        ran, cooldown = work.run_next()
+        if not ran or cooldown:
             break
-        summary["requests"] += 1
-        before_requests = gate.requests
-        try:
-            cooldown, checked = _fetch_one(job, client, summary, gate)
-        except RequestBudgetError as exc:
-            summary["deferred"] = 1
-            cooldown = max(0, int((exc.retry_at - timezone.now()).total_seconds()) + 1)
-            break
-        finally:
-            summary["http_requests"] = gate.requests
-            progress(None, summary)
-            key = f"http_requests_{job.resource.kind}"
-            summary[key] = summary.get(key, 0) + gate.requests - before_requests
-        planner.completed(job, checked=checked)
-        if cooldown:
-            break
-    if budget is not None and gate.requests >= budget and planner.candidate_jobs():
-        summary["deferred"] = 1
-    if not isinstance(planner, MetadataPlanner):
-        planner.record_missing_results()
-    summary["http_requests"] = gate.requests
-    summary["matches_checked"] = len(planner.checked)
-    summary["schedules_checked"] = len(planner.schedule_checked)
-    summary.update(planner.result_metrics())
+    work.finish()
     return cooldown
 
 

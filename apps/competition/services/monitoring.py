@@ -17,6 +17,7 @@ from apps.schedule.models import Season
 
 SUMMARY_FIELDS = (
     "requests",
+    "history_requests",
     "updated",
     "unchanged",
     "pending",

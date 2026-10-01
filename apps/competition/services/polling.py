@@ -27,6 +27,8 @@ MINIMUM_FEED_INTERVAL = RESULT_INTERVAL
 UPCOMING_SCHEDULE_WINDOW = timedelta(days=2)
 UPCOMING_SCHEDULE_INTERVAL = timedelta(hours=1)
 IMMINENT_SCHEDULE_INTERVAL = timedelta(minutes=15)
+# Schedule checks this close to kickoff (before or after) are time-critical.
+KICKOFF_WINDOW = timedelta(hours=1)
 MINIMUM_REPORTING_SAMPLES = 12
 
 
@@ -356,6 +358,24 @@ class PollPlanner:
                     job = jobs.setdefault(program.pk, PollJob(program, set(), 1))
                     job.priority = min(job.priority, 1)
                     job.schedule_matches.add(row["id"])
+
+    def urgent_due(self) -> bool:
+        """Tell whether time-critical work waits, without selecting or marking it.
+
+        Fresh results, schedule checks within ``KICKOFF_WINDOW`` of kickoff and
+        never-fetched feeds pre-empt backfills. Routine refreshes, including
+        hourly schedule checks two days ahead, do not.
+        """
+        self.now = max(self.now, timezone.now())
+        return any(
+            job.urgent_matches
+            or job.resource.fetched_at is None
+            or any(
+                abs(self.row_by_id[match]["starts_at"] - self.now) <= KICKOFF_WINDOW
+                for match in job.schedule_matches
+            )
+            for job in self.candidate_jobs(include_metadata=False)
+        )
 
     def candidate_jobs(self, *, include_metadata: bool = True) -> list[PollJob]:
         """Collect eligible feeds in one pass without selecting or marking work."""

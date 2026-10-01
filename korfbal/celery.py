@@ -40,6 +40,11 @@ app.conf.beat_schedule = {
         "schedule": 60.0,
         "options": {"expires": 60, "queue": "competition"},
     },
+    "run-provider-turn": {
+        "task": "apps.competition.tasks.run_provider_turn",
+        "schedule": 60.0,
+        "options": {"expires": 60, "queue": "competition"},
+    },
     "sync-competition-history": {
         "task": "apps.competition.tasks.sync_competition_history",
         "schedule": 60.0,
