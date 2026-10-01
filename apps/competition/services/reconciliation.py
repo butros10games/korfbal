@@ -166,7 +166,7 @@ class Reconciler:
                 | Q(pk__in=[pk for key, pk in self.overrides if key == kind])
             )
         if lock:
-            query = query.select_for_update(skip_locked=self.skip_locked)
+            query = query.select_for_update(skip_locked=self.skip_locked, no_key=True)
         return list(query.values())
 
     def _resolve_seasons(
@@ -204,7 +204,7 @@ class Reconciler:
         """Read native rows keyed by UUID, locked when links will be applied."""
         query = query.order_by("pk")
         if lock:
-            query = query.select_for_update()
+            query = query.select_for_update(no_key=True)
         return {str(row["id_uuid"]): row for row in query.values()}
 
     def linked(

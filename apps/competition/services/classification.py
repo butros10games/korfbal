@@ -102,7 +102,7 @@ def map_pool(pool: Pool) -> dict[str, Any]:
     """Persist a decision under a source lock; unchanged reruns issue no writes."""
     pool = (
         Pool.objects
-        .select_for_update(of=("self",))
+        .select_for_update(of=("self",), no_key=True)
         .select_related("season")
         .get(pk=pool.pk)
     )

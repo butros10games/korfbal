@@ -6,6 +6,7 @@ import json
 from unittest.mock import Mock
 
 from django.core.management import call_command
+from django.db import OperationalError
 from django.utils import timezone
 import pytest
 
@@ -548,3 +549,37 @@ def test_known_old_poule_can_exceed_club_lookback(old_season: Season) -> None:
     client.session.get = Mock(return_value=Mock(status_code=200, headers={}, json=list))
     client.fetch(resource, Mock())
     assert client.session.get.call_args.kwargs["params"]["weekoffset"] < -LOOKBACK_WEEKS
+
+
+class DeadlockError(Exception):
+    """Stand-in for a psycopg error carrying PostgreSQL's deadlock SQLSTATE."""
+
+    sqlstate = "40P01"
+
+
+@pytest.mark.django_db
+def test_lock_conflict_defers_one_checkpoint_without_failing_the_batch(
+    old_season: Season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deadlock with publication retries the checkpoint shortly; the batch goes on."""
+    first = seed(old_season, "app", "match", "M1")
+    second = seed(old_season, "app", "match", "M2")
+    deadlock = OperationalError("deadlock detected")
+    deadlock.__cause__ = DeadlockError()
+    fetched = []
+
+    def fetch(resource: HistoricalResource, *args: object) -> None:
+        if resource.pk == first.pk:
+            raise deadlock
+        fetched.append(resource.pk)
+        HistoricalResource.objects.filter(pk=resource.pk).update(state="fetched")
+
+    monkeypatch.setattr(
+        "apps.competition.services.history_worker.fetch_resource", fetch
+    )
+    result = run_history(lambda: FakeClient([]), publish_with=None)
+    assert fetched == [second.pk]
+    assert result["deferred"] == 1
+    first.refresh_from_db()
+    assert (first.state, first.attempts) == ("pending", 0)
+    assert first.next_attempt_at > timezone.now()

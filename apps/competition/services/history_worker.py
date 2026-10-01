@@ -10,7 +10,7 @@ from typing import Any
 import uuid
 
 from django.conf import settings
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import Case, IntegerField, When
 from django.utils import timezone
 
@@ -36,6 +36,7 @@ from apps.competition.services.history import (
 from apps.competition.services.history_checkpoint import checkpoint
 from apps.competition.services.history_dataservice import reconcile_pool_coverage
 from apps.competition.services.polling import PollPlanner
+from apps.competition.services.publication_worker import lock_conflict
 from apps.competition.services.publishing import (
     MatchBounds,
     pending_matches,
@@ -214,6 +215,10 @@ def fetch_resource(
         raise TransportError("Historical HTTP failure")
 
 
+# A checkpoint rolled back by a lock conflict waits this long before its retry.
+LOCK_RETRY = timedelta(seconds=30)
+
+
 class HistoryBatch:
     """Isolate per-resource retries from provider-wide cooldowns."""
 
@@ -235,7 +240,12 @@ class HistoryBatch:
         }
 
     def process(self, resource: HistoricalResource) -> bool:
-        """Return whether this batch can continue after a single resource attempt."""
+        """Return whether this batch can continue after a single resource attempt.
+
+        Raises:
+            OperationalError: A database error other than a lock conflict.
+
+        """
         self.touched.add(resource.pk)
         try:
             if not local_work(resource, owner=self.gate.owner):
@@ -277,6 +287,15 @@ class HistoryBatch:
                 return False
         except (TransportError, ValueError, KeyError, TypeError):
             self.record_failure(resource)
+        except OperationalError as exc:
+            if not lock_conflict(exc):
+                raise
+            # Publication won a row lock: the checkpoint rolled back, so retry it
+            # shortly instead of failing the whole provider turn.
+            HistoricalResource.objects.filter(pk=resource.pk).update(
+                next_attempt_at=timezone.now() + LOCK_RETRY
+            )
+            self.summary["deferred"] += 1
         return True
 
     @transaction.atomic

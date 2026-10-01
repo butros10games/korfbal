@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.db import connection
+from django.db.models import QuerySet
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
@@ -368,3 +369,26 @@ def test_unnamed_club_is_stored_as_dissolved(season: Season) -> None:
     club = Club.objects.get(external_id=row["HomeTeam"]["Club"]["ClubId"])
     assert (club.name, club.dissolved) == ("Keizer Karel", True)
     assert not Club.objects.get(external_id=row["AwayTeam"]["Club"]["ClubId"]).dissolved
+
+
+@pytest.mark.django_db
+def test_import_locks_never_block_foreign_key_checks(
+    season: Season, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identity locks use FOR NO KEY UPDATE: publication's commit-time FK checks
+    take KEY SHARE on the same rows, and FOR UPDATE would deadlock with them.
+    """
+    modes = []
+    original = QuerySet.select_for_update
+
+    def recording(self: QuerySet, **kwargs: object) -> QuerySet:
+        modes.append((self.model.__name__, kwargs.get("no_key", False)))
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "select_for_update", recording)
+    Importer(season, timezone.now()).apply(
+        "club_results", "C", {"MatchResult": [match_payload()]}
+    )
+    locked = {model for model, _ in modes}
+    assert {"Club", "Team", "Pool"} <= locked
+    assert all(no_key for _, no_key in modes), modes

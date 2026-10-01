@@ -142,7 +142,7 @@ class Importer:
         if data.get("Dissolved"):
             values["dissolved"] = True
         with transaction.atomic():
-            club, _ = Club.objects.select_for_update().get_or_create(
+            club, _ = Club.objects.select_for_update(no_key=True).get_or_create(
                 external_id=source_id, defaults=values
             )
             if self.discover:
@@ -181,7 +181,7 @@ class Importer:
             "sport": data.get("SportId") or "",
         }
         with transaction.atomic():
-            team, _ = Team.objects.select_for_update().get_or_create(
+            team, _ = Team.objects.select_for_update(no_key=True).get_or_create(
                 season=self.season, external_id=source_id, defaults=values
             )
             if team.sport != values["sport"]:
@@ -218,7 +218,7 @@ class Importer:
         ):
             return cached
         with transaction.atomic():
-            pool, _ = Pool.objects.select_for_update().get_or_create(
+            pool, _ = Pool.objects.select_for_update(no_key=True).get_or_create(
                 season=self.season, external_id=source_id, defaults=values
             )
             save_changed(pool, values)

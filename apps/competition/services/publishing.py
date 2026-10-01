@@ -412,7 +412,7 @@ class Publisher:
         )
         if claimant is None or not final or claimant[1] not in SUPERSEDED_STATUSES:
             return False
-        twin = Match.objects.select_for_update().get(pk=claimant[0])
+        twin = Match.objects.select_for_update(no_key=True).get(pk=claimant[0])
         # The final record inherits the twin's ownership and published result, so
         # manual edits made since that publication still block the update.
         row.local_created = twin.local_created
@@ -510,7 +510,7 @@ class Publisher:
                 row, (home, away), candidates, claimed, pools.get(row.pool_id)
             ):
                 continue
-            tracker = MatchData.objects.select_for_update().get(
+            tracker = MatchData.objects.select_for_update(no_key=True).get(
                 match_link_id=row.local_match_id
             )
             accepted = self.result(row, tracker, pools.get(row.pool_id))
