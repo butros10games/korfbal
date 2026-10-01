@@ -21,6 +21,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.match_form_payloads import (
     SUBSTITUTION_EVENT,
+    app_events_form,
     event_signature,
     is_player,
     merge_substitutions,
@@ -423,13 +424,19 @@ def execute(
         # Snapshot canonical, corrected facts; recomputation may have advanced revision.
         desired = _substitutions(locked, job.access, source, home, details)
         job.expected_revision = locked.live_revision
+    if not desired and not job.published_event_ids:
+        # Nothing of ours to add or withdraw: leave the provider form untouched.
+        job.event_count = 0
+        return
     team_id = (source.home_team if home else source.away_team).external_id
-    updated = merge_substitutions(
-        form,
-        home=home,
-        team_id=team_id,
-        desired=desired,
-        owned_ids=job.published_event_ids,
+    updated = app_events_form(
+        merge_substitutions(
+            form,
+            home=home,
+            team_id=team_id,
+            desired=desired,
+            owned_ids=job.published_event_ids,
+        )
     )
     # Persist ownership intent before I/O: a timeout may still have committed the PUT.
     job.published_event_ids = sorted(
@@ -437,6 +444,24 @@ def execute(
     )
     job.save(update_fields=["published_event_ids", "expected_revision"])
     result = provider.replace("events", source.external_id, form, updated)
+    _confirm_substitutions(result, desired, job.published_event_ids)
+    # Officials only received earlier automatic substitutions after a team re-saved
+    # the form in the KNKV app, which sends the provider-assigned EventIds back.
+    result = provider.save_events(source.external_id, result, app_events_form(result))
+    ids = _confirm_substitutions(result, desired, job.published_event_ids)
+    job.published_event_ids = ids
+    job.event_count = len(desired)
+
+
+def _confirm_substitutions(
+    result: dict, desired: list[dict[str, Any]], published_ids: list[str]
+) -> list[str]:
+    """Require exactly the desired own substitutions in a read-back form.
+
+    Raises:
+        MatchFormError: KNKV does not show the desired substitutions.
+
+    """
     actual = {
         row.get("ClientEventId"): row
         for row in rows_at(result, "MatchFormMatchEvents", "MatchEvent")
@@ -447,10 +472,9 @@ def execute(
     ):
         raise MatchFormError("publication_not_confirmed")
     ids = [row["ClientEventId"] for row in desired]
-    if any(old in actual for old in set(job.published_event_ids) - set(ids)):
+    if any(old in actual for old in set(published_ids) - set(ids)):
         raise MatchFormError("publication_not_confirmed")
-    job.published_event_ids = ids
-    job.event_count = len(desired)
+    return ids
 
 
 def _publish_selection(

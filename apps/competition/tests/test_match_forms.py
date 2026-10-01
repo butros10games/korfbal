@@ -28,6 +28,7 @@ from apps.competition.models import (
 from apps.competition.services.history_worker import current_work_due
 from apps.competition.services.importer import Importer
 from apps.competition.services.match_form_payloads import (
+    app_events_form,
     merge_substitutions,
     player_rows,
     publish_players,
@@ -173,6 +174,69 @@ def test_merge_is_idempotent_preserves_opponent_and_updates_only_owned_event() -
         updated, home=True, team_id="T1", desired=[], owned_ids=["own"]
     )
     assert cleared["MatchFormMatchEvents"]["MatchEvent"] == [opponent]
+
+
+def test_events_are_saved_with_the_knkv_app_field_set() -> None:
+    """Send every app field including nulls, and only fields the app knows."""
+    original = events_form([
+        {
+            **event(),
+            "EventId": 90,
+            "ServerField": "drop",
+            "MatchEventDetails": [{"MatchEventDetailType": "X", "Extra": 1}],
+        }
+    ])
+    original["InputForm"]["Extra"] = True
+    original["Permissions"]["Extra"] = True
+    original["ServerField"] = "drop"
+    sent = app_events_form(original)
+    assert sent == {
+        "Domain": None,
+        "InputForm": {
+            "AwayPenaltyShots": None,
+            "AwayScore": 18,
+            "AwayScoreExtraTime": None,
+            "AwayTotalTimePenalty": None,
+            "HomePenaltyShots": None,
+            "HomeScore": 22,
+            "HomeScoreExtraTime": None,
+            "HomeTotalTimePenalty": None,
+            "Unlock": None,
+        },
+        "MatchFormMatchEvents": {
+            "MatchEvent": [
+                {
+                    "ChargeCodeId": None,
+                    "ClientEventId": "own",
+                    "EventDescription": None,
+                    "EventId": 90,
+                    "OffsetTime": "35",
+                    "OtherPersonId": "P2",
+                    "PeriodId": 2,
+                    "PersonId": "P1",
+                    "PublicMatchId": None,
+                    "PublicTeamId": "T1",
+                    "RoleId": None,
+                    "TypeOfEvent": 10,
+                    "MatchEventDetails": [
+                        {
+                            "MatchEventDetailId": None,
+                            "MatchEventDetailType": "X",
+                            "MatchEventDetailValue": None,
+                        }
+                    ],
+                }
+            ]
+        },
+        "Permissions": {
+            "MatchEventEditAwayTeamAllowed": None,
+            "MatchEventEditHomeTeamAllowed": True,
+            "MatchEventEditOfficialAllowed": None,
+        },
+        "PersonId": None,
+        "PublicMatchId": "M1",
+    }
+    assert app_events_form(sent) == sent
 
 
 def test_manual_duplicate_and_opponent_id_collision_stop_publication() -> None:
@@ -515,19 +579,36 @@ def test_substitution_upload_uses_paused_clock_and_reconciles_after_timeout(
     assert own["OtherPersonId"] == "P2"
     job.refresh_from_db()
     assert own["ClientEventId"] in job.published_event_ids
-    provider.replace.side_effect = (
-        lambda resource, match_id, original, updated, **kwargs: deepcopy(updated)
+
+    def commit(
+        resource: str, match_id: str, original: dict, updated: dict, **kwargs: object
+    ) -> dict:
+        result = deepcopy(updated)
+        for number, row in enumerate(result["MatchFormMatchEvents"]["MatchEvent"]):
+            row["EventId"] = row.get("EventId") or 100 + number
+        return result
+
+    provider.replace.side_effect = commit
+    provider.save_events.side_effect = lambda match_id, original, updated: commit(
+        "events", match_id, original, updated
     )
     execute(job, provider, Mock())
-    assert len(
-        provider.replace.call_args.args[3]["MatchFormMatchEvents"]["MatchEvent"]
-    ) == len({"own", "opponent"})
+    sent = provider.replace.call_args.args[3]["MatchFormMatchEvents"]["MatchEvent"]
+    assert len(sent) == len({"own", "opponent"})
+    # Re-save the read-back like the KNKV app, returning provider-assigned EventIds.
+    _, readback, resaved = provider.save_events.call_args.args
+    assert readback == commit(*provider.replace.call_args.args)
+    assert resaved == app_events_form(readback)
+    assert all(row["EventId"] for row in resaved["MatchFormMatchEvents"]["MatchEvent"])
     assert job.event_count == 1
     change.delete()
     execute(job, provider, Mock())
-    assert provider.replace.call_args.args[3]["MatchFormMatchEvents"]["MatchEvent"] == [
-        event("opponent", "T2")
-    ]
+    assert [
+        row["ClientEventId"]
+        for row in provider.save_events.call_args.args[2]["MatchFormMatchEvents"][
+            "MatchEvent"
+        ]
+    ] == ["opponent"]
     assert job.event_count == 0
 
 

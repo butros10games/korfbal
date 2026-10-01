@@ -122,7 +122,24 @@ class SportlinkMatchForms:
         *,
         home: bool | None = None,
     ) -> dict[str, Any]:
-        """Preflight changes, preserve ETags, and read back the committed form.
+        """Preflight changes, preserve ETags, and read back the committed form."""
+        self._preflight(resource, match_id, original, home)
+        if updated != original:
+            self._request("PUT", resource, match_id, home, body=updated)
+        return self.read(resource, match_id, home=home)
+
+    def save_events(
+        self, match_id: str, original: dict[str, Any], updated: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Save even an unchanged events form, as the KNKV app's Save button does."""
+        self._preflight("events", match_id, original, None)
+        self._request("PUT", "events", match_id, None, body=updated)
+        return self.read("events", match_id)
+
+    def _preflight(
+        self, resource: str, match_id: str, original: dict[str, Any], home: bool | None
+    ) -> None:
+        """Require a writable resource that still matches the observed form.
 
         Raises:
             MatchFormError: The resource is read-only or the form changed since reading.
@@ -130,12 +147,8 @@ class SportlinkMatchForms:
         """
         if resource not in {"players", "events"}:
             raise MatchFormError("invalid_action")
-        current = self.read(resource, match_id, home=home)
-        if current != original:
+        if self.read(resource, match_id, home=home) != original:
             raise MatchFormError("knkv_changed")
-        if updated != original:
-            self._request("PUT", resource, match_id, home, body=updated)
-        return self.read(resource, match_id, home=home)
 
 
 def _response_body(
@@ -155,7 +168,8 @@ def _response_body(
     if response.status_code in {401, 403}:
         raise MatchFormError("knkv_access_denied")
     data = None
-    if response.status_code in {200, 400, 409, 412, 422}:
+    # KNKV reports condition errors such as an official's finalization with HTTP 420.
+    if response.status_code in {200, 400, 409, 412, 420, 422}:
         with suppress(ValueError):
             data = response.json()
         _check_violations(data)
@@ -184,6 +198,8 @@ def _check_violations(data: object) -> None:
         return
     if "TEAM_ALREADY_APPROVED" in violations:
         code = "team_already_approved"
+    elif {"ALREADY_FINALIZED", "OFFICIAL_ALREADY_APPROVED"} & violations.keys():
+        code = "match_finalized"
     elif "MULTIPLE_INSERT" in violations:
         code = "duplicate_player"
     elif all(isinstance(key, str) and key.startswith("WARNING") for key in violations):

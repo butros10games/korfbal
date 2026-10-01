@@ -7,6 +7,42 @@ from apps.competition.application.match_forms import MatchFormError
 
 
 SUBSTITUTION_EVENT = 10
+# Fields the KNKV app's models write for MatchFormMatchEventsForm v3, nulls included.
+APP_EVENT_FORM_INPUTS = (
+    "AwayPenaltyShots",
+    "AwayScore",
+    "AwayScoreExtraTime",
+    "AwayTotalTimePenalty",
+    "HomePenaltyShots",
+    "HomeScore",
+    "HomeScoreExtraTime",
+    "HomeTotalTimePenalty",
+    "Unlock",
+)
+APP_EVENT_FORM_PERMISSIONS = (
+    "MatchEventEditAwayTeamAllowed",
+    "MatchEventEditHomeTeamAllowed",
+    "MatchEventEditOfficialAllowed",
+)
+APP_EVENT_FIELDS = (
+    "ChargeCodeId",
+    "ClientEventId",
+    "EventDescription",
+    "EventId",
+    "OffsetTime",
+    "OtherPersonId",
+    "PeriodId",
+    "PersonId",
+    "PublicMatchId",
+    "PublicTeamId",
+    "RoleId",
+    "TypeOfEvent",
+)
+APP_EVENT_DETAIL_FIELDS = (
+    "MatchEventDetailId",
+    "MatchEventDetailType",
+    "MatchEventDetailValue",
+)
 
 
 def rows_at(form: dict, *path: str) -> list[dict[str, Any]]:
@@ -161,3 +197,37 @@ def merge_substitutions(
             result.append(event)
     updated["MatchFormMatchEvents"]["MatchEvent"] = result
     return updated
+
+
+def _app_fields(row: object, fields: tuple[str, ...]) -> dict[str, Any] | None:
+    """Mirror a nullable app model: absent objects stay null, known fields only."""
+    if not isinstance(row, dict):
+        return None
+    return {key: row.get(key) for key in fields}
+
+
+def app_events_form(form: dict) -> dict:
+    """Serialize an events form exactly as the KNKV app saves it.
+
+    The app writes every model field, including nulls, and omits fields its models
+    do not know. Officials only received automatic substitutions after a team saved
+    the form again from the app, so publication mirrors that request shape.
+    """
+    events = []
+    for event in rows_at(form, "MatchFormMatchEvents", "MatchEvent"):
+        details = event.get("MatchEventDetails")
+        events.append({
+            **{key: event.get(key) for key in APP_EVENT_FIELDS},
+            "MatchEventDetails": [
+                _app_fields(detail, APP_EVENT_DETAIL_FIELDS)
+                for detail in (details if isinstance(details, list) else [])
+            ],
+        })
+    return {
+        "Domain": form.get("Domain"),
+        "InputForm": _app_fields(form.get("InputForm"), APP_EVENT_FORM_INPUTS),
+        "MatchFormMatchEvents": {"MatchEvent": events},
+        "Permissions": _app_fields(form.get("Permissions"), APP_EVENT_FORM_PERMISSIONS),
+        "PersonId": form.get("PersonId"),
+        "PublicMatchId": form.get("PublicMatchId"),
+    }

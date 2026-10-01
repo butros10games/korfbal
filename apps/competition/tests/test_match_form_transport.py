@@ -41,6 +41,25 @@ def test_put_has_side_version_csrf_independent_oauth_and_conditional_header() ->
     assert client.session.headers["X-Navajo-Instance"] == "KNKV"
 
 
+def test_events_save_sends_an_unchanged_form() -> None:
+    """An explicit events save sends the observed form even without local changes."""
+    client = SportlinkClient("synthetic", user_agent="synthetic")
+    form = {"PublicMatchId": "M1", "value": 1}
+    client.session.request = Mock(return_value=response(form))
+    forms = SportlinkMatchForms(client, Mock())
+    assert forms.replace("events", "M1", form, form) == form
+    assert [call.args[0] for call in client.session.request.call_args_list] == [
+        "GET",
+        "GET",
+    ]
+    assert forms.save_events("M1", form, form) == form
+    assert [call.args[0] for call in client.session.request.call_args_list[2:]] == [
+        "GET",
+        "PUT",
+        "GET",
+    ]
+
+
 def test_intervening_provider_change_stops_before_put() -> None:
     """A new server form must not be overwritten by the queued snapshot."""
     client = SportlinkClient("synthetic", user_agent="synthetic")
@@ -101,12 +120,14 @@ def test_provider_cooldown_is_retained_and_timeout_is_ambiguous() -> None:
         SportlinkMatchForms(client, Mock()).read("events", "M1")
 
 
-@pytest.mark.parametrize("http_status", [200, 400, 409, 412, 422])
+@pytest.mark.parametrize("http_status", [200, 400, 409, 412, 420, 422])
 @pytest.mark.parametrize(
     ("violations", "code"),
     [
         ({"TEAM_ALREADY_APPROVED": "private details"}, "team_already_approved"),
         ({"MULTIPLE_INSERT": "private details"}, "duplicate_player"),
+        ({"ALREADY_FINALIZED": "private details"}, "match_finalized"),
+        ({"OFFICIAL_ALREADY_APPROVED": "private details"}, "match_finalized"),
         ({"WARNING_ELIGIBILITY": "private details"}, "knkv_validation_warning"),
         (
             {"WARNING_ELIGIBILITY": "private", "INVALID_TEAM": "private"},

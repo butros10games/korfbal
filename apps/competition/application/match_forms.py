@@ -43,3 +43,8 @@ class MatchFormProvider(Protocol):
         home: bool | None = None,
     ) -> dict[str, Any]:
         """Reject an intervening provider edit before sending a replacement."""
+
+    def save_events(
+        self, match_id: str, original: dict[str, Any], updated: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Save an events form even when unchanged, then read it back."""
