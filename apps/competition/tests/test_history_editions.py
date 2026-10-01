@@ -592,3 +592,30 @@ def test_history_does_not_yield_to_routine_poll_refreshes() -> None:
         fetched_at=past,
     )
     assert not current_work_due()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("minutes", "blocks"), [(300, False), (30, True)])
+def test_history_yields_only_to_schedules_close_to_kickoff(
+    minutes: int, *, blocks: bool
+) -> None:
+    """Routine schedule checks share the lease; the hour before kickoff does not."""
+    current = Season.objects.create(
+        name="active",
+        start_date=timezone.localdate() - timedelta(days=30),
+        end_date=timezone.localdate() + timedelta(days=30),
+    )
+    fixture = {
+        **row("M1", (timezone.now() + timedelta(minutes=minutes)).isoformat()),
+        "Status": "SCHEDULED",
+        "HomeResult": None,
+        "AwayResult": None,
+    }
+    Importer(current, timezone.now()).apply(
+        "club_results", "CT1", {"MatchResult": [fixture]}
+    )
+    past = timezone.now() - timedelta(days=1)
+    SyncResource.objects.update(
+        fetched_at=past, next_sync_at=timezone.now() + timedelta(days=1)
+    )
+    assert current_work_due() is blocks

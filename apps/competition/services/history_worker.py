@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 import time
 from typing import Any
@@ -76,12 +76,30 @@ def current_work_due(*, include_results: bool = True) -> bool:
         return True
     if not include_results:
         return False
-    # Only results of just-played matches and kickoff schedule checks are
-    # time-critical; the planner always has routine refreshes to offer.
     return any(
-        job.urgent_matches or job.schedule_matches
+        time_critical_checks(PollPlanner(season, now), now)
         for season in Season.objects.filter(pk__in=resources.values("season_id"))
-        for job in PollPlanner(season, now).candidate_jobs(include_metadata=False)
+    )
+
+
+# Schedule checks this close to kickoff (before or after) pause history.
+KICKOFF_WINDOW = timedelta(hours=1)
+
+
+def time_critical_checks(planner: PollPlanner, now: datetime) -> bool:
+    """Only fresh results and schedules close to kickoff are time-critical.
+
+    The planner always offers routine refreshes, and schedule checks cover every
+    fixture within two days of kickoff; yielding to those would starve history
+    for most of the week. A history turn delays other checks by minutes at most.
+    """
+    starts = {row["id"]: row["starts_at"] for row in planner.rows}
+    return any(
+        job.urgent_matches
+        or any(
+            abs(starts[match] - now) <= KICKOFF_WINDOW for match in job.schedule_matches
+        )
+        for job in planner.candidate_jobs(include_metadata=False)
     )
 
 
