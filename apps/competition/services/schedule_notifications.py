@@ -7,12 +7,13 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from apps.competition.models import Match as SourceMatch
-from apps.player.models import Player
-from apps.player.services.match_notifications import PayloadSender
+from apps.player.services.match_notifications import (
+    PayloadSender,
+    match_follower_user_ids,
+)
 from apps.player.services.web_push import WebPushPayload
 from apps.schedule.models import Match
 
@@ -69,22 +70,7 @@ def notify_schedule_change(
     )
     if match is None:
         return
-    recipients = list(
-        Player.objects.filter(
-            Q(
-                pk__in=Player.team_follow.through.objects.filter(
-                    team_id__in=[match.home_team_id, match.away_team_id]
-                ).values("player_id")
-            )
-            | Q(
-                pk__in=Player.club_follow.through.objects.filter(
-                    club_id__in=[match.home_team.club_id, match.away_team.club_id]
-                ).values("player_id")
-            ),
-            user__isnull=False,
-            user__is_active=True,
-        ).values_list("user_id", flat=True)
-    )
+    recipients = sorted(match_follower_user_ids(match, include_clubs=True))
     if not recipients:
         return
     title = "Wedstrijd afgelast" if cancelled else "Wedstrijdprogramma gewijzigd"

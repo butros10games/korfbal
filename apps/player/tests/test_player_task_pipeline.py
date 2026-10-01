@@ -24,12 +24,14 @@ from apps.player.tasks import (
     download_cached_song,
     download_player_song,
     handle_match_finished,
+    handle_match_started,
     publish_mvp_and_notify,
     send_mvp_vote_reminder,
 )
 
 
 def test_player_tasks_keep_their_public_celery_names() -> None:
+    assert handle_match_started.name == "apps.player.tasks.handle_match_started"
     assert handle_match_finished.name == "apps.player.tasks.handle_match_finished"
     assert send_mvp_vote_reminder.name == "apps.player.tasks.send_mvp_vote_reminder"
     assert publish_mvp_and_notify.name == "apps.player.tasks.publish_mvp_and_notify"

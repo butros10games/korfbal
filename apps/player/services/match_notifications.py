@@ -8,11 +8,12 @@ import logging
 from typing import Protocol
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.awards.models.mvp import MatchMvpVote
 from apps.awards.services import mvp as mvp_service
-from apps.game_tracker.models import MatchData
+from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup
 from apps.player.models.player import Player
 from apps.player.models.push_subscription import PlayerPushSubscription
 from apps.player.services.expo_push import ExpoPushPayload
@@ -107,24 +108,48 @@ def _participant_user_ids(players: list[Player]) -> list[int]:
     return user_ids
 
 
-def _match_title(match: Match) -> str:
-    home = getattr(match.home_team, "name", "") or "Thuis"
-    away = getattr(match.away_team, "name", "") or "Uit"
-    return f"{home} - {away}".strip(" -")
+def match_follower_user_ids(match: Match, *, include_clubs: bool) -> set[int]:
+    """Return active accounts following either team (and optionally either club)."""
+    follows = Q(
+        pk__in=Player.team_follow.through.objects.filter(
+            team_id__in=[match.home_team_id, match.away_team_id]
+        ).values("player_id")
+    )
+    if include_clubs:
+        follows |= Q(
+            pk__in=Player.club_follow.through.objects.filter(
+                club_id__in=[match.home_team.club_id, match.away_team.club_id]
+            ).values("player_id")
+        )
+    return set(
+        Player.objects.filter(
+            follows, user__isnull=False, user__is_active=True
+        ).values_list("user_id", flat=True)
+    )
 
 
-def _push_url(match: Match) -> str:
-    return f"/matches/{match.id_uuid}"
+def _playing_user_ids(match_data: MatchData) -> set[int]:
+    """Return accounts selected in the match's player groups or lineup."""
+    return set(
+        Player.objects.filter(
+            Q(
+                pk__in=PlayerGroup.players.through.objects.filter(
+                    playergroup__match_data=match_data
+                ).values("player_id")
+            )
+            | Q(
+                pk__in=MatchPlayer.objects.filter(match_data=match_data).values(
+                    "player_id"
+                )
+            ),
+            user__isnull=False,
+        ).values_list("user_id", flat=True)
+    )
 
 
-@transaction.atomic
-def handle_finished_match(
-    *,
-    match_id: str,
-    match_data_id: str,
-    jobs: FinishedMatchJobs,
-) -> None:
-    """Notify match participants and schedule the MVP lifecycle."""
+def _load_match_pair(
+    match_id: str, match_data_id: str
+) -> tuple[Match, MatchData] | None:
     match = (
         Match.objects
         .select_related(
@@ -138,29 +163,85 @@ def handle_finished_match(
     )
     match_data = (
         MatchData.objects
-        .select_related(
-            "match_link",
-            "match_link__home_team",
-            "match_link__away_team",
-        )
+        .select_related("match_link")
         .filter(id_uuid=match_data_id)
         .first()
     )
-    if (
-        match is None
-        or match_data is None
-        or match_data.status != "finished"
-        or str(match_data.match_link.pk) != match_id
-    ):
+    if match is None or match_data is None or str(match_data.match_link.pk) != match_id:
+        return None
+    return match, match_data
+
+
+def _match_title(match: Match) -> str:
+    home = getattr(match.home_team, "name", "") or "Thuis"
+    away = getattr(match.away_team, "name", "") or "Uit"
+    return f"{home} - {away}".strip(" -")
+
+
+def _push_url(match: Match) -> str:
+    return f"/matches/{match.id_uuid}"
+
+
+def handle_started_match(
+    *,
+    match_id: str,
+    match_data_id: str,
+    send_payload: PayloadSender,
+) -> None:
+    """Notify team followers that tracking started, skipping selected players."""
+    loaded = _load_match_pair(match_id, match_data_id)
+    if loaded is None:
+        return
+    match, match_data = loaded
+    # An undone start returns the match to "upcoming"; announce only live matches.
+    if match_data.status != "active":
+        return
+
+    # Club followers are skipped: a large club starts many matches each weekend.
+    recipients = match_follower_user_ids(
+        match, include_clubs=False
+    ) - _playing_user_ids(match_data)
+    if not recipients:
+        return
+    send_payload(
+        user_ids=sorted(recipients),
+        payload=WebPushPayload(
+            title="Wedstrijd begonnen",
+            body=f"{_match_title(match)} is begonnen. Volg de wedstrijd live.",
+            url=_push_url(match),
+            tag=f"match-started:{match_data.id_uuid}",
+        ),
+    )
+
+
+@transaction.atomic
+def handle_finished_match(
+    *,
+    match_id: str,
+    match_data_id: str,
+    jobs: FinishedMatchJobs,
+) -> None:
+    """Notify team followers and players, and schedule the MVP lifecycle."""
+    loaded = _load_match_pair(match_id, match_data_id)
+    if loaded is None:
+        return
+    match, match_data = loaded
+    if match_data.status != "finished":
         return
 
     home = getattr(match.home_team, "name", "") or "Thuis"
     away = getattr(match.away_team, "name", "") or "Uit"
+    recipients = match_follower_user_ids(
+        match, include_clubs=False
+    ) | _playing_user_ids(match_data)
     jobs.send_payload(
-        user_ids=_participant_user_ids(_participant_players(match_data)),
+        user_ids=sorted(recipients),
         payload=WebPushPayload(
             title="Wedstrijd afgelopen",
-            body=(f"{home} {match_data.home_score} - {match_data.away_score} {away}"),
+            body=(
+                f"{home} {match_data.home_score} - {match_data.away_score} {away}. "
+                "De statistieken staan klaar."
+            ),
             url=_push_url(match),
             tag=f"match-finished:{match_data.id_uuid}",
         ),

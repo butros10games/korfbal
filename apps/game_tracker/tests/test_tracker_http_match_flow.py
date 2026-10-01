@@ -409,6 +409,42 @@ def test_finished_task_intent_commits_with_match() -> None:
 
 
 @pytest.mark.django_db
+def test_match_start_announces_once_across_undo_and_later_parts() -> None:
+    tracker = create_tracker_match(prefix="Start Announcement")
+    data = tracker.match_data
+    data.parts = 2
+    data.save(update_fields=["parts"])
+
+    def start() -> None:
+        apply_tracker_command(
+            tracker.match, team=tracker.home_team, payload={"command": "start/pause"}
+        )
+
+    start()
+    part = MatchPart.objects.get(match_data=data, part_number=1)
+    apply_tracker_command(
+        tracker.match,
+        team=tracker.home_team,
+        payload={
+            "command": "undo_part_transition",
+            "part_id": str(part.pk),
+            "transition": "start",
+        },
+    )
+    start()
+    apply_tracker_command(
+        tracker.match, team=tracker.home_team, payload={"command": "part_end"}
+    )
+    start()
+
+    job = BackgroundJob.objects.get(task="apps.player.tasks.handle_match_started")
+    assert job.kwargs == {
+        "match_id": str(tracker.match.pk),
+        "match_data_id": str(data.pk),
+    }
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("part_number", [1, 2])
 def test_undo_part_start_restores_pre_start_state(part_number: int) -> None:
     tracker = create_tracker_match(prefix=f"UndoStart{part_number}")

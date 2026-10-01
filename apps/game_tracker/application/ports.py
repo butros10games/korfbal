@@ -34,6 +34,9 @@ class MatchChangePublisher(Protocol):
 class TrackerJobDispatcher(Protocol):
     """Dispatch asynchronous work requested by tracker use cases."""
 
+    def match_started(self, *, match_id: str, match_data_id: str) -> None:
+        """Schedule the match-start notification."""
+
     def match_finished(self, *, match_id: str, match_data_id: str) -> None:
         """Schedule post-match notifications and publication."""
 

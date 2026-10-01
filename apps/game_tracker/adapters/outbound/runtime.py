@@ -93,6 +93,15 @@ class ChannelsMatchChangePublisher:
 class CeleryTrackerJobDispatcher:
     """Persist work inside the tracker transaction without contacting the broker."""
 
+    def match_started(self, *, match_id: str, match_data_id: str) -> None:
+        """Announce each match start once, even if the start is undone and redone."""
+        enqueue(
+            "apps.player.tasks.handle_match_started",
+            match_data_id,
+            kwargs={"match_id": match_id, "match_data_id": match_data_id},
+            once=True,
+        )
+
     def match_finished(self, *, match_id: str, match_data_id: str) -> None:
         """Schedule each finished-match lifecycle once."""
         enqueue(

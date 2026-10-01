@@ -39,7 +39,8 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
-def _prepare_new_part(match_data: MatchData) -> None:
+def _prepare_new_part(context: TrackerCommandContext) -> None:
+    match_data = context.match_data
     if match_data.status == "finished":
         raise TrackerCommandError(
             "Finished matches cannot be restarted.",
@@ -58,6 +59,10 @@ def _prepare_new_part(match_data: MatchData) -> None:
         match_data.status = "active"
         match_data.score_source = "tracker"
         match_data.save(update_fields=["status", "score_source"])
+        context.jobs.match_started(
+            match_id=str(context.match.id_uuid),
+            match_data_id=str(match_data.id_uuid),
+        )
         return
 
     if match_data.status != "active":
@@ -120,7 +125,7 @@ class StartPauseCommand:
         if match_part is None:
             if not MatchPart.objects.filter(match_data=match_data).exists():
                 capture_starting_lineup(match_data)
-            _prepare_new_part(match_data)
+            _prepare_new_part(context)
             MatchPart.objects.create(
                 match_data=match_data,
                 active=True,

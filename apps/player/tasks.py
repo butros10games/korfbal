@@ -23,6 +23,7 @@ from apps.player.services.expo_push import ExpoPushPayload
 from apps.player.services.match_notifications import (
     FinishedMatchJobs,
     handle_finished_match,
+    handle_started_match,
     publish_mvp,
     remind_mvp_voters,
 )
@@ -75,6 +76,21 @@ def _dispatch_cached_song(cached_song_id: str) -> None:
         cached_song_id,
         args=[cached_song_id],
         queue="media",
+    )
+
+
+@shared_task(bind=True)
+def handle_match_started(
+    self: Any,
+    *,
+    match_id: str,
+    match_data_id: str,
+) -> None:
+    """Notify followers who are not playing that a match started."""
+    handle_started_match(
+        match_id=match_id,
+        match_data_id=match_data_id,
+        send_payload=_send_payload,
     )
 
 
