@@ -28,6 +28,11 @@ class ClubSerializer(serializers.ModelSerializer):
             "dissolved",
         ]
         read_only_fields: ClassVar[list[str]] = ["id_uuid", "dissolved"]
+        # Clients render `logo_url`. A signed storage URL per club would add an
+        # expiring, incompressible token to every match, team and club response.
+        extra_kwargs: ClassVar[dict[str, dict[str, bool]]] = {
+            "logo": {"write_only": True}
+        }
 
     def get_logo_url(self, obj: Club) -> str | None:
         """Return the URL of the club logo.

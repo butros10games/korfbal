@@ -49,7 +49,6 @@ def test_team_catalog_caps_page_size_and_serializes_nested_club(
     assert club_payload == {
         "id_uuid": str(club.id_uuid),
         "name": club.name,
-        "logo": None,
         "logo_url": club_payload["logo_url"],
         "dissolved": False,
         "city": None,

@@ -47,6 +47,8 @@ MIDDLEWARE = [
     "apps.kwt_common.middleware.slow_queries.SlowQueryLoggingMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # Inside CORS, so a cross-origin 304 still carries the allow-origin headers.
+    "apps.kwt_common.middleware.conditional_get.ApiConditionalGetMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "korfbal.admin_security.AdminMfaMiddleware",

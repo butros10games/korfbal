@@ -15,7 +15,10 @@ import pytest
 from pytest_django.fixtures import Settings
 from storages.backends.s3 import S3Storage
 
-from apps.player.adapters.outbound.private_storage import PrivateMediaStorage
+from apps.player.adapters.outbound.private_storage import (
+    MEDIA_URL_REUSE_SECONDS,
+    PrivateMediaStorage,
+)
 from apps.player.composition import song_jobs
 from apps.player.media_paths import player_picture_path, player_song_path
 from apps.player.models import PlayerSong
@@ -139,3 +142,36 @@ def test_media_capability_expires_and_never_redirects_to_bucket(
         ):
             assert client.get(path).status_code == HTTPStatus.FORBIDDEN
         opened.assert_called_once()
+
+
+def test_media_url_is_reused_within_a_window_without_outliving_the_limit(
+    client: Client, settings: Settings
+) -> None:
+    """Repeated reads share a URL; it still expires within the configured age."""
+    storage = PrivateMediaStorage(
+        access_key="synthetic", secret_key="synthetic", bucket_name="test"
+    )
+    key = "profile_pictures/owner/avatar.png"
+    start = 1_800_000_000 - 1_800_000_000 % MEDIA_URL_REUSE_SECONDS
+    clock = "django.core.signing.time.time"
+    with patch(clock, return_value=start + 1):
+        first = storage.url(key)
+        assert storage.url("profile_pictures/other/avatar.png") != first
+    with patch(clock, return_value=start + MEDIA_URL_REUSE_SECONDS - 1):
+        late = storage.url(key)
+    with patch(clock, return_value=start + MEDIA_URL_REUSE_SECONDS):
+        following = storage.url(key)
+    assert late == first
+    assert following != first
+    assert MEDIA_URL_REUSE_SECONDS < settings.KORFBAL_MEDIA_URL_MAX_AGE
+
+    url = urlsplit(late)
+    path = f"{url.path}?{url.query}"
+    with patch(
+        "apps.player.api.views.media.audio_storage.open",
+        return_value=BytesIO(b"synthetic"),
+    ):
+        with patch(clock, return_value=start + settings.KORFBAL_MEDIA_URL_MAX_AGE):
+            assert client.get(path).status_code == HTTPStatus.OK
+        with patch(clock, return_value=start + settings.KORFBAL_MEDIA_URL_MAX_AGE + 1):
+            assert client.get(path).status_code == HTTPStatus.FORBIDDEN

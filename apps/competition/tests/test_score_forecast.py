@@ -382,6 +382,8 @@ def test_artifact_boundary_is_database_free_and_fails_closed(
             prediction["expected_goals"]
             == summarize(prediction["rate_draws"])["expected_goals"]
         )
+        # Four significant digits per rate instead of full float precision.
+        assert len(json.dumps(prediction["rate_draws"])) < DRAW_COUNT * 20
         broken = deepcopy(artifact)
         broken["contexts"][context_key(row)]["intercept"] = [float("nan")] * DRAW_COUNT
         with patch.object(serving, "load_artifact", return_value=broken):

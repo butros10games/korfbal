@@ -66,6 +66,9 @@ def score_prediction(row: dict, as_of: datetime) -> dict | None:
         group = artifact["contexts"][context_key(row)]
         if len(draws) != DRAW_COUNT:
             return None
+        # Clients recompute the forecast from these draws; four significant digits
+        # are far inside the model's sampling error and halve the summary response.
+        draws = [[float(f"{rate:.4g}") for rate in draw] for draw in draws]
         samples = {
             "context": group["matches"],
             "pool": group["pool_matches"].get(row["pool"], 0),
