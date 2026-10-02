@@ -131,6 +131,7 @@ class Reconciler:
         """
         self.overrides = overrides
         self.incremental = incremental
+        self.lock = lock
         # Beside a running import, defer source rows it holds instead of waiting
         # on them: they publish next pass, and lock-order cycles cannot form.
         self.skip_locked = skip_locked
@@ -191,7 +192,12 @@ class Reconciler:
                 for target in [targets[row["id"]]]
             }
             linked = {row[field] for row in self.sources[kind] if row[field]}
-            query = query.filter(Q(season_id__in=seasons) | Q(pk__in=linked))
+            if kind == "match":
+                # A season holds tens of thousands of fixtures. Candidates need
+                # linked opponents, so matches() reads them after team planning.
+                query = query.filter(pk__in=linked)
+            else:
+                query = query.filter(Q(season_id__in=seasons) | Q(pk__in=linked))
         self.locals[kind] = self._local_rows(query, lock=lock)
         for row in self.sources[kind]:
             target = targets[row["id"]]
@@ -451,10 +457,30 @@ class Reconciler:
                 ]
         return self.choose("pool", candidates, allowed)
 
+    def _read_match_candidates(self, team_links: dict[int, str | None]) -> None:
+        """Read native fixtures between the linked opponents of pending matches."""
+        keys = {
+            (row["season_id"], home, away)
+            for row in self.sources["match"]
+            for home in [team_links.get(row["home_team_id"])]
+            for away in [team_links.get(row["away_team_id"])]
+            if home and away
+        }
+        if not keys:
+            return
+        query = LocalMatch.objects.filter(
+            season_id__in={season for season, _, _ in keys},
+            home_team_id__in={home for _, home, _ in keys},
+            away_team_id__in={away for _, _, away in keys},
+        )
+        self.locals["match"].update(self._local_rows(query, lock=self.lock))
+
     def matches(
         self, team_links: dict[int, str | None], pool_links: dict[int, str]
     ) -> None:
         """Require linked opponents, correct home/away, season and exact kickoff."""
+        if self.incremental:
+            self._read_match_candidates(team_links)
         index: dict[tuple[str, str, str], list[str]] = {}
         for pk, local in self.locals["match"].items():
             key = (

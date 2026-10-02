@@ -491,3 +491,31 @@ def test_incremental_publication_plans_the_same_links(
     full = new_links(overrides, incremental=False)
     assert full
     assert new_links(overrides, incremental=True) == full
+
+
+@pytest.mark.django_db
+def test_incremental_publication_reads_only_fixtures_between_linked_opponents(
+    graph: dict[str, Any], season: Season
+) -> None:
+    """A pending fixture must not read or lock its season's whole programme."""
+    other_club = LocalClub.objects.create(name="Elsewhere")
+    first = LocalTeam.objects.create(club=other_club, name="1")
+    second = LocalTeam.objects.create(club=other_club, name="2")
+    LocalMatch.objects.bulk_create(
+        LocalMatch(
+            season=season,
+            home_team=first,
+            away_team=second,
+            start_time=graph["local"].start_time + timedelta(days=day),
+        )
+        for day in range(1, 6)
+    )
+    planner = Reconciler(graph["overrides"], lock=False, incremental=True)
+    links = {
+        (row.kind, row.source_id, row.local_id)
+        for row in planner.plan()
+        if row.reason in {"unique", "explicit"}
+    }
+
+    assert ("match", graph["source"].pk, str(graph["local"].pk)) in links
+    assert set(planner.locals["match"]) == {str(graph["local"].pk)}

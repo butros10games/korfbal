@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from bg_auth.tasks import send_2fa_email_task, send_confirmation_email_task
+from celery.schedules import crontab
 from django.conf import settings
 import pytest
 
@@ -102,5 +103,10 @@ def test_package_exports_the_configured_celery_application() -> None:
             "task": "apps.competition.tasks.sync_competition_history",
             "schedule": 60.0,
             "options": {"expires": 300, "queue": "competition"},
+        },
+        "recheck-competition-history": {
+            "task": "apps.competition.tasks.recheck_competition_history",
+            "schedule": crontab(minute="0", hour="4", day_of_week="monday"),
+            "options": {"expires": 3600, "queue": "competition"},
         },
     }

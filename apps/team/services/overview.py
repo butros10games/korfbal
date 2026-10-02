@@ -120,14 +120,20 @@ def build_team_overview_payload(
     staff = []
     if options.include_roster:
         data = TeamData.objects.filter(team=team, season=season)
+        # Two uncorrelated ID subqueries: OR-ing a staff join with a subquery
+        # makes PostgreSQL walk every player and deduplicate with DISTINCT.
         people = (
             Player.objects
             .filter(
-                Q(team_data_as_staff__in=data)
+                Q(
+                    pk__in=TeamData.staff.through.objects.filter(
+                        teamdata__in=data
+                    ).values("player_id")
+                )
                 | Q(pk__in=selections.filter(role="staff").values("player_id"))
             )
             .select_related("user")
-            .distinct()
+            .order_by("pk")
         )
         labels = {
             "COACHING_STAFF": "Technische staf",

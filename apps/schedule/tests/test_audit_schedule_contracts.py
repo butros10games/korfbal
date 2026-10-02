@@ -136,7 +136,7 @@ def test_match_list_accepts_repeated_club_filters_for_either_side(
     )
 
     assert response.status_code == HTTPStatus.OK
-    assert {item["id_uuid"] for item in response.json()} == {
+    assert {item["id_uuid"] for item in response.json()["results"]} == {
         str(first_match.id_uuid),
         str(second_match.id_uuid),
     }

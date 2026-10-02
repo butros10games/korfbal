@@ -459,3 +459,39 @@ def test_editor_pages_filter_before_slicing(client: Client) -> None:
     assert len(
         client.get("/api/matches/", {"season": str(season.id_uuid)}).json()
     ) == len(pools)
+
+
+@pytest.mark.django_db
+def test_match_list_is_bounded_outside_legacy_season_editors(client: Client) -> None:
+    """Only staff season editors keep complete lists; history must not be dumped."""
+    season = Season.objects.create(
+        name="Bounded season", start_date=date(2026, 8, 1), end_date=date(2027, 6, 1)
+    )
+    club = Club.objects.create(name="Bounded club")
+    home = Team.objects.create(name="Home", club=club)
+    away = Team.objects.create(name="Away", club=club)
+    total = 55
+    Match.objects.bulk_create([
+        Match(
+            season=season,
+            home_team=home,
+            away_team=away,
+            start_time=datetime(2026, 9, 12, tzinfo=UTC) + timedelta(hours=index),
+        )
+        for index in range(total)
+    ])
+    default_page_size = 50
+
+    for params in ({}, {"season": str(season.id_uuid)}):
+        payload = client.get("/api/matches/", params).json()
+        assert payload["count"] == total
+        assert len(payload["results"]) == default_page_size
+
+    client.force_login(
+        get_user_model().objects.create_user(username="bounded_staff", is_staff=True)
+    )
+    unscoped = client.get("/api/matches/").json()
+    assert len(unscoped["results"]) == default_page_size
+    assert len(client.get("/api/matches/", {"season": str(season.id_uuid)}).json()) == (
+        total
+    )

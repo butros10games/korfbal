@@ -81,11 +81,11 @@ def pool_memberships(pool_ids: list[int]) -> dict[int, set[Any]]:
     return members
 
 
-def missing_membership(team_path: str) -> Exists:
-    """Linked team of a published poule that its native poule does not list yet."""
+def native_membership(team_path: str) -> Exists:
+    """Match rows whose linked team is already listed by the native poule."""
     return Exists(
         SeasonPool.teams.through.objects.filter(
-            seasonpool_id=OuterRef(OuterRef("local_pool_id")),
+            seasonpool_id=OuterRef("pool__local_pool_id"),
             team_id=OuterRef(team_path + "__group__local_team_id"),
         )
     )
@@ -94,17 +94,21 @@ def missing_membership(team_path: str) -> Exists:
 def pools_to_publish() -> QuerySet[Pool]:
     """Poules that are unpublished, still unnamed, or miss a native membership.
 
-    Everything else is already published; scanning it would make every
-    publication pass grow with the whole historical catalogue.
+    Missing memberships are collected once per source table rather than per
+    poule: a correlated check walks every historical fixture again for each of
+    the ~15,000 poules (seconds per pass), while an uncorrelated anti-join reads
+    each table once.
     """
-    entries = PoolEntry.objects.filter(
-        pool=OuterRef("pk"), team__group__local_team__isnull=False
-    ).exclude(missing_membership("team"))
-    fixtures = [
-        Match.objects.filter(
-            pool=OuterRef("pk"), **{side + "__group__local_team__isnull": False}
-        ).exclude(missing_membership(side))
-        for side in ("home_team", "away_team")
+    unlisted = [
+        model.objects
+        .filter(**{team_path + "__group__local_team__isnull": False})
+        .exclude(native_membership(team_path))
+        .values("pool_id")
+        for model, team_path in (
+            (PoolEntry, "team"),
+            (Match, "home_team"),
+            (Match, "away_team"),
+        )
     ]
     placeholder = Q(local_pool__name=Concat(Value("KNKV-poule "), "external_id"))
     named = ~Q(name="") | ~Q(class_name="")
@@ -113,9 +117,9 @@ def pools_to_publish() -> QuerySet[Pool]:
         | Q(local_pool__name="")
         # A placeholder can only be renamed once the source knows a name.
         | (placeholder & named)
-        | Exists(entries)
-        | Exists(fixtures[0])
-        | Exists(fixtures[1])
+        | Q(pk__in=unlisted[0])
+        | Q(pk__in=unlisted[1])
+        | Q(pk__in=unlisted[2])
     )
 
 
@@ -221,9 +225,12 @@ class Publisher:
             TeamGroup.objects
             .filter(
                 Q(local_team_data__isnull=True)
-                | Q(variants__local_team_data__isnull=True)
+                | Q(
+                    pk__in=Team.objects.filter(local_team_data__isnull=True).values(
+                        "group_id"
+                    )
+                )
             )
-            .distinct()
             .select_related("club")
             .order_by("pk")
         )
@@ -237,9 +244,10 @@ class Publisher:
             joint.add(str(team.pk), team.club.name, team.name)
             local_teams[str(team.pk)] = team
         claimed = {
-            (str(row.season_id), str(row.local_team_id)): row.pk
-            for row in TeamGroup.objects.exclude(local_team=None)
-            if row.local_team_id
+            (str(season_id), str(local_team_id)): pk
+            for pk, season_id, local_team_id in TeamGroup.objects.exclude(
+                local_team=None
+            ).values_list("pk", "season_id", "local_team_id")
         }
         for row in sources:
             if row.local_team_id is None:
@@ -286,8 +294,19 @@ class Publisher:
             variants = variants.filter(season=scope)
         if not force:
             variants = variants.filter(local_team_data=None)
+        variants = list(variants)
         resolver = SeasonResolver()
-        existing = {(row.team_id, row.season_id): row for row in TeamData.objects.all()}
+        # Only the bound native teams' seasons: the full table has ~80,000 rows.
+        existing = {
+            (row.team_id, row.season_id): row
+            for row in TeamData.objects.filter(
+                team_id__in={
+                    variant.group.local_team_id
+                    for variant in variants
+                    if variant.group and variant.group.local_team_id
+                }
+            )
+        }
         changed = []
         for variant in variants:
             if not variant.group or not variant.group.local_team_id:

@@ -65,14 +65,21 @@ class ScheduleEditorPagination(StandardResultsSetPagination):
     """Opt existing schedule clients into bounded pages with a page parameter.
 
     Current web and Expo clients always send ``page``. Native season editors
-    built before 2026-09-13 request complete pool/match lists without it and
-    parse a paginated envelope as its first page, so bounding the default now
-    would silently truncate their programme. Make pages the default once those
+    built before 2026-09-13 request a complete season's pools/matches without it
+    and parse a paginated envelope as its first page, so their staff-only,
+    season-scoped requests still receive complete lists. Every other caller gets
+    bounded pages: an unscoped match list is the entire imported history (about
+    270,000 fixtures, hundreds of megabytes). Drop the exception once those
     builds are no longer supported.
     """
 
     def get_page_size(self, request: Request) -> int | None:
-        """Preserve complete list responses until the caller requests pagination."""
-        if "page" not in request.query_params:
+        """Preserve complete lists only for legacy season editor requests."""
+        user = getattr(request, "user", None)
+        if (
+            "page" not in request.query_params
+            and "season" in request.query_params
+            and getattr(user, "is_staff", False)
+        ):
             return None
         return super().get_page_size(request)
