@@ -615,6 +615,8 @@ class HistoricalResource(models.Model):
     fetched_at = models.DateTimeField(null=True)
     attempts = models.PositiveIntegerField(default=0)
     etag = models.CharField(max_length=512, blank=True)
+    # Lineups only: season and competition class, sampled together.
+    cohort = models.CharField(max_length=120, blank=True)
 
     class Meta:
         """Index bounded workers by ready state and newest historical interval."""
@@ -626,6 +628,7 @@ class HistoricalResource(models.Model):
                 fields=("kind", "state", "next_attempt_at"),
                 name="history_kind_ready",
             ),
+            models.Index(fields=("cohort", "state"), name="history_cohort_state"),
         ]
         constraints: ClassVar = [
             models.CheckConstraint(

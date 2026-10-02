@@ -38,6 +38,7 @@ from apps.competition.services.history_sites import (
     site_summary,
 )
 from apps.competition.services.history_worker import run_history
+from apps.competition.services.lineup_plan import plan_lineups
 from apps.competition.services.site_repair import repair_site
 from apps.schedule.models import Season
 
@@ -265,7 +266,8 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
             for edition in editions
         ]
     if action == "lineups":
-        return [queue_edition_lineups(edition) for edition in editions]
+        queued = [queue_edition_lineups(edition) for edition in editions]
+        return [*queued, {"cohorts": plan_lineups()}]
     if action == "log" and len(editions) == 1 and options["output"]:
         return write_log(editions[0], options["output"])
     raise ValueError("Select one edition and an output file for the log")

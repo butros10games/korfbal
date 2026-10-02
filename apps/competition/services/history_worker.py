@@ -36,6 +36,7 @@ from apps.competition.services.history import (
 )
 from apps.competition.services.history_checkpoint import checkpoint
 from apps.competition.services.history_dataservice import reconcile_pool_coverage
+from apps.competition.services.lineup_plan import settle
 from apps.competition.services.polling import PollPlanner
 from apps.competition.services.publication_worker import lock_conflict
 from apps.competition.services.publishing import (
@@ -265,13 +266,27 @@ class HistoryBatch:
         }
 
     def process(self, resource: HistoricalResource) -> bool:
-        """Return whether this batch can continue after a single resource attempt.
+        """Attempt one checkpoint, then replan its lineup cohort.
+
+        Returns:
+            Whether this batch can continue after a single resource attempt.
+
+        """
+        self.touched.add(resource.pk)
+        result = self.attempt(resource)
+        settle(resource)
+        return result
+
+    def attempt(self, resource: HistoricalResource) -> bool:
+        """Fetch one checkpoint, classifying provider and database failures.
+
+        Returns:
+            Whether this batch can continue.
 
         Raises:
             OperationalError: A database error other than a lock conflict.
 
         """
-        self.touched.add(resource.pk)
         try:
             if not local_work(resource, owner=self.gate.owner):
                 fetch_resource(resource, self.client, self.gate)

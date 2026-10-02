@@ -36,6 +36,7 @@ from apps.competition.services.history import (
     validate_identity,
 )
 from apps.competition.services.importer import Importer
+from apps.competition.services.lineup_plan import assign_cohorts, plan_cohort
 from apps.competition.services.seasons import INDOOR, OUTDOOR
 from apps.schedule.models import Season
 
@@ -848,6 +849,15 @@ def queue_lineups(entries: Iterable[HistoricalResource]) -> None:
     HistoricalResource.objects.bulk_create(
         lineups, ignore_conflicts=True, batch_size=1000
     )
+    keys = [lineup.key for lineup in lineups]
+    new = lineups_by_key(keys).filter(state="pending", cohort="")
+    for cohort in assign_cohorts(new):
+        plan_cohort(cohort)
+
+
+def lineups_by_key(keys: list[str]) -> QuerySet[HistoricalResource]:
+    """Return the stored lineup checkpoints with these keys."""
+    return HistoricalResource.objects.filter(key__in=keys)
 
 
 def queue_edition_lineups(edition: int) -> dict[str, Any]:
