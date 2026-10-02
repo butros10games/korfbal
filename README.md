@@ -1523,6 +1523,11 @@ waits while its app discovery is running. When the app later delivers the same
 fixture, its record replaces the archive record and keeps the published match.
 `status --edition` reports site progress under `sites`.
 
+The former KNKV site keeps the matches and name of a club that merged or dissolved,
+but not its Sportlink code. Such a club is the catalogue club with exactly that name,
+or else a dissolved club of its own, and gets its own read. Running `site` again for
+an edition repeats club reads that skipped rows for such clubs.
+
 Invoke `run` periodically through the existing deployment scheduler (for example,
 every 15 minutes). Credential paths may instead come from
 `SPORTLINK_HISTORY_SESSION_FILE` / `SPORTLINK_HISTORY_DATASERVICE_FILE`. Each run is

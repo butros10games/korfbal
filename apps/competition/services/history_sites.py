@@ -55,6 +55,7 @@ REFERENCES = {
 # The first checkpoint of each source and its fixed identifier (None: the edition).
 FIRST_CHECKPOINT = {KORFBALNL: ("catalogue", None), UITSLAGEN: ("match_page", "0")}
 PLAYED = "uitgespeeld"
+SIDES = ("home", "away")
 
 
 def edition_interval(anchor: Season) -> tuple[date, date]:
@@ -142,6 +143,14 @@ def seed_site(provider: str, edition: int) -> dict[str, Any]:
     result["queued"] = queue(
         anchor, provider, kind, [source_id or str(edition)], parent=None
     )
+    # Read clubs again whose rows an earlier version skipped for a delisted club.
+    result["requeued"] = HistoricalResource.objects.filter(
+        season=anchor,
+        provider=provider,
+        kind="club_matches",
+        state="fetched",
+        evidence__skipped__club_unknown__gt=0,
+    ).update(state="pending", attempts=0, next_attempt_at=timezone.now())
     return result
 
 
@@ -158,7 +167,7 @@ def team_name(name: str, source_club: str, club: Club | None) -> str:
 
 
 def side_payload(
-    provider: str, team: dict[str, Any], club: dict[str, str], sport: str
+    provider: str, team: dict[str, Any], club: dict[str, Any], sport: str
 ) -> dict[str, Any]:
     """Build one team of a normalized result row."""
     identifier = str(team["ref_id"])
@@ -173,6 +182,7 @@ def side_payload(
             "ClubId": club["ref_id"],
             "ClubName": club["name"],
             "City": club.get("city") or "",
+            **({"Dissolved": True} if club.get("dissolved") else {}),
         },
     }
 
@@ -208,23 +218,70 @@ def payload(
     }
 
 
-def korfbalnl_row(row: dict[str, Any], catalogue: dict[str, Any]) -> dict | str:
+def site_clubs(
+    catalogue: dict[str, Any], rows: list[dict[str, Any]]
+) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    """Identify every club in the rows, including clubs the site no longer lists.
+
+    The site keeps the matches and name of a club that merged or dissolved but
+    not its Sportlink code. Such a club is the catalogue club with exactly that
+    name, or else a dissolved club of its own under the site's club number.
+
+    Returns:
+        Clubs by site club number, and the numbers of the delisted clubs.
+
+    """
+    clubs = {
+        key: dict(zip(("ref_id", "name", "city"), club, strict=True))
+        for key, club in catalogue["clubs"].items()
+    }
+    delisted = {
+        club["_id"]: (club.get("name") or "").strip()
+        for row in rows
+        for club in ((row.get("clubs") or {}).get(side) or {} for side in SIDES)
+        if club.get("_id") and club["_id"] not in clubs
+    }
+    named: dict[str, list[str]] = {}
+    for external_id, name in Club.objects.filter(
+        name__in={name for name in delisted.values() if name}
+    ).values_list("external_id", "name"):
+        named.setdefault(name, []).append(external_id)
+    for key, name in delisted.items():
+        if not name:
+            continue
+        matches = named.get(name, [])
+        clubs[key] = (
+            {"ref_id": matches[0], "name": name}
+            if len(matches) == 1
+            else {
+                "ref_id": f"{ARCHIVE_PREFIX}{NAMESPACES[KORFBALNL]}:{key}",
+                "name": name,
+                "dissolved": True,
+            }
+        )
+    return clubs, {key for key, name in delisted.items() if name}
+
+
+def korfbalnl_row(
+    row: dict[str, Any], catalogue: dict[str, Any], clubs: dict[str, dict[str, Any]]
+) -> dict | str:
     """Normalize one competitie.korfbal.nl match, or name the reason to skip it."""
     if str((row.get("status") or {}).get("game") or "").casefold() != PLAYED:
         return "not_played"
     sport = catalogue["sports"].get((row.get("sport") or {}).get("_id"))
     if sport not in SPORTS:
         return "unsupported_sport"
-    clubs = [
-        catalogue["clubs"].get((row["clubs"][side] or {}).get("_id"))
-        for side in ("home", "away")
+    sides_clubs = [
+        club
+        for side in SIDES
+        if (club := clubs.get((row["clubs"][side] or {}).get("_id")))
     ]
-    if not all(clubs):
+    if len(sides_clubs) != len(SIDES):
         return "club_unknown"
     stats = row.get("stats") or {}
-    scores = [score((stats.get(side) or {}).get("score")) for side in ("home", "away")]
+    scores = [score((stats.get(side) or {}).get("score")) for side in SIDES]
     poule = row.get("poule") or {}
-    teams = [row["teams"][side] for side in ("home", "away")]
+    teams = [row["teams"][side] for side in SIDES]
     if None in scores or not all(team.get("ref_id") for team in teams):
         return "incomplete"
     if not re.fullmatch(r"[0-9]+", str(poule.get("ref_id") or "")):
@@ -234,13 +291,8 @@ def korfbalnl_row(row: dict[str, Any], catalogue: dict[str, Any]) -> dict | str:
         "",
     )
     sides = [
-        side_payload(
-            KORFBALNL,
-            team,
-            dict(zip(("ref_id", "name", "city"), club, strict=True)),
-            sport,
-        )
-        for team, club in zip(teams, clubs, strict=True)
+        side_payload(KORFBALNL, team, club, sport)
+        for team, club in zip(teams, sides_clubs, strict=True)
     ]
     return payload(
         KORFBALNL,
@@ -411,11 +463,18 @@ def apply_site(resource: HistoricalResource, data: dict[str, Any]) -> None:
         catalogue = HistoricalResource.objects.get(
             season=resource.season, provider=KORFBALNL, kind="catalogue"
         ).evidence
-        rows = [
-            korfbalnl_row(row, catalogue)
-            for week in data["weeks"]
-            for row in week["matches"]
-        ]
+        matches = [row for week in data["weeks"] for row in week["matches"]]
+        clubs, delisted = site_clubs(catalogue, matches)
+        # The catalogue queued listed clubs only; a delisted club's own matches
+        # against other delisted clubs appear in no other read.
+        queue(
+            resource.season,
+            KORFBALNL,
+            "club_matches",
+            sorted(delisted),
+            parent=resource,
+        )
+        rows = [korfbalnl_row(row, catalogue, clubs) for row in matches]
     elif resource.kind == "match_page":
         rows = [uitslagen_row(row) for row in data["rows"]]
         if len(rows) >= PAGE_SIZE:

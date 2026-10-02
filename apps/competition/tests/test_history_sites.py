@@ -158,6 +158,60 @@ def test_former_knkv_site_fills_a_season_with_archive_matches() -> None:
     }
 
 
+def delisted_match(identifier: str = "1001") -> dict:
+    """Fabricate a match of T1 against a club the site no longer lists."""
+    return site_match(
+        identifier,
+        teams={
+            "home": {"ref_id": "11", "name": "Example T1"},
+            "away": {"ref_id": "99", "name": "Old Club 1"},
+        },
+        clubs={
+            "home": {"_id": "cT1", "name": "Club T1"},
+            "away": {"_id": "cOld", "name": "Old Club"},
+        },
+    )
+
+
+@pytest.mark.django_db
+def test_delisted_club_becomes_a_dissolved_club_with_its_own_read() -> None:
+    """The site keeps a merged club's matches and name but not its code."""
+    seed_site(KORFBALNL, EDITION)
+    run([FetchResult(200, catalogue())])
+    run([weeks(delisted_match()), weeks()])
+    club = Match.objects.select_related("away_team__club").get().away_team.club
+    assert (club.external_id, club.name, club.dissolved) == (
+        "archive:knkv:cOld",
+        "Old Club",
+        True,
+    )
+    # Its matches against other delisted clubs appear in no listed club's read.
+    assert HistoricalResource.objects.get(state="pending").source_id == "cOld"
+    assert "club_unknown" not in site_summary(EDITION)["skipped"]
+
+
+@pytest.mark.django_db
+def test_delisted_club_is_the_catalogue_club_with_exactly_that_name() -> None:
+    """A club the app history already knows keeps its Sportlink code."""
+    Club.objects.create(external_id="NCX1", name="Old Club", dissolved=True)
+    seed_site(KORFBALNL, EDITION)
+    run([FetchResult(200, catalogue())])
+    run([weeks(delisted_match()), weeks()])
+    assert Match.objects.get().away_team.club.external_id == "NCX1"
+    assert Club.objects.filter(name="Old Club").count() == 1
+
+
+@pytest.mark.django_db
+def test_queueing_a_site_again_rereads_clubs_with_skipped_delisted_rows() -> None:
+    """Reads made before delisted clubs were recognised are repeated once."""
+    import_club(site_match("1001"))
+    skipped = HistoricalResource.objects.filter(kind="club_matches").first()
+    skipped.evidence = {"skipped": {"club_unknown": 3}}
+    skipped.save()
+    assert seed_site(KORFBALNL, EDITION)["requeued"] == 1
+    assert HistoricalResource.objects.get(state="pending").pk == skipped.pk
+
+
 @pytest.mark.django_db
 def test_one_site_team_plays_outdoors_and_indoors() -> None:
     """The former KNKV site uses one team code for both disciplines."""
@@ -382,7 +436,7 @@ def test_command_queues_a_site_and_reports_it() -> None:
         stdout=out,
     )
     assert json.loads(out.getvalue()) == [
-        {"edition": EDITION, "source": UITSLAGEN, "queued": 1}
+        {"edition": EDITION, "source": UITSLAGEN, "queued": 1, "requeued": 0}
     ]
     status = StringIO()
     call_command(
