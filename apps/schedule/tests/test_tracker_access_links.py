@@ -16,6 +16,9 @@ from apps.game_tracker.models import (
     TrackerAccessLink,
     TrackerCommand,
 )
+from apps.game_tracker.services.player_groups import (
+    ensure_player_groups_for_match_data,
+)
 from apps.game_tracker.services.tracker_access import SESSION_KEY
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_group_types,
@@ -393,6 +396,7 @@ def test_guest_lineup_grants_cannot_escape_scope(
             )
     elif scope == "other_match":
         other = create_match_graph(prefix="Other lineup")
+        ensure_player_groups_for_match_data(other.match_data)
         attack = PlayerGroup.objects.get(
             match_data=other.match_data,
             team=other.home_team,

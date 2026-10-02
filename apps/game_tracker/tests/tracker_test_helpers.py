@@ -15,6 +15,9 @@ from django.utils import timezone
 
 from apps.club.models import Club
 from apps.game_tracker.models import GroupType, MatchData, MatchPart, PlayerGroup
+from apps.game_tracker.services.player_groups import (
+    ensure_player_groups_for_match_data,
+)
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match, Season
 from apps.team.models import Team
@@ -68,8 +71,15 @@ def create_tracker_match(
 
 
 def create_group_types(*names: str) -> dict[str, GroupType]:
-    """Create the requested tracker group types and return them by name."""
-    return {name: GroupType.objects.create(name=name) for name in names}
+    """Create group types and the lineups of existing test matches.
+
+    Production creates a match's groups when its lineup or tracker is first used;
+    these tests start from matches whose lineup is already in use.
+    """
+    group_types = {name: GroupType.objects.create(name=name) for name in names}
+    for match_data in MatchData.objects.all():
+        ensure_player_groups_for_match_data(match_data)
+    return group_types
 
 
 def create_tracker_user(*, username: str, email: str = "") -> AbstractBaseUser:
@@ -120,7 +130,8 @@ def get_tracker_group(
     name: str,
     team: Team | None = None,
 ) -> PlayerGroup:
-    """Return a named group for the requested tracker team."""
+    """Return a named group, creating the match's lineup as its first use does."""
+    ensure_player_groups_for_match_data(tracker.match_data)
     return PlayerGroup.objects.get(
         match_data=tracker.match_data,
         team=team or tracker.home_team,

@@ -12,6 +12,9 @@ from apps.game_tracker.models import (
     GoalType,
     MatchPart,
 )
+from apps.game_tracker.services.player_groups import (
+    ensure_player_groups_for_match_data,
+)
 from apps.game_tracker.services.timeline_reads import (
     MATCH_TIMELINE_IDENTITY_VERSION,
     read_match_event_history,
@@ -251,15 +254,18 @@ class MatchEventReadActionsMixin:
         match_parts = list(
             MatchPart.objects.filter(match_data=match_data).order_by("part_number")
         )
-        player_groups = list(
-            match_data.player_groups.select_related(
-                "team",
-                "starting_type",
-                "current_type",
-            ).prefetch_related(
-                "players__user",
-            )
+        player_groups_query = match_data.player_groups.select_related(
+            "team",
+            "starting_type",
+            "current_type",
+        ).prefetch_related(
+            "players__user",
         )
+        player_groups = list(player_groups_query)
+        if not player_groups:
+            # Substitution corrections need group IDs; create them on first use.
+            ensure_player_groups_for_match_data(match_data)
+            player_groups = list(player_groups_query.all())
         goal_types = list(GoalType.objects.order_by("name"))
 
         players_by_id: dict[str, dict[str, str]] = {}

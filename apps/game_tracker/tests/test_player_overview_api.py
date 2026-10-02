@@ -9,7 +9,7 @@ from django.test.utils import CaptureQueriesContext
 import pytest
 
 from apps.game_tracker.composition import apply_tracker_command
-from apps.game_tracker.models import PlayerGroup
+from apps.game_tracker.models import GroupType, PlayerGroup
 from apps.game_tracker.tests.tracker_test_helpers import (
     create_group_types,
     create_tracker_match,
@@ -54,6 +54,36 @@ def test_group_types_backfill_both_match_teams() -> None:
         ).count()
         == GROUPS_PER_TEAM
     )
+
+
+def test_lineups_are_created_on_first_use_not_for_every_match(
+    client: Client,
+) -> None:
+    """Imported matches stay group-free until their lineup is first read."""
+    GroupType.objects.create(name="Reserve")
+    tracker = create_tracker_match(prefix="Lazy Lineup")
+    untouched = create_tracker_match(prefix="Untouched Lineup")
+    assert not PlayerGroup.objects.exists()
+
+    url = _overview_url(tracker.match.id_uuid, tracker.home_team.id_uuid)
+    first = client.get(url).json()["player_groups"]
+    second = client.get(url).json()["player_groups"]
+
+    assert [group["id_uuid"] for group in first] == [
+        group["id_uuid"] for group in second
+    ]
+    assert (
+        PlayerGroup.objects.filter(match_data=tracker.match_data).count()
+        == GROUPS_AFTER_ONE_TYPE
+    )
+    assert not PlayerGroup.objects.filter(match_data=untouched.match_data).exists()
+
+    # A new type extends existing lineups only; other matches get it on first use.
+    GroupType.objects.create(name="Aanval")
+    assert PlayerGroup.objects.filter(match_data=tracker.match_data).count() == (
+        GROUPS_AFTER_ONE_TYPE * 2
+    )
+    assert not PlayerGroup.objects.filter(match_data=untouched.match_data).exists()
 
 
 def test_player_overview_returns_groups_and_live_revision(client: Client) -> None:

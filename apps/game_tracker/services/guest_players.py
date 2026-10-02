@@ -21,7 +21,7 @@ from apps.game_tracker.services.player_designation import (
     can_edit_player_groups,
     sync_match_players_for_team,
 )
-from apps.game_tracker.services.player_groups import RESERVE_GROUP_NAME
+from apps.game_tracker.services.player_groups import get_reserve_group
 from apps.game_tracker.services.tracker_access import has_tracker_grant
 from apps.player.models import Player
 from apps.schedule.models import Match
@@ -111,13 +111,10 @@ def add_guest_player(
 
     with locked_match_mutation(match_data.pk) as locked:
         require_match_revision(locked, expected_revision=command.expected_revision)
-        reserve_group = PlayerGroup.objects.filter(
-            match_data=locked,
-            team=team,
-            starting_type__name=RESERVE_GROUP_NAME,
-        ).first()
-        if reserve_group is None:
-            raise PlayerDesignationValidationError("Unknown player group")
+        try:
+            reserve_group = get_reserve_group(match_data=locked, team=team)
+        except PlayerGroup.DoesNotExist:
+            raise PlayerDesignationValidationError("Unknown player group") from None
         if reserve_group.players.count() >= MAX_RESERVE_PLAYERS:
             raise PlayerDesignationValidationError("Too many players selected")
 

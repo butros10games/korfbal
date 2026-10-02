@@ -41,6 +41,7 @@ from apps.game_tracker.services.player_designation import (
 )
 from apps.game_tracker.services.player_groups import (
     club_lineup_players,
+    ensure_player_groups_for_match_data,
     match_guests_for,
 )
 from apps.game_tracker.services.player_search import player_name_match_score
@@ -242,6 +243,10 @@ def player_overview_data(request: Request, match_id: str, team_id: str) -> Respo
         )
         .order_by("starting_type__order")
     )
+    if not player_groups:
+        # Editors receive the group IDs they write to; create them on first use.
+        ensure_player_groups_for_match_data(match_data)
+        player_groups = player_groups.all()
     viewer = _viewer_player(request)
     guest_ids = _guest_ids(match_model, team_id)
     starting_players_by_group = _starting_players_by_group(

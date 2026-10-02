@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models.expressions import Combinable
 from django.utils import timezone
 
 from apps.game_tracker.models import (
     GroupType,
     MatchData,
     MatchGuestPlayer,
+    PlayerChange,
     PlayerGroup,
+    StartingPlayerAssignment,
+    SubstitutionEventDetail,
+)
+from apps.game_tracker.services.live_update_signal_control import (
+    suppress_tracker_delete_side_effects,
 )
 from apps.player.models import Player, PlayerClubMembership
 from apps.schedule.models import Match
@@ -61,52 +70,184 @@ def match_guests_for(*, match: Match, team: Team) -> QuerySet[MatchGuestPlayer]:
     return MatchGuestPlayer.objects.filter(match_data__match_link=match, team=team)
 
 
-def ensure_player_groups_for_match_data(match_data: MatchData) -> None:
-    """Create any missing PlayerGroup rows for both teams in a match."""
-    group_types = list(GroupType.objects.order_by("order", "name"))
-    if not group_types:
-        return
-
-    match_link = match_data.match_link
-    teams = (match_link.home_team, match_link.away_team)
+def _missing_player_groups(
+    match_data_id: object, team_ids: tuple[str, str], group_types: list[GroupType]
+) -> list[PlayerGroup]:
     existing_group_keys = set(
-        PlayerGroup.objects.filter(match_data=match_data, team__in=teams).values_list(
-            "team_id", "starting_type_id"
-        )
+        PlayerGroup.objects.filter(
+            match_data_id=match_data_id, team_id__in=team_ids
+        ).values_list("team_id", "starting_type_id")
     )
-
-    missing_groups = [
+    return [
         PlayerGroup(
-            match_data=match_data,
-            team=team,
+            match_data_id=match_data_id,
+            team_id=team_id,
             starting_type=group_type,
             current_type=group_type,
         )
-        for team in teams
+        for team_id in team_ids
         for group_type in group_types
-        if (team.id_uuid, group_type.id_uuid) not in existing_group_keys
+        if (team_id, group_type.id_uuid) not in existing_group_keys
     ]
-    if missing_groups:
-        PlayerGroup.objects.bulk_create(missing_groups)
+
+
+def ensure_player_groups_for_match_data(match_data: MatchData) -> None:
+    """Create any missing PlayerGroup rows for both teams in a match.
+
+    Groups are created when a lineup or tracker first uses a match rather than for
+    every imported fixture: almost all imported matches are never tracked. Readers
+    that only aggregate groups treat a missing lineup as empty.
+    """
+    group_types = list(GroupType.objects.order_by("order", "name"))
+    if not group_types:
+        return
+    team_ids = (
+        Match.objects
+        .filter(pk=match_data.match_link_id)
+        .values_list("home_team_id", "away_team_id")
+        .get()
+    )
+    if not _missing_player_groups(match_data.pk, team_ids, group_types):
+        return
+
+    # Concurrent first reads of the same lineup must not create duplicate groups.
+    with transaction.atomic():
+        list(
+            MatchData.objects
+            .select_for_update()
+            .filter(pk=match_data.pk)
+            .values_list("pk", flat=True)
+        )
+        missing_groups = _missing_player_groups(match_data.pk, team_ids, group_types)
+        if missing_groups:
+            PlayerGroup.objects.bulk_create(missing_groups)
 
 
 def ensure_player_groups_for_group_type(group_type: GroupType) -> None:
-    """Backfill PlayerGroup rows for a newly created group type."""
-    del group_type
-    for match_data in MatchData.objects.select_related(
-        "match_link__home_team",
-        "match_link__away_team",
-    ):
-        ensure_player_groups_for_match_data(match_data)
+    """Add a new group type to the lineups that already exist.
+
+    Matches without groups receive every type when their lineup is first used.
+    """
+    with_type = set(
+        PlayerGroup.objects.filter(starting_type=group_type).values_list(
+            "match_data_id", "team_id"
+        )
+    )
+    lineups = (
+        PlayerGroup.objects
+        .order_by()
+        .values_list("match_data_id", "team_id")
+        .distinct()
+    )
+    PlayerGroup.objects.bulk_create(
+        [
+            PlayerGroup(
+                match_data_id=match_data_id,
+                team_id=team_id,
+                starting_type=group_type,
+                current_type=group_type,
+            )
+            for match_data_id, team_id in lineups
+            if (match_data_id, team_id) not in with_type
+        ],
+        batch_size=1000,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PruneResult:
+    """Lineups (matches) and groups removed, or found in a dry run."""
+
+    matches: int
+    groups: int
+
+
+def prune_unused_player_groups(
+    *, started_before: datetime, batch_size: int = 2000, dry_run: bool = False
+) -> PruneResult:
+    """Delete never-used lineups that every imported match used to receive.
+
+    A match's groups are removed together, and only when none has players, a
+    captured starting lineup or a substitution; such a lineup is recreated with
+    new IDs on first use. Matches that have not started are left alone so an
+    editor holding their group IDs keeps working.
+    """
+    used = (
+        Q(players__isnull=False)
+        | Exists(StartingPlayerAssignment.objects.filter(player_group=OuterRef("pk")))
+        | Exists(PlayerChange.objects.filter(player_group=OuterRef("pk")))
+        | Exists(SubstitutionEventDetail.objects.filter(player_group=OuterRef("pk")))
+    )
+    match_data_ids = (
+        MatchData.objects
+        .filter(
+            match_link__start_time__lt=started_before,
+            pk__in=PlayerGroup.objects.values("match_data_id"),
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    matches = groups = 0
+    batch: list[object] = []
+    for match_data_id in match_data_ids.iterator(chunk_size=batch_size):
+        batch.append(match_data_id)
+        if len(batch) == batch_size:
+            pruned = _prune_batch(batch, used, dry_run=dry_run)
+            matches, groups = matches + pruned.matches, groups + pruned.groups
+            batch = []
+    if batch:
+        pruned = _prune_batch(batch, used, dry_run=dry_run)
+        matches, groups = matches + pruned.matches, groups + pruned.groups
+    return PruneResult(matches=matches, groups=groups)
+
+
+def _unused_lineups(batch: list[object], used: Combinable) -> list[object]:
+    in_use = set(
+        PlayerGroup.objects.filter(used, match_data_id__in=batch).values_list(
+            "match_data_id", flat=True
+        )
+    )
+    return [match_data_id for match_data_id in batch if match_data_id not in in_use]
+
+
+def _prune_batch(
+    batch: list[object], used: Combinable, *, dry_run: bool
+) -> PruneResult:
+    candidates = _unused_lineups(batch, used)
+    if dry_run:
+        groups = PlayerGroup.objects.filter(match_data_id__in=candidates).count()
+        return PruneResult(matches=len(candidates), groups=groups)
+    if not candidates:
+        return PruneResult(matches=0, groups=0)
+    # Lineup writers lock MatchData; take the same locks (in a stable order) and
+    # decide again under them, so a lineup saved after the first check survives.
+    # Removing empty groups changes no statistics; skip per-row recompute jobs.
+    with transaction.atomic(), suppress_tracker_delete_side_effects():
+        locked = list(
+            MatchData.objects
+            .select_for_update()
+            .filter(pk__in=candidates)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        unused = _unused_lineups(locked, used)
+        groups = PlayerGroup.objects.filter(match_data_id__in=unused)
+        deleted = groups.delete()[1].get(PlayerGroup._meta.label, 0)
+    return PruneResult(matches=len(unused), groups=deleted)
 
 
 def get_reserve_group(*, match_data: MatchData, team: Team) -> PlayerGroup:
-    """Return the team's reserve group for a match."""
-    return PlayerGroup.objects.get(
+    """Return the team's reserve group for a match, creating the lineup if needed."""
+    reserve = PlayerGroup.objects.filter(
         team=team,
         match_data=match_data,
         starting_type__name=RESERVE_GROUP_NAME,
     )
+    group = reserve.first()
+    if group is None:
+        ensure_player_groups_for_match_data(match_data)
+        group = reserve.get()
+    return group
 
 
 def add_player_to_group(

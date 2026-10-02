@@ -194,7 +194,10 @@ def test_active_and_reserve_rosters_share_two_selects(players_per_group: int) ->
 
 @pytest.mark.parametrize("role", [None, "Aanval", "Unsupported"])
 def test_roster_without_a_reserve_group(role: str | None) -> None:
-    """Missing reserve history and unsupported-only rosters remain valid reads."""
+    """Missing reserve history and unsupported-only rosters remain valid reads.
+
+    A team without any groups receives its lineup on this first tracker read.
+    """
     for name in ("Aanval", "Unsupported"):
         GroupType.objects.get_or_create(name=name)
     tracker = create_tracker_match(prefix="No reserve roster")
@@ -207,7 +210,7 @@ def test_roster_without_a_reserve_group(role: str | None) -> None:
         include_configuration=False,
         goal_audio=build_goal_song_manifest,
     )
-    assert len(state["player_groups"]) == int(role == "Aanval")
+    assert len(state["player_groups"]) == int(role in {None, "Aanval"})
     assert state["reserve_players"] == []
 
 

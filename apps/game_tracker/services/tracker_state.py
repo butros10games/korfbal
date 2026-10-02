@@ -25,7 +25,10 @@ from apps.game_tracker.models import (
     Timeout,
 )
 from apps.game_tracker.services.live_updates import summarize_match_changes
-from apps.game_tracker.services.player_groups import RESERVE_GROUP_NAME
+from apps.game_tracker.services.player_groups import (
+    RESERVE_GROUP_NAME,
+    ensure_player_groups_for_match_data,
+)
 from apps.game_tracker.services.tracker_clock_queries import (
     read_clock_state as _clock_state,
 )
@@ -407,6 +410,13 @@ def get_tracker_state(
         )
     }
     roster_groups = _roster_groups(match_data, team=team)
+    if (
+        not roster_groups
+        and not PlayerGroup.objects.filter(match_data=match_data, team=team).exists()
+    ):
+        # A match's lineup is created on first use; existing lineups cost no query.
+        ensure_player_groups_for_match_data(match_data)
+        roster_groups = _roster_groups(match_data, team=team)
     player_groups = _player_groups_payload(
         match_data,
         team=team,
