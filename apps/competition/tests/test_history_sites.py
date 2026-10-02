@@ -11,7 +11,7 @@ import pytest
 
 from apps.competition.adapters.outbound.history import HistoryClient
 from apps.competition.adapters.outbound.public_sites import PublicSiteClient
-from apps.competition.application.ports import FetchResult
+from apps.competition.application.ports import FetchResult, TransportError
 from apps.competition.models import (
     Club,
     HistoricalResource,
@@ -672,6 +672,27 @@ def test_former_knkv_site_key_is_read_once_and_requests_are_counted() -> None:
     assert calls[1].kwargs["params"]["end"] == "2025-06-30"
     assert gate.before_request.call_count == len(calls)
     assert all(call.kwargs["allow_redirects"] is False for call in calls)
+
+
+def test_a_single_row_collection_is_read_as_one_row() -> None:
+    """The former KNKV site returns a one-poule series as a bare object."""
+    client, gate = PublicSiteClient(), Mock()
+    client.korfbalnl_token = "key"
+    client.session.get = Mock(
+        side_effect=[
+            reply(body=[{"_id": "s1", "year": 2024, "serie": "NAJAAR"}]),
+            reply(body={"_id": "p1", "ref_id": "7", "name": "A"}),
+            reply(body=[]),
+            reply(body=[]),
+        ]
+    )
+    data = client.fetch(site_resource(KORFBALNL, "catalogue", "2024"), gate).data
+    assert data["poules"] == [
+        {"_id": "p1", "ref_id": "7", "name": "A", "serie": "NAJAAR"}
+    ]
+    client.session.get = Mock(return_value=reply(body={"statusCode": 404}))
+    with pytest.raises(TransportError):
+        client.fetch(site_resource(KORFBALNL, "club_matches", "club1"), gate)
 
 
 def test_result_page_is_bounded_by_the_edition_and_the_cursor() -> None:

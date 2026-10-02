@@ -147,6 +147,9 @@ class PublicSiteClient:
             params=params,
             headers={"Authorization": f"Bearer {self.korfbalnl_token}"},
         ).json()
+        if isinstance(body, dict) and "_id" in body:
+            # A collection of exactly one row arrives as that row, not a list.
+            return [body]
         if not isinstance(body, list):
             raise TransportError("Expected a result site collection")
         return body
