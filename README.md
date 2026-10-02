@@ -1523,6 +1523,13 @@ waits while its app discovery is running. When the app later delivers the same
 fixture, its record replaces the archive record and keeps the published match.
 `status --edition` reports site progress under `sites`.
 
+The former KNKV site's regular outdoor series plays both halves as one competition;
+those poules go to the full-year season (`Veld seizoen`), like the app's. A site poule
+counts as delivered by the app when the app has it in any season of the edition.
+`site-repair --source korfbalnl --edition N` counts site matches in poules the app
+delivered; with `--apply` it removes them (and the fixtures they created, unless those
+carry native activity) and queues the site again.
+
 The former KNKV site keeps the matches and name of a club that merged or dissolved,
 but not its Sportlink code. Such a club is the catalogue club with exactly that name,
 or else a dissolved club of its own, and gets its own read. Running `site` again for

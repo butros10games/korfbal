@@ -37,6 +37,7 @@ from apps.competition.services.history_sites import (
     site_summary,
 )
 from apps.competition.services.history_worker import run_history
+from apps.competition.services.site_repair import repair_site
 from apps.schedule.models import Season
 
 
@@ -44,8 +45,8 @@ class Command(BaseCommand):
     """Seed verified IDs, backfill explicit date ranges, and inspect coverage."""
 
     help = (
-        "Historical KNKV discovery: edition, site, recheck, lineups, seed, run, "
-        "status, log, retry, archive."
+        "Historical KNKV discovery: edition, site, site-repair, recheck, lineups, "
+        "seed, run, status, log, retry, archive."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -55,6 +56,7 @@ class Command(BaseCommand):
             choices=(
                 "edition",
                 "site",
+                "site-repair",
                 "recheck",
                 "lineups",
                 "seed",
@@ -78,6 +80,11 @@ class Command(BaseCommand):
                 "Public result site for the site action: korfbalnl holds editions "
                 "2016-2021, uitslagen holds 2025"
             ),
+        )
+        parser.add_argument(
+            "--apply",
+            action="store_true",
+            help="With site-repair: remove the duplicates instead of counting them",
         )
         parser.add_argument(
             "--output", type=Path, help="CSV file for the per-match import log"
@@ -146,7 +153,7 @@ class Command(BaseCommand):
         """
         action = options["action"]
         if (
-            action in {"edition", "site", "recheck", "lineups", "log"}
+            action in {"edition", "site", "site-repair", "recheck", "lineups", "log"}
             or (options["edition"])
         ):
             return edition_action(action, options)
@@ -237,10 +244,8 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
             )
             for edition in editions
         ]
-    if action == "site":
-        if not options["source"]:
-            raise ValueError("Select the public result site")
-        return [seed_site(options["source"], edition) for edition in editions]
+    if action in {"site", "site-repair"}:
+        return site_action(action, editions, options)
     if action == "recheck":
         return [recheck_edition(edition) for edition in editions]
     if action == "status":
@@ -253,6 +258,23 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
     if action == "log" and len(editions) == 1 and options["output"]:
         return write_log(editions[0], options["output"])
     raise ValueError("Select one edition and an output file for the log")
+
+
+def site_action(action: str, editions: list[int], options: dict[str, Any]) -> list:
+    """Queue a public result site, or repair its copies of provider poules.
+
+    Raises:
+        ValueError: No result site was selected.
+
+    """
+    source = options["source"]
+    if not source:
+        raise ValueError("Select the public result site")
+    if action == "site":
+        return [seed_site(source, edition) for edition in editions]
+    return [
+        repair_site(source, edition, apply=options["apply"]) for edition in editions
+    ]
 
 
 def write_log(edition: int, output: Path) -> dict:

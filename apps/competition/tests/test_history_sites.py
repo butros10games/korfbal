@@ -12,9 +12,10 @@ import pytest
 from apps.competition.adapters.outbound.history import HistoryClient
 from apps.competition.adapters.outbound.public_sites import PublicSiteClient
 from apps.competition.application.ports import FetchResult
-from apps.competition.models import Club, HistoricalResource, Match, Team
+from apps.competition.models import Club, HistoricalResource, Match, Pool, Team
 from apps.competition.services.history_editions import (
     current_edition,
+    full_year_season,
     prepare_edition,
     recheck_edition,
     seed_edition,
@@ -28,6 +29,7 @@ from apps.competition.services.history_sites import (
 from apps.competition.services.importer import Importer
 from apps.competition.services.publishing import pending_matches, publish_catalogue
 from apps.competition.services.seasons import INDOOR, OUTDOOR
+from apps.competition.services.site_repair import repair_site
 from apps.competition.tasks import recheck_competition_history
 from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_history_editions import (
@@ -54,7 +56,7 @@ def no_spacing_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("apps.competition.services.traffic.time.sleep", lambda _: None)
 
 
-def catalogue() -> dict:
+def catalogue(serie: str = "NAJAAR") -> dict:
     """Fabricate the former KNKV site's clubs, sports and poule classes."""
     return {
         "clubs": [
@@ -70,7 +72,14 @@ def catalogue() -> dict:
             {"_id": "outdoor", "ref_id": OUTDOOR},
             {"_id": "indoor", "ref_id": INDOOR},
         ],
-        "poules": [{"ref_id": "7", "name": "A", "division": {"name": "Ereklasse"}}],
+        "poules": [
+            {
+                "ref_id": "7",
+                "name": "A",
+                "division": {"name": "Ereklasse"},
+                "serie": serie,
+            }
+        ],
     }
 
 
@@ -156,6 +165,84 @@ def test_former_knkv_site_fills_a_season_with_archive_matches() -> None:
         "catalogue/fetched": 1,
         "club_matches/fetched": 2,
     }
+
+
+AUTUMN, SPRING = "2024-09-14T13:00:00.000Z", "2025-04-12T13:00:00.000Z"
+FULL_YEAR = "Veld seizoen 2024-2025"
+
+
+def outdoor_match(identifier: str, when: str) -> dict:
+    """Fabricate a played outdoor match in poule 7."""
+    return site_match(identifier, when, sport={"_id": "outdoor"})
+
+
+def app_match(season: Season, identifier: str, when: str) -> None:
+    """Import one provider result of outdoor poule 7 into a season."""
+    Importer(season, timezone.now(), discover=False).apply(
+        "club_results", "", {"MatchResult": [app_row(identifier, when, pool=7)]}
+    )
+
+
+@pytest.mark.django_db
+def test_full_year_outdoor_poule_stays_whole_in_its_own_season() -> None:
+    """The site's regular outdoor series plays both halves as one competition."""
+    seed_site(KORFBALNL, EDITION)
+    run([FetchResult(200, catalogue("REGULIER"))])
+    run([weeks(outdoor_match("1", AUTUMN), outdoor_match("2", SPRING)), weeks()])
+    assert set(Match.objects.values_list("season__name", flat=True)) == {FULL_YEAR}
+    assert Pool.objects.get().season.name == FULL_YEAR
+
+
+@pytest.mark.django_db
+def test_provider_poule_in_the_full_year_season_is_not_copied_into_a_half() -> None:
+    """The provider's poule covers the whole edition, whichever season holds it."""
+    prepare_edition(EDITION)
+    app_match(full_year_season(EDITION), "M1", "2024-09-14T15:00:00+0200")
+    import_club(outdoor_match("1", AUTUMN), outdoor_match("2", SPRING))
+    assert list(Match.objects.values_list("external_id", flat=True)) == ["M1"]
+    assert site_summary(EDITION)["skipped"] == {"app_has_poule": 4}
+
+
+@pytest.mark.django_db
+def test_reading_a_club_again_moves_a_half_copy_to_the_full_year_season() -> None:
+    """Copies an earlier read placed by date are retired, fixtures included."""
+    import_club(outdoor_match("1", AUTUMN))
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    assert Match.objects.get().season.name == "Voor seizoen 2024"
+    HistoricalResource.objects.update(state="pending")
+    run([FetchResult(200, catalogue("REGULIER"))])
+    run([weeks(outdoor_match("1", AUTUMN)), weeks()])
+    assert Match.objects.get().season.name == FULL_YEAR
+    assert not AppMatch.objects.exists()
+    assert not Pool.objects.filter(season__name="Voor seizoen 2024").exists()
+
+
+@pytest.mark.django_db
+def test_repair_removes_site_copies_of_provider_poules_and_reads_again() -> None:
+    """Published duplicates go with their fixtures; the site is queued again."""
+    import_club(outdoor_match("1", AUTUMN))
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    app_match(full_year_season(EDITION), "M1", "2024-09-14T15:00:00+0200")
+    preview = repair_site(KORFBALNL, EDITION, apply=False)
+    assert (preview["duplicates"], preview["poules"]) == (1, 1)
+    assert Match.objects.count() == len({"M1", "archive:knkv:1"})
+
+    result = repair_site(KORFBALNL, EDITION, apply=True)
+    assert (result["removed"], result["kept_in_use"]) == (1, 0)
+    assert list(Match.objects.values_list("external_id", flat=True)) == ["M1"]
+    assert not AppMatch.objects.exists()
+    assert not HistoricalResource.objects.exclude(state="pending").exists()
+
+
+@pytest.mark.django_db
+def test_catalogue_without_series_is_read_again_before_its_clubs() -> None:
+    """An older catalogue cannot place full-year poules."""
+    import_club(site_match("1001"))
+    stored = HistoricalResource.objects.get(kind="catalogue")
+    stored.evidence = {**stored.evidence, "version": 1}
+    stored.save()
+    seed_site(KORFBALNL, EDITION)
+    assert HistoricalResource.objects.get(state="pending").kind == "catalogue"
 
 
 def delisted_match(identifier: str = "1001") -> dict:

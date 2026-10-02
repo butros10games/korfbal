@@ -172,7 +172,8 @@ class PublicSiteClient:
                     },
                     gate,
                 )
-                poules.extend(rows)
+                # The series tells a full-year competition from a half-season one.
+                poules.extend({**row, "serie": season.get("serie")} for row in rows)
                 if len(rows) < KORFBALNL_LIMIT:
                     break
                 page += 1

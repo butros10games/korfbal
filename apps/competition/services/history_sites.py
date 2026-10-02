@@ -16,7 +16,8 @@ from datetime import date, timedelta
 import re
 from typing import Any
 
-from django.db.models import Count
+from django.db import transaction
+from django.db.models import Count, Exists, OuterRef, QuerySet
 from django.utils import timezone
 
 from apps.competition.models import (
@@ -24,8 +25,10 @@ from apps.competition.models import (
     HistoricalDiscovery,
     HistoricalResource,
     Match,
+    Pool,
     Team,
 )
+from apps.competition.services.clock_twins import untouched
 from apps.competition.services.history import (
     ARCHIVE_PREFIX,
     EDITION_KINDS,
@@ -37,11 +40,16 @@ from apps.competition.services.history_editions import (
     SPORTS,
     edition_scopes,
     edition_seasons,
+    full_year_season,
     prepare_edition,
     route,
 )
 from apps.competition.services.importer import Importer
-from apps.schedule.models import Season
+from apps.competition.services.seasons import OUTDOOR
+from apps.schedule.models import (
+    Match as AppMatch,
+    Season,
+)
 
 
 KORFBALNL, UITSLAGEN = "korfbalnl", "uitslagen"
@@ -55,6 +63,10 @@ REFERENCES = {
 # The first checkpoint of each source and its fixed identifier (None: the edition).
 FIRST_CHECKPOINT = {KORFBALNL: ("catalogue", None), UITSLAGEN: ("match_page", "0")}
 PLAYED = "uitgespeeld"
+# The former KNKV site's series for a competition that plays the whole edition.
+FULL_YEAR_SERIE = "REGULIER"
+# Catalogues without each poule's series cannot place full-year poules.
+CATALOGUE_VERSION = 2
 SIDES = ("home", "away")
 
 
@@ -143,6 +155,12 @@ def seed_site(provider: str, edition: int) -> dict[str, Any]:
     result["queued"] = queue(
         anchor, provider, kind, [source_id or str(edition)], parent=None
     )
+    for catalogue in HistoricalResource.objects.filter(
+        season=anchor, provider=provider, kind="catalogue", state="fetched"
+    ):
+        if catalogue.evidence.get("version") != CATALOGUE_VERSION:
+            catalogue.state, catalogue.next_attempt_at = "pending", timezone.now()
+            catalogue.save(update_fields=("state", "next_attempt_at"))
     # Read clubs again whose rows an earlier version skipped for a delisted club.
     result["requeued"] = HistoricalResource.objects.filter(
         season=anchor,
@@ -205,7 +223,7 @@ def result(sides: list[dict], scores: list[int | None]) -> dict[str, Any]:
 
 
 def payload(
-    provider: str, identifier: object, when: str, pool: dict[str, str], played: dict
+    provider: str, identifier: object, when: str, pool: dict[str, Any], played: dict
 ) -> dict[str, Any]:
     """Build a final result in the provider's row shape, with an archive ID."""
     return {
@@ -286,8 +304,9 @@ def korfbalnl_row(
         return "incomplete"
     if not re.fullmatch(r"[0-9]+", str(poule.get("ref_id") or "")):
         return "poule_unknown"
-    name, class_name = catalogue["pools"].get(str(poule["ref_id"])) or (
+    name, class_name, serie = catalogue["pools"].get(str(poule["ref_id"])) or (
         poule.get("name") or "",
+        "",
         "",
     )
     sides = [
@@ -298,7 +317,13 @@ def korfbalnl_row(
         KORFBALNL,
         row.get("ref_id") or row["_id"],
         row["date"],
-        {"PoolId": str(poule["ref_id"]), "PoolName": name, "ClassName": class_name},
+        {
+            "PoolId": str(poule["ref_id"]),
+            "PoolName": name,
+            "ClassName": class_name,
+            # One competition over both outdoor halves stays whole (see route).
+            "FullYear": serie == FULL_YEAR_SERIE and sport == OUTDOOR,
+        },
         result(sides, scores),
     )
 
@@ -355,12 +380,14 @@ def apply_catalogue(resource: HistoricalResource, data: dict[str, Any]) -> None:
         if row.get("ref_id")
     }
     resource.evidence = {
+        "version": CATALOGUE_VERSION,
         "sports": {row["_id"]: row.get("ref_id") for row in data["sports"]},
         "clubs": clubs,
         "pools": {
             str(row["ref_id"]): [
                 row.get("name") or "",
                 (row.get("division") or {}).get("name") or "",
+                row.get("serie") or "",
             ]
             for row in data["poules"]
             if row.get("ref_id")
@@ -370,15 +397,53 @@ def apply_catalogue(resource: HistoricalResource, data: dict[str, Any]) -> None:
     resource.coverage = "complete" if clubs else "empty"
 
 
-def covered_pools(season: Season, pool_ids: set[str]) -> set[str]:
-    """Poules of a season the provider already delivered matches for."""
+def covered_pools(scopes: list[Season], pool_ids: set[str]) -> set[str]:
+    """Poules the provider delivered matches for, in any season of the edition.
+
+    The provider keeps a full-year outdoor poule in its own season, so a poule
+    absent from the autumn or spring season can still be covered.
+    """
     return set(
         Match.objects
-        .filter(season=season, pool__external_id__in=pool_ids)
+        .filter(season__in=scopes, pool__external_id__in=pool_ids)
         .exclude(external_id__startswith=ARCHIVE_PREFIX)
         .values_list("pool__external_id", flat=True)
         .distinct()
     )
+
+
+@transaction.atomic
+def remove_site_matches(query: QuerySet[Match]) -> set[str]:
+    """Remove site matches with the fixtures and empty poules they created.
+
+    Returns:
+        IDs of the matches kept because their fixture carries native activity.
+
+    """
+    matches = list(query.select_for_update(of=("self",)).select_related("local_match"))
+    kept = {
+        match.external_id
+        for match in matches
+        if match.local_match is not None
+        and not (match.local_created and untouched(match.local_match))
+    }
+    gone = [match for match in matches if match.external_id not in kept]
+    keys = [match.pk for match in gone]
+    fixtures = [match.local_match_id for match in gone if match.local_match_id]
+    Match.objects.filter(pk__in=keys).update(local_match=None)
+    AppMatch.objects.filter(pk__in=fixtures).delete()
+    Match.objects.filter(pk__in=keys).delete()
+    for pool in (
+        Pool.objects
+        .filter(pk__in={match.pool_id for match in gone if match.pool_id})
+        .exclude(Exists(Match.objects.filter(pool=OuterRef("pk"))))
+        .select_related("local_pool")
+    ):
+        local = pool.local_pool
+        pool.delete()
+        if local is not None and not AppMatch.objects.filter(pool=local).exists():
+            local.delete()
+    return kept
 
 
 def import_site_rows(
@@ -415,6 +480,13 @@ def import_site_rows(
             }
         ).values_list("external_id", "sport")
     )
+    covered = covered_pools(
+        edition_scopes(seasons.edition),
+        {row["Pool"]["PoolId"] for row in unique.values()},
+    )
+    halves = {seasons.autumn.pk, seasons.spring.pk}
+    whole: Season | None = None
+    moved: list[str] = []
     groups: dict[Any, tuple[Season, list[dict]]] = {}
     for row in unique.values():
         target, _, reason = route(seasons, row)
@@ -424,9 +496,16 @@ def import_site_rows(
             for side in ("HomeTeam", "AwayTeam")
         ):
             target, reason = None, "sport_mismatch"
+        if target is not None and row["Pool"]["PoolId"] in covered:
+            target, reason = None, "app_has_poule"
+        full_year = row["Pool"].pop("FullYear", False)
         if target is None:
             skipped[reason] += 1
             continue
+        if full_year and target.pk in halves:
+            whole = whole or full_year_season(seasons.edition)
+            target = whole
+            moved.append(row["PublicMatchId"])
         for side in ("HomeTeam", "AwayTeam"):
             team = row[side]
             team["TeamName"] = team_name(
@@ -435,12 +514,19 @@ def import_site_rows(
                 clubs.get(team["Club"]["ClubId"]),
             )
         groups.setdefault(target.pk, (target, []))[1].append(row)
+    # An earlier read placed full-year poules in the halves: retire those copies.
+    in_use = (
+        remove_site_matches(
+            Match.objects.filter(season_id__in=halves, external_id__in=moved)
+        )
+        if moved
+        else set()
+    )
     imported = {}
     now = timezone.now()
     for target, group in groups.values():
-        covered = covered_pools(target, {row["Pool"]["PoolId"] for row in group})
-        fresh = [row for row in group if row["Pool"]["PoolId"] not in covered]
-        skipped["app_has_poule"] += len(group) - len(fresh)
+        fresh = [row for row in group if row["PublicMatchId"] not in in_use]
+        skipped["half_copy_in_use"] += len(group) - len(fresh)
         if fresh:
             Importer(target, now, discover=False).apply(
                 "club_results", "", {"MatchResult": fresh}
@@ -463,6 +549,8 @@ def apply_site(resource: HistoricalResource, data: dict[str, Any]) -> None:
         catalogue = HistoricalResource.objects.get(
             season=resource.season, provider=KORFBALNL, kind="catalogue"
         ).evidence
+        if catalogue.get("version") != CATALOGUE_VERSION:
+            raise ValueError("The catalogue must be read again before its clubs")
         matches = [row for week in data["weeks"] for row in week["matches"]]
         clubs, delisted = site_clubs(catalogue, matches)
         # The catalogue queued listed clubs only; a delisted club's own matches

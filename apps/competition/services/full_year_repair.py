@@ -10,6 +10,7 @@ Fixtures that are linked to native activity are never removed.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from typing import Any
 
 from django.db import transaction
@@ -151,7 +152,7 @@ def requeue_poule(
     return True
 
 
-def remove_orphan_teams(seasons: tuple[Season, Season]) -> Counter[str]:
+def remove_orphan_teams(seasons: Iterable[Season]) -> Counter[str]:
     """Remove half-season teams left without poules or fixtures.
 
     Native team seasons go too, but only while nothing else uses them.
