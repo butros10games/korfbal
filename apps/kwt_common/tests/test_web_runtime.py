@@ -7,8 +7,16 @@ import subprocess
 import sys
 from time import monotonic, sleep
 
-from korfbal.serve import server_commands
+from korfbal.serve import server_commands, server_environment
 import pytest
+
+
+def test_web_pools_reuse_database_connections_by_default() -> None:
+    """Hosts without an explicit size must not open a connection per request."""
+    assert server_environment({})["KORFBAL_DB_POOL_MAX_SIZE"] == "4"
+    assert server_environment({"KORFBAL_DB_POOL_MAX_SIZE": "0"}) == {
+        "KORFBAL_DB_POOL_MAX_SIZE": "0"
+    }
 
 
 def test_pool_commands_isolate_stream_admission(

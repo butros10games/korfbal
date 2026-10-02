@@ -70,7 +70,18 @@ def server_commands() -> list[list[str]]:
     ]
 
 
-def supervise(commands: list[list[str]]) -> int:
+# Without a pool every request opens a new PostgreSQL connection. Ten web processes
+# at this size stay well inside the default 100 connections beside Celery, which
+# keeps direct connections for its session advisory locks.
+WEB_DB_POOL_MAX_SIZE = "4"
+
+
+def server_environment(environ: dict[str, str]) -> dict[str, str]:
+    """Pool web database connections unless the deployment sets its own size."""
+    return {"KORFBAL_DB_POOL_MAX_SIZE": WEB_DB_POOL_MAX_SIZE, **environ}
+
+
+def supervise(commands: list[list[str]], env: dict[str, str] | None = None) -> int:
     """Forward stop signals and fail the deployment unit when any pool exits."""
     processes: list[subprocess.Popen] = []
     stopping = False
@@ -88,7 +99,7 @@ def supervise(commands: list[list[str]]) -> int:
         for command in commands:
             if stopping:
                 break
-            processes.append(subprocess.Popen(command))
+            processes.append(subprocess.Popen(command, env=env))
         if processes and not stopping:
             os.wait()
     finally:
@@ -100,4 +111,4 @@ def supervise(commands: list[list[str]]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(supervise(server_commands()))
+    raise SystemExit(supervise(server_commands(), server_environment(dict(os.environ))))

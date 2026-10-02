@@ -21,7 +21,7 @@ from pytest_django.fixtures import DjangoAssertNumQueries
 from apps.club.models import Club
 from apps.game_tracker.models import MatchData
 from apps.player.models import Player
-from apps.schedule.models import Match, Season
+from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.models import Team, TeamData
 
 
@@ -538,3 +538,56 @@ def test_upcoming_rejects_invalid_offset(client: Client, offset: str) -> None:
     response = client.get("/api/matches/upcoming/", {"offset": offset})
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert "offset" in response.json()
+
+
+@pytest.mark.parametrize(
+    ("term", "expected"),
+    [
+        ("tigers", {"home-team", "away-team"}),
+        ("riverside", {"home-club", "away-club"}),
+        ("poule 7", {"pool"}),
+        ("RIVERSIDE", {"home-club", "away-club"}),
+        ("absent", set()),
+    ],
+)
+def test_match_search_matches_teams_clubs_and_pools(
+    client: Client, term: str, expected: set[str]
+) -> None:
+    """Search keeps matching both sides' team and club names and the pool name."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="Search", start_date=today, end_date=today)
+    plain = Club.objects.create(name="Plain Club")
+    riverside = Club.objects.create(name="Riverside KV")
+    tigers = Team.objects.create(name="Tigers 1", club=plain)
+    other = Team.objects.create(name="Other 1", club=plain)
+    another = Team.objects.create(name="Other 2", club=plain)
+    river_team = Team.objects.create(name="Senior 2", club=riverside)
+    pool = SeasonPool.objects.create(season=season, name="Poule 7")
+    start = timezone.now()
+    matches = {
+        "home-team": Match.objects.create(
+            home_team=tigers, away_team=other, season=season, start_time=start
+        ),
+        "away-team": Match.objects.create(
+            home_team=other, away_team=tigers, season=season, start_time=start
+        ),
+        "home-club": Match.objects.create(
+            home_team=river_team, away_team=other, season=season, start_time=start
+        ),
+        "away-club": Match.objects.create(
+            home_team=other, away_team=river_team, season=season, start_time=start
+        ),
+        "pool": Match.objects.create(
+            home_team=other,
+            away_team=another,
+            season=season,
+            start_time=start,
+            pool=pool,
+        ),
+    }
+
+    response = client.get("/api/matches/", {"search": term, "page": 1})
+
+    assert response.status_code == HTTPStatus.OK
+    found = {row["id_uuid"] for row in response.json()["results"]}
+    assert found == {str(matches[name].id_uuid) for name in expected}

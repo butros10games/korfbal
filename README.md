@@ -172,8 +172,11 @@ Production Compose bounds web database usage with `KORFBAL_WEB_DB_POOL_MAX_SIZE`
 all replicas, Celery, administration and monitoring when budgeting PostgreSQL
 connections. The pool waits up to five seconds instead of opening unlimited new
 connections. Set the Compose variable to `0` to disable pooling. Outside Compose,
-set `KORFBAL_DB_POOL_MAX_SIZE` on the web process only; do not put it in a shared
-worker environment because durable worker jobs hold session advisory locks.
+`python -m korfbal.serve` gives its web pools 4 connections per process unless
+`KORFBAL_DB_POOL_MAX_SIZE` is set (ten processes, at most 40 connections); without
+a pool every request opens a new PostgreSQL connection. Set the variable on the web
+process only; do not put it in a shared worker environment because durable worker
+jobs hold session advisory locks.
 
 Public live endpoints now read the latest committed snapshot from the dedicated
 `public_live` cache before accessing PostgreSQL. Every recorded match revision

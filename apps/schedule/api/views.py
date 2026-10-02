@@ -30,7 +30,8 @@ from apps.kwt_common.api.params import UUID_URL_REGEX, uuid_query_values
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.player.models.player import Player
 from apps.player.services.player_teams import connected_team_ids
-from apps.schedule.models import Match
+from apps.schedule.models import Match, SeasonPool
+from apps.team.models.team import Team
 
 from .match_viewset_event_writes import (
     PossessionChangeCreateRequestSerializer,
@@ -266,12 +267,25 @@ class MatchViewSet(
                 queryset = queryset.filter(pool_id=pool_ids[-1])
             search = self.request.query_params.get("search", "").strip()
             if search:
+                # Match the small team and pool tables first, then use the indexed
+                # match foreign keys. An OR across joined names scans and joins
+                # every imported fixture (~0.5 s on production), twice per page.
+                teams = (
+                    Team.objects
+                    .filter(Q(name__icontains=search) | Q(club__name__icontains=search))
+                    .order_by()
+                    .values("pk")
+                )
+                pools = (
+                    SeasonPool.objects
+                    .filter(name__icontains=search)
+                    .order_by()
+                    .values("pk")
+                )
                 queryset = queryset.filter(
-                    Q(home_team__name__icontains=search)
-                    | Q(home_team__club__name__icontains=search)
-                    | Q(away_team__name__icontains=search)
-                    | Q(away_team__club__name__icontains=search)
-                    | Q(pool__name__icontains=search)
+                    Q(home_team_id__in=teams)
+                    | Q(away_team_id__in=teams)
+                    | Q(pool_id__in=pools)
                 )
         return queryset
 
