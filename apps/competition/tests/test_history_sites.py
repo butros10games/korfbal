@@ -12,7 +12,19 @@ import pytest
 from apps.competition.adapters.outbound.history import HistoryClient
 from apps.competition.adapters.outbound.public_sites import PublicSiteClient
 from apps.competition.application.ports import FetchResult
-from apps.competition.models import Club, HistoricalResource, Match, Pool, Team
+from apps.competition.models import (
+    Club,
+    HistoricalResource,
+    Match,
+    Pool,
+    PoolEntry,
+    Team,
+)
+from apps.competition.services.computed_standings import (
+    GOAL_DIFFERENCE_CLASSES,
+    refresh_edition_standings,
+    standings,
+)
 from apps.competition.services.history_editions import (
     current_edition,
     full_year_season,
@@ -243,6 +255,67 @@ def test_catalogue_without_series_is_read_again_before_its_clubs() -> None:
     stored.save()
     seed_site(KORFBALNL, EDITION)
     assert HistoricalResource.objects.get(state="pending").kind == "catalogue"
+
+
+@pytest.mark.django_db
+def test_site_poule_gets_standings_computed_from_its_results() -> None:
+    """A site has results but no table; the poule page still shows a ranking."""
+    import_club(site_match("1001"), site_match("1002", "2024-11-16T14:00:00.000Z"))
+    pool = Pool.objects.get()
+    assert pool.results_filtered is False
+    assert pool.standings_synced_at is not None
+    rows = {
+        entry.team.name: entry.standing
+        for entry in PoolEntry.objects.select_related("team")
+    }
+    assert rows["Example T1"] == {
+        "TotalMatches": 2,
+        "Won": 2,
+        "Draw": 0,
+        "Lost": 0,
+        "TotalPoints": 4,
+        "GoalsFor": 40,
+        "GoalsAgainst": 36,
+        "GoalsDifference": 4,
+        "Position": 1,
+        "Computed": True,
+    }
+    assert (rows["Example T2"]["Position"], rows["Example T2"]["Lost"]) == (2, 2)
+
+
+@pytest.mark.django_db
+def test_provider_poule_keeps_its_official_standings() -> None:
+    """Only poules with nothing but site results get a computed table."""
+    indoor = prepare_edition(EDITION).indoor
+    Importer(indoor, timezone.now(), discover=False).apply(
+        "club_results",
+        "",
+        {
+            "MatchResult": [
+                app_row("M1", "2024-11-09T15:00:00+0100", sport=INDOOR, pool=7)
+            ]
+        },
+    )
+    assert refresh_edition_standings(EDITION) == {"edition": EDITION, "poules": 0}
+    assert Pool.objects.get().results_filtered is True
+
+
+def result(home: str, away: str, home_score: int, away_score: int) -> tuple:
+    """Fabricate one final result between two teams."""
+    return (home, away, home_score, away_score)
+
+
+def test_equal_points_are_decided_by_mutual_results_or_goal_difference() -> None:
+    """Most competitions rank tied teams on their own matches; the youngest do not."""
+    results = [result("A", "B", 20, 5), result("C", "A", 12, 11)]
+    # A and C both have 2 points; C won their match, A has the better difference.
+    assert [team for team, _ in standings(results, "ABC")] == ["C", "A", "B"]
+    by_difference = [team for team, _ in standings(results, "ABC", mutual=False)]
+    assert by_difference == ["A", "C", "B"]
+    assert GOAL_DIFFERENCE_CLASSES.match("E-jeugd BK")
+    assert GOAL_DIFFERENCE_CLASSES.match("Midweek dames nj")
+    assert not GOAL_DIFFERENCE_CLASSES.match("Ereklasse")
+    assert not GOAL_DIFFERENCE_CLASSES.match("")
 
 
 def delisted_match(identifier: str = "1001") -> dict:

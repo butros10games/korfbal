@@ -29,6 +29,9 @@ from apps.competition.models import (
     Team,
 )
 from apps.competition.services.clock_twins import untouched
+from apps.competition.services.computed_standings import (
+    refresh_computed_standings,
+)
 from apps.competition.services.history import (
     ARCHIVE_PREFIX,
     EDITION_KINDS,
@@ -540,6 +543,13 @@ def import_site_rows(
                 "club_results", "", {"MatchResult": fresh}
             )
             imported[target.name] = len(fresh)
+            # A site has results but no standings: compute the poules' tables.
+            refresh_computed_standings(
+                Pool.objects.filter(
+                    season=target,
+                    external_id__in={row["Pool"]["PoolId"] for row in fresh},
+                ).values_list("pk", flat=True)
+            )
     return {"imported": imported, "skipped": dict(+skipped)}
 
 

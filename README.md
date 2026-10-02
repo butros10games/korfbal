@@ -1523,6 +1523,12 @@ waits while its app discovery is running. When the app later delivers the same
 fixture, its record replaces the archive record and keeps the published match.
 `status --edition` reports site progress under `sites`.
 
+A site has results but no standings, so a poule with only site results gets a table
+computed from them (`services/computed_standings.py`): two points for a win, one for a
+draw; equal points by mutual results, or by goal difference in the youngest youth and
+midweek competitions. Official deductions are unknown. `site-standings --edition N`
+computes the tables of an edition imported earlier.
+
 The former KNKV site's regular outdoor series plays both halves as one competition;
 those poules go to the full-year season (`Veld seizoen`), like the app's. A site poule
 counts as delivered by the app when the app has it in any season of the edition.

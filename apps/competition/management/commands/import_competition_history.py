@@ -20,6 +20,7 @@ from apps.competition.composition import (
     schedule_change_dispatcher,
 )
 from apps.competition.models import HistoricalResource
+from apps.competition.services.computed_standings import refresh_edition_standings
 from apps.competition.services.history import progress, seed
 from apps.competition.services.history_archive import import_archive
 from apps.competition.services.history_editions import (
@@ -45,8 +46,8 @@ class Command(BaseCommand):
     """Seed verified IDs, backfill explicit date ranges, and inspect coverage."""
 
     help = (
-        "Historical KNKV discovery: edition, site, site-repair, recheck, lineups, "
-        "seed, run, status, log, retry, archive."
+        "Historical KNKV discovery: edition, site, site-repair, site-standings, "
+        "recheck, lineups, seed, run, status, log, retry, archive."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -57,6 +58,7 @@ class Command(BaseCommand):
                 "edition",
                 "site",
                 "site-repair",
+                "site-standings",
                 "recheck",
                 "lineups",
                 "seed",
@@ -153,7 +155,16 @@ class Command(BaseCommand):
         """
         action = options["action"]
         if (
-            action in {"edition", "site", "site-repair", "recheck", "lineups", "log"}
+            action
+            in {
+                "edition",
+                "site",
+                "site-repair",
+                "site-standings",
+                "recheck",
+                "lineups",
+                "log",
+            }
             or (options["edition"])
         ):
             return edition_action(action, options)
@@ -244,7 +255,7 @@ def edition_action(action: str, options: dict[str, Any]) -> dict | list:
             )
             for edition in editions
         ]
-    if action in {"site", "site-repair"}:
+    if action in {"site", "site-repair", "site-standings"}:
         return site_action(action, editions, options)
     if action == "recheck":
         return [recheck_edition(edition) for edition in editions]
@@ -267,6 +278,8 @@ def site_action(action: str, editions: list[int], options: dict[str, Any]) -> li
         ValueError: No result site was selected.
 
     """
+    if action == "site-standings":
+        return [refresh_edition_standings(edition) for edition in editions]
     source = options["source"]
     if not source:
         raise ValueError("Select the public result site")
