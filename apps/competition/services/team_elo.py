@@ -44,6 +44,8 @@ LOCK_ID = 0x4B4F5246454C4F32
 OVERLAP = timedelta(minutes=10)
 INCREMENTAL_DAYS = 60
 BATCH = 5000
+# PostgreSQL accepts at most 65,535 parameters per statement (13 per match row).
+UPSERT_BATCH = 2000
 MATCH_FIELDS = (
     "home_rating",
     "away_rating",
@@ -398,11 +400,15 @@ def synchronize(
         and existing[pk] != tuple(getattr(row, field) for field in fields)
     ]
     stale = [pk for pk in existing if pk not in wanted]
-    scope.model.objects.bulk_create(created, batch_size=BATCH)
-    scope.model.objects.bulk_update(
-        changed,
-        [field.removesuffix("_id") for field in fields],
-        batch_size=BATCH,
+    # One upsert writes new and changed rows in linear time. ``bulk_update`` sends
+    # a CASE branch per row for every field, which PostgreSQL evaluates per row:
+    # rewriting the whole history held one statement for over 25 minutes.
+    scope.model.objects.bulk_create(
+        [*created, *changed],
+        batch_size=UPSERT_BATCH,
+        update_conflicts=True,
+        unique_fields=[scope.model._meta.pk.name],
+        update_fields=[field.removesuffix("_id") for field in fields],
     )
     for start in range(0, len(stale), BATCH):
         scope.model.objects.filter(pk__in=stale[start : start + BATCH]).delete()

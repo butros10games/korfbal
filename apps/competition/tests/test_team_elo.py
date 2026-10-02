@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from django.core.cache import cache
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 from rest_framework.test import APIClient
@@ -199,6 +201,30 @@ def test_incremental_refresh_equals_a_full_replay(predicted_match: Match) -> Non
     assert full["status"] == "full"
     assert (full["matches_updated"], full["teams_updated"]) == (0, 0)
     assert stored() == incremental
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("no_overlap")
+def test_changed_ratings_are_upserted_without_case_updates(
+    predicted_match: Match,
+) -> None:
+    """Rewriting history must stay linear: CASE-based bulk updates are quadratic."""
+    later_result(predicted_match, 2, (14, 9))
+    corrected = later_result(predicted_match, 1, (8, 8))
+    refresh_team_ratings()
+    corrected.home_score = 3
+    corrected.save()
+    with CaptureQueriesContext(connection) as queries:
+        refreshed = refresh_team_ratings(full=True)
+    assert refreshed["matches_updated"] == 1
+    writes = [
+        query["sql"] for query in queries if "competition_matchrating" in query["sql"]
+    ]
+    assert not any("CASE WHEN" in sql for sql in writes)
+    assert any("ON CONFLICT" in sql for sql in writes)
+    # Upserted values are stored exactly: replaying again changes nothing.
+    again = refresh_team_ratings(full=True)
+    assert (again["matches_updated"], again["teams_updated"]) == (0, 0)
 
 
 @pytest.mark.django_db
