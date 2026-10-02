@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -27,14 +28,57 @@ from apps.schedule.queries.seasons import (
 from apps.team.models import TeamData
 
 
-def resolve_season(
-    season_id: str | None,
-    seasons: list[Season],
-) -> Season | None:
-    """Resolve a requested season, defaulting to current or first available."""
-    if season_id:
-        return find_season(season_id, seasons)
-    return default_season(seasons)
+# Explicit request for every season of a player's career.
+CAREER = "career"
+DEFAULT_SCOPE = "default"
+EXPLICIT_SCOPE = "explicit"
+INVALID_SEASON = "invalid_season"
+
+
+@dataclass(frozen=True)
+class SeasonSelection:
+    """A resolved player season scope; ``season`` None means the whole career."""
+
+    season: Season | None
+    scope: str
+
+    def as_meta(self) -> dict[str, Any]:
+        """Describe the requested and resolved scope for clients and caches."""
+        return {
+            "season_id": str(self.season.id_uuid) if self.season else None,
+            "season_name": self.season.name if self.season else None,
+            "season_scope": self.scope,
+        }
+
+
+class InvalidSeasonError(ValueError):
+    """An explicit season request outside the player's own seasons."""
+
+
+def resolve_season(season_id: str | None, seasons: list[Season]) -> SeasonSelection:
+    """Resolve a player's season request without ever widening it silently.
+
+    An omitted season resolves the player's current (or most recent) season;
+    ``career`` explicitly selects every season. A malformed, unknown or
+    out-of-scope season is an error, never a career-wide fallback.
+
+    Returns:
+        The selected season and how it was chosen.
+
+    Raises:
+        InvalidSeasonError: The explicit season is not one of the player's.
+
+    """
+    season_id = (season_id or "").strip()
+    if not season_id:
+        default = default_season(seasons)
+        return SeasonSelection(default, DEFAULT_SCOPE if default else CAREER)
+    if season_id == CAREER:
+        return SeasonSelection(None, CAREER)
+    season = find_season(season_id, seasons)
+    if season is None:
+        raise InvalidSeasonError(season_id)
+    return SeasonSelection(season, EXPLICIT_SCOPE)
 
 
 def player_seasons_queryset(player: Player) -> QuerySet[Season]:
@@ -117,8 +161,12 @@ def build_player_overview_payload(
     player: Player,
     season: Season | None,
     seasons: list[Season],
+    selection: SeasonSelection | None = None,
 ) -> dict[str, Any]:
     """Build the player overview payload."""
+    selection = selection or SeasonSelection(
+        season, EXPLICIT_SCOPE if season else CAREER
+    )
     upcoming_matches = build_match_summaries(
         match_queryset_for_player(
             player,
@@ -145,10 +193,7 @@ def build_player_overview_payload(
             "recent": recent_matches,
         },
         "seasons": season_options_payload(seasons),
-        "meta": {
-            "season_id": str(season.id_uuid) if season else None,
-            "season_name": season.name if season else None,
-        },
+        "meta": selection.as_meta(),
     }
 
 
@@ -226,6 +271,7 @@ def build_player_stats_payload(
     *,
     player: Player,
     season: Season | None,
+    selection: SeasonSelection | None = None,
 ) -> dict[str, Any]:
     """Build the season-scoped player stats payload."""
     mvp_queryset = MatchMvp.objects.filter(
@@ -268,4 +314,7 @@ def build_player_stats_payload(
         **_shot_stats(shot_queryset),
         "mvps": len(mvp_match_ids),
         "mvp_matches": mvp_matches,
+        "meta": (
+            selection or SeasonSelection(season, EXPLICIT_SCOPE if season else CAREER)
+        ).as_meta(),
     }

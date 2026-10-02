@@ -71,7 +71,7 @@ def test_invalid_parameters_are_rejected(parameters: dict) -> None:
         calculate({1: "B"}, [], **parameters)
 
 
-def create_baseline(season: Season) -> AllocationSource:
+def create_baseline(season: Season, sport: str = "KORFBALL-VE-BK") -> AllocationSource:
     """Create an exact mapped poule with two independently seeded teams."""
     row = match_payload()
     row["HomeTeam"]["TeamName"] = "Example J1"
@@ -82,10 +82,10 @@ def create_baseline(season: Season) -> AllocationSource:
     assert pool is not None
     pool.name = "Ge4-001"
     pool.class_name = ""
-    pool.sport = "KORFBALL-VE-BK"
+    pool.sport = sport
     pool.save()
     for team in (match.home_team, match.away_team):
-        team.sport = "KORFBALL-VE-BK"
+        team.sport = sport
         team.save()
     match.starts_at = START + timedelta(days=1)
     match.home_score, match.away_score = 10, 5

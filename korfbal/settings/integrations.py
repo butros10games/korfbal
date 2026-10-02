@@ -78,6 +78,13 @@ SPORTLINK_IMPORT_ROSTERS = env("SPORTLINK_IMPORT_ROSTERS", "false").lower() == "
 
 # Enable after repairing existing publication links; new import scopes bind once.
 SPORTLINK_SPLIT_SEASONS = env("SPORTLINK_SPLIT_SEASONS", "false").lower() == "true"
+# Also route independent outdoor autumn/spring poules to their own playing
+# seasons (continuous outdoor competitions stay in the annual scope). Requires
+# SPORTLINK_SPLIT_SEASONS; existing scopes are converted with the reviewed
+# repair_competition_context command.
+SPORTLINK_SPLIT_OUTDOOR_PHASES = (
+    env("SPORTLINK_SPLIT_OUTDOOR_PHASES", "false").lower() == "true"
+)
 
 SPORTLINK_IMPORT_LINEUPS = env("SPORTLINK_IMPORT_LINEUPS", "false").lower() == "true"
 

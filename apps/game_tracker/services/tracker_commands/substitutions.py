@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
 
-from apps.game_tracker.domain.match_limits import MAX_SUBSTITUTIONS_PER_TEAM
 from apps.game_tracker.models import MatchEvent, MatchPart, PlayerChange, PlayerGroup
 from apps.game_tracker.services.event_reconciliation import (
     SubstitutionObservation,
@@ -20,6 +19,7 @@ from apps.game_tracker.services.player_groups import (
     get_reserve_group,
 )
 from apps.player.models import Player
+from apps.team.models import Team
 
 from .base import (
     NO_ACTIVE_MATCH_PART_MESSAGE,
@@ -28,6 +28,27 @@ from .base import (
     current_part,
     other_team,
 )
+
+
+def _check_substitution_limit(context: TrackerCommandContext, team: Team) -> None:
+    """Enforce the match's rule profile; B-category matches have no limit.
+
+    Raises:
+        TrackerCommandError: The team reached its substitution limit.
+
+    """
+    limit = context.match_data.match_rules().effective_substitution_limit()
+    if limit is None:
+        return
+    substitutions = PlayerChange.objects.filter(
+        match_data=context.match_data,
+        player_group__team=team,
+    ).count()
+    if substitutions >= limit:
+        raise TrackerCommandError(
+            "Max wissels bereikt.",
+            code="max_substitutions",
+        )
 
 
 def _part_for_substitution(context: TrackerCommandContext) -> MatchPart | None:
@@ -109,12 +130,7 @@ class SubstituteCommand:
     old_player_id: str
 
     def apply(self, context: TrackerCommandContext) -> None:
-        """Register the concrete substitution.
-
-        Raises:
-            TrackerCommandError: If match state or the substitution limit blocks it.
-
-        """
+        """Register the concrete substitution within the match's rule profile."""
         match_part = _part_for_substitution(context)
         player_in, player_out, active_group = _substitution_players_and_group(
             context=context,
@@ -168,15 +184,7 @@ class SubstituteCommand:
             rebuild_current_lineup(context.match_data)
             return
 
-        substitutions = PlayerChange.objects.filter(
-            match_data=context.match_data,
-            player_group__team=context.team,
-        ).count()
-        if substitutions >= MAX_SUBSTITUTIONS_PER_TEAM:
-            raise TrackerCommandError(
-                "Max wissels bereikt.",
-                code="max_substitutions",
-            )
+        _check_substitution_limit(context, context.team)
 
         change = PlayerChange.objects.create(
             player_in=player_in,
@@ -202,12 +210,7 @@ class OpponentSubstitutionCommand:
     """Register an opponent substitution without player identities."""
 
     def apply(self, context: TrackerCommandContext) -> None:
-        """Register the anonymous opponent substitution.
-
-        Raises:
-            TrackerCommandError: If match state or the substitution limit blocks it.
-
-        """
+        """Register the anonymous opponent substitution within the rule profile."""
         match_part = _part_for_substitution(context)
         opponent = other_team(context.match, context.team)
         reserve_group = get_reserve_group(
@@ -238,15 +241,7 @@ class OpponentSubstitutionCommand:
             )
             return
 
-        substitutions = PlayerChange.objects.filter(
-            match_data=context.match_data,
-            player_group__team=opponent,
-        ).count()
-        if substitutions >= MAX_SUBSTITUTIONS_PER_TEAM:
-            raise TrackerCommandError(
-                "Max wissels bereikt.",
-                code="max_substitutions",
-            )
+        _check_substitution_limit(context, opponent)
 
         change = PlayerChange.objects.create(
             player_in=None,

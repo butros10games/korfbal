@@ -15,6 +15,8 @@ VERSION = "knkv-classification-v1"
 UNKNOWN = "unknown"
 MODERN_YOUTH_YEAR = 2025
 REDUCED_CLASSES_YEAR = 2026
+# A season whose korfbal year cannot be determined selects no edition rules.
+UNRESOLVED_EDITION = "unresolved_edition"
 COLOURS = {
     "rood": "red",
     "oranje": "orange",
@@ -80,8 +82,12 @@ class Classification:
     playing_format: str = UNKNOWN
 
 
-def designation(name: str, season_start: int) -> dict[str, object]:
-    """Read only the terminal designation; J numbers do not encode ages."""
+def designation(name: str, season_start: int | None) -> dict[str, object]:
+    """Read only the terminal designation; J numbers do not encode ages.
+
+    ``season_start`` is the edition (start year of the korfbal year), not the
+    calendar year of a playing season: spring 2025 belongs to 2024-2025.
+    """
     match = re.search(
         r"(?:^|\s)(U(?:19|17|15)|J|[A-F])\s*-?\s*(\d+)$", name, re.IGNORECASE
     )
@@ -93,6 +99,13 @@ def designation(name: str, season_start: int) -> dict[str, object]:
             "average_age": None,
         }
     prefix, number = match.group(1).upper(), int(match.group(2))
+    if season_start is None:
+        return {
+            "kind": "unknown",
+            "number": number,
+            "age_group": None,
+            "average_age": None,
+        }
     modern = season_start >= MODERN_YOUTH_YEAR
     kind = (
         "j"
@@ -112,9 +125,15 @@ def designation(name: str, season_start: int) -> dict[str, object]:
 
 
 def classify(
-    label: str, sport: str, season_start: int, override: dict[str, str] | None = None
+    label: str,
+    sport: str,
+    season_start: int | None,
+    override: dict[str, str] | None = None,
 ) -> tuple[Classification, list[str]]:
     """Normalize an entire class label; never consume a pool code as a class.
+
+    ``season_start`` is the edition year that selects season-scoped rules;
+    None (an unresolved edition) applies no year-specific rule at all.
 
     Raises:
         ValueError: A reviewed override contains unsupported fields or values.
@@ -172,7 +191,7 @@ def hierarchy(value: Classification) -> tuple[str, ...]:
     return ()
 
 
-def validate(value: Classification, year: int) -> list[str]:
+def validate(value: Classification, year: int | None) -> list[str]:
     """Report missing context and season conflicts instead of guessing it."""
     issues = []
     for field in (
@@ -192,7 +211,9 @@ def validate(value: Classification, year: int) -> list[str]:
         and value.phase not in {UNKNOWN, "indoor", "full_season"}
     ) or (value.discipline == "outdoor" and value.phase == "indoor"):
         issues.append("conflicting_phase")
-    if (
+    if year is None:
+        issues.append(UNRESOLVED_EDITION)
+    elif (
         year < MODERN_YOUTH_YEAR
         and (value.age_group.startswith("U") or value.code == "youth_colour")
     ) or (year >= MODERN_YOUTH_YEAR and value.age_group in set("ABCDEF")):
@@ -207,15 +228,16 @@ def validate(value: Classification, year: int) -> list[str]:
     ladder = hierarchy(value)
     if ladder and value.code not in {*ladder, UNKNOWN}:
         issues.append("class_not_in_hierarchy")
+    reduced = year is not None and year >= REDUCED_CLASSES_YEAR
     if (
-        year >= REDUCED_CLASSES_YEAR
+        reduced
         and value.gender == "mixed"
         and value.age_group in {"U19", "U17", "U15"}
         and value.code == "class_2"
     ):
         issues.append("class_removed_for_season")
     if (
-        year >= REDUCED_CLASSES_YEAR
+        reduced
         and value.gender == "mixed"
         and value.team_kind == "reserve"
         and value.code == "class_4"

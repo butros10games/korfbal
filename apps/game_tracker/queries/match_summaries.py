@@ -57,6 +57,8 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
             "start_time": localtime(match.start_time).isoformat(),
             "status": entry.status,
             "competition": match.season.name,
+            # Structured context: clients never infer the discipline from names.
+            "discipline": match.season.discipline or None,
             "location": home_team.club.name,
             "match_url": match.get_absolute_url(),
             "score": {

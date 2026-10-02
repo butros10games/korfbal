@@ -131,6 +131,11 @@ def test_player_stats_returns_counts_for_season(client: Client) -> None:
                 },
             ],
         },
+        "meta": {
+            "season_id": str(season.id_uuid),
+            "season_name": season.name,
+            "season_scope": "default",
+        },
     }
 
     # Filter explicitly to the previous season
@@ -156,6 +161,11 @@ def test_player_stats_returns_counts_for_season(client: Client) -> None:
                 },
             ],
             "against": [],
+        },
+        "meta": {
+            "season_id": str(previous_season.id_uuid),
+            "season_name": previous_season.name,
+            "season_scope": "explicit",
         },
     }
 

@@ -22,7 +22,9 @@ from apps.game_tracker.models.player_match_minutes import (
     PlayerMatchMinutes,
 )
 from apps.player.models import Player, PlayerClubMembership
+from apps.schedule.domain.competition_context import AUTUMN, FULL_SEASON, SPRING
 from apps.schedule.models import Match, Season
+from apps.schedule.tests.season_builders import playing_season
 from apps.team.models import Team, TeamData
 
 
@@ -273,9 +275,13 @@ def test_club_overview_folds_full_year_outdoor_season_into_both_halves(
         start_date=date(2022, 10, 1),
         end_date=date(2023, 6, 30),
     )
-    autumn = _make_season("Voor seizoen 2022", date(2022, 7, 1), date(2022, 12, 31))
-    spring = _make_season("Na seizoen 2023", date(2023, 1, 1), date(2023, 6, 30))
-    whole = _make_season("Veld seizoen 2022-2023", date(2022, 7, 1), date(2023, 6, 30))
+    # The indoor season's kind is its stored context, not its name.
+    Season.objects.filter(pk=graph.season.pk).update(
+        edition=2022, discipline="indoor", phase="indoor"
+    )
+    autumn = playing_season(AUTUMN, 2022)
+    spring = playing_season(SPRING, 2022)
+    whole = playing_season(FULL_SEASON, 2022)
     halves = Team.objects.create(name="Halves", club=graph.club)
     full_year = Team.objects.create(name="Full year", club=graph.club)
     indoor = Team.objects.create(name="Indoor", club=graph.club)

@@ -25,8 +25,13 @@ from apps.competition.models import (
     HistoricalDiscovery,
     HistoricalResource,
     Match,
+    Pool,
     SeasonBinding,
     Team,
+)
+from apps.competition.services.competition_periods import (
+    decide_pool_period,
+    resolve_pool_periods,
 )
 from apps.competition.services.history import (
     ARCHIVE_PREFIX,
@@ -38,7 +43,16 @@ from apps.competition.services.history import (
 from apps.competition.services.importer import Importer
 from apps.competition.services.lineup_plan import assign_cohorts, plan_cohort
 from apps.competition.services.seasons import INDOOR, OUTDOOR
+from apps.schedule.domain.competition_context import (
+    AUTUMN,
+    FULL_SEASON,
+    INDOOR_PHASE,
+    SPRING,
+    edition_bounds,
+    edition_for_day,
+)
 from apps.schedule.models import Season
+from apps.schedule.services.season_context import edition_season
 
 
 # Catalogue teams probed per stratum before the rest of the stratum is queued.
@@ -63,6 +77,12 @@ class EditionSeasons:
     autumn: Season
     indoor: Season
     spring: Season
+
+    def for_phase(self, phase: str) -> Season:
+        """Return the playing season of a decided outdoor period."""
+        if phase == FULL_SEASON:
+            return full_year_season(self.edition)
+        return self.autumn if phase == AUTUMN else self.spring
 
     def target(self, sport: str, day: date) -> Season | None:
         """Route a match to its playing season; other disciplines are unsupported."""
@@ -94,8 +114,11 @@ def full_year_season(edition: int) -> Season:
         The season spanning the edition's autumn and spring halves.
 
     """
-    season = _named_season(
-        full_year_name(edition), (date(edition, 7, 1), date(edition + 1, 6, 30))
+    season = edition_season(
+        edition,
+        FULL_SEASON,
+        full_year_name(edition),
+        (date(edition, 7, 1), date(edition + 1, 6, 30)),
     )
     _bind(season, OUTDOOR)
     return season
@@ -103,27 +126,7 @@ def full_year_season(edition: int) -> Season:
 
 def current_edition() -> int:
     """Editions start in July; the running edition is not historical."""
-    today = timezone.localdate()
-    return today.year if today.month >= AUTUMN_FIRST_MONTH else today.year - 1
-
-
-def _named_season(name: str, defaults: tuple[date, date] | None) -> Season:
-    """Reuse an existing season by name, creating it only when allowed.
-
-    Raises:
-        ValueError: The name is ambiguous or the season does not exist.
-
-    """
-    matches = list(Season.objects.filter(name__iexact=name))
-    if len(matches) > 1:
-        raise ValueError(f"More than one season is named {name!r}")
-    if matches:
-        return matches[0]
-    if defaults is None:
-        raise ValueError(f"Season {name!r} does not exist; seed the edition first")
-    return Season.objects.create(
-        name=name, start_date=defaults[0], end_date=defaults[1]
-    )
+    return edition_for_day(timezone.localdate())
 
 
 def _bind(scope: Season, sport: str) -> None:
@@ -153,12 +156,20 @@ def prepare_edition(edition: int) -> EditionSeasons:
     autumn_name, indoor_name, spring_name = season_names(edition)
     seasons = EditionSeasons(
         edition,
-        autumn=_named_season(autumn_name, (date(edition, 7, 1), date(edition, 12, 31))),
-        indoor=_named_season(
-            indoor_name, (date(edition, 10, 1), date(edition + 1, 6, 30))
+        autumn=edition_season(
+            edition, AUTUMN, autumn_name, (date(edition, 7, 1), date(edition, 12, 31))
         ),
-        spring=_named_season(
-            spring_name, (date(edition + 1, 1, 1), date(edition + 1, 6, 30))
+        indoor=edition_season(
+            edition,
+            INDOOR_PHASE,
+            indoor_name,
+            (date(edition, 10, 1), date(edition + 1, 6, 30)),
+        ),
+        spring=edition_season(
+            edition,
+            SPRING,
+            spring_name,
+            (date(edition + 1, 1, 1), date(edition + 1, 6, 30)),
         ),
     )
     # The indoor season anchors discovery checkpoints; its start year is the
@@ -177,15 +188,15 @@ def edition_seasons(resource: HistoricalResource) -> EditionSeasons:
     autumn, indoor, spring = season_names(edition)
     return EditionSeasons(
         edition,
-        autumn=_named_season(autumn, None),
-        indoor=_named_season(indoor, None),
-        spring=_named_season(spring, None),
+        autumn=edition_season(edition, AUTUMN, autumn, None),
+        indoor=edition_season(edition, INDOOR_PHASE, indoor, None),
+        spring=edition_season(edition, SPRING, spring, None),
     )
 
 
 def edition_scopes(edition: int) -> list[Season]:
     """Return the existing playing seasons of one edition."""
-    query = Q()
+    query = Q(edition=edition, phase__in=(AUTUMN, INDOOR_PHASE, SPRING, FULL_SEASON))
     for name in (*season_names(edition), full_year_name(edition)):
         query |= Q(name__iexact=name)
     return list(Season.objects.filter(query))
@@ -604,9 +615,14 @@ def final_score(row: dict[str, Any]) -> tuple[int, int] | None:
 
 
 def route(
-    seasons: EditionSeasons, row: dict[str, Any]
+    seasons: EditionSeasons, row: dict[str, Any], phase: str | None = None
 ) -> tuple[Season | None, date | None, str]:
-    """Choose the playing season for one result row, or the reason to skip it."""
+    """Choose the playing season for one result row, or the reason to skip it.
+
+    ``phase`` is the row's poule period. A decided outdoor period routes every
+    fixture of the poule, including one rescheduled across the winter break;
+    only rows without a decided period fall back to their own date.
+    """
     stamp = parse_datetime(str(row.get("MatchDateTime") or ""))
     if stamp is None or timezone.is_naive(stamp):
         return None, None, "invalid_timestamp"
@@ -616,12 +632,66 @@ def route(
     sports = {row[side].get("SportId") for side in ("HomeTeam", "AwayTeam")}
     if len(sports) != 1:
         return None, day, "sport_mismatch"
-    target = seasons.target(sports.pop() or "", day)
+    target, reason = _playing_season(seasons, sports.pop() or "", day, phase)
+    return target, day, reason
+
+
+def _playing_season(
+    seasons: EditionSeasons, sport: str, day: date, phase: str | None
+) -> tuple[Season | None, str]:
+    """Return a routed fixture's playing season, or the reason it has none."""
+    if sport == OUTDOOR and phase in {AUTUMN, SPRING, FULL_SEASON}:
+        first, last = edition_bounds(seasons.edition)
+        if not first <= day <= last:
+            return None, "outside_season_dates"
+        return seasons.for_phase(phase), ""
+    target = seasons.target(sport, day)
     if target is None:
-        return None, day, "unsupported_sport"
+        return None, "unsupported_sport"
     if not target.start_date <= day <= target.end_date:
-        return None, day, "outside_season_dates"
-    return target, day, ""
+        return None, "outside_season_dates"
+    return target, ""
+
+
+def pool_phases(
+    seasons: EditionSeasons,
+    rows: Iterable[dict[str, Any]],
+    explicit: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Decide each outdoor poule's period from all of its rows at once.
+
+    ``explicit`` holds provider evidence (a site's full-year flag) per poule.
+
+    Returns:
+        Poule ID to decided phase; undecided poules are absent.
+
+    """
+    days: dict[str, list[date]] = defaultdict(list)
+    labels: dict[str, str] = {}
+    for row in rows:
+        pool = row.get("Pool") or {}
+        if not pool.get("PoolId") or row["HomeTeam"].get("SportId") != OUTDOOR:
+            continue
+        stamp = parse_datetime(str(row.get("MatchDateTime") or ""))
+        if stamp is None or timezone.is_naive(stamp):
+            continue
+        key = str(pool["PoolId"])
+        days[key].append(timezone.localdate(stamp))
+        labels.setdefault(key, str(pool.get("ClassName") or ""))
+    phases = {}
+    for key, pool_days in days.items():
+        if explicit and key in explicit:
+            phases[key] = explicit[key]
+            continue
+        decision = decide_pool_period(
+            sport=OUTDOOR,
+            class_name=labels[key],
+            edition=seasons.edition,
+            days=pool_days,
+        )
+        if decision.phase:
+            phases[key] = decision.phase
+    return phases
 
 
 def import_rows(
@@ -642,15 +712,28 @@ def import_rows(
     groups: dict[Any, tuple[Season, list[dict]]] = {}
     skipped: list[tuple[dict, str]] = []
     latest: tuple[date, Any] | None = None
+    pool = resource.source_id if resource.kind == "edition_pool" else ""
+    # A poule response holds the whole competition; club rows can hold only some
+    # of a poule's fixtures, so they keep date routing.
+    phases = (
+        pool_phases(
+            seasons,
+            [
+                {**row, "Pool": {**(row.get("Pool") or {}), "PoolId": pool}}
+                for row in unique.values()
+            ],
+        )
+        if pool
+        else {}
+    )
     for row in unique.values():
-        target, day, reason = route(seasons, row)
+        target, day, reason = route(seasons, row, phases.get(pool))
         if target is None or day is None:
             skipped.append((row, reason))
             continue
         groups.setdefault(target.pk, (target, []))[1].append(row)
         if latest is None or day > latest[0]:
             latest = (day, target.pk)
-    pool = resource.source_id if resource.kind == "edition_pool" else ""
     if pool and seasons.autumn.pk in groups and seasons.spring.pk in groups:
         # One competition across both halves keeps its results and standings
         # together in the full-year season.
@@ -662,7 +745,11 @@ def import_rows(
     imported: dict[Any, dict[str, Match]] = {}
     now = timezone.now()
     for key, (target, group) in groups.items():
-        importer = Importer(target, now, discover=False)
+        # Fixtures follow their poule: a rescheduled one may fall outside the
+        # playing season's own dates but never outside its edition.
+        importer = Importer(
+            target, now, discover=False, window=edition_bounds(seasons.edition)
+        )
         if pool:
             # Final standings belong to the season of the poule's last match.
             final = latest is not None and latest[1] == key
@@ -680,6 +767,12 @@ def import_rows(
         else:
             importer.apply("club_results", "", {"MatchResult": group})
         supersede_archive(target, [str(row["PublicMatchId"]) for row in group])
+        if pool:
+            resolve_pool_periods(
+                Pool.objects.filter(season=target, external_id=pool).values_list(
+                    "pk", flat=True
+                )
+            )
         imported[key] = {
             match.external_id: match
             for match in Match.objects.filter(

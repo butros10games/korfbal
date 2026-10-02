@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 
@@ -151,11 +151,21 @@ class Importer:
     """Import one response atomically; repeated discovery is idempotent."""
 
     def __init__(
-        self, season: Season, observed_at: datetime, *, discover: bool = True
+        self,
+        season: Season,
+        observed_at: datetime,
+        *,
+        discover: bool = True,
+        window: tuple[date, date] | None = None,
     ) -> None:
-        """Bind each import to an explicit season and observation time."""
+        """Bind each import to an explicit season and observation time.
+
+        ``window`` widens the accepted fixture dates beyond the season's own,
+        for poules whose period was decided from all of their fixtures.
+        """
         self.discover = discover
         self.season = season
+        self.window = window or (season.start_date, season.end_date)
         self.observed_at = observed_at
         self.observed_match_ids: set[int] = set()
         self._detail_match_ids: set[int] = set()
@@ -216,7 +226,13 @@ class Importer:
         """Preserve source team identity, sport and season."""
         source_id = str(data["PublicTeamId"])
         if settings.SPORTLINK_SPLIT_SEASONS and not self._seasons_configured:
-            configure_seasons(self.season, self.season.start_date.year)
+            configure_seasons(
+                self.season,
+                self.season.start_date.year,
+                split_outdoor=getattr(
+                    settings, "SPORTLINK_SPLIT_OUTDOOR_PHASES", False
+                ),
+            )
             self._seasons_configured = True
         if source_id in self._teams:
             return self._teams[source_id]
@@ -284,11 +300,7 @@ class Importer:
         starts_at = parse_datetime(data["MatchDateTime"])
         if starts_at is None or timezone.is_naive(starts_at):
             raise ValueError("MatchDateTime must contain a timezone")
-        if (
-            not self.season.start_date
-            <= timezone.localdate(starts_at)
-            <= self.season.end_date
-        ):
+        if not self.window[0] <= timezone.localdate(starts_at) <= self.window[1]:
             return
         if _self_fixture(data) or self._repeated_match(data, starts_at, result=result):
             return

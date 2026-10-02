@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 import time
@@ -23,12 +24,15 @@ from apps.competition.models import (
     SyncLease,
     Team,
     TeamGroup,
+    TeamParticipation,
 )
+from apps.competition.services.competition_periods import resolve_pool_periods
 from apps.competition.services.identities import (
     merge_unlinked_joint_groups,
     unnamed_pool_label,
 )
 from apps.competition.services.logos import publish_logo
+from apps.competition.services.match_rules import RULE_RELATIONS, source_rules
 from apps.competition.services.reconciliation import (
     LOCAL_FIELDS,
     SOURCE_MODELS,
@@ -44,6 +48,10 @@ from apps.competition.services.schedule_notifications import (
 )
 from apps.competition.services.seasons import SeasonResolver
 from apps.game_tracker.models import MatchData, MatchPart, Shot
+from apps.game_tracker.services.match_rule_profiles import (
+    UNCHANGED,
+    apply_rule_profile,
+)
 from apps.schedule.models import (
     Match as AppMatch,
     Season,
@@ -165,6 +173,9 @@ class Publisher:
         self.last_match: int | None = None
         self.counts: Counter[str] = Counter()
         self.blocked: list[dict[str, Any]] = []
+        # (source team, period) -> native season of fixtures routed by period.
+        self.participating: dict[tuple[int, str], UUID] = {}
+        self.participation_groups: set[int] = set()
 
     def conflict(self, kind: str, source_id: int, reason: str) -> None:
         """Retain unresolved identities for explicit review instead of guessing."""
@@ -334,6 +345,17 @@ class Publisher:
         if not rows:
             return
         resolver = SeasonResolver()
+        self.periods(
+            row.pk
+            for row in rows
+            if not row.phase or resolver.splits(row.season_id, row.sport)
+        )
+        rows = list(
+            Pool.objects
+            .filter(pk__in=[row.pk for row in rows])
+            .select_related("local_pool")
+            .order_by("pk")
+        )
         members = pool_memberships([row.pk for row in rows])
         claimed = set(
             Pool.objects.exclude(local_pool=None).values_list(
@@ -348,9 +370,8 @@ class Publisher:
         )
         additions = []
         for row in rows:
-            season_id = resolver.resolve(row.season_id, row.sport)
+            season_id = self.pool_season(row, resolver)
             if season_id is None:
-                self.conflict("pool", row.pk, "season_discipline_unresolved")
                 continue
             local = row.local_pool
             if local and local.season_id != season_id:
@@ -379,6 +400,17 @@ class Publisher:
                     additions.append(through(seasonpool_id=local.pk, team_id=team_id))
                     existing_members.add(pair)
         through.objects.bulk_create(additions, ignore_conflicts=True, batch_size=1000)
+
+    def pool_season(self, row: Pool, resolver: SeasonResolver) -> UUID | None:
+        """Return a poule's native season, or None after recording why not."""
+        if not row.phase and resolver.splits(row.season_id, row.sport):
+            # Its competition period decides the native season; wait for it.
+            self.counts["pools_period_pending"] += 1
+            return None
+        season_id = resolver.resolve(row.season_id, row.sport, row.phase)
+        if season_id is None:
+            self.conflict("pool", row.pk, "season_discipline_unresolved")
+        return season_id
 
     def claim_pool(
         self, row: Pool, season_id: UUID, name: str, claimed: set[UUID]
@@ -473,26 +505,112 @@ class Publisher:
         self.counts["matches_superseded"] += 1
         return True
 
+    def periods(self, pool_ids: Iterable[int]) -> None:
+        """Record competition periods of the poules this pass publishes."""
+        for key, value in resolve_pool_periods(pool_ids).items():
+            if value:
+                self.counts[f"pool_periods_{key}"] += value
+
     def match_seasons(self, rows: list[Match]) -> list[Match]:
-        """Resolve discipline before matching native fixture identities."""
+        """Resolve discipline and competition period before matching identities.
+
+        A fixture follows its poule's period, so a rescheduled fixture stays in
+        its competition instead of moving with its calendar date.
+        """
         resolver = SeasonResolver()
-        source_sports = dict(Team.objects.values_list("pk", "sport"))
+        source_sports = dict(
+            Team.objects.filter(
+                pk__in={
+                    team
+                    for row in rows
+                    for team in (row.home_team_id, row.away_team_id)
+                }
+            ).values_list("pk", "sport")
+        )
+        # Published poules are rechecked too: changed evidence is recorded for
+        # review, never applied (see resolve_pool_periods).
+        self.periods(row.pool_id for row in rows if row.pool_id is not None)
+        pool_rows = Pool.objects.filter(
+            pk__in={row.pool_id for row in rows if row.pool_id is not None}
+        ).values_list("pk", "phase", "phase_evidence", "local_pool__season_id")
+        phases = {pk: phase for pk, phase, _, _ in pool_rows}
+        # A published poule stays in one native season: a new fixture never
+        # publishes elsewhere while the poule waits for a reviewed repair.
+        pool_seasons = {pk: season for pk, _, _, season in pool_rows if season}
+        # New evidence contradicts a published period: new fixtures wait for the
+        # reviewed correction instead of joining a period they may not belong to.
+        under_review = {pk for pk, _, evidence, _ in pool_rows if "review" in evidence}
         eligible = []
         for row in rows:
             home_sport, away_sport = (
                 source_sports[row.home_team_id],
                 source_sports[row.away_team_id],
             )
-            season_id = resolver.resolve(row.season_id, home_sport)
+            phase = phases.get(row.pool_id, "") if row.pool_id is not None else ""
+            if row.local_match_id is None and row.pool_id in under_review:
+                self.counts["matches_period_review"] += 1
+                continue
+            if (
+                row.pool_id is not None
+                and not phase
+                and resolver.splits(row.season_id, home_sport)
+            ):
+                self.counts["matches_period_pending"] += 1
+                continue
+            season_id = resolver.resolve(row.season_id, home_sport, phase)
             if season_id is None or home_sport != away_sport:
                 self.conflict("match", row.pk, "season_discipline_unresolved")
                 continue
             if row.local_match_id and row.local_match.season_id != season_id:
                 self.conflict("match", row.pk, "season_repair_required")
                 continue
+            if pool_seasons.get(row.pool_id, season_id) != season_id:
+                self.conflict("match", row.pk, "season_repair_required")
+                continue
+            if phase and season_id != resolver.resolve(row.season_id, home_sport):
+                for team_id in (row.home_team_id, row.away_team_id):
+                    self.participating[team_id, phase] = season_id
             row.season_id = season_id
             eligible.append(row)
         return eligible
+
+    def participations(self) -> None:
+        """Give teams of period-routed fixtures a roster in that period's season.
+
+        Existing participations are kept: a team's roster in an earlier period
+        is history, and its native TeamData identity never changes.
+        """
+        if not self.participating:
+            return
+        groups = dict(
+            Team.objects.filter(
+                pk__in={team for team, _ in self.participating}
+            ).values_list("pk", "group__local_team_id")
+        )
+        existing = set(
+            TeamParticipation.objects.filter(
+                team_id__in={team for team, _ in self.participating}
+            ).values_list("team_id", "phase")
+        )
+        created = []
+        for (team_id, phase), season_id in sorted(self.participating.items()):
+            local_team = groups.get(team_id)
+            if local_team is None or (team_id, phase) in existing:
+                continue
+            data, made = TeamData.objects.get_or_create(
+                team_id=local_team, season_id=season_id
+            )
+            self.counts["team_seasons_created"] += int(made)
+            created.append(
+                TeamParticipation(team_id=team_id, phase=phase, team_data=data)
+            )
+        TeamParticipation.objects.bulk_create(created, ignore_conflicts=True)
+        self.counts["participations_created"] += len(created)
+        self.participation_groups.update(
+            Team.objects.filter(
+                pk__in={row.team_id for row in created}, group__isnull=False
+            ).values_list("group_id", flat=True)
+        )
 
     def matches(self, bounds: MatchBounds | None = None) -> None:
         """Publish fixtures and results while keeping tracked history authoritative.
@@ -507,6 +625,7 @@ class Publisher:
         self.last_match = rows[-1].pk
         deadline = bounds.deadline
         rows = self.match_seasons(rows)
+        self.participations()
         team_ids = {
             team_id for row in rows for team_id in (row.home_team_id, row.away_team_id)
         }
@@ -567,6 +686,10 @@ class Publisher:
             tracker = MatchData.objects.select_for_update(no_key=True).get(
                 match_link_id=row.local_match_id
             )
+            # Rules first: an imported final result is not tracking history.
+            outcome = apply_rule_profile(tracker, source_rules(row))
+            if outcome != UNCHANGED:
+                self.counts[f"rules_{outcome}"] += 1
             accepted = self.result(row, tracker, pools.get(row.pool_id))
             schedule_fields = self.schedule(row, accepted=accepted)
             # Published as of the change read above: a concurrent import raises
@@ -711,7 +834,9 @@ def pending_matches(seasons: set[UUID] | None = None) -> QuerySet[Match]:
 
 def pending_rows(bounds: MatchBounds) -> list[Match]:
     """Select one bounded pass of pending fixtures, oldest first."""
-    query = pending_matches(bounds.seasons).select_related("local_match")
+    query = pending_matches(bounds.seasons).select_related(
+        "local_match", "pool", *RULE_RELATIONS
+    )
     if bounds.after is not None:
         query = query.filter(pk__gt=bounds.after)
     query = query.order_by("pk")
@@ -778,7 +903,7 @@ def publish_catalogue(
     publisher.teams()
     publisher.pools()
     publisher.matches(bounds)
-    publish_pending_rosters()
+    publish_pending_rosters(publisher.participation_groups)
     return {
         "counts": dict(publisher.counts),
         "blocked": publisher.blocked,

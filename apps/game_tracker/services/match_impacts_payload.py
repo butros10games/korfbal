@@ -8,7 +8,10 @@ from typing import Any
 
 from django.core.cache import cache
 
-from apps.game_tracker.domain.win_probability import WPA_MODEL_VERSION
+from apps.game_tracker.domain.win_probability import (
+    WPA_MODEL_VERSION,
+    win_probability_context,
+)
 from apps.game_tracker.models import MatchData, PlayerMatchImpact
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
@@ -19,6 +22,15 @@ from apps.schedule.models import Match
 
 
 logger = logging.getLogger(__name__)
+
+
+def _wpa_context(match_data: MatchData) -> dict[str, object]:
+    rules = match_data.match_rules()
+    return win_probability_context(
+        duration_resolved=rules.duration_resolved,
+        regulation_minutes=rules.regulation_minutes,
+        players_per_team=rules.players_per_team,
+    )
 
 
 def _self_heal_latest_impacts_for_finished_match(*, match_data: MatchData) -> None:
@@ -104,6 +116,7 @@ def build_match_impacts_payload(
         "score_unit": "expected_goal_value_added",
         "wpa_unit": "win_expectancy_added",
         "win_probability_model": WPA_MODEL_VERSION,
+        "win_probability_context": _wpa_context(match_data),
         "computed_at": computed_at,
         "impacts": [
             {

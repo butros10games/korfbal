@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.player.models.player import Player
-from apps.schedule.queries.seasons import current_season
 from apps.team.models import TeamData
 from apps.team.models.team import Team
 
@@ -29,61 +29,56 @@ def followed_teams_for_player(player: Player) -> QuerySet[Team]:
     )
 
 
+def running_rosters() -> QuerySet[TeamData]:
+    """Return team seasons running today, for filtering by the player's role.
+
+    Indoor and outdoor competitions overlap, so a player can play in several
+    seasons at once. This is resolved from the player's rosters, never from a
+    catalogue-wide "current season" chosen by unrelated fixtures.
+    """
+    today = timezone.localdate()
+    return TeamData.objects.filter(
+        season__start_date__lte=today, season__end_date__gte=today
+    )
+
+
 def connected_team_ids(player: Player) -> list[UUID]:
-    """Return followed teams plus current-season teams the player plays in or coaches.
+    """Return followed teams plus running teams the player plays in or coaches.
 
     Players are often placed on a roster without following that team, so
     "followed" views must also include their own teams.
     """
     team_ids = set(player.team_follow.values_list("id_uuid", flat=True))
-    season = current_season()
-    if season is not None:
-        team_ids.update(
-            TeamData.objects
-            .filter(season=season)
-            .filter(Q(players=player) | Q(coach=player))
-            .values_list("team_id", flat=True)
-        )
+    team_ids.update(
+        running_rosters()
+        .filter(Q(players=player) | Q(coach=player))
+        .values_list("team_id", flat=True)
+    )
     return sorted(team_ids)
 
 
 def grouped_teams_for_player(player: Player) -> PlayerTeamCollections:
-    """Return current-season playing/coaching/following team querysets."""
-    season = current_season()
-    playing_qs = Team.objects.none()
-    coaching_qs = Team.objects.none()
-
-    if season is not None:
-        playing_ids = (
-            TeamData.objects
-            .filter(season=season)
-            .filter(players=player)
-            .values_list("team_id", flat=True)
-            .distinct()
-        )
-        coaching_ids = (
-            TeamData.objects
-            .filter(season=season)
-            .filter(coach=player)
-            .values_list("team_id", flat=True)
-            .distinct()
-        )
-
-        playing_qs = (
-            Team.objects
-            .filter(id_uuid__in=playing_ids)
-            .select_related("club")
-            .order_by("club__name", "name")
-        )
-        coaching_qs = (
-            Team.objects
-            .filter(id_uuid__in=coaching_ids)
-            .select_related("club")
-            .order_by("club__name", "name")
-        )
-
+    """Return running playing/coaching teams and followed teams separately."""
+    playing_ids = (
+        running_rosters()
+        .filter(players=player)
+        .values_list("team_id", flat=True)
+        .distinct()
+    )
+    coaching_ids = (
+        running_rosters()
+        .filter(coach=player)
+        .values_list("team_id", flat=True)
+        .distinct()
+    )
     return PlayerTeamCollections(
-        playing=playing_qs,
-        coaching=coaching_qs,
+        playing=Team.objects
+        .filter(id_uuid__in=playing_ids)
+        .select_related("club")
+        .order_by("club__name", "name"),
+        coaching=Team.objects
+        .filter(id_uuid__in=coaching_ids)
+        .select_related("club")
+        .order_by("club__name", "name"),
         following=followed_teams_for_player(player),
     )

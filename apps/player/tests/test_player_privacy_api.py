@@ -100,6 +100,11 @@ def test_other_player_stats_club_allows_connected_and_blocks_unconnected(
         "mvps": 0,
         "mvp_matches": [],
         "goal_types": {"for": [], "against": []},
+        "meta": {
+            "season_id": str(season.id_uuid),
+            "season_name": season.name,
+            "season_scope": "default",
+        },
     }
 
     other_user = get_user_model().objects.create_user(

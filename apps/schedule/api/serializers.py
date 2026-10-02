@@ -24,6 +24,10 @@ from apps.game_tracker.services.event_editor import (
     UpdateSubstitutionEvent,
     UpdateTimeoutEvent,
 )
+from apps.schedule.domain.competition_context import (
+    SOURCE_MANUAL,
+    validate_context,
+)
 from apps.schedule.models import Match, Season, SeasonPool
 from apps.team.api.serializers import TeamSerializer
 from apps.team.models.team import Team
@@ -39,6 +43,7 @@ class MatchSerializer(serializers.ModelSerializer):
     away_team = TeamSerializer(read_only=True)
     location = serializers.SerializerMethodField()
     competition = serializers.SerializerMethodField()
+    discipline = serializers.SerializerMethodField()
     broadcast_url = serializers.SerializerMethodField()
     season_id = serializers.UUIDField(read_only=True)
     pool_id = serializers.UUIDField(read_only=True, allow_null=True)
@@ -62,6 +67,7 @@ class MatchSerializer(serializers.ModelSerializer):
             "away_team",
             "location",
             "competition",
+            "discipline",
             "broadcast_url",
         ]
         read_only_fields: ClassVar[list[str]] = fields
@@ -83,6 +89,10 @@ class MatchSerializer(serializers.ModelSerializer):
 
         """
         return obj.season.name
+
+    def get_discipline(self, obj: Match) -> str | None:
+        """Return the season's stored discipline; never parsed from its name."""
+        return obj.season.discipline or None
 
     def get_broadcast_url(self, obj: Match) -> str | None:
         """Expose a placeholder for future livestream links.
@@ -195,12 +205,17 @@ class SeasonSerializer(serializers.ModelSerializer):
             "is_current",
             "match_count",
             "pool_count",
+            "edition",
+            "discipline",
+            "phase",
+            "context_source",
         ]
         read_only_fields: ClassVar[list[str]] = [
             "id_uuid",
             "is_current",
             "match_count",
             "pool_count",
+            "context_source",
         ]
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
@@ -221,6 +236,25 @@ class SeasonSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "end_date": "End date must be on or after start date."
             })
+        edition = attrs.get("edition", getattr(instance, "edition", None))
+        if isinstance(start_date, date) and isinstance(end_date, date):
+            issues = validate_context(
+                start=start_date,
+                end=end_date,
+                edition=edition if isinstance(edition, int) else None,
+                discipline=str(
+                    attrs.get("discipline", getattr(instance, "discipline", "")) or ""
+                ),
+                phase=str(attrs.get("phase", getattr(instance, "phase", "")) or ""),
+            )
+            if issues:
+                raise serializers.ValidationError({"context": issues})
+        if any(
+            field in attrs and attrs[field] != getattr(instance, field, None)
+            for field in ("edition", "discipline", "phase")
+        ):
+            # An explicit editor decision; a rename alone never changes context.
+            attrs["context_source"] = SOURCE_MANUAL
         return attrs
 
     def get_is_current(self, obj: Season) -> bool:

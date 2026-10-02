@@ -7,6 +7,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Value
 from django.utils import timezone
 
 
@@ -182,7 +183,13 @@ class TeamGroup(models.Model):
 
 
 class SeasonBinding(models.Model):
-    """Map an explicitly configured provider edition to a native playing season."""
+    """Map an explicitly configured provider edition to a native playing season.
+
+    A blank ``phase`` is the discipline's default target. A phase-specific
+    binding routes poules whose competition period was resolved to that phase
+    (autumn, spring or full_season), so one provider scope can feed independent
+    outdoor halves and a continuous outdoor competition at the same time.
+    """
 
     if TYPE_CHECKING:
         scope_id: UUID
@@ -194,20 +201,23 @@ class SeasonBinding(models.Model):
         related_name="competition_season_bindings",
     )
     sport = models.CharField(max_length=80)
+    phase = models.CharField(max_length=12, blank=True, default="", db_default="")
     season = models.ForeignKey("schedule.Season", on_delete=models.PROTECT)
 
     class Meta:
-        """One target for each provider scope and discipline."""
+        """One target for each provider scope, discipline and phase."""
 
         constraints: ClassVar = [
             models.UniqueConstraint(
-                fields=("scope", "sport"), name="competition_scope_sport_once"
+                fields=("scope", "sport", "phase"),
+                name="competition_scope_sport_phase_once",
             )
         ]
 
     def __str__(self) -> str:
         """Identify the mapping without loading its related seasons."""
-        return f"{self.scope_id}:{self.sport}"
+        suffix = f":{self.phase}" if self.phase else ""
+        return f"{self.scope_id}:{self.sport}{suffix}"
 
 
 class Team(SeasonalIdentity):
@@ -236,6 +246,44 @@ class Team(SeasonalIdentity):
     def __str__(self) -> str:
         """Return the full team name."""
         return self.name
+
+
+class TeamParticipation(models.Model):
+    """One source team's roster participation in one native competition period.
+
+    A team entered in independent autumn and spring poules of the same provider
+    scope plays two native competition periods, each with its own roster. The
+    variant's ``local_team_data`` remains its default (compatibility) target.
+    """
+
+    objects: ClassVar[models.Manager[TeamParticipation]]
+    team = models.ForeignKey(
+        Team, on_delete=models.CASCADE, related_name="participations"
+    )
+    phase = models.CharField(max_length=12)
+    team_data = models.ForeignKey(
+        "team.TeamData",
+        on_delete=models.PROTECT,
+        related_name="competition_participations",
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+
+    if TYPE_CHECKING:
+        team_id: int
+        team_data_id: int
+
+    class Meta:
+        """A source team has at most one native target per competition period."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("team", "phase"), name="competition_team_phase_once"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the participation without loading its relations."""
+        return f"{self.team_id}:{self.phase}:{self.team_data_id}"
 
 
 class CompetitionEdition(models.Model):
@@ -388,6 +436,17 @@ class Pool(SeasonalIdentity):
     mapping_issues = models.JSONField(default=list)
     mapping_override = models.JSONField(default=dict)
     mapping_evidence = models.JSONField(default=dict)
+    # Competition period, decided from the whole poule rather than one fixture's
+    # date: autumn, spring, full_season (continuous outdoor) or indoor. Blank is
+    # unresolved. Once a fixture is published under it, it only changes through
+    # the reviewed repair command.
+    phase = models.CharField(max_length=12, blank=True, default="", db_default="")
+    # Independent competition part within the phase (indoor youth four-player
+    # competitions are played as two separately graded parts).
+    competition_part = models.PositiveSmallIntegerField(null=True, blank=True)
+    phase_evidence = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
     standings_synced_at = models.DateTimeField(null=True)
     results_filtered = models.BooleanField(default=True)
     local_pool = models.OneToOneField(

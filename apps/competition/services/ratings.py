@@ -19,7 +19,11 @@ from apps.competition.domain.elo import (
 )
 from apps.competition.models import Match, RatingConfiguration, Team
 from apps.competition.services.published_ratings import published_ratings
-from apps.competition.services.seasons import native_season_filter
+from apps.competition.services.seasons import (
+    binding_fingerprint,
+    native_match_filter,
+    native_team_filter,
+)
 
 
 CACHE_SECONDS = 300
@@ -37,13 +41,12 @@ def team_ratings(season_id: UUID) -> dict[str, Any]:
     if configuration is not None:
         return published_ratings(configuration)
     teams = list(
-        Team.objects.filter(native_season_filter(season_id)).values(
-            "id", "external_id", "name", "sport", "club_id"
-        )
+        Team.objects
+        .filter(native_team_filter(season_id))
+        .values("id", "external_id", "name", "sport", "club_id")
+        .distinct()
     )
-    matches = Match.objects.filter(
-        native_season_filter(season_id, sport_field="home_team__sport")
-    )
+    matches = Match.objects.filter(native_match_filter(season_id))
     fingerprint = matches.aggregate(count=Count("pk"), changed=Max("updated_at"))
     population = sha256(
         json.dumps(sorted((team["id"], team["sport"]) for team in teams)).encode()
@@ -52,7 +55,7 @@ def team_ratings(season_id: UUID) -> dict[str, Any]:
     stamp = changed.isoformat() if changed else "empty"
     key = (
         f"competition:{MODEL_VERSION}:{season_id}:"
-        f"{fingerprint['count']}:{stamp}:{population}"
+        f"{fingerprint['count']}:{stamp}:{population}:{binding_fingerprint(season_id)}"
     )
     cached = cache.get(key)
     if cached is None:

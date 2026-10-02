@@ -35,6 +35,11 @@ class Command(BaseCommand):
             type=UUID,
             help="Earlier source season whose results centre the priors (repeatable)",
         )
+        parser.add_argument(
+            "--with-context",
+            action="store_true",
+            help="Schema 3: add each row's edition and competition period",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Write an export and report aggregate coverage.
@@ -46,7 +51,12 @@ class Command(BaseCommand):
         values: dict[str, Any] = dict(options)
         through = values.get("through") or timezone.now()
         prior = tuple(str(season) for season in values["prior_season"])
-        report = export_rows(str(values["season"]), through, prior)
+        report = export_rows(
+            str(values["season"]),
+            through,
+            prior,
+            with_context=bool(values.get("with_context")),
+        )
         if not report["rows"]:
             raise CommandError("No supported league fixtures for this source season")
         scored = snapshot(report["rows"], through)

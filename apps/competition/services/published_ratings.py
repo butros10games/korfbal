@@ -12,6 +12,11 @@ from django.utils import timezone
 
 from apps.competition.models import Allocation, Match, RatingConfiguration, Team
 from apps.competition.services.rating_preview import PreviewParameters, preview_ratings
+from apps.competition.services.seasons import (
+    binding_fingerprint,
+    native_match_filter,
+    native_team_filter,
+)
 from apps.schedule.models import Season
 
 
@@ -23,13 +28,10 @@ def published_ratings(configuration: RatingConfiguration) -> dict[str, Any]:
     """Return only the selected rating population; never mix default Elo into it."""
     now = timezone.now()
     teams = list(
-        Team.objects.filter(season=configuration.season).values(
-            "id",
-            "external_id",
-            "name",
-            "sport",
-            "club_id",
-        )
+        Team.objects
+        .filter(native_team_filter(configuration.season_id))
+        .values("id", "external_id", "name", "sport", "club_id")
+        .distinct()
     )
     key = fingerprint(configuration, now, teams)
     cached = cache.get(key)
@@ -117,7 +119,7 @@ def fingerprint(
     matches = (
         Match.objects
         .filter(
-            season=configuration.season,
+            native_match_filter(configuration.season_id),
             starts_at__gte=configuration.effective_at,
             starts_at__lte=now,
             status="FINAL",
@@ -149,7 +151,8 @@ def fingerprint(
     digest = sha256(
         json.dumps(payload, default=str, sort_keys=True).encode()
     ).hexdigest()
-    return f"competition:{MODEL}:{configuration.season_id}:{digest}"
+    routing = binding_fingerprint(configuration.season_id)
+    return f"competition:{MODEL}:{configuration.season_id}:{digest}:{routing}"
 
 
 @transaction.atomic

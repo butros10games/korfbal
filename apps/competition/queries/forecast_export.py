@@ -7,11 +7,14 @@ from django.db.models import QuerySet
 
 from apps.competition.domain.score_forecast import MAX_DURATION
 from apps.competition.models import Match, Pool, Team
+from apps.schedule.queries.seasons import season_edition
 
 
 # Mixed and women's poules share labels; only KNKV allocation sheets disclose the
 # gender. Such a poule remains its own context and never borrows a mixed baseline.
 GENDER_PENDING = ["missing_gender"]
+# Export schema that carries explicit edition and competition period per row.
+CONTEXT_SCHEMA = 3
 
 
 def supported_pool(pool: Pool | None) -> bool:
@@ -152,13 +155,30 @@ def revisions(source: Match, observed_through: datetime) -> list[dict]:
     return rows
 
 
+def competition_context(source: Match) -> dict:
+    """Describe a row's explicit competition context, unknowns kept as None.
+
+    The edition comes from the provider scope's stored context; the period is
+    the poule's resolved competition period, not the fixture's month.
+    """
+    pool = source.pool
+    return {
+        "edition": season_edition(source.season),
+        "period": (pool.phase or None) if pool else None,
+        "part": pool.competition_part if pool else None,
+    }
+
+
 def season_matches(season: str) -> QuerySet[Match]:
     """Load each row's context and cross-season identities in one query."""
     return (
         Match.objects
         .filter(season_id=season)
         .select_related(
-            "pool__competition_class__edition", "home_team__group", "away_team__group"
+            "season",
+            "pool__competition_class__edition",
+            "home_team__group",
+            "away_team__group",
         )
         .prefetch_related("revisions")
         .order_by("pk")
@@ -166,9 +186,18 @@ def season_matches(season: str) -> QuerySet[Match]:
 
 
 def export_rows(
-    season: str, observed_through: datetime, prior_seasons: tuple[str, ...] = ()
+    season: str,
+    observed_through: datetime,
+    prior_seasons: tuple[str, ...] = (),
+    *,
+    with_context: bool = False,
 ) -> dict:
-    """Export all known revisions, with current metadata provenance disclosed."""
+    """Export all known revisions, with current metadata provenance disclosed.
+
+    ``with_context`` selects schema 3, which adds each row's edition and
+    competition period for held-out-season evaluation; schemas 1 and 2 stay
+    byte-compatible with earlier exports.
+    """
     query = season_matches(season)
     cups = set(query.filter(cup_fixture__isnull=False).values_list("pk", flat=True))
     excluded: Counter[str] = Counter()
@@ -182,9 +211,11 @@ def export_rows(
             excluded["unsupported_context_or_duration"] += 1
             continue
         row["revisions"] = revisions(source, observed_through)
+        if with_context:
+            row.update(competition_context(source))
         rows.append(row)
     report = {
-        "schema": 2 if prior_seasons else 1,
+        "schema": CONTEXT_SCHEMA if with_context else 2 if prior_seasons else 1,
         "season": season,
         "exported_at": observed_through.isoformat(),
         "metadata_history": (
@@ -195,11 +226,15 @@ def export_rows(
         "rows": rows,
     }
     if prior_seasons:
-        report.update(prior_export(prior_seasons, observed_through))
+        report.update(
+            prior_export(prior_seasons, observed_through, with_context=with_context)
+        )
     return report
 
 
-def prior_export(seasons: tuple[str, ...], observed_through: datetime) -> dict:
+def prior_export(
+    seasons: tuple[str, ...], observed_through: datetime, *, with_context: bool = False
+) -> dict:
     """Export earlier source seasons' results as priors, never as test labels."""
     excluded: Counter[str] = Counter()
     rows = []
@@ -211,6 +246,8 @@ def prior_export(seasons: tuple[str, ...], observed_through: datetime) -> dict:
                 excluded["unsupported_context_or_identity"] += 1
                 continue
             row["revisions"] = revisions(source, observed_through)
+            if with_context:
+                row.update(competition_context(source))
             if row["revisions"]:
                 rows.append(row)
     return {

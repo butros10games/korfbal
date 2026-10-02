@@ -14,6 +14,8 @@ from rest_framework.response import Response
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.kwt_common.api.params import uuid_query_values
 from apps.player.services.player_overview import (
+    INVALID_SEASON,
+    InvalidSeasonError,
     build_player_overview_payload,
     build_player_stats_payload,
     connected_club_recent_results,
@@ -57,12 +59,16 @@ class PlayerOverviewAPIView(KorfbalAPIView):
             )
 
         seasons = list(player_seasons_queryset(player))
-        season = resolve_season(request.query_params.get("season"), seasons)
+        try:
+            selection = resolve_season(request.query_params.get("season"), seasons)
+        except InvalidSeasonError:
+            return invalid_season_response()
         return Response(
             build_player_overview_payload(
                 player=player,
-                season=season,
+                season=selection.season,
                 seasons=seasons,
+                selection=selection,
             )
         )
 
@@ -155,5 +161,23 @@ class PlayerStatsAPIView(KorfbalAPIView):
             )
 
         seasons = list(player_seasons_queryset(player))
-        season = resolve_season(request.query_params.get("season"), seasons)
-        return Response(build_player_stats_payload(player=player, season=season))
+        try:
+            selection = resolve_season(request.query_params.get("season"), seasons)
+        except InvalidSeasonError:
+            return invalid_season_response()
+        return Response(
+            build_player_stats_payload(
+                player=player, season=selection.season, selection=selection
+            )
+        )
+
+
+def invalid_season_response() -> Response:
+    """Reject an explicit season outside the player's seasons with a stable code."""
+    return Response(
+        {
+            "code": INVALID_SEASON,
+            "detail": "Dit seizoen hoort niet bij deze speler.",
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )

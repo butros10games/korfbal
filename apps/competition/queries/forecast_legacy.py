@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import datetime
 from functools import lru_cache, partial
+from uuid import UUID
 
 from apps.competition.models import Allocation, Match, RatingConfiguration
 from apps.competition.services.match_prediction import (
@@ -23,7 +24,9 @@ def unavailable_reason(
         return "no_configuration"
     if cutoff < configuration.effective_at:
         return "before_baseline"
-    if source.season_id != native.season_id or source.pool is None:
+    # A bound provider scope publishes into another native season; the link
+    # itself identifies the fixture, as in the single-match predictor.
+    if source.pool is None:
         return "no_allocation_match"
     if (
         source.pool.mapping_status != "mapped"
@@ -73,12 +76,14 @@ def predictions(
     )
 
     @lru_cache(maxsize=64)
-    def members(configuration_id: int, class_id: int) -> list[Allocation]:
+    def members(
+        configuration_id: int, class_id: int, scope_id: UUID
+    ) -> list[Allocation]:
         configuration = configurations[configuration_id]
         return list(
             Allocation.objects.filter(
                 source_id__in=configuration.source_ids,
-                source__season_id=configuration.season_id,
+                source__season_id=scope_id,
                 competition_class_id=class_id,
                 competition_class__edition__season_id=configuration.season_id,
             ).select_related(
@@ -117,7 +122,7 @@ def predictions(
                 configuration,
                 cutoff,
                 batch=(
-                    members(configuration.pk, class_id),
+                    members(configuration.pk, class_id, source.season_id),
                     partial(replay_class, source, configuration, cutoff, replay_cache),
                 ),
             )

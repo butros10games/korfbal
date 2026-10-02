@@ -1,5 +1,7 @@
 """Minimal visible roster snapshots and dated memberships from one team feed."""
 
+from collections import defaultdict
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any
 
@@ -13,10 +15,12 @@ from apps.competition.models import (
     RosterMembership,
     SyncResource,
     Team,
+    TeamParticipation,
 )
 from apps.competition.services.player_photos import discover_photo
 from apps.competition.services.seasons import SeasonResolver
 from apps.player.models import Player
+from apps.schedule.domain.competition_context import FULL_SEASON
 from apps.schedule.models import Season
 from apps.team.models import TeamData
 from apps.team.services.roster_history import reconcile_roster_history
@@ -251,8 +255,20 @@ def publish_roster(team: Team) -> None:
     fallback = (
         team.group.local_team_data_id if team.season_id not in resolver.scopes else None
     )
-    targets = {row.team.local_team_data_id or fallback for row in observations}
-    targets.update(row.published_team_data_id for row in observations)
+    target = participation_targets(team.group_id, fallback)
+    # A finished competition period is history: its roster stays as published
+    # (with its ownership) instead of being emptied when the next one starts.
+    closed = set(
+        TeamParticipation.objects.filter(
+            team__group_id=team.group_id,
+            team_data__season__end_date__lt=timezone.localdate(),
+        ).values_list("team_data_id", flat=True)
+    )
+    frozen = {row.pk for row in observations if target(row) in closed}
+    targets = {target(row) for row in observations} | {
+        row.published_team_data_id for row in observations
+    }
+    targets -= closed
     targets.discard(None)
     visible = set(
         Player.objects.filter(
@@ -269,7 +285,7 @@ def publish_roster(team: Team) -> None:
         desired_rows = [
             row
             for row in observations
-            if (row.team.local_team_data_id or fallback) == data.pk
+            if target(row) == data.pk
             and row.ended_at is None
             and row.last_seen_at >= cutoff
             and row.player_id in visible
@@ -303,21 +319,66 @@ def publish_roster(team: Team) -> None:
                 )
                 new_ownership[owner.pk][flag] = True
     for row in observations:
+        if row.pk in frozen:
+            continue
         for flag, value in new_ownership[row.pk].items():
             setattr(row, flag, value)
-        row.published_team_data_id = row.team.local_team_data_id or fallback
+        row.published_team_data_id = target(row)
     RosterMembership.objects.bulk_update(
         observations, ["published_team_data", *ROSTER_RELATIONS.values()]
     )
 
 
-def publish_pending_rosters() -> None:
-    """Publish new or season-remapped observations once per global source group."""
+def participation_targets(
+    group_id: int | None, fallback: int | None
+) -> Callable[[RosterMembership], int | None]:
+    """Return the native roster an observation belongs to on its observation day.
+
+    A team entered in several competition periods publishes a roster seen on a
+    given day only to the period running that day; outside every period it
+    falls back to the team's default season. Observations never reach back into
+    earlier periods, so current rosters are not projected onto history.
+    """
+    periods: dict[int, list[TeamParticipation]] = defaultdict(list)
+    for participation in TeamParticipation.objects.filter(
+        team__group_id=group_id
+    ).select_related("team_data__season"):
+        periods[participation.team_id].append(participation)
+
+    def target(row: RosterMembership) -> int | None:
+        day = timezone.localdate(row.last_seen_at)
+        running = [
+            participation
+            for participation in periods.get(row.team_id, [])
+            if participation.team_data.season.start_date
+            <= day
+            <= participation.team_data.season.end_date
+        ]
+        if running:
+            chosen = min(
+                running,
+                key=lambda item: (
+                    item.phase == FULL_SEASON,
+                    item.team_data.season.start_date,
+                    item.pk,
+                ),
+            )
+            return chosen.team_data_id
+        return row.team.local_team_data_id or fallback
+
+    return target
+
+
+def publish_pending_rosters(extra_groups: Iterable[int] = ()) -> None:
+    """Publish new or season-remapped observations once per global source group.
+
+    ``extra_groups`` are groups whose teams gained a competition period.
+    """
     groups = set(
         RosterMembership.objects.filter(published_team_data=None).values_list(
             "team__group_id", flat=True
         )
-    )
+    ) | set(extra_groups)
     for group_id in groups:
         team = Team.objects.filter(
             group_id=group_id, group__local_team__isnull=False

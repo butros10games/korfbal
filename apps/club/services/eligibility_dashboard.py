@@ -15,11 +15,13 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.club.models import Club
+from apps.club.queries.eligibility_scope import eligibility_scope, match_periods
 from apps.club.queries.overview import eligibility_classifications
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerMatchMinutes
 from apps.game_tracker.models.player_match_minutes import LATEST_MATCH_MINUTES_VERSION
 from apps.player.models import Player
 from apps.schedule.models import Season
+from apps.schedule.queries.seasons import season_edition
 from apps.team.models import Team, TeamData
 
 
@@ -27,7 +29,6 @@ WEEK_START_ISO_DAY = 2  # Tuesday
 INACTIVITY_RESET_DAYS = 45
 MIN_MATCHES_FOR_RESTRICTIONS = 3
 OWN_TEAM_PERCENT_THRESHOLD = 65
-SEASON_START_MONTH = 7
 MODERN_YOUTH_START_YEAR = 2025
 MINIMUM_AGE = 5
 
@@ -55,6 +56,12 @@ class PlayedEntry:
     team_rank: int
     family: str
     wedstrijd_sport: bool
+    # Competition period key (autumn, spring, full_season, indoor[:part]).
+    period: str = ""
+
+
+# Independent competition periods start a new eligibility history.
+INDEPENDENT_PERIODS = ("autumn", "spring", "indoor:")
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,8 @@ class PlayerState:
     own_team_id: str | None
     last_week_team_rank: int | None
     history_needs_check: bool = False
+    # A partial appearance in a match whose duration is only assumed.
+    duration_needs_check: bool = False
 
 
 def _week_start_for(dt: datetime) -> date:
@@ -114,16 +123,40 @@ def _team_order(family: str, rank: int) -> tuple[int, int]:
     )
 
 
+PLAYED_SHARE = 0.75
+PLAYED = "played"
+NOT_PLAYED = "not_played"
+UNCERTAIN = "uncertain"
+
+
 def _expected_match_minutes(match_data: MatchData) -> float:
+    """Return the regulation duration; resolved periods win over the clock."""
+    rules = match_data.match_rules()
+    if rules.duration_resolved and rules.regulation_minutes:
+        return float(rules.regulation_minutes)
     parts = float(getattr(match_data, "parts", 0) or 0)
     part_length = float(getattr(match_data, "part_length", 0) or 0)
     expected = (parts * part_length) / 60.0
     return max(1.0, expected)
 
 
+def _played_verdict(*, minutes_played: float, match_data: MatchData) -> str:
+    """Apply the 75% rule to the match's actual regulation duration.
+
+    With only the legacy duration assumption, a partial appearance below its
+    threshold may still have counted in a shorter match: it is uncertain.
+    """
+    if minutes_played >= _expected_match_minutes(match_data) * PLAYED_SHARE:
+        return PLAYED
+    if minutes_played > 0 and not match_data.match_rules().duration_resolved:
+        return UNCERTAIN
+    return NOT_PLAYED
+
+
 def _is_played_match(*, minutes_played: float, match_data: MatchData) -> bool:
-    required = _expected_match_minutes(match_data) * 0.75
-    return minutes_played >= required
+    return _played_verdict(minutes_played=minutes_played, match_data=match_data) == (
+        PLAYED
+    )
 
 
 def _pick_counted_match_for_week(entries: list[PlayedEntry]) -> PlayedEntry:
@@ -292,7 +325,7 @@ def _build_team_context_by_id(
 def _fetch_match_data_by_id(
     *,
     club_team_ids: list[str],
-    season: Season | None,
+    seasons: tuple[Season, ...] | None,
 ) -> dict[str, MatchData]:
     finished_matches_qs = (
         MatchData.objects
@@ -303,8 +336,8 @@ def _fetch_match_data_by_id(
             | Q(match_link__away_team_id__in=club_team_ids)
         )
     )
-    if season is not None:
-        finished_matches_qs = finished_matches_qs.filter(match_link__season=season)
+    if seasons is not None:
+        finished_matches_qs = finished_matches_qs.filter(match_link__season__in=seasons)
     return {str(md.id_uuid): md for md in finished_matches_qs}
 
 
@@ -340,7 +373,10 @@ def _collect_entries_and_players(
     *,
     match_data_by_id: dict[str, MatchData],
     team_context_by_id: dict[str, TeamContext],
+    uncertain: set[str] | None = None,
 ) -> tuple[dict[str, list[PlayedEntry]], dict[str, Player]]:
+    """Collect counted appearances; ``uncertain`` receives unclear players."""
+    periods = match_periods([md.match_link_id for md in match_data_by_id.values()])
     match_minutes_qs = PlayerMatchMinutes.objects.select_related(
         "player",
         "player__user",
@@ -377,10 +413,12 @@ def _collect_entries_and_players(
         )
         if team_id is None or team_id not in team_context_by_id:
             continue
-        if not _is_played_match(
-            minutes_played=float(row.minutes_played),
-            match_data=match_data,
-        ):
+        verdict = _played_verdict(
+            minutes_played=float(row.minutes_played), match_data=match_data
+        )
+        if verdict == UNCERTAIN and uncertain is not None:
+            uncertain.add(player_id)
+        if verdict != PLAYED:
             continue
 
         team_ctx = team_context_by_id[team_id]
@@ -403,6 +441,7 @@ def _collect_entries_and_players(
                 team_rank=team_ctx.team_rank,
                 family=team_ctx.family,
                 wedstrijd_sport=team_ctx.wedstrijd_sport,
+                period=periods.get(str(match_data.match_link_id), ""),
             )
         )
 
@@ -423,15 +462,52 @@ def _add_roster_players(
         players_by_id.setdefault(str(player.id_uuid), player)
 
 
+def _current_period_entries(entries: list[PlayedEntry]) -> list[PlayedEntry]:
+    """Keep the history of the competition period the player plays in now.
+
+    Independent periods (outdoor halves, indoor parts) start a new history;
+    entries without a known period keep the previous, combined behavior.
+    """
+    if not entries:
+        return entries
+    latest = max(entries, key=lambda entry: entry.played_at).period
+    if not latest.startswith(INDEPENDENT_PERIODS):
+        return entries
+    return [entry for entry in entries if entry.period in {latest, ""}]
+
+
+def _gap_days(
+    left: PlayedEntry,
+    right: PlayedEntry | date,
+    winter_break: tuple[datetime, datetime] | None,
+) -> int:
+    """Count inactivity days, excluding a continuous competition's winter break."""
+    start = left.played_at.date()
+    end = right.played_at.date() if isinstance(right, PlayedEntry) else right
+    days = (end - start).days
+    continuous = all(
+        not isinstance(side, PlayedEntry) or side.period in {"full_season", ""}
+        for side in (left, right)
+    )
+    if winter_break is None or not continuous:
+        return days
+    overlap = (
+        min(end, winter_break[1].date()) - max(start, winter_break[0].date())
+    ).days
+    return days - max(0, overlap)
+
+
 def _build_player_states(
     *,
     players_by_id: dict[str, Player],
     entries_by_player: dict[str, list[PlayedEntry]],
     team_context_by_id: dict[str, TeamContext],
+    winter_break: tuple[datetime, datetime] | None = None,
+    uncertain: set[str] | None = None,
 ) -> dict[str, PlayerState]:
     player_states: dict[str, PlayerState] = {}
     for player_id, player in players_by_id.items():
-        raw_entries = entries_by_player.get(player_id, [])
+        raw_entries = _current_period_entries(entries_by_player.get(player_id, []))
         by_week: dict[date, list[PlayedEntry]] = defaultdict(list)
         for entry in raw_entries:
             by_week[entry.week_start].append(entry)
@@ -449,13 +525,12 @@ def _build_player_states(
         ]
         history = sorted(raw_entries, key=lambda entry: entry.played_at)
         history_needs_check = any(
-            (right.played_at.date() - left.played_at.date()).days
-            >= INACTIVITY_RESET_DAYS
+            _gap_days(left, right, winter_break) >= INACTIVITY_RESET_DAYS
             for left, right in pairwise(history)
-        )
+        ) or player_id in (uncertain or set())
         if (
             history
-            and (timezone.localdate() - history[-1].played_at.date()).days
+            and _gap_days(history[-1], timezone.localdate(), winter_break)
             >= INACTIVITY_RESET_DAYS
         ):
             history_needs_check = True
@@ -463,6 +538,7 @@ def _build_player_states(
         player_states[player_id] = PlayerState(
             player=player,
             history_needs_check=history_needs_check,
+            duration_needs_check=player_id in (uncertain or set()),
             counted_entries=counted_entries,
             total_counted=len(counted_entries),
             restrictions_active=len(counted_entries) >= MIN_MATCHES_FOR_RESTRICTIONS,
@@ -527,8 +603,8 @@ def _youth_age_check(
     born = player.date_of_birth
     if season is None:
         return "check", "Kies een seizoen om de geboortejaargrens te bepalen."
-    year = season.start_date.year - (season.start_date.month < SEASON_START_MONTH)
-    if year < MODERN_YOUTH_START_YEAR:
+    year = season_edition(season)
+    if year is None or year < MODERN_YOUTH_START_YEAR:
         return (
             "check",
             "Controleer de leeftijdsregels voor dit historische seizoen.",
@@ -549,6 +625,33 @@ def _youth_age_check(
     return "passed", f"Voldoet aan de geboortejaargrens van {team.family}."
 
 
+def _history_check(
+    state: PlayerState, target: TeamContext, teams: dict[str, TeamContext]
+) -> tuple[str, str] | None:
+    """Return a manual check when the counted history cannot be relied on."""
+    if any(
+        teams[entry.team_id].context != target.context
+        for entry in state.counted_entries
+    ):
+        return (
+            "check",
+            "Andere competitiecontext; controleer de speelstatus in Sportlink.",
+        )
+    if state.duration_needs_check:
+        return (
+            "check",
+            "Wedstrijdduur niet vastgesteld: controleer of gedeeltelijk gespeelde "
+            "wedstrijden 75% van de speeltijd haalden.",
+        )
+    if state.history_needs_check:
+        return (
+            "check",
+            "Onderbreking van 45 dagen of langer: controleer de herstartstatus "
+            "en eventuele veldpauze in Sportlink.",
+        )
+    return None
+
+
 def _binding_check(
     state: PlayerState,
     target: TeamContext,
@@ -565,20 +668,9 @@ def _binding_check(
             "Competitie-indeling ontbreekt of bevat meerdere competitiedelen. "
             "Controleer Sportlink.",
         )
-    if any(
-        teams[entry.team_id].context != target.context
-        for entry in state.counted_entries
-    ):
-        return (
-            "check",
-            "Andere competitiecontext; controleer de speelstatus in Sportlink.",
-        )
-    if state.history_needs_check:
-        return (
-            "check",
-            "Onderbreking van 45 dagen of langer: controleer de herstartstatus "
-            "en eventuele veldpauze in Sportlink.",
-        )
+    history = _history_check(state, target, teams)
+    if history is not None:
+        return history
     if not state.restrictions_active or own is None:
         return (
             ("available", "Nog geen 3 meegetelde speelweken; geen vastspeelbeperking.")
@@ -751,11 +843,20 @@ def build_club_eligibility_dashboard(
     season: Season | None,
 ) -> dict[str, Any]:
     """Build club-level eligibility and vastspelen dashboard payload."""
-    team_data_qs = TeamData.objects.select_related("team", "team__club").filter(
-        team__club=club
+    club_team_ids = [
+        str(pk) for pk in Team.objects.filter(club=club).values_list("pk", flat=True)
+    ]
+    # The displayed half of a continuous outdoor competition reads its whole
+    # history; independent periods stay separate.
+    scope = eligibility_scope(season, club_team_ids)
+    team_data_qs = (
+        TeamData.objects
+        .select_related("team", "team__club", "season")
+        .filter(team__club=club)
+        .order_by("season__start_date", "pk")
     )
     if season is not None:
-        team_data_qs = team_data_qs.filter(season=season)
+        team_data_qs = team_data_qs.filter(season__in=scope.seasons)
 
     team_context_by_id = _build_team_context_by_id(team_data_qs)
     teams_payload = _build_teams_payload(team_context_by_id)
@@ -764,18 +865,20 @@ def build_club_eligibility_dashboard(
             "season_id": str(season.id_uuid) if season else None,
             "season_name": season.name if season else None,
             "generated_at": timezone.now().isoformat(),
+            "competition_scope": scope.as_payload(),
             "teams": teams_payload,
             "players": [],
         }
 
-    club_team_ids = list(team_context_by_id.keys())
     match_data_by_id = _fetch_match_data_by_id(
-        club_team_ids=club_team_ids,
-        season=season,
+        club_team_ids=list(team_context_by_id.keys()),
+        seasons=scope.seasons if season is not None else None,
     )
+    uncertain: set[str] = set()
     entries_by_player, players_by_id = _collect_entries_and_players(
         match_data_by_id=match_data_by_id,
         team_context_by_id=team_context_by_id,
+        uncertain=uncertain,
     )
     _add_roster_players(players_by_id, team_data_qs)
 
@@ -783,6 +886,8 @@ def build_club_eligibility_dashboard(
         players_by_id=players_by_id,
         entries_by_player=entries_by_player,
         team_context_by_id=team_context_by_id,
+        winter_break=scope.winter_break,
+        uncertain=uncertain,
     )
     roster_teams: dict[str, list[str]] = defaultdict(list)
     for team_id, player_id in team_data_qs.values_list("team_id", "players__pk"):
@@ -801,6 +906,7 @@ def build_club_eligibility_dashboard(
         "season_id": str(season.id_uuid) if season else None,
         "season_name": season.name if season else None,
         "generated_at": timezone.now().isoformat(),
+        "competition_scope": scope.as_payload(),
         "teams": teams_payload,
         "players": players_payload,
     }

@@ -1,7 +1,7 @@
 """Tests for the team API endpoints."""
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 from http import HTTPStatus
 from unittest.mock import Mock
 import uuid
@@ -26,7 +26,9 @@ from apps.game_tracker.services.match_impact import (
 from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models import Player
 from apps.player.models.player_song import PlayerSong
+from apps.schedule.domain.competition_context import FULL_SEASON, INDOOR_PHASE, SPRING
 from apps.schedule.models import Match, Season
+from apps.schedule.tests.season_builders import playing_season
 from apps.team.models import Team
 from apps.team.models.team_data import TeamData
 
@@ -382,19 +384,9 @@ def test_team_overview_opens_full_year_season_for_requested_outdoor_half(
 ) -> None:
     """A club's outdoor half resolves to the team's one full-year outdoor season."""
     current = create_season()
-    whole = Season.objects.create(
-        name="Veld seizoen 2022-2023",
-        start_date=date(2022, 7, 1),
-        end_date=date(2023, 6, 30),
-    )
-    spring = Season.objects.create(
-        name="Na seizoen 2023", start_date=date(2023, 1, 1), end_date=date(2023, 6, 30)
-    )
-    indoor = Season.objects.create(
-        name="Zaal seizoen 2022-2023",
-        start_date=date(2022, 10, 1),
-        end_date=date(2023, 6, 30),
-    )
+    whole = playing_season(FULL_SEASON, 2022)
+    spring = playing_season(SPRING, 2022)
+    indoor = playing_season(INDOOR_PHASE, 2022)
     team, _ = _teams()
     _roster(team, current)
     _roster(team, whole)

@@ -16,6 +16,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.seasons import target_season
 from apps.schedule.models import Season
+from apps.schedule.queries.seasons import season_edition
 
 
 CLASS_FIELDS = (
@@ -48,7 +49,10 @@ def plan_pool(pool: Pool) -> dict[str, Any]:
                 context[field] = values.pop()
             else:
                 allocation_issues.append(f"allocation_conflicting_{field}")
-    original, _ = classify(pool.class_name, pool.sport, pool.season.start_date.year)
+    # Rules follow the edition (July-June), not the playing season's start year:
+    # a spring season starting in January belongs to the previous July's year.
+    edition = season_edition(pool.season)
+    original, _ = classify(pool.class_name, pool.sport, edition)
     reviewed_fields = override.get("values", {})
     for field, inferred in asdict(original).items():
         if (
@@ -60,7 +64,7 @@ def plan_pool(pool: Pool) -> dict[str, Any]:
     value, issues = classify(
         pool.class_name,
         pool.sport,
-        pool.season.start_date.year,
+        edition,
         {**context, **override.get("values", {})},
     )
     issues.extend(allocation_issues)
@@ -85,7 +89,7 @@ def plan_pool(pool: Pool) -> dict[str, Any]:
         if issues
         else "mapped"
     )
-    if value.code == "unknown" and status != "conflict":
+    if (value.code == "unknown" and status != "conflict") or edition is None:
         status = "unresolved"
     return {
         "classification": asdict(value),
@@ -109,7 +113,7 @@ def map_pool(pool: Pool) -> dict[str, Any]:
     decision = plan_pool(pool)
     class_id = None
     if decision["status"] not in {"unresolved", "conflict"}:
-        native_season = target_season(pool.season, pool.sport)
+        native_season = target_season(pool.season, pool.sport, pool.phase)
         if native_season is not None:
             class_id = resolve_class(native_season, decision).pk
     updates = {

@@ -19,28 +19,21 @@ INDOOR = "indoor"
 SPRING = "spring"
 FULL_YEAR = "full_year"
 OTHER = "other"
-# The competition importer names the playing seasons of an edition this way.
-_KIND_BY_PREFIX = {
-    "voor seizoen": AUTUMN,
-    "zaal seizoen": INDOOR,
-    "na seizoen": SPRING,
-    "veld seizoen": FULL_YEAR,
-}
 
 
-def season_edition(season: Season) -> int:
-    """Return the start year of the korfbal year a season belongs to."""
-    start = season.start_date
-    return start.year if start.month >= EDITION_FIRST_MONTH else start.year - 1
+def season_edition(season: Season) -> int | None:
+    """Return the edition a season belongs to, or None when it is unresolved.
+
+    The stored edition wins; otherwise a season that fits inside one July-June
+    year belongs to it. Spring seasons (January-June) belong to the edition that
+    started the previous July.
+    """
+    return season.context.edition
 
 
 def season_kind(season: Season) -> str:
-    """Classify a season by its name; unrecognised names stay unclassified."""
-    name = season.name.casefold()
-    return next(
-        (kind for prefix, kind in _KIND_BY_PREFIX.items() if name.startswith(prefix)),
-        OTHER,
-    )
+    """Classify a season by its stored phase; renaming never changes the kind."""
+    return season.context.kind
 
 
 @dataclass(frozen=True)
@@ -62,7 +55,7 @@ def _outdoor_parts(editions: set[int]) -> dict[int, dict[str, Season]]:
         start_date__lt=date(max(editions) + 1, EDITION_FIRST_MONTH, 1),
     ):
         edition = season_edition(season)
-        if edition in editions:
+        if edition is not None and edition in editions:
             found.setdefault(edition, {}).setdefault(season_kind(season), []).append(
                 season
             )
@@ -81,7 +74,10 @@ def fold_full_year_seasons(seasons: list[Season]) -> list[Season]:
     A full-year season without both halves stays a choice of its own.
     """
     parts = _outdoor_parts({
-        season_edition(season) for season in seasons if season_kind(season) == FULL_YEAR
+        edition
+        for season in seasons
+        if season_kind(season) == FULL_YEAR
+        and (edition := season_edition(season)) is not None
     })
     if not parts:
         return seasons
@@ -101,6 +97,8 @@ def folded_full_year(season: Season | None) -> FoldedSeason | None:
     if season is None or kind not in {AUTUMN, SPRING}:
         return None
     edition = season_edition(season)
+    if edition is None:
+        return None
     parts = _outdoor_parts({edition}).get(edition)
     if parts is None or parts[kind].pk != season.pk:
         return None
@@ -128,8 +126,13 @@ def full_year_for_half(requested_id: str, seasons: list[Season]) -> Season | Non
         return None
     if half is None or season_kind(half) not in {AUTUMN, SPRING}:
         return None
+    edition = season_edition(half)
     return next(
-        (season for season in whole if season_edition(season) == season_edition(half)),
+        (
+            season
+            for season in whole
+            if edition is not None and season_edition(season) == edition
+        ),
         None,
     )
 
@@ -247,8 +250,10 @@ def season_options_payload(seasons: list[Season]) -> list[dict[str, object]]:
             "start_date": season.start_date.isoformat(),
             "end_date": season.end_date.isoformat(),
             "is_current": active is not None and season.id_uuid == active.id_uuid,
-            "edition": season_edition(season),
-            "kind": season_kind(season),
+            "edition": season.context.edition,
+            "kind": season.context.kind,
+            "discipline": season.context.discipline,
+            "phase": season.context.phase,
         }
         for season in seasons
     ]

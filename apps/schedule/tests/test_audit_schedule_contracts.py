@@ -351,6 +351,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "is_current": False,
             "edition": season_edition(completed),
             "kind": "other",
+            "discipline": None,
+            "phase": None,
         },
         {
             "id_uuid": str(current.id_uuid),
@@ -360,6 +362,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "is_current": True,
             "edition": season_edition(current),
             "kind": "other",
+            "discipline": None,
+            "phase": None,
         },
     ]
 

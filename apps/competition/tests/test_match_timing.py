@@ -31,7 +31,7 @@ from apps.schedule.models import Season
         (("b", "youth"), "red", "eight", "outdoor", 90),
         (("a", "U15"), "unknown", "eight", "indoor", 80),
         (("a", "U17"), "unknown", "eight", "outdoor", 90),
-        (("a", "U17"), "unknown", "eight", "indoor", 90),
+        (("a", "U17"), "unknown", "eight", "indoor", 80),
         (("unknown", "youth"), "unknown", "unknown", "indoor", 90),
     ],
 )
@@ -89,7 +89,7 @@ def test_ambiguous_classification_cannot_shorten_the_finish_estimate(
         (("a", "U17"), "unknown", "eight", "outdoor", 60),
         (("a", "U19"), "unknown", "eight", "outdoor", 60),
         (("a", "senior"), "unknown", "eight", "outdoor", 60),
-        (("a", "U17"), "unknown", "eight", "indoor", None),
+        (("a", "U17"), "unknown", "eight", "indoor", 50),
         (("a", "U19"), "unknown", "eight", "indoor", None),
         (("a", "senior"), "unknown", "eight", "indoor", None),
     ],

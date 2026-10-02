@@ -20,6 +20,7 @@ from apps.competition.services.classification import pool_classification
 from apps.competition.services.seasons import SeasonResolver
 from apps.competition.services.standings import STANDINGS_PAGE_SIZE
 from apps.schedule.models import Season
+from apps.schedule.queries.seasons import season_edition
 
 
 MAX_SAFE_INTEGER = 9007199254740991
@@ -47,7 +48,14 @@ class NativeSeasonSerializer(serializers.ModelSerializer):
             self._season_resolver = SeasonResolver()
         resolver = self._season_resolver
         sport = obj.home_team.sport if isinstance(obj, Match) else obj.sport
-        value = resolver.resolve(obj.season_id, sport)
+        phase = (
+            obj.phase
+            if isinstance(obj, Pool)
+            else obj.pool.phase
+            if isinstance(obj, Match) and obj.pool is not None
+            else ""
+        )
+        value = resolver.resolve(obj.season_id, sport, phase)
         return str(value) if value is not None else None
 
 
@@ -61,7 +69,7 @@ class CompetitionTeamSerializer(NativeSeasonSerializer):
 
     def get_designation(self, obj: Team) -> dict:
         """Keep J numbering independent of age."""
-        return designation(obj.name, obj.season.start_date.year)
+        return designation(obj.name, season_edition(obj.season))
 
     class Meta:
         """Declare storage or serialization metadata."""
@@ -295,7 +303,16 @@ class CompetitionSeasonSerializer(serializers.ModelSerializer):
         """Declare storage or serialization metadata."""
 
         model = Season
-        fields = ("id_uuid", "name", "start_date", "end_date", "editions")
+        fields = (
+            "id_uuid",
+            "name",
+            "start_date",
+            "end_date",
+            "edition",
+            "discipline",
+            "phase",
+            "editions",
+        )
 
 
 class CompetitionFilters(serializers.Serializer):

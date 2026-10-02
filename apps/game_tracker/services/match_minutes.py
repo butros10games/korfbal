@@ -94,6 +94,10 @@ def _expected_match_end_minutes(match_data: MatchData) -> float:
     than the timeline-derived default of 1 minute when no event timestamps are
     available.
     """
+    rules = match_data.match_rules()
+    if rules.duration_resolved and rules.regulation_minutes:
+        # Resolved periods may differ in length; the clock cannot run them all.
+        return max(1.0, float(rules.regulation_minutes))
     parts = float(getattr(match_data, "parts", 0) or 0)
     part_length_seconds = float(getattr(match_data, "part_length", 0) or 0)
     expected = (parts * part_length_seconds) / 60.0

@@ -9,6 +9,7 @@ from typing import Any
 
 from apps.competition.domain.elo import INITIAL_RATING, RatedResult, calculate
 from apps.competition.models import Allocation, AllocationSource, Match
+from apps.competition.services.seasons import bound_scopes, native_match_filter
 from apps.schedule.models import Season
 
 
@@ -50,8 +51,11 @@ def preview_ratings(
         or not season.start_date <= effective_at.date() <= season.end_date
     ):
         raise ValueError("Require an aware, ordered window starting within the season")
+    # Allocation files and results live in provider scopes bound to this season.
     sources = list(
-        AllocationSource.objects.filter(season=season, pk__in=source_ids).order_by("pk")
+        AllocationSource.objects.filter(
+            season_id__in=bound_scopes(season.pk), pk__in=source_ids
+        ).order_by("pk")
     )
     if not sources or len(sources) != len(set(source_ids)):
         raise ValueError("Select existing allocation sources in the selected season")
@@ -89,7 +93,7 @@ def preview_ratings(
         groups[allocation.competition_class_id].append(allocation)
     results = list(
         Match.objects.filter(
-            season=season,
+            native_match_filter(season.pk),
             starts_at__gte=effective_at,
             starts_at__lte=through,
             status="FINAL",

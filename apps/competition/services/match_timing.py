@@ -3,8 +3,11 @@
 from datetime import datetime
 from typing import Any
 
+from django.db import transaction
+
 from apps.competition.models import Match
 from apps.competition.services.cups import import_cup_fixture
+from apps.competition.services.match_rules import sync_tracker_rules
 from apps.schedule.models import Season
 
 
@@ -56,11 +59,13 @@ def import_playing_time(
     ):
         return False
     import_cup_fixture(match)
-    match.playing_time_minutes = value
-    match.playing_time_observed_at = observed_at
-    match.match_periods = [
+    stored = [
         {key: period[key] for key in ("Description", "PlayTime")} for period in periods
     ]
+    changed = (match.playing_time_minutes, match.match_periods) != (value, stored)
+    match.playing_time_minutes = value
+    match.playing_time_observed_at = observed_at
+    match.match_periods = stored
     # Timing metadata is not a score correction or native schedule change.
     match.save(
         update_fields=(
@@ -69,7 +74,11 @@ def import_playing_time(
             "match_periods",
         )
     )
-
+    if changed and match.local_match_id is not None:
+        # Timing can arrive after publication: untouched trackers adopt it now,
+        # tracked ones keep it for review. No source timestamp changes.
+        with transaction.atomic():
+            sync_tracker_rules(match)
     return True
 
 

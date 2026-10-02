@@ -8,10 +8,6 @@ from django.db import models
 from django.utils import timezone
 
 from apps.game_tracker.application.ports import GoalAudioManifest
-from apps.game_tracker.domain.match_limits import (
-    MAX_SUBSTITUTIONS_PER_TEAM,
-    MAX_TIMEOUTS_PER_TEAM,
-)
 from apps.game_tracker.models import (
     Attack,
     GoalType,
@@ -425,6 +421,7 @@ def get_tracker_state(
     )
     reserve_players = _reserve_players_payload(roster_groups)
     paused, timer = _clock_state(match_data, match_part)
+    rules = match_data.match_rules()
 
     # Compact polls retain the initial configuration in the client. Do not
     # query or serialize audio, goal types and team labels only to discard them.
@@ -454,6 +451,7 @@ def get_tracker_state(
                 {"id": str(goal_type.id_uuid), "name": goal_type.name}
                 for goal_type in GoalType.objects.order_by("name")
             ],
+            "rules": rules.as_payload(),
         }
 
     return {
@@ -468,12 +466,13 @@ def get_tracker_state(
         "substitutions": {
             "for": substitutions_for,
             "against": substitutions_against,
-            "max": MAX_SUBSTITUTIONS_PER_TEAM,
+            # None: unlimited (B-category). Commands enforce the same profile.
+            "max": rules.effective_substitution_limit(),
         },
         "timeouts": {
             "for": timeouts_by_team.get(team.id_uuid, 0),
             "against": timeouts_by_team.get(opponent.id_uuid, 0),
-            "max": MAX_TIMEOUTS_PER_TEAM,
+            "max": rules.effective_timeout_limit(),
         },
         "substitutions_total": substitutions_for + substitutions_against,
         "paused": paused,

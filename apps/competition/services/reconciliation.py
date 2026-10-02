@@ -182,9 +182,25 @@ class Reconciler:
         """Map source scopes to playing seasons and read their native rows."""
         field = LOCAL_FIELDS[kind] + "_id"
         targets = {}
+        phases = (
+            dict(
+                Pool.objects.filter(
+                    pk__in={row["pool_id"] for row in self.sources[kind]}
+                ).values_list("pk", "phase")
+            )
+            if kind == "match" and resolver.split
+            else {}
+        )
         for row in self.sources[kind]:
             sport = row.get("sport", sports.get(row.get("home_team_id"), ""))
-            targets[row["id"]] = resolver.resolve(row["season_id"], sport)
+            phase = row.get("phase", phases.get(row.get("pool_id"), ""))
+            targets[row["id"]] = (
+                None
+                if not phase
+                and row.get("pool_id", row["id"]) is not None
+                and resolver.splits(row["season_id"], sport)
+                else resolver.resolve(row["season_id"], sport, phase)
+            )
         if self.incremental:
             seasons = {
                 target or row["season_id"]

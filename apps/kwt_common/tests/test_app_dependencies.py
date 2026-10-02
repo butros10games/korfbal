@@ -48,6 +48,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
     "game_tracker": frozenset({
         "application.ports",
         "composition",
+        "domain.match_rules",
         "queries.match_summaries",
         "services.event_editor",
         "services.event_reconciliation",
@@ -57,6 +58,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "services.match_impact",
         "services.match_impacts_payload",
         "services.match_mutations",
+        "services.match_rule_profiles",
         "services.match_stats_payload",
         "services.match_timeline_payload",
         "services.player_designation",
@@ -92,7 +94,11 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "services.upload_validation",
         "services.web_push",
     }),
-    "schedule": frozenset({"queries.seasons"}),
+    "schedule": frozenset({
+        "domain.competition_context",
+        "queries.seasons",
+        "services.season_context",
+    }),
     "team": frozenset({"api.serializers", "services.roster_history"}),
     "tournament": frozenset({"composition", "services.cups"}),
     "video_analysis": frozenset({
@@ -106,7 +112,14 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
 # Application-layer dependencies between apps (excluding models and pure domain
 # modules). The set must match the code exactly and remain acyclic.
 SERVICE_DEPENDENCIES: dict[str, frozenset[str]] = {
-    "competition": frozenset({"game_tracker", "player", "team", "tournament"}),
+    "club": frozenset({"schedule"}),
+    "competition": frozenset({
+        "game_tracker",
+        "player",
+        "schedule",
+        "team",
+        "tournament",
+    }),
     "player": frozenset({"awards", "game_tracker", "schedule"}),
     "team": frozenset({"game_tracker", "player", "schedule"}),
     "video_analysis": frozenset({"kwt_common"}),

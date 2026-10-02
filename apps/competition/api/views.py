@@ -20,7 +20,11 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
-from apps.competition.services.seasons import native_season_filter
+from apps.competition.services.seasons import (
+    native_match_filter,
+    native_pool_filter,
+    native_team_filter,
+)
 from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_entries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.schedule.models import Season
@@ -57,17 +61,15 @@ class CatalogueViewSet(viewsets.ReadOnlyModelViewSet):
         for name, field in self.field_filters.items():
             if name in validator.validated_data:
                 if name == "season" and query.model in {Team, Pool, Match, TeamGroup}:
-                    sport_field = (
-                        "home_team__sport"
-                        if query.model is Match
-                        else "variants__sport"
-                        if query.model is TeamGroup
-                        else "sport"
-                    )
+                    season_id = validator.validated_data[name]
                     query = query.filter(
-                        native_season_filter(
-                            validator.validated_data[name], sport_field=sport_field
-                        )
+                        native_team_filter(season_id)
+                        if query.model is Team
+                        else native_team_filter(season_id, prefix="variants__")
+                        if query.model is TeamGroup
+                        else native_match_filter(season_id)
+                        if query.model is Match
+                        else native_pool_filter(season_id)
                     ).distinct()
                 elif name == "season" and query.model is Allocation:
                     query = query.filter(
@@ -218,7 +220,7 @@ class PoolViewSet(CatalogueViewSet):
 class MatchViewSet(CatalogueViewSet):
     """Browse fixtures/results for analysis without contacting Sportlink."""
 
-    queryset = Match.objects.select_related("home_team", "away_team").order_by(
+    queryset = Match.objects.select_related("home_team", "away_team", "pool").order_by(
         "starts_at", "external_id"
     )
     serializer_class = CompetitionMatchSerializer

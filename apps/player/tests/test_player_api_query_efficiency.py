@@ -111,7 +111,8 @@ def test_player_read_endpoints_keep_bounded_query_counts(client: Client) -> None
 
     assert counts == {
         "profile": 10,
-        "teams": 7,
+        # Running playing and coaching rosters: two fixed queries, any season count.
+        "teams": 8,
         "overview": 8,
         "stats": 8,
     }

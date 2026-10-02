@@ -35,6 +35,7 @@ CONFIGURATION_KEYS = {
     "opponent",
     "goal_types",
     "goal_audio",
+    "rules",
     "live_revision",
     "last_changed_at",
 }

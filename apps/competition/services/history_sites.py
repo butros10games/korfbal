@@ -43,12 +43,13 @@ from apps.competition.services.history_editions import (
     SPORTS,
     edition_scopes,
     edition_seasons,
-    full_year_season,
+    pool_phases,
     prepare_edition,
     route,
 )
 from apps.competition.services.importer import Importer
 from apps.competition.services.seasons import OUTDOOR
+from apps.schedule.domain.competition_context import FULL_SEASON, edition_bounds
 from apps.schedule.models import (
     Match as AppMatch,
     Season,
@@ -496,11 +497,21 @@ def import_site_rows(
         {row["Pool"]["PoolId"] for row in unique.values()},
     )
     halves = {seasons.autumn.pk, seasons.spring.pk}
-    whole: Season | None = None
     moved: list[str] = []
     groups: dict[Any, tuple[Season, list[dict]]] = {}
+    # Rows of one poule share its period; a site's full-year flag is evidence.
+    phases = pool_phases(
+        seasons,
+        unique.values(),
+        {
+            str(row["Pool"]["PoolId"]): FULL_SEASON
+            for row in unique.values()
+            if row["Pool"].get("FullYear")
+        },
+    )
     for row in unique.values():
-        target, _, reason = route(seasons, row)
+        phase = phases.get(str(row["Pool"]["PoolId"]))
+        target, _, reason = route(seasons, row, phase)
         if target is not None and any(
             sports.get(row[side]["PublicTeamId"], row[side]["SportId"])
             != row[side]["SportId"]
@@ -513,9 +524,8 @@ def import_site_rows(
         if target is None:
             skipped[reason] += 1
             continue
-        if full_year and target.pk in halves:
-            whole = whole or full_year_season(seasons.edition)
-            target = whole
+        if full_year and target.phase == FULL_SEASON:
+            # An earlier read may have placed this fixture in a half.
             moved.append(row["PublicMatchId"])
         for side in ("HomeTeam", "AwayTeam"):
             team = row[side]
@@ -539,9 +549,9 @@ def import_site_rows(
         fresh = [row for row in group if row["PublicMatchId"] not in in_use]
         skipped["half_copy_in_use"] += len(group) - len(fresh)
         if fresh:
-            Importer(target, now, discover=False).apply(
-                "club_results", "", {"MatchResult": fresh}
-            )
+            Importer(
+                target, now, discover=False, window=edition_bounds(seasons.edition)
+            ).apply("club_results", "", {"MatchResult": fresh})
             imported[target.name] = len(fresh)
             # A site has results but no standings: compute the poules' tables.
             refresh_computed_standings(

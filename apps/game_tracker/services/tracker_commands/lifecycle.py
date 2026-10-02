@@ -7,7 +7,6 @@ import logging
 from uuid import UUID
 
 from apps.game_tracker.application.ports import TrackerJobDispatcher
-from apps.game_tracker.domain.match_limits import MAX_TIMEOUTS_PER_TEAM
 from apps.game_tracker.models import (
     Attack,
     MatchData,
@@ -349,12 +348,18 @@ class TimeoutCommand:
             context.team,
             context.match,
         )
+        limit = context.match_data.match_rules().effective_timeout_limit()
+        if not limit:
+            raise TrackerCommandError(
+                "Time-outs gelden niet in deze competitie.",
+                code="timeouts_not_applicable",
+            )
         if (
             Timeout.objects.filter(
                 match_data=context.match_data,
                 team=timeout_team,
             ).count()
-            >= MAX_TIMEOUTS_PER_TEAM
+            >= limit
         ):
             raise TrackerCommandError(
                 "Maximum number of timeouts reached.",

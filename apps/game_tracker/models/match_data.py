@@ -7,7 +7,15 @@ from uuid import UUID
 
 from bg_uuidv7 import uuidv7
 from django.db import models
+from django.db.models import Value
 from django.utils import timezone
+
+from apps.game_tracker.domain.match_rules import (
+    ASSUMED_DEFAULT,
+    SOURCES,
+    MatchRules,
+    rules_from_snapshot,
+)
 
 
 if TYPE_CHECKING:
@@ -62,6 +70,22 @@ class MatchData(models.Model):
         models.PositiveBigIntegerField(default=0)
     )
     live_changed_at: models.DateTimeField = models.DateTimeField(default=timezone.now)
+    # Versioned rule profile (see apps.game_tracker.domain.match_rules). Empty is
+    # the legacy assumption; ``parts``/``part_length`` stay the clock settings.
+    rules = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
+    rules_source = models.CharField(
+        max_length=20,
+        default=ASSUMED_DEFAULT,
+        db_default=ASSUMED_DEFAULT,
+        choices=[(value, value) for value in SOURCES],
+    )
+    # An official correction that arrived after tracking started, kept for review
+    # instead of silently rewriting the clock of tracked history.
+    rules_pending = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
 
     class Meta:
         """Meta class for MatchData model."""
@@ -92,6 +116,12 @@ class MatchData(models.Model):
         """
         return str(
             self.match_link.home_team.name + " - " + self.match_link.away_team.name,
+        )
+
+    def match_rules(self) -> MatchRules:
+        """Return the rule profile tracker writes and reads must share."""
+        return rules_from_snapshot(
+            self.rules, parts=self.parts, part_length=self.part_length
         )
 
     def get_winner(self) -> str | None:

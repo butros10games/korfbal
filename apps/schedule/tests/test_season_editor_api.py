@@ -495,3 +495,53 @@ def test_match_list_is_bounded_outside_legacy_season_editors(client: Client) -> 
     assert len(client.get("/api/matches/", {"season": str(season.id_uuid)}).json()) == (
         total
     )
+
+
+@pytest.mark.django_db
+def test_season_editor_renames_without_changing_context(client: Client) -> None:
+    """A display rename keeps the stored context; context edits are manual."""
+    staff = get_user_model().objects.create_user(
+        username="context_staff", is_staff=True
+    )
+    client.force_login(staff)
+    season = Season.objects.create(
+        name="Voor seizoen 2026",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 12, 31),
+        edition=2026,
+        discipline="outdoor",
+        phase="autumn",
+        context_source="importer",
+    )
+    renamed = client.patch(
+        f"/api/seasons/{season.pk}/",
+        data={"name": "Zaal seizoen 2026-2027"},
+        content_type="application/json",
+    )
+    assert renamed.status_code == HTTPStatus.OK
+    season.refresh_from_db()
+    assert (season.discipline, season.phase, season.context_source) == (
+        "outdoor",
+        "autumn",
+        "importer",
+    )
+    mismatch = client.patch(
+        f"/api/seasons/{season.pk}/",
+        data={"phase": "indoor"},
+        content_type="application/json",
+    )
+    assert mismatch.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch.json()["context"] == ["phase_discipline_conflict"]
+    wrong_year = client.patch(
+        f"/api/seasons/{season.pk}/",
+        data={"edition": 2025},
+        content_type="application/json",
+    )
+    assert wrong_year.status_code == HTTPStatus.BAD_REQUEST
+    corrected = client.patch(
+        f"/api/seasons/{season.pk}/",
+        data={"phase": "full_season", "end_date": "2027-06-30"},
+        content_type="application/json",
+    )
+    assert corrected.status_code == HTTPStatus.OK
+    assert corrected.json()["context_source"] == "manual"

@@ -75,9 +75,11 @@ def rating_prediction(match: NativeMatch) -> dict[str, Any]:
     cutoff = min(timezone.now(), match.start_time)
     if cutoff < configuration.effective_at:
         return unavailable("before_baseline")
+    # The provider scope can differ from the native season: an annual import
+    # scope publishes indoor fixtures into its bound indoor season.
     source = (
         Match.objects
-        .filter(local_match=match, season_id=match.season_id)
+        .filter(local_match=match)
         .select_related("pool", "home_team", "away_team")
         .fetch_mode(FETCH_RAISE)
         .first()
@@ -110,7 +112,9 @@ def predict_allocations(
         else list(
             Allocation.objects.filter(
                 source_id__in=configuration.source_ids,
-                source__season_id=match.season_id,
+                # Allocation files belong to the provider scope; their classes
+                # are resolved in the native season the fixture plays in.
+                source__season_id=source.season_id,
                 competition_class_id=source.pool.competition_class_id,
                 competition_class__edition__season_id=match.season_id,
             ).select_related(

@@ -137,3 +137,27 @@ def match_outcome_probabilities(
             + with_possession_goal.away_win * goal_probability
         ),
     )
+
+
+def win_probability_context(
+    *,
+    duration_resolved: bool,
+    regulation_minutes: int | None,
+    players_per_team: int | None,
+) -> dict[str, object]:
+    """Describe the provenance and limits of this model for one match.
+
+    The model uses one scoring pace for every competition. It has no fitted
+    calibration per discipline, category, format or duration, so its values
+    are approximate within a match and not comparable across contexts.
+    Without a resolved duration the time remaining itself is an assumption.
+    """
+    return {
+        "model": WPA_MODEL_VERSION,
+        "calibration": "uncalibrated_single_pace",
+        "goals_per_team_minute": WPA_GOALS_PER_TEAM_MINUTE,
+        "status": "approximate" if duration_resolved else "assumed_duration",
+        "regulation_minutes": regulation_minutes,
+        "players_per_team": players_per_team,
+        "comparable_across_contexts": False,
+    }

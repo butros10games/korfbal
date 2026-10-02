@@ -12,6 +12,7 @@ from django.db import models, transaction
 from apps.competition.domain.classification import designation
 from apps.competition.models import Match, Pool, PoolEntry, Team
 from apps.competition.services.classification import map_pool, plan_pool
+from apps.schedule.queries.seasons import season_edition
 
 
 class Command(BaseCommand):
@@ -84,7 +85,7 @@ class Command(BaseCommand):
             "season", "group"
         )
         team_counts = Counter(
-            designation(team.name, team.season.start_date.year)["kind"]
+            designation(team.name, season_edition(team.season))["kind"]
             for team in teams
         )
         conflicts = list(
