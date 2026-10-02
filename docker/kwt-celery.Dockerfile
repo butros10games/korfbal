@@ -1,10 +1,26 @@
 FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS audio-js
 
-## ------------------------------- Dependency Stage ------------------------------ ##
-# Install third-party dependencies before local source so library changes retain that cache.
-FROM python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS deps
+## ------------------------------- Python Stage ------------------------------ ##
+# uv's python-build-standalone CPython served Korfbal requests ~24% faster than the
+# official python image's build of the same release. Keep only runtime files.
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS python
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 /uv /bin/uv
+
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+
+RUN uv python install --no-bin 3.14.7 && \
+    cd /opt/python/cpython-3.14.7-linux-x86_64-gnu && \
+    rm -rf include lib/libpython3.14.so* lib/libtcl* lib/itcl* lib/tcl* lib/tk* lib/thread* \
+    lib/python3.14/idlelib lib/python3.14/tkinter lib/python3.14/turtledemo \
+    lib/python3.14/lib-dynload/_tkinter.* && \
+    ln -s /opt/python/cpython-3.14.7-linux-x86_64-gnu/bin/python3.14 /usr/local/bin/python3.14 && \
+    ln -s python3.14 /usr/local/bin/python3 && \
+    ln -s python3.14 /usr/local/bin/python
+
+## ------------------------------- Dependency Stage ------------------------------ ##
+# Install third-party dependencies before local source so library changes retain that cache.
+FROM python AS deps
 
 WORKDIR /build/apps/django_projects/korfbal/deps
 
@@ -21,6 +37,7 @@ COPY libs/shared_python_packages/bg_uuidv7/pyproject.toml libs/shared_python_pac
 
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 ENV UV_LINK_MODE=copy
+ENV UV_PYTHON=3.14.7 UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_DOWNLOADS=never
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --no-install-local
@@ -47,7 +64,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     /app/.venv/lib/python3.14/site-packages/wheel
 
 ## ------------------------------- Production Stage ------------------------------ ##
-FROM python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS production
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS production
+
+ENV LANG=C.UTF-8
 
 ARG APP_UID=1000
 ARG APP_GID=1000
@@ -59,7 +78,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    curl ffmpeg perl-base
+    ca-certificates curl ffmpeg netbase perl-base
 
 RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid appuser --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
@@ -68,6 +87,8 @@ RUN groupadd --gid "${APP_GID}" appuser \
 
 COPY --link --from=audio-js /usr/local/bin/node /usr/local/bin/node
 
+COPY --link --from=python /opt/python /opt/python
+COPY --link --from=python /usr/local/bin/ /usr/local/bin/
 COPY --link --from=venv-optimizer /app/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
