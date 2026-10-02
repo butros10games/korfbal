@@ -289,6 +289,26 @@ def test_delisted_club_is_the_catalogue_club_with_exactly_that_name() -> None:
 
 
 @pytest.mark.django_db
+def test_team_without_a_sportlink_code_uses_the_site_team_number() -> None:
+    """Teams the site added in spring 2018 carry scores but no team code."""
+    import_club(
+        site_match(
+            "1001",
+            teams={
+                "home": {"ref_id": "11", "name": "Example T1"},
+                "away": {"_id": "5a7fb971", "name": "Example T2"},
+            },
+        )
+    )
+    assert Match.objects.get().away_team.external_id == "archive:knkv:5a7fb971"
+    assert "incomplete" not in site_summary(EDITION)["skipped"]
+    stored = HistoricalResource.objects.filter(kind="club_matches").first()
+    stored.evidence = {"skipped": {"incomplete": 2}}
+    stored.save()
+    assert seed_site(KORFBALNL, EDITION)["requeued"] == 1
+
+
+@pytest.mark.django_db
 def test_queueing_a_site_again_rereads_clubs_with_skipped_delisted_rows() -> None:
     """Reads made before delisted clubs were recognised are repeated once."""
     import_club(site_match("1001"))

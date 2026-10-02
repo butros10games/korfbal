@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, QuerySet
+from django.db.models import Count, Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
 from apps.competition.models import (
@@ -161,14 +161,17 @@ def seed_site(provider: str, edition: int) -> dict[str, Any]:
         if catalogue.evidence.get("version") != CATALOGUE_VERSION:
             catalogue.state, catalogue.next_attempt_at = "pending", timezone.now()
             catalogue.save(update_fields=("state", "next_attempt_at"))
-    # Read clubs again whose rows an earlier version skipped for a delisted club.
-    result["requeued"] = HistoricalResource.objects.filter(
-        season=anchor,
-        provider=provider,
-        kind="club_matches",
-        state="fetched",
-        evidence__skipped__club_unknown__gt=0,
-    ).update(state="pending", attempts=0, next_attempt_at=timezone.now())
+    # Read clubs again whose rows an earlier version skipped for a delisted club
+    # or for a team without a Sportlink code.
+    result["requeued"] = (
+        HistoricalResource.objects
+        .filter(season=anchor, provider=provider, kind="club_matches", state="fetched")
+        .filter(
+            Q(evidence__skipped__club_unknown__gt=0)
+            | Q(evidence__skipped__incomplete__gt=0)
+        )
+        .update(state="pending", attempts=0, next_attempt_at=timezone.now())
+    )
     return result
 
 
@@ -188,10 +191,13 @@ def side_payload(
     provider: str, team: dict[str, Any], club: dict[str, Any], sport: str
 ) -> dict[str, Any]:
     """Build one team of a normalized result row."""
-    identifier = str(team["ref_id"])
+    identifier = str(team.get("ref_id") or "")
     if provider == KORFBALNL:
-        # Numeric Sportlink team codes are not the app's public team IDs.
-        identifier = f"{ARCHIVE_PREFIX}{NAMESPACES[provider]}:{identifier}"
+        # Numeric Sportlink team codes are not the app's public team IDs. Teams
+        # the site added in spring 2018 have no code, only the site's own number.
+        identifier = (
+            f"{ARCHIVE_PREFIX}{NAMESPACES[provider]}:{identifier or team['_id']}"
+        )
     return {
         "PublicTeamId": identifier,
         "TeamName": team["name"],
@@ -300,7 +306,9 @@ def korfbalnl_row(
     scores = [score((stats.get(side) or {}).get("score")) for side in SIDES]
     poule = row.get("poule") or {}
     teams = [row["teams"][side] for side in SIDES]
-    if None in scores or not all(team.get("ref_id") for team in teams):
+    if None in scores or not all(
+        (team.get("ref_id") or team.get("_id")) and team.get("name") for team in teams
+    ):
         return "incomplete"
     if not re.fullmatch(r"[0-9]+", str(poule.get("ref_id") or "")):
         return "poule_unknown"
