@@ -1,24 +1,33 @@
 """Persist cross-season club-team Elo and read it for rankings and predictions.
 
-The replay reads every non-cup fixture once and rewrites only ratings that changed,
-so a correction to an old result propagates to every later match it affects.
+Every 15 minutes, matches changed since the previous refresh are replayed from the
+earliest changed kickoff, resuming from the stored ratings at that moment; a match
+weekend touches thousands of rows rather than the whole history. A nightly full
+replay remains the reference: it also applies what an incremental refresh cannot
+see cheaply (deleted matches, merged team identities, moved kickoffs, changes more
+than ``INCREMENTAL_DAYS`` old) and recomputes comparison groups.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from django.core.cache import cache
-from django.db import transaction
-from django.db.models import Count, Max, Sum
+from django.db import connection, transaction
+from django.db.models import OuterRef, Q, QuerySet, Subquery
+from django.utils import timezone
 
 from apps.competition.domain.team_elo import (
     MODEL_VERSION,
     PROVISIONAL_GAMES,
     Fixture,
     Replay,
+    TeamState,
     entering,
     expected_score,
     outcome_probabilities,
@@ -28,11 +37,13 @@ from apps.competition.models import Match, MatchRating, TeamRating
 from apps.schedule.models import Match as NativeMatch
 
 
-LOCK_KEY = f"competition:{MODEL_VERSION}:refresh"
-FINGERPRINT_KEY = f"competition:{MODEL_VERSION}:fingerprint"
-LOCK_SECONDS = 900
+WATERMARK_KEY = f"competition:{MODEL_VERSION}:refreshed-through"
+# Session advisory lock: released by PostgreSQL if the worker dies mid-refresh.
+LOCK_ID = 0x4B4F5246454C4F32
+# Rows saved shortly before the previous run may have committed after it read.
+OVERLAP = timedelta(minutes=10)
+INCREMENTAL_DAYS = 60
 BATCH = 5000
-DIGITS = 3
 MATCH_FIELDS = (
     "home_rating",
     "away_rating",
@@ -40,6 +51,12 @@ MATCH_FIELDS = (
     "home_change",
     "home_games",
     "away_games",
+    "home_team_id",
+    "away_team_id",
+    "starts_at",
+    "phase_id",
+    "home_phase_start",
+    "away_phase_start",
 )
 TEAM_FIELDS = (
     "rating",
@@ -51,36 +68,50 @@ TEAM_FIELDS = (
     "comparison_group",
     "model",
 )
+RESUME_FIELDS = (
+    "starts_at",
+    "match_id",
+    "phase_id",
+    "home_rating",
+    "away_rating",
+    "home_change",
+    "home_games",
+    "away_games",
+    "home_phase_start",
+    "away_phase_start",
+)
 
 
-def fixtures() -> tuple[list[Fixture], dict[str, int | None]]:
-    """Load every linked non-cup fixture, plus each team's latest result class.
+def linked() -> QuerySet[Match]:
+    """Non-cup fixtures whose two teams are linked to native club teams."""
+    return Match.objects.filter(
+        cup_fixture__isnull=True,
+        home_team__group__local_team__isnull=False,
+        away_team__group__local_team__isnull=False,
+    )
+
+
+def fixtures(
+    query: QuerySet[Match],
+) -> tuple[list[Fixture], dict[str, int | None]]:
+    """Load fixtures, plus each team's latest result class among them.
 
     Awarded results, missing scores and unverified 0-0 placeholders only add poule
     membership, matching the score forecast's result policy.
     """
-    rows = (
-        Match.objects
-        .filter(
-            cup_fixture__isnull=True,
-            home_team__group__local_team__isnull=False,
-            away_team__group__local_team__isnull=False,
-        )
-        .values_list(
-            "pk",
-            "season_id",
-            "pool_id",
-            "starts_at",
-            "home_team__group__local_team_id",
-            "away_team__group__local_team_id",
-            "status",
-            "automatic_result",
-            "home_score",
-            "away_score",
-            "pool__competition_class_id",
-        )
-        .iterator(chunk_size=BATCH)
-    )
+    rows = query.values_list(
+        "pk",
+        "season_id",
+        "pool_id",
+        "starts_at",
+        "home_team__group__local_team_id",
+        "away_team__group__local_team_id",
+        "status",
+        "automatic_result",
+        "home_score",
+        "away_score",
+        "pool__competition_class_id",
+    ).iterator(chunk_size=BATCH)
     loaded = []
     latest: dict[str, tuple[datetime, int | None]] = {}
     for pk, season, pool, starts_at, home, away, status, awarded, hs, aw, kind in rows:
@@ -109,61 +140,220 @@ def fixtures() -> tuple[list[Fixture], dict[str, int | None]]:
     return loaded, {team: kind for team, (_, kind) in latest.items()}
 
 
-def fingerprint() -> str:
-    """Change whenever a fixture is added, removed or its content changes.
+@contextmanager
+def refresh_lock() -> Iterator[bool]:
+    """Let one refresh run at a time, without a lease that can expire mid-run.
 
-    Score sums also catch direct corrections that bypass ``updated_at``.
+    Yields:
+        Whether this process holds the refresh lock.
+
     """
-    summary = Match.objects.aggregate(
-        count=Count("pk"),
-        changed=Max("updated_at"),
-        home=Sum("home_score"),
-        away=Sum("away_score"),
-    )
-    changed = summary["changed"]
-    stamp = changed.isoformat() if changed else "empty"
-    return f"{summary['count']}:{stamp}:{summary['home']}:{summary['away']}"
-
-
-def refresh_team_ratings(*, force: bool = False) -> dict[str, Any]:
-    """Replay the full history when results changed; one refresh runs at a time."""
-    owner = str(uuid4())
-    if not cache.add(LOCK_KEY, owner, LOCK_SECONDS):
-        return {"status": "busy"}
+    if connection.vendor != "postgresql":
+        yield True
+        return
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [LOCK_ID])
+        acquired = bool(cursor.fetchone()[0])
     try:
-        stamp = fingerprint()
-        if not force and cache.get(FINGERPRINT_KEY) == stamp:
-            return {"status": "unchanged"}
-        loaded, classes = fixtures()
-        state = replay(loaded)
-        written = store(state, classes)
-        cache.set(FINGERPRINT_KEY, stamp, None)
-        return {"status": "refreshed", "teams": len(state.teams), **written}
+        yield acquired
     finally:
-        if cache.get(LOCK_KEY) == owner:
-            cache.delete(LOCK_KEY)
+        if acquired:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s)", [LOCK_ID])
+
+
+def refresh_team_ratings(*, full: bool = False) -> dict[str, Any]:
+    """Apply changed results incrementally, or replay everything when asked."""
+    with refresh_lock() as acquired:
+        if not acquired:
+            return {"status": "busy"}
+        started = timezone.now()
+        mark = cache.get(WATERMARK_KEY)
+        if full or mark is None or not TeamRating.objects.exists():
+            result = full_refresh()
+        else:
+            result = incremental_refresh(datetime.fromisoformat(mark), started)
+        cache.set(WATERMARK_KEY, started.isoformat(), None)
+        return result
+
+
+def full_refresh() -> dict[str, Any]:
+    """Replay the complete history and make both tables equal to it."""
+    loaded, classes = fixtures(linked())
+    state = replay(loaded)
+    return {"status": "full", "teams": len(state.teams), **store(state, classes)}
+
+
+def incremental_refresh(mark: datetime, now: datetime) -> dict[str, Any]:
+    """Replay from the earliest recently changed kickoff onwards.
+
+    Falls back to a full replay when stored ratings lack resume data.
+    """
+    changed = list(
+        linked()
+        .filter(updated_at__gt=mark - OVERLAP)
+        .values_list("starts_at", flat=True)
+    )
+    recent = [
+        kickoff
+        for kickoff in changed
+        if kickoff >= now - timedelta(days=INCREMENTAL_DAYS)
+    ]
+    deferred = len(changed) - len(recent)
+    if not recent:
+        return {"status": "unchanged", "deferred": deferred}
+    since = min(recent)
+    window, classes = fixtures(linked().filter(starts_at__gte=since))
+    members = poule_members(window)
+    teams = {team for fixture in window for team in (fixture.home, fixture.away)}
+    teams |= {team for poule in members.values() for team in poule}
+    initial = states_before(since, teams)
+    if initial is None:
+        return full_refresh()
+    state = replay(window, initial=initial, members=members)
+    written = store(state, classes, since=since)
+    return {
+        "status": "incremental",
+        "since": since.isoformat(),
+        "deferred": deferred,
+        **written,
+    }
+
+
+def poule_members(window: list[Fixture]) -> dict[tuple[str, int | None], set[str]]:
+    """Complete membership of every poule in the window, including earlier rounds."""
+    pools = {fixture.pool for fixture in window if fixture.pool is not None}
+    open_phases = {fixture.phase for fixture in window if fixture.pool is None}
+    members: dict[tuple[str, int | None], set[str]] = defaultdict(set)
+    rows = (
+        linked()
+        .filter(
+            Q(pool_id__in=pools)
+            | Q(pool__isnull=True, season_id__in=[UUID(p) for p in open_phases])
+        )
+        .values_list(
+            "season_id",
+            "pool_id",
+            "home_team__group__local_team_id",
+            "away_team__group__local_team_id",
+        )
+        .iterator(chunk_size=BATCH)
+    )
+    for season, pool, home, away in rows:
+        members[str(season), pool] |= {str(home), str(away)}
+    return members
+
+
+def states_before(since: datetime, teams: set[str]) -> dict[str, TeamState] | None:
+    """Rebuild each team's state just before ``since`` from stored ratings.
+
+    Teams that last played earlier keep their stored rating; others resume after
+    their last match before ``since``. ``None`` asks for a full replay.
+    """
+    stored = TeamRating.objects.filter(team_id__in=[UUID(team) for team in teams])
+    states = {}
+    resume = []
+    for row in stored:
+        state = TeamState(
+            rating=row.rating,
+            games=row.games,
+            phase=str(row.phase_id),
+            phase_start=row.phase_start,
+            last_played=row.last_played_at,
+            group=row.comparison_group,
+        )
+        if row.last_played_at < since:
+            states[str(row.team_id)] = state
+        else:
+            resume.append(row.team_id)
+    last = {}
+    for side in ("home", "away"):
+        latest = (
+            MatchRating.objects
+            .filter(**{f"{side}_team": OuterRef("team_id")}, starts_at__lt=since)
+            .order_by("-starts_at", "-match_id")
+            .values("match_id")[:1]
+        )
+        last[side] = dict(
+            TeamRating.objects
+            .filter(team_id__in=resume)
+            .annotate(previous=Subquery(latest))
+            .values_list("team_id", "previous")
+        )
+    groups = dict(
+        TeamRating.objects.filter(team_id__in=resume).values_list(
+            "team_id", "comparison_group"
+        )
+    )
+    candidates = {
+        row["match_id"]: row
+        for row in MatchRating.objects.filter(
+            match_id__in={
+                match for side in last.values() for match in side.values() if match
+            }
+        ).values(*RESUME_FIELDS)
+    }
+    for team in resume:
+        options = [
+            (candidates[last[side][team]], side)
+            for side in ("home", "away")
+            if last[side].get(team) is not None
+        ]
+        if not options:
+            continue
+        row, side = max(
+            options, key=lambda option: (option[0]["starts_at"], option[0]["match_id"])
+        )
+        phase_start = row[f"{side}_phase_start"]
+        if phase_start is None or row["phase_id"] is None:
+            return None
+        change = row["home_change"] if side == "home" else -row["home_change"]
+        states[str(team)] = TeamState(
+            rating=row[f"{side}_rating"] + change,
+            games=row[f"{side}_games"] + 1,
+            phase=str(row["phase_id"]),
+            phase_start=phase_start,
+            last_played=row["starts_at"],
+            group=groups[team],
+        )
+    return states
 
 
 @transaction.atomic
-def store(state: Replay, classes: dict[str, int | None]) -> dict[str, int]:
-    """Write changed rows only; removed results and teams lose their ratings."""
+def store(
+    state: Replay, classes: dict[str, int | None], since: datetime | None = None
+) -> dict[str, int]:
+    """Write changed rows only; removed results and teams lose their ratings.
+
+    Ratings are stored unrounded, so a refresh resuming from them reproduces a
+    full replay exactly.
+
+    An incremental refresh (``since``) rewrites ratings of matches from ``since``
+    and of teams that played there; other rows are left to the full replay.
+    """
     matches = {
         rating.match: MatchRating(
             match_id=rating.match,
-            home_rating=round(rating.home_rating, DIGITS),
-            away_rating=round(rating.away_rating, DIGITS),
-            home_expected=round(rating.home_expected, DIGITS + 3),
-            home_change=round(rating.home_change, DIGITS),
+            home_rating=rating.home_rating,
+            away_rating=rating.away_rating,
+            home_expected=rating.home_expected,
+            home_change=rating.home_change,
             home_games=rating.home_games,
             away_games=rating.away_games,
+            home_team_id=UUID(rating.home),
+            away_team_id=UUID(rating.away),
+            starts_at=rating.starts_at,
+            phase_id=UUID(rating.phase),
+            home_phase_start=rating.home_phase_start,
+            away_phase_start=rating.away_phase_start,
         )
         for rating in state.matches
     }
     teams = {
         UUID(team): TeamRating(
             team_id=UUID(team),
-            rating=round(value.rating, DIGITS),
-            phase_start=round(value.phase_start, DIGITS),
+            rating=value.rating,
+            phase_start=value.phase_start,
             games=value.games,
             phase_id=UUID(value.phase),
             last_played_at=value.last_played,
@@ -172,33 +362,33 @@ def store(state: Replay, classes: dict[str, int | None]) -> dict[str, int]:
             model=MODEL_VERSION,
         )
         for team, value in state.teams.items()
+        if since is None or (value.last_played and value.last_played >= since)
     }
-    return {
-        **{
-            f"matches_{key}": count
-            for key, count in synchronize(
-                MatchRating, "match_id", matches, MATCH_FIELDS
-            ).items()
-        },
-        **{
-            f"teams_{key}": count
-            for key, count in synchronize(
-                TeamRating, "team_id", teams, TEAM_FIELDS
-            ).items()
-        },
-    }
+    match_scope = MatchRating.objects.all()
+    team_scope = TeamRating.objects.all()
+    if since is not None:
+        match_scope = match_scope.filter(starts_at__gte=since)
+        team_scope = team_scope.filter(team_id__in=teams)
+    written = {}
+    for name, model_rows, scope, key, fields in (
+        ("matches", matches, match_scope, "match_id", MATCH_FIELDS),
+        ("teams", teams, team_scope, "team_id", TEAM_FIELDS),
+    ):
+        for action, count in synchronize(scope, key, model_rows, fields).items():
+            written[f"{name}_{action}"] = count
+    return written
 
 
 def synchronize(
-    model: type[MatchRating | TeamRating],
+    scope: QuerySet[MatchRating] | QuerySet[TeamRating],
     key: str,
     wanted: dict,
     fields: tuple[str, ...],
 ) -> dict[str, int]:
-    """Insert, update and delete so the table equals the replay."""
+    """Insert, update and delete so the scoped rows equal the replay."""
     existing = {
         row[key]: tuple(row[field] for field in fields)
-        for row in model.objects.values(key, *fields).iterator(chunk_size=BATCH)
+        for row in scope.values(key, *fields).iterator(chunk_size=BATCH)
     }
     created = [row for pk, row in wanted.items() if pk not in existing]
     changed = [
@@ -208,14 +398,14 @@ def synchronize(
         and existing[pk] != tuple(getattr(row, field) for field in fields)
     ]
     stale = [pk for pk in existing if pk not in wanted]
-    model.objects.bulk_create(created, batch_size=BATCH)
-    model.objects.bulk_update(
+    scope.model.objects.bulk_create(created, batch_size=BATCH)
+    scope.model.objects.bulk_update(
         changed,
         [field.removesuffix("_id") for field in fields],
         batch_size=BATCH,
     )
     for start in range(0, len(stale), BATCH):
-        model.objects.filter(pk__in=stale[start : start + BATCH]).delete()
+        scope.model.objects.filter(pk__in=stale[start : start + BATCH]).delete()
     return {"created": len(created), "updated": len(changed), "deleted": len(stale)}
 
 

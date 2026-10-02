@@ -1,9 +1,13 @@
 """Cross-season club-team Elo: replay rules, persistence, rankings and predictions."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from django.core.cache import cache
+from django.utils import timezone
 import pytest
 from rest_framework.test import APIClient
 
@@ -12,13 +16,17 @@ from apps.competition.domain.team_elo import (
     PHASE_CARRY,
     Fixture,
     expected_score,
+    membership,
     outcome_probabilities,
     replay,
 )
 from apps.competition.models import Match, MatchRating, TeamRating
 from apps.competition.services.match_prediction import match_prediction
 from apps.competition.services.publishing import publish_catalogue
-from apps.competition.services.team_elo import refresh_team_ratings
+from apps.competition.services.team_elo import (
+    INCREMENTAL_DAYS,
+    refresh_team_ratings,
+)
 from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_rating_preview import create_baseline
 from apps.schedule.models import Season
@@ -29,6 +37,13 @@ HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
 WINNER_SCORE = 10
 EVEN = 0.5
+
+
+@pytest.fixture
+def no_overlap() -> Iterator[None]:
+    """Make runs consecutive; production re-reads ten minutes of recent changes."""
+    with patch("apps.competition.services.team_elo.OVERLAP", timedelta(0)):
+        yield
 
 
 @pytest.fixture
@@ -115,6 +130,22 @@ def test_a_new_phase_starts_near_the_new_poule() -> None:
     assert after.teams["weak"].phase != "indoor"
 
 
+def test_resuming_from_stored_states_reproduces_a_full_replay() -> None:
+    """Incremental refreshes rely on this: same matches, same final states."""
+    fixtures = [
+        result(1, "a", "b", (12, 8)),
+        result(2, "c", "d", (9, 11)),
+        result(3, "a", "c", (15, 4), phase="indoor", pool=2),
+        result(4, "b", "d", (7, 7), phase="indoor", pool=2),
+        result(5, "d", "a", (10, 13), phase="indoor", pool=2),
+    ]
+    full = replay(fixtures)
+    prefix = replay(fixtures[:2])
+    resumed = replay(fixtures[2:], initial=prefix.teams, members=membership(fixtures))
+    assert resumed.matches == full.matches[2:]
+    assert resumed.teams == full.teams
+
+
 def test_teams_that_never_met_have_separate_comparison_groups() -> None:
     """Rankings across disconnected schedules would compare unrelated ratings."""
     state = replay([result(1, "a", "b", (10, 8)), result(2, "c", "d", (7, 9))])
@@ -122,27 +153,75 @@ def test_teams_that_never_met_have_separate_comparison_groups() -> None:
     assert state.teams["a"].group != state.teams["c"].group
 
 
+def later_result(source: Match, days: float, scores: tuple[int, int]) -> Match:
+    """Add another result between the same club teams, relative to now."""
+    return Match.objects.create(
+        season=source.season,
+        external_id=f"later-{days}",
+        pool=source.pool,
+        home_team=source.away_team,
+        away_team=source.home_team,
+        starts_at=timezone.now() - timedelta(days=days),
+        status="FINAL",
+        home_score=scores[0],
+        away_score=scores[1],
+        result_observed_at=timezone.now(),
+    )
+
+
+def stored() -> tuple[list[tuple], list[tuple]]:
+    """Every stored rating value, for exact comparisons."""
+    return (
+        list(MatchRating.objects.order_by("pk").values_list()),
+        list(TeamRating.objects.order_by("pk").values_list()),
+    )
+
+
 @pytest.mark.django_db
-def test_refresh_stores_ratings_and_skips_unchanged_history(
-    predicted_match: Match,
-) -> None:
-    """The first refresh writes every row; an unchanged history writes nothing."""
-    first = refresh_team_ratings()
-    assert first["status"] == "refreshed"
-    assert first["matches_created"] == 1
+@pytest.mark.usefixtures("no_overlap")
+def test_incremental_refresh_equals_a_full_replay(predicted_match: Match) -> None:
+    """New, earlier-inserted and corrected results resume exactly where needed."""
+    assert refresh_team_ratings()["status"] == "full"
     assert refresh_team_ratings()["status"] == "unchanged"
-    forced = refresh_team_ratings(force=True)
-    assert (forced["matches_updated"], forced["teams_updated"]) == (0, 0)
-    stored = MatchRating.objects.get(match=predicted_match)
-    assert stored.home_rating == INITIAL_RATING
-    winner = TeamRating.objects.get(team=predicted_match.home_team.group.local_team)
-    assert winner.rating > INITIAL_RATING
-    assert winner.competition_class_id == predicted_match.pool.competition_class_id
-    Match.objects.filter(pk=predicted_match.pk).update(home_score=1, away_score=9)
-    corrected = refresh_team_ratings()
-    assert corrected["matches_updated"] == 1
-    winner.refresh_from_db()
-    assert winner.rating < INITIAL_RATING
+    later_result(predicted_match, 3, (14, 9))
+    newer = later_result(predicted_match, 1, (8, 8))
+    first = refresh_team_ratings()
+    assert (first["status"], first["matches_created"]) == ("incremental", 2)
+    # A result arriving late for an earlier kickoff replays the matches after it.
+    later_result(predicted_match, 2, (5, 12))
+    second = refresh_team_ratings()
+    assert (second["matches_created"], second["matches_updated"]) == (1, 1)
+    newer.home_score = 3
+    newer.save()
+    assert refresh_team_ratings()["matches_updated"] == 1
+    incremental = stored()
+    full = refresh_team_ratings(full=True)
+    assert full["status"] == "full"
+    assert (full["matches_updated"], full["teams_updated"]) == (0, 0)
+    assert stored() == incremental
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("no_overlap")
+def test_old_changes_wait_for_the_nightly_replay(predicted_match: Match) -> None:
+    """Changes more than 60 days back are deferred instead of replaying history."""
+    refresh_team_ratings()
+    later_result(predicted_match, INCREMENTAL_DAYS + 40, (10, 2))
+    assert refresh_team_ratings() == {"status": "unchanged", "deferred": 1}
+    assert refresh_team_ratings(full=True)["matches_created"] == 1
+
+
+@pytest.mark.django_db
+def test_a_held_refresh_lock_skips_the_run(predicted_match: Match) -> None:
+    """Overlapping runs return immediately instead of writing concurrently."""
+
+    @contextmanager
+    def held() -> Iterator[bool]:
+        yield False
+
+    with patch("apps.competition.services.team_elo.refresh_lock", held):
+        assert refresh_team_ratings() == {"status": "busy"}
+    assert not MatchRating.objects.filter(match=predicted_match).exists()
 
 
 @pytest.mark.django_db

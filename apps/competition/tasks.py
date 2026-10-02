@@ -330,8 +330,8 @@ def publish_competition_backlog() -> dict[str, object]:
 
 
 @shared_task(ignore_result=True, soft_time_limit=600, time_limit=660)
-def refresh_club_team_ratings() -> dict[str, object]:
-    """Replay cross-season club-team Elo after results changed."""
-    result = refresh_team_ratings()
+def refresh_club_team_ratings(*, full: bool = False) -> dict[str, object]:
+    """Apply changed results to club-team Elo; ``full`` replays all history."""
+    result = refresh_team_ratings(full=full)
     logger.info("Club team rating refresh: %s", result)
     return result

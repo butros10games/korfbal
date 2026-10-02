@@ -1840,11 +1840,15 @@ by strength. Cups are excluded. On 2025-26 results it predicted outcomes with a
 21% lower Brier score than the per-season `elo-v1` for established teams and 12% lower
 early in a phase.
 
-The beat task `refresh_club_team_ratings` replays the history when results change.
-Run the first replay (or one after a model change) by hand:
+Every 15 minutes `refresh_club_team_ratings` applies changed results: it replays from
+the earliest changed kickoff (within the last 60 days), resuming from stored ratings,
+and gives exactly the ratings of a full replay. A nightly full replay at 03:30 also
+applies deleted matches, merged team identities, moved kickoffs and older changes.
+Without a previous run (for example after deploying a model change) the next refresh
+replays everything; to do so immediately:
 
 ```sh
-uv run python apps/django_projects/korfbal/manage.py refresh_team_ratings --force
+uv run python apps/django_projects/korfbal/manage.py refresh_team_ratings --full
 ```
 
 `GET /api/competition/rankings/?age_group=senior` is public. Rankings require an age

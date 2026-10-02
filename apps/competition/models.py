@@ -488,7 +488,11 @@ class Match(SeasonalIdentity):
         """Index chronological season queries."""
 
         abstract = False
-        indexes: ClassVar = [models.Index(fields=("season", "status", "starts_at"))]
+        indexes: ClassVar = [
+            models.Index(fields=("season", "status", "starts_at")),
+            # Incremental rating refreshes find content changes since their last run.
+            models.Index(fields=("updated_at",), name="competition_match_updated"),
+        ]
 
 
 class ResultRevision(models.Model):
@@ -885,9 +889,42 @@ class MatchRating(models.Model):
     home_change = models.FloatField()
     home_games = models.PositiveIntegerField()
     away_games = models.PositiveIntegerField()
+    # Denormalized so an incremental refresh can resume after any team's last match
+    # with one indexed lookup; filled by the first full replay after migration.
+    home_team = models.ForeignKey(
+        "team.Team",
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="+",
+        db_index=False,
+    )
+    away_team = models.ForeignKey(
+        "team.Team",
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="+",
+        db_index=False,
+    )
+    starts_at = models.DateTimeField(null=True, db_index=True)
+    phase = models.ForeignKey(
+        "schedule.Season", null=True, on_delete=models.PROTECT, related_name="+"
+    )
+    home_phase_start = models.FloatField(null=True)
+    away_phase_start = models.FloatField(null=True)
+
+    class Meta:
+        """Find each team's last rated match before a resume point."""
+
+        indexes: ClassVar = [
+            models.Index(fields=("home_team", "starts_at"), name="rating_home_start"),
+            models.Index(fields=("away_team", "starts_at"), name="rating_away_start"),
+        ]
 
     if TYPE_CHECKING:
         match_id: int
+        home_team_id: UUID | None
+        away_team_id: UUID | None
+        phase_id: UUID | None
 
     def __str__(self) -> str:
         """Identify the rated match without loading it."""

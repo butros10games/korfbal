@@ -61,6 +61,12 @@ app.conf.beat_schedule = {
         "schedule": 900.0,
         "options": {"expires": 900, "queue": "celery"},
     },
+    "replay-club-team-ratings": {
+        "task": "apps.competition.tasks.refresh_club_team_ratings",
+        "schedule": crontab(minute="30", hour="3"),
+        "kwargs": {"full": True},
+        "options": {"expires": 3600, "queue": "celery"},
+    },
     "recheck-competition-history": {
         "task": "apps.competition.tasks.recheck_competition_history",
         "schedule": crontab(minute="0", hour="4", day_of_week="monday"),

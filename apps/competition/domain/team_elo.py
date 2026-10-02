@@ -19,7 +19,7 @@ Separate indoor and outdoor ratings were worse than one shared rating.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from statistics import fmean
 
@@ -78,6 +78,12 @@ class MatchRating:
     home_change: float
     home_games: int
     away_games: int
+    home_phase_start: float
+    away_phase_start: float
+    home: str
+    away: str
+    starts_at: datetime
+    phase: str
 
 
 @dataclass
@@ -106,13 +112,31 @@ def entering(rating: float | None, poule: list[float]) -> float:
     return target if rating is None else target + PHASE_CARRY * (rating - target)
 
 
-def replay(fixtures: list[Fixture]) -> Replay:
-    """Rate all results chronologically so corrections are never double counted."""
+def membership(fixtures: list[Fixture]) -> dict[tuple[str, int | None], set[str]]:
+    """Club teams scheduled in each phase's poule, played or not."""
     members: dict[tuple[str, int | None], set[str]] = defaultdict(set)
     for fixture in fixtures:
         members[fixture.phase, fixture.pool] |= {fixture.home, fixture.away}
-    state = Replay()
-    parents: dict[str, str] = {}
+    return members
+
+
+def replay(
+    fixtures: list[Fixture],
+    *,
+    initial: dict[str, TeamState] | None = None,
+    members: dict[tuple[str, int | None], set[str]] | None = None,
+) -> Replay:
+    """Rate results chronologically so corrections are never double counted.
+
+    ``initial`` resumes from the team states just before the earliest fixture, and
+    ``members`` then supplies complete poules, including fixtures before the resume
+    point. Resuming yields exactly the ratings of a replay from the start.
+    """
+    poules = members if members is not None else membership(fixtures)
+    state = Replay(
+        teams={team: replace(value) for team, value in (initial or {}).items()}
+    )
+    parents = {team: value.group or team for team, value in state.teams.items()}
     results = sorted(
         (fixture for fixture in fixtures if fixture.result),
         key=lambda fixture: (fixture.starts_at, fixture.match),
@@ -121,7 +145,12 @@ def replay(fixtures: list[Fixture]) -> Replay:
         if fixture.home == fixture.away:
             continue
         for team in (fixture.home, fixture.away):
-            enter(state.teams, team, fixture, members[fixture.phase, fixture.pool])
+            enter(
+                state.teams,
+                team,
+                fixture,
+                poules.get((fixture.phase, fixture.pool), set()),
+            )
         home, away = state.teams[fixture.home], state.teams[fixture.away]
         expected = expected_score(home.rating, away.rating)
         change = update(fixture, expected)
@@ -134,6 +163,12 @@ def replay(fixtures: list[Fixture]) -> Replay:
                 change,
                 home.games,
                 away.games,
+                home.phase_start,
+                away.phase_start,
+                fixture.home,
+                fixture.away,
+                fixture.starts_at,
+                fixture.phase,
             )
         )
         home.rating += change
