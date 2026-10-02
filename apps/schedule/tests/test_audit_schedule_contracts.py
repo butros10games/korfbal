@@ -20,6 +20,7 @@ from apps.schedule.queries.seasons import (
     current_season,
     most_recent_season,
     requested_or_default_season,
+    season_edition,
     season_options_payload,
 )
 from apps.team.models import Team
@@ -348,6 +349,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "start_date": completed.start_date.isoformat(),
             "end_date": completed.end_date.isoformat(),
             "is_current": False,
+            "edition": season_edition(completed),
+            "kind": "other",
         },
         {
             "id_uuid": str(current.id_uuid),
@@ -355,6 +358,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "start_date": current.start_date.isoformat(),
             "end_date": current.end_date.isoformat(),
             "is_current": True,
+            "edition": season_edition(current),
+            "kind": "other",
         },
     ]
 

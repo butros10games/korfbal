@@ -1,7 +1,7 @@
 """Tests for the team API endpoints."""
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from http import HTTPStatus
 from unittest.mock import Mock
 import uuid
@@ -375,6 +375,46 @@ def test_team_overview_invalid_season_does_not_broaden(client: Client) -> None:
     assert payload["meta"]["season_name"] == current.name
     assert payload["matches"]["upcoming"]
     assert payload["matches"]["recent"] == []
+
+
+def test_team_overview_opens_full_year_season_for_requested_outdoor_half(
+    client: Client,
+) -> None:
+    """A club's outdoor half resolves to the team's one full-year outdoor season."""
+    current = create_season()
+    whole = Season.objects.create(
+        name="Veld seizoen 2022-2023",
+        start_date=date(2022, 7, 1),
+        end_date=date(2023, 6, 30),
+    )
+    spring = Season.objects.create(
+        name="Na seizoen 2023", start_date=date(2023, 1, 1), end_date=date(2023, 6, 30)
+    )
+    indoor = Season.objects.create(
+        name="Zaal seizoen 2022-2023",
+        start_date=date(2022, 10, 1),
+        end_date=date(2023, 6, 30),
+    )
+    team, _ = _teams()
+    _roster(team, current)
+    _roster(team, whole)
+
+    def selected(season: Season) -> str:
+        response = client.get(
+            f"/api/team/teams/{team.id_uuid}/overview/",
+            data={"season": season.id_uuid},
+        )
+        assert response.status_code == HTTPStatus.OK
+        payload = response.json()
+        assert [option["name"] for option in payload["seasons"]] == [
+            current.name,
+            whole.name,
+        ]
+        return payload["meta"]["season_name"]
+
+    assert selected(spring) == whole.name
+    # Other seasons the team did not play still fall back to its default.
+    assert selected(indoor) == current.name
 
 
 def test_team_overview_denies_goal_song_management_to_anonymous_viewer(

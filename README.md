@@ -1857,14 +1857,40 @@ All dates must include a timezone. Origins precede the cutoff, which cannot exce
 export time. Results are replayed from their last observed revision before each
 origin. Duration must have been observed by that origin (and by kickoff for test
 matches). Cups, awarded results, incomplete scores and unverified 0–0 records are
-excluded. Contexts need ten training matches; individual teams and poules can be
-unseen and are integrated over their priors. Actual verified 0–0 matches cannot yet
+excluded. Contexts need ten training matches unless earlier seasons supply their
+pace (below); individual teams and poules can be unseen and are integrated over
+their priors. Actual verified 0–0 matches cannot yet
 be distinguished from placeholders by the feed and remain quarantined.
+
+Each season otherwise starts from nothing: a context has no forecasts until ten
+results. Add `--prior-season <source-season-uuid>` (repeatable) to the export,
+refresh or launcher to forecast such contexts from earlier results. They start from
+the earlier scoring pace and class effects of a compatible format (unknown earlier
+fields act as wildcards), with team uncertainty from the observed between-team
+spread instead of the wide default, which would inflate expected goals by about a
+third. A context's own edition never serves as its own prior, but the season's other
+edition does: an indoor start uses the autumn results too. Established contexts are
+fitted exactly as without earlier seasons. Earlier editions are often imported long
+after they ended, so a completed earlier match counts from kickoff with its first
+observed score (later corrections only from their observation). Earlier editions
+also lack playing times: results are scaled by the current duration of a compatible
+format, falling back to the other discipline. Poules whose allocation sheet has not
+yet disclosed the gender (`partial` with only `missing_gender`) form their own context.
+
+Measured on the 2026 autumn start (October 2026): carrying earlier team strength
+over, damped or in full, never beat the pace alone, and earlier priors made
+established contexts' Brier score significantly worse, so neither is used. First-week
+forecasts were available for 86% of matches but missed by 6.2 goals per team
+(3.0 later): youth colour formats scored about twice as much in autumn 2025, the
+first colour season, as in 2026. Check `history.new_contexts` before activating
+a phase-start artifact, and refit after the first round.
 
 The report includes score log loss, W/D/L Brier score, goal MAE, marginal interval
 coverage, calibration bins, per-context metrics and poule-cluster bootstrap paired
 differences. It compares with a Gamma-Poisson context baseline and the old fixed-total
 predictor, including exported pre-match ratings and context outcome calibration.
+With earlier seasons, `history.new_contexts` reports forecasts for contexts below
+the ten-match minimum separately; the current model has no comparator there.
 Exports without the legacy forecasts cannot pass the promotion gate. `--cold-start`
 reports a separate held-out-poule experiment and cannot approve an artifact.
 

@@ -263,6 +263,93 @@ def test_club_overview_can_filter_by_season(client: Client) -> None:
     assert payload["matches"]["recent"][0]["competition"] == previous.name
 
 
+def test_club_overview_folds_full_year_outdoor_season_into_both_halves(
+    client: Client,
+) -> None:
+    """Full-year teams and their matches appear under both outdoor halves."""
+    graph = _make_club_graph(
+        club_name="Folded Club",
+        season_name="Zaal seizoen 2022-2023",
+        start_date=date(2022, 10, 1),
+        end_date=date(2023, 6, 30),
+    )
+    autumn = _make_season("Voor seizoen 2022", date(2022, 7, 1), date(2022, 12, 31))
+    spring = _make_season("Na seizoen 2023", date(2023, 1, 1), date(2023, 6, 30))
+    whole = _make_season("Veld seizoen 2022-2023", date(2022, 7, 1), date(2023, 6, 30))
+    halves = Team.objects.create(name="Halves", club=graph.club)
+    full_year = Team.objects.create(name="Full year", club=graph.club)
+    indoor = Team.objects.create(name="Indoor", club=graph.club)
+    TeamData.objects.create(team=indoor, season=graph.season)
+    for team, season, day in (
+        (halves, autumn, date(2022, 9, 10)),
+        (full_year, whole, date(2022, 9, 17)),
+        (full_year, whole, date(2023, 4, 15)),
+    ):
+        match = Match.objects.create(
+            home_team=team,
+            away_team=graph.opponent_team,
+            season=season,
+            start_time=timezone.make_aware(datetime.combine(day, time(14))),
+        )
+        _finish_match(match)
+
+    def overview(season: Season) -> dict:
+        response = client.get(
+            f"/api/club/clubs/{graph.club.id_uuid}/overview/",
+            {"season": str(season.id_uuid)},
+        )
+        assert response.status_code == HTTPStatus.OK
+        return response.json()
+
+    payload = overview(autumn)
+    assert [
+        (season["name"], season["edition"], season["kind"])
+        for season in payload["seasons"]
+    ] == [
+        ("Na seizoen 2023", 2022, "spring"),
+        ("Zaal seizoen 2022-2023", 2022, "indoor"),
+        ("Voor seizoen 2022", 2022, "autumn"),
+    ]
+    assert [team["name"] for team in payload["teams"]] == ["Full year", "Halves"]
+    assert [match["start_time"][:10] for match in payload["matches"]["recent"]] == [
+        "2022-09-17",
+        "2022-09-10",
+    ]
+
+    # The club has no match in the spring season itself, yet it is offered.
+    payload = overview(spring)
+    assert payload["meta"]["season_name"] == "Na seizoen 2023"
+    assert [team["name"] for team in payload["teams"]] == ["Full year"]
+    assert [match["start_time"][:10] for match in payload["matches"]["recent"]] == [
+        "2023-04-15"
+    ]
+
+    # A request for the folded season falls back instead of reviving it.
+    assert overview(whole)["meta"]["season_name"] != whole.name
+
+
+def test_club_overview_keeps_full_year_season_without_both_halves(
+    client: Client,
+) -> None:
+    """A full-year season stays selectable when its halves do not both exist."""
+    graph = _make_club_graph(
+        club_name="Unfolded Club",
+        season_name="Veld seizoen 2019-2020",
+        start_date=date(2019, 7, 1),
+        end_date=date(2020, 6, 30),
+    )
+    _make_season("Voor seizoen 2019", date(2019, 7, 1), date(2019, 12, 31))
+    TeamData.objects.create(
+        team=Team.objects.create(name="Full year", club=graph.club),
+        season=graph.season,
+    )
+
+    payload = client.get(f"/api/club/clubs/{graph.club.id_uuid}/overview/").json()
+
+    assert [season["name"] for season in payload["seasons"]] == [graph.season.name]
+    assert [team["name"] for team in payload["teams"]] == ["Full year"]
+
+
 def test_club_overview_invalid_season_does_not_broaden(client: Client) -> None:
     """Fall back to a club season without broadening an invalid query."""
     today = timezone.localdate()

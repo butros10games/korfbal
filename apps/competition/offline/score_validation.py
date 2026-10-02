@@ -15,7 +15,11 @@ from apps.competition.domain.score_forecast import (
     summarize,
     timestamp,
 )
-from apps.competition.offline.score_training import fit, snapshot
+from apps.competition.offline.score_training import (
+    MIN_CONTEXT_MATCHES,
+    fit,
+    snapshot,
+)
 
 
 MIN_TEST_MATCHES = 100
@@ -138,9 +142,16 @@ def backtest(
     through: datetime,
     *,
     cold_start: bool = False,
+    prior_rows: list[dict] | None = None,
 ) -> dict:
-    """Fit at each origin using only already-observed labels."""
+    """Fit at each origin using only already-observed labels.
+
+    With ``prior_rows``, contexts below the training minimum are forecast from
+    earlier seasons; they have no comparator and are reported separately. Earlier
+    seasons never change established contexts, so the gate applies unchanged.
+    """
     records: list[dict] = []
+    new_contexts: list[dict] = []
     folds = []
     labels = snapshot(rows, through)
     for index, cutoff in enumerate(cutoffs):
@@ -152,41 +163,32 @@ def backtest(
                 for row in rows
                 if int(sha256(row["pool"].encode()).hexdigest(), 16) % 5 != 0
             ]
-        artifact = fit(training_rows, cutoff)
+        artifact = fit(training_rows, cutoff, prior_rows=prior_rows)
         training = snapshot(training_rows, cutoff)
         groups: dict[str, list[dict]] = defaultdict(list)
         for row in training:
             groups[context_key(row)].append(row)
         fold_count = 0
+        held_out_pools = {row["pool"] for row in training_rows} if cold_start else set()
         for row in labels:
             if not cutoff <= timestamp(row["starts_at"]) < end:
                 continue
-            if timestamp(row["duration_observed_at"]) > timestamp(row["starts_at"]):
-                continue
-            if cold_start and any(
-                row["pool"] == train["pool"] for train in training_rows
+            if (
+                timestamp(row["duration_observed_at"]) > timestamp(row["starts_at"])
+                or row["pool"] in held_out_pools
             ):
                 continue
             draws = rate_draws(artifact, row)
             if draws is None:
                 continue
             group = groups[context_key(row)]
-            # Conjugate Gamma-Poisson pooled context baseline includes uncertainty;
-            # identical format and exposure, without team or poule effects.
-            shape = 1 + sum(r["home_score"] + r["away_score"] for r in group)
-            rate = 0.1 + sum(2 * r["duration"] / 60 for r in group)
-            rng = np.random.default_rng(2026)
-            pace = rng.gamma(shape, 1 / rate, 64) * row["duration"] / 60
-            pooled = [[float(value), float(value)] for value in pace]
-            legacy = legacy_metrics(row)
-            records.append({
-                "legacy_available": "legacy_prediction" in row,
-                "context": context_key(row),
-                "pool": row["pool"],
-                "candidate": metrics(draws, row),
-                "context_baseline": metrics(pooled, row),
-                "legacy": legacy,
-            })
+            if len(group) < MIN_CONTEXT_MATCHES:
+                new_contexts.append({
+                    "pool": row["pool"],
+                    "candidate": metrics(draws, row),
+                })
+                continue
+            records.append(evaluate(row, draws, group))
             fold_count += 1
         folds.append({
             "cutoff": cutoff.isoformat(),
@@ -209,6 +211,12 @@ def backtest(
         )
         and MIN_COVERAGE <= overall["candidate"].get("coverage_80", 0) <= MAX_COVERAGE
     )
+    history = None
+    if prior_rows is not None:
+        history = {
+            "new_contexts": aggregate([item["candidate"] for item in new_contexts]),
+            "new_context_pools": len({item["pool"] for item in new_contexts}),
+        }
     return {
         "passed": passed,
         "mode": "unseen-poule" if cold_start else "rolling-origin",
@@ -224,6 +232,26 @@ def backtest(
             "differences < 0 versus both baselines; marginal interval coverage 70-95%"
         ),
         "limitations": ("Retrospective current metadata; live forecasts not evaluated"),
+        **({"history": history} if history is not None else {}),
+    }
+
+
+def evaluate(row: dict, draws: list[list[float]], group: list[dict]) -> dict:
+    """Score one held-out match against every comparator fitted at its origin."""
+    # Conjugate Gamma-Poisson pooled context baseline includes uncertainty;
+    # identical format and exposure, without team or poule effects.
+    shape = 1 + sum(r["home_score"] + r["away_score"] for r in group)
+    rate = 0.1 + sum(2 * r["duration"] / 60 for r in group)
+    rng = np.random.default_rng(2026)
+    pace = rng.gamma(shape, 1 / rate, 64) * row["duration"] / 60
+    pooled = [[float(value), float(value)] for value in pace]
+    return {
+        "legacy_available": "legacy_prediction" in row,
+        "context": context_key(row),
+        "pool": row["pool"],
+        "candidate": metrics(draws, row),
+        "context_baseline": metrics(pooled, row),
+        "legacy": legacy_metrics(row),
     }
 
 

@@ -36,6 +36,7 @@ from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
 from apps.schedule.queries.seasons import (
+    folded_full_year,
     requested_or_default_season,
     season_options_payload,
 )
@@ -131,19 +132,20 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         """
         club = self.get_object()
-        seasons_qs = list(club_seasons(club))
+        seasons_qs = club_seasons(club)
         season = requested_or_default_season(
             request.query_params.get("season"), seasons_qs
         )
+        folded = folded_full_year(season)
 
-        teams_qs = club_teams(club, season)
+        teams_qs = club_teams(club, season, folded)
         teams_payload = TeamSerializer(
             teams_qs,
             many=True,
             context=self.get_serializer_context(),
         ).data
 
-        match_data_qs = club_matches(club, season)
+        match_data_qs = club_matches(club, season, folded)
 
         upcoming_matches = build_match_summaries(
             match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
@@ -222,7 +224,7 @@ class ClubViewSet(viewsets.ModelViewSet):
     ) -> Response:
         """Return club-level player eligibility/vastspelen dashboard data."""
         club = self.get_object()
-        seasons_qs = list(club_seasons(club))
+        seasons_qs = club_seasons(club)
         season = requested_or_default_season(
             request.query_params.get("season"), seasons_qs
         )

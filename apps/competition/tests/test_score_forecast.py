@@ -19,14 +19,30 @@ from apps.competition.domain.score_forecast import (
     rate_draws,
     summarize,
 )
-from apps.competition.models import Match, RatingConfiguration, ResultRevision
-from apps.competition.offline.score_training import fit, snapshot
+from apps.competition.management.commands.refresh_score_forecasts import from_season
+from apps.competition.models import (
+    CompetitionClass,
+    Match,
+    Pool,
+    RatingConfiguration,
+    ResultRevision,
+)
+from apps.competition.offline.score_training import (
+    fit,
+    imputed_durations,
+    pace_lookup,
+    snapshot,
+)
 from apps.competition.offline.score_validation import (
     backtest,
     forward_audit,
     metric_summary,
 )
-from apps.competition.queries.forecast_export import export_rows, features
+from apps.competition.queries.forecast_export import (
+    export_rows,
+    features,
+    supported_pool,
+)
 from apps.competition.queries.forecast_legacy import predictions
 from apps.competition.services import score_prediction as serving
 from apps.competition.services.match_prediction import known_results, rating_prediction
@@ -45,6 +61,9 @@ from apps.schedule.models import (
 
 
 TARGET_THRESHOLD = 0.75
+EARLIER_HOME, EARLIER_AWAY = 14, 8
+PRIOR_SCHEMA = 2
+PRIOR_SPREAD_NOISE = 0.15
 EXPECTED_COMPARISONS = 4
 EXPECTED_POOLS = 3
 HTTP_OK = 200
@@ -156,6 +175,183 @@ def test_unseen_teams_and_poules_integrate_their_prior(history: list[dict]) -> N
     assert shorter is not None
     for full, short in zip(draws, shorter, strict=True):
         assert short == pytest.approx([value * 2 / 3 for value in full])
+
+
+@pytest.fixture
+def earlier() -> list[dict]:
+    """Return a previous edition in which one club team clearly outscored another."""
+    return [
+        {
+            "match": f"earlier-{index}",
+            "season": "earlier-season",
+            "discipline": "outdoor",
+            "gender": "unknown",
+            "category": "b",
+            "age_group": "senior",
+            "colour": "unknown",
+            "playing_format": "eight",
+            "team_kind": "senior",
+            "class_code": "B",
+            "home_identity": "club-strong" if index % 2 else f"club-{index % 4}",
+            "away_identity": f"club-{index % 4}" if index % 2 else "club-strong",
+            "duration": None,
+            "starts_at": (START - timedelta(days=60 - index)).isoformat(),
+            "revisions": [
+                {
+                    "revision": 1,
+                    "observed_at": (START - timedelta(days=59 - index)).isoformat(),
+                    "status": "FINAL",
+                    "automatic_result": False,
+                    "home_score": EARLIER_HOME if index % 2 else EARLIER_AWAY,
+                    "away_score": EARLIER_AWAY if index % 2 else EARLIER_HOME,
+                }
+            ],
+        }
+        for index in range(40)
+    ]
+
+
+def mean_rates(artifact: dict, row: dict) -> tuple[float, float]:
+    """Average posterior home and away scoring rates."""
+    draws = rate_draws(artifact, row)
+    assert draws is not None
+    return (
+        sum(home for home, _ in draws) / len(draws),
+        sum(away for _, away in draws) / len(draws),
+    )
+
+
+def test_earlier_seasons_forecast_a_context_before_its_first_result(
+    history: list[dict], earlier: list[dict]
+) -> None:
+    """A new phase starts from its format's earlier pace, not earlier team strength."""
+    for row in history:
+        row["revisions"] = []
+        row["home_identity"] = "club-strong" if row["home"] == "home-0" else None
+        row["away_identity"] = None
+    cutoff = START + timedelta(hours=12)
+    assert fit(history, cutoff)["contexts"] == {}
+    artifact = fit(history, cutoff, prior_rows=earlier)
+    key = context_key(history[0])
+    assert artifact["history"]["contexts"][key]["pace_key"].split("|")[1] == "unknown"
+    for row in history[:3]:
+        assert sum(mean_rates(artifact, row)) == pytest.approx(
+            EARLIER_HOME + EARLIER_AWAY, rel=0.25
+        )
+    # The linked strong team starts like any other: carry-over never helped.
+    strong = artifact["contexts"][key]["effects"]["attack"]["home-0"]
+    assert abs(sum(strong) / len(strong)) < PRIOR_SPREAD_NOISE
+
+
+def test_earlier_seasons_leave_established_contexts_unchanged(
+    history: list[dict], earlier: list[dict]
+) -> None:
+    """Contexts with the training minimum are fitted exactly as without history."""
+    cutoff = START + timedelta(days=16)
+    artifact = fit(history, cutoff, prior_rows=earlier)
+    assert artifact["contexts"] == fit(history, cutoff)["contexts"]
+    assert artifact["history"]["contexts"] == {}
+
+
+def test_earlier_results_count_from_kickoff_but_corrections_from_observation(
+    history: list[dict], earlier: list[dict]
+) -> None:
+    """Late-imported seasons are usable; later corrections and fixtures are not."""
+    for row in history:
+        row["revisions"] = []
+    cutoff = START + timedelta(hours=12)
+    artifact = fit(history, cutoff, prior_rows=earlier)
+    imported = deepcopy(earlier)
+    for row in imported:
+        row["revisions"][0]["observed_at"] = (cutoff + timedelta(days=30)).isoformat()
+    assert fit(history, cutoff, prior_rows=imported) == artifact
+    late = deepcopy(earlier)
+    late[0]["revisions"].append({
+        **late[0]["revisions"][0],
+        "revision": 2,
+        "home_score": 99,
+        "observed_at": (cutoff + timedelta(hours=1)).isoformat(),
+    })
+    late.append({
+        **late[1],
+        "match": "after-cutoff",
+        "starts_at": (cutoff + timedelta(hours=1)).isoformat(),
+    })
+    assert fit(history, cutoff, prior_rows=late) == artifact
+
+
+def test_unknown_earlier_fields_match_but_disciplines_keep_their_pace(
+    history: list[dict],
+) -> None:
+    """Partial earlier formats fit known ones; only playing time crosses disciplines."""
+    row = history[0]
+    outdoor = "outdoor|mixed|b|senior|unknown|eight|senior"
+    vague = "outdoor|unknown|unknown|senior|unknown|eight|senior"
+    gendered = "outdoor|unknown|b|senior|unknown|eight|senior"
+    indoor = "indoor|unknown|b|senior|unknown|eight|senior"
+    prior = {"pace": {vague: 0.0, gendered: 0.0, indoor: 0.0}}
+    assert pace_lookup(prior, row) == gendered
+    assert pace_lookup({"pace": {indoor: 0.0}}, row) is None
+    duration = 60
+    assert imputed_durations({indoor, vague}, {outdoor: duration}) == {
+        indoor: duration,
+        vague: duration,
+    }
+
+
+def test_an_edition_never_serves_as_its_own_prior(history: list[dict]) -> None:
+    """Results of the same edition stay likelihood, not also prior evidence."""
+    for row in history:
+        row["home_identity"], row["away_identity"] = row["home"], row["away"]
+    cutoff = START + timedelta(days=16)
+    artifact = fit(history, cutoff, prior_rows=[])
+    assert artifact["history"]["contexts"] == {}
+    assert artifact["contexts"] == fit(history, cutoff)["contexts"]
+
+
+def test_backtest_reports_new_contexts_apart_from_the_unchanged_gate(
+    history: list[dict], earlier: list[dict]
+) -> None:
+    """Prior-only forecasts are reported separately; established evidence is equal."""
+    origins = [START + timedelta(hours=12), START + timedelta(days=16)]
+    through = START + timedelta(days=25)
+    report = backtest(history, origins, through, prior_rows=earlier)
+    plain = backtest(history, origins, through)
+    assert report["history"]["new_contexts"]["matches"] == len(range(1, 16))
+    assert report["metrics"] == plain["metrics"]
+    assert report["passed"] == plain["passed"]
+    assert "history" not in plain
+
+
+def test_only_gender_pending_partial_poules_are_forecast() -> None:
+    """A poule awaiting only its allocation sheet gender remains its own context."""
+    context = CompetitionClass()
+    assert supported_pool(Pool(mapping_status="mapped", competition_class=context))
+    assert supported_pool(
+        Pool(
+            mapping_status="partial",
+            mapping_issues=["missing_gender"],
+            competition_class=context,
+        )
+    )
+    assert not supported_pool(
+        Pool(
+            mapping_status="partial",
+            mapping_issues=["missing_gender", "missing_category"],
+            competition_class=context,
+        )
+    )
+    assert not supported_pool(Pool(mapping_status="mapped"))
+
+
+def test_refresh_accepts_other_editions_of_its_source_season() -> None:
+    """Indoor contexts published from an outdoor source season stay in scope."""
+    indoor = {"source_season": "source", "contexts": {"indoor-edition|x": {}}}
+    assert from_season(indoor, "source")
+    assert not from_season(indoor, "other")
+    assert from_season({"contexts": {"source|x": {}}}, "source")
+    assert not from_season({"contexts": {"indoor-edition|x": {}}}, "source")
+    assert from_season({"season": "source", "rows": [{"season": "x"}]}, "source")
 
 
 def test_joint_distribution_and_quantile_targets() -> None:
@@ -423,6 +619,18 @@ def test_export_and_summary_use_stable_identities_without_rating_configuration(
         source.pool.competition_class.edition.season_id
     )
     assert report["rows"][0]["revisions"][0]["home_score"] == result_score
+    assert report["rows"][0]["home_identity"] == str(
+        source.home_team.group.local_team_id
+    )
+    assert report["season"] == str(source.season_id)
+    with_prior = export_rows(
+        str(source.season_id), START + timedelta(days=3), (str(source.season_id),)
+    )
+    assert with_prior["schema"] == PRIOR_SCHEMA
+    earlier_row = with_prior["prior_rows"][0]
+    assert earlier_row["home_identity"] == row["home_identity"]
+    assert earlier_row["duration"] == source.playing_time_minutes
+    assert "home" not in earlier_row
     RatingConfiguration.objects.all().delete()
     native = predicted_match.local_match
     assert native is not None

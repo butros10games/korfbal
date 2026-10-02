@@ -28,6 +28,13 @@ class Command(BaseCommand):
         parser.add_argument("--output", required=True, type=Path)
         parser.add_argument("--legacy-from", type=timestamp)
         parser.add_argument("--through", type=timestamp)
+        parser.add_argument(
+            "--prior-season",
+            action="append",
+            default=[],
+            type=UUID,
+            help="Earlier source season whose results centre the priors (repeatable)",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Write an export and report aggregate coverage.
@@ -38,7 +45,8 @@ class Command(BaseCommand):
         """
         values: dict[str, Any] = dict(options)
         through = values.get("through") or timezone.now()
-        report = export_rows(str(values["season"]), through)
+        prior = tuple(str(season) for season in values["prior_season"])
+        report = export_rows(str(values["season"]), through, prior)
         if not report["rows"]:
             raise CommandError("No supported league fixtures for this source season")
         scored = snapshot(report["rows"], through)
@@ -61,3 +69,8 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Exported {len(report['rows'])} fixtures; exclusions: {report['excluded']}"
         )
+        if prior:
+            self.stdout.write(
+                f"Exported {len(report['prior_rows'])} earlier results; "
+                f"exclusions: {report['prior_excluded']}"
+            )

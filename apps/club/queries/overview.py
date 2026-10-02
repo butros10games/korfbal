@@ -14,21 +14,43 @@ from apps.competition.models import (
 )
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import Match, Season
+from apps.schedule.queries.seasons import FoldedSeason, fold_full_year_seasons
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
 
 
-def club_seasons(club: Club) -> QuerySet[Season]:
-    """Return seasons with a roster or match connected to the club."""
-    return Season.objects.filter(
-        Q(pk__in=TeamData.objects.filter(team__club=club).values("season_id"))
-        | Q(pk__in=Match.objects.filter(home_team__club=club).values("season_id"))
-        | Q(pk__in=Match.objects.filter(away_team__club=club).values("season_id"))
-    ).order_by("-start_date")
+def club_seasons(club: Club) -> list[Season]:
+    """Return seasons with a roster or match connected to the club.
+
+    Full-year outdoor seasons are offered as the two outdoor halves, so the
+    club has one set of choices for teams that play one or two outdoor seasons.
+    """
+    return fold_full_year_seasons(
+        list(
+            Season.objects.filter(
+                Q(pk__in=TeamData.objects.filter(team__club=club).values("season_id"))
+                | Q(
+                    pk__in=Match.objects.filter(home_team__club=club).values(
+                        "season_id"
+                    )
+                )
+                | Q(
+                    pk__in=Match.objects.filter(away_team__club=club).values(
+                        "season_id"
+                    )
+                )
+            ).order_by("-start_date")
+        )
+    )
 
 
-def club_teams(club: Club, season: Season | None) -> QuerySet[Team]:
-    """Return club teams observed in the selected season."""
+def club_teams(
+    club: Club, season: Season | None, folded: FoldedSeason | None = None
+) -> QuerySet[Team]:
+    """Return club teams observed in the selected season.
+
+    ``folded`` adds the teams of the full-year season shown inside this half.
+    """
     queryset = (
         club.teams
         .select_related("club")
@@ -36,16 +58,26 @@ def club_teams(club: Club, season: Season | None) -> QuerySet[Team]:
         .fetch_mode(models.FETCH_RAISE)
     )
     if season:
+        seasons = [season, folded.whole] if folded else [season]
         queryset = queryset.filter(
-            Exists(TeamData.objects.filter(team_id=OuterRef("pk"), season=season))
-            | Exists(Match.objects.filter(home_team_id=OuterRef("pk"), season=season))
-            | Exists(Match.objects.filter(away_team_id=OuterRef("pk"), season=season))
+            Exists(TeamData.objects.filter(team_id=OuterRef("pk"), season__in=seasons))
+            | Exists(
+                Match.objects.filter(home_team_id=OuterRef("pk"), season__in=seasons)
+            )
+            | Exists(
+                Match.objects.filter(away_team_id=OuterRef("pk"), season__in=seasons)
+            )
         )
     return queryset
 
 
-def club_matches(club: Club, season: Season | None) -> QuerySet[MatchData]:
-    """Return tracker match data involving a club."""
+def club_matches(
+    club: Club, season: Season | None, folded: FoldedSeason | None = None
+) -> QuerySet[MatchData]:
+    """Return tracker match data involving a club.
+
+    ``folded`` adds the full-year season's matches played during this half.
+    """
     # Filter match foreign keys before loading the home/away presentation data.
     # An OR across both joined clubs otherwise performs those joins for every
     # unrelated fixture encountered by the ordered match scan.
@@ -66,7 +98,14 @@ def club_matches(club: Club, season: Season | None) -> QuerySet[MatchData]:
         )
         .fetch_mode(models.FETCH_RAISE)
     )
-    if season:
+    if season and folded:
+        played = Q(match_link__season_id=folded.whole.id_uuid)
+        if folded.start:
+            played &= Q(match_link__start_time__gte=folded.start)
+        if folded.end:
+            played &= Q(match_link__start_time__lt=folded.end)
+        queryset = queryset.filter(Q(match_link__season_id=season.id_uuid) | played)
+    elif season:
         queryset = queryset.filter(match_link__season_id=season.id_uuid)
     return queryset
 

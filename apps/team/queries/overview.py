@@ -10,8 +10,10 @@ from apps.player.models import Player
 from apps.schedule.models import Match, Season, SeasonPool
 from apps.schedule.queries.seasons import (
     current_season,
+    default_season,
+    find_season,
+    full_year_for_half,
     most_recent_season,
-    requested_or_default_season,
 )
 from apps.team.models.team import Team
 from apps.team.models.team_data import TeamData
@@ -22,8 +24,11 @@ def resolve_team_season(
     seasons: list[Season],
 ) -> Season | None:
     """Resolve a team-scoped season without broadening invalid requests."""
-    return requested_or_default_season(requested_id, seasons) or (
-        current_season() or most_recent_season()
+    requested = find_season(requested_id, seasons) if requested_id else None
+    if requested_id and requested is None:
+        requested = full_year_for_half(requested_id, seasons)
+    return (
+        requested or default_season(seasons) or current_season() or most_recent_season()
     )
 
 

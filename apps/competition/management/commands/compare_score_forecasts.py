@@ -41,7 +41,7 @@ class Command(BaseCommand):
             candidate_raw = values["candidate"].read_bytes()
             incumbent = json.loads(incumbent_raw)
             candidate = json.loads(candidate_raw)
-            if exported["schema"] != 1 or not exported["rows"]:
+            if exported["schema"] not in {1, 2} or not exported["rows"]:
                 raise ValueError("Unsupported or empty forecast export")
             if any(
                 artifact.get("version") != VERSION

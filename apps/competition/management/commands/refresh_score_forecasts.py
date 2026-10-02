@@ -30,12 +30,26 @@ def saved_export(options: dict[str, object]) -> tuple[bytes | None, datetime]:
     if not isinstance(through, datetime):
         raise CommandError("Expected a timezone-aware cutoff")
     if saved is not None and (
-        saved["schema"] != 1
+        saved["schema"] not in {1, 2}
         or through > timestamp(saved["exported_at"])
-        or any(row["season"] != str(options["season"]) for row in saved["rows"])
+        or not from_season(saved, str(options["season"]))
     ):
         raise CommandError("Saved export does not match season or cutoff")
     return raw, through
+
+
+def from_season(document: dict, season: str) -> bool:
+    """Match the source season; one season can feed indoor and outdoor editions.
+
+    Older exports and artifacts predate the recorded source season, and then held
+    only contexts of the source season's own edition.
+    """
+    recorded = document.get("season") or document.get("source_season")
+    if recorded:
+        return recorded == season
+    if "rows" in document:
+        return all(row["season"] == season for row in document["rows"])
+    return all(key.split("|")[0] == season for key in document["contexts"])
 
 
 def compare_challenger(
@@ -78,6 +92,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--input", type=Path, help="Reuse a saved export after a failed worker run"
         )
+        parser.add_argument(
+            "--prior-season",
+            action="append",
+            default=[],
+            type=UUID,
+            help="Earlier source season whose results centre the priors (repeatable)",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Preserve provenance and record failed gates as a completed decision.
@@ -112,10 +133,7 @@ class Command(BaseCommand):
                 <= timezone.now()
             ):
                 raise CommandError("Invalid forward audit cutoff")
-            if any(
-                key.split("|")[0] != str(options["season"])
-                for key in artifact["contexts"]
-            ):
+            if not from_season(artifact, str(options["season"])):
                 raise CommandError("Season does not match deployed artifact")
             root.mkdir(mode=0o700, parents=True, exist_ok=False)
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -146,6 +164,7 @@ class Command(BaseCommand):
                     output=root / "input.json",
                     legacy_from=origins[-1],
                     through=through,
+                    prior_season=options["prior_season"],
                     stdout=self.stdout,
                 )
             state["input_sha256"] = sha256(

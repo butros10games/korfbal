@@ -38,7 +38,7 @@ class Command(BaseCommand):
         try:
             data = json.loads(values["input"].read_bytes())
             artifact = json.loads(values["artifact"].read_bytes())
-            if data["schema"] != 1 or not data["rows"]:
+            if data["schema"] not in {1, 2} or not data["rows"]:
                 raise ValueError("Unsupported or empty forecast export")
             if artifact.get("version") != VERSION:
                 raise ValueError("Unsupported score forecast artifact")

@@ -13,8 +13,39 @@ from django.utils import timezone
 from apps.competition.domain.score_forecast import (
     CONTEXT_FIELDS,
     MAX_DURATION,
+    PACE_FIELDS,
     timestamp,
 )
+
+
+def checked_rows(data: dict) -> list[dict] | None:
+    """Validate fixtures and return the earlier-season results, if exported.
+
+    Raises:
+        ValueError: The export is unsupported or a row is invalid.
+
+    """
+    rows = data["rows"]
+    if data["schema"] not in {1, 2} or not rows:
+        raise ValueError("Unsupported or empty forecast export")
+    if len({row["match"] for row in rows}) != len(rows):
+        raise ValueError("Duplicate match identities")
+    for row in rows:
+        if any(
+            not isinstance(row.get(key), str) or "|" in row[key]
+            for key in CONTEXT_FIELDS
+        ):
+            raise ValueError("Missing or invalid competition context")
+        if not 0 < row["duration"] <= MAX_DURATION or row["home"] == row["away"]:
+            raise ValueError("Invalid duration or team identity")
+    prior_rows = data.get("prior_rows")
+    for row in prior_rows or []:
+        if any(
+            not isinstance(row.get(key), str) or "|" in row[key]
+            for key in (*PACE_FIELDS, "class_code")
+        ):
+            raise ValueError("Missing or invalid earlier-season context")
+    return prior_rows
 
 
 class Command(BaseCommand):
@@ -60,26 +91,17 @@ class Command(BaseCommand):
                 raise ValueError(
                     "Origins must precede cutoff; cutoff must not exceed export time"
                 )
-            if data["schema"] != 1 or not rows:
-                raise ValueError("Unsupported or empty forecast export")
-            if len({row["match"] for row in rows}) != len(rows):
-                raise ValueError("Duplicate match identities")
-            for row in rows:
-                if any(
-                    not isinstance(row.get(key), str) or "|" in row[key]
-                    for key in CONTEXT_FIELDS
-                ):
-                    raise ValueError("Missing or invalid competition context")
-                if (
-                    not 0 < row["duration"] <= MAX_DURATION
-                    or row["home"] == row["away"]
-                ):
-                    raise ValueError("Invalid duration or team identity")
+            prior_rows = checked_rows(data)
             validation = backtest(
-                rows, origins, cutoff, cold_start=values["cold_start"]
+                rows,
+                origins,
+                cutoff,
+                cold_start=values["cold_start"],
+                prior_rows=prior_rows,
             )
-            artifact = fit(rows, cutoff)
+            artifact = fit(rows, cutoff, prior_rows=prior_rows)
             artifact.update({
+                **({"source_season": data["season"]} if "season" in data else {}),
                 "input_sha256": sha256(raw).hexdigest(),
                 "available_from": timezone.now().isoformat(),
                 "metadata_history": data["metadata_history"],

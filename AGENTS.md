@@ -355,3 +355,6 @@ misleading provider 500/603 errors.
 - Score forecast artifacts must carry observed-time training cutoffs and actual availability
   times. Keep API/browser predictive calculations aligned with the shared synthetic score
   fixture, and keep live calibration claims separate from pre-match backtest results.
+- The production forecast batch overlays only `FORECAST_FILES` from
+  `scripts/python/run_korfbal_forecast_worker.py` onto the deployed worker image. List every
+  forecast module a change touches there; an omitted one silently runs the deployed version.

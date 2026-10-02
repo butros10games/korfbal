@@ -22,6 +22,16 @@ CONTEXT_FIELDS = (
     "playing_format",
     "team_kind",
 )
+# Scoring format shared across seasons and phases: earlier editions centre priors.
+PACE_FIELDS = (
+    "discipline",
+    "gender",
+    "category",
+    "age_group",
+    "colour",
+    "playing_format",
+    "team_kind",
+)
 PRIOR_SD = {"class": 0.3, "pool": 0.25, "attack": 0.4, "defence": 0.4}
 
 

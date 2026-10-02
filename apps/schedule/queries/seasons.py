@@ -2,10 +2,136 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date, datetime
+from uuid import UUID
+
 from django.db.models import Max, Min, Q
 from django.utils import timezone
 
 from apps.schedule.models import Match, Season
+
+
+# A korfbal year runs from July to June and holds up to four playing seasons.
+EDITION_FIRST_MONTH = 7
+AUTUMN = "autumn"
+INDOOR = "indoor"
+SPRING = "spring"
+FULL_YEAR = "full_year"
+OTHER = "other"
+# The competition importer names the playing seasons of an edition this way.
+_KIND_BY_PREFIX = {
+    "voor seizoen": AUTUMN,
+    "zaal seizoen": INDOOR,
+    "na seizoen": SPRING,
+    "veld seizoen": FULL_YEAR,
+}
+
+
+def season_edition(season: Season) -> int:
+    """Return the start year of the korfbal year a season belongs to."""
+    start = season.start_date
+    return start.year if start.month >= EDITION_FIRST_MONTH else start.year - 1
+
+
+def season_kind(season: Season) -> str:
+    """Classify a season by its name; unrecognised names stay unclassified."""
+    name = season.name.casefold()
+    return next(
+        (kind for prefix, kind in _KIND_BY_PREFIX.items() if name.startswith(prefix)),
+        OTHER,
+    )
+
+
+@dataclass(frozen=True)
+class FoldedSeason:
+    """The part of a full-year outdoor season shown inside one of its halves."""
+
+    whole: Season
+    start: datetime | None
+    end: datetime | None
+
+
+def _outdoor_parts(editions: set[int]) -> dict[int, dict[str, Season]]:
+    """Return the outdoor seasons of editions whose halves are unambiguous."""
+    if not editions:
+        return {}
+    found: dict[int, dict[str, list[Season]]] = {}
+    for season in Season.objects.filter(
+        start_date__gte=date(min(editions), EDITION_FIRST_MONTH, 1),
+        start_date__lt=date(max(editions) + 1, EDITION_FIRST_MONTH, 1),
+    ):
+        edition = season_edition(season)
+        if edition in editions:
+            found.setdefault(edition, {}).setdefault(season_kind(season), []).append(
+                season
+            )
+    return {
+        edition: {kind: rows[0] for kind, rows in kinds.items()}
+        for edition, kinds in found.items()
+        if all(len(kinds.get(kind, [])) == 1 for kind in (AUTUMN, SPRING, FULL_YEAR))
+    }
+
+
+def fold_full_year_seasons(seasons: list[Season]) -> list[Season]:
+    """Replace full-year outdoor seasons by the two outdoor halves of their edition.
+
+    Poules that play both halves live in their own season. Lists covering many
+    teams offer the halves instead, so every team appears under the same choices.
+    A full-year season without both halves stays a choice of its own.
+    """
+    parts = _outdoor_parts({
+        season_edition(season) for season in seasons if season_kind(season) == FULL_YEAR
+    })
+    if not parts:
+        return seasons
+    hidden = {kinds[FULL_YEAR].pk for kinds in parts.values()}
+    folded = {season.pk: season for season in seasons if season.pk not in hidden}
+    for kinds in parts.values():
+        folded.update({kinds[kind].pk: kinds[kind] for kind in (AUTUMN, SPRING)})
+    return sorted(
+        folded.values(),
+        key=lambda season: (-season.start_date.toordinal(), season.name),
+    )
+
+
+def folded_full_year(season: Season | None) -> FoldedSeason | None:
+    """Return the full-year season whose matches a half season also shows."""
+    kind = season_kind(season) if season else OTHER
+    if season is None or kind not in {AUTUMN, SPRING}:
+        return None
+    edition = season_edition(season)
+    parts = _outdoor_parts({edition}).get(edition)
+    if parts is None or parts[kind].pk != season.pk:
+        return None
+    # Full-year matches follow the calendar year, like the importer's routing.
+    turn = datetime(edition + 1, 1, 1, tzinfo=timezone.get_current_timezone())
+    return FoldedSeason(
+        parts[FULL_YEAR],
+        start=None if kind == AUTUMN else turn,
+        end=turn if kind == AUTUMN else None,
+    )
+
+
+def full_year_for_half(requested_id: str, seasons: list[Season]) -> Season | None:
+    """Return the scoped full-year season covering a requested outdoor half.
+
+    Club pages offer the halves for every team, so a team that plays one
+    full-year outdoor season is opened with a half it does not have itself.
+    """
+    whole = [season for season in seasons if season_kind(season) == FULL_YEAR]
+    if not whole:
+        return None
+    try:
+        half = Season.objects.filter(pk=UUID(requested_id)).first()
+    except ValueError:
+        return None
+    if half is None or season_kind(half) not in {AUTUMN, SPRING}:
+        return None
+    return next(
+        (season for season in whole if season_edition(season) == season_edition(half)),
+        None,
+    )
 
 
 def _playing_season(active: list[Season]) -> Season:
@@ -121,6 +247,8 @@ def season_options_payload(seasons: list[Season]) -> list[dict[str, object]]:
             "start_date": season.start_date.isoformat(),
             "end_date": season.end_date.isoformat(),
             "is_current": active is not None and season.id_uuid == active.id_uuid,
+            "edition": season_edition(season),
+            "kind": season_kind(season),
         }
         for season in seasons
     ]
