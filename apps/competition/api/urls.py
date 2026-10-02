@@ -4,6 +4,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .match_forms import MatchFormView
+from .rankings import RankingsView
 from .ratings import RatingsView
 from .views import (
     AllocationViewSet,
@@ -33,5 +34,6 @@ urlpatterns = [
         name="competition-match-form",
     ),
     path("ratings/", RatingsView.as_view(), name="competition-ratings"),
+    path("rankings/", RankingsView.as_view(), name="competition-rankings"),
     *router.urls,
 ]

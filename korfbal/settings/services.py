@@ -123,6 +123,8 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_TASK_ROUTES = {
     "apps.competition.tasks.sync_match_forms": {"queue": "instant"},
     "apps.competition.tasks.publish_competition_backlog": {"queue": "publication"},
+    # A full history replay must not wait behind (or delay) provider turns.
+    "apps.competition.tasks.refresh_club_team_ratings": {"queue": "celery"},
     "apps.competition.tasks.*": {"queue": "competition"},
     "apps.player.tasks.download_*": {"queue": "media"},
     "apps.game_tracker.tasks.*": {"queue": "projections"},

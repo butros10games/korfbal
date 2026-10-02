@@ -831,6 +831,69 @@ class RatingConfiguration(models.Model):
         return f"{self.season_id}: allocation Elo"
 
 
+class TeamRating(models.Model):
+    """Cross-season Elo of one club team, rebuilt from the complete result history."""
+
+    objects: ClassVar[models.Manager[TeamRating]]
+
+    team = models.OneToOneField(
+        "team.Team",
+        primary_key=True,
+        on_delete=models.CASCADE,
+        related_name="competition_rating",
+    )
+    rating = models.FloatField(db_index=True)
+    phase_start = models.FloatField()
+    games = models.PositiveIntegerField()
+    phase = models.ForeignKey(
+        "schedule.Season", on_delete=models.PROTECT, related_name="+"
+    )
+    last_played_at = models.DateTimeField()
+    competition_class = models.ForeignKey(
+        CompetitionClass,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    comparison_group = models.CharField(max_length=36)
+    model = models.CharField(max_length=20)
+
+    if TYPE_CHECKING:
+        team_id: UUID
+        phase_id: UUID
+        competition_class_id: int | None
+        # Assigned by the rankings query, not stored.
+        rank: int
+
+    def __str__(self) -> str:
+        """Identify the rated team without loading it."""
+        return f"{self.team_id}: {self.rating:.0f}"
+
+
+class MatchRating(models.Model):
+    """Ratings both club teams brought into one rated result."""
+
+    objects: ClassVar[models.Manager[MatchRating]]
+
+    match = models.OneToOneField(
+        Match, primary_key=True, on_delete=models.CASCADE, related_name="elo_rating"
+    )
+    home_rating = models.FloatField()
+    away_rating = models.FloatField()
+    home_expected = models.FloatField()
+    home_change = models.FloatField()
+    home_games = models.PositiveIntegerField()
+    away_games = models.PositiveIntegerField()
+
+    if TYPE_CHECKING:
+        match_id: int
+
+    def __str__(self) -> str:
+        """Identify the rated match without loading it."""
+        return f"{self.match_id}: {self.home_expected:.2f}"
+
+
 class ScoreForecastReview(models.Model):
     """Aggregate evidence and an auditable human decision for one artifact.
 

@@ -1830,6 +1830,31 @@ Media must use a bucket separate from static files. From the configured Korfbal 
 
 Spotify track imports now require both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Metadata comes from Spotify's official API; the Celery worker uses yt-dlp, its packaged JavaScript solver, Node, and ffmpeg to find and convert one audio result. Search matching can differ from spotDL. Direct MP3 uploads remain available without Spotify credentials. The existing `SPOTDL_DOWNLOAD_TIMEOUT_SECONDS` setting continues to bound each download attempt for deployment compatibility. The worker accepts only a successful, nonempty MP3 within the upload size limit and kills decoder descendants on timeout.
 
+## Club-team ratings and rankings
+
+`elo-v2` gives every club team (the native team behind each season's provider team)
+one rating across all seasons, indoor and outdoor. Results update it by margin
+relative to the match total, with home advantage; a team entering a new phase starts
+at 30% of its rating plus 70% of its new poule's average, because poules are regraded
+by strength. Cups are excluded. On 2025-26 results it predicted outcomes with a
+21% lower Brier score than the per-season `elo-v1` for established teams and 12% lower
+early in a phase.
+
+The beat task `refresh_club_team_ratings` replays the history when results change.
+Run the first replay (or one after a model change) by hand:
+
+```sh
+uv run python apps/django_projects/korfbal/manage.py refresh_team_ratings --force
+```
+
+`GET /api/competition/rankings/?age_group=senior` is public. Rankings require an age
+group, filter by the team's latest classification (`gender`, `category`, `team_kind`,
+`class_code`, `discipline`, …), include teams that played in the last 400 days
+(`active_days`), and keep a team's rank when filtering by `club` or `search`. Teams
+from different levels rarely meet, so compare within a class or team kind:
+across levels, dominant reserve and lower-league teams can outrank top-league teams.
+`comparison_group` marks schedules that never connected.
+
 ## Contextual score forecasts
 
 The optional score model predicts goals with separate season/discipline/phase/age/

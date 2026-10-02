@@ -48,6 +48,7 @@ from apps.competition.services.sync import (
     preview_sync,
     sync_leased,
 )
+from apps.competition.services.team_elo import refresh_team_ratings
 from apps.schedule.models import Season
 
 
@@ -326,3 +327,11 @@ def publish_competition_backlog() -> dict[str, object]:
     if result["more"]:
         publish_competition_backlog.apply_async(expires=120)
     return {"status": "published", **result}
+
+
+@shared_task(ignore_result=True, soft_time_limit=600, time_limit=660)
+def refresh_club_team_ratings() -> dict[str, object]:
+    """Replay cross-season club-team Elo after results changed."""
+    result = refresh_team_ratings()
+    logger.info("Club team rating refresh: %s", result)
+    return result

@@ -19,13 +19,17 @@ from apps.competition.queries.forecast_export import features
 from apps.competition.services.context_prediction import context_prediction
 from apps.competition.services.rating_preview import exclusion, rate_class
 from apps.competition.services.score_prediction import score_prediction
+from apps.competition.services.team_elo import elo_prediction
 from apps.schedule.models import Match as NativeMatch
 
 
 def match_prediction(match: NativeMatch) -> dict[str, Any]:
-    """Resolve exact native/provider identities without comparing unrelated classes."""
-    if not getattr(settings, "KORFBAL_SCORE_FORECAST_ARTIFACT", ""):
-        return rating_prediction(match)
+    """Resolve exact native/provider identities without comparing unrelated classes.
+
+    The contextual score forecast comes first, then the cross-season club-team Elo,
+    which also covers contexts and phase starts without enough results yet. The
+    allocation-seeded predictor remains for teams without any rated history.
+    """
     # Score forecasts use their own training provenance, independently of whether
     # a KNKV preseason rating configuration exists.
     score_source = (
@@ -37,7 +41,9 @@ def match_prediction(match: NativeMatch) -> dict[str, Any]:
         .first()
     )
     cutoff = min(timezone.now(), match.start_time)
-    if score_source is not None:
+    if score_source is None:
+        return rating_prediction(match)
+    if getattr(settings, "KORFBAL_SCORE_FORECAST_ARTIFACT", ""):
         row = features(score_source)
         home_group, away_group = (
             score_source.home_team.group,
@@ -53,6 +59,9 @@ def match_prediction(match: NativeMatch) -> dict[str, Any]:
             prediction = score_prediction(row, min(cutoff, score_source.starts_at))
             if prediction is not None:
                 return prediction
+    elo = elo_prediction(match, score_source, cutoff)
+    if elo is not None:
+        return elo
     return rating_prediction(match)
 
 
