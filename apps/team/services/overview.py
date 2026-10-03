@@ -77,6 +77,15 @@ def build_team_overview_payload(
         roster_players = list(team_players(team, season, match_data_qs))
 
     roster_ids = main_roster_ids(team=team, season=season) if roster_players else set()
+    private_roster = (
+        _private_roster_counts(team, season)
+        if options.include_roster
+        else {"players": 0, "staff": 0, "is_estimate": False}
+    )
+    # Without an explicit season roster (for example imported historical
+    # seasons), the observed match players are the season's players rather
+    # than extras beside an empty roster. A private-only roster still counts.
+    has_season_roster = bool(roster_ids) or private_roster["players"] > 0
     ordered_roster_players = _order_roster_players(
         roster_players=roster_players,
         main_roster_ids=roster_ids,
@@ -102,7 +111,9 @@ def build_team_overview_payload(
                 "has_account": player.user_id is not None,
                 "role_labels": sorted(match_roles.get(player.pk, set())),
                 "roster_role": (
-                    "main" if str(player.id_uuid) in roster_ids else "reserve"
+                    "main"
+                    if not has_season_roster or str(player.id_uuid) in roster_ids
+                    else "reserve"
                 ),
                 "profile_picture_url": (
                     player.get_profile_picture()
@@ -175,11 +186,6 @@ def build_team_overview_payload(
     if options.include_stats and roster_players and finished_matches.exists():
         stats_players = build_player_stats(roster_players, finished_matches)
 
-    private_roster = (
-        _private_roster_counts(team, season)
-        if options.include_roster
-        else {"players": 0, "staff": 0, "is_estimate": False}
-    )
     return {
         "private_roster": private_roster,
         "team": options.team_payload,

@@ -39,6 +39,32 @@ def lineup() -> dict:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("roster", "substitute_role"),
+    [([], "main"), ([person("HIDDEN", "PRIVATE")], "reserve")],
+)
+def test_lineups_fill_seasons_without_team_roster(
+    season: Season, roster: list[dict], substitute_role: str
+) -> None:
+    """Selections are the players of a season without any roster, private or public."""
+    importer = Importer(season, timezone.now())
+    importer.match(match_payload(), result=True)
+    publish_catalogue(schedule_changes=RecordingScheduleChanges())
+    if roster:
+        importer.apply("team_roster", "T1", {"TeamPersonOverview": roster})
+    importer.apply("match_lineup", "M1", lineup())
+    home = Match.objects.select_related("home_team__local_team_data").get()
+    team_id = home.home_team.local_team_data.team_id
+    response = APIClient().get(
+        f"/api/team/teams/{team_id}/overview/?season={season.pk}"
+    )
+    rows = {p["id_uuid"]: p for p in response.data["roster"]}
+    substitute = rows[str(Player.objects.get(knkv_person_id="P2").pk)]
+    assert substitute["role_labels"] == ["Wisselspeler (wedstrijd)"]
+    assert substitute["roster_role"] == substitute_role
+
+
+@pytest.mark.django_db
 def test_lineups_reuse_people_without_roster_or_appearance(season: Season) -> None:
     """A match substitute belongs in selection, never regular roster or minutes."""
     importer = Importer(season, timezone.now())

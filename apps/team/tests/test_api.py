@@ -284,8 +284,8 @@ def test_team_overview_discovers_guest_and_shot_only_players(
     assert [
         (line["username"], line["roster_role"]) for line in opponent_payload["roster"]
     ] == [
-        ("opponent_attacker", "reserve"),
-        ("opponent_defender", "reserve"),
+        ("opponent_attacker", "main"),
+        ("opponent_defender", "main"),
     ]
     assert {line["username"] for line in opponent_payload["stats"]["players"]} == {
         "opponent_attacker",
