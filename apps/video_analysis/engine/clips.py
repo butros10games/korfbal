@@ -14,9 +14,11 @@ from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any, cast
 
+from .clip_appearance import Appearance, beside_cache, describe_players
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
 from .clip_identity import IdentityMemory, court_reference
 from .clip_inference import CPU_THREADS, clip_detector
+from .clip_linking import Background, Linker
 from .clip_match_events import MatchEvents
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_overlap import OverlapFrame, OverlapRecovery
@@ -42,6 +44,8 @@ if TYPE_CHECKING:
 
 PROGRESS_SECONDS = 5
 REFERENCE_TIME_TOLERANCE = 0.1
+# Appearance changes slowly; a sparser sample keeps its cost bounded at any rate.
+APPEARANCE_INTERVAL = 0.15
 
 
 def directory(store: Store, run_id: str) -> Path:
@@ -96,6 +100,10 @@ class ClipRun:
         self.overlap = OverlapRecovery()
         self.refiner = IdentityRefiner()
         self.numbers: ShirtNumbers | None = None
+        self.linker = Linker()
+        self.background = Background()
+        self.described_at = -math.inf
+        self.appearance: Appearance | None = None
         self.record["recipe"]["player_recovery"] = {
             "version": 1,
             "crop_search_enabled": self.recovery.crops,
@@ -163,8 +171,8 @@ class ClipRun:
             if self.record["status"] == "completed":
                 started = time.monotonic()
                 self.record["status"] = "running"
-                self.record["identity_refinement"] = self.refiner.finish(
-                    stopped=self.stopped
+                self.record["identity_refinement"] = self.linked_identities(
+                    self.refiner.finish(stopped=self.stopped)
                 )
                 if self.stopped():
                     self.record.pop("identity_refinement", None)
@@ -304,6 +312,8 @@ class ClipRun:
         if self.numbers is not None:
             self.numbers.attach(image, persons, timestamp)
         self.refiner.observe(image, persons, timestamp, camera, shirts=self.teams)
+        if self.appearance is not None:
+            self.observe_identities(image, persons, timestamp, camera)
         detected = static_objects(result, self.options.confidence)
         balls, active = self.balls.update(
             [o for o in detected if o["label"] == "ball"],
@@ -344,6 +354,43 @@ class ClipRun:
         ):
             self.publish()
 
+    def observe_identities(
+        self, image: NDArray[Any], persons: list[dict], timestamp: float, camera: dict
+    ) -> None:
+        """Retain observed players, with appearance on sampled frames, for linking."""
+        players = [
+            obj
+            for obj in persons
+            if obj["label"] == "player" and not obj.get("estimated")
+        ]
+        descriptors = None
+        if (
+            self.appearance
+            and timestamp - self.described_at >= APPEARANCE_INTERVAL - 1e-6
+        ):
+            self.described_at = timestamp
+            descriptors = describe_players(self.appearance, image, players)
+            self.timings["appearance"] = self.appearance.seconds
+        height, width = image.shape[:2]
+        boxes = [obj.get("observed_bbox") or obj["bbox"] for obj in persons]
+        motion = self.background.update(image, boxes, cut=bool(camera["cut"]))
+        self.linker.observe(
+            players,
+            round(timestamp, 6),
+            {"segment": camera["segment"], "cut": camera["cut"], "motion": motion},
+            aspect=width / height,
+            descriptors=descriptors,
+        )
+
+    def linked_identities(self, refined: dict) -> dict:
+        """Prefer whole-shot tracklet linking; keep the refinement when it stops."""
+        if self.appearance is None or refined.get("status") != "completed":
+            return refined
+        linked = self.linker.finish(self.stopped)
+        if linked is None:
+            return refined
+        return self.refiner.roster.finish(linked, self.stopped) or refined
+
     def execute(self, store: Store, weights: str) -> None:
         """Load one model, stream inference, and always publish a terminal receipt.
 
@@ -377,6 +424,9 @@ class ClipRun:
                     beside(weights)
                     if os.environ.get("KORFBAL_CLIP_NUMBERS", "1") != "0"
                     else (None, {"status": "disabled"})
+                )
+                self.appearance, self.record["identity_linking"] = beside_cache(
+                    store.root / "vision" / "cpu-cache"
                 )
                 if not supports_clips(list(model.names.values())):
                     self.record["failure_code"] = "incompatible_model"
