@@ -30,6 +30,9 @@ services:
             KORFBAL_SSE_WORKERS: ${KORFBAL_SSE_WORKERS:-2}
             KORFBAL_SSE_BACKPRESSURE: ${KORFBAL_SSE_BACKPRESSURE:-8192}
             KORFBAL_DB_POOL_MAX_SIZE: ${KORFBAL_WEB_DB_POOL_MAX_SIZE:-8}
+            # Aggregates every Granian worker on :9464 inside kwt-net (not published);
+            # infrastructure/korfbal-observability scrapes it.
+            KORFBAL_ENABLE_PROMETHEUS: ${KORFBAL_ENABLE_PROMETHEUS:-true}
             VIDEO_ANALYSIS_ROOT: /var/lib/korfbal/video-analysis
             VIDEO_ANALYSIS_TRAINING_POLICY: /run/korfbal/training-policy.json
             BG_AUTH_PASSKEY_RP_ID: korfbal.butrosgroot.com

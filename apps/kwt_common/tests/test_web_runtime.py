@@ -1,14 +1,24 @@
 """Web process isolation keeps failures and shutdown visible to the container."""
 
+from http.client import HTTPConnection
 import json
+import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 from time import monotonic, sleep
 
-from korfbal.serve import server_commands, server_environment
+from korfbal.metrics_exporter import LiveWorkerCollector
+from korfbal.serve import metrics_commands, server_commands, server_environment
+from prometheus_client import CollectorRegistry
 import pytest
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+OPEN_STREAMS = 7
+WORKER_REQUESTS = 2
 
 
 def test_web_pools_reuse_database_connections_by_default() -> None:
@@ -84,3 +94,145 @@ def test_supervisor_exits_when_a_pool_fails() -> None:
         timeout=10,
     )
     assert result.returncode == 1
+
+
+def test_metrics_stay_off_unless_prometheus_is_enabled(tmp_path: Path) -> None:
+    """Without the flag, no exporter starts and processes keep their own registry."""
+    environment = server_environment({})
+    assert "PROMETHEUS_MULTIPROC_DIR" not in environment
+    assert metrics_commands(environment) == []
+
+    enabled = server_environment({
+        "KORFBAL_ENABLE_PROMETHEUS": "true",
+        "PROMETHEUS_MULTIPROC_DIR": str(tmp_path / "metrics"),
+    })
+    stale = tmp_path / "metrics" / "counter_123.db"
+    stale.parent.mkdir()
+    stale.write_bytes(b"old")
+    assert metrics_commands(enabled) == [
+        [sys.executable, "-m", "korfbal.metrics_exporter"]
+    ]
+    assert not stale.exists()
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def test_exporter_sums_samples_from_every_web_process(tmp_path: Path) -> None:
+    """A scrape reports all workers, not whichever process answered it."""
+    port = _free_port()
+    environment = {
+        **os.environ,
+        "PROMETHEUS_MULTIPROC_DIR": str(tmp_path),
+        "KORFBAL_METRICS_PORT": str(port),
+        "KORFBAL_BIND_HOST": "127.0.0.1",
+    }
+    record = (
+        "from prometheus_client import Counter; Counter('korfbal_probe', 'probe').inc()"
+    )
+    for _ in range(3):
+        subprocess.run(
+            [sys.executable, "-c", record], env=environment, check=True, timeout=30
+        )
+    exporter = subprocess.Popen(
+        [sys.executable, "-m", "korfbal.metrics_exporter"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+    )
+    try:
+        deadline = monotonic() + 15
+        body = ""
+        while monotonic() < deadline:
+            connection = HTTPConnection("127.0.0.1", port, timeout=2)
+            try:
+                connection.request("GET", "/metrics")
+                body = connection.getresponse().read().decode()
+                break
+            except OSError:
+                sleep(0.1)
+            finally:
+                connection.close()
+        assert "korfbal_probe_total 3.0" in body
+        exporter.send_signal(signal.SIGTERM)
+        assert exporter.wait(timeout=10) == 0
+    finally:
+        if exporter.poll() is None:
+            exporter.kill()
+            exporter.wait(timeout=10)
+
+
+def test_exporter_forgets_live_gauges_of_respawned_workers(tmp_path: Path) -> None:
+    """A worker killed and respawned in place must not keep reporting its streams."""
+    environment = {**os.environ, "PROMETHEUS_MULTIPROC_DIR": str(tmp_path)}
+    record = (
+        "from prometheus_client import Counter, Gauge;"
+        "Counter('korfbal_probe', 'probe').inc();"
+        "Gauge('korfbal_streams', 'open', multiprocess_mode='livesum')"
+        f".set({OPEN_STREAMS})"
+    )
+    dead = subprocess.run(
+        [sys.executable, "-c", f"{record}; import os; print(os.getpid())"],
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    dead_pid = int(dead.stdout.strip())
+    live = subprocess.Popen(
+        [sys.executable, "-c", f"{record}; import sys; sys.stdin.read()"],
+        env=environment,
+        stdin=subprocess.PIPE,
+    )
+    try:
+        deadline = monotonic() + 15
+        while not list(tmp_path.glob(f"gauge_livesum_{live.pid}.db")):
+            assert monotonic() < deadline
+            sleep(0.05)
+        samples = {
+            sample.name: sample.value
+            for metric in LiveWorkerCollector(
+                CollectorRegistry(), str(tmp_path)
+            ).collect()
+            for sample in metric.samples
+        }
+    finally:
+        live.communicate(timeout=10)
+    assert samples["korfbal_streams"] == pytest.approx(OPEN_STREAMS)
+    assert samples["korfbal_probe_total"] == pytest.approx(WORKER_REQUESTS)
+    assert not list(tmp_path.glob(f"gauge_livesum_{dead_pid}.db"))
+
+
+@pytest.mark.parametrize(("multiprocess", "route"), [(True, False), (False, True)])
+def test_application_ports_serve_metrics_only_without_the_exporter(
+    tmp_path: Path, multiprocess: bool, route: bool
+) -> None:
+    """With the internal exporter, published API ports expose no `/metrics` route."""
+    environment = {
+        **os.environ,
+        "KORFBAL_ENABLE_PROMETHEUS": "true",
+        "DJANGO_SETTINGS_MODULE": "korfbal.settings",
+    }
+    environment.pop("PROMETHEUS_MULTIPROC_DIR", None)
+    if multiprocess:
+        environment["PROMETHEUS_MULTIPROC_DIR"] = str(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import django; django.setup();"
+            "from django.urls import Resolver404, resolve\n"
+            "try:\n    resolve('/metrics')\n    print(True)\n"
+            "except Resolver404:\n    print(False)",
+        ],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.stdout.strip() == str(route)

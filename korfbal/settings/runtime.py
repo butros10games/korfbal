@@ -14,6 +14,12 @@ SECRET_KEY = env("SECRET_KEY", "change-me" if DEBUG else None, required=not DEBU
 
 RUNNER = env("RUNNER", "")
 KORFBAL_ENABLE_PROMETHEUS = env_bool("KORFBAL_ENABLE_PROMETHEUS", RUNNER == "uwsgi")
+# With shared multiprocess files, `korfbal.metrics_exporter` serves the totals on
+# an internal port. A `/metrics` route on the published application ports would
+# be unauthenticated and report only whichever worker answered.
+KORFBAL_PROMETHEUS_ROUTE = KORFBAL_ENABLE_PROMETHEUS and not os.getenv(
+    "PROMETHEUS_MULTIPROC_DIR"
+)
 KORFBAL_AUDIT_INGEST_TOKEN = env(
     "KORFBAL_AUDIT_INGEST_TOKEN",
     "" if DEBUG else None,

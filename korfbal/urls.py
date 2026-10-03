@@ -24,5 +24,5 @@ urlpatterns = [
     path("match/api/", include("apps.game_tracker.api.urls")),
 ]
 
-if getattr(settings, "KORFBAL_ENABLE_PROMETHEUS", False):
+if getattr(settings, "KORFBAL_PROMETHEUS_ROUTE", False):
     urlpatterns.append(path("", include("django_prometheus.urls")))

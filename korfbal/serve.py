@@ -1,9 +1,12 @@
 """Supervise separate API, live-read, public-read and SSE capacity in the web image."""
 
 import os
+from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 
 def server_commands() -> list[list[str]]:
@@ -76,9 +79,36 @@ def server_commands() -> list[list[str]]:
 WEB_DB_POOL_MAX_SIZE = "4"
 
 
+# Every web process writes its samples here; `korfbal.metrics_exporter` sums them.
+DEFAULT_METRICS_DIRECTORY = str(Path(tempfile.gettempdir()) / "korfbal-prometheus")
+
+
+def metrics_enabled(environ: dict[str, str]) -> bool:
+    """Match the settings flag that installs django-prometheus."""
+    value = environ.get("KORFBAL_ENABLE_PROMETHEUS", "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 def server_environment(environ: dict[str, str]) -> dict[str, str]:
     """Pool web database connections unless the deployment sets its own size."""
-    return {"KORFBAL_DB_POOL_MAX_SIZE": WEB_DB_POOL_MAX_SIZE, **environ}
+    environment = {"KORFBAL_DB_POOL_MAX_SIZE": WEB_DB_POOL_MAX_SIZE, **environ}
+    if metrics_enabled(environment):
+        environment.setdefault("PROMETHEUS_MULTIPROC_DIR", DEFAULT_METRICS_DIRECTORY)
+    return environment
+
+
+def metrics_commands(environ: dict[str, str]) -> list[list[str]]:
+    """Start the aggregate exporter with a directory free of a previous run's files.
+
+    Stale files from crashed processes would otherwise keep reporting old counters
+    and connection gauges after a container restart.
+    """
+    directory = environ.get("PROMETHEUS_MULTIPROC_DIR")
+    if not directory:
+        return []
+    shutil.rmtree(directory, ignore_errors=True)
+    Path(directory).mkdir(parents=True)
+    return [[sys.executable, "-m", "korfbal.metrics_exporter"]]
 
 
 def supervise(commands: list[list[str]], env: dict[str, str] | None = None) -> int:
@@ -111,4 +141,10 @@ def supervise(commands: list[list[str]], env: dict[str, str] | None = None) -> i
 
 
 if __name__ == "__main__":
-    raise SystemExit(supervise(server_commands(), server_environment(dict(os.environ))))
+    environment = server_environment(dict(os.environ))
+    raise SystemExit(
+        supervise(
+            [*server_commands(), *metrics_commands(environment)],
+            environment,
+        )
+    )
