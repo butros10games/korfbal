@@ -232,6 +232,7 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
 
     teams = None
     standings = serializers.SerializerMethodField()
+    standings_computed = serializers.SerializerMethodField()
 
     def get_standings(self, obj: Pool) -> dict:
         """Detect the next page with one extra prefetched row, without a count query."""
@@ -241,6 +242,14 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
             ).data,
             "has_more": len(obj.standing_rows) > STANDINGS_PAGE_SIZE,
         }
+
+    def get_standings_computed(self, obj: Pool) -> bool:
+        """Tell a table computed from site results apart from an official one.
+
+        computed_standings.py marks every row it writes, and an official provider
+        table replaces the whole standing, so the first rows decide.
+        """
+        return any(row.standing.get("Computed") is True for row in obj.standing_rows)
 
     class Meta:
         """Declare the public response fields."""
@@ -253,6 +262,7 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
                 if field != "teams"
             ),
             "standings",
+            "standings_computed",
         )
 
 

@@ -163,8 +163,14 @@ def test_team_standings_are_bounded_and_constant_query_count(season: Season) -> 
         )
         for index in range(3)
     ])
+    # The first poule's table was computed from site results, the others are official.
     PoolEntry.objects.bulk_create([
-        PoolEntry(pool=pool, team=team, standing={"Position": str(102 - index)})
+        PoolEntry(
+            pool=pool,
+            team=team,
+            standing={"Position": str(102 - index)}
+            | ({"Computed": True} if pool == pools[0] else {}),
+        )
         for pool in pools
         for index, team in enumerate(teams)
     ])
@@ -184,6 +190,7 @@ def test_team_standings_are_bounded_and_constant_query_count(season: Season) -> 
         assert len(rows) == min(page_size, 3)
         for pool in rows:
             assert "teams" not in pool
+            assert pool["standings_computed"] is (pool["id"] == pools[0].pk)
             standings = pool["standings"]
             if pool["results_filtered"]:
                 assert standings == {"results": [], "has_more": False}

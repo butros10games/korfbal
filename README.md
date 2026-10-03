@@ -342,27 +342,30 @@ budget for the deployment; all pools still share the host CPU and database.
 The checked-in production Compose exposes those ports. The tracked Nginx example
 routes exact GET/HEAD score/clock paths to the live pool, other public resources
 to the public pool, and keeps other methods on the API pool. **The external Hetzner Caddy configuration is not managed by this
-repository's image release script.** Its API-site routing needs the equivalent
-ordered rules before isolation is active there, for example inside the existing
-site block:
+repository's image release script.** Production applies the equivalent ordered
+rules since 2 October 2026. The host Compose file publishes 1664–1667 on
+`127.0.0.1`, and both API sites (`api.korfconnect.nl`, `api.korfbal.butrosgroot.com`)
+import one snippet inside their `handle @api` block:
 
 ```caddyfile
-@match_sse path /api/live/events/
-@match_live {
-    method GET HEAD
-    path_regexp match_live ^/api/matches/[0-9a-fA-F-]+/live(/poll)?/$
-}
-@match_reads {
-    method GET HEAD
-    path_regexp match_reads ^/api/matches/[0-9a-fA-F-]+/(summary|stats|events|shots)/$
-}
-route {
-    reverse_proxy @match_sse kwt-uwsgi:1666 {
-        flush_interval -1
+(korfbal_api_upstreams) {
+    @match_sse path /api/live/events/
+    @match_live {
+        method GET HEAD
+        path_regexp ^/api/matches/[0-9a-fA-F-]+/live(/poll)?/$
     }
-    reverse_proxy @match_live kwt-uwsgi:1667
-    reverse_proxy @match_reads kwt-uwsgi:1665
-    reverse_proxy /api/* kwt-uwsgi:1664
+    @match_reads {
+        method GET HEAD
+        path_regexp ^/api/matches/[0-9a-fA-F-]+/(summary|stats|events|shots)/$
+    }
+    route {
+        reverse_proxy @match_sse 127.0.0.1:1666 {
+            flush_interval -1
+        }
+        reverse_proxy @match_live 127.0.0.1:1667
+        reverse_proxy @match_reads 127.0.0.1:1665
+        reverse_proxy 127.0.0.1:1664
+    }
 }
 ```
 
