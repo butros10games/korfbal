@@ -270,6 +270,14 @@ def test_rankings_are_public_and_keep_rank_when_searching(
     assert [(row["rank"], row["team_name"]) for row in searched.data["results"]] == [
         (2, "Other J2")
     ]
+    club = TeamRating.objects.get(team__name="Other J2").team.club
+    club.name = "Synthetic Vereniging"
+    club.save(update_fields=["name"])
+    by_club = client.get(
+        "/api/competition/rankings/",
+        {"age_group": "youth", "search": "vereniging other"},
+    )
+    assert [row["team_name"] for row in by_club.data["results"]] == ["Other J2"]
     senior = client.get("/api/competition/rankings/", {"age_group": "senior"})
     assert senior.data["count"] == 0
 

@@ -52,7 +52,8 @@ def rankings(filters: dict[str, Any]) -> list[TeamRating]:
         rating
         for rating in ranked
         if ("club" not in filters or rating.team.club_id == filters["club"])
-        and search in rating.team.name.casefold()
+        # Team names are often just "1"; readers search for "Fortuna 1".
+        and search in f"{rating.team.club.name} {rating.team.name}".casefold()
     ]
 
 
