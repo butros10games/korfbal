@@ -104,5 +104,9 @@ RUN python -c "from apps.kwt_common.adapters.outbound.redis_cache import SharedR
 
 EXPOSE 1664 1665 1666 1667
 
+# Last layer: the commit tag changes every release and must not bust earlier caches.
+ARG KORFBAL_RELEASE=""
+ENV KORFBAL_RELEASE=${KORFBAL_RELEASE}
+
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-m", "korfbal.serve"]

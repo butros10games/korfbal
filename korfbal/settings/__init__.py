@@ -35,6 +35,18 @@ from .i18n import *
 # Integrations
 from .integrations import *
 
+# Logging and error/performance reporting
+from .observability import (
+    KORFBAL_ACCESS_LOG,
+    KORFBAL_LOG_FORMAT,
+    KORFBAL_LOG_LEVEL,
+    LOGGING,
+    SENTRY_DSN,
+    SENTRY_ENABLED,
+    SENTRY_ENVIRONMENT,
+    SENTRY_RELEASE,
+)
+
 # App performance switches
 from .performance import (
     KORFBAL_ENABLE_IMPACT_AUTO_RECOMPUTE,
@@ -60,7 +72,9 @@ from .security import (
     ALLOWED_HOSTS,
     CORS_ALLOW_ALL_ORIGINS,
     CORS_ALLOW_CREDENTIALS,
+    CORS_ALLOW_HEADERS,
     CORS_ALLOWED_ORIGINS,
+    CORS_EXPOSE_HEADERS,
     CSRF_COOKIE_DOMAIN,
     CSRF_COOKIE_NAME,
     CSRF_COOKIE_SECURE,

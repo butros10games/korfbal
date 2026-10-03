@@ -128,3 +128,7 @@ COPY scripts/python/korfbal_review /app/scripts/python/korfbal_review
 RUN mkdir -p /app/apps/django_projects/korfbal/apps/video_analysis && ln -s /app/apps/video_analysis/engine /app/apps/django_projects/korfbal/apps/video_analysis/engine && install -d -o appuser -g appuser /models/config /var/lib/korfbal/video-analysis && install -d -m 700 -o appuser -g appuser /home/appuser/.codex
 ENV PYTHONPATH=/app
 USER appuser
+
+# Last layer: the commit tag changes every release and must not bust earlier caches.
+ARG KORFBAL_RELEASE=""
+ENV KORFBAL_RELEASE=${KORFBAL_RELEASE}

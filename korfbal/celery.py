@@ -2,8 +2,10 @@
 
 import os
 
-from celery import Celery
+from celery import Celery, signals
 from celery.schedules import crontab
+
+from korfbal.observability import TaskToken, bind_task, unbind_task
 
 
 # Set the default Django settings module for the 'celery' program.
@@ -15,6 +17,8 @@ app = Celery("korfbal")
 # the configuration object to child processes.
 # Namespace 'CELERY' means all celery-related configs must be prefixed with 'CELERY_'.
 app.config_from_object("django.conf:settings", namespace="CELERY")
+# Keep Django's LOGGING (JSON lines with task IDs) instead of Celery's own format.
+app.conf.worker_hijack_root_logger = False
 
 # Automatically discover tasks in installed apps.
 app.autodiscover_tasks()
@@ -73,3 +77,16 @@ app.conf.beat_schedule = {
         "options": {"expires": 3600, "queue": "competition"},
     },
 }
+
+
+_task_log_context: dict[str, TaskToken] = {}
+
+
+@signals.task_prerun.connect
+def _bind_task_log_context(task_id: str, task: object, **_: object) -> None:
+    _task_log_context[task_id] = bind_task(task_id, getattr(task, "name", "unknown"))
+
+
+@signals.task_postrun.connect
+def _unbind_task_log_context(task_id: str, **_: object) -> None:
+    unbind_task(_task_log_context.pop(task_id, None))

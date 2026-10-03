@@ -32,6 +32,8 @@ dependencies = [
     # Live Activity pushes go straight to APNs (HTTP/2 + ES256 provider tokens).
     "httpx[http2]",
     "pyjwt[crypto]>=2.15.1",
+    # Errors, tracing and profiling; stays inactive until SENTRY_DSN is set.
+    "sentry-sdk>=2.40,<3",
 ]
 
 [dependency-groups]

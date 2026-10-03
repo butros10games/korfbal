@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from corsheaders.defaults import default_headers
+
 from .env import env, env_bool, env_int, env_list, sorted_hosts
 from .runtime import DEBUG
 
@@ -87,6 +89,9 @@ CORS_ALLOWED_ORIGINS = sorted_hosts(
 )
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", False)
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", True)
+# Browser tracing joins page loads to API spans; error reports quote the request ID.
+CORS_ALLOW_HEADERS = (*default_headers, "sentry-trace", "baggage")
+CORS_EXPOSE_HEADERS = ("X-Request-ID",)
 
 if DEBUG:
     ALLOWED_HOSTS = sorted_hosts([

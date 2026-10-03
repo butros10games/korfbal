@@ -39,6 +39,7 @@ if KORFBAL_ENABLE_PROMETHEUS:
 
 MIDDLEWARE = [
     "apps.kwt_common.middleware.trusted_proxy.trusted_proxy_middleware",
+    "apps.kwt_common.middleware.request_context.request_context_middleware",
     "apps.kwt_common.middleware.cookie_domain.cookie_domain_middleware",
     "korfbal.api_errors.ApiErrorResponseMiddleware",
     "django.middleware.security.SecurityMiddleware",

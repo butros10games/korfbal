@@ -1,5 +1,14 @@
+# Docker keeps json-file logs forever by default; cap them so the host disk survives
+# busy matches. The log collector reads them through the Docker API.
+x-logging: &default-logging
+    driver: json-file
+    options:
+        max-size: 20m
+        max-file: '5'
+
 services:
     kwt-uwsgi:
+        logging: *default-logging
         image: butros10/kwt-uwsgi:latest
         container_name: kwt-uwsgi
         ports:
@@ -34,6 +43,7 @@ services:
             - kwt-net
 
     kwt-video-worker:
+        logging: *default-logging
         image: butros10/kwt-celery:latest
         restart: unless-stopped
         env_file: [.env]
@@ -70,6 +80,7 @@ services:
         cpus: 2
 
     kwt-web:
+        logging: *default-logging
         image: butros10/kwt-web:latest
         container_name: kwt-web
         ports:
@@ -84,6 +95,7 @@ services:
             - kwt-net
 
     kwt-valkey:
+        logging: *default-logging
         image: valkey/valkey:latest
         container_name: kwt-valkey
         restart: unless-stopped
@@ -91,6 +103,7 @@ services:
             - kwt-net
 
     kwt-collectstatic:
+        logging: *default-logging
         image: butros10/kwt-collectstatic:latest
         container_name: kwt-collectstatic
         env_file:
@@ -105,6 +118,7 @@ services:
             - kwt-net
 
     kwt-migrate:
+        logging: *default-logging
         image: butros10/kwt-uwsgi:latest
         container_name: kwt-migrate
         command: python manage.py migrate
@@ -117,6 +131,7 @@ services:
             - kwt-net
 
     kwt-celery_worker:
+        logging: *default-logging
         stop_grace_period: 35m
         image: butros10/kwt-celery:latest
         container_name: kwt-celery_worker
@@ -136,6 +151,7 @@ services:
             - kwt-net
 
     kwt-celery_beat:
+        logging: *default-logging
         image: butros10/kwt-celery:latest
         container_name: kwt-celery_beat
         restart: unless-stopped
