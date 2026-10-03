@@ -417,6 +417,21 @@ def shirt_number(obj: dict) -> str | None:
     return number if isinstance(number, str) and number.isdigit() else None
 
 
+def without_officials(frame: dict, objects: list[dict], officials: set[str]) -> dict:
+    """Return the resolved frame; a referee is not a player on the court map."""
+    resolved = dict(frame, objects=objects)
+    if officials and "top_down" in frame:
+        resolved["top_down"] = dict(
+            frame["top_down"],
+            players=[
+                player
+                for player in frame["top_down"].get("players", [])
+                if player.get("track_id") not in officials
+            ],
+        )
+    return resolved
+
+
 def refined_frames(frames: list[dict], report: dict) -> list[dict]:
     """Apply replay aliases to observed boxes for independent benchmark scoring."""
     if report.get("status") != "completed":
@@ -435,6 +450,7 @@ def refined_frames(frames: list[dict], report: dict) -> list[dict]:
         }
         superseded = ownership.superseded_ids(frame["objects"], frame_links, aliases)
         objects = []
+        officials: set[str] = set()
         for obj in frame["objects"]:
             if obj["track_id"] in superseded:
                 continue
@@ -452,9 +468,14 @@ def refined_frames(frames: list[dict], report: dict) -> list[dict]:
                     resolved["display_id"] = link["display_id"]
                 if link.get("team") in {"team_a", "team_b"}:
                     resolved["team"] = link["team"]
+                if link.get("label") == "referee" and obj["label"] == "player":
+                    resolved.update(label="referee", team="unknown")
+                    officials.add(obj["track_id"])
             objects.append(resolved)
         ids = [obj["track_id"] for obj in objects]
         output.append(
-            dict(frame, objects=objects) if len(ids) == len(set(ids)) else frame
+            without_officials(frame, objects, officials)
+            if len(ids) == len(set(ids))
+            else frame
         )
     return output

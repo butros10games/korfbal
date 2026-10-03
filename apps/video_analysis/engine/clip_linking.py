@@ -64,6 +64,7 @@ APPEARANCE_WEIGHT = 7.6
 MOTION_WEIGHT = 1.15
 LONG_PENALTY = 1.0
 ONLINE_BONUS = 2.0
+UNKNOWN_TEAM_PENALTY = 1.0
 UNKNOWN_APPEARANCE = 0.45
 MAX_BLIND_REACH = 0.5
 MAX_BLIND_GAP = 0.3
@@ -72,6 +73,20 @@ SHRINKAGE = 0.3
 MIN_CLASS_SAMPLES = 6
 MIN_CLASSES = 4
 TEAM_SHARE = 0.7
+# Torso region of a player box and how clearly a shirt colour must lean to one team.
+TORSO = (0.3, 0.7, 0.2, 0.45)
+LIGHTNESS_WEIGHT = 0.3
+MIN_COLOUR_SAMPLES = 8
+MIN_COLOUR_CONFIDENCE = 0.5
+MIN_COLOUR_TRACKLETS = 4
+COLOUR_MARGIN = 0.5
+MIN_COLOUR_GAP = 20.0
+MIN_COLOUR_AGREEMENT = 0.8
+MIN_COLOUR_ANCHORS = 2
+COLOUR_ROUNDS = 20
+# An identity the detector called a referee this often is the referee throughout.
+MIN_REFEREE_ROWS = 5
+MIN_REFEREE_SHARE = 0.3
 MIN_TEAM_VOTES = 3
 FILL_GAP = 3.0
 FLOW_POINTS = 600
@@ -94,6 +109,8 @@ class Row(NamedTuple):
     team: int | None
     track_id: str
     descriptor: int
+    colour: Any = None
+    referee: bool = False
 
 
 def overlaps(first: NDArray[Any], second: NDArray[Any]) -> NDArray[Any]:
@@ -139,6 +156,50 @@ def assign(costs: NDArray[Any], limit: float) -> dict[int, int]:
         for row, column in zip(rows, columns, strict=True)
         if column < costs.shape[1] and costs[row, column] <= limit
     }
+
+
+def torso_colour(image: NDArray[Any], box: list[float]) -> NDArray[Any] | None:
+    """Return the median Lab colour of a normalised box's torso region."""
+    cv, np = modules()
+    height, width = image.shape[:2]
+    x, y, w, h = box
+    left, right = int((x + TORSO[0] * w) * width), int((x + TORSO[1] * w) * width)
+    top, bottom = int((y + TORSO[2] * h) * height), int((y + TORSO[3] * h) * height)
+    patch = image[
+        max(0, top) : max(top + 1, bottom), max(0, left) : max(left + 1, right)
+    ]
+    if not patch.size:
+        return None
+    lab = cv.cvtColor(np.ascontiguousarray(patch), cv.COLOR_BGR2LAB)
+    return np.median(lab.reshape(-1, 3), axis=0)
+
+
+def colour_sides(colours: NDArray[Any]) -> list[int | None]:
+    """Split tracklet shirt colours into two groups; unclear ones stay undecided."""
+    _, np = modules()
+    values = colours * np.array([LIGHTNESS_WEIGHT, 1.0, 1.0])
+    # Start from two colours far apart without comparing every pair: the one
+    # furthest from the average, then the one furthest from that.
+    first = int(np.linalg.norm(values - values.mean(axis=0), axis=1).argmax())
+    second = int(np.linalg.norm(values - values[first], axis=1).argmax())
+    centres = values[[first, second]].astype(float)
+    for _ in range(COLOUR_ROUNDS):
+        nearest = np.linalg.norm(values[:, None] - centres[None], axis=2).argmin(axis=1)
+        centres = np.array([
+            values[nearest == side].mean(axis=0)
+            if (nearest == side).any()
+            else centres[side]
+            for side in (0, 1)
+        ])
+    reach = np.linalg.norm(values[:, None] - centres[None], axis=2)
+    apart = float(np.linalg.norm(centres[0] - centres[1]))
+    if apart < MIN_COLOUR_GAP:
+        # One shirt colour in two shades is one team, not two.
+        return [None] * len(values)
+    margin = COLOUR_MARGIN * apart
+    return [
+        int(row.argmin()) if abs(row[0] - row[1]) > margin else None for row in reach
+    ]
 
 
 class Background:
@@ -229,6 +290,10 @@ def link_cost(
     gap = max(after["start"] - before["end"], MIN_STEP)
     predicted, plain = displacement(before, after, gap)
     ratio = before["last_height"] / max(after["first_height"], EPSILON)
+    # Without a team on both sides nothing rules out an opponent.
+    unknown = (
+        UNKNOWN_TEAM_PENALTY if before["team"] is None or after["team"] is None else 0.0
+    )
     if long:
         if (
             appearance is None
@@ -237,7 +302,7 @@ def link_cost(
             or not MIN_LONG_SIZE_RATIO < ratio < MAX_LONG_SIZE_RATIO
         ):
             return float("inf")
-        return APPEARANCE_WEIGHT * appearance - BIAS + LONG_PENALTY
+        return APPEARANCE_WEIGHT * appearance - BIAS + LONG_PENALTY + unknown
     # The online tracker followed one box across this gap: weak evidence
     # alone, but worth a share when appearance does not contradict it.
     online = ONLINE_BONUS if before["last_id"] == after["first_id"] else 0.0
@@ -248,7 +313,73 @@ def link_cost(
         if reach > MAX_BLIND_REACH or gap > MAX_BLIND_GAP:
             return float("inf")
         appearance = UNKNOWN_APPEARANCE
-    return APPEARANCE_WEIGHT * appearance + MOTION_WEIGHT * reach - BIAS - online
+    return (
+        APPEARANCE_WEIGHT * appearance + MOTION_WEIGHT * reach - BIAS - online + unknown
+    )
+
+
+def seconded(rows: list[Row]) -> set[int]:
+    """Find player boxes that a referee box of the same frame lies on.
+
+    The detector can report one body under both classes at once. Whichever box
+    ends up in an identity, the referee detection is evidence about that body.
+    """
+    _, np = modules()
+    frames: dict[int, list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        frames[row.frame].append(index)
+    found: set[int] = set()
+    for members in frames.values():
+        referees = [i for i in members if rows[i].referee]
+        players = [i for i in members if not rows[i].referee]
+        if not referees or not players:
+            continue
+        scores = overlaps(
+            np.array([rows[i].box for i in players]),
+            np.array([rows[i].box for i in referees]),
+        )
+        # Only a box on the very same body counts: a player standing partly
+        # in front of the referee is someone else.
+        found.update(
+            index
+            for position, index in enumerate(players)
+            if scores[position].max() >= DUPLICATE_IOU
+        )
+    return found
+
+
+def official(rows: list[Row], chain: list[int], doubled: set[int]) -> bool:
+    """Whether an identity is the referee, from every frame it was seen in."""
+    votes = sum(rows[index].referee or index in doubled for index in chain)
+    return votes >= MIN_REFEREE_ROWS and votes >= MIN_REFEREE_SHARE * len(chain)
+
+
+def shadows(rows: list[Row], owner: dict[int, int], officials: set[int]) -> dict:
+    """Find loose player boxes that lie on a referee identity's own box.
+
+    The detector can report one body as a referee and as a player in the same
+    frame. The referee box is linked; its player copy would otherwise stay a
+    team player on the court map.
+    """
+    _, np = modules()
+    frames: dict[int, list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        frames[row.frame].append(index)
+    found: dict[int, int] = {}
+    for members in frames.values():
+        linked = [i for i in members if owner.get(i) in officials]
+        loose = [i for i in members if i not in owner and not rows[i].referee]
+        if not linked or not loose:
+            continue
+        scores = overlaps(
+            np.array([rows[i].box for i in loose]),
+            np.array([rows[i].box for i in linked]),
+        )
+        for position, index in enumerate(loose):
+            best = int(scores[position].argmax())
+            if scores[position, best] >= DUPLICATE_IOU:
+                found[index] = owner[linked[best]]
+    return found
 
 
 class Linker:
@@ -262,6 +393,7 @@ class Linker:
         self.motions: list[NDArray[Any] | None] = []
         self.descriptors: list[NDArray[Any]] = []
         self.to_first: list[NDArray[Any]] = []
+        self.sides: dict[int, int] = {}
 
     def observe(
         self,
@@ -295,7 +427,8 @@ class Linker:
                 )
             # Only a shirt seen in this frame counts; a team inherited through
             # the online identity would repeat that identity's mistakes.
-            seen = player.get("team_source", "shirt") == "shirt"
+            referee = player.get("label") == "referee"
+            seen = player.get("team_source", "shirt") == "shirt" and not referee
             team = player.get("team") if seen else None
             self.rows.append(
                 Row(
@@ -306,6 +439,8 @@ class Linker:
                     TEAMS.index(team) if team in TEAMS else None,
                     player["track_id"],
                     descriptor,
+                    player.get("shirt_colour"),
+                    referee,
                 )
             )
 
@@ -429,7 +564,9 @@ class Linker:
         first = np.flatnonzero(times - times[0] <= VELOCITY_WINDOW)
         last = np.flatnonzero(times[-1] - times <= VELOCITY_WINDOW)
         teams = Counter(
-            self.rows[i].team for i in chain if self.rows[i].team is not None
+            self.sides.get(i, self.rows[i].team)
+            for i in chain
+            if self.sides.get(i, self.rows[i].team) is not None
         )
         team = None
         if teams:
@@ -626,12 +763,68 @@ class Linker:
                 placed[index] = found[row]
         return members
 
+    def shirt_sides(self, tracklets: list[list[int]]) -> dict[int, int]:
+        """Give tracklets without a seen shirt team the side their colour shows.
+
+        Tracklets show one person, so their median torso colour is steadier
+        than a frame's. The two colour groups are named by the shirt teams
+        already seen; without enough agreement the colours are not used.
+        """
+        np = self.np
+        described = []
+        for track in tracklets:
+            # A referee's kit is not a team colour, whatever it resembles.
+            colours = [
+                self.rows[i].colour
+                for i in track
+                if self.rows[i].colour is not None
+                and not self.rows[i].referee
+                and self.rows[i].confidence >= MIN_COLOUR_CONFIDENCE
+            ]
+            if len(colours) >= MIN_COLOUR_SAMPLES:
+                described.append((track, np.median(np.array(colours), axis=0)))
+        if len(described) < MIN_COLOUR_TRACKLETS:
+            return {}
+        groups = colour_sides(np.array([colour for _, colour in described]))
+        seen: Counter[tuple[int, int]] = Counter()
+        for (track, _), group in zip(described, groups, strict=True):
+            votes = Counter(
+                team for i in track if (team := self.rows[i].team) is not None
+            )
+            if group is not None and votes:
+                seen[group, votes.most_common(1)[0][0]] += 1
+        straight, crossed = seen[0, 0] + seen[1, 1], seen[0, 1] + seen[1, 0]
+        # Without seen shirt teams the two groups have no names: calling them
+        # team A and B could contradict a team seen on a short tracklet.
+        if straight + crossed < MIN_COLOUR_ANCHORS or max(
+            straight, crossed
+        ) < MIN_COLOUR_AGREEMENT * (straight + crossed):
+            return {}
+        flip = crossed > straight
+        sides: dict[int, int] = {}
+        for (track, _), group in zip(described, groups, strict=True):
+            if group is None:
+                continue
+            # A team seen on this tracklet stands; colour only fills
+            # tracklets on which no shirt team was seen often enough.
+            seen_here = sum(self.rows[i].team is not None for i in track)
+            if seen_here >= MIN_TEAM_VOTES:
+                continue
+            side = 1 - group if flip else group
+            sides.update({
+                i: side
+                for i in track
+                if self.rows[i].team is None and not self.rows[i].referee
+            })
+        return sides
+
     def identities(
         self, stopped: Callable[[], bool] | None = None
     ) -> list[list[int]] | None:
         """Resolve observations into identities, or stop at the job deadline."""
         self.stabilise()
         tracklets = self.tracklets()
+        self.sides = self.shirt_sides(tracklets)
 
         def solid(track: list[int]) -> bool:
             span = self.rows[track[-1]].time - self.rows[track[0]].time
@@ -686,14 +879,34 @@ class Linker:
         main: dict[str, int],
         names: list[str],
         teams: list[int | None],
+        officials: set[int],
     ) -> list[dict[str, Any]]:
         """Rename the observations an online track's main alias does not cover."""
         duplicates = self.duplicates(owner, main)
+        copies = shadows(self.rows, owner, officials)
         frame_links = []
         for index, row in sorted(
             enumerate(self.rows), key=lambda item: itemgetter(0, 5)(item[1])
         ):
-            number = owner.get(index)
+            if row.referee:
+                continue  # Already a referee in the frame; nothing to correct.
+            number = owner.get(index, copies.get(index))
+            if number in officials:
+                # Seen as a player here, but the same person is the referee
+                # elsewhere in the shot, before or after this frame.
+                # A loose copy shares its frame with the identity's own box,
+                # so it needs a name of its own.
+                target = names[number]
+                if index in copies:
+                    target = f"{target}~{row.track_id}"
+                frame_links.append({
+                    "time_seconds": round(row.time, 6),
+                    "from_track_id": row.track_id,
+                    "to_track_id": target,
+                    "display_id": None,
+                    "label": "referee",
+                })
+                continue
             if number == main.get(row.track_id) and index not in duplicates:
                 continue
             link: dict[str, Any] = {
@@ -728,9 +941,15 @@ class Linker:
             for number, chain in enumerate(chains)
         ]
         teams = [self.describe(chain)["team"] for chain in chains]
+        doubled = seconded(self.rows)
+        officials = {
+            number
+            for number, chain in enumerate(chains)
+            if official(self.rows, chain, doubled)
+        }
         targets: dict[str, Counter[int]] = defaultdict(Counter)
         for index, row in enumerate(self.rows):
-            if index in owner:
+            if index in owner and not row.referee and owner[index] not in officials:
                 targets[row.track_id][owner[index]] += 1
         # One alias covers an online track's main identity; only the
         # observations that belong elsewhere need their own entry.
@@ -746,14 +965,18 @@ class Linker:
             }
             for track_id, number in sorted(main.items())
         ]
-        frame_links = self.frame_links(owner, main, names, teams)
+        frame_links = self.frame_links(owner, main, names, teams, officials)
         return {
             "version": 1,
             "status": "completed",
             "appearance": "learned_descriptors" if self.descriptors else "unavailable",
             "linking": {
                 "version": VERSION,
-                "identities": len(chains),
+                "identities": len(chains) - len(officials),
+                "referee_identities": len(officials),
+                "referee_corrections": sum(
+                    link.get("label") == "referee" for link in frame_links
+                ),
                 "observations": len(self.rows),
                 "linked_observations": len(owner),
             },

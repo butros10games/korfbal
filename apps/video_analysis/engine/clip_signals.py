@@ -39,6 +39,10 @@ MAX_NEUTRAL_CHROMA = 18
 MIN_TEAM_SAMPLES = 40
 MIN_CLUSTER_SAMPLES = 8
 MIN_COLOR_MARGIN = 0.55
+PALETTE_GROUPS = 3
+PALETTE_SAMPLES = 60
+MIN_PALETTE_SHARE = 0.15
+MIN_PALETTE_GAP = 35
 MAX_COLOR_DISTANCE = 55
 MIN_TEAM_VOTES = 3
 MIN_VOTE_SHARE = 0.8
@@ -231,6 +235,7 @@ class Teams:
         self.observation_pixels = {}
         self.spans = TeamSpans()
         self.centers = None
+        self.other: NDArray[Any] | None = None
         if colors is not None:
             rgb = self.np.uint8([colors])
             self.centers = self.cv.cvtColor(rgb, self.cv.COLOR_RGB2LAB)[0].astype(float)
@@ -364,6 +369,69 @@ class Teams:
                 self.np.median(points[assignment == n], axis=0) for n in (0, 1)
             ])
 
+    def learn_palette(self, colors: list[NDArray[Any]]) -> bool:
+        """Learn both shirts from samples across the clip, before analysis starts.
+
+        The first frames can show mostly a referee, spectators or one team. A
+        third group takes whatever is not a team shirt; the teams are the two
+        largest groups, and only count when they are clearly apart.
+        """
+        if self.centers is not None or len(colors) < PALETTE_SAMPLES:
+            return False
+        points = self.np.array(colors)
+        features = self.features(points)
+        # Spread the starting centres: the sample furthest from the middle,
+        # then twice the sample furthest from the centres chosen so far.
+        middle = self.np.median(features, axis=0)
+        chosen = [int(self.np.argmax(self.np.linalg.norm(features - middle, axis=1)))]
+        for _ in range(PALETTE_GROUPS - 1):
+            gaps = self.np.linalg.norm(
+                features[:, None] - features[chosen][None], axis=2
+            ).min(axis=1)
+            chosen.append(int(self.np.argmax(gaps)))
+        centers = features[chosen].astype(float)
+        assignment = self.np.zeros(len(features), dtype=int)
+        for _ in range(20):
+            assignment = self.np.linalg.norm(
+                features[:, None] - centers[None], axis=2
+            ).argmin(axis=1)
+            centers = self.np.array([
+                self.np.median(features[assignment == n], axis=0)
+                if (assignment == n).any()
+                else centers[n]
+                for n in range(PALETTE_GROUPS)
+            ])
+        sizes = self.np.bincount(assignment, minlength=PALETTE_GROUPS)
+        first, second = (int(n) for n in self.np.argsort(-sizes)[:2])
+        if (
+            sizes[second] < MIN_PALETTE_SHARE * len(features)
+            or self.np.linalg.norm(centers[first] - centers[second]) < MIN_PALETTE_GAP
+        ):
+            # Unclear from here; the frame-by-frame learner decides instead.
+            return False
+        # The remaining group is either a third kit (a referee, spectators) or
+        # one team in another light. Near a team it is that team's shirt and
+        # joins it; clearly apart it is remembered, so that a shirt closer to
+        # it than to either team is not given a team.
+        # Shirt features ignore most of the lightness, so a grey kit beside a
+        # black team is one group here and cannot be told apart this way.
+        rest = next(n for n in range(PALETTE_GROUPS) if n not in {first, second})
+        if sizes[rest]:
+            gaps = [
+                float(self.np.linalg.norm(centers[rest] - centers[n]))
+                for n in (first, second)
+            ]
+            if min(gaps) < MIN_PALETTE_GAP:
+                assignment[assignment == rest] = (first, second)[
+                    int(self.np.argmin(gaps))
+                ]
+            else:
+                self.other = self.np.median(points[assignment == rest], axis=0)
+        self.centers = self.np.array([
+            self.np.median(points[assignment == n], axis=0) for n in (first, second)
+        ])
+        return True
+
     def vote(self, color: NDArray[Any] | None) -> tuple[int, float] | None:
         """Abstain on mixed crops and on colours outside the learned shirts."""
         if self.centers is None or color is None:
@@ -373,6 +441,13 @@ class Teams:
             axis=1,
         )
         winner = int(self.np.argmin(distances))
+        if self.other is not None:
+            apart = self.np.linalg.norm(
+                self.features(self.np.array([self.other]))[0]
+                - self.features(self.np.array([color]))[0]
+            )
+            if apart < distances[winner]:
+                return None
         margin = float(abs(distances[0] - distances[1]) / max(1, distances.sum()))
         if margin < MIN_COLOR_MARGIN or distances[winner] > MAX_COLOR_DISTANCE:
             return None

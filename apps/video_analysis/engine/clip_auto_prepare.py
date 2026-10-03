@@ -12,6 +12,15 @@ import warnings
 from . import clip_basket_reference, clip_penalty_area
 from .clip_auto_court import estimate
 from .clip_inference import CPU_THREADS
+from .clip_referee import (
+    MIN_PLAYER_CONFIDENCE,
+    MIN_REFEREE_CONFIDENCE,
+    SAME_BODY_IOU,
+    alike,
+    kit,
+    outvoted,
+    overlap,
+)
 from .clip_signals import modules
 from .clips import static_objects
 
@@ -37,6 +46,7 @@ SAMPLE_QUALITY = 92
 BRIDGE_INTERVAL = 0.15
 MAX_BRIDGE_FRAMES = 12
 MAX_BRIDGED_GAPS = 12
+PALETTE_CONFIDENCE = 0.5
 
 
 class TemporalReference:
@@ -186,6 +196,7 @@ def prepare(run: ClipRun, video: Path | str, model: object) -> None:
     camera_model: dict = {"groups": []}
     windows: list[list[tuple]] = []
     landmarks = {"samples": 0, "runtime_seconds": 0.0}
+    field: dict = {"status": "not_needed"}
     try:
         for context, timestamps in preparation_windows(run):
             windows.append([])
@@ -205,9 +216,11 @@ def prepare(run: ClipRun, video: Path | str, model: object) -> None:
                 )
                 if time.monotonic() - run.last_publish >= PROGRESS_SECONDS:
                     run.publish()
+        whole_clip_evidence(run, windows)
         bridge(run, capture, mapping)
         camera_model = calibrate_camera(mapping, run.stopped)
         landmarks = landmark_references(run, mapping, windows, started)
+        field = field_camera(run, capture, mapping, windows)
     finally:
         capture.release()
         run.record["automatic_court_preparation"] = {
@@ -222,8 +235,57 @@ def prepare(run: ClipRun, video: Path | str, model: object) -> None:
             "max_seconds": MAX_SECONDS,
             "camera_model": camera_model,
             "landmark_references": landmarks,
+            "field_camera": field,
         }
         run.publish()
+
+
+def field_camera(
+    run: ClipRun, capture: object, mapping: AutoCourt, windows: list
+) -> dict:
+    """Fit a sideline tripod camera when neither a hall nor markings were found.
+
+    The camera's turn between the korfs is followed through every frame of the
+    clip; that needs no detector, only the frames themselves.
+    """
+    if mapping.hall.groups or mapping.references.items:
+        return {"status": "not_needed"}
+    samples = windows[0] if windows else []
+    if not mapping.field.promising([objects for _, _, objects in samples]):
+        return {"status": "no_evidence"}
+    # Like the camera model, this runs after sampling and outside its deadline:
+    # a slow sampling pass must not cost the clip its only map.
+    began = time.monotonic()
+    aspect = follow_camera(run, capture, mapping)
+    if aspect is None:
+        return {"status": "interrupted"}
+    for timestamp, _, objects in samples:
+        mapping.field.sample(timestamp, objects, aspect)
+    summary = mapping.field.fit()
+    summary["runtime_seconds"] = round(time.monotonic() - began, 3)
+    return summary
+
+
+def follow_camera(run: ClipRun, capture: object, mapping: AutoCourt) -> float | None:
+    """Track the camera through the clip's frames; return the image aspect."""
+    cv, _ = modules()
+    decoder = cast("Any", capture)
+    start, end = run.options.start, run.options.start + run.options.duration
+    decoder.set(cv.CAP_PROP_POS_MSEC, start * 1000)
+    next_sample, aspect = start, None
+    while not run.stopped() and decoder.grab():
+        timestamp = decoder.get(cv.CAP_PROP_POS_MSEC) / 1000
+        if timestamp >= end:
+            break
+        if timestamp + 1e-6 < next_sample:
+            continue
+        ok, image = decoder.retrieve()
+        if not ok:
+            break
+        aspect = image.shape[1] / image.shape[0]
+        mapping.field.track(image, timestamp)
+        next_sample = max(next_sample + 1 / run.options.fps, timestamp + 1e-6)
+    return None if run.stopped() else aspect
 
 
 def encode(image: NDArray[Any]) -> bytes:
@@ -363,3 +425,85 @@ def sample(
         result, 0.1, labels=("ball", "basket", "player", "referee")
     )
     return actual, image, objects
+
+
+def pixel_row(obj: dict, width: int, height: int) -> NDArray[Any]:
+    """Return a sampled detection as a pixel corner box with its confidence."""
+    _, np = modules()
+    x, y, w, h = obj["bbox"]
+    return np.array([
+        x * width,
+        y * height,
+        (x + w) * width,
+        (y + h) * height,
+        obj["confidence"],
+    ])
+
+
+def whole_clip_evidence(run: ClipRun, windows: list) -> None:
+    """Learn shirt colours and the referee's kit from the sampled views.
+
+    Analysis runs forward, but the samples span the whole clip: what is only
+    recognisable later (a referee the detector first calls a player, a team
+    that is out of view at the start) is known from the first frame on.
+    """
+    cv, np = modules()
+    kits, frames = [], []
+    learn = run.teams.centers is None
+    memory = run.people.referee
+    for _, picture, objects in windows[0] if windows else []:
+        image = cv.imdecode(np.frombuffer(picture, np.uint8), cv.IMREAD_COLOR)
+        height, width = image.shape[:2]
+        referees = [
+            pixel_row(obj, width, height)
+            for obj in objects
+            if obj["label"] == "referee" and obj["confidence"] >= MIN_REFEREE_CONFIDENCE
+        ]
+        # Every player box may outvote a referee label, as in analysis; only
+        # the surer ones are samples of what players wear.
+        players = [
+            (box := pixel_row(obj, width, height), kit(image, box), obj)
+            for obj in objects
+            if obj["label"] == "player" and obj["confidence"] >= MIN_PLAYER_CONFIDENCE
+        ]
+        worn = [(box, colour) for box, colour, _ in players]
+        believed = [
+            (box, colour)
+            for box in referees
+            if not outvoted(box, colour := kit(image, box), worn)
+        ]
+        # Analysis learns the kit from each frame's strongest referee box.
+        if believed:
+            kits.append(max(believed, key=lambda found: found[0][4])[1])
+        samples = []
+        for box, colour, obj in players:
+            # A player box on the referee's body in their kit is the referee.
+            if obj["confidence"] < PALETTE_CONFIDENCE or any(
+                overlap(box, other) >= SAME_BODY_IOU and alike(colour, theirs)
+                for other, theirs in believed
+            ):
+                continue
+            shirt = run.teams.observe(image, obj["bbox"]) if learn else None
+            samples.append((box, colour, shirt))
+        frames.append(samples)
+    memory.preload(kits, [])
+    shirts, others = [], []
+    for samples in frames:
+        # The only body in the referee's kit may be the referee the detector
+        # called a player: no evidence that players wear it, and no team.
+        near = [box for box, colour, _ in samples if memory.close(colour)]
+        alone = bool(near) and all(
+            overlap(box, near[0]) >= SAME_BODY_IOU for box in near[1:]
+        )
+        for _, colour, shirt in samples:
+            if alone and memory.close(colour):
+                continue
+            others.append(colour)
+            if shirt is not None:
+                shirts.append(shirt)
+    learned = run.teams.learn_palette(shirts) if learn else False
+    run.record["team_palette"] = {
+        "status": "learned" if learned else "unclear" if learn else "supplied",
+        "samples": len(shirts),
+    }
+    memory.preload([], others)

@@ -122,6 +122,8 @@ class Roster:
             if (time, identity) in superseded:
                 continue
             link = scoped.get((time, identity))
+            if link and link.get("label") == "referee":
+                continue  # A referee has no shirt number to join players by.
             canonical = link["to_track_id"] if link else aliases.get(identity, identity)
             grouped[canonical].append(row)
         return [

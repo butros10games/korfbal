@@ -19,6 +19,7 @@ from . import (
 )
 from .clip_auto_references import MIN_EDGE_SUPPORT, References
 from .clip_court import CourtMap
+from .clip_field_camera import FieldCamera
 from .clip_hall import Hall
 from .clip_signals import modules
 
@@ -399,6 +400,7 @@ class AutoCourt:
         self.matcher = CourtMap(court)
         self.references = References(self.matcher)
         self.hall = Hall(court)
+        self.field = FieldCamera(court)
         self.hall_located = False
         self.last_search = -float("inf")
         self.last_seen = -float("inf")
@@ -488,7 +490,18 @@ class AutoCourt:
         if self.hall_located:
             self.hall_located = False
             cut = True
-        return self.from_landmarks(image, timestamp, objects, cut)
+        floor, evidence = self.from_landmarks(image, timestamp, objects, cut)
+        if cut:
+            # The field camera was fitted to one tripod shot; after a cut that
+            # playback finds, its geometry says nothing about the picture.
+            self.field.interrupt(timestamp)
+        if floor is None:
+            # No hall and no markings: an outdoor field seen from its sideline.
+            height, width = image.shape[:2]
+            placed = self.field.locate(timestamp, width / height)
+            if placed is not None:
+                return placed
+        return floor, evidence
 
     def from_landmarks(
         self, image: NDArray[Any], timestamp: float, objects: list, cut: bool

@@ -18,7 +18,7 @@ from .clip_appearance import Appearance, beside_cache, describe_players
 from .clip_contract import CHUNK_FRAMES, MAX_RUNTIME_SECONDS, ClipOptions
 from .clip_identity import IdentityMemory, court_reference
 from .clip_inference import CPU_THREADS, clip_detector
-from .clip_linking import Background, Linker
+from .clip_linking import Background, Linker, torso_colour
 from .clip_match_events import MatchEvents
 from .clip_models import MODEL_ERROR, failure_message, supports_clips
 from .clip_overlap import OverlapFrame, OverlapRecovery
@@ -282,9 +282,12 @@ class ClipRun:
             self.balls.reset(camera["segment"])
             self.teams.reset()
             self.record["camera_cuts"] += 1
+        # A referee the detector calls a player would be tracked, recovered
+        # and given a team as one: correct the detections for everything below.
+        self.people.referee.correct(result, image, timestamp, camera["motion"])
 
         def recover(memory: IdentityMemory, observed: list[dict]) -> list[dict]:
-            return self.recovery.recover(
+            recovered = self.recovery.recover(
                 memory,
                 observed,
                 RecoveryFrame(
@@ -298,6 +301,14 @@ class ClipRun:
                     other_seconds=self.overlap.seconds,
                 ),
             )
+            # A crop search runs the detector again, outside the correction.
+            return [
+                obj
+                for obj in recovered
+                if not self.people.referee.covers(
+                    obj.get("observed_bbox") or obj["bbox"], image, timestamp
+                )
+            ]
 
         self.people.identities.shirts.centers = self.teams.centers
         persons = self.people.update(
@@ -348,6 +359,7 @@ class ClipRun:
             o["label"] == "player" for o in persons
         )
         self.record["team_colors"] = self.teams.colors()
+        self.record["referee_correction"] = self.people.referee.snapshot()
         if (
             len(self.buffer) >= CHUNK_FRAMES
             or time.monotonic() - self.last_publish >= PROGRESS_SECONDS
@@ -359,9 +371,17 @@ class ClipRun:
     ) -> None:
         """Retain observed players, with appearance on sampled frames, for linking."""
         players = [
-            obj
+            # A copy: the colour is evidence for linking, not part of the frame.
+            dict(
+                obj,
+                shirt_colour=torso_colour(
+                    image, obj.get("observed_bbox") or obj["bbox"]
+                ),
+            )
             for obj in persons
-            if obj["label"] == "player" and not obj.get("estimated")
+            # Referees too: someone the detector calls a player in one frame
+            # and a referee in another is one person to follow.
+            if obj["label"] in {"player", "referee"} and not obj.get("estimated")
         ]
         descriptors = None
         if (

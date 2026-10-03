@@ -19,6 +19,7 @@ from .clip_identity import (
     court_reference,
 )
 from .clip_prediction import PositionMemory
+from .clip_referee import RefereeMemory
 from .clip_replay import near_player
 from .clip_signals import center, distance, floor_position, modules, transform
 
@@ -98,12 +99,14 @@ class People:
         self.identities = IdentityMemory(options.court)
         self.ground = GroundContacts()
         self.positions = PositionMemory()
+        self.referee = RefereeMemory()
 
     def reset(self, segment: int) -> None:
         """Discard identities and motion history across a camera cut."""
         self.identities.reset()
         self.ground = GroundContacts()
         self.positions = PositionMemory()
+        self.referee.reset()
         self.trackers.clear()
         self.motion = None
         self.previous.clear()
