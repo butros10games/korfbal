@@ -112,9 +112,12 @@ def test_upload_profile_picture_happy_path_persists_file_and_returns_url(
 
     assert response.status_code == HTTPStatus.OK
     payload = response.json()
-    assert payload["url"].startswith("/media/profile_pictures/")
-    assert str(user.player.pk) in payload["url"]
-    assert payload["url"].endswith(".png")
+    path, _, query = payload["url"].partition("?")
+    assert path.startswith("/media/profile_pictures/")
+    assert str(user.player.pk) in path
+    assert path.endswith(".png")
+    # Clients render the small copy; the media endpoint resizes on request.
+    assert query == "variant=w256"
 
     user.refresh_from_db()
     assert user.player.profile_picture

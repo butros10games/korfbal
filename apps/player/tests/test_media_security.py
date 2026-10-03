@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from django.contrib.auth.models import User
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpResponse
 from django.test import Client
 from django.utils import timezone
+from PIL import Image
 import pytest
 from pytest_django.fixtures import Settings
 from storages.backends.s3 import S3Storage
@@ -20,7 +24,13 @@ from apps.player.adapters.outbound.private_storage import (
     PrivateMediaStorage,
 )
 from apps.player.composition import song_jobs
-from apps.player.media_paths import player_picture_path, player_song_path
+from apps.player.media_paths import (
+    delete_with_variant,
+    player_picture_path,
+    player_song_path,
+    variant_key,
+    variant_url,
+)
 from apps.player.models import PlayerSong
 from apps.player.services.player_songs import create_player_song
 from apps.player.services.upload_validation import InvalidAudioUploadError
@@ -132,7 +142,13 @@ def test_media_capability_expires_and_never_redirects_to_bucket(
         response = client.get(path)
         assert response.status_code == HTTPStatus.OK
         assert b"".join(response.streaming_content) == b"synthetic"
-        assert response["Cache-Control"] == "private, no-store"
+        cache_control, max_age = response["Cache-Control"].split("=")
+        assert cache_control == "private, max-age"
+        assert (
+            settings.KORFBAL_MEDIA_URL_MAX_AGE - MEDIA_URL_REUSE_SECONDS
+            <= int(max_age)
+            <= settings.KORFBAL_MEDIA_URL_MAX_AGE
+        )
         assert response["Content-Security-Policy"].startswith("sandbox")
         assert client.get(path + "tampered").status_code == HTTPStatus.FORBIDDEN
         now = timezone.now().timestamp()
@@ -171,7 +187,54 @@ def test_media_url_is_reused_within_a_window_without_outliving_the_limit(
         "apps.player.api.views.media.audio_storage.open",
         return_value=BytesIO(b"synthetic"),
     ):
+        # Browsers may keep the object only for the rest of the URL's lifetime.
+        with patch(clock, return_value=start + settings.KORFBAL_MEDIA_URL_MAX_AGE - 90):
+            response = client.get(path)
+            assert response["Cache-Control"] == "private, max-age=90"
         with patch(clock, return_value=start + settings.KORFBAL_MEDIA_URL_MAX_AGE):
-            assert client.get(path).status_code == HTTPStatus.OK
+            response = client.get(path)
+            assert response.status_code == HTTPStatus.OK
+            assert response["Cache-Control"] == "private, max-age=0"
         with patch(clock, return_value=start + settings.KORFBAL_MEDIA_URL_MAX_AGE + 1):
             assert client.get(path).status_code == HTTPStatus.FORBIDDEN
+
+
+def _jpeg() -> bytes:
+    encoded = BytesIO()
+    Image.new("RGB", (900, 1200), (20, 120, 200)).save(encoded, "JPEG")
+    return encoded.getvalue()
+
+
+def test_profile_pictures_are_served_as_small_variants(
+    client: Client, settings: Settings, tmp_path: Path
+) -> None:
+    """Pictures resize on first use; other private media never does."""
+    settings.MEDIA_ROOT = tmp_path
+    owner = User.objects.create_user(username="variant-owner").player
+    owner.profile_picture = default_storage.save(
+        player_picture_path(owner, "avatar.jpg"), BytesIO(_jpeg())
+    )
+    owner.save(update_fields=["profile_picture"])
+    song = default_storage.save("player_songs/owner/track.mp3", BytesIO(b"ID3"))
+    storage = PrivateMediaStorage(
+        access_key="synthetic", secret_key="synthetic", bucket_name="test"
+    )
+
+    def fetch(key: str) -> HttpResponse:
+        url = urlsplit(variant_url(storage.url(key)))
+        return client.get(f"{url.path}?{url.query}")
+
+    assert owner.get_profile_picture().endswith("?variant=w256")
+    response = fetch(owner.profile_picture.name)
+    assert response.status_code == HTTPStatus.OK
+    assert response["Content-Type"] == "image/webp"
+    assert response["Cache-Control"].startswith("private, max-age=")
+    with Image.open(BytesIO(response.content)) as image:
+        assert image.size == (192, 256)
+    assert default_storage.exists(variant_key(owner.profile_picture.name))
+    assert b"".join(fetch(song).streaming_content) == b"ID3"
+    assert not default_storage.exists(variant_key(song))
+
+    delete_with_variant(default_storage, owner.profile_picture.name)
+    assert not default_storage.exists(owner.profile_picture.name)
+    assert not default_storage.exists(variant_key(owner.profile_picture.name))

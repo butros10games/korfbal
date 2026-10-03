@@ -17,6 +17,10 @@ if TYPE_CHECKING:
     from apps.team.models.team import Team
 
 
+# 64 bits of the digest identify a logo; the URL also names the club.
+LOGO_URL_VERSION_LENGTH = 16
+
+
 class Club(models.Model):
     """Model for a club."""
 
@@ -70,6 +74,13 @@ class Club(models.Model):
         """Identify an immutable stored upload without exposing its storage key."""
         return sha256((self.logo.name or "").encode()).hexdigest()
 
+    def accepts_logo_version(self, version: str) -> bool:
+        """Accept the short version in current URLs and the full one in older ones."""
+        return bool(version) and version in {
+            self.logo_version,
+            self.logo_version[:LOGO_URL_VERSION_LENGTH],
+        }
+
     def get_club_logo(self) -> str:
         """Get the URL of the club logo.
 
@@ -79,7 +90,11 @@ class Club(models.Model):
         """
         if self.logo:
             path = reverse(
-                "club-logo", kwargs={"club_id": self.pk, "version": self.logo_version}
+                "club-logo-variant",
+                kwargs={
+                    "club_id": self.pk,
+                    "version": self.logo_version[:LOGO_URL_VERSION_LENGTH],
+                },
             )
             return f"{settings.KORFBAL_MEDIA_API_ORIGIN}{path}"
 

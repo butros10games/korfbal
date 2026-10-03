@@ -3,7 +3,9 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .logo import ClubLogoAPIView
+from apps.player.media_paths import VARIANT
+
+from .logo import ClubLogoAPIView, ClubLogoVariantAPIView
 from .views import ClubViewSet
 
 
@@ -15,6 +17,11 @@ urlpatterns = [
         "clubs/<uuid:club_id>/logo/<str:version>/",
         ClubLogoAPIView.as_view(),
         name="club-logo",
+    ),
+    path(
+        f"clubs/<uuid:club_id>/logo/<str:version>/{VARIANT}/",
+        ClubLogoVariantAPIView.as_view(),
+        name="club-logo-variant",
     ),
     path("", include(router.urls)),
 ]

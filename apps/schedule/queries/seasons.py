@@ -229,20 +229,77 @@ def default_season(seasons: list[Season]) -> Season | None:
 def requested_or_default_season(
     requested_id: str | None,
     seasons: list[Season],
+    unavailable: list[Season] | None = None,
 ) -> Season | None:
-    """Resolve a scoped request, safely falling back for invalid identifiers."""
-    requested = find_season(requested_id, seasons) if requested_id else None
+    """Resolve a scoped request, safely falling back for invalid identifiers.
+
+    ``unavailable`` seasons can be requested but are never the default.
+    """
+    requested = (
+        find_season(requested_id, [*seasons, *(unavailable or [])])
+        if requested_id
+        else None
+    )
     return requested or default_season(seasons)
 
 
-def season_options_payload(seasons: list[Season]) -> list[dict[str, object]]:
-    """Serialize season choices consistently across overview endpoints."""
+def _same_discipline(first: Season, second: Season) -> bool:
+    # Unresolved seasons say nothing about either discipline's history.
+    discipline = first.context.discipline
+    return discipline is not None and discipline == second.context.discipline
+
+
+def unavailable_seasons(seasons: list[Season]) -> list[Season]:
+    """Return finished seasons without source data inside this history.
+
+    A team or club lists such a season only between seasons of the same
+    discipline it has data in, and only when none of its data overlaps it, so a
+    club founded after the gap never shows it. These choices are never a default.
+    """
+    if not seasons:
+        return []
+    known = {season.pk for season in seasons}
+    gaps = []
+    for gap in Season.objects.filter(
+        data_unavailable=True, end_date__lt=timezone.localdate()
+    ).order_by("-start_date", "name"):
+        if gap.pk in known:
+            continue
+        related = [season for season in seasons if _same_discipline(gap, season)]
+        if (
+            any(season.end_date < gap.start_date for season in related)
+            and any(season.start_date > gap.end_date for season in related)
+            and not any(
+                season.start_date <= gap.end_date and season.end_date >= gap.start_date
+                for season in related
+            )
+        ):
+            gaps.append(gap)
+    return gaps
+
+
+def season_options_payload(
+    seasons: list[Season], unavailable: list[Season] | None = None
+) -> list[dict[str, object]]:
+    """Serialize season choices consistently across overview endpoints.
+
+    ``unavailable`` seasons join the choices with ``data_unavailable`` set.
+    """
     if not seasons:
         return []
     today = timezone.localdate()
     active = default_season([
         season for season in seasons if season.start_date <= today <= season.end_date
     ])
+    gaps = {season.pk for season in unavailable or []}
+    choices = (
+        sorted(
+            [*seasons, *(unavailable or [])],
+            key=lambda season: (-season.start_date.toordinal(), season.name),
+        )
+        if gaps
+        else seasons
+    )
     return [
         {
             "id_uuid": str(season.id_uuid),
@@ -254,6 +311,7 @@ def season_options_payload(seasons: list[Season]) -> list[dict[str, object]]:
             "kind": season.context.kind,
             "discipline": season.context.discipline,
             "phase": season.context.phase,
+            "data_unavailable": season.pk in gaps,
         }
-        for season in seasons
+        for season in choices
     ]

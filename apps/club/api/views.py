@@ -39,6 +39,7 @@ from apps.schedule.queries.seasons import (
     folded_full_year,
     requested_or_default_season,
     season_options_payload,
+    unavailable_seasons,
 )
 from apps.team.api.serializers import TeamSerializer
 
@@ -133,8 +134,9 @@ class ClubViewSet(viewsets.ModelViewSet):
         """
         club = self.get_object()
         seasons_qs = club_seasons(club)
+        gaps = unavailable_seasons(seasons_qs)
         season = requested_or_default_season(
-            request.query_params.get("season"), seasons_qs
+            request.query_params.get("season"), seasons_qs, gaps
         )
         folded = folded_full_year(season)
 
@@ -165,7 +167,7 @@ class ClubViewSet(viewsets.ModelViewSet):
                 "upcoming": upcoming_matches,
                 "recent": recent_matches,
             },
-            "seasons": season_options_payload(seasons_qs),
+            "seasons": season_options_payload(seasons_qs, gaps),
             "meta": {
                 "team_count": len(teams_payload),
                 "season_id": str(season.id_uuid) if season else None,
@@ -226,7 +228,9 @@ class ClubViewSet(viewsets.ModelViewSet):
         club = self.get_object()
         seasons_qs = club_seasons(club)
         season = requested_or_default_season(
-            request.query_params.get("season"), seasons_qs
+            request.query_params.get("season"),
+            seasons_qs,
+            unavailable_seasons(seasons_qs),
         )
         return Response(
             build_club_eligibility_dashboard(

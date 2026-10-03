@@ -11,6 +11,7 @@ from django.db.models import Model, Q
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 
+from apps.player.media_paths import delete_with_variant
 from apps.player.models.player import Player
 from apps.team.models import TeamData
 
@@ -144,5 +145,6 @@ def delete_player_profile(player: Player) -> None:
     player.songs.all().delete()
     for relation in ("team_data_as_player", "team_data_as_coach", "team_data_as_staff"):
         getattr(player, relation).clear()
-    if picture:
-        transaction.on_commit(lambda: picture.delete(save=False))
+    if picture and picture.name:
+        storage, name = picture.storage, picture.name
+        transaction.on_commit(lambda: delete_with_variant(storage, name))

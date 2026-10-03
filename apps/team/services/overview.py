@@ -50,6 +50,7 @@ def build_team_overview_payload(
     season: Season | None,
     seasons: list[Season],
     options: TeamOverviewOptions,
+    unavailable: list[Season] | None = None,
 ) -> dict[str, Any]:
     """Build the stable API payload for the team overview endpoint."""
     match_data_qs = team_matches(team, season)
@@ -192,7 +193,7 @@ def build_team_overview_payload(
         },
         "roster": roster,
         "staff": staff,
-        "seasons": season_options_payload(seasons),
+        "seasons": season_options_payload(seasons, unavailable),
         "meta": {
             "season_id": str(season.id_uuid) if season else None,
             "season_name": season.name if season else None,

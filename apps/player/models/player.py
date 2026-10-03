@@ -12,7 +12,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.player.media_paths import player_picture_path
+from apps.player.media_paths import player_picture_path, variant_url
 from apps.player.models.ordered_song_selection import OrderedSongSelectionModel
 
 from .constants import club_model_string, team_model_string
@@ -226,7 +226,7 @@ class Player(OrderedSongSelectionModel):
 
         """
         if self.profile_picture:
-            return self.profile_picture.url
+            return variant_url(self.profile_picture.url)
 
         return self.get_placeholder_profile_picture_url()
 

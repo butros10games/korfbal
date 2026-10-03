@@ -47,6 +47,28 @@ class AudioStorage(Protocol):
         """Open a stored artifact for binary reading."""
 
 
+class ImageVariantStorage(Protocol):
+    """Read stored images and keep resized copies at exact derived keys."""
+
+    def read(self, key: str) -> bytes:
+        """Return a stored object's bytes; raise FileNotFoundError when missing."""
+
+    def write(self, key: str, content: bytes) -> None:
+        """Store bytes at exactly this key, replacing an existing object."""
+
+    def exists(self, key: str) -> bool:
+        """Return whether an object is stored."""
+
+    def delete(self, key: str) -> None:
+        """Remove an object if it exists."""
+
+    def claim(self, key: str) -> bool:
+        """Reserve creating a copy for a short while; False when already reserved."""
+
+    def release(self, key: str) -> None:
+        """End a reservation made by ``claim``."""
+
+
 @dataclass(frozen=True, slots=True)
 class AudioRuntime:
     """Outbound capabilities needed to prepare player audio."""

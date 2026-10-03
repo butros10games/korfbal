@@ -52,7 +52,7 @@ def test_native_photo_cache_and_variant_deduplication(season: Season) -> None:
     name = publish(player)
     assert player.profile_picture.name == name
     assert player.profile_picture.storage.exists(name)
-    assert player.get_profile_picture() == player.profile_picture.url
+    assert player.get_profile_picture() == f"{player.profile_picture.url}?variant=w256"
     client = SportlinkClient("synthetic", user_agent="synthetic")
     with patch.object(client, "_logo_get") as get:
         result = client.fetch(SyncResource.objects.get(kind="player_photo"), Mock())

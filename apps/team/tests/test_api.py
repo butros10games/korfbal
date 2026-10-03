@@ -409,6 +409,50 @@ def test_team_overview_opens_full_year_season_for_requested_outdoor_half(
     assert selected(indoor) == current.name
 
 
+def test_team_overview_lists_season_without_data_inside_its_history(
+    client: Client,
+) -> None:
+    """A flagged season appears between known seasons but is never the default."""
+    current = create_season()
+    before = playing_season(INDOOR_PHASE, 2022)
+    gap = playing_season(INDOOR_PHASE, 2023)
+    after = playing_season(INDOOR_PHASE, 2024)
+    Season.objects.filter(pk=gap.pk).update(data_unavailable=True)
+    team, newcomer = _teams()
+    for season in (current, before, after):
+        _roster(team, season)
+    _roster(newcomer, after)
+
+    def overview(target: Team, **params: str) -> dict:
+        response = client.get(f"/api/team/teams/{target.id_uuid}/overview/", params)
+        assert response.status_code == HTTPStatus.OK
+        return response.json()
+
+    payload = overview(team)
+    assert payload["meta"]["season_id"] == str(current.id_uuid)
+    assert [
+        (option["name"], option["data_unavailable"]) for option in payload["seasons"]
+    ] == [
+        (current.name, False),
+        (after.name, False),
+        (gap.name, True),
+        (before.name, False),
+    ]
+    selected = overview(team, season=str(gap.id_uuid))
+    assert selected["meta"]["season_id"] == str(gap.id_uuid)
+    assert selected["matches"] == {"upcoming": [], "recent": []}
+    assert selected["roster"] == []
+    player = create_player(username="gap-player")
+    impact = client.get(
+        f"/api/team/teams/{team.id_uuid}/impact-breakdown/",
+        data={"season": str(gap.id_uuid), "player": str(player.id_uuid)},
+    )
+    assert impact.status_code == HTTPStatus.OK
+    assert impact.json()["season_id"] == str(gap.id_uuid)
+    # A team that only started after the gap does not list it.
+    assert [option["name"] for option in overview(newcomer)["seasons"]] == [after.name]
+
+
 def test_team_overview_denies_goal_song_management_to_anonymous_viewer(
     client: Client,
 ) -> None:

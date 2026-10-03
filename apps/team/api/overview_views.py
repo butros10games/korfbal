@@ -17,6 +17,7 @@ from apps.game_tracker.services.match_impact import (
 )
 from apps.kwt_common.api.params import bool_query_param, uuid_query_value
 from apps.player.models import Player
+from apps.schedule.queries.seasons import unavailable_seasons
 from apps.team.api.permissions import (
     viewer_can_manage_team,
     viewer_player,
@@ -78,7 +79,10 @@ class TeamOverviewActions(viewsets.GenericViewSet):
         """
         team = self.get_object()
         seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
+        gaps = unavailable_seasons(seasons_qs)
+        season = resolve_team_season(
+            request.query_params.get("season"), seasons_qs, gaps
+        )
 
         include_stats = bool_query_param(
             request,
@@ -95,6 +99,7 @@ class TeamOverviewActions(viewsets.GenericViewSet):
             team=team,
             season=season,
             seasons=seasons_qs,
+            unavailable=gaps,
             options=TeamOverviewOptions(
                 include_stats=include_stats,
                 include_roster=include_roster,
@@ -138,7 +143,11 @@ class TeamOverviewActions(viewsets.GenericViewSet):
         """
         team = self.get_object()
         seasons_qs = list(team_seasons(team))
-        season = resolve_team_season(request.query_params.get("season"), seasons_qs)
+        season = resolve_team_season(
+            request.query_params.get("season"),
+            seasons_qs,
+            unavailable_seasons(seasons_qs),
+        )
 
         player_param = (request.query_params.get("player") or "").strip()
         if not player_param:

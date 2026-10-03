@@ -14,6 +14,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.player_photos import PREFIX, photo_name
 from apps.competition.services.rosters import ROSTER_RELATIONS
+from apps.player.media_paths import delete_with_variant
 from apps.player.models import Player
 from apps.team.models import TeamData, TeamRosterMembership
 
@@ -120,7 +121,9 @@ def _move_photo(source: Player, target: Player) -> None:
             target.profile_picture = destination
     if old_name:
         storage = source.profile_picture.storage
-        transaction.on_commit(lambda: storage.delete(old_name), robust=True)
+        transaction.on_commit(
+            lambda: delete_with_variant(storage, old_name), robust=True
+        )
 
 
 def _validate_links(

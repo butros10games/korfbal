@@ -7,8 +7,8 @@ and data changes are always reflected, but an identical body is not sent again.
 
 ``Cache-Control: private, no-cache`` makes the stored copy usable only after this
 revalidation, on every platform, and keeps it out of shared caches. Responses
-that already declare a cache policy (``no-store`` media and credential reads,
-immutable logos) keep it.
+that already declare a cache policy (time-limited private media, ``no-store``
+credential reads, immutable logos) keep it.
 """
 
 from __future__ import annotations

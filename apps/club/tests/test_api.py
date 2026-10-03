@@ -22,7 +22,12 @@ from apps.game_tracker.models.player_match_minutes import (
     PlayerMatchMinutes,
 )
 from apps.player.models import Player, PlayerClubMembership
-from apps.schedule.domain.competition_context import AUTUMN, FULL_SEASON, SPRING
+from apps.schedule.domain.competition_context import (
+    AUTUMN,
+    FULL_SEASON,
+    INDOOR_PHASE,
+    SPRING,
+)
 from apps.schedule.models import Match, Season
 from apps.schedule.tests.season_builders import playing_season
 from apps.team.models import Team, TeamData
@@ -354,6 +359,47 @@ def test_club_overview_keeps_full_year_season_without_both_halves(
 
     assert [season["name"] for season in payload["seasons"]] == [graph.season.name]
     assert [team["name"] for team in payload["teams"]] == ["Full year"]
+
+
+def test_club_overview_lists_season_without_data_inside_its_history(
+    client: Client,
+) -> None:
+    """Clubs list a flagged season only between seasons they have data in."""
+    before = playing_season(INDOOR_PHASE, 2022)
+    gap = playing_season(INDOOR_PHASE, 2023)
+    after = playing_season(INDOOR_PHASE, 2024)
+    Season.objects.filter(pk=gap.pk).update(data_unavailable=True)
+    club = Club.objects.create(name="Long history")
+    founded = Club.objects.create(name="Founded later")
+    team = Team.objects.create(name="Long history 1", club=club)
+    TeamData.objects.create(team=team, season=before)
+    TeamData.objects.create(team=team, season=after)
+    TeamData.objects.create(
+        team=Team.objects.create(name="Founded later 1", club=founded), season=after
+    )
+
+    def overview(target: Club, **params: str) -> dict:
+        response = client.get(f"/api/club/clubs/{target.id_uuid}/overview/", params)
+        assert response.status_code == HTTPStatus.OK
+        return response.json()
+
+    payload = overview(club)
+    assert payload["meta"]["season_id"] == str(after.id_uuid)
+    assert [
+        (option["name"], option["data_unavailable"]) for option in payload["seasons"]
+    ] == [(after.name, False), (gap.name, True), (before.name, False)]
+    selected = overview(club, season=str(gap.id_uuid))
+    assert selected["meta"]["season_id"] == str(gap.id_uuid)
+    assert selected["teams"] == []
+    # Related season reads keep the gap instead of substituting another season.
+    _login_as_admin(client, club, "gap_admin")
+    eligibility = client.get(
+        f"/api/club/clubs/{club.id_uuid}/eligibility-dashboard/",
+        {"season": str(gap.id_uuid)},
+    )
+    assert eligibility.status_code == HTTPStatus.OK
+    assert eligibility.json()["season_id"] == str(gap.id_uuid)
+    assert [option["name"] for option in overview(founded)["seasons"]] == [after.name]
 
 
 def test_club_overview_invalid_season_does_not_broaden(client: Client) -> None:

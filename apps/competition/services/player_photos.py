@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.competition.models import SyncResource
 from apps.competition.services.logos import logo_name, store_image
+from apps.player.media_paths import delete_with_variant
 from apps.player.models import Player
 from apps.schedule.models import Season
 
@@ -39,7 +40,7 @@ def discover_photo(player: Player, reference: object, season: Season) -> None:
         player.save(update_fields=fields)
         if old_name:
             storage = player.profile_picture.storage
-            transaction.on_commit(lambda: storage.delete(old_name))
+            transaction.on_commit(lambda: delete_with_variant(storage, old_name))
     if not desired or (current == photo_name(player) and previous == desired):
         return
     resource, created = SyncResource.objects.get_or_create(

@@ -20,7 +20,10 @@ from apps.player.adapters.outbound.song_downloader import (
 from apps.player.adapters.outbound.song_jobs import CelerySongDownloadDispatcher
 from apps.player.adapters.outbound.spotify import RequestsSpotifyClient
 from apps.player.adapters.outbound.spotify_tracks import RequestsTrackMetadataClient
-from apps.player.adapters.outbound.storage import DjangoAudioStorage
+from apps.player.adapters.outbound.storage import (
+    DjangoAudioStorage,
+    DjangoImageVariantStorage,
+)
 from apps.player.adapters.outbound.web_push import PyWebPushClient
 from apps.player.adapters.outbound.web_push_batch import (
     send_web_push_batch as _send_web_push_batch,
@@ -63,6 +66,7 @@ from apps.schedule.models.match import Match
 check_media_privacy = _check_media_privacy
 command_runner = SubprocessCommandRunner()
 audio_storage = DjangoAudioStorage()
+image_variant_storage = DjangoImageVariantStorage()
 audio_runtime = AudioRuntime(storage=audio_storage, commands=command_runner)
 song_jobs = CelerySongDownloadDispatcher()
 web_push_client = PyWebPushClient()

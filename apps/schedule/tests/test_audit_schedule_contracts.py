@@ -353,6 +353,7 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "kind": "other",
             "discipline": None,
             "phase": None,
+            "data_unavailable": False,
         },
         {
             "id_uuid": str(current.id_uuid),
@@ -364,6 +365,7 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "kind": "other",
             "discipline": None,
             "phase": None,
+            "data_unavailable": False,
         },
     ]
 

@@ -200,8 +200,8 @@ Match tracker issues often require coordinated backend + frontend changes.
   entries silently deletes their audited standings adjustments.
 - Test data migrations with `MigrationExecutor` and the historical app registry. Current model
   classes cannot detect dependency, field-state, or migration-order regressions.
-- Add new migration test files to both `test-migrations` commands in `project.json`; the
-  general test lane excludes `migration_regression` tests.
+- Both `test-migrations` commands in `project.json` select tests by the `migration_regression`
+  marker, so new migration test files need only the marker; the general test lane excludes them.
 - Keep `test` dependent on both test lanes, including their `ci` configurations, so the
   standard validation command always runs migration checks and CI retains coverage enforcement.
 - Mark every `MigrationExecutor` test with `migration_regression`; the Nx test target runs those

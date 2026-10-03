@@ -22,9 +22,17 @@ from apps.team.models.team_data import TeamData
 def resolve_team_season(
     requested_id: str | None,
     seasons: list[Season],
+    unavailable: list[Season] | None = None,
 ) -> Season | None:
-    """Resolve a team-scoped season without broadening invalid requests."""
-    requested = find_season(requested_id, seasons) if requested_id else None
+    """Resolve a team-scoped season without broadening invalid requests.
+
+    ``unavailable`` seasons can be requested but are never the default.
+    """
+    requested = (
+        find_season(requested_id, [*seasons, *(unavailable or [])])
+        if requested_id
+        else None
+    )
     if requested_id and requested is None:
         requested = full_year_for_half(requested_id, seasons)
     return (

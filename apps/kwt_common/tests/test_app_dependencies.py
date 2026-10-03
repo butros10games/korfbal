@@ -85,6 +85,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "privacy",
         "services.goal_song",
         "services.goal_song_manifest",
+        "services.image_variants",
         "services.live_activities",
         "services.match_notifications",
         "services.player_queries",

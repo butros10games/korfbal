@@ -58,6 +58,14 @@ class Season(models.Model):
         db_default="",
         choices=[(value, value) for value in SOURCES],
     )
+    data_unavailable = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text=(
+            "No source supplies this season's matches. Teams and clubs with data "
+            "before and after it list it as a season without data."
+        ),
+    )
 
     class Meta:
         """Require a valid inclusive season interval."""

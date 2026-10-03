@@ -32,8 +32,9 @@ class SeasonAdmin(SeasonAdminBase):
         "discipline",
         "phase",
         "context_source",
+        "data_unavailable",
     )
-    list_filter = ("discipline", "phase", "context_source")
+    list_filter = ("discipline", "phase", "context_source", "data_unavailable")
     search_fields = ("id_uuid", "name")
     show_full_result_count = False
 
