@@ -50,11 +50,13 @@ from apps.schedule.queries.seasons import (
     unavailable_seasons,
 )
 from apps.team.api.serializers import TeamSerializer
+from apps.team.queries.season_history import club_season_history
 
 from .permissions import IsClubAdmin
 from .serializers import (
     ClubAdminPlayerSerializer,
     ClubCatalogSerializer,
+    ClubHistorySerializer,
     ClubMembershipAddSerializer,
     ClubMembershipSerializer,
     ClubSerializer,
@@ -137,6 +139,12 @@ class ClubViewSet(viewsets.ModelViewSet):
 
         """
         return Response(club_info(self.get_object()))
+
+    @extend_schema(responses=ClubHistorySerializer)
+    @action(detail=True, methods=("GET",), url_path="history", filter_backends=[])
+    def history(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Return the club's results per korfbal year and its teams with history."""
+        return Response(club_season_history(self.get_object().pk))
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(self, request: Request, *args: Any, **kwargs: Any) -> Response:

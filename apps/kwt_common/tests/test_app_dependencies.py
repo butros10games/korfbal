@@ -103,6 +103,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
     }),
     "team": frozenset({
         "api.serializers",
+        "queries.season_history",
         "services.roster",
         "services.roster_history",
     }),

@@ -28,6 +28,7 @@ from apps.team.queries.overview import (
     team_pool_matches,
     team_seasons,
 )
+from apps.team.queries.season_history import team_season_history
 from apps.team.services.goal_song_reads import (
     fallback_goal_song_audio_urls,
 )
@@ -38,6 +39,7 @@ from apps.team.services.overview import (
 )
 
 from .serializers import (
+    TeamHistorySerializer,
     TeamPoolMatchesPageSerializer,
     TeamPoolMatchesQuerySerializer,
 )
@@ -63,6 +65,12 @@ class TeamOverviewActions(viewsets.GenericViewSet):
         )
         page = self.paginate_queryset(matches)
         return self.get_paginated_response(build_match_summaries(page or []))
+
+    @extend_schema(responses=TeamHistorySerializer)
+    @action(detail=True, methods=("GET",), url_path="history", filter_backends=[])
+    def history(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """Return every season of the team: results, poules, positions and Elo."""
+        return Response(team_season_history(self.get_object()))
 
     @action(detail=True, methods=("GET",), url_path="overview")
     def overview(

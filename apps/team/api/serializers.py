@@ -93,3 +93,40 @@ class TeamPoolMatchesPageSerializer(serializers.Serializer):
     next = serializers.URLField(allow_null=True)
     previous = serializers.URLField(allow_null=True)
     results = serializers.ListField(child=serializers.DictField())
+
+
+class TeamSeasonPouleSerializer(serializers.Serializer):
+    """Document one poule a team played in, with its final position if known."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    class_name = serializers.CharField()
+    level = serializers.IntegerField(allow_null=True)
+    position = serializers.IntegerField(allow_null=True)
+    teams = serializers.IntegerField(allow_null=True)
+
+
+class TeamSeasonHistorySerializer(serializers.Serializer):
+    """Document one season of a team's history."""
+
+    season = serializers.UUIDField()
+    season_name = serializers.CharField()
+    start_date = serializers.DateField()
+    edition = serializers.IntegerField(allow_null=True)
+    discipline = serializers.CharField(allow_null=True)
+    kind = serializers.CharField()
+    played = serializers.IntegerField()
+    won = serializers.IntegerField()
+    drawn = serializers.IntegerField()
+    lost = serializers.IntegerField()
+    goals_for = serializers.IntegerField()
+    goals_against = serializers.IntegerField()
+    poules = TeamSeasonPouleSerializer(many=True)
+    rating = serializers.FloatField(allow_null=True)
+    rating_change = serializers.FloatField(allow_null=True)
+
+
+class TeamHistorySerializer(serializers.Serializer):
+    """Document every season of one team, newest first."""
+
+    seasons = TeamSeasonHistorySerializer(many=True)

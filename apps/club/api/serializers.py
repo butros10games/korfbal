@@ -117,3 +117,37 @@ class JoinRequestDecisionSerializer(serializers.Serializer):
     """A club admin's decision on a pending join request."""
 
     decision = serializers.ChoiceField(choices=("approve", "reject"))
+
+
+class ClubHistoryEditionSerializer(serializers.Serializer):
+    """Document the club's combined results in one korfbal year."""
+
+    key = serializers.CharField()
+    edition = serializers.IntegerField(allow_null=True)
+    season_name = serializers.CharField(allow_null=True)
+    start_date = serializers.DateField()
+    teams = serializers.IntegerField()
+    played = serializers.IntegerField()
+    won = serializers.IntegerField()
+    drawn = serializers.IntegerField()
+    lost = serializers.IntegerField()
+    goals_for = serializers.IntegerField()
+    goals_against = serializers.IntegerField()
+
+
+class ClubHistoryTeamSerializer(serializers.Serializer):
+    """Document a club team that has history, without its season rows."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    seasons = serializers.IntegerField()
+    first_season = serializers.CharField()
+    last_season = serializers.CharField()
+    played = serializers.IntegerField()
+
+
+class ClubHistorySerializer(serializers.Serializer):
+    """Document the club history: years newest first and teams to compare."""
+
+    editions = ClubHistoryEditionSerializer(many=True)
+    teams = ClubHistoryTeamSerializer(many=True)
