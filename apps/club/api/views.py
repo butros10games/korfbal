@@ -16,6 +16,7 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.club.composition import join_request_ports
 from apps.club.models.club import Club
 from apps.club.queries.overview import (
     club_matches,
@@ -30,11 +31,18 @@ from apps.club.services.admin import (
     search_club_admin_users,
 )
 from apps.club.services.eligibility_dashboard import build_club_eligibility_dashboard
+from apps.club.services.join_requests import (
+    JoinRequestError,
+    claimed_knkv_names,
+    decide_request,
+    pending_member_requests,
+)
 from apps.competition.queries.club_info import club_info
 from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly
+from apps.player.models import Player
 from apps.schedule.queries.seasons import (
     folded_full_year,
     requested_or_default_season,
@@ -50,6 +58,7 @@ from .serializers import (
     ClubMembershipAddSerializer,
     ClubMembershipSerializer,
     ClubSerializer,
+    JoinRequestDecisionSerializer,
 )
 
 
@@ -58,7 +67,12 @@ from .serializers import (
         parameters=[
             OpenApiParameter("player_id", OpenApiTypes.UUID, OpenApiParameter.PATH)
         ]
-    )
+    ),
+    decide_join_request=extend_schema(
+        parameters=[
+            OpenApiParameter("request_id", OpenApiTypes.UUID, OpenApiParameter.PATH)
+        ]
+    ),
 )
 class ClubViewSet(viewsets.ModelViewSet):
     """Expose club CRUD endpoints with search support."""
@@ -301,6 +315,68 @@ class ClubViewSet(viewsets.ModelViewSet):
             )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(
+        detail=True,
+        methods=("GET",),
+        url_path="join-requests",
+        permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
+    )
+    def join_requests(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """List pending player requests for the club admin to decide."""
+        club = get_object_or_404(Club, id_uuid=kwargs.get("id_uuid"))
+        pending = pending_member_requests(club)
+        names = claimed_knkv_names(pending)
+        return Response({
+            "results": [
+                {
+                    "id_uuid": str(item.pk),
+                    "player": ClubAdminPlayerSerializer().to_representation(
+                        item.player
+                    ),
+                    "email": item.player.user.email if item.player.user else None,
+                    "team": (
+                        {"id_uuid": str(item.team.pk), "name": item.team.name}
+                        if item.team
+                        else None
+                    ),
+                    "knkv_person_id": item.knkv_person_id or None,
+                    "knkv_name": names.get(item.knkv_person_id),
+                    "created_at": item.created_at.isoformat(),
+                }
+                for item in pending
+            ]
+        })
+
+    @action(
+        detail=True,
+        methods=("POST",),
+        url_path=rf"join-requests/(?P<request_id>{UUID_URL_REGEX})",
+        permission_classes=[permissions.IsAuthenticated, IsClubAdmin],
+    )
+    def decide_join_request(
+        self,
+        request: Request,
+        request_id: str,
+        *args: object,
+        **kwargs: object,
+    ) -> Response:
+        """Approve or reject a pending player request."""
+        club = get_object_or_404(Club, id_uuid=kwargs.get("id_uuid"))
+        serializer = JoinRequestDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        decision = serializer.validated_data["decision"]
+        try:
+            decided = decide_request(
+                request_id=request_id,
+                club=club,
+                approve=decision == "approve",
+                reviewer=Player.objects.filter(user=request.user).first(),
+                ports=join_request_ports,
+            )
+        except JoinRequestError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({"id_uuid": str(decided.pk), "status": decided.status})
 
     def _viewer_is_admin(self, request: Request, club: Club) -> bool:
         user = request.user

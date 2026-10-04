@@ -115,6 +115,11 @@ def test_package_exports_the_configured_celery_application() -> None:
             "kwargs": {"full": True},
             "options": {"expires": 3600, "queue": "celery"},
         },
+        "resume-stalled-join-request-links": {
+            "task": "apps.club.tasks.resume_stalled_join_request_links",
+            "schedule": 3600.0,
+            "options": {"expires": 3600, "queue": "celery"},
+        },
         "recheck-competition-history": {
             "task": "apps.competition.tasks.recheck_competition_history",
             "schedule": crontab(minute="0", hour="4", day_of_week="monday"),

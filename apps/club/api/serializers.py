@@ -111,3 +111,9 @@ class ClubMembershipAddSerializer(serializers.Serializer):
                 "Provide one of: player_id, user_id, username."
             )
         return attrs
+
+
+class JoinRequestDecisionSerializer(serializers.Serializer):
+    """A club admin's decision on a pending join request."""
+
+    decision = serializers.ChoiceField(choices=("approve", "reject"))

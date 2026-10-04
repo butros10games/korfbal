@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
@@ -15,6 +14,7 @@ from apps.player.composition import (
     expo_push_client,
     prepare_player_song_clip,
     push_live_activities_for_match,
+    send_push_to_users,
     send_web_push,
 )
 from apps.player.models.player_song import PlayerSong
@@ -34,20 +34,7 @@ from apps.player.services.song_processing import (
 from apps.player.services.web_push import WebPushPayload
 
 
-def _send_payload(*, user_ids: list[int], payload: WebPushPayload) -> None:
-    for subscription_id, user_id in PlayerPushSubscription.objects.filter(
-        user_id__in=user_ids, is_active=True
-    ).values_list("pk", "user_id"):
-        enqueue(
-            "apps.player.tasks.deliver_notification",
-            f"{payload.tag}:{subscription_id}",
-            kwargs={
-                "subscription_id": str(subscription_id),
-                "user_id": user_id,
-                "payload": asdict(payload),
-            },
-            once=True,
-        )
+_send_payload = send_push_to_users
 
 
 def _schedule_reminder(*, match_id: str, eta: datetime) -> None:

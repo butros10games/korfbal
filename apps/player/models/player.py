@@ -67,6 +67,13 @@ class Player(OrderedSongSelectionModel):
         PUBLIC = "public", "Public"
         CLUB = "club", "Club"
 
+    class AccountRole(models.TextChoices):
+        """How the account takes part, chosen during first-run setup."""
+
+        PLAYER = "player", "Speler"
+        CLUB = "club", "Clubvertegenwoordiger"
+        SPECTATOR = "spectator", "Toeschouwer"
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
@@ -133,6 +140,17 @@ class Player(OrderedSongSelectionModel):
         related_name="members",
         blank=True,
     )
+
+    # The account type chosen during first-run setup. Setup is complete once
+    # `onboarded_at` is set; accounts that predate the setup flow are backfilled.
+    account_role: models.CharField[str, str] = models.CharField(
+        max_length=16,
+        choices=AccountRole.choices,
+        blank=True,
+        default="",
+        db_default="",
+    )
+    onboarded_at = models.DateTimeField(blank=True, null=True)
 
     goal_song_uri: models.CharField[str, str] = models.CharField(
         max_length=255, blank=True

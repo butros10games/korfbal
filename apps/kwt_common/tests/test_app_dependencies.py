@@ -43,6 +43,7 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "queries.match_info",
         "services.classification",
         "services.match_prediction",
+        "services.player_linking",
         "services.schedule_notifications",
     }),
     "game_tracker": frozenset({
@@ -100,7 +101,11 @@ PUBLIC_INTERFACES: dict[str, frozenset[str]] = {
         "queries.seasons",
         "services.season_context",
     }),
-    "team": frozenset({"api.serializers", "services.roster_history"}),
+    "team": frozenset({
+        "api.serializers",
+        "services.roster",
+        "services.roster_history",
+    }),
     "tournament": frozenset({"composition", "services.cups"}),
     "video_analysis": frozenset({
         "composition",

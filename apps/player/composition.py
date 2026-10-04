@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from functools import partial
 from typing import Any
 
 from django.conf import settings
 
 from apps.game_tracker.composition import read_public_live
+from apps.kwt_common.services.jobs import enqueue
 from apps.player.adapters.outbound.apns import ApnsLiveActivityClient
 from apps.player.adapters.outbound.command_runner import SubprocessCommandRunner
 from apps.player.adapters.outbound.expo_push import RequestsExpoPushClient
@@ -131,6 +133,23 @@ resolve_player_song_clip = partial(
     prepare_clip=ensure_goal_song_clip,
     jobs=song_jobs,
 )
+
+
+def send_push_to_users(*, user_ids: list[int], payload: WebPushPayload) -> None:
+    """Persist one delivery job per active device inside the caller's transaction."""
+    for subscription_id, user_id in PlayerPushSubscription.objects.filter(
+        user_id__in=user_ids, is_active=True
+    ).values_list("pk", "user_id"):
+        enqueue(
+            "apps.player.tasks.deliver_notification",
+            f"{payload.tag}:{subscription_id}",
+            kwargs={
+                "subscription_id": str(subscription_id),
+                "user_id": user_id,
+                "payload": asdict(payload),
+            },
+            once=True,
+        )
 
 
 def _web_push_ttl_seconds() -> int:
