@@ -19,11 +19,13 @@ def server_commands() -> list[list[str]]:
         "--host",
         os.getenv("KORFBAL_BIND_HOST", "127.0.0.1"),
     ]
+    # Django's ASGI handler rejects lifespan scopes; `asginl` skips them instead of
+    # raising a startup ValueError that Sentry reports from every ASGI worker.
     return [
         [
             *common,
             "--interface",
-            "asgi",
+            "asginl",
             "--port",
             "1664",
             "--workers",
@@ -47,7 +49,7 @@ def server_commands() -> list[list[str]]:
         [
             *common,
             "--interface",
-            "asgi",
+            "asginl",
             "--port",
             "1666",
             "--workers",

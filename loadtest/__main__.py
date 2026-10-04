@@ -456,7 +456,7 @@ def start_read_pool(
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    interface = "wsgi" if threads is not None else "asgi"
+    interface = "wsgi" if threads is not None else "asginl"
     args = [
         sys.executable,
         "-m",
@@ -718,7 +718,7 @@ def main() -> int:
                 "-m",
                 "granian",
                 "--interface",
-                "asgi",
+                "asginl",
                 "--no-ws",
                 "--host",
                 "127.0.0.1",

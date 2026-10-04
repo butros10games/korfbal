@@ -47,6 +47,20 @@ def test_pool_commands_isolate_stream_admission(
     assert commands[1][-1] == "korfbal.wsgi:application"
 
 
+def test_asgi_pools_skip_lifespan() -> None:
+    """Django rejects lifespan scopes, which Sentry would report on every start."""
+    interfaces = {
+        command[command.index("--port") + 1]: command[command.index("--interface") + 1]
+        for command in server_commands()
+    }
+    assert interfaces == {
+        "1664": "asginl",
+        "1665": "wsgi",
+        "1666": "asginl",
+        "1667": "wsgi",
+    }
+
+
 def test_supervisor_stops_all_pools_on_container_signal(tmp_path: Path) -> None:
     """Exercise real child processes instead of only checking command construction."""
     probe = (
