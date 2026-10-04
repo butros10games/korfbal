@@ -516,9 +516,20 @@ class WorkspaceObjects:
             )
         )
 
-    def purge_clip(self, run_id: uuid.UUID) -> None:
-        """Delete one clip run's indexed artifacts, including replay section parts."""
+    def purge_clip(self, run_id: uuid.UUID, *, part: int | None = None) -> None:
+        """Delete one clip run's indexed artifacts, including replay section parts.
+
+        With ``part`` only that replay section's own run (a discarded attempt).
+        """
         name = str(uuid.UUID(str(run_id)))
+        if part is not None:
+            self._purge(
+                StoredFile.objects.filter(
+                    workspace=self.workspace,
+                    relative_path__startswith=f"vision/clips/{name}-part-{part:04d}/",
+                )
+            )
+            return
         self._purge(
             StoredFile.objects.filter(workspace=self.workspace).filter(
                 Q(relative_path__startswith=f"vision/clips/{name}/")

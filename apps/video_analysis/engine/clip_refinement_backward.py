@@ -100,7 +100,11 @@ def trace(frames: dict, before: list, after: list, team: str, histories: dict) -
     previous_id = anchor["id"]
     point = anchor["image"]
     time = anchor["time"]
-    future = after[1]
+    # One identity can hold two boxes at the anchor's moment (a duplicate
+    # body); the velocity needs the first strictly later observation.
+    future = next((row for row in after[1:] if row["time"] > time), None)
+    if future is None:
+        return []
     elapsed = future["time"] - time
     velocity = [(b - a) / elapsed for a, b in zip(point, future["image"], strict=True)]
     output = []

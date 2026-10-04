@@ -21,6 +21,7 @@ import importlib
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from . import clip_discriminant
 from .clip_signals import modules
 
 
@@ -33,6 +34,18 @@ VERSION = 1
 MIN_CONFIDENCE = 0.3
 DUPLICATE_IOU = 0.7
 SAME_BODY_IOU = 0.5
+# A fixed camera (one tripod, the club recordings) barely pans or zooms; an
+# operated broadcast camera does so in most frames. Rates are per second so the
+# test does not depend on the processed frame rate. The answer chooses the
+# appearance descriptor and its calibration; linking itself treats both alike.
+# Treating a weaker box inside a stronger one (same head and feet) as the same
+# body, and refusing hand-overs, on fixed cameras helped one club clip with a
+# detector that boxes bodies twice, but with the shipped detector such boxes
+# are often a partly hidden player: every club clip then tracked worse than
+# without those rules. The copies' geometry and rate do not tell the two apart.
+MOVING_SHIFT = 0.025
+MOVING_ZOOM = 0.025
+FIXED_CAMERA_SHARE = 0.2
 MIN_IOU = 0.4
 MIN_IOU_MARGIN = 0.15
 # Tracklets shorter than this carry too little evidence to be linked; they
@@ -54,6 +67,11 @@ MIN_SIZE_RATIO = 0.6
 MAX_SIZE_RATIO = 1.6
 MIN_LONG_SIZE_RATIO = 0.4
 MAX_LONG_SIZE_RATIO = 2.5
+# After a long absence only appearance can tell teammates apart; motion only
+# bounds where the player can be: half a body height plus a sprint of four
+# body heights per second. A fixed three-body-height limit, chosen on 60 s
+# clips, cut correct returns on five-minute and club clips (a player leaves
+# the view and comes back elsewhere) and made them worse than this bound.
 LONG_REACH = 0.5
 LONG_SPEED = 4.0
 MAX_LONG_APPEARANCE = 0.3
@@ -129,9 +147,9 @@ def overlaps(first: NDArray[Any], second: NDArray[Any]) -> NDArray[Any]:
 
 
 def moved(box: NDArray[Any], motion: NDArray[Any] | None) -> NDArray[Any]:
-    """Carry a box into the next frame's coordinates."""
+    """Carry a box into the next frame's coordinates, as a new array."""
     if motion is None:
-        return box
+        return box.copy()
     _, np = modules()
     corners = np.array([[box[0], box[1], 1.0], [box[2], box[3], 1.0]]) @ motion.T
     scale = np.where(np.abs(corners[:, 2]) < EPSILON, 1.0, corners[:, 2])
@@ -252,12 +270,46 @@ class Background:
         return np.linalg.inv(scale) @ np.vstack([affine, [0.0, 0.0, 1.0]]) @ scale
 
 
-def follows(before: dict, after: dict) -> bool:
-    """Whether one identity can continue as another: later, and not a rival shirt."""
+def fixed_camera(
+    segments: list[int], motions: list[NDArray[Any] | None], times: list[float]
+) -> bool:
+    """Whether one camera that hardly pans or zooms (a tripod) filmed the clip.
+
+    Judged over the whole clip: an operated broadcast camera can hold a wide
+    shot still for many seconds, but it pans, zooms and cuts over a minute.
+    """
+    _, np = modules()
+    moving = []
+    for frame in range(1, len(segments)):
+        motion = motions[frame]
+        step = times[frame] - times[frame - 1]
+        if motion is None or segments[frame] != segments[frame - 1] or step <= 0:
+            continue
+        shift = float(np.hypot(motion[0, 2], motion[1, 2])) / step
+        zoom = abs(float(np.sqrt(abs(np.linalg.det(motion[:2, :2])))) - 1) / step
+        moving.append(shift > MOVING_SHIFT or zoom > MOVING_ZOOM)
+    return bool(moving) and float(np.mean(moving)) <= FIXED_CAMERA_SHARE
+
+
+def frame_times(rows: list[Row], frames: int) -> list[float]:
+    """Frame times from the observations, for inputs recorded without them."""
+    found = {row.frame: row.time for row in rows}
+    times, last = [], 0.0
+    for frame in range(frames):
+        last = found.get(frame, last)
+        times.append(last)
+    return times
+
+
+def follows(before: dict, after: dict, *, same_body: bool = False) -> bool:
+    """Whether one identity can continue as another: later, and not a rival shirt.
+
+    Boxes of both in one frame are two people, unless they lie on one body:
+    the detector boxed it twice where the tracklets hand over.
+    """
     if after["start"] <= before["start"] or after["end"] <= before["end"]:
         return False
-    # Sharing exactly one frame is two people; a tracker hand-over overlaps less.
-    if after["start"] == before["end"]:
+    if after["start"] <= before["end"] and not same_body:
         return False
     teams = {before["team"], after["team"]} - {None}
     return len(teams) <= 1
@@ -382,6 +434,27 @@ def shadows(rows: list[Row], owner: dict[int, int], officials: set[int]) -> dict
     return found
 
 
+def one_body(rows: list[Row], before: list[int], after: list[int]) -> bool:
+    """Whether every frame both identities hold shows them on one body."""
+    _, np = modules()
+    first, last = rows[after[0]].frame, rows[before[-1]].frame
+    shared: dict[int, tuple[list[int], list[int]]] = defaultdict(lambda: ([], []))
+    for side, chain in enumerate((before, after)):
+        for index in chain:
+            if first <= rows[index].frame <= last:
+                shared[rows[index].frame][side].append(index)
+    return all(
+        ends
+        and starts
+        and overlaps(
+            np.array([rows[i].box for i in ends]),
+            np.array([rows[i].box for i in starts]),
+        ).max()
+        >= SAME_BODY_IOU
+        for ends, starts in shared.values()
+    )
+
+
 class Linker:
     """Collect one clip's player observations and resolve them into identities."""
 
@@ -392,8 +465,13 @@ class Linker:
         self.segments: list[int] = []
         self.motions: list[NDArray[Any] | None] = []
         self.descriptors: list[NDArray[Any]] = []
+        # Broadcast descriptors of the same observations (optional, aligned).
+        self.alternates: list[NDArray[Any]] = []
+        self.broadcast = False
         self.to_first: list[NDArray[Any]] = []
         self.sides: dict[int, int] = {}
+        self.times: list[float] = []
+        self.fixed = False
 
     def observe(
         self,
@@ -402,12 +480,17 @@ class Linker:
         camera: dict,
         *,
         aspect: float,
-        descriptors: dict[int, NDArray[Any]] | None = None,
+        descriptors: dict[int, Any] | None = None,
     ) -> None:
-        """Retain one frame's observed player boxes, teams and appearance."""
+        """Retain one frame's observed player boxes, teams and appearance.
+
+        A descriptor may be a `(default, broadcast)` pair when a broadcast
+        re-identification model is configured; the linker chooses per clip.
+        """
         np = self.np
         frame = len(self.segments)
         self.segments.append(int(camera.get("segment", 0)))
+        self.times.append(time)
         scale = np.diag([aspect, 1.0, 1.0])
         motion = camera.get("motion")
         self.motions.append(
@@ -421,10 +504,14 @@ class Linker:
                 continue
             descriptor = -1
             if descriptors and index in descriptors:
-                descriptor = len(self.descriptors)
-                self.descriptors.append(
-                    np.asarray(descriptors[index], dtype=np.float16)
+                value = descriptors[index]
+                default, alternate = (
+                    value if isinstance(value, tuple) else (value, None)
                 )
+                descriptor = len(self.descriptors)
+                self.descriptors.append(np.asarray(default, dtype=np.float16))
+                if alternate is not None:
+                    self.alternates.append(np.asarray(alternate, dtype=np.float16))
             # Only a shirt seen in this frame counts; a team inherited through
             # the online identity would repeat that identity's mistakes.
             referee = player.get("label") == "referee"
@@ -494,10 +581,11 @@ class Linker:
         ordered = sorted(indices, key=lambda i: -self.rows[i].confidence)
         if not ordered:
             return []
-        scores = overlaps(*[np.array([self.rows[i].box for i in ordered])] * 2)
+        boxes = np.array([self.rows[i].box for i in ordered])
+        duplicate = overlaps(boxes, boxes) >= DUPLICATE_IOU
         kept: list[int] = []
         for position in range(len(ordered)):
-            if all(scores[position, other] < DUPLICATE_IOU for other in kept):
+            if not duplicate[position, kept].any():
                 kept.append(position)
         return [ordered[position] for position in kept]
 
@@ -587,6 +675,11 @@ class Linker:
             "last_id": self.rows[chain[-1]].track_id,
         }
 
+    def _descriptor(self, index: int) -> NDArray[Any]:
+        """Return the descriptor this clip links with: broadcast or default."""
+        source = self.alternates if self.broadcast else self.descriptors
+        return source[self.rows[index].descriptor]
+
     def space(self) -> tuple[NDArray[Any], NDArray[Any]] | None:
         """Gather the sampled descriptors and the observations they describe."""
         np = self.np
@@ -595,9 +688,7 @@ class Linker:
         ])
         if len(owners) < MIN_CLASS_SAMPLES * MIN_CLASSES:
             return None
-        values = np.stack([
-            self.descriptors[self.rows[i].descriptor] for i in owners
-        ]).astype(np.float64)
+        values = np.stack([self._descriptor(i) for i in owners]).astype(np.float64)
         return owners, values - values.mean(axis=0)
 
     def appearance(
@@ -621,22 +712,33 @@ class Linker:
         ]
         if len(classes) < MIN_CLASSES:
             return {}
-        within = np.zeros((values.shape[1],) * 2)
-        centres = []
-        for label in classes:
-            members = values[labels == label]
-            centre = members.mean(axis=0)
-            centres.append(centre)
-            within += (members - centre).T @ (members - centre)
-        within /= sum(int((labels == label).sum()) for label in classes)
-        within = (1 - SHRINKAGE) * within + SHRINKAGE * np.trace(within) / len(
-            within
-        ) * np.eye(len(within))
-        weights, vectors = np.linalg.eigh(within)
-        whiten = vectors @ np.diag(np.maximum(weights, EPSILON) ** -0.5) @ vectors.T
-        between = np.array(centres) @ whiten
-        _, _, axes = np.linalg.svd(between - between.mean(axis=0), full_matrices=False)
-        projected = values @ whiten @ axes[:DIMENSIONS].T
+        if clip_discriminant.gpu():
+            # The same float64 fit on the GPU (DINOv2-g makes this 4,608-d).
+            projected = values @ clip_discriminant.transform(
+                values,
+                labels,
+                classes,
+                clip_discriminant.Fit(DIMENSIONS, SHRINKAGE, EPSILON),
+            )
+        else:
+            within = np.zeros((values.shape[1],) * 2)
+            centres = []
+            for label in classes:
+                members = values[labels == label]
+                centre = members.mean(axis=0)
+                centres.append(centre)
+                within += (members - centre).T @ (members - centre)
+            within /= sum(int((labels == label).sum()) for label in classes)
+            within = (1 - SHRINKAGE) * within + SHRINKAGE * np.trace(within) / len(
+                within
+            ) * np.eye(len(within))
+            weights, vectors = np.linalg.eigh(within)
+            whiten = vectors @ np.diag(np.maximum(weights, EPSILON) ** -0.5) @ vectors.T
+            between = np.array(centres) @ whiten
+            _, _, axes = np.linalg.svd(
+                between - between.mean(axis=0), full_matrices=False
+            )
+            projected = values @ whiten @ axes[:DIMENSIONS].T
         projected /= np.maximum(
             np.linalg.norm(projected, axis=1, keepdims=True), EPSILON
         )
@@ -673,7 +775,10 @@ class Linker:
                 for column in range(low, high):
                     other = members[column]
                     after = described[other]
-                    if not follows(before, after):
+                    same_body = after["start"] <= before["end"] and one_body(
+                        self.rows, chains[number], chains[other]
+                    )
+                    if not follows(before, after, same_body=same_body):
                         continue
                     distance = (
                         1 - float(means[number] @ means[other])
@@ -823,6 +928,14 @@ class Linker:
     ) -> list[list[int]] | None:
         """Resolve observations into identities, or stop at the job deadline."""
         self.stabilise()
+        self.fixed = fixed_camera(
+            self.segments,
+            self.motions,
+            self.times or frame_times(self.rows, len(self.segments)),
+        )
+        self.broadcast = (
+            not self.fixed and len(self.alternates) == len(self.descriptors) > 0
+        )
         tracklets = self.tracklets()
         self.sides = self.shirt_sides(tracklets)
 
@@ -979,6 +1092,8 @@ class Linker:
                 ),
                 "observations": len(self.rows),
                 "linked_observations": len(owner),
+                "fixed_camera": self.fixed,
+                "broadcast_descriptors": self.broadcast,
             },
             "tracks": len({row.track_id for row in self.rows}),
             "truncated": False,

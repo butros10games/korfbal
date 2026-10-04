@@ -10,7 +10,6 @@ from collections import OrderedDict
 import fcntl
 import hashlib
 import importlib
-import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ import shutil
 import tempfile
 from typing import Any, cast
 
+from . import clip_device
 from .store import atomic_json
 from .training import Detector, detector
 from .vision import digest
@@ -37,7 +37,7 @@ def export_recipe(weights: Path, shape: tuple[int, int]) -> dict:
         "opset": 17,
         "precision": "fp32",
         "packages": {
-            name: importlib.metadata.version(name)
+            name: clip_device.package_version(name)
             for name in ("torch", "ultralytics", "onnx", "onnxslim", "onnxruntime")
         },
     }
@@ -129,19 +129,15 @@ class CpuDetector:
             return
         runtime = importlib.import_module("onnxruntime")
         exported = cached_export(Path(self.ckpt_path), self.cache, shape)
-        options = runtime.SessionOptions()
-        options.intra_op_num_threads = CPU_THREADS
-        options.inter_op_num_threads = 1
-        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        self.session = runtime.InferenceSession(
-            str(exported), sess_options=options, providers=["CPUExecutionProvider"]
-        )
+        # The same export runs on the GPU when the worker opts in.
+        self.session = clip_device.session(exported, CPU_THREADS, spin=False)
         self.shape = shape
         self.inference_info.update(
             runtime_version=runtime.__version__,
             export_sha256=digest(exported),
             input_shape=list(shape),
             cpu_threads=CPU_THREADS,
+            device=clip_device.used(self.session),
         )
         self.sessions[shape] = self.session, self.inference_info.copy()
         # Retain the normal frame and one fixed crop shape, never one per region.

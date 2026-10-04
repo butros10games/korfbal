@@ -42,6 +42,7 @@ def clip_endpoint(
         "clips",
         "clips/cancel",
         "clips/delete",
+        "clips/retry",
     }:
         return JsonResponse({"error": "Method not allowed"}, status=405)
     if len(request.body) > MAX_BODY or request.content_type != "application/json":
@@ -57,5 +58,10 @@ def clip_endpoint(
                 store, workspace, payload["run_id"], purge_clip=composition.purge_clip
             )
         return JsonResponse({"ok": True})
-    job = clips.start(store, workspace, cast(User, request.user), payload)
+    job = (
+        # Resume a failed whole recording at its unfinished section.
+        clips.retry(workspace, str(payload["run_id"]))
+        if action == "clips/retry"
+        else clips.start(store, workspace, cast(User, request.user), payload)
+    )
     return JsonResponse({"job_id": str(job.pk), "queued": True}, status=202)

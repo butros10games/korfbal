@@ -1,10 +1,15 @@
 """Long replays share one job and retain private completed progress on interruption."""
 
 from collections.abc import Callable
+from dataclasses import asdict
 from http import HTTPStatus
 import json
+import os
 from pathlib import Path
+import signal
+import sqlite3
 import subprocess
+import sys
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
@@ -13,14 +18,28 @@ import pytest
 from apps.video_analysis.adapters.detector import run_with_progress
 from apps.video_analysis.adapters.replay import ReplaySection
 from apps.video_analysis.adapters.store import DatabaseStore
-from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS
-from apps.video_analysis.engine.clips import directory, receipt
+from apps.video_analysis.engine.clip_closed_set import (
+    Evidence,
+    ReviewSession,
+    Scope,
+    Settings as Recipe,
+)
+from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS, ClipOptions
+from apps.video_analysis.engine.clip_match_evidence import fit_fragments
+from apps.video_analysis.engine.clip_number_anchors import KitRead
+from apps.video_analysis.engine.clip_section_identity import (
+    GALLERY_FILE,
+    open_gallery,
+    remember,
+)
+from apps.video_analysis.engine.clips import WORKER_PID, directory, launch, receipt
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import digest
 from apps.video_analysis.models import AnalysisJob, Recording
 from apps.video_analysis.services.jobs import continue_analysis
 from apps.video_analysis.tasks import execute
 from apps.video_analysis.tests.test_clips import ready
+from apps.video_analysis.tests.test_identity_review import FOUR, raw_view
 from apps.video_analysis.tests.test_review import verified
 
 
@@ -28,6 +47,7 @@ pytestmark = pytest.mark.django_db
 SOURCE_SECONDS = 250
 SECTION_SECONDS = 120
 EXPECTED_SECTIONS = 2
+BOUNDARY_SECONDS = 50
 
 
 def test_recording_scope_binds_server_duration_and_reuses_request(
@@ -272,6 +292,62 @@ def test_sections_publish_one_replay_without_duplicate_counts_or_track_ids(
         )
 
 
+def test_a_section_out_of_budget_hands_over_at_its_first_unprocessed_frame(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """The next section starts where the previous one stopped, not where planned."""
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": 250}
+    run_id = payload.pop("request_id")
+
+    def out_of_budget(
+        store: Store, child: str, request: dict, **kwargs: Callable
+    ) -> None:
+        child_result(store, child, request, **kwargs)
+        record = receipt(store, child)
+        record["section_end_seconds"] = request["options"]["start"] + BOUNDARY_SECONDS
+        atomic_json(directory(store, child) / "run.json", record)
+
+    ReplaySection(store, run_id, payload).run(out_of_budget)
+    analyze = Mock(side_effect=child_result)
+    ReplaySection(store, run_id, payload).run(analyze)
+    request = analyze.call_args.args[2]
+    assert request["options"]["start"] == 10 + BOUNDARY_SECONDS
+    # Server-owned context: the child shares this replay's identity gallery.
+    assert request["section"] == {"part": 1, "parent": run_id}
+    assert receipt(store, run_id)["budget_boundaries"] == 1
+
+
+def test_a_budget_boundary_in_the_last_second_never_strands_the_replay(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """A sub-second remainder is not queued as an unparseable section.
+
+    Review v1 finding 8: a child stopping at 249.52 of a 250 s recording left a
+    0.48 s part that ClipOptions rejects, so the replay failed. The engine no
+    longer closes within the last second; an older receipt that did is
+    finished with the unanalysed tail recorded.
+    """
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": 250}
+    payload["options"] = {**payload["options"], "start": 130}
+    run_id = payload.pop("request_id")
+
+    def late_boundary(
+        store: Store, child: str, request: dict, **kwargs: Callable
+    ) -> None:
+        child_result(store, child, request, **kwargs)
+        record = receipt(store, child)
+        record["section_end_seconds"] = 249.52
+        atomic_json(directory(store, child) / "run.json", record)
+
+    ReplaySection(store, run_id, payload).run(late_boundary)
+    manifest = receipt(store, run_id)
+    assert manifest["status"] == "completed"
+    assert manifest["unprocessed_tail_seconds"] == pytest.approx(0.48)
+    assert manifest["next_start"] == pytest.approx(250)
+
+
 @pytest.mark.parametrize("stop", ["cancel", "checkpoint", "source", "worker"])
 def test_interrupted_replay_retains_prior_sections(
     imported: tuple[User, DatabaseStore, Store], stop: str
@@ -397,18 +473,378 @@ def test_progress_runner_kills_only_its_owned_child_on_failure(
     child.kill.assert_called_once_with()
 
 
-def test_lost_active_section_cannot_restart_after_cache_loss(
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux parent-death signal")
+def test_a_section_subprocess_dies_with_its_worker() -> None:
+    """A redelivered section restarts in place, so no orphan may keep writing.
+
+    A hard time limit or the OOM killer can kill the worker process while its
+    detector subprocess runs; the kernel must then kill the subprocess too. The
+    child binds itself (``bind_to_worker``) from the worker's PID.
+    """
+    probe = (
+        "import ctypes; from apps.video_analysis.engine.clips import bind_to_worker; "
+        "bind_to_worker(); value = ctypes.c_int(); "
+        "ctypes.CDLL(None).prctl(2, ctypes.byref(value)); print(value.value)"
+    )
+    environment = {**os.environ, WORKER_PID: str(os.getpid())}
+    command = [sys.executable, "-c", probe]
+    output = subprocess.run(
+        command, env=environment, capture_output=True, text=True, check=True
+    ).stdout
+    assert int(output) == signal.SIGKILL
+    gone = {**environment, WORKER_PID: "1"}
+    orphan = subprocess.run(command, env=gone, capture_output=True, check=False)
+    assert orphan.returncode != 0
+    with patch("apps.video_analysis.adapters.detector.subprocess.Popen") as popen:
+        popen.return_value.__enter__.return_value.poll.return_value = 0
+        popen.return_value.__enter__.return_value.returncode = 0
+        run_with_progress(["detector"], {}, Path("missing.json"), Mock())
+    assert popen.call_args.kwargs["env"][WORKER_PID] == str(os.getpid())
+
+
+def test_a_lost_active_section_restarts_as_a_recorded_attempt(
     imported: tuple[User, DatabaseStore, Store],
 ) -> None:
-    """An incomplete cached child is never silently recreated from a parent receipt."""
+    """A section whose worker died (its child files lost too) starts again.
+
+    It is never silently recreated: the attempt is counted in the receipt and
+    the automatic restarts are bounded; an explicit retry is still possible.
+    """
     _, store, _ = imported
     payload = {**ready(store), "recording_end": SOURCE_SECONDS}
     run_id = payload.pop("request_id")
     section = ReplaySection(store, run_id, payload)
     section.record["status"] = "running"
     section.save()
-    analyze = Mock()
-    with pytest.raises(ValueError, match="interrupted section"):
-        ReplaySection(store, run_id, payload).run(analyze)
-    assert not analyze.called
+    analyze = Mock(side_effect=child_result)
+    ReplaySection(store, run_id, payload).run(analyze)
+    assert analyze.called
+    record = receipt(store, run_id)
+    assert (record["completed_parts"], record["section_attempts"]) == (1, {"0": 1})
+    assert [c["name"] for c in record["chunks"]] == ["part-0000-r1-chunk-00000.json"]
+    exhausted = ReplaySection(store, run_id, payload)
+    exhausted.record.update(status="running", section_attempts={"1": 3})
+    exhausted.save()
+    never = Mock()
+    with pytest.raises(ValueError, match="interrupted 3 times"):
+        ReplaySection(store, run_id, payload).run(never)
+    assert not never.called
     assert receipt(store, run_id)["status"] == "failed"
+    ReplaySection(store, run_id, payload).run(
+        Mock(side_effect=child_result), retry=True
+    )
+    assert receipt(store, run_id)["status"] == "completed"
+
+
+def failing_child(
+    store: Store, run_id: str, payload: dict, *, progress: Callable[[dict], None]
+) -> None:
+    """Publish part of a section and leave naming files, then fail transiently.
+
+    Raises:
+        RuntimeError: Always, after the partial publication.
+
+    """
+    root = directory(store, run_id)
+    root.mkdir(parents=True, exist_ok=True)
+    chunk = root / "chunk-00000.json"
+    start = payload["options"]["start"]
+    atomic_json(chunk, {"frames": [{"time_seconds": start, "segment": 0}]})
+    progress({
+        "status": "running",
+        "frames": 1,
+        "video_sha256": "frozen-source",
+        "weights_sha256": digest(store.root / "vision/runs/model/fit/weights/best.pt"),
+        "chunks": [{"name": chunk.name, "sha256": digest(chunk), "frames": 1}],
+        "event_detection": {"version": 2, "processed_frames": 1},
+        "events": [{"id": "partial", "segment": 0, "time_seconds": start}],
+    })
+    # A section can fail after it named players: its cache and evidence exist.
+    (root / "identity-review.sqlite").write_bytes(b"stale attempt")
+    (root / "identity-evidence.json").write_text("{}")
+    atomic_json(root / "run.json", {"status": "running", "chunks": []})
+    msg = "transient worker failure"
+    raise RuntimeError(msg)
+
+
+def fresh_child(
+    store: Store, run_id: str, payload: dict, *, progress: Callable[[dict], None]
+) -> None:
+    """Complete a section, first checking nothing of a failed attempt is reused."""
+    root = directory(store, run_id)
+    assert not (root / "identity-review.sqlite").exists()
+    assert not (root / "identity-evidence.json").exists()
+    assert not (root / "run.json").exists()
+    child_result(store, run_id, payload, progress=progress)
+
+
+def test_a_failed_section_is_retried_alone_keeping_committed_sections(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """Review round 3, finding 4: a transient failure costs one section, not all.
+
+    Section 0 is committed; section 1 publishes a partial chunk and fails. A
+    redelivery still runs nothing, but the server-owned retry resumes at
+    section 1: the failed attempt's private files are discarded, its partial
+    progress leaves the replay, its published chunk is never rewritten, and
+    the new attempt publishes under new names without double counts.
+    """
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": SOURCE_SECONDS}
+    run_id = payload.pop("request_id")
+    ReplaySection(store, run_id, payload).run(child_result)
+    with pytest.raises(RuntimeError):
+        ReplaySection(store, run_id, payload).run(failing_child)
+    failed = receipt(store, run_id)
+    assert failed["status"] == "failed"
+    partial = directory(store, run_id) / "part-0001-chunk-00000.json"
+    published = partial.read_bytes()
+    redelivered = Mock(side_effect=child_result)
+    ReplaySection(store, run_id, payload).run(redelivered)
+    assert not redelivered.called
+    ReplaySection(store, run_id, payload).run(Mock(side_effect=fresh_child), retry=True)
+    record = receipt(store, run_id)
+    assert (record["status"], record["completed_parts"]) == ("completed", 2)
+    assert [c["name"] for c in record["chunks"]] == [
+        "part-0000-chunk-00000.json",
+        "part-0001-r1-chunk-00000.json",
+    ]
+    assert record["chunks"][0] == failed["chunks"][0]
+    assert record["frames"] == EXPECTED_SECTIONS
+    assert record["section_attempts"] == {"1": 1}
+    assert [e["id"] for e in record["events"]] == [
+        "p0-s0-shot-1",
+        "p0-s0-possession-1",
+        "p1-s0-shot-1",
+        "p1-s0-possession-1",
+    ]
+    assert partial.read_bytes() == published
+
+
+def test_the_engine_starts_the_restarted_attempt_of_an_interrupted_section(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """The real ``launch`` refused an interrupted child; a restart can run.
+
+    The worker died mid-section: the parent says running and the child's
+    marker says it started. The engine's own fence ("this attempt already
+    started") stays, so the replay discards that attempt first.
+    """
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": SOURCE_SECONDS}
+    run_id = payload.pop("request_id")
+    section = ReplaySection(store, run_id, payload)
+    section.record["status"] = "running"
+    section.save()
+    options = ClipOptions.parse(section.child_payload["options"])
+    weights = store.root / "vision/runs/model/fit/weights/best.pt"
+    section.child_root.mkdir(parents=True)
+    atomic_json(
+        section.child_root / "run.json",
+        {
+            "status": "running",
+            "chunks": [],
+            "recipe": {
+                "match_id": "demo",
+                "options": asdict(options),
+                "weights_sha256": digest(weights),
+            },
+        },
+    )
+    match = {**store.recording("demo"), "duration_seconds": SOURCE_SECONDS}
+    request = {"weights": str(weights), "section": section.child_payload["section"]}
+    with pytest.raises(ValueError, match="already started"):
+        launch(store, section.child_id, {**request, "match": match, "options": options})
+
+    class Run:
+        """The engine's run object without a detector (OpenCV is not here)."""
+
+        def __init__(self, root: Path, *_: object) -> None:
+            self.root, self.record = root, {"status": "running", "chunks": []}
+
+        def execute(self, *_: object) -> None:
+            self.record.update(status="completed", message="Done", frames=1)
+            atomic_json(self.root / "run.json", self.record)
+
+    def engine(store: Store, run_id: str, child: dict, **_: object) -> None:
+        launch(
+            store,
+            run_id,
+            {**request, "match": match, "options": ClipOptions.parse(child["options"])},
+        )
+
+    with patch("apps.video_analysis.engine.clips.ClipRun", Run):
+        ReplaySection(store, run_id, payload).run(engine)
+    record = receipt(store, run_id)
+    assert (record["completed_parts"], record["section_attempts"]) == (1, {"0": 1})
+
+
+def test_a_retried_section_withdraws_its_gallery_commit(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """The failed attempt's named views and kit sightings leave the gallery.
+
+    A section can fail after it committed to the replay's identity gallery.
+    Its attempt is discarded, so its views (from tracklets that no longer
+    exist) and its kit-orientation sightings must not count next to the new
+    attempt's; the committed section 0 keeps everything.
+    """
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": SOURCE_SECONDS}
+    run_id = payload.pop("request_id")
+    ReplaySection(store, run_id, payload).run(child_result)
+    path = directory(store, run_id) / GALLERY_FILE
+    gallery = open_gallery(path, "demo", "synthetic-v1")
+    assert gallery is not None
+    for part in (0, 1):
+        pieces = [raw_view(f"v{part}{i}", part * 200 + i, i) for i in range(4)]
+        fit_fragments(pieces, dimensions=8)
+        session = ReviewSession(
+            Scope("demo", f"s{part}"),
+            pieces,
+            FOUR,
+            Recipe("synthetic-v1"),
+            Evidence(
+                numbers=(
+                    KitRead(f"v{part}0", "team_a", "7", 0.9),
+                    KitRead(f"v{part}2", "team_a", "4", 0.9),
+                ),
+                section=f"part-{part:04d}",
+            ),
+        )
+        span = {
+            "id": f"part-{part:04d}",
+            "start": part * 200.0,
+            "end": part * 200.0 + 100,
+            "fingerprint": f"f{part}",
+        }
+        remember(gallery, span, pieces, session.result, FOUR, session.sightings())
+
+    def committed() -> dict[str, set[str]]:
+        with sqlite3.connect(path) as db:
+            return {
+                "views": {
+                    r[0].split(":")[0] for r in db.execute("SELECT seed FROM samples")
+                },
+                "sightings": {
+                    r[0] for r in db.execute("SELECT section FROM sightings")
+                },
+                "sections": {r[0] for r in db.execute("SELECT id FROM sections")},
+            }
+
+    assert committed()["sightings"] == {"part-0000", "part-0001"}
+    with pytest.raises(RuntimeError):
+        ReplaySection(store, run_id, payload).run(failing_child)
+
+    def checked(*args: object, **kwargs: object) -> None:
+        assert committed() == {
+            "views": {"part-0000"},
+            "sightings": {"part-0000"},
+            "sections": {"part-0000"},
+        }
+        child_result(*args, **kwargs)  # type: ignore[arg-type]
+
+    ReplaySection(store, run_id, payload).run(Mock(side_effect=checked), retry=True)
+    assert receipt(store, run_id)["status"] == "completed"
+
+
+ROSTER = [{"player_id": "alice", "team": "team_a", "number": "7"}]
+
+
+def tracklet_child(
+    store: Store, run_id: str, payload: dict, *, progress: Callable[[dict], None]
+) -> None:
+    """Complete a section whose one pure tracklet the match pass can name."""
+    child_result(store, run_id, payload, progress=progress)
+    record = receipt(store, run_id)
+    record["identity_refinement"]["frame_links"].append({
+        "time_seconds": payload["options"]["start"],
+        "from_track_id": "player-3",
+        "to_track_id": "s0-linked-3",
+        "display_id": 3,
+        "fragment_identity": "tracklet:3",
+        "unnamed_track_id": "s0-linked-3",
+        "unnamed_display_id": 3,
+    })
+    atomic_json(directory(store, run_id) / "run.json", record)
+    progress(record)
+
+
+def test_a_finished_replay_names_players_across_all_sections(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """After the last section, one match pass renames every section's links."""
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": 250}
+    payload["options"] = {
+        **payload["options"],
+        "match_identity": {"version": 1, "closed_set": {"roster": ROSTER}},
+    }
+    run_id = payload.pop("request_id")
+    seen: list[int] = []
+
+    def match(store: Store, replay: str) -> None:
+        seen.append(receipt(store, replay)["completed_parts"])
+        atomic_json(
+            directory(store, replay) / "match-identity.json",
+            {
+                "status": "completed",
+                "sections": EXPECTED_SECTIONS,
+                "tracklets": EXPECTED_SECTIONS,
+                "number_anchors": {"accepted": 1},
+                "assignments": [
+                    {
+                        "identity": "p0001:tracklet:3",
+                        "player_id": "alice",
+                        "display_id": "#7",
+                        "origin": "automatic",
+                        "source": "shirt_number",
+                    },
+                    {"identity": "p0000:tracklet:3", "player_id": None},
+                ],
+            },
+        )
+
+    for _ in range(3):
+        ReplaySection(store, run_id, payload).run(
+            Mock(side_effect=tracklet_child), match=match
+        )
+    record = receipt(store, run_id)
+    assert record["status"] == "completed"
+    assert seen == [EXPECTED_SECTIONS]
+    named = {
+        link["from_track_id"]: link
+        for link in record["identity_refinement"]["frame_links"]
+        if link.get("fragment_identity")
+    }
+    assert named["p1-player-3"]["to_track_id"] == "alice"
+    assert named["p1-player-3"]["name_source"] == "shirt_number"
+    assert named["p0-player-3"]["to_track_id"] == "p0-s0-linked-3"
+    assert record["match_identity_wide"]["status"] == "completed"
+
+
+def test_a_failed_match_pass_keeps_the_section_names(
+    imported: tuple[User, DatabaseStore, Store],
+) -> None:
+    """The replay completes with per-section names when the match pass fails."""
+    _, store, _ = imported
+    payload = {**ready(store), "recording_end": 250}
+    payload["options"] = {
+        **payload["options"],
+        "match_identity": {"version": 1, "closed_set": {"roster": ROSTER}},
+    }
+    run_id = payload.pop("request_id")
+    failing = Mock(side_effect=subprocess.CalledProcessError(1, "match"))
+    for _ in range(EXPECTED_SECTIONS):
+        ReplaySection(store, run_id, payload).run(
+            Mock(side_effect=tracklet_child), match=failing
+        )
+    record = receipt(store, run_id)
+    assert record["status"] == "completed"
+    assert record["match_identity_wide"]["status"] == "failed"
+    assert record["match_identity_wide"]["code"] == "match_pass_failed"
+    assert {
+        link["to_track_id"]
+        for link in record["identity_refinement"]["frame_links"]
+        if link.get("fragment_identity")
+    } == {"p0-s0-linked-3", "p1-s0-linked-3"}

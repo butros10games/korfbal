@@ -49,6 +49,10 @@ class PositionMemory:
                 x, y, w, h = obj["observed_bbox"]
                 if history and timestamp - history[-1][0] > MAX_SAMPLE_GAP:
                     history = []
+                # One sample per frame: a second box with this identity in the
+                # same frame replaces the first instead of a zero-length step.
+                if history and history[-1][0] >= timestamp:
+                    history = history[:-1]
                 self.samples[identity] = [*history, (timestamp, [x + w / 2, y + h])][
                     -5:
                 ]

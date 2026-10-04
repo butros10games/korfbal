@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 import re
+import shutil
 import threading
 from typing import Any
 import zipfile
@@ -334,6 +335,13 @@ class Store:
 
     def publish_artifact(self, relative: str) -> None:
         """Publish one changed artifact when using remote storage."""
+
+    def discard_section(self, run_id: str, part: int) -> None:
+        """Delete one replay section's own run files (a discarded attempt)."""
+        shutil.rmtree(
+            self.root / "vision" / "clips" / f"{run_id}-part-{part:04d}",
+            ignore_errors=True,
+        )
 
     def _persist(self, data: dict[str, Any]) -> None:
         if (self.root / ".migrated-to-django").exists():

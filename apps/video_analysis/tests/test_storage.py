@@ -27,31 +27,6 @@ from apps.video_analysis.tests.test_review import verified
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture
-def s3() -> MagicMock:
-    """Model immutable S3 bytes without hiding corruption behind local cache reads."""
-    client = MagicMock()
-    objects: dict[tuple[str, str], bytes] = {}
-
-    def upload(handle: BinaryIO, bucket: str, key: str, **kwargs: object) -> None:
-        objects[bucket, key] = handle.read()
-
-    def get(**kwargs: str) -> dict[str, object]:
-        content = objects[kwargs["Bucket"], kwargs["Key"]]
-        if kwargs.get("Range"):
-            start, end = map(int, kwargs["Range"].removeprefix("bytes=").split("-"))
-            content = content[start : end + 1]
-        return {"Body": io.BytesIO(content), "ContentLength": len(content)}
-
-    def download(bucket: str, key: str, handle: BinaryIO) -> None:
-        handle.write(objects[bucket, key])
-
-    client.upload_fileobj.side_effect = upload
-    client.get_object.side_effect = get
-    client.download_fileobj.side_effect = download
-    return client
-
-
 def test_minio_primary_reads_and_verified_cache_recovery(
     imported: tuple[User, DatabaseStore, Store],
     settings: Settings,
@@ -270,6 +245,29 @@ def test_replay_restores_only_its_parent_and_stop_receipts(
     assert (store.root / paths[0]).is_file()
     assert (store.root / paths[1]).is_file()
     assert not (store.root / paths[2]).exists()
+
+
+def test_replay_sections_restore_the_published_identity_gallery(
+    imported: tuple[User, DatabaseStore, Store], s3: MagicMock
+) -> None:
+    """A section job must continue the shared gallery, not start an empty one.
+
+    Review v1 finding 2: publication evicts non-JSON files, so the next
+    section otherwise opened a fresh gallery and carried nobody.
+    """
+    _, store, _ = imported
+    workspace = Workspace.objects.get(pk=store.workspace_id)
+    store.files = WorkspaceObjects(workspace, s3)
+    relative = "vision/clips/replay/identity-gallery.sqlite"
+    gallery = store.root / relative
+    gallery.parent.mkdir(parents=True, exist_ok=True)
+    gallery.write_bytes(b"SQLite format 3\x00 synthetic gallery")
+    store.publish_artifact(relative)
+    store.files.evict_bulk()
+    assert not gallery.exists()
+    with patch("apps.video_analysis.composition.detector.clip"):
+        run_clip(store, "replay", {"recording_end": 250, "model": "example"})
+    assert gallery.read_bytes() == b"SQLite format 3\x00 synthetic gallery"
 
 
 def test_upload_chunks_restore_privately_and_cleanup_preserves_recording_media(

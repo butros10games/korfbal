@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+import uuid
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -119,6 +120,12 @@ class DatabaseStore(Store):
         """Keep a small interactive metadata change independent of model archives."""
         if self.files:
             self.files.publish_artifact(relative)
+
+    def discard_section(self, run_id: str, part: int) -> None:
+        """Delete a discarded section attempt from private storage and the cache."""
+        if self.files:
+            self.files.purge_clip(uuid.UUID(run_id), part=part)
+        super().discard_section(run_id, part)
 
     @contextmanager
     def transaction(self) -> Iterator[None]:

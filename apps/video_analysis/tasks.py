@@ -27,15 +27,18 @@ from apps.video_analysis.engine.store import Store, number
 from apps.video_analysis.engine.timeline import is_active_time
 from apps.video_analysis.engine.whistles import find_whistles
 from apps.video_analysis.models import AnalysisJob, Workspace
-from apps.video_analysis.services import match_video
+from apps.video_analysis.services import identity_review, match_identity, match_video
 from apps.video_analysis.services.jobs import continue_analysis
 from apps.video_analysis.services.pipeline_worker import advance
 from apps.video_analysis.services.uploads import cleanup
 
 
 @shared_task
-def execute(job_id: str) -> None:
-    """Execute a persisted request under the shared job system's exclusive lease."""
+def execute(job_id: str, *, retry: bool = False) -> None:
+    """Execute a persisted request under the shared job system's exclusive lease.
+
+    ``retry`` resumes a failed whole recording at its unfinished section.
+    """
     job = AnalysisJob.objects.select_related("workspace", "requested_by").get(pk=job_id)
     if job.status in {"completed", "failed", "cancelled", "interrupted"}:
         return
@@ -48,7 +51,7 @@ def execute(job_id: str) -> None:
     try:
         with processing_store(job.workspace, job.requested_by) as store:
             prepare_inputs(job, store)
-            perform(job, store)
+            perform(job, store, retry=retry)
         job.status, job.message = (
             "completed",
             "GPU training queued. Follow the Cloud GPU run for training and cleanup."
@@ -74,6 +77,9 @@ def execute(job_id: str) -> None:
                 job.message = failure_message(receipt(store, str(job.pk)), job.message)
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "message", "finished_at"])
+    if job.kind == "clip":
+        # Roster naming is prepared after the receipt is durable.
+        identity_review.after_clip(job)
 
 
 def prepare_inputs(job: AnalysisJob, store: Store) -> None:
@@ -89,8 +95,8 @@ def prepare_inputs(job: AnalysisJob, store: Store) -> None:
             )
 
 
-def perform(job: AnalysisJob, store: Store) -> None:
-    """Execute one validated operation.
+def perform(job: AnalysisJob, store: Store, *, retry: bool = False) -> None:
+    """Execute one validated operation (``retry`` only concerns a replay).
 
     Raises:
         ValueError: The operation or selected model is invalid.
@@ -116,7 +122,7 @@ def perform(job: AnalysisJob, store: Store) -> None:
     elif job.kind == "propose":
         run_detector(store, payload["match_id"], proposal_weights(store, payload))
     elif job.kind == "clip":
-        run_clip(store, str(job.pk), payload)
+        run_clip(store, str(job.pk), payload, retry=retry)
     else:
         raise ValueError("Unknown analysis job")
 
@@ -169,6 +175,18 @@ def proposal_weights(store: Store, payload: dict) -> str:
     return str(
         store.media((root / "fit/weights/best.pt").relative_to(store.root).as_posix())
     )
+
+
+@shared_task
+def review_identities(run_id: str) -> None:
+    """Apply queued roster answers for one clip run or replay section."""
+    identity_review.process(run_id, composition.identity_review_runtime())
+
+
+@shared_task
+def republish_match_identity(job_id: str) -> None:
+    """Re-run a finished replay's match pass after reviewer answers."""
+    match_identity.republish(job_id, composition.match_identity_runtime())
 
 
 @shared_task

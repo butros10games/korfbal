@@ -27,7 +27,9 @@ from apps.video_analysis.models import (
     StoredFile,
     Workspace,
 )
-from apps.video_analysis.services.jobs import schedule
+from apps.video_analysis.services.identity_review import match_roster
+from apps.video_analysis.services.jobs import retry_analysis, schedule
+from apps.video_analysis.services.match_identity import stale
 
 
 def read_file(store: Store, workspace: Workspace, path: Path) -> dict:
@@ -51,12 +53,23 @@ def start(
         ValueError: The request or input does not satisfy this operation.
 
     """
-    options = ClipOptions.parse(payload.get("options", {}))
-    recording = Recording.objects.filter(
-        workspace=workspace, source_id=payload["match_id"]
-    ).first()
+    recording = (
+        Recording.objects
+        .select_related("match")
+        .filter(workspace=workspace, source_id=payload["match_id"])
+        .first()
+    )
     if recording is None:
         raise ValueError("Choose a recording from this workspace")
+    raw_options = dict(payload.get("options", {}))
+    if payload.get("name_players") is True:
+        # The server owns the roster: the linked match's players, or an empty
+        # roster that reviewers fill with team and shirt number while naming.
+        raw_options["match_identity"] = {
+            "version": 1,
+            "closed_set": {"input": "tracklets", "roster": match_roster(recording)},
+        }
+    options = ClipOptions.parse(raw_options)
     scope = payload.get("scope", "clip")
     if scope not in {"clip", "recording"}:
         raise ValueError("Choose a clip or the remaining recording")
@@ -153,6 +166,11 @@ def result(store: Store, workspace: Workspace, run_id: str, chunk: str | None) -
     root = directory(store, run_id)
     record = read_file(store, workspace, root / "run.json")
     if chunk is None:
+        wide = record.get("match_identity_wide")
+        if wide:
+            # Names published before a reviewer's latest answer are stale until
+            # the queued match pass republishes them.
+            record["match_identity_wide"] = {**wide, "stale": stale(run_id, wide)}
         return record
     if not any(c["name"] == chunk for c in record.get("chunks", [])):
         raise FileNotFoundError("Chunk not found")
@@ -178,6 +196,16 @@ def cancel(store: Store, workspace: Workspace, run_id: str) -> None:
         AnalysisJob.objects.filter(pk=job.pk, status="queued").update(
             status="cancelled", message="Stopped before analysis started"
         )
+
+
+def retry(workspace: Workspace, run_id: str) -> AnalysisJob:
+    """Resume a failed whole-recording run at its unfinished section.
+
+    Returns:
+        The queued job.
+
+    """
+    return retry_analysis(workspace, uuid.UUID(run_id))
 
 
 @transaction.atomic

@@ -5,6 +5,8 @@ from itertools import combinations
 import math
 from operator import itemgetter
 
+from .clip_match_input import validate as match_identity_input
+
 
 CORNERS = 4
 DIMENSIONS = 2
@@ -15,6 +17,11 @@ CHUNK_FRAMES = 100
 MAX_RUNTIME_SECONDS = 3600
 MAX_RECORDING_SECONDS = 14400
 REPLAY_PART_SECONDS = 120
+# A replay section stops decoding after this share of the runtime limit and
+# leaves the rest for linking and identity; the next section continues there.
+SECTION_BUDGET_FRACTION = 0.75
+# The shortest clip (and replay section) the engine analyses.
+MIN_CLIP_SECONDS = 1
 MAX_ANCHORS = 16
 MAX_LANDMARKS = 16
 
@@ -167,6 +174,7 @@ class ClipOptions:
     tracker: str = "botsort"
     team_colors: list[list[float]] | None = None
     court: dict | None = None
+    match_identity: dict | None = None
 
     @classmethod
     def parse(cls, payload: dict) -> "ClipOptions":
@@ -186,7 +194,7 @@ class ClipOptions:
         defaults.update(payload)
         for name, low, high in (
             ("start", 0, 86400),
-            ("duration", 1, 600),
+            ("duration", MIN_CLIP_SECONDS, 600),
             ("fps", 5, 25),
             ("confidence", 0.1, 0.9),
             ("imgsz", 640, 1600),
@@ -199,14 +207,12 @@ class ClipOptions:
         defaults["imgsz"] = int(defaults["imgsz"])
         if defaults["tracker"] not in {"botsort", "bytetrack"}:
             raise ValueError("Choose BoT-SORT or ByteTrack")
-        colors = defaults["team_colors"]
-        if colors is not None:
-            if not isinstance(colors, list) or len(colors) != DIMENSIONS:
-                raise ValueError("Choose two shirt colours")
-            if any(not isinstance(c, list) or len(c) != RGB_CHANNELS for c in colors):
-                raise ValueError("Colours must have three RGB components")
-            defaults["team_colors"] = [[finite(v, 0, 255) for v in c] for c in colors]
+        defaults["team_colors"] = team_colors(defaults["team_colors"])
         defaults["court"] = calibration(defaults["court"])
+        if defaults["match_identity"] is not None:
+            defaults["match_identity"] = match_identity_input(
+                defaults["match_identity"]
+            )
         return cls(**defaults)
 
     def for_recording(self, recording: dict) -> None:
@@ -223,3 +229,19 @@ class ClipOptions:
             raise ValueError("The clip extends past the end of the recording")
         if self.court and any(a["time"] >= end for a in self.court.get("anchors", [])):
             raise ValueError("Court references must be within the same recording")
+
+
+def team_colors(colors: object) -> list[list[float]] | None:
+    """Validate the optional pair of observed shirt colours.
+
+    Raises:
+        ValueError: The colours are not two bounded RGB triples.
+
+    """
+    if colors is None:
+        return None
+    if not isinstance(colors, list) or len(colors) != DIMENSIONS:
+        raise ValueError("Choose two shirt colours")
+    if any(not isinstance(c, list) or len(c) != RGB_CHANNELS for c in colors):
+        raise ValueError("Colours must have three RGB components")
+    return [[finite(v, 0, 255) for v in c] for c in colors]

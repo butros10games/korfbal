@@ -7,7 +7,7 @@ in replay only; they neither invent boxes nor change event/training evidence.
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 import math
 from operator import itemgetter
@@ -441,13 +441,13 @@ def refined_frames(frames: list[dict], report: dict) -> list[dict]:
         (link["time_seconds"], link["from_track_id"]): link
         for link in report.get("frame_links", [])
     }
+    # Index the frame links by time once: a whole section has tens of thousands.
+    by_time: dict[float, dict[str, dict]] = defaultdict(dict)
+    for (time, identity), link in scoped.items():
+        by_time[time][identity] = link
     output = []
     for frame in frames:
-        frame_links = {
-            identity: link
-            for (time, identity), link in scoped.items()
-            if time == frame.get("time_seconds")
-        }
+        frame_links = dict(by_time.get(frame.get("time_seconds"), {}))
         superseded = ownership.superseded_ids(frame["objects"], frame_links, aliases)
         objects = []
         officials: set[str] = set()

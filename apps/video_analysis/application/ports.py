@@ -89,3 +89,33 @@ class PipelineRuntime:
     infer_batch: BatchInference
     extract_frames: FrameExtractor
     run_clip: ClipRunner
+
+
+class IdentityReviewSolver(Protocol):
+    """Apply roster answers and crop questions in the isolated vision runtime."""
+
+    def __call__(self, store: Store, run_id: str, request: dict) -> dict:
+        """Return the engine's compact review and one receipt per answer."""
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityReviewRuntime:
+    """Capabilities required to re-solve a clip run's roster naming."""
+
+    processing_store: ProcessingStores
+    solve: IdentityReviewSolver
+
+
+class MatchPassPublisher(Protocol):
+    """Run a finished replay's match pass and rename its published links."""
+
+    def __call__(self, store: Store, record: dict) -> dict:
+        """Return the replay's updated receipt (not yet saved)."""
+
+
+@dataclass(frozen=True, slots=True)
+class MatchIdentityRuntime:
+    """Capabilities required to republish a recording's match-wide names."""
+
+    processing_store: ProcessingStores
+    publish: MatchPassPublisher

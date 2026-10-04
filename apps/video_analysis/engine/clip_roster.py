@@ -53,13 +53,19 @@ class Roster:
         team: str,
         number: str | None,
     ) -> None:
-        """Record one observation; `number` is a confident shirt-number reading."""
+        """Record one observation; `number` is a confident shirt-number reading.
+
+        Times are keyed like the linker and the stored frames (six decimals):
+        a raw accumulated timestamp such as 60.480000000000004 misses the
+        refinement's frame links and the frame itself, so a split identity
+        would flicker between its parts on alternate frames.
+        """
         if len(self.rows) >= MAX_ROWS:
             self.truncated = True
             return
         self.rows.append((
             identity,
-            time,
+            round(time, 6),
             tuple(court) if court is not None else None,
             team,
             number,

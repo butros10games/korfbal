@@ -2,31 +2,27 @@
 
 from collections.abc import Callable
 from functools import wraps
-from http import HTTPStatus
 import io
 import json
-import mimetypes
 from typing import Any, cast
 import uuid
 import zipfile
 
 from django.contrib.auth.models import User
-from django.core.handlers.asgi import ASGIRequest
 from django.db import transaction
 from django.http import (
     FileResponse,
     HttpRequest,
     HttpResponseBase,
-    HttpResponseRedirect,
     JsonResponse,
-    StreamingHttpResponse,
 )
 from django.middleware.csrf import get_token
 from django.utils.crypto import constant_time_compare
 
 from apps.video_analysis.api.clip_views import clip_endpoint
+from apps.video_analysis.api.identity_views import identity_endpoint
 from apps.video_analysis.api.pipeline_views import pipeline_endpoint
-from apps.video_analysis.api.streaming import async_chunks
+from apps.video_analysis.api.streaming import stored_response, stream_response
 from apps.video_analysis.api.upload_views import upload_endpoint
 from apps.video_analysis.composition import (
     accepted_policy,
@@ -37,7 +33,6 @@ from apps.video_analysis.composition import (
     snapshot_download,
 )
 from apps.video_analysis.engine import monitor, vision
-from apps.video_analysis.engine.server import parse_range
 from apps.video_analysis.engine.store import ConflictError, Store, frame_version
 from apps.video_analysis.engine.timeline import sample_times, validate_periods
 from apps.video_analysis.engine.training import PRETRAINED_WEIGHTS
@@ -121,6 +116,9 @@ def secured(view: Callable[..., HttpResponseBase]) -> Callable[..., HttpResponse
                             "vision/freeze",
                             "vision/split",
                             "clips",
+                            "clips/identity",
+                            "clips/identity/answer",
+                            "clips/identity/prepare",
                             "timeline",
                             "prepare",
                             "pipeline",
@@ -158,17 +156,20 @@ def endpoint(request: HttpRequest, action: str) -> HttpResponseBase:
         if action in {"pipeline", "pipeline/upload"} and request.method == "POST"
         else review_store(cast(User, request.user), hydrate=False)
     )
-    if action.startswith("pipeline") or action in {
+    if action.startswith(("pipeline", "clips/identity")) or action in {
         "clips",
         "clips/result",
         "clips/cancel",
         "clips/delete",
+        "clips/retry",
     }:
         handler = (
             upload_endpoint
             if action.startswith("pipeline/upload")
             else pipeline_endpoint
             if action.startswith("pipeline")
+            else identity_endpoint
+            if action.startswith("clips/identity")
             else clip_endpoint
         )
         return handler(request, action, store, workspace)
@@ -493,45 +494,3 @@ def media(request: HttpRequest, store: Store, workspace: Workspace) -> HttpRespo
     if files and request.GET.get("delivery") == "direct":
         return stored_response(request, store, relative)
     return stream_response(request, store, relative)
-
-
-def stored_response(
-    request: HttpRequest, store: Store, relative: str
-) -> HttpResponseBase:
-    """Prefer direct private S3 delivery; internal legacy MinIO stays proxied."""
-    files = getattr(store, "files", None)
-    url = files.media_url(relative) if files else None
-    if url:
-        response = HttpResponseRedirect(url, preserve_request=True)
-        response["Referrer-Policy"] = "no-referrer"
-        return response
-    return stream_response(request, store, relative)
-
-
-def stream_response(
-    request: HttpRequest, store: Store, relative: str
-) -> HttpResponseBase:
-    """Stream authorized ranges without materializing any local file."""
-    size = store.media_size(relative)
-    start, end = 0, size - 1
-    status = 200
-    if request.headers.get("Range"):
-        try:
-            start, end = parse_range(request.headers["Range"], size)
-        except ValueError:
-            response = JsonResponse({"error": "Invalid range"}, status=416)
-            response["Content-Range"] = f"bytes */{size}"
-            return response
-        status = 206
-
-    chunks = store.media_chunks(relative, start, end)
-    response = StreamingHttpResponse(
-        async_chunks(chunks) if isinstance(request, ASGIRequest) else chunks,
-        status=status,
-        content_type=mimetypes.guess_type(relative)[0] or "application/octet-stream",
-    )
-    response["Content-Length"] = str(end - start + 1)
-    response["Accept-Ranges"] = "bytes"
-    if status == HTTPStatus.PARTIAL_CONTENT:
-        response["Content-Range"] = f"bytes {start}-{end}/{size}"
-    return response

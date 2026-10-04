@@ -18,6 +18,7 @@ CPU clip worker, which already has PyTorch.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 import importlib
@@ -27,6 +28,7 @@ import time
 from typing import Any
 
 from .clip_signals import modules
+from .number_evidence import MIN_LEGIBILITY, TEMPERATURE, EpisodeVotes, best
 from .vision import digest
 
 
@@ -48,6 +50,7 @@ THRESHOLDS = tuple(round(0.5 + 0.01 * k, 2) for k in range(50))
 MAX_CROPS = 50_000
 FILE = "numbers.pt"
 READ_INTERVAL = 0.4
+MAX_EVIDENCE_TRACKS = 2048
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
 SHIRTS = (
@@ -385,6 +388,30 @@ class NumberReader:
         self.model.eval()
         self.sha256 = digest(path)
 
+    def distributions(self, crops: list) -> list[dict[str, float]]:
+        """Joint probabilities for canonical 0-99 numbers and unknown.
+
+        The legacy tens head has a leading-zero class. Its invalid two-digit
+        outputs are abstentions, rather than evidence for a different number.
+        """
+        if not crops:
+            return []
+        torch = importlib.import_module("torch")
+        with torch.inference_mode():
+            outputs = self.model(torch.from_numpy(tensor(crops)))
+        readable, tens, units = (softmax(v.numpy()) for v in outputs)
+        distributions = []
+        for r, t, u in zip(readable, tens, units, strict=True):
+            probabilities = {
+                str(n): float(
+                    r[1] * t[0 if n < UNITS else n // UNITS + 1] * u[n % UNITS]
+                )
+                for n in range(UNITS * UNITS)
+            }
+            probabilities["unknown"] = max(0.0, 1 - sum(probabilities.values()))
+            distributions.append(probabilities)
+        return distributions
+
     def read(self, crops: list) -> list[tuple[str | None, float]]:
         """Most likely number and its joint probability for each crop."""
         if not crops:
@@ -416,14 +443,38 @@ class ShirtNumbers:
     lend their number. Readings below the calibrated threshold are dropped.
     """
 
-    def __init__(self, reader: NumberReader, threshold: float) -> None:
-        """Use one calibrated reader for the whole run."""
+    def __init__(
+        self,
+        reader: Any,  # noqa: ANN401 - compatible external reader implementations
+        threshold: float | None,
+        *,
+        temperature: float = TEMPERATURE,
+        tracklet_calibration: bool = False,
+        votes: Callable[[], Any] | None = None,
+    ) -> None:
+        """Use one calibrated reader for the whole run.
+
+        ``votes`` builds the per-track aggregator (default: episode peaks).
+        Readers may provide their own ``crop(image, box)``; otherwise the
+        legacy torso band is used.
+        """
         self.reader = reader
         self.threshold = threshold
+        self.temperature = temperature
+        self.tracklet_calibration = tracklet_calibration
+        self.votes = votes or (lambda: EpisodeVotes(temperature=temperature))
+        self.crop = getattr(reader, "crop", torso)
         self.last: dict[str, float] = {}
-        self.stats = {"read": 0, "reported": 0, "seconds": 0.0}
+        self.evidence: OrderedDict[str, Any] = OrderedDict()
+        self.stats = {"read": 0, "reported": 0, "seconds": 0.0, "evicted_tracklets": 0}
 
-    def attach(self, image: Any, persons: list[dict], time_seconds: float) -> None:  # noqa: ANN401
+    def attach(
+        self,
+        image: Any,  # noqa: ANN401 - lazy optional vision runtime
+        persons: list[dict],
+        time_seconds: float,
+        camera_segment: int | None = None,
+    ) -> None:
         """Add `shirt_number` and its confidence to confidently read players."""
         clear_torso = importlib.import_module(
             ".clip_identity", __package__
@@ -440,16 +491,45 @@ class ShirtNumbers:
                 or not clear_torso(person, persons)
             ):
                 continue
-            crop = torso(image, person["observed_bbox"])
+            crop = self.crop(image, person["observed_bbox"])
             if crop is not None:
                 chosen.append(person)
                 crops.append(crop)
-        for person, (value, confidence) in zip(
-            chosen, self.reader.read(crops), strict=True
-        ):
+        distributions = (
+            self.reader.distributions(crops)
+            if hasattr(self.reader, "distributions")
+            else [
+                {**({v: c} if v is not None else {}), "unknown": 1 - c if v else 1.0}
+                for v, c in self.reader.read(crops)
+            ]
+        )
+        for person, distribution in zip(chosen, distributions, strict=True):
             self.last[person["track_id"]] = time_seconds
             self.stats["read"] += 1
-            if value is not None and confidence >= self.threshold:
+            evidence = self.evidence.get(person["track_id"]) or self.votes()
+            self.evidence[person["track_id"]] = evidence
+            self.evidence.move_to_end(person["track_id"])
+            while len(self.evidence) > MAX_EVIDENCE_TRACKS:
+                forgotten, _ = self.evidence.popitem(last=False)
+                self.last.pop(forgotten, None)
+                self.stats["evicted_tracklets"] += 1
+            votes = evidence.observe(distribution, time_seconds, camera_segment)
+            person["shirt_number_distribution"] = votes
+            person["shirt_number_observation"] = distribution
+            person["shirt_number_episode"] = evidence.episode
+            person["shirt_number_episodes"] = len(evidence.peaks)
+            person["shirt_number_reader_sha256"] = self.reader.sha256
+            # Detector-adjacent readers retain their original crop calibration;
+            # independent artifacts are calibrated with the episode-pooled API.
+            value, confidence = best(
+                votes if self.tracklet_calibration else distribution
+            )
+            if (
+                self.threshold is not None
+                and value is not None
+                and confidence >= self.threshold
+                and 1 - distribution.get("unknown", 0.0) >= MIN_LEGIBILITY
+            ):
                 self.stats["reported"] += 1
                 person["shirt_number"] = value
                 person["shirt_number_confidence"] = round(confidence, 3)
@@ -458,8 +538,10 @@ class ShirtNumbers:
     def snapshot(self) -> dict[str, Any]:
         """Receipt counts for the run manifest."""
         return {
+            "status": "enabled" if self.threshold is not None else "evidence_only",
             "reader_sha256": self.reader.sha256,
             "threshold": self.threshold,
+            "calibration_unit": "tracklet" if self.tracklet_calibration else "crop",
             **{k: round(v, 3) for k, v in self.stats.items()},
         }
 

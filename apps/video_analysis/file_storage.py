@@ -70,6 +70,9 @@ class WorkspaceFiles(Protocol):
         """Remove only temporary chunks for a server-selected upload session."""
         ...
 
-    def purge_clip(self, run_id: uuid.UUID) -> None:
-        """Remove every stored artifact of one server-selected clip run."""
+    def purge_clip(self, run_id: uuid.UUID, *, part: int | None = None) -> None:
+        """Remove every stored artifact of one server-selected clip run.
+
+        With ``part`` only that replay section's own run (a discarded attempt).
+        """
         ...

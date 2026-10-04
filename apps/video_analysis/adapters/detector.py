@@ -14,10 +14,11 @@ from django.conf import settings
 
 from apps.video_analysis.engine.clip_contract import MAX_RUNTIME_SECONDS, ClipOptions
 from apps.video_analysis.engine.clip_models import failure_message
-from apps.video_analysis.engine.clips import directory
+from apps.video_analysis.engine.clips import WORKER_PID, directory
 from apps.video_analysis.engine.store import Store, atomic_json
 from apps.video_analysis.engine.vision import artifact
 
+from .match_identity import stage
 from .replay import ReplaySection
 
 
@@ -46,14 +47,41 @@ def propose(store: Store, match_id: str, weights: str) -> None:
         )
 
 
+def match_wide(store: Store, run_id: str) -> None:
+    """Run a finished replay's match pass in the pinned vision runtime.
+
+    Its inputs are staged and verified first (``match_identity.stage``); the
+    engine checks the staged inputs again before it solves.
+    """
+    inputs = stage(store, run_id)
+    subprocess.run(
+        [
+            settings.VIDEO_ANALYSIS_PYTHON,
+            "-m",
+            "apps.video_analysis.engine.clip_match_wide",
+            str(store.root),
+            run_id,
+            "--inputs",
+            str(inputs),
+        ],
+        check=True,
+        timeout=MAX_RUNTIME_SECONDS,
+        env={**os.environ, "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2"},
+    )
+
+
 def clip(
     store: Store,
     run_id: str,
     payload: dict,
     *,
     progress: Callable[[dict], None] | None = None,
+    retry: bool = False,
 ) -> None:
     """Stage a fresh database projection and bound inference in a subprocess.
+
+    A whole recording advances one section (``ReplaySection``); ``retry``
+    resumes a failed one at its unfinished section.
 
     Raises:
         OSError: The worker process cannot start.
@@ -61,7 +89,7 @@ def clip(
 
     """
     if payload.get("recording_end"):
-        ReplaySection(store, run_id, payload).run(clip)
+        ReplaySection(store, run_id, payload).run(clip, match=match_wide, retry=retry)
         return
     match = store.recording(payload["match_id"])
     options = ClipOptions.parse(payload["options"])
@@ -148,6 +176,10 @@ def run_with_progress(
 
     """
     deadline = time.monotonic() + MAX_RUNTIME_SECONDS + 60
+    # If the worker itself dies (a hard time limit, the OOM killer), the section
+    # must not keep writing: a redelivered task restarts it in the same place.
+    # The child binds itself to this process (``clips.bind_to_worker``).
+    environment = {**environment, WORKER_PID: str(os.getpid())}
     with subprocess.Popen(command, env=environment) as child:
         try:
             while child.poll() is None:

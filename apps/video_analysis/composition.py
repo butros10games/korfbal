@@ -9,7 +9,7 @@ import zipfile
 from django.conf import settings
 from django.contrib.auth.models import User
 
-from apps.video_analysis.adapters import detector, repackaging
+from apps.video_analysis.adapters import detector, identity_review, repackaging
 from apps.video_analysis.adapters.objects import WorkspaceObjects
 from apps.video_analysis.adapters.pipeline import (
     extract_batch,
@@ -18,6 +18,7 @@ from apps.video_analysis.adapters.pipeline import (
     infer_batch,
     purge_uploaded_chunks,
 )
+from apps.video_analysis.adapters.replay import publish_match_wide
 from apps.video_analysis.adapters.store import DatabaseStore
 from apps.video_analysis.adapters.training import (
     accepted_policy,
@@ -25,8 +26,13 @@ from apps.video_analysis.adapters.training import (
     launch_status,
     queue_training,
 )
-from apps.video_analysis.application.ports import PipelineRuntime
+from apps.video_analysis.application.ports import (
+    IdentityReviewRuntime,
+    MatchIdentityRuntime,
+    PipelineRuntime,
+)
 from apps.video_analysis.engine import vision
+from apps.video_analysis.engine.clip_section_identity import GALLERY_FILE
 from apps.video_analysis.engine.clips import directory
 from apps.video_analysis.engine.storage_workspace import (
     clear_incomplete_cache,
@@ -41,7 +47,9 @@ __all__ = [
     "accepted_policy",
     "cancel_training",
     "delete_superseded_video",
+    "identity_review_runtime",
     "launch_status",
+    "match_identity_runtime",
     "match_video_urls",
     "pipeline_runtime",
     "purge_clip",
@@ -117,15 +125,25 @@ def run_detector(store: Store, match_id: str, weights: str) -> None:
     detector.propose(store, match_id, weights)
 
 
-def run_clip(store: Store, run_id: str, payload: dict) -> None:
-    """Wire a bounded full-clip run to the isolated CPU environment."""
+def run_clip(store: Store, run_id: str, payload: dict, *, retry: bool = False) -> None:
+    """Wire a bounded full-clip run to the isolated CPU environment.
+
+    A replay section restores its parent's boundary, stop request and roster
+    gallery from object storage before the section runs; ``retry`` resumes a
+    failed replay at its unfinished section.
+    """
     if (
         payload.get("recording_end")
         and isinstance(store, DatabaseStore)
         and store.files
     ):
         root = directory(store, run_id).relative_to(store.root)
-        names = [(root / name).as_posix() for name in ("run.json", "cancel.json")]
+        # The shared roster gallery is not JSON, so publication evicts it between
+        # sections; without it the next section would start an empty one.
+        names = [
+            (root / name).as_posix()
+            for name in ("run.json", "cancel.json", GALLERY_FILE)
+        ]
         for relative in StoredFile.objects.filter(
             workspace_id=store.workspace_id, relative_path__in=names
         ).values_list("relative_path", flat=True):
@@ -138,7 +156,7 @@ def run_clip(store: Store, run_id: str, payload: dict) -> None:
             workspace_id=store.workspace_id, relative_path=reader
         ).exists():
             store.media(reader)
-    detector.clip(store, run_id, payload)
+    detector.clip(store, run_id, payload, retry=retry)
 
 
 def import_pipeline_source(store: Store, recipe: dict) -> None:
@@ -193,6 +211,40 @@ def pipeline_runtime() -> PipelineRuntime:
         infer_batch=infer_pipeline_batch,
         extract_frames=extract_pipeline_frames,
         run_clip=run_clip,
+    )
+
+
+def identity_review_runtime() -> IdentityReviewRuntime:
+    """Bind roster-naming re-solves to private storage and the vision runtime.
+
+    Returns:
+        The production identity-review capabilities.
+
+    """
+    return IdentityReviewRuntime(
+        processing_store=processing_store, solve=identity_review.solve
+    )
+
+
+def publish_match_identity(store: Store, record: dict) -> dict:
+    """Wire a replay's match pass to staged inputs and the vision runtime.
+
+    Returns:
+        The replay's receipt with republished match-wide names.
+
+    """
+    return publish_match_wide(store, record, detector.match_wide)
+
+
+def match_identity_runtime() -> MatchIdentityRuntime:
+    """Bind match-pass reruns to private storage and the vision runtime.
+
+    Returns:
+        The production match-identity capabilities.
+
+    """
+    return MatchIdentityRuntime(
+        processing_store=processing_store, publish=publish_match_identity
     )
 
 

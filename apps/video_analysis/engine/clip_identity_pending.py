@@ -172,6 +172,7 @@ class PendingIdentities:
             )
             if identity is not None:
                 matched[index] = identity
+                self.release(obj, {v for k, v in matched.items() if k != index})
 
     def resolve(
         self,
@@ -215,8 +216,6 @@ class PendingIdentities:
                 "gap_seconds": round(timestamp - state["start"], 3),
                 "evidence_score": round(max(0, 1 - ranked[0][0]), 3),
             }
-            if provisional is not None:
-                memory.tracks.pop(provisional, None)
             del self.pending[native]
             return winner
         if timestamp - state["start"] >= MAX_PENDING_SECONDS:
@@ -224,6 +223,17 @@ class PendingIdentities:
         else:
             obj["identity_status"] = "pending"
         return provisional if provisional in memory.tracks else None
+
+    def release(self, obj: dict, held: set[str]) -> None:
+        """Drop a confirmed body's provisional number unless another body holds it.
+
+        Association can hand that number to a second detection of this frame
+        (a contained fragment or a swap correction); it continues the history.
+        """
+        confirmation = obj.get("identity_confirmation") or {}
+        provisional = confirmation.get("from_track_id")
+        if provisional is not None and provisional not in held:
+            self.memory.tracks.pop(provisional, None)
 
     def remember(self, native: str, identity: str) -> None:
         """Remember the temporary public number without refreshing candidate tracks."""

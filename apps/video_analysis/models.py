@@ -140,6 +140,90 @@ class AnalysisJob(models.Model):
         return f"{self.kind}: {self.status}"
 
 
+class ClipIdentityReview(models.Model):
+    """Latest worker-written roster-naming snapshot of one clip run or section.
+
+    The private cache with descriptors stays in the run directory and is only
+    opened by the vision worker; this row holds the small JSON a reviewer reads,
+    updated in the same transaction as the answers it applied. ``section`` is
+    empty for a clip run, or ``part-NNNN`` for one section of a long recording
+    (its own child run, sharing the replay's identity gallery).
+    """
+
+    objects: ClassVar[models.Manager[ClipIdentityReview]] = models.Manager[
+        "ClipIdentityReview"
+    ]()
+    job_id: uuid.UUID
+
+    job = models.ForeignKey(
+        AnalysisJob, on_delete=models.CASCADE, related_name="identity_reviews"
+    )
+    section = models.CharField(max_length=16, blank=True, default="", db_default="")
+    revision = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=16, default="preparing")
+    message = models.CharField(max_length=300, blank=True)
+    snapshot = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """One review per clip run and replay section."""
+
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=("job", "section"), name="va_identity_review_section"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Identify the clip run or section under review."""
+        return f"{self.job_id}{self.section and '-' + self.section}: {self.status}"
+
+
+class IdentityReviewAnswer(models.Model):
+    """One reviewer answer; its primary key is the client's idempotency key.
+
+    ``sequence`` is the review revision the answer expects; the vision worker
+    applies queued answers in that order and records its receipt here.
+    """
+
+    objects: ClassVar[models.Manager[IdentityReviewAnswer]] = models.Manager[
+        "IdentityReviewAnswer"
+    ]()
+    job_id: uuid.UUID
+    requested_by_id: int | None
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    job = models.ForeignKey(
+        AnalysisJob, on_delete=models.CASCADE, related_name="identity_answers"
+    )
+    # Empty for a clip run, ``part-NNNN`` for a replay section.
+    section = models.CharField(max_length=16, blank=True, default="", db_default="")
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL
+    )
+    sequence = models.PositiveIntegerField()
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, default="queued")
+    code = models.CharField(max_length=24, blank=True)
+    message = models.CharField(max_length=300, blank=True)
+    revision = models.PositiveIntegerField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True)
+
+    class Meta:
+        """Answers are read per run in submission order."""
+
+        indexes: ClassVar = [
+            models.Index(
+                fields=("job", "section", "status", "sequence"), name="va_answer_order"
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return a safe operational label."""
+        return f"{self.job_id}: {self.status} #{self.sequence}"
+
+
 class StoredFile(models.Model):
     """Verified private object behind a workspace-relative logical filename."""
 

@@ -78,3 +78,54 @@ def continue_analysis(job_id: str) -> None:
         args=[str(job.pk)],
         queue="vision",
     )
+
+
+@transaction.atomic
+def retry_analysis(workspace: Workspace, job_id: uuid.UUID) -> AnalysisJob:
+    """Resume a stopped whole-recording analysis at its unfinished section.
+
+    Committed sections are kept; the worker discards the unfinished attempt and
+    runs that section again (``adapters/replay.py``). Like a new request it
+    waits for no other job in the workspace.
+
+    Returns:
+        The queued job.
+
+    Raises:
+        FileNotFoundError: The clip is not a job of this workspace.
+        ConflictError: The run is not a failed whole recording, or another job
+            is queued or running.
+
+    """
+    Workspace.objects.select_for_update().get(pk=workspace.pk)
+    job = (
+        AnalysisJob.objects
+        .select_for_update()
+        .filter(workspace=workspace, pk=job_id, kind="clip")
+        .first()
+    )
+    if job is None:
+        raise FileNotFoundError("Clip not found")
+    if not job.payload.get("recording_end") or job.status not in {
+        "failed",
+        "interrupted",
+    }:
+        raise ConflictError("Only a stopped whole-recording analysis can resume")
+    if (
+        AnalysisJob.objects.filter(
+            workspace=workspace, status__in=["queued", "running"]
+        ).exists()
+        or ReviewPipeline.objects.filter(workspace=workspace, status="running").exists()
+    ):
+        raise ConflictError("An analysis job is already queued or running")
+    job.status, job.finished_at = "queued", None
+    job.message = "Retrying the unfinished section; completed sections are kept."
+    job.save(update_fields=["status", "message", "finished_at"])
+    enqueue(
+        "apps.video_analysis.tasks.execute",
+        str(job.pk),
+        args=[str(job.pk)],
+        kwargs={"retry": True},
+        queue="vision",
+    )
+    return job
