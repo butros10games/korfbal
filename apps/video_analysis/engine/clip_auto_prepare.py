@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 import importlib
+import itertools
 import time
 from typing import TYPE_CHECKING, Any, cast
 import warnings
@@ -35,6 +36,17 @@ if TYPE_CHECKING:
 
 MAX_SAMPLES = 96
 MAX_SECONDS = 120
+# A sideline camera that the first samples cannot place gets more of them:
+# each round halves their spacing, within its own time budget.
+FIELD_ROUNDS = 2
+FIELD_SECONDS = 240
+FIELD_RETRY = {
+    "no_views",
+    "one_post",
+    "unsupported_camera",
+    "ambiguous_camera",
+    "unstable_camera",
+}
 SAMPLE_INTERVAL = 0.8
 CONTEXT_SECONDS = 12
 WINDOW_SAMPLES = 21
@@ -220,7 +232,7 @@ def prepare(run: ClipRun, video: Path | str, model: object) -> None:
         bridge(run, capture, mapping)
         camera_model = calibrate_camera(mapping, run.stopped)
         landmarks = landmark_references(run, mapping, windows, started)
-        field = field_camera(run, capture, mapping, windows)
+        field = field_camera(run, (capture, model), mapping, windows)
     finally:
         capture.release()
         run.record["automatic_court_preparation"] = {
@@ -241,13 +253,17 @@ def prepare(run: ClipRun, video: Path | str, model: object) -> None:
 
 
 def field_camera(
-    run: ClipRun, capture: object, mapping: AutoCourt, windows: list
+    run: ClipRun, source: tuple[object, object], mapping: AutoCourt, windows: list
 ) -> dict:
     """Fit a sideline tripod camera when neither a hall nor markings were found.
 
     The camera's turn between the korfs is followed through every frame of the
-    clip; that needs no detector, only the frames themselves.
+    clip; that needs no detector, only the frames themselves. `source` holds
+    the video decoder and the detector. A far korf is seen in few frames, so
+    when the sampled frames do not place the camera, the frames between them
+    are detected too.
     """
+    capture = source[0]
     if mapping.hall.groups or mapping.references.items:
         return {"status": "not_needed"}
     samples = windows[0] if windows else []
@@ -262,8 +278,45 @@ def field_camera(
     for timestamp, _, objects in samples:
         mapping.field.sample(timestamp, objects, aspect)
     summary = mapping.field.fit()
+    times = sorted(timestamp for timestamp, _, _ in samples)
+    extra = 0
+    for _ in range(FIELD_ROUNDS):
+        if summary["status"] not in FIELD_RETRY:
+            break
+        added = between(run, source, mapping, times, (aspect, began))
+        extra += len(added)
+        # A cancelled run or a spent budget keeps the answer it already has.
+        if not added or run.stopped() or time.monotonic() - began > FIELD_SECONDS:
+            break
+        times = sorted(times + added)
+        summary = mapping.field.fit()
+    summary["extra_samples"] = extra
     summary["runtime_seconds"] = round(time.monotonic() - began, 3)
     return summary
+
+
+def between(
+    run: ClipRun,
+    source: tuple[object, object],
+    mapping: AutoCourt,
+    times: list[float],
+    frame: tuple[float, float],
+) -> list[float]:
+    """Detect the frames halfway between sampled ones; return their times.
+
+    `frame` holds the image aspect and when the field camera's work began.
+    """
+    capture, model = source
+    aspect, began = frame
+    added = []
+    for before, after in itertools.pairwise(times):
+        if run.stopped() or time.monotonic() - began > FIELD_SECONDS:
+            break
+        snapshot = sample(run, capture, model, (before + after) / 2)
+        if snapshot is not None:
+            mapping.field.sample(snapshot[0], snapshot[2], aspect)
+            added.append(snapshot[0])
+    return added
 
 
 def follow_camera(run: ClipRun, capture: object, mapping: AutoCourt) -> float | None:

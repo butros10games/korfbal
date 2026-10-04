@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import deque
+import itertools
 import math
 import operator
 from typing import TYPE_CHECKING, Any
@@ -60,7 +61,11 @@ MAX_ZOOM = 0.05
 ZOOM_FRAMES = 12
 GRAPHICS_BAND = 0.14
 MIN_CONFIDENCE = 0.5
-MIN_POST_CONFIDENCE = 0.25
+# A far korf is small: detectors see it only faintly. One faint box means
+# little; a view only counts a korf whose sightings in one place add up to
+# three sure ones.
+MIN_POST_CONFIDENCE = 0.1
+SURE_POST_CONFIDENCE = 0.25
 MAX_BODY_ASPECT = 0.6
 MAX_FOOT = 0.98
 VIEW_SPAN = 0.2
@@ -82,13 +87,12 @@ MIN_CAMERA_HEIGHT, MAX_CAMERA_HEIGHT = 0.7, 2.3
 MAX_PITCH = math.radians(12)
 MAX_ROLL = math.radians(5)
 MIN_ROLL_SPREAD = 0.5
-# Pitch and body size soak up part of a roll, so it is found in steps; a
-# roll that is still not settled after these is not known.
-ROLL_ROUNDS = 8
-ROLL_PROBE = math.radians(0.5)
+# The roll is bracketed on a grid of trial rolls, then halved in on.
+ROLL_GRID = math.radians(1)
+ROLL_ROUNDS = 6
+MIN_ROLL_TRIALS = 5
 MIN_ROLL_SHARE = 0.1
 SAG_ROUNDS = 3
-ROLL_STEP = math.radians(0.02)
 # The camera must stay put within the focal length's doubt, and models this
 # close together are the same camera.
 MAX_CAMERA_DOUBT = 3.0
@@ -498,7 +502,7 @@ class FieldCamera(Turns):
             ):
                 bodies.append((y + h, y, (x + w / 2) * aspect))
             elif obj["label"] == "basket" and confidence >= MIN_POST_CONFIDENCE:
-                posts.append(((x + w / 2) * aspect, y, w))
+                posts.append(((x + w / 2) * aspect, y, w, confidence))
         self.samples.append({
             "frame": frame,
             "pan": self.pans[frame],
@@ -559,8 +563,8 @@ class FieldCamera(Turns):
                     for foot, head, x in s["bodies"]
                 ],
                 "posts": [
-                    (*level((x, top), self.roll, s["aspect"] / 2), width)
-                    for x, top, width in s["posts"]
+                    (*level((x, top), self.roll, s["aspect"] / 2), width, sure)
+                    for x, top, width, sure in s["posts"]
                 ],
             }
             for s in self.samples
@@ -604,8 +608,15 @@ class FieldCamera(Turns):
         seen = [
             (x - (s["pan"] - pan), top - (s["tilt"] - tilt), width, x, top, s["frame"])
             for s in members
-            for x, top, width in s["posts"]
+            for x, top, width, _ in s["posts"]
         ]
+        # A faint box counts for less than a sure one: three faint sightings
+        # in one place are not yet a korf.
+        support = np.array([
+            min(1.0, sure / SURE_POST_CONFIDENCE)
+            for s in members
+            for *_, sure in s["posts"]
+        ])
         if len(seen) < MIN_VIEW_POSTS:
             return []
         steady = np.array([row[:3] for row in seen])
@@ -621,7 +632,7 @@ class FieldCamera(Turns):
             (
                 number
                 for number in range(len(counts))
-                if counts[number] >= MIN_VIEW_POSTS
+                if support[inverse == number].sum() >= MIN_VIEW_POSTS
             ),
             key=lambda number: -counts[number] * widths[number],
         )
@@ -769,32 +780,56 @@ class FieldCamera(Turns):
         return inside / max(total, 1)
 
     def lean_views(self, stretch: int, centre: float) -> list[dict]:
-        """Measure the picture's roll and return the stretch's levelled views."""
-        self.roll, self.levelled = 0.0, False
-        views = self.views(stretch)
-        first = self.lean(views, centre)
-        # Pitch and body size soak up part of a roll, more so when the players
-        # stand close together: the roll that still shows is only a share of
-        # what is left. A small trial roll shows how large a share.
-        self.roll = ROLL_PROBE
-        rest = self.lean(self.views(stretch), centre)
-        if first is None or rest is None:
-            return views
-        share = (first - rest) / ROLL_PROBE
+        """Measure the picture's roll and return the stretch's levelled views.
+
+        Pitch and body size soak up part of a roll, more so when the players
+        stand close together, so the roll that still shows after a trial roll
+        is only a share of what is left. That share is read off trial rolls
+        across the whole supported range; over a small step it drowns in the
+        scatter of real bodies. The roll is where the remainder changes sign.
+        """
+        np = self.np
+        self.levelled = False
+
+        def rest(roll: float) -> float | None:
+            self.roll = float(roll)
+            return self.lean(self.views(stretch), centre)
+
+        span = MAX_ROLL + ROLL_GRID
+        tried = [
+            (float(roll), left)
+            for roll in np.arange(-span, span + ROLL_GRID / 2, ROLL_GRID)
+            if (left := rest(roll)) is not None
+        ]
+        self.roll = 0.0
+        if len(tried) < MIN_ROLL_TRIALS:
+            return self.views(stretch)
+        slope, level = np.polyfit(*zip(*tried, strict=True), 1)
+        crossings = [
+            (low, high)
+            for low, high in itertools.pairwise(tried)
+            if low[1] * high[1] <= 0
+        ]
+        # Too little of a roll shows to tell how large it is, or it is larger
+        # than a tripod's.
+        if -slope < MIN_ROLL_SHARE or not crossings:
+            return self.views(stretch)
+        expected = -level / slope
+        low, high = min(
+            crossings, key=lambda pair: abs((pair[0][0] + pair[1][0]) / 2 - expected)
+        )
         for _ in range(ROLL_ROUNDS):
-            if share < MIN_ROLL_SHARE:
-                break  # Too little of a roll shows to tell how large it is.
-            at, step = self.roll, rest / share
-            self.roll = max(-2 * MAX_ROLL, min(2 * MAX_ROLL, at + step))
-            views = self.views(stretch)
-            if abs(step) < ROLL_STEP:
-                self.levelled = True
-                break
-            again = self.lean(views, centre)
-            if again is None or abs(self.roll - at) < EPSILON:
-                break
-            share, rest = (rest - again) / (self.roll - at), again
-        return views
+            middle = (low[0] + high[0]) / 2
+            left = rest(middle)
+            if left is None:
+                self.roll = 0.0
+                return self.views(stretch)
+            if left * low[1] > 0:
+                low = (middle, left)
+            else:
+                high = (middle, left)
+        self.roll, self.levelled = (low[0] + high[0]) / 2, True
+        return self.views(stretch)
 
     def upright_views(
         self, stretch: int, centre: float, focals: list[float]
