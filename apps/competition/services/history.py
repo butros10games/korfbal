@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date, timedelta
 import hashlib
 import json
@@ -15,6 +14,8 @@ from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from apps.competition.domain.history_scopes import ARCHIVE_PREFIX
+from apps.competition.domain.standings_provenance import is_official_standing
 from apps.competition.models import (
     HistoricalDiscovery,
     HistoricalResource,
@@ -23,8 +24,15 @@ from apps.competition.models import (
     Pool,
     PoolEntry,
 )
+from apps.competition.services.history_integrity import (
+    fixture_coverage,
+    standing_projection,
+    unique_matches,
+)
 from apps.competition.services.importer import Importer
 from apps.competition.services.lineups import import_lineup
+from apps.competition.services.seasons import INDOOR
+from apps.schedule.domain.competition_context import INDOOR_PHASE
 from apps.schedule.models import Season
 
 
@@ -32,8 +40,6 @@ from apps.schedule.models import Season
 # former competition site and korfbal-uitslagen.nl (see history_sites.py).
 SITE_PROVIDERS = {"korfbalnl", "uitslagen"}
 PROVIDERS = {"app", "dataservice", "archive", *SITE_PROVIDERS}
-# Matches that do not come from the provider of record carry this ID prefix.
-ARCHIVE_PREFIX = "archive:"
 KINDS = {
     "match",
     "pool",
@@ -340,69 +346,137 @@ def apply_lineup(resource: HistoricalResource, data: dict[str, Any]) -> None:
 
 
 def apply_app(resource: HistoricalResource, data: dict[str, Any]) -> None:
-    """Reuse source/native models without ever queuing present-day club/team feeds.
+    """Reuse historical source models without queuing present-day club/team feeds.
 
     Raises:
-        ValueError: The supplied configuration or response is inconsistent.
+        ValueError: The resource kind is unsupported.
 
     """
     if resource.kind == "lineup":
         apply_lineup(resource, data)
-        return
-    importer = Importer(resource.season, timezone.now(), discover=False)
-    if resource.kind == "match":
-        if str(data["PublicMatchId"]) != resource.source_id:
-            raise ValueError("Unexpected match identity")
-        validate_match(data, resource)
-        prior_pools = set(
-            Match.objects
-            .filter(season=resource.season, external_id=resource.source_id)
-            .exclude(pool=None)
-            .values_list("pool__external_id", flat=True)
-        )
-        importer.apply("club_results", "", {"MatchResult": [data]})
-        if data.get("Pool"):
-            pool_resource = discover(resource, "pool", str(data["Pool"]["PoolId"]))
-            prior_pools.add(pool_resource.source_id)
-        refresh_app_pool_coverage(resource.season, prior_pools)
-        resource.coverage = "partial"
-        resource.evidence = {"matches": 1, "match_ids": [resource.source_id]}
+    elif resource.kind == "match":
+        apply_app_match(resource, data)
     elif resource.kind == "pool":
-        rows = data["MatchResult"]
-        for row in rows:
-            validate_match(row, resource)
-            if row.get("Pool") and str(row["Pool"]["PoolId"]) != resource.source_id:
-                raise ValueError("Unexpected poule identity")
-        # Undated standings alone cannot establish that a reused pool ID is historical.
-        if not rows:
-            resource.coverage, resource.reason = "empty", "no_dated_results"
-            resource.evidence = {"matches": 0}
-            return
-        prior_pools = set(
-            Match.objects
-            .filter(
-                season=resource.season,
-                external_id__in=[str(row["PublicMatchId"]) for row in rows],
-            )
-            .exclude(pool=None)
-            .exclude(pool__external_id=resource.source_id)
-            .values_list("pool__external_id", flat=True)
-        )
-        pool = importer.pool({"PoolId": resource.source_id}, resource.sport)
-        importer.apply("pool_results", resource.source_id, data)
-        # Some result summaries omit their enclosing poule; retain that verified edge.
-        Match.objects.filter(
-            season=resource.season,
-            external_id__in=[row["PublicMatchId"] for row in rows],
-        ).exclude(pool=pool).update(pool=pool, updated_at=timezone.now())
-        resource.coverage, resource.evidence = pool_coverage(resource, data)
-        resource.reason = (
-            "" if resource.coverage == "complete" else "standings_results_disagree"
-        )
-        reuse_pool_matches(resource, [str(row["PublicMatchId"]) for row in rows])
-        refresh_app_pool_coverage(resource.season, prior_pools)
+        apply_app_pool(resource, data)
     else:
         raise ValueError("Unsupported app history resource")
+
+
+def apply_app_match(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Observe one scoped detail and refresh its old and new pool proofs.
+
+    Raises:
+        ValueError: The response names another match.
+
+    """
+    importer = Importer(resource.season, timezone.now(), discover=False)
+    if str(data["PublicMatchId"]) != resource.source_id:
+        raise ValueError("Unexpected match identity")
+    validate_match(data, resource)
+    prior_pools = set(
+        Match.objects
+        .filter(season=resource.season, external_id=resource.source_id)
+        .exclude(pool=None)
+        .values_list("pool__external_id", flat=True)
+    )
+    importer.apply("club_results", "", {"MatchResult": [data]})
+    if data.get("Pool"):
+        pool_resource = discover(resource, "pool", str(data["Pool"]["PoolId"]))
+        prior_pools.add(pool_resource.source_id)
+    refresh_app_pool_coverage(resource.season, prior_pools)
+    resource.coverage = "partial"
+    resource.evidence = {
+        **resource.evidence,
+        "matches": len(importer.observed_match_ids),
+        "match_ids": [resource.source_id],
+        "detail_attempted": True,
+    }
+
+
+def apply_app_pool(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Import a validated pool response and retain independent count evidence.
+
+    Raises:
+        ValueError: A response fixture names another pool.
+
+    """
+    importer = Importer(resource.season, timezone.now(), discover=False)
+    rows = unique_matches(data["MatchResult"])
+    table = standing_projection(data.get("PoolStanding"))
+    if table is None:
+        table = standing_projection(resource.evidence.get("official_table"))
+    data = {**data, "MatchResult": rows, "PoolStanding": table}
+    for row in rows:
+        validate_match(row, resource)
+        if row.get("Pool") and str(row["Pool"]["PoolId"]) != resource.source_id:
+            raise ValueError("Unexpected poule identity")
+        if not row.get("Pool"):
+            # Enclosing-pool evidence must take the same contextual update path
+            # as a detail response, including metadata and table invalidation.
+            row["Pool"] = {"PoolId": resource.source_id}
+    # Undated standings alone cannot establish that a reused pool ID is historical.
+    if not rows:
+        retain_app_standings(resource, data, table, importer)
+        return
+    prior_pools = set(
+        Match.objects
+        .filter(
+            season=resource.season,
+            external_id__in=[str(row["PublicMatchId"]) for row in rows],
+        )
+        .exclude(pool=None)
+        .exclude(pool__external_id=resource.source_id)
+        .values_list("pool__external_id", flat=True)
+    )
+    importer.pool({"PoolId": resource.source_id}, resource.sport)
+    importer.apply("pool_results", resource.source_id, data)
+    resource.evidence = {
+        **resource.evidence,
+        "accepted_match_ids": [str(row["PublicMatchId"]) for row in rows],
+        "source_accounted": len(importer.observed_match_ids) == len(rows),
+        "official_table": table
+        if table is not None
+        else resource.evidence.get("official_table"),
+    }
+    resource.coverage, resource.evidence = pool_coverage(resource, data)
+    resource.reason = (
+        "" if resource.coverage == "complete" else "standings_results_disagree"
+    )
+    reuse_pool_matches(resource, [str(row["PublicMatchId"]) for row in rows])
+    prior_pools.add(resource.source_id)
+    refresh_app_pool_coverage(resource.season, prior_pools)
+
+
+def retain_app_standings(
+    resource: HistoricalResource,
+    data: dict[str, Any],
+    table: dict | None,
+    importer: Importer,
+) -> None:
+    """Store an undated table, using an established or proven indoor binding."""
+    pool = Pool.objects.filter(
+        season=resource.season, external_id=resource.source_id
+    ).first()
+    standing_rows = (table or {}).get("PoolStandingTeam") or []
+    if (
+        pool is None
+        and resource.season.context.phase == INDOOR_PHASE
+        and {row.get("SportId") for row in standing_rows} == {INDOOR}
+        and resource.sport in {"", INDOOR}
+    ):
+        pool = importer.pool({"PoolId": resource.source_id}, INDOOR)
+    if pool is not None and table is not None:
+        importer.apply("pool_results", resource.source_id, data)
+    meaningful = bool((table or {}).get("PoolStandingTeam"))
+    resource.coverage = "partial" if meaningful else "empty"
+    resource.reason = (
+        "standings_without_dated_results" if meaningful else "no_dated_results"
+    )
+    resource.evidence = {
+        "matches": 0,
+        "official_table": table,
+        "source_accounted": False,
+    }
 
 
 def refresh_app_pool_coverage(season: Season, identifiers: set[str]) -> None:
@@ -485,51 +559,34 @@ def pool_coverage(
     """Require every team's played count to match dated, scored final fixtures."""
     pool = Pool.objects.get(season=resource.season, external_id=resource.source_id)
     rows = list(PoolEntry.objects.filter(pool=pool).select_related("team"))
-    counts: Counter[str] = Counter()
     matches = list(
         Match.objects.filter(pool=pool).select_related("home_team", "away_team")
     )
-    for match in matches:
-        if (
-            match.status == "FINAL"
-            and match.home_score is not None
-            and match.away_score is not None
-        ):
-            counts[match.home_team.external_id] += 1
-            counts[match.away_team.external_id] += 1
     expected = {
         row.team.external_id: row.standing.get("TotalMatches")
         for row in rows
-        if row.standing
+        if is_official_standing(row.standing)
     }
-    complete = (
-        bool(expected)
-        and len(expected) == len(rows)
-        and data["ResultsFiltered"] is False
-    )
-    complete = complete and set(counts) <= set(expected)
-    complete = complete and all(
-        isinstance(total, int)
-        and not isinstance(total, bool)
-        and total >= 0
-        and counts[key] == total
-        for key, total in expected.items()
-    )
-    complete = (
-        complete
-        and bool(matches)
-        and all(
-            m.status == "FINAL"
-            and m.home_score is not None
-            and m.away_score is not None
-            for m in matches
-        )
+    complete, proof = fixture_coverage(
+        (
+            (
+                match.home_team.external_id,
+                match.away_team.external_id,
+                match.status == "FINAL"
+                and match.home_score is not None
+                and match.away_score is not None,
+            )
+            for match in matches
+        ),
+        expected,
+        members={row.team.external_id for row in rows},
+        unfiltered=data.get("ResultsFiltered") is False,
+        accounted=resource.evidence.get("source_accounted") is True,
     )
     return ("complete" if complete else "partial"), {
-        "matches": len(matches),
-        "expected_played": expected,
-        "observed_played": dict(counts),
-        "results_filtered": data["ResultsFiltered"],
+        **resource.evidence,
+        **proof,
+        "results_filtered": data.get("ResultsFiltered"),
     }
 
 
@@ -548,3 +605,6 @@ def progress() -> list[dict]:
         .annotate(resources=Count("pk"))
         .order_by("season__name", "provider", "kind", "state")
     )
+
+
+__all__ = ["ARCHIVE_PREFIX"]

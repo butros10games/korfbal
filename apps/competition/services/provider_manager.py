@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from apps.competition.application.ports import CompetitionClient, HistoricalClient
 from apps.competition.models import SyncLease
+from apps.competition.services.catalog_metadata import enrichment_waiting
 from apps.competition.services.monitoring import observe_run, outcome
 from apps.competition.services.provider_scheduler import (
     ProviderTurn,
@@ -104,8 +105,11 @@ class ProviderManager:
             else self.turn(None)
         )
         history = result.get("history") or {}
-        if result.get("updated") or (
-            isinstance(history, dict) and history.get("fetched")
+        enrichment = result.get("enrichment") or {}
+        if (
+            result.get("updated")
+            or (isinstance(history, dict) and history.get("fetched"))
+            or (isinstance(enrichment, dict) and enrichment.get("updated"))
         ):
             self.wiring.request_publication()
         if result.get("status") == "busy_or_cooldown":
@@ -120,6 +124,8 @@ class ProviderManager:
             live_budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None,
             history_budget=settings.SPORTLINK_HISTORY_MAX_REQUESTS,
             history_share=settings.SPORTLINK_HISTORY_SHARE,
+            enrichment_budget=settings.SPORTLINK_ENRICHMENT_MAX_REQUESTS,
+            enrichment_share=settings.SPORTLINK_ENRICHMENT_SHARE,
             publish=False,
             stop=self.stopping,
         )
@@ -129,12 +135,15 @@ class ProviderManager:
 
 
 def work_waiting(season: Season | None) -> bool:
-    """Tell whether history or the live season has due work."""
+    """Tell whether history, the live season or the enrichment lane has work."""
     if history_pending():
         return True
-    return season is not None and bool(
-        preview_sync(season, budget=None)["candidate_feed_requests"]
-    )
+    if (
+        season is not None
+        and preview_sync(season, budget=None)["candidate_feed_requests"]
+    ):
+        return True
+    return enrichment_waiting(season, budget=settings.SPORTLINK_ENRICHMENT_MAX_REQUESTS)
 
 
 def limit_database_waits() -> None:

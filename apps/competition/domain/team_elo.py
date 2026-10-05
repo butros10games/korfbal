@@ -137,6 +137,9 @@ def replay(
         teams={team: replace(value) for team, value in (initial or {}).items()}
     )
     parents = {team: value.group or team for team, value in state.teams.items()}
+    # A bounded resume can reference a historical root without loading its rating.
+    for group in tuple(parents.values()):
+        parents.setdefault(group, group)
     results = sorted(
         (fixture for fixture in fixtures if fixture.result),
         key=lambda fixture: (fixture.starts_at, fixture.match),

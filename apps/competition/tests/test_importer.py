@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import timedelta
+import re
 from typing import Any
 
 from django.db import connection
@@ -207,7 +208,7 @@ def test_unchanged_import_only_writes_result_freshness(
     season: Season,
     result: bool,
 ) -> None:
-    """Polling stable snapshots must not dirty publication or rewrite identities."""
+    """Polling advances observation watermarks without changing sporting content."""
     now = timezone.now()
     row = match_payload()
     kind = "club_results" if result else "club_program"
@@ -216,6 +217,23 @@ def test_unchanged_import_only_writes_result_freshness(
     )
     Importer(season, now).apply(kind, "CT1", payload)
     before = Match.objects.get()
+    catalogue_before = {
+        "clubs": list(
+            Club.objects.order_by("pk").values(
+                "pk", "name", "city", "colors", "logo_bucket", "logo_hash", "dissolved"
+            )
+        ),
+        "teams": list(
+            Team.objects.order_by("pk").values(
+                "pk", "name", "club_id", "sport", "group_id", "local_team_data_id"
+            )
+        ),
+        "pools": list(
+            Pool.objects.order_by("pk").values(
+                "pk", "name", "class_name", "sport", "competition_class_id"
+            )
+        ),
+    }
     checkpoint = SyncResource.objects.values_list("pk", "next_sync_at", "fetched_at")
     checkpoints = list(checkpoint)
     with CaptureQueriesContext(connection) as queries:
@@ -225,14 +243,57 @@ def test_unchanged_import_only_writes_result_freshness(
         for query in queries
         if query["sql"].split()[0] in {"INSERT", "UPDATE", "DELETE"}
     ]
-    assert len(writes) == int(result)
+    # Each distinct club may advance its latest observation once. These narrow
+    # writes protect against delayed responses without replacing catalogue data.
+    club_writes = [sql for sql in writes if sql.startswith('UPDATE "competition_club"')]
+    assert len(club_writes) <= len(catalogue_before["clubs"])
+    club_reads = [
+        query
+        for query in queries
+        if query["sql"].startswith("SELECT")
+        and 'FROM "competition_club"' in query["sql"]
+    ]
+    assert len(club_reads) <= len(catalogue_before["clubs"])
+    assert all(
+        set(
+            re.findall(r'"(\w+)"\s*=', sql.split(" SET ", 1)[1].rsplit(" WHERE ", 1)[0])
+        )
+        == {"metadata_observations"}
+        for sql in club_writes
+    )
+    other_writes = [sql for sql in writes if sql not in club_writes]
+    assert len(other_writes) == int(result)
+    if result:
+        assert set(
+            re.findall(
+                r'"(\w+)"\s*=',
+                other_writes[0].split(" SET ", 1)[1].rsplit(" WHERE ", 1)[0],
+            )
+        ) == {"result_observed_at", "results_checked_at"}
+    assert {
+        "clubs": list(
+            Club.objects.order_by("pk").values(
+                "pk", "name", "city", "colors", "logo_bucket", "logo_hash", "dissolved"
+            )
+        ),
+        "teams": list(
+            Team.objects.order_by("pk").values(
+                "pk", "name", "club_id", "sport", "group_id", "local_team_data_id"
+            )
+        ),
+        "pools": list(
+            Pool.objects.order_by("pk").values(
+                "pk", "name", "class_name", "sport", "competition_class_id"
+            )
+        ),
+    } == catalogue_before
     after = Match.objects.get()
     assert after.updated_at == before.updated_at
     assert list(checkpoint) == checkpoints
+    assert after.revisions.count() == int(result)
     if result:
         assert after.result_observed_at == now + timedelta(seconds=1)
         assert after.results_checked_at == after.result_observed_at
-        assert after.revisions.count() == 1
 
 
 @pytest.mark.django_db

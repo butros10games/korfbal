@@ -12,6 +12,7 @@ from django.utils import timezone
 from apps.game_tracker.application.ports import (
     PublicLiveStoreError,
     PublishedLiveStore,
+    SourceResultReader,
 )
 from apps.game_tracker.models import MatchData, MatchLiveChange, Shot
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
@@ -20,7 +21,9 @@ from apps.game_tracker.services.tracker_clock_queries import read_clock_state
 from apps.game_tracker.services.tracker_commands.base import current_part
 
 
-def _build_public_snapshot(match_data: MatchData) -> dict[str, Any]:
+def _build_public_snapshot(
+    match_data: MatchData, *, source_results: SourceResultReader | None = None
+) -> dict[str, Any]:
     match = match_data.match_link
     if match_data.status == "finished" and match_data.score_source in {
         "knkv",
@@ -30,15 +33,20 @@ def _build_public_snapshot(match_data: MatchData) -> dict[str, Any]:
     else:
         totals = dict(
             Shot.objects
-            .filter(match_data=match_data, scored=True)
+            .filter(match_data=match_data)
             .values("team_id")
-            .annotate(total=models.Count("pk"))
+            .annotate(total=models.Count("pk", filter=models.Q(scored=True)))
             .values_list("team_id", "total")
         )
-        home, away = (
-            totals.get(match.home_team_id, 0),
-            totals.get(match.away_team_id, 0),
-        )
+        if match_data.status == "finished" and not totals:
+            # Manual finished results need no fabricated shots. Actual tracker
+            # registrations (including missed shots) still own tracked scores.
+            home, away = match_data.home_score, match_data.away_score
+        else:
+            home, away = (
+                totals.get(match.home_team_id, 0),
+                totals.get(match.away_team_id, 0),
+            )
     part = current_part(match_data)
     paused, timer = read_clock_state(match_data, part)
     # Published payloads contain only revision-stable fields. Render time is fresh.
@@ -52,12 +60,19 @@ def _build_public_snapshot(match_data: MatchData) -> dict[str, Any]:
         "paused": paused,
         "timer": timer,
         "score": {"home": home, "away": away},
+        "source_result": (
+            source_results([str(match.pk)]).get(str(match.pk))
+            if source_results is not None
+            else None
+        ),
         "last_changed_at": match_data.live_changed_at.isoformat(),
         "live_revision": match_data.live_revision,
     }
 
 
-def build_published_live(match_id: str) -> dict[str, Any] | None:
+def build_published_live(
+    match_id: str, *, source_results: SourceResultReader | None = None
+) -> dict[str, Any] | None:
     """Build public state and bounded resource history from one database snapshot."""
     created_at = time()
     with consistent_timeline_read():
@@ -70,7 +85,7 @@ def build_published_live(match_id: str) -> dict[str, Any] | None:
         )
         if match_data is None:
             return None
-        payload = _build_public_snapshot(match_data)
+        payload = _build_public_snapshot(match_data, source_results=source_results)
         history = list(
             MatchLiveChange.objects
             .filter(match_data=match_data, revision__lte=match_data.live_revision)
@@ -102,15 +117,24 @@ def build_published_live(match_id: str) -> dict[str, Any] | None:
     }
 
 
-def publish_public_live(*, match_id: str, store: PublishedLiveStore) -> None:
+def publish_public_live(
+    *,
+    match_id: str,
+    store: PublishedLiveStore,
+    source_results: SourceResultReader | None = None,
+) -> None:
     """Publish committed state; storage failures propagate to durable job recovery."""
-    envelope = build_published_live(match_id)
+    envelope = build_published_live(match_id, source_results=source_results)
     if envelope is not None:
         store.put(match_id, envelope)
 
 
 def read_published_live(
-    *, match_id: object, store: PublishedLiveStore, since_revision: int | None = None
+    *,
+    match_id: object,
+    store: PublishedLiveStore,
+    since_revision: int | None = None,
+    source_results: SourceResultReader | None = None,
 ) -> dict[str, Any] | None:
     """Read shared public state without SQL; recover authoritatively on a miss."""
     match_key = str(match_id)
@@ -118,7 +142,8 @@ def read_published_live(
     envelope = None
     if not shared and since_revision is not None and since_revision >= 0:
         # Caller-owned transactions cannot use the shared cache. An unchanged
-        # response needs only one metadata read, not score/clock/history queries.
+        # response needs native metadata and its bounded source projection,
+        # rather than rebuilding score, clock and revision history.
         current = (
             MatchData.objects
             .filter(match_link_id=match_key)
@@ -131,6 +156,11 @@ def read_published_live(
                 "server_time": timezone.now().isoformat(),
                 "last_changed_at": current["live_changed_at"].isoformat(),
                 "live_revision": current["live_revision"],
+                "source_result": (
+                    source_results([match_key]).get(match_key)
+                    if source_results is not None
+                    else None
+                ),
             }
     if shared:
         with suppress(PublicLiveStoreError):
@@ -139,7 +169,7 @@ def read_published_live(
     if envelope is None or (
         since_revision is not None and envelope["revision"] < since_revision
     ):
-        build = partial(build_published_live, match_key)
+        build = partial(build_published_live, match_key, source_results=source_results)
         envelope = (
             store.recover(
                 match_key, since_revision if since_revision is not None else -1, build
@@ -180,6 +210,10 @@ def render_published_live(
                 "server_time": timezone.now().isoformat(),
                 "last_changed_at": payload["last_changed_at"],
                 "live_revision": revision,
+                # Provider observations can change without a native revision.
+                # After the short cache expiry, even an unchanged poll must
+                # deliver their current display state to the client's cache.
+                "source_result": payload.get("source_result"),
             }
         complete = (
             since_revision < revision

@@ -30,6 +30,19 @@ def scheduled_history_client() -> HistoryClient:
     )
 
 
+def source_probe_client(
+    *, app: bool, session_file: Path | None = None
+) -> HistoryClient:
+    """Open only the connections needed by an explicitly authorized source probe."""
+    return HistoryClient(
+        competition_client(
+            session_file=session_file or Path(settings.SPORTLINK_SYNC_SESSION_FILE)
+        )
+        if app
+        else None
+    )
+
+
 def provider_clients() -> tuple[SportlinkClient, HistoryClient]:
     """Open one app session for a provider turn; history reuses its client."""
     client = competition_client(session_file=Path(settings.SPORTLINK_SYNC_SESSION_FILE))

@@ -117,6 +117,32 @@ SPORTLINK_HISTORY_REQUEST_SPACING = max(
     0, int(env("SPORTLINK_HISTORY_REQUEST_SPACING", "1"))
 )
 
+# Opt-in enrichment lane: player photos and club metadata queued outside the
+# active live season, inside the provider turn. Zero requests per turn keeps it
+# closed; enable only with a reviewed preview_historical_photos and a pilot cap.
+SPORTLINK_ENRICHMENT_MAX_REQUESTS = max(
+    0, min(1000, int(env("SPORTLINK_ENRICHMENT_MAX_REQUESTS", "0")))
+)
+# Durable rolling-day cap on the lane's own requests; zero leaves only the
+# provider-wide hourly/daily limits.
+SPORTLINK_ENRICHMENT_DAILY_LIMIT = max(
+    0, int(env("SPORTLINK_ENRICHMENT_DAILY_LIMIT", "0"))
+)
+# The lane's weight among routine requests, relative to live (1 - history share)
+# and history (history share).
+SPORTLINK_ENRICHMENT_SHARE = min(
+    1.0, max(0.0, float(env("SPORTLINK_ENRICHMENT_SHARE", "0.25")))
+)
+# Comma-separated resource kinds the lane may request.
+SPORTLINK_ENRICHMENT_KINDS = [
+    kind.strip()
+    for kind in env(
+        "SPORTLINK_ENRICHMENT_KINDS",
+        "player_photo,club_logo,club_contact,club_sports,club_details",
+    ).split(",")
+    if kind.strip()
+]
+
 # Finished editions the app serves no (or partial) results for. A weekly task
 # reads a few of their empty checkpoints again and imports the edition once the
 # provider serves it; blank disables the recheck.
@@ -125,6 +151,12 @@ SPORTLINK_HISTORY_RECHECK_EDITIONS = [
     for edition in env("SPORTLINK_HISTORY_RECHECK_EDITIONS", "").split(",")
     if edition.strip()
 ]
+
+# Existing published pools receive context only after the bounded repair preview
+# has been reviewed. Zero keeps the publication backlog disabled.
+SPORTLINK_CONTEXT_BACKLOG_LIMIT = max(
+    0, min(5000, int(env("SPORTLINK_CONTEXT_BACKLOG_LIMIT", "0")))
+)
 
 # Bound each worker turn; the shared lease skips overlapping heartbeats.
 SPORTLINK_SYNC_MAX_SECONDS = max(

@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -9,7 +10,12 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.competition.domain.rosters import ROSTER_FRESHNESS
+from apps.competition.domain.rosters import (
+    ROSTER_FRESHNESS,
+    RosterPayloadError,
+    RosterPeriod,
+    roster_target,
+)
 from apps.competition.models import (
     MatchMembership,
     RosterMembership,
@@ -20,7 +26,6 @@ from apps.competition.models import (
 from apps.competition.services.player_photos import discover_photo
 from apps.competition.services.seasons import SeasonResolver
 from apps.player.models import Player
-from apps.schedule.domain.competition_context import FULL_SEASON
 from apps.schedule.models import Season
 from apps.team.models import TeamData
 from apps.team.services.roster_history import reconcile_roster_history
@@ -29,6 +34,8 @@ from apps.team.services.roster_history import reconcile_roster_history
 SOURCE_ID_LIMIT = 80
 NAME_LIMIT = 255
 SHIRT_LIMIT = 10
+PRIVACY_LIMIT = 16
+MAX_DISCOVERY_BATCH = 1000
 VISIBLE_LEVELS = {"OPEN", "NORMAL", "LIMITED"}
 
 
@@ -39,13 +46,15 @@ def import_roster(
     """Replace a complete visible roster atomically and erase withdrawn identities.
 
     Raises:
-        ValueError: A malformed envelope cannot retire an existing roster.
+        RosterPayloadError: A malformed envelope cannot retire an existing roster.
 
     """
-    team = Team.objects.select_for_update().get(season=season, external_id=source_id)
+    team = Team.objects.select_for_update(no_key=True).get(
+        season=season, external_id=source_id
+    )
     rows = data.get("TeamPersonOverview")
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-        raise ValueError("Invalid roster collection")
+        raise RosterPayloadError("collection")
     if team.roster_observed_at and team.roster_observed_at > observed_at:
         return
     visible, hidden = parse_people(rows)
@@ -54,19 +63,23 @@ def import_roster(
     for person_id, (name, shirt, privacy, roles) in visible.items():
         if person_id in hidden:
             continue
-        player, _ = Player.all_objects.get_or_create(
+        player, _ = Player.all_objects.select_for_update(no_key=True).get_or_create(
             knkv_person_id=person_id,
             defaults={"name": name, "knkv_observed_at": observed_at},
         )
-        if player.knkv_observed_at and player.knkv_observed_at > observed_at:
-            continue
         if player.archived_at is not None:
             continue
-        Player.all_objects.filter(pk=player.pk).update(
-            knkv_observed_at=observed_at,
-            knkv_privacy=privacy,
-            **({"name": name} if player.user_id is None else {}),
-        )
+        if player.knkv_observed_at and player.knkv_observed_at > observed_at:
+            # Identity freshness and team membership are independent observations.
+            # An older feed can retain a present member, but cannot undo withdrawal.
+            if player.knkv_privacy not in VISIBLE_LEVELS:
+                continue
+        else:
+            Player.all_objects.filter(pk=player.pk).update(
+                knkv_observed_at=observed_at,
+                knkv_privacy=privacy,
+                **({"name": name} if player.user_id is None else {}),
+            )
         membership, _ = RosterMembership.objects.get_or_create(
             player=player,
             team=team,
@@ -74,7 +87,9 @@ def import_roster(
             defaults={"first_seen_at": observed_at, "last_seen_at": observed_at},
         )
         RosterMembership.objects.filter(pk=membership.pk).update(
-            last_seen_at=observed_at, shirt_number=shirt, roles=roles
+            last_seen_at=max(membership.last_seen_at, observed_at),
+            shirt_number=shirt,
+            roles=roles,
         )
         current.append(membership.pk)
     RosterMembership.objects.filter(team=team, ended_at=None).exclude(
@@ -129,33 +144,50 @@ def withdraw_people(hidden: set[str], season: Season, observed_at: datetime) -> 
     )
 
 
+def _person_contract(row: dict[str, Any]) -> tuple[str, str, str]:
+    """Validate identity, privacy and role even when the row is hidden.
+
+    Raises:
+        RosterPayloadError: The minimal membership contract is malformed.
+
+    """
+    person_id = row.get("PersonId")
+    if (
+        not isinstance(person_id, str)
+        or not person_id
+        or len(person_id) > SOURCE_ID_LIMIT
+    ):
+        raise RosterPayloadError("identity")
+    privacy = row.get("PrivacyLevel")
+    if not isinstance(privacy, str) or not privacy or len(privacy) > PRIVACY_LIMIT:
+        raise RosterPayloadError("privacy")
+    if not isinstance(row.get("TeamPerson"), bool):
+        raise RosterPayloadError("membership")
+    role = row.get("TeamPersonFunction")
+    if not isinstance(role, dict):
+        raise RosterPayloadError("role")
+    role_id = role.get("RoleId")
+    if not isinstance(role_id, str) or not role_id or len(role_id) > SOURCE_ID_LIMIT:
+        raise RosterPayloadError("role")
+    return person_id, privacy, role_id
+
+
 def parse_people(
     rows: list[dict[str, Any]],
 ) -> tuple[dict[str, tuple[str, str, str, list[str]]], set[str]]:
     """Whitelist visible players and minimal fields before applying any writes.
 
     Raises:
-        ValueError: Required player fields are malformed.
-        TypeError: The provider role is not an object.
+        RosterPayloadError: Required player fields are malformed.
 
     """
     visible: dict[str, tuple[str, str, str, list[str]]] = {}
     hidden = set()
     for row in rows:
-        person_id = row.get("PersonId")
-        if (
-            not isinstance(person_id, str)
-            or not person_id
-            or len(person_id) > SOURCE_ID_LIMIT
-        ):
-            raise ValueError("Invalid roster identity")
-        if row.get("PrivacyLevel") not in VISIBLE_LEVELS:
+        person_id, privacy, role_id = _person_contract(row)
+        if privacy not in VISIBLE_LEVELS:
             hidden.add(person_id)
             continue
-        role = row.get("TeamPersonFunction") or {}
-        if not isinstance(role, dict):
-            raise TypeError("Invalid roster role")
-        role_id = role.get("RoleId")
         if row.get("TeamPerson") is not True or role_id not in {
             "PLAYER_DEFAULT",
             "COACHING_STAFF",
@@ -163,67 +195,203 @@ def parse_people(
             "OTHER_STAFF",
         }:
             continue
-        parts = [row.get(key) or "" for key in ("FirstName", "Infix", "LastName")]
-        if any(not isinstance(part, str) for part in parts):
-            raise ValueError("Invalid roster name")
+        parts = [row.get(key) for key in ("FirstName", "Infix", "LastName")]
+        if any(part is not None and not isinstance(part, str) for part in parts):
+            raise RosterPayloadError("name")
+        parts = [part or "" for part in parts]
         name = " ".join(part.strip() for part in parts if part.strip())
         if not name or len(name) > NAME_LIMIT:
-            raise ValueError("Invalid roster name")
-        shirt = str(row.get("ShirtNumber") or "")
+            raise RosterPayloadError("name")
+        shirt_value = row.get("ShirtNumber")
+        if shirt_value is not None and (
+            not isinstance(shirt_value, (int, str)) or isinstance(shirt_value, bool)
+        ):
+            raise RosterPayloadError("shirt")
+        shirt = str(shirt_value) if shirt_value is not None else ""
         if len(shirt) > SHIRT_LIMIT:
-            raise ValueError("Invalid shirt number")
+            raise RosterPayloadError("shirt")
         previous_roles = visible[person_id][3] if person_id in visible else []
         visible[person_id] = (
             name,
             shirt,
-            row["PrivacyLevel"],
+            privacy,
             sorted({*previous_roles, role_id}),
         )
     return visible, hidden
 
 
-def queue_rosters(season: Season, *, refresh_private: bool = False) -> int:
-    """Discover feeds, optionally refreshing successful private-roster snapshots.
+@dataclass(frozen=True, slots=True)
+class RosterQueueSelection:
+    """Scope a discovery page by public variant IDs, sport and stable cursor."""
+
+    sport: str | None = None
+    source_ids: tuple[str, ...] = ()
+    after: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RosterQueuePlan:
+    """A bounded, local-only selection of missing feeds and explicit refreshes."""
+
+    season: Season
+    missing: tuple[str, ...]
+    refresh: tuple[str, ...]
+    next_cursor: str | None
+    counts: dict[str, int]
+
+    def report(self) -> dict[str, object]:
+        """Describe public source IDs and aggregate outcomes without person data."""
+        return {
+            "season": self.season.name,
+            "counts": self.counts,
+            "selected_missing": list(self.missing),
+            "selected_private_refresh": list(self.refresh),
+            "next_cursor": self.next_cursor,
+            "selected_feeds": len(self.missing) + len(self.refresh),
+        }
+
+
+def plan_rosters(
+    season: Season,
+    *,
+    refresh_private: bool = False,
+    limit: int | None = 20,
+    selection: RosterQueueSelection | None = None,
+) -> RosterQueuePlan:
+    """Preview distinct roster discovery without HTTP or database writes.
 
     Raises:
         ValueError: Live rosters cannot be assigned to historical seasons.
+        ValueError: The requested selection exceeds the bounded command contract.
 
     """
+    selection = selection or RosterQueueSelection()
     now = timezone.now()
     if not season.start_date <= timezone.localdate(now) <= season.end_date:
         raise ValueError("Roster feeds only support the current season")
-    before = SyncResource.objects.filter(season=season, kind="team_roster").count()
+    if limit is not None and not 1 <= limit <= MAX_DISCOVERY_BATCH:
+        raise ValueError("Roster selection limit must be between 1 and 1000")
+    requested = tuple(dict.fromkeys(selection.source_ids))
+    if len(requested) > MAX_DISCOVERY_BATCH or any(
+        not isinstance(source_id, str)
+        or not source_id
+        or len(source_id) > SOURCE_ID_LIMIT
+        for source_id in requested
+    ):
+        raise ValueError("Roster source IDs must be bounded nonempty strings")
+    if len(selection.after) > SOURCE_ID_LIMIT:
+        raise ValueError("Roster cursor is too long")
+    teams = Team.objects.filter(season=season)
+    if selection.sport:
+        teams = teams.filter(sport=selection.sport)
+    if requested:
+        teams = teams.filter(external_id__in=requested)
+        if teams.count() != len(requested):
+            raise ValueError("Every selected roster source must belong to the scope")
+    feeds = SyncResource.objects.filter(season=season, kind="team_roster")
+    missing = teams.exclude(external_id__in=feeds.values("source_id"))
+    private = teams.filter(
+        Q(private_roster_counts__players__gt=0) | Q(private_roster_counts__staff__gt=0)
+    )
+    successful_private = feeds.filter(
+        source_id__in=private.values("external_id"),
+        fetched_at__isnull=False,
+        failures=0,
+    )
+    refresh = successful_private if refresh_private else feeds.none()
+    candidates = teams.filter(
+        Q(pk__in=missing.values("pk")) | Q(external_id__in=refresh.values("source_id")),
+        external_id__gt=selection.after,
+    ).order_by("external_id")
+    selected = list(
+        candidates.values_list("external_id", flat=True)[
+            : None if limit is None else limit + 1
+        ]
+    )
+    more = limit is not None and len(selected) > limit
+    if more:
+        selected = selected[:limit]
+    missing_ids = set(
+        missing.filter(external_id__in=selected).values_list("external_id", flat=True)
+    )
+    return RosterQueuePlan(
+        season=season,
+        missing=tuple(source_id for source_id in selected if source_id in missing_ids),
+        refresh=tuple(
+            source_id for source_id in selected if source_id not in missing_ids
+        ),
+        next_cursor=selected[-1] if more else None,
+        counts={
+            "known_variants": teams.count(),
+            "missing_feeds": missing.count(),
+            "unobserved_missing_feeds": missing.filter(roster_observed_at=None).count(),
+            "observed_empty": teams
+            .filter(
+                roster_observed_at__isnull=False,
+                private_roster_counts__players=0,
+                private_roster_counts__staff=0,
+            )
+            .exclude(
+                pk__in=RosterMembership.objects.filter(ended_at=None).values("team_id")
+            )
+            .count(),
+            "private_feeds": private.count(),
+            "successful_private_refresh": successful_private.count(),
+            "selected": len(selected),
+        },
+    )
+
+
+@transaction.atomic
+def apply_roster_plan(plan: RosterQueuePlan) -> int:
+    """Queue only selected feeds; preserve failed and already pending work.
+
+    Raises:
+        ValueError: The selected source season is no longer current.
+
+    """
+    now = timezone.now()
+    if not plan.season.start_date <= timezone.localdate(now) <= plan.season.end_date:
+        raise ValueError("Roster feeds only support the current season")
+    feeds = SyncResource.objects.filter(
+        season=plan.season, kind="team_roster", source_id__in=plan.missing
+    )
+    before = feeds.count()
     SyncResource.objects.bulk_create(
         [
             SyncResource(
-                season=season, kind="team_roster", source_id=source_id, next_sync_at=now
+                season=plan.season,
+                kind="team_roster",
+                source_id=source_id,
+                next_sync_at=now,
             )
-            for source_id in Team.objects.filter(season=season).values_list(
-                "external_id", flat=True
-            )
+            for source_id in Team.objects.filter(
+                season=plan.season, external_id__in=plan.missing
+            ).values_list("external_id", flat=True)
         ],
         ignore_conflicts=True,
         batch_size=1000,
     )
-    refreshed = 0
-    if refresh_private:
-        affected = Team.objects.filter(season=season).filter(
-            Q(private_roster_counts__players__gt=0)
-            | Q(private_roster_counts__staff__gt=0)
-        )
-        # Preserve active/pending requests and retry ceilings. Only successful
-        # snapshots need a fresh body to repair their anonymous counts.
-        refreshed = SyncResource.objects.filter(
-            season=season,
-            kind="team_roster",
-            source_id__in=affected.values("external_id"),
-            fetched_at__isnull=False,
-            failures=0,
-        ).update(fetched_at=None, etag="", next_sync_at=now)
-    return (
-        SyncResource.objects.filter(season=season, kind="team_roster").count()
-        - before
-        + refreshed
+    # A stale preview cannot reset a failure ceiling or duplicate pending work.
+    affected = Team.objects.filter(
+        season=plan.season, external_id__in=plan.refresh
+    ).filter(
+        Q(private_roster_counts__players__gt=0) | Q(private_roster_counts__staff__gt=0)
+    )
+    refreshed = SyncResource.objects.filter(
+        season=plan.season,
+        kind="team_roster",
+        source_id__in=affected.values("external_id"),
+        fetched_at__isnull=False,
+        failures=0,
+    ).update(fetched_at=None, etag="", next_sync_at=now)
+    return feeds.count() - before + refreshed
+
+
+def queue_rosters(season: Season, *, refresh_private: bool = False) -> int:
+    """Preserve the existing service's explicit, idempotent full-scope queue API."""
+    return apply_roster_plan(
+        plan_rosters(season, refresh_private=refresh_private, limit=None)
     )
 
 
@@ -339,32 +507,26 @@ def participation_targets(
     falls back to the team's default season. Observations never reach back into
     earlier periods, so current rosters are not projected onto history.
     """
-    periods: dict[int, list[TeamParticipation]] = defaultdict(list)
+    periods: dict[int, list[RosterPeriod]] = defaultdict(list)
     for participation in TeamParticipation.objects.filter(
         team__group_id=group_id
     ).select_related("team_data__season"):
-        periods[participation.team_id].append(participation)
+        periods[participation.team_id].append(
+            RosterPeriod(
+                team_data_id=participation.team_data_id,
+                start_date=participation.team_data.season.start_date,
+                end_date=participation.team_data.season.end_date,
+                phase=participation.phase,
+                order=participation.pk,
+            )
+        )
 
     def target(row: RosterMembership) -> int | None:
-        day = timezone.localdate(row.last_seen_at)
-        running = [
-            participation
-            for participation in periods.get(row.team_id, [])
-            if participation.team_data.season.start_date
-            <= day
-            <= participation.team_data.season.end_date
-        ]
-        if running:
-            chosen = min(
-                running,
-                key=lambda item: (
-                    item.phase == FULL_SEASON,
-                    item.team_data.season.start_date,
-                    item.pk,
-                ),
-            )
-            return chosen.team_data_id
-        return row.team.local_team_data_id or fallback
+        return roster_target(
+            row.last_seen_at,
+            periods.get(row.team_id, []),
+            row.team.local_team_data_id or fallback,
+        )
 
     return target
 

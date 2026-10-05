@@ -12,6 +12,7 @@ from apps.game_tracker.application.ports import (
     PublicLiveStoreError,
     PublicMatchReadRuntime,
     PublishedLiveStore,
+    SourceResultReader,
 )
 from apps.game_tracker.models import MatchData, MatchLiveChange
 from apps.game_tracker.queries.match_summaries import build_match_summaries
@@ -33,7 +34,10 @@ def resource_key(match_id: str, resource: str) -> str:
 
 
 def build_public_match_reads(
-    match_id: str, *, forecast: MatchForecaster
+    match_id: str,
+    *,
+    forecast: MatchForecaster,
+    source_results: SourceResultReader | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Build all public resources once from a consistent, non-locking snapshot."""
     started = time()
@@ -51,7 +55,7 @@ def build_public_match_reads(
         if data is None:
             return {}
         match = data.match_link
-        summary = build_match_summaries([data])[0]
+        summary = build_match_summaries([data], source_results=source_results)[0]
         summary["prediction"] = forecast(match)
         payloads = {
             "summary": summary,
@@ -122,7 +126,7 @@ def build_public_match_reads(
 def publish_public_match_reads(*, match_id: str, reads: PublicMatchReadRuntime) -> None:
     """Publish shared resources before notifying their readers."""
     for resource, envelope in build_public_match_reads(
-        match_id, forecast=reads.forecast
+        match_id, forecast=reads.forecast, source_results=reads.source_results
     ).items():
         reads.store.put(resource_key(match_id, resource), envelope)
 
@@ -186,7 +190,9 @@ def read_public_match_resource(
     ):
 
         def build() -> dict[str, Any] | None:
-            envelopes = build_public_match_reads(match_id, forecast=reads.forecast)
+            envelopes = build_public_match_reads(
+                match_id, forecast=reads.forecast, source_results=reads.source_results
+            )
             for name, value in envelopes.items():
                 with suppress(PublicLiveStoreError):
                     store.put(resource_key(match_id, name), value)

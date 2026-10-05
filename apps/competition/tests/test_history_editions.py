@@ -25,6 +25,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.full_year_repair import split_poules
 from apps.competition.services.history_editions import (
+    apply_edition_match,
     current_edition,
     edition_log,
     edition_summary,
@@ -803,6 +804,29 @@ def test_command_queues_lineups_for_an_already_imported_edition() -> None:
             "import_competition_history", "lineups", "--edition", "2024", stdout=out
         )
         assert f'"lineups_queued": {expected}' in out.getvalue()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("status", "when"),
+    [
+        ("SUSPENDED", "2024-09-14T15:00:00+0200"),
+        ("FINAL", "2025-04-19T15:00:00+0200"),
+    ],
+)
+def test_match_detail_keeps_its_full_year_poule_season(status: str, when: str) -> None:
+    """A suspended or rescheduled detail never moves out of its decided poule."""
+    seed_edition_with_team("T1", OUTDOOR)
+    run([FetchResult(200, {"Pool": [{"PoolId": 7}]})])
+    run([FetchResult(200, full_year_pool())])
+    detail = HistoricalResource.objects.get(kind="match", source_id="M1")
+    apply_edition_match(
+        detail, {**row("M1", when), "Status": status, "HomeResult": {"Score": 8}}
+    )
+    match = Match.objects.select_related("season", "pool__season").get(external_id="M1")
+    assert match.season.name == match.pool.season.name == FULL_YEAR
+    assert set(Match.objects.values_list("external_id", flat=True)) == {"M1", "M2"}
+    assert Pool.objects.count() == 1
 
 
 @pytest.mark.django_db

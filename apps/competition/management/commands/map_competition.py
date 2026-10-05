@@ -11,7 +11,13 @@ from django.db import models, transaction
 
 from apps.competition.domain.classification import designation
 from apps.competition.models import Match, Pool, PoolEntry, Team
-from apps.competition.services.classification import map_pool, plan_pool
+from apps.competition.services.classification import (
+    MAX_CLASS_BATCH,
+    map_pool,
+    plan_pool,
+    relevel_classes,
+)
+from apps.schedule.models import Season
 from apps.schedule.queries.seasons import season_edition
 
 
@@ -27,6 +33,13 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--overrides", type=Path)
         parser.add_argument("--output", type=Path)
+        parser.add_argument("--limit", type=int, default=200)
+        parser.add_argument("--after", type=int, default=0)
+        parser.add_argument(
+            "--relevel",
+            action="store_true",
+            help="Recompute existing class levels from their immutable keys only",
+        )
 
     @transaction.atomic
     def handle(self, *args: object, **options: object) -> None:
@@ -37,17 +50,31 @@ class Command(BaseCommand):
 
         """
         parameters: dict[str, Any] = dict(options)
+        if not 0 < parameters["limit"] <= MAX_CLASS_BATCH or parameters["after"] < 0:
+            raise CommandError("--limit must be 1-5000 and --after nonnegative")
+        if parameters["relevel"]:
+            try:
+                report = relevel_classes(
+                    season=Season.objects.get(name=parameters["season"]),
+                    apply=parameters["apply"],
+                    limit=parameters["limit"],
+                    after=parameters["after"],
+                )
+            except Season.DoesNotExist as exc:
+                raise CommandError("Unknown season") from exc
+            self._write_report(report, parameters["output"])
+            return
         query = (
             Pool.objects
-            .filter(season__name=parameters["season"])
+            .filter(season__name=parameters["season"], pk__gt=parameters["after"])
             .select_related("season", "competition_class__edition")
-            .order_by("external_id")
+            .order_by("pk")
         )
         if parameters["pool"]:
             query = query.filter(external_id__in=parameters["pool"])
         if parameters["apply"]:
-            query = query.select_for_update(of=("self",))
-        rows = list(query)
+            query = query.select_for_update(of=("self",), no_key=True)
+        rows = list(query[: parameters["limit"]])
         overrides = {}
         try:
             if parameters["overrides"]:
@@ -55,35 +82,17 @@ class Command(BaseCommand):
             decisions = review_decisions(rows, overrides)
         except (ValueError, OSError, TypeError) as error:
             raise CommandError(str(error)) from error
-        report_rows = []
-        counts = Counter()
-        for pool, before, after in decisions:
-            changed = (
-                before != after
-                or pool.mapping_version != after["version"]
-                or pool.mapping_evidence != after["evidence"]
-            )
-            if parameters["apply"]:
-                if pool.external_id in overrides:
-                    Pool.objects.filter(pk=pool.pk).update(
-                        mapping_override=pool.mapping_override
-                    )
-                result = map_pool(pool)
-                changed = result["changed"]
-            counts[after["status"]] += 1
-            counts["changed"] += int(changed)
-            report_rows.append({
-                "pool": pool.external_id,
-                "name": pool.name,
-                "before": {
-                    "status": pool.mapping_status,
-                    "evidence": pool.mapping_evidence,
-                },
-                "after": after,
-            })
-        teams = Team.objects.filter(season__name=parameters["season"]).select_related(
-            "season", "group"
+        report_rows, counts = mapping_report_rows(
+            decisions, overrides, apply=parameters["apply"]
         )
+        team_ids = set(
+            PoolEntry.objects.filter(pool__in=rows).values_list("team_id", flat=True)
+        )
+        for home, away in Match.objects.filter(pool__in=rows).values_list(
+            "home_team_id", "away_team_id"
+        ):
+            team_ids.update((home, away))
+        teams = Team.objects.filter(pk__in=team_ids).select_related("season", "group")
         team_counts = Counter(
             designation(team.name, season_edition(team.season))["kind"]
             for team in teams
@@ -99,6 +108,7 @@ class Command(BaseCommand):
             "applied": parameters["apply"],
             "scope": "Local discovered records only; provider completeness is unknown",
             "pools": len(rows),
+            "next_after": rows[-1].pk if len(rows) == parameters["limit"] else None,
             "counts": dict(counts),
             "labels": dict(Counter(row.class_name for row in rows)),
             "team_designations": dict(team_counts),
@@ -109,9 +119,13 @@ class Command(BaseCommand):
             ).count(),
             "decisions": report_rows,
         }
+        self._write_report(report, parameters["output"])
+
+    def _write_report(self, report: dict, destination: Path | None) -> None:
+        """Write the same concrete report to stdout or a requested file."""
         output = json.dumps(report, indent=2, sort_keys=True)
-        if parameters["output"]:
-            parameters["output"].write_text(output + "\n")
+        if destination:
+            destination.write_text(output + "\n")
         else:
             self.stdout.write(output)
 
@@ -148,3 +162,36 @@ def review_decisions(rows: list[Pool], overrides: dict) -> list:
         after = plan_pool(pool)
         decisions.append((pool, before, after))
     return decisions
+
+
+def mapping_report_rows(
+    decisions: list, overrides: dict, *, apply: bool
+) -> tuple[list, Counter]:
+    """Apply reviewed pool decisions and count their bounded outcomes."""
+    report_rows = []
+    counts = Counter()
+    for pool, before, after in decisions:
+        changed = (
+            before != after
+            or pool.mapping_version != after["version"]
+            or pool.mapping_evidence != after["evidence"]
+        )
+        if apply:
+            if pool.external_id in overrides:
+                Pool.objects.filter(pk=pool.pk).update(
+                    mapping_override=pool.mapping_override
+                )
+            result = map_pool(pool)
+            changed = result["changed"]
+        counts[after["status"]] += 1
+        counts["changed"] += int(changed)
+        report_rows.append({
+            "pool": pool.external_id,
+            "name": pool.name,
+            "before": {
+                "status": pool.mapping_status,
+                "evidence": pool.mapping_evidence,
+            },
+            "after": after,
+        })
+    return report_rows, counts

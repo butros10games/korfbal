@@ -22,14 +22,46 @@ from apps.competition.domain.competition_periods import (
     indoor_parts,
     outdoor_phase,
 )
-from apps.competition.models import Match, Pool, PoolEntry
-from apps.competition.services.allocations import realign_pool_allocations
+from apps.competition.models import Match, Pool, PoolEntry, SeasonBinding
 from apps.competition.services.classification import map_pool
+from apps.competition.services.seasons import target_season
 from apps.schedule.queries.seasons import season_edition
 
 
 OUTDOOR_SPORT = "KORFBALL-VE-WK"
 INDOOR_SPORT = "KORFBALL-ZA-WK"
+PERIOD_VERSION = "knkv-pool-period-v2"
+MAX_PERIOD_BATCH = 5000
+
+
+def period_backlog(limit: int = 200) -> list[int]:
+    """Select never-attempted blank contexts in one indexed bounded batch.
+
+    Raises:
+        ValueError: The batch limit is invalid.
+
+    """
+    if not 0 < limit <= MAX_PERIOD_BATCH:
+        raise ValueError("Period backlog limit must be between 1 and 5000")
+    return list(
+        Pool.objects
+        .filter(phase="", phase_evidence={})
+        .order_by("pk")
+        .values_list("pk", flat=True)[:limit]
+    )
+
+
+def season_phase_mismatch(pool: Pool, phase: str | None) -> bool:
+    """Self-routed playing seasons cannot silently turn into another period."""
+    return bool(
+        phase
+        and pool.season.phase in {"autumn", "spring", "indoor", "full_season"}
+        and pool.season.phase != phase
+        and not SeasonBinding.objects
+        .filter(scope=pool.season)
+        .exclude(season=pool.season)
+        .exists()
+    )
 
 
 def decide_pool_period(
@@ -41,9 +73,9 @@ def decide_pool_period(
         The phase decision; indoor parts need team evidence and are added later.
 
     """
-    if sport == INDOOR_SPORT:
+    if sport in {INDOOR_SPORT, "KORFBALL-ZA-BK"}:
         return PhaseDecision(INDOOR, {"reason": "discipline"})
-    if sport != OUTDOOR_SPORT or edition is None:
+    if sport not in {OUTDOOR_SPORT, "KORFBALL-VE-BK"} or edition is None:
         return PhaseDecision(None, {"reason": "unsupported_context"})
     label = classify(class_name, sport, edition)[0].phase
     return outdoor_phase(
@@ -98,6 +130,16 @@ def resolve_pool_periods(pool_ids: Iterable[int]) -> dict[str, int]:
             edition=season_edition(pool.season),
             days=days[pool.pk],
         )
+        if season_phase_mismatch(pool, decision.phase):
+            decision = PhaseDecision(
+                None,
+                {
+                    **decision.evidence,
+                    "observed_phase": decision.phase,
+                    "season_phase": pool.season.phase,
+                    "reason": "season_phase_mismatch",
+                },
+            )
         part = parts.get(pool.pk)
         _apply(pool, decision, part, frozen=pool.pk in frozen, counts=counts)
     return counts
@@ -114,10 +156,25 @@ def _apply(
     """Store a decision; published periods only gain review evidence."""
     phase = decision.phase or ""
     number = part.evidence.get("part") if part else None
-    evidence: dict[str, Any] = {"decision": decision.evidence}
+    evidence: dict[str, Any] = {
+        "version": PERIOD_VERSION,
+        "decision": decision.evidence,
+    }
     if part is not None:
         evidence["part"] = part.evidence
-    if (
+    target = target_season(pool.season, pool.sport, phase)
+    route_conflict = (
+        frozen
+        and phase
+        and (
+            target is None
+            or Match.objects
+            .filter(pool=pool, local_match__isnull=False)
+            .exclude(local_match__season=target)
+            .exists()
+        )
+    )
+    if route_conflict or (
         frozen
         and pool.phase
         and (phase, number)
@@ -126,7 +183,17 @@ def _apply(
             pool.competition_part,
         )
     ):
-        evidence = {**pool.phase_evidence, "review": {"observed": phase, **evidence}}
+        evidence = {
+            **pool.phase_evidence,
+            "version": PERIOD_VERSION,
+            "review": {
+                "observed": phase,
+                "reason": "season_repair_required"
+                if route_conflict
+                else "period_changed",
+                **evidence,
+            },
+        }
         values: dict[str, Any] = {"phase_evidence": evidence}
         counts["conflicts"] += 1
     elif frozen and pool.phase:
@@ -159,8 +226,8 @@ def _apply(
         if "phase" in changed:
             # The class (and linked allocation baselines) follow the period's
             # native season, exactly as routing does.
-            map_pool(pool)
-            counts["allocations_realigned"] += realign_pool_allocations(pool)
+            result = map_pool(pool)
+            counts["allocations_realigned"] += result["allocations_realigned"]
 
 
 def four_player(pool: Pool) -> bool:

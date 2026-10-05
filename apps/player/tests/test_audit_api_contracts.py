@@ -13,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 import pytest
 
+from apps.game_tracker.composition import read_source_results
 from apps.kwt_common.models import BackgroundJob
 from apps.kwt_common.tests.api_test_support import assert_api_error
 from apps.player.models.player import Player
@@ -337,6 +338,7 @@ def test_connected_results_normalises_query_parameters(
         limit=expected_limit,
         days=expected_days,
         season_id="11111111-1111-4111-8111-111111111111",
+        source_results=read_source_results,
     )
     assert (
         recent_results.call_args.kwargs["player"].id_uuid == _player_for(user).id_uuid

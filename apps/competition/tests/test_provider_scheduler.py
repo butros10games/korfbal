@@ -16,6 +16,7 @@ from apps.competition.models import HistoricalResource, SyncLease, SyncResource
 from apps.competition.services.history import HistoryUnavailableError
 from apps.competition.services.history_editions import prepare_edition, seed_many
 from apps.competition.services.provider_scheduler import (
+    ENRICHMENT,
     HISTORY,
     LIVE,
     ProviderTurn,
@@ -172,7 +173,7 @@ def test_turn_alternates_routine_live_work_and_history(live_season: Season) -> N
     recorder = Recorder()
     result = turn(live_season, recorder)
     assert [source for source, _ in recorder.log] == [HISTORY, LIVE, HISTORY, LIVE]
-    assert result["turn_requests"] == {LIVE: 2, HISTORY: 2}
+    assert result["turn_requests"] == {LIVE: 2, HISTORY: 2, ENRICHMENT: 0}
     assert SyncLease.objects.get(key="sportlink").owner is None
     assert not result["more_work"]
 
@@ -234,7 +235,7 @@ def test_history_runs_without_an_active_live_season() -> None:
     recorder = Recorder()
     result = turn(None, recorder)
     assert [source for source, _ in recorder.log] == [HISTORY, HISTORY]
-    assert result["turn_requests"] == {LIVE: 0, HISTORY: 2}
+    assert result["turn_requests"] == {LIVE: 0, HISTORY: 2, ENRICHMENT: 0}
 
 
 @pytest.mark.django_db
@@ -266,7 +267,7 @@ def test_task_runs_the_unified_turn_and_chains_more_work(
         patch.object(run_provider_turn, "apply_async") as chain,
     ):
         result = run_provider_turn()
-    assert result["turn_requests"] == {LIVE: 1, HISTORY: 1}
+    assert result["turn_requests"] == {LIVE: 1, HISTORY: 1, ENRICHMENT: 0}
     chain.assert_not_called()
 
 
@@ -304,7 +305,7 @@ def test_history_source_access_problems_leave_live_work_running(
     history_pools(2)
     recorder = Recorder(history_error=HistoryUnavailableError("access_denied"))
     result = turn(live_season, recorder)
-    assert result["turn_requests"] == {LIVE: 2, HISTORY: 1}
+    assert result["turn_requests"] == {LIVE: 2, HISTORY: 1, ENRICHMENT: 0}
     assert SyncLease.objects.get(key="sportlink").expires_at <= timezone.now()
 
 

@@ -30,6 +30,7 @@ from apps.team.models import Team
 pytestmark = pytest.mark.django_db
 # Results (home and away), poules, ratings (home and away), seasons, teams, club.
 MAX_HISTORY_QUERIES = 9
+LADDER_FIELDS = {"ladder_id", "hierarchy_revision", "level_reason"}
 
 
 def season(name: str, edition: int, phase: str, start: date, end: date) -> Season:
@@ -209,18 +210,27 @@ def test_team_history_lists_every_season_with_results_poule_and_elo(
 
     assert response.status_code == HTTPStatus.OK
     newest, oldest = response.json()["seasons"]
-    assert newest["season_name"] == "Zaal 2024"
-    assert newest["poules"] == [
-        {
-            "id": str(new_pool.pk),
-            "name": "O1",
-            "class_name": "Hoofdklasse",
-            "level": 2,
-            # A table filtered to one club's results is no reliable position.
-            "position": None,
-            "teams": None,
-        }
-    ]
+    assert (newest["season_name"], newest["phase"]) == ("Zaal 2024", "indoor")
+    [poule] = newest["poules"]
+    assert {"ladder_id", "hierarchy_revision", "level_reason"} <= poule.keys()
+    assert {key: poule[key] for key in poule.keys() - LADDER_FIELDS} == {
+        "id": str(new_pool.pk),
+        "name": "O1",
+        "class_name": "Hoofdklasse",
+        "class_code": "hoofdklasse",
+        "level": 2,
+        "competition_part": None,
+        # A table filtered to one club's results is no reliable position.
+        "position": None,
+        "observed_position": None,
+        "teams": None,
+        "table_source": "none",
+        "table_status": "unknown",
+        "fixture_coverage": "unknown",
+        "penalty_points": None,
+        "tied": False,
+        "is_champion": False,
+    }
     assert newest["rating"] is None
     assert {
         key: oldest[key]
@@ -249,7 +259,87 @@ def test_team_history_lists_every_season_with_results_poule_and_elo(
         "rating": 1625.0,
         "rating_change": 25.0,
     }
-    assert (oldest["poules"][0]["position"], oldest["poules"][0]["teams"]) == (5, 8)
+    old_poule = oldest["poules"][0]
+    # An official table without final evidence is observed, not a final position.
+    assert (
+        old_poule["position"],
+        old_poule["observed_position"],
+        old_poule["teams"],
+        old_poule["table_source"],
+        old_poule["table_status"],
+    ) == (None, 5, 8, "official", "unknown")
+
+
+def test_history_never_turns_a_first_place_into_a_championship(
+    client: Client,
+) -> None:
+    """Older apps call position 1 a champion; only final official evidence may."""
+    team = Team.objects.create(name="1", club=Club.objects.create(name="Leaders"))
+    generated = SeasonPool.objects.create(
+        season=season("Zaal 2022", 2022, "indoor", date(2022, 11, 1), date(2023, 3, 1)),
+        name="G1",
+    )
+    final = SeasonPool.objects.create(
+        season=season("Zaal 2023", 2023, "indoor", date(2023, 11, 1), date(2024, 3, 1)),
+        name="F1",
+    )
+    standing(team, generated, level=1, positions=("1", "2"))
+    standing(team, final, level=1, positions=("1", "1", "3"))
+    for entry in PoolEntry.objects.filter(pool__local_pool=generated):
+        # A generated table with equal points orders its leaders approximately.
+        entry.computed_standing = {**entry.standing, "TotalPoints": 4}
+        entry.standing = {}
+        entry.save(update_fields=("standing", "computed_standing"))
+    PoolEntry.objects.filter(
+        pool__local_pool=final, team__group__local_team=team
+    ).update(standing={"Position": "1", "TotalPoints": 9, "PenaltyPoints": 2})
+    Pool.objects.filter(local_pool=final).update(
+        standings_provenance={
+            "official_digest": "a" * 32,
+            "official": {
+                "status": "final",
+                "evidence": {
+                    "kind": "official-final-review-v1",
+                    "reference": "synthetic reviewed source",
+                    "table_digest": "a" * 32,
+                },
+            },
+        }
+    )
+
+    newest, oldest = client.get(f"/api/team/teams/{team.pk}/history/").json()["seasons"]
+
+    fields = (
+        "position",
+        "observed_position",
+        "teams",
+        "table_source",
+        "table_status",
+        "penalty_points",
+        "tied",
+        "is_champion",
+    )
+    assert {key: oldest["poules"][0][key] for key in fields} == {
+        "position": None,
+        "observed_position": 1,
+        "teams": 2,
+        "table_source": "computed",
+        "table_status": "provisional",
+        "penalty_points": None,
+        "tied": True,
+        "is_champion": False,
+    }
+    # A proven final official first place is a shared pool win, not a title.
+    assert {key: newest["poules"][0][key] for key in fields} == {
+        "position": 1,
+        "observed_position": 1,
+        "teams": 3,
+        "table_source": "official",
+        "table_status": "final",
+        "penalty_points": 2,
+        "tied": True,
+        "is_champion": False,
+    }
 
 
 def test_club_history_totals_each_korfbal_year_and_lists_active_teams_first(

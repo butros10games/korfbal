@@ -58,7 +58,8 @@ def notify_schedule_change(
     # The claim and per-recipient durable delivery intents commit together.
     if not SourceMatch.objects.filter(
         local_match_id=match_id,
-        published_schedule=expected,
+        published_schedule__starts_at=expected["starts_at"],
+        published_schedule__status=expected["status"],
         schedule_notification_id=notification_id,
     ).update(schedule_notification_id=None):
         return

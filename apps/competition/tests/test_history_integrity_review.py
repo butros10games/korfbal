@@ -17,6 +17,7 @@ from apps.competition.models import (
     PoolEntry,
     ResultRevision,
     SyncLease,
+    SyncResource,
 )
 from apps.competition.services.history import (
     pool_coverage,
@@ -27,6 +28,7 @@ from apps.competition.services.history_archive import import_archive
 from apps.competition.services.history_checkpoint import checkpoint
 from apps.competition.services.history_worker import local_work
 from apps.competition.services.importer import Importer
+from apps.competition.services.match_details import metadata_context
 from apps.competition.tests.test_history import old_match, old_pool
 from apps.competition.tests.test_importer import team_payload
 from apps.schedule.models import Season
@@ -126,6 +128,11 @@ def test_duplicate_result_rows_do_not_add_database_work(history_season: Season) 
     """Overlapping identical rows are normalized once within each response."""
     row = old_match()
     now = timezone.now()
+    Importer(history_season, now, discover=False).apply(
+        "club_results", "", {"MatchResult": [row]}
+    )
+    # The first fixture adds pool membership after classification runs. Settle
+    # its membership evidence so both captures start from the same source state.
     Importer(history_season, now, discover=False).apply(
         "club_results", "", {"MatchResult": [row]}
     )
@@ -314,15 +321,66 @@ def test_moving_an_app_match_invalidates_its_former_pool_coverage(
 def test_enclosing_pool_reassigns_summaries_that_omit_their_pool(
     history_season: Season,
 ) -> None:
-    """The verified enclosing pool corrects a stale association in summary rows."""
+    """Enclosing-pool corrections invalidate metadata while preserving backoff."""
     former = seed(history_season, "app", "pool", "10")
     checkpoint(former, old_pool())
+    match = Match.objects.get()
+    observed = timezone.now()
+    duration = 60
+    match.playing_time_observed_at = observed
+    match.rules_observed_at = observed
+    match.facility_observed_at = observed
+    match.playing_time_minutes = duration
+    match.match_rules = {"timeout": True}
+    match.facility_details = {"name": "Synthetic venue"}
+    match.metadata_observations = {
+        kind: {
+            "state": "available",
+            "context": metadata_context(match, kind),
+            "observed_at": observed.isoformat(),
+        }
+        for kind in ("match_timing", "match_rules", "match_facility")
+    }
+    match.save()
+    due = observed + timedelta(days=1)
+    healthy = SyncResource.objects.create(
+        season=history_season,
+        kind="match_rules",
+        source_id="M1",
+        next_sync_at=due,
+        etag="healthy-validator",
+    )
+    failed = SyncResource.objects.create(
+        season=history_season,
+        kind="match_timing",
+        source_id="M1",
+        next_sync_at=due,
+        etag="failed-validator",
+        failures=2,
+    )
     current = seed(history_season, "app", "pool", "11")
     data = old_pool()
     data["MatchResult"][0].pop("Pool")
     checkpoint(current, data)
     former.refresh_from_db()
-    assert Match.objects.get().pool.external_id == "11"
+    match.refresh_from_db()
+    healthy.refresh_from_db()
+    failed.refresh_from_db()
+    assert match.pool.external_id == "11"
+    assert match.playing_time_observed_at is None
+    assert match.rules_observed_at is None
+    assert match.metadata_observations["match_timing"]["state"] == "stale"
+    assert match.metadata_observations["match_rules"]["state"] == "stale"
+    assert match.playing_time_minutes == duration
+    assert match.match_rules == {"timeout": True}
+    assert match.facility_observed_at == observed
+    assert healthy.next_sync_at <= timezone.now()
+    assert not healthy.etag
+    assert (failed.next_sync_at, failed.etag, failed.failures) == (
+        due,
+        "failed-validator",
+        2,
+    )
     assert former.coverage == "partial"
     assert current.coverage == "complete"
 

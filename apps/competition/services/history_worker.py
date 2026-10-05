@@ -104,13 +104,17 @@ def current_work_due(*, include_results: bool = True) -> bool:
     )
 
 
-def next_resource() -> HistoricalResource | None:
+def next_resource(
+    *, resource_ids: frozenset[int] | None = None
+) -> HistoricalResource | None:
     """Prefer bulk poule discovery over per-match enrichment, newest scope first.
 
     Lineups wait until no other historical work is ready, so every edition's
     matches are imported before any lineup request is sent.
     """
     pending = HistoricalResource.objects.filter(state="pending")
+    if resource_ids is not None:
+        pending = pending.filter(pk__in=resource_ids)
     ready = pending.filter(next_attempt_at__lte=timezone.now()).select_related("season")
     found = discovery_resource(ready)
     if found is not None or pending.filter(kind__in=DISCOVERY_KINDS).exists():

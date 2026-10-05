@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Q, QuerySet
+from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 
 from apps.competition.models import (
@@ -31,6 +31,7 @@ from apps.competition.models import (
 from apps.competition.services.clock_twins import untouched
 from apps.competition.services.computed_standings import (
     refresh_computed_standings,
+    refresh_generated_standings,
 )
 from apps.competition.services.history import (
     ARCHIVE_PREFIX,
@@ -47,6 +48,7 @@ from apps.competition.services.history_editions import (
     prepare_edition,
     route,
 )
+from apps.competition.services.history_integrity import is_self_fixture, unique_matches
 from apps.competition.services.importer import Importer
 from apps.competition.services.seasons import OUTDOOR
 from apps.schedule.domain.competition_context import FULL_SEASON, edition_bounds
@@ -440,6 +442,7 @@ def remove_site_matches(query: QuerySet[Match]) -> set[str]:
         and not (match.local_created and untouched(match.local_match))
     }
     gone = [match for match in matches if match.external_id not in kept]
+    touched = {match.pool_id for match in gone if match.pool_id is not None}
     keys = [match.pk for match in gone]
     fixtures = [match.local_match_id for match in gone if match.local_match_id]
     Match.objects.filter(pk__in=keys).update(local_match=None)
@@ -447,17 +450,20 @@ def remove_site_matches(query: QuerySet[Match]) -> set[str]:
     Match.objects.filter(pk__in=keys).delete()
     for pool in (
         Pool.objects
-        .filter(pk__in={match.pool_id for match in gone if match.pool_id})
-        .exclude(Exists(Match.objects.filter(pool=OuterRef("pk"))))
+        .filter(pk__in=touched)
+        .exclude(pk__in=Match.objects.filter(pool_id__in=touched).values("pool_id"))
         .select_related("local_pool")
     ):
         local = pool.local_pool
         pool.delete()
         if local is not None and not AppMatch.objects.filter(pool=local).exists():
             local.delete()
+    if touched:
+        refresh_generated_standings(touched)
     return kept
 
 
+@transaction.atomic
 def import_site_rows(
     resource: HistoricalResource, rows: list[dict | str]
 ) -> dict[str, Any]:
@@ -467,9 +473,13 @@ def import_site_rows(
         Imported counts per season name and skipped counts per reason.
 
     """
+    accepted = unique_matches(row for row in rows if isinstance(row, dict))
     seasons = edition_seasons(resource)
     skipped: Counter[str] = Counter(row for row in rows if isinstance(row, str))
-    unique = {row["PublicMatchId"]: row for row in rows if isinstance(row, dict)}
+    skipped["self_fixture"] += sum(is_self_fixture(row) for row in accepted)
+    unique = {
+        str(row["PublicMatchId"]): row for row in accepted if not is_self_fixture(row)
+    }
     clubs = {
         club.external_id: club
         for club in Club.objects.filter(
@@ -549,10 +559,12 @@ def import_site_rows(
         fresh = [row for row in group if row["PublicMatchId"] not in in_use]
         skipped["half_copy_in_use"] += len(group) - len(fresh)
         if fresh:
-            Importer(
+            importer = Importer(
                 target, now, discover=False, window=edition_bounds(seasons.edition)
-            ).apply("club_results", "", {"MatchResult": fresh})
-            imported[target.name] = len(fresh)
+            )
+            importer.apply("club_results", "", {"MatchResult": fresh})
+            imported[target.name] = len(importer.observed_match_ids)
+            skipped["not_persisted"] += len(fresh) - len(importer.observed_match_ids)
             # A site has results but no standings: compute the poules' tables.
             refresh_computed_standings(
                 Pool.objects.filter(
@@ -560,7 +572,11 @@ def import_site_rows(
                     external_id__in={row["Pool"]["PoolId"] for row in fresh},
                 ).values_list("pk", flat=True)
             )
-    return {"imported": imported, "skipped": dict(+skipped)}
+    return {
+        "imported": imported,
+        "skipped": dict(+skipped),
+        "duplicate_matches": sum(isinstance(row, dict) for row in rows) - len(accepted),
+    }
 
 
 def apply_site(resource: HistoricalResource, data: dict[str, Any]) -> None:
@@ -606,7 +622,9 @@ def apply_site(resource: HistoricalResource, data: dict[str, Any]) -> None:
         raise ValueError("Unsupported result site resource")
     resource.evidence = {"rows": len(rows), **import_site_rows(resource, rows)}
     # A site is not the provider of record: its coverage is never called complete.
-    resource.coverage = "partial" if resource.evidence["imported"] else "empty"
+    resource.coverage = "partial" if rows else "empty"
+    if rows and not any(resource.evidence["imported"].values()):
+        resource.reason = "all_rows_skipped"
 
 
 def site_summary(edition: int) -> dict[str, Any]:

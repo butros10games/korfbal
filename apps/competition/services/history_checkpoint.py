@@ -14,7 +14,10 @@ from apps.competition.services.history import (
     apply_app,
 )
 from apps.competition.services.history_dataservice import apply_dataservice
-from apps.competition.services.history_editions import apply_edition
+from apps.competition.services.history_editions import (
+    apply_edition,
+    apply_edition_match,
+)
 from apps.competition.services.history_sites import apply_site
 
 
@@ -29,6 +32,12 @@ def checkpoint(
     resource.reason = ""
     if resource.kind in EDITION_KINDS:
         apply_edition(resource, data)
+    elif (
+        resource.provider == "app"
+        and resource.kind == "match"
+        and resource.evidence.get("edition")
+    ):
+        apply_edition_match(resource, data)
     elif resource.provider == "app":
         apply_app(resource, data)
     elif resource.provider in SITE_PROVIDERS:

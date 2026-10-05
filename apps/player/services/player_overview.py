@@ -16,6 +16,7 @@ from django.db.models import (
 from django.utils import timezone
 
 from apps.awards.models import MatchMvp
+from apps.game_tracker.application.ports import SourceResultReader
 from apps.game_tracker.models import MatchData, MatchPlayer, PlayerGroup, Shot
 from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.player.models.player import Player
@@ -162,6 +163,7 @@ def build_player_overview_payload(
     season: Season | None,
     seasons: list[Season],
     selection: SeasonSelection | None = None,
+    source_results: SourceResultReader | None = None,
 ) -> dict[str, Any]:
     """Build the player overview payload."""
     selection = selection or SeasonSelection(
@@ -174,7 +176,8 @@ def build_player_overview_payload(
             include_roster=True,
         )
         .filter(status__in=["upcoming", "active"])
-        .order_by("match_link__start_time")[:10]
+        .order_by("match_link__start_time")[:10],
+        source_results=source_results,
     )
 
     recent_matches = build_match_summaries(
@@ -184,7 +187,8 @@ def build_player_overview_payload(
             include_roster=False,
         )
         .filter(status="finished")
-        .order_by("-match_link__start_time")[:10]
+        .order_by("-match_link__start_time")[:10],
+        source_results=source_results,
     )
 
     return {
@@ -203,6 +207,7 @@ def connected_club_recent_results(
     limit: int,
     days: int | None,
     season_id: str | None,
+    source_results: SourceResultReader | None = None,
 ) -> list[dict[str, Any]]:
     """Return recent finished match summaries for the player's followed clubs."""
     clubs_qs = player.club_follow.all()
@@ -234,7 +239,10 @@ def connected_club_recent_results(
         cutoff = timezone.now() - timedelta(days=days)
         queryset = queryset.filter(match_link__start_time__gte=cutoff)
 
-    return build_match_summaries(queryset.order_by("-match_link__start_time")[:limit])
+    return build_match_summaries(
+        queryset.order_by("-match_link__start_time")[:limit],
+        source_results=source_results,
+    )
 
 
 def _shot_stats(queryset: QuerySet[Shot]) -> dict[str, Any]:
@@ -272,6 +280,7 @@ def build_player_stats_payload(
     player: Player,
     season: Season | None,
     selection: SeasonSelection | None = None,
+    source_results: SourceResultReader | None = None,
 ) -> dict[str, Any]:
     """Build the season-scoped player stats payload."""
     mvp_queryset = MatchMvp.objects.filter(
@@ -301,7 +310,8 @@ def build_player_stats_payload(
             .distinct()
         )
         mvp_matches = build_match_summaries(
-            mvp_matchdata_queryset.order_by("-match_link__start_time")
+            mvp_matchdata_queryset.order_by("-match_link__start_time"),
+            source_results=source_results,
         )
 
     shot_queryset = Shot.objects.select_related("match_data", "shot_type").filter(

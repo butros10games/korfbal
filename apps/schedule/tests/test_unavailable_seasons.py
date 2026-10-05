@@ -101,6 +101,52 @@ def test_payload_merges_gaps_in_date_order_and_never_makes_them_current() -> Non
     ]
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("coverage", ["unknown", "partial", "unavailable"])
+def test_uncertain_gaps_are_entity_scoped_and_partial_choices_remain_browsable(
+    coverage: str,
+) -> None:
+    """Only same-discipline periods inside the entity's actual history appear."""
+    before = playing_season(INDOOR_PHASE, 2022)
+    after = playing_season(INDOOR_PHASE, 2024)
+    gap = playing_season(INDOOR_PHASE, 2023)
+    Season.objects.filter(pk=gap.pk).update(data_coverage=coverage)
+    gap.data_coverage = coverage
+    # A gap in another discipline is not evidence about this entity's indoor history.
+    playing_season(AUTUMN, 2023)
+    playing_season(INDOOR_PHASE, 2021)
+
+    assert unavailable_seasons([after, before]) == [gap]
+    assert unavailable_seasons([after]) == []
+    option = season_options_payload([after, before], [gap])[1]
+    assert option["data_coverage"] == coverage
+    assert option["data_unavailable"] is (coverage == "unavailable")
+    assert not option["is_current"]
+
+
+@pytest.mark.django_db
+def test_complete_coverage_is_not_an_inferred_history_gap() -> None:
+    """A reviewed complete period is not offered as an unknown entity gap."""
+    before = playing_season(INDOOR_PHASE, 2022)
+    after = playing_season(INDOOR_PHASE, 2024)
+    gap = playing_season(INDOOR_PHASE, 2023)
+    Season.objects.filter(pk=gap.pk).update(
+        data_coverage="complete", coverage_reason="Reviewed fixture proof"
+    )
+    assert unavailable_seasons([after, before]) == []
+
+
+@pytest.mark.django_db
+def test_known_entity_content_overrides_an_unavailable_global_marker() -> None:
+    """Older clients can still fetch content while new clients see partial coverage."""
+    season = _gap(INDOOR_PHASE, 2023)
+    season.data_coverage = "unavailable"
+    option = season_options_payload([season])[0]
+    assert option["data_coverage"] == "partial"
+    assert option["data_unavailable"] is False
+    assert option["coverage_reason"]
+
+
 @pytest.mark.migration_regression
 @pytest.mark.django_db(transaction=True)
 def test_migration_marks_2023_and_autumn_2024() -> None:

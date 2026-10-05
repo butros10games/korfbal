@@ -8,13 +8,18 @@ Unknown provider labels stay unresolved; pool numbers never imply strength.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 import re
 
 
-VERSION = "knkv-classification-v1"
+VERSION = "knkv-classification-v2"
 UNKNOWN = "unknown"
 MODERN_YOUTH_YEAR = 2025
 REDUCED_CLASSES_YEAR = 2026
+# Raw provider values need a reviewed calibration before they select rules.
+SOURCE_GENDERS: dict[str, str] = {}
+HANDBOOK = "https://www.knkv.nl/kennisbank/competitiehandboek/"
+INDOOR_CLASSES = "https://www.knkv.nl/competitie-indeling-zaal-2026-2027-deels-bekend/"
 # A season whose korfbal year cannot be determined selects no edition rules.
 UNRESOLVED_EDITION = "unresolved_edition"
 COLOURS = {
@@ -129,14 +134,15 @@ def classify(
     sport: str,
     season_start: int | None,
     override: dict[str, str] | None = None,
+    *,
+    context: dict[str, str] | None = None,
 ) -> tuple[Classification, list[str]]:
     """Normalize an entire class label; never consume a pool code as a class.
 
     ``season_start`` is the edition year that selects season-scoped rules;
     None (an unresolved edition) applies no year-specific rule at all.
 
-    Raises:
-        ValueError: A reviewed override contains unsupported fields or values.
+    Invalid context or reviewed override values raise ValueError.
 
     """
     values = asdict(Classification())
@@ -154,41 +160,159 @@ def classify(
         text = text.replace(word, replacement)
     text = re.sub(r"\b([1-4])(?:ste|de)\b", r"\1e", text)
     values.update(provider_label(text, values["discipline"]))
-    if override:
-        for field, value in override.items():
-            if field not in CHOICES or value not in CHOICES[field]:
-                raise ValueError(f"Unsupported classification override: {field}")
-            values[field] = value
-    complete_known_context(values, override)
+    context_issues = merge_context(values, context or {})
+    context_issues.extend(merge_override(values, override or {}, context or {}))
+    complete_known_context(
+        values, {**(context or {}), **(override or {})}, season_start
+    )
     result = Classification(**values)
-    issues = validate(result, season_start)
+    issues = list(dict.fromkeys([*context_issues, *validate(result, season_start)]))
     return result, issues
 
 
-def hierarchy(value: Classification) -> tuple[str, ...]:
-    """Return only a known competition ladder, never a cross-context ranking."""
-    if UNKNOWN in {value.gender, value.discipline}:
-        return ()
-    if value.age_group == "senior" and value.team_kind in {"standard", "reserve"}:
-        if value.gender == "women":
-            return ("topklasse", "hoofdklasse", "overgangsklasse", "class_1")
-        top = ("league", "league_2") if value.discipline == "indoor" else ("ereklasse",)
-        return (
-            *top,
-            "hoofdklasse",
-            "overgangsklasse",
-            "class_1",
-            "class_2",
-            "class_3",
-            "class_4",
-        )
-    if value.team_kind == "youth" and value.age_group in {"U19", "U17", "U15"}:
-        return (
-            ("hoofdklasse", "overgangsklasse", "class_1", "class_2")
-            if value.age_group == "U19" and value.gender == "mixed"
-            else ("hoofdklasse", "class_1", "class_2")
-        )
-    return ()
+def merge_context(values: dict[str, str], context: dict[str, str]) -> list[str]:
+    """Fill unknown fields from source context and report explicit disagreements.
+
+    Raises:
+        ValueError: A context field or value is unsupported.
+
+    """
+    context_issues = []
+    for field, value in context.items():
+        if field not in CHOICES or value not in CHOICES[field]:
+            raise ValueError(f"Unsupported classification context: {field}")
+        if value == UNKNOWN:
+            continue
+        if values[field] not in {UNKNOWN, value}:
+            context_issues.append(
+                "conflicting_period" if field == "phase" else f"conflicting_{field}"
+            )
+        else:
+            values[field] = value
+    return context_issues
+
+
+def merge_override(
+    values: dict[str, str], override: dict[str, str], context: dict[str, str]
+) -> list[str]:
+    """Apply reviewed values while retaining a conflicting source period.
+
+    Raises:
+        ValueError: An override field or value is unsupported.
+
+    """
+    context_issues = []
+    for field, value in override.items():
+        if field not in CHOICES or value not in CHOICES[field]:
+            raise ValueError(f"Unsupported classification override: {field}")
+        if field == "phase" and context.get(field, UNKNOWN) not in {
+            UNKNOWN,
+            value,
+        }:
+            context_issues.append("conflicting_period")
+        values[field] = value
+    return context_issues
+
+
+@dataclass(frozen=True)
+class LadderRule:
+    """A sourced structure; identity is stable when another edition verifies it."""
+
+    first_edition: int
+    last_edition: int
+    discipline: str
+    gender: str
+    age_group: str
+    team_kind: str
+    codes: tuple[str, ...]
+    sources: tuple[str, ...]
+
+    @property
+    def ladder_id(self) -> str:
+        """Separate lanes without making every edition a different ladder."""
+        return f"{self.discipline}:{self.gender}:{self.age_group}:{self.team_kind}"
+
+    @property
+    def hierarchy_revision(self) -> str:
+        """Equal ordered structures remain comparable across sourced editions."""
+        return sha256("|".join(self.codes).encode()).hexdigest()[:16]
+
+
+def _verified_rules() -> tuple[LadderRule, ...]:
+    """2026-27 handbook 2.1 and the indoor restructuring announcement.
+
+    The current handbook cannot verify historical A-F or earlier senior ladders.
+    Indoor Ereklasse has no demonstrated context and is deliberately absent.
+    """
+    rules = []
+    for discipline in ("indoor", "outdoor"):
+        for kind in ("standard", "reserve"):
+            top = ("league", "league_2") if discipline == "indoor" else ("ereklasse",)
+            mixed = (
+                *top,
+                "hoofdklasse",
+                "overgangsklasse",
+                "class_1",
+                "class_2",
+                "class_3",
+            )
+            if kind == "standard":
+                mixed = (*mixed, "class_4")
+            for gender, codes in (
+                ("mixed", mixed),
+                ("women", ("topklasse", "hoofdklasse", "overgangsklasse", "class_1")),
+            ):
+                rules.append(
+                    LadderRule(
+                        2026,
+                        2026,
+                        discipline,
+                        gender,
+                        "senior",
+                        kind,
+                        codes,
+                        (HANDBOOK, INDOOR_CLASSES),
+                    )
+                )
+        for gender in ("mixed", "women"):
+            for age in ("U19", "U17", "U15"):
+                codes = ("hoofdklasse",)
+                if gender == "mixed" and age == "U19":
+                    codes = (*codes, "overgangsklasse")
+                if gender == "mixed" or age == "U19":
+                    codes = (*codes, "class_1")
+                rules.append(
+                    LadderRule(
+                        2026,
+                        2026,
+                        discipline,
+                        gender,
+                        age,
+                        "youth",
+                        codes,
+                        (HANDBOOK, INDOOR_CLASSES),
+                    )
+                )
+    return tuple(rules)
+
+
+LADDER_RULES = _verified_rules()
+
+
+def hierarchy(value: Classification, edition: int | None) -> LadderRule | None:
+    """Return an edition-appropriate verified ladder, never guess an old one."""
+    if edition is None or value.category == "b":
+        return None
+    return next(
+        (
+            rule
+            for rule in LADDER_RULES
+            if rule.first_edition <= edition <= rule.last_edition
+            and (rule.discipline, rule.gender, rule.age_group, rule.team_kind)
+            == (value.discipline, value.gender, value.age_group, value.team_kind)
+        ),
+        None,
+    )
 
 
 def validate(value: Classification, year: int | None) -> list[str]:
@@ -225,10 +349,10 @@ def validate(value: Classification, year: int | None) -> list[str]:
         or value.age_group != "youth"
     ):
         issues.append("conflicting_youth_colour")
-    ladder = hierarchy(value)
-    if ladder and value.code not in {*ladder, UNKNOWN}:
+    ladder = hierarchy(value, year)
+    if ladder and value.code not in {*ladder.codes, UNKNOWN}:
         issues.append("class_not_in_hierarchy")
-    reduced = year is not None and year >= REDUCED_CLASSES_YEAR
+    reduced = year == REDUCED_CLASSES_YEAR
     if (
         reduced
         and value.gender == "mixed"
@@ -247,14 +371,42 @@ def validate(value: Classification, year: int | None) -> list[str]:
     return issues
 
 
-def level(value: Classification, issues: list[str]) -> int | None:
+def level(
+    value: Classification, issues: list[str], edition: int | None = None
+) -> int | None:
     """Expose official hierarchy position only with sufficient consistent context."""
-    ladder = hierarchy(value)
-    if issues:
+    ladder = hierarchy(value, edition)
+    if level_reason(value, issues, edition) != "ranked" or ladder is None:
         return None
-    if value.code not in ladder:
-        return None
-    return ladder.index(value.code) + 1
+    return ladder.codes.index(value.code) + 1
+
+
+def level_reason(value: Classification, issues: list[str], edition: int | None) -> str:
+    """Explain class identity separately from numeric-ladder eligibility."""
+    if any(not issue.startswith("missing_") for issue in issues):
+        return "conflict"
+    if value.category == "b" or value.code in {"b_senior", "adapted", "youth_colour"}:
+        return "no_ladder_b_category"
+    for field in ("discipline", "gender", "age_group", "team_kind", "code"):
+        if getattr(value, field) == UNKNOWN:
+            return f"missing_{field}"
+    rule = hierarchy(value, edition)
+    if rule is None:
+        return "ladder_unverified"
+    return "ranked" if value.code in rule.codes else "conflict"
+
+
+def ladder_context(
+    value: Classification, issues: list[str], edition: int | None
+) -> dict[str, object]:
+    """Additive public metadata for compatible history comparisons."""
+    rule = hierarchy(value, edition)
+    return {
+        "ladder_id": rule.ladder_id if rule else None,
+        "hierarchy_revision": rule.hierarchy_revision if rule else None,
+        "level_reason": level_reason(value, issues, edition),
+        "level": level(value, issues, edition),
+    }
 
 
 def parse_label(text: str) -> dict[str, str]:
@@ -295,9 +447,15 @@ def parse_label(text: str) -> dict[str, str]:
 
 
 def complete_known_context(
-    values: dict[str, str], override: dict[str, str] | None
+    values: dict[str, str], override: dict[str, str] | None, edition: int | None
 ) -> None:
     """Derive format/category only from an explicit age and competition context."""
+    if (
+        edition == REDUCED_CLASSES_YEAR
+        and values["team_kind"] == "reserve"
+        and values["age_group"] == UNKNOWN
+    ):
+        values["age_group"] = "senior"
     if values["age_group"] in {"senior", "U19", "U17", "U15"} and values[
         "code"
     ] not in {UNKNOWN, "youth_colour", "b_senior", "adapted"}:
@@ -352,12 +510,6 @@ def context_conflicts(value: Classification) -> list[str]:
         issues.append("conflicting_category")
     if value.category == "b" and value.code in CLASS_NAMES.values():
         issues.append("conflicting_category")
-    if (
-        value.gender == "women"
-        and value.age_group in {"U17", "U15"}
-        and value.code not in {UNKNOWN, "hoofdklasse"}
-    ):
-        issues.append("class_not_in_hierarchy")
     return issues
 
 

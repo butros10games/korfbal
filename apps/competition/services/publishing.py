@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import time
 from typing import Any
 from uuid import UUID, uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Value
 from django.db.models.functions import Concat
@@ -26,7 +27,15 @@ from apps.competition.models import (
     TeamGroup,
     TeamParticipation,
 )
-from apps.competition.services.competition_periods import resolve_pool_periods
+from apps.competition.services.competition_periods import (
+    period_backlog,
+    resolve_pool_periods,
+)
+from apps.competition.services.fixture_linkage import (
+    desired_fixture,
+    fixture_decision,
+    native_fixture,
+)
 from apps.competition.services.identities import (
     merge_unlinked_joint_groups,
     unnamed_pool_label,
@@ -183,6 +192,17 @@ class Publisher:
 
     def clubs(self) -> None:
         """Reuse reviewed club links and create only unclaimed unique names."""
+        # Linked identities need no name reconciliation. Only the monotonic
+        # status mismatch is publication work; manual names and images survive.
+        dissolved_ids = list(
+            Club.objects.filter(
+                dissolved=True, local_club__dissolved=False
+            ).values_list("local_club_id", flat=True)
+        )
+        if dissolved_ids:
+            self.counts["clubs_dissolved"] += AppClub.objects.filter(
+                pk__in=dissolved_ids, dissolved=False
+            ).update(dissolved=True)
         local_names: dict[str, list[AppClub]] = defaultdict(list)
         for club in AppClub.objects.all():
             local_names[normalized(club.name)].append(club)
@@ -339,8 +359,17 @@ class Publisher:
                 changed.append(variant)
         Team.objects.bulk_update(changed, ["local_team_data"], batch_size=1000)
 
+    def context_backlog(self) -> None:
+        """Resolve one configured page of previously unattempted pool contexts."""
+        backlog_limit = max(
+            0, min(5000, getattr(settings, "SPORTLINK_CONTEXT_BACKLOG_LIMIT", 0))
+        )
+        if backlog_limit:
+            self.periods(period_backlog(limit=backlog_limit))
+
     def pools(self) -> None:
         """Publish poules once and share membership through global teams."""
+        self.context_backlog()
         rows = list(pools_to_publish().select_related("local_pool").order_by("pk"))
         if not rows:
             return
@@ -499,8 +528,14 @@ class Publisher:
         # manual edits made since that publication still block the update.
         row.local_created = twin.local_created
         row.published_state = twin.published_state
+        row.published_schedule = twin.published_schedule
+        row.schedule_notification_id = twin.schedule_notification_id
         Match.objects.filter(pk=twin.pk).update(
-            local_match=None, local_created=False, published_state={}
+            local_match=None,
+            local_created=False,
+            published_state={},
+            published_schedule={},
+            schedule_notification_id=None,
         )
         self.counts["matches_superseded"] += 1
         return True
@@ -540,6 +575,11 @@ class Publisher:
         # New evidence contradicts a published period: new fixtures wait for the
         # reviewed correction instead of joining a period they may not belong to.
         under_review = {pk for pk, _, evidence, _ in pool_rows if "review" in evidence}
+        routing_review = {
+            pk
+            for pk, _, evidence, _ in pool_rows
+            if evidence.get("review", {}).get("reason") == "season_repair_required"
+        }
         eligible = []
         for row in rows:
             home_sport, away_sport = (
@@ -548,6 +588,8 @@ class Publisher:
             )
             phase = phases.get(row.pool_id, "") if row.pool_id is not None else ""
             if row.local_match_id is None and row.pool_id in under_review:
+                if row.pool_id in routing_review:
+                    self.conflict("match", row.pk, "season_repair_required")
                 self.counts["matches_period_review"] += 1
                 continue
             if (
@@ -686,11 +728,9 @@ class Publisher:
             tracker = MatchData.objects.select_for_update(no_key=True).get(
                 match_link_id=row.local_match_id
             )
-            # Rules first: an imported final result is not tracking history.
-            outcome = apply_rule_profile(tracker, source_rules(row))
-            if outcome != UNCHANGED:
-                self.counts[f"rules_{outcome}"] += 1
-            accepted = self.result(row, tracker, pools.get(row.pool_id))
+            accepted = self.matched_result(
+                row, tracker, pools.get(row.pool_id), home, away
+            )
             schedule_fields = self.schedule(row, accepted=accepted)
             # Published as of the change read above: a concurrent import raises
             # updated_at past it, so the fixture stays pending for the next pass.
@@ -705,6 +745,76 @@ class Publisher:
                 )
             )
 
+    def matched_result(
+        self,
+        row: Match,
+        tracker: MatchData,
+        pool_id: UUID | None,
+        home: UUID,
+        away: UUID,
+    ) -> bool:
+        """Validate native participants before adopting source scores or rules."""
+        # Validate sporting identity before attributing source scores or rules.
+        fixture_accepted = self.fixture(row, tracker, pool_id, home, away)
+        accepted = False
+        if fixture_accepted:
+            # An imported final result is not tracking history.
+            outcome = apply_rule_profile(tracker, source_rules(row))
+            if outcome != UNCHANGED:
+                self.counts[f"rules_{outcome}"] += 1
+        native = row.local_match
+        compatible_sides = (
+            str(native.home_team_id) == str(home)
+            and str(native.away_team_id) == str(away)
+            and native.season_id == row.season_id
+        )
+        if compatible_sides:
+            accepted = self.result(row, tracker, pool_id)
+        return accepted
+
+    def fixture(
+        self,
+        row: Match,
+        tracker: MatchData,
+        pool_id: UUID | None,
+        home: UUID,
+        away: UUID,
+    ) -> bool:
+        """Update only native values still equal to the retained importer baseline."""
+        local = row.local_match
+        current = native_fixture(local)
+        desired = desired_fixture(row, home, away, pool_id)
+        decision = fixture_decision(row, tracker, current, desired)
+        if decision not in {"unchanged", "safe_update"}:
+            self.conflict("match", row.pk, decision)
+            return False
+        if decision == "safe_update":
+            updated = AppMatch.objects.filter(
+                pk=local.pk,
+                season_id=local.season_id,
+                home_team_id=local.home_team_id,
+                away_team_id=local.away_team_id,
+                start_time=local.start_time,
+                pool_id=local.pool_id,
+            ).update(
+                home_team_id=home,
+                away_team_id=away,
+                start_time=row.starts_at,
+                pool_id=pool_id,
+            )
+            if not updated:
+                # Re-read the failed CAS before deciding score compatibility.
+                local.refresh_from_db()
+                self.conflict("match", row.pk, "protected_native_change")
+                return False
+            local.home_team_id, local.away_team_id = home, away
+            local.start_time, local.pool_id = row.starts_at, pool_id
+            self.counts["fixtures_updated"] += 1
+        # Equality proves the initial baseline only for fixtures we created.
+        if row.local_created:
+            row.published_schedule = {**row.published_schedule, "fixture": desired}
+        return True
+
     def schedule(self, row: Match, *, accepted: bool) -> tuple[str, ...]:
         """Version changed schedules without rearming a concurrently claimed event.
 
@@ -712,9 +822,19 @@ class Publisher:
             RuntimeError: A repair-only publisher reached fixture publication.
 
         """
-        schedule = {"starts_at": row.starts_at.isoformat(), "status": row.status}
-        if schedule == row.published_schedule:
-            return ()
+        schedule = {
+            "starts_at": row.starts_at.astimezone(UTC).isoformat(),
+            "status": row.status,
+        }
+        previous = {
+            key: row.published_schedule.get(key) for key in ("starts_at", "status")
+        }
+        same_time = (
+            previous["starts_at"] is not None
+            and datetime.fromisoformat(previous["starts_at"]) == row.starts_at
+        )
+        if same_time and schedule["status"] == previous["status"]:
+            return ("published_schedule",)
         row.schedule_notification_id = None
         if (
             accepted
@@ -730,7 +850,7 @@ class Publisher:
                 starts_at=schedule["starts_at"],
                 cancelled=row.status == "CANCELLED",
             )
-        row.published_schedule = schedule
+        row.published_schedule = {**row.published_schedule, **schedule}
         return ("published_schedule", "schedule_notification_id")
 
     def result(self, row: Match, tracker: MatchData, pool_id: UUID | None) -> bool:
@@ -779,11 +899,6 @@ class Publisher:
             home_score=row.published_state["home"],
             away_score=row.published_state["away"],
         )
-        # Fixtures created in this pass already have this kickoff and poule.
-        if row.local_created and row.local_match_id not in self.fresh:
-            AppMatch.objects.filter(pk=row.local_match_id).update(
-                start_time=row.starts_at, pool_id=pool_id
-            )
         self.counts["matches_updated"] += 1
 
         return True
@@ -841,6 +956,20 @@ def pending_rows(bounds: MatchBounds) -> list[Match]:
         query = query.filter(pk__gt=bounds.after)
     query = query.order_by("pk")
     return list(query if bounds.limit is None else query[: bounds.limit])
+
+
+def serialize_with_publication() -> None:
+    """Lock both publication lock rows so a caller waits for any running pass.
+
+    Inside a transaction, a repair that also writes fixtures and trackers then
+    never holds row locks a concurrent pass needs. Each pass takes only one of
+    these rows, so acquiring both in this order cannot form a cycle.
+    """
+    for key in ("publication", "sportlink"):
+        SyncLease.objects.get_or_create(
+            key=key, defaults={"expires_at": timezone.now()}
+        )
+        SyncLease.objects.select_for_update().get(key=key)
 
 
 @transaction.atomic

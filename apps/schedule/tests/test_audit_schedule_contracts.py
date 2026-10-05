@@ -354,6 +354,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "discipline": None,
             "phase": None,
             "data_unavailable": False,
+            "data_coverage": "unknown",
+            "coverage_reason": "",
         },
         {
             "id_uuid": str(current.id_uuid),
@@ -366,6 +368,8 @@ def test_season_query_helpers_prefer_scoped_current_then_first_option() -> None:
             "discipline": None,
             "phase": None,
             "data_unavailable": False,
+            "data_coverage": "unknown",
+            "coverage_reason": "",
         },
     ]
 

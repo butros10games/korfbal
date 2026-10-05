@@ -13,6 +13,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 import pytest
 
+from apps.game_tracker.application.ports import SourceResultReader
 from apps.game_tracker.models import MatchData, Pause, Shot
 from apps.game_tracker.services import public_live
 from apps.game_tracker.services.live_update_signal_control import (
@@ -37,7 +38,8 @@ pytestmark = [
     pytest.mark.service_backed,
 ]
 MAX_PUBLIC_LIVE_SELECTS = 10
-UNCHANGED_PUBLIC_LIVE_SELECTS = 1
+# Native revision metadata plus the selected match's source projection.
+UNCHANGED_PUBLIC_LIVE_SELECTS = 2
 PUBLIC_KEYS = {
     "match_id",
     "match_data_id",
@@ -49,6 +51,7 @@ PUBLIC_KEYS = {
     "score",
     "last_changed_at",
     "live_revision",
+    "source_result",
 }
 
 
@@ -147,7 +150,8 @@ def test_public_live_fields_match_the_tracker_clock_and_score(
         {"resources"} if endpoint.endswith("poll") else set()
     )
     assert set(payload) == expected_keys
-    for field in PUBLIC_KEYS - {"score", "timer"}:
+    assert payload["source_result"] is None
+    for field in PUBLIC_KEYS - {"score", "timer", "source_result"}:
         assert payload[field] == reference[field]
     assert payload["score"] == {
         "home": reference["score"]["for"],
@@ -233,7 +237,9 @@ def test_public_live_snapshot_does_not_lock_or_mix_concurrent_writes(
 
     interleaved = False
 
-    def snapshot_after_write(match_data: MatchData) -> dict[str, Any]:
+    def snapshot_after_write(
+        match_data: MatchData, *, source_results: SourceResultReader | None = None
+    ) -> dict[str, Any]:
         nonlocal interleaved
         # The writer also publishes a snapshot. Interleave once so publication
         # cannot recursively trigger another write through this patched helper.
@@ -241,7 +247,7 @@ def test_public_live_snapshot_does_not_lock_or_mix_concurrent_writes(
             interleaved = True
             with ThreadPoolExecutor(max_workers=1) as executor:
                 executor.submit(write_goal).result(timeout=10)
-        return original_snapshot(match_data)
+        return original_snapshot(match_data, source_results=source_results)
 
     with patch.object(public_live, "_build_public_snapshot", snapshot_after_write):
         response = client.get(f"/api/matches/{graph.match.id_uuid}/{endpoint}/")
@@ -255,7 +261,7 @@ def test_public_live_snapshot_does_not_lock_or_mix_concurrent_writes(
 
 
 def test_unchanged_public_poll_skips_clock_and_score_queries(client: Client) -> None:
-    """Idle polling only reads the current revision and timestamp."""
+    """Idle polling reads native metadata and source state without clock/score work."""
     graph = _live_graph()
     with (
         patch.object(public_live, "_build_public_snapshot") as snapshot,
@@ -272,8 +278,10 @@ def test_unchanged_public_poll_skips_clock_and_score_queries(client: Client) -> 
         "server_time",
         "last_changed_at",
         "live_revision",
+        "source_result",
     }
     assert payload["changed"] is False
+    assert payload["source_result"] is None
     assert payload["live_revision"] == graph.match_data.live_revision
     assert payload["last_changed_at"] == graph.match_data.live_changed_at.isoformat()
     snapshot.assert_not_called()

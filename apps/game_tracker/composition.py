@@ -8,6 +8,9 @@ from typing import Any
 
 from django.utils import timezone
 
+from apps.competition.queries.source_results import (
+    source_results as read_source_results,
+)
 from apps.competition.services.match_prediction import match_prediction
 from apps.game_tracker.adapters.outbound.published_live_store import (
     SharedPublishedLiveStore,
@@ -19,6 +22,9 @@ from apps.game_tracker.adapters.outbound.runtime import (
 from apps.game_tracker.adapters.outbound.shared_compact import SharedCompactStore
 from apps.game_tracker.application.ports import PublicMatchReadRuntime, TrackerRuntime
 from apps.game_tracker.models import MatchData
+from apps.game_tracker.queries.match_summaries import (
+    build_match_summaries as _build_match_summaries,
+)
 from apps.game_tracker.realtime.contracts import ALL_LIVE_RESOURCES, LiveResource
 from apps.game_tracker.services.event_editor import (
     apply_event_editor_command as _apply_event_editor_command,
@@ -54,8 +60,11 @@ from apps.schedule.models import Match
 from apps.team.models import Team
 
 
-published_live_store = SharedPublishedLiveStore()
-published_match_store = SharedPublishedLiveStore("public-match:published:v1")
+published_live_store = SharedPublishedLiveStore("public-live:published:v2")
+published_match_store = SharedPublishedLiveStore("public-match:published:v2")
+build_match_summaries = partial(
+    _build_match_summaries, source_results=read_source_results
+)
 
 
 def invalidate_public_match_reads(match_id: str, revision: int) -> None:
@@ -65,7 +74,9 @@ def invalidate_public_match_reads(match_id: str, revision: int) -> None:
 
 
 public_match_reads = PublicMatchReadRuntime(
-    store=published_match_store, forecast=match_prediction
+    store=published_match_store,
+    forecast=match_prediction,
+    source_results=read_source_results,
 )
 prepare_public_match_reads = partial(
     publish_public_match_reads, reads=public_match_reads
@@ -74,7 +85,11 @@ read_public_match = partial(read_public_match_resource, reads=public_match_reads
 
 change_publisher = ChannelsMatchChangePublisher(
     published_live_store,
-    lambda match_id: publish_public_live(match_id=match_id, store=published_live_store),
+    lambda match_id: publish_public_live(
+        match_id=match_id,
+        store=published_live_store,
+        source_results=read_source_results,
+    ),
     lambda match_id: prepare_public_match_reads(match_id=match_id),
     invalidate_public_match_reads,
     partial(read_public_match_updates, store=published_match_store),
@@ -137,8 +152,12 @@ schedule_match_minutes_recompute = tracker_jobs.recompute_minutes
 
 
 read_cached_live = partial(read_cached_public_live, store=published_live_store)
-read_public_live = partial(read_published_live, store=published_live_store)
-publish_public_live_snapshot = partial(publish_public_live, store=published_live_store)
+read_public_live = partial(
+    read_published_live, store=published_live_store, source_results=read_source_results
+)
+publish_public_live_snapshot = partial(
+    publish_public_live, store=published_live_store, source_results=read_source_results
+)
 
 
 shared_compact_store = SharedCompactStore()

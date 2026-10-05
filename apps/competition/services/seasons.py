@@ -10,6 +10,7 @@ competitions stay in the annual scope.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
 from hashlib import sha256
 import json
@@ -18,6 +19,7 @@ from uuid import UUID
 from django.db import transaction
 from django.db.models import Q
 
+from apps.competition.domain.history_scopes import full_year_name, season_names
 from apps.competition.models import Pool, SeasonBinding
 from apps.schedule.domain.competition_context import (
     AUTUMN,
@@ -156,11 +158,13 @@ def phase_split(scope_id: UUID, sport: str) -> bool:
 class SeasonResolver:
     """Load mappings once per publication pass, not once per entity."""
 
-    def __init__(self) -> None:
-        """Build the scope index in one query."""
+    def __init__(self, scopes: Iterable[UUID] | None = None) -> None:
+        """Build the scope index in one query, optionally for selected scopes."""
+        rows = SeasonBinding.objects.all()
+        if scopes is not None:
+            rows = rows.filter(scope_id__in=set(scopes))
         self.bindings = {
-            (row.scope_id, row.sport, row.phase): row.season_id
-            for row in SeasonBinding.objects.all()
+            (row.scope_id, row.sport, row.phase): row.season_id for row in rows
         }
         self.scopes = {scope for scope, _, _ in self.bindings}
         self.split = {(scope, sport) for scope, sport, phase in self.bindings if phase}
@@ -274,3 +278,11 @@ def binding_fingerprint(season_id: UUID) -> str:
     )
     payload = json.dumps([rows, periods], sort_keys=True, default=str)
     return sha256(payload.encode()).hexdigest()[:16]
+
+
+def edition_scopes(edition: int) -> list[Season]:
+    """Return the existing playing seasons of one edition."""
+    query = Q(edition=edition, phase__in=(AUTUMN, INDOOR_PHASE, SPRING, FULL_SEASON))
+    for name in (*season_names(edition), full_year_name(edition)):
+        query |= Q(name__iexact=name)
+    return list(Season.objects.filter(query))

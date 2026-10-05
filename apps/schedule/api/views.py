@@ -17,8 +17,8 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.game_tracker.composition import build_match_summaries
 from apps.game_tracker.models import MatchData
-from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.services.live_update_signal_control import (
     suppress_tracker_delete_side_effects,
 )

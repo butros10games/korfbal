@@ -86,7 +86,9 @@ def test_club_colors_clear_when_provider_removes_outfits(season: Season) -> None
     data = {"ClubId": "CT1", "ClubName": "Example"}
     Importer(season, timezone.now()).club(data)
     assert Club.objects.get(external_id="CT1").colors
-    Importer(season, timezone.now()).club({**data, "ClubColors": {}})
+    Importer(season, timezone.now()).apply(
+        "club_details", "CT1", {**data, "ClubColors": {}}
+    )
     assert Club.objects.get(external_id="CT1").colors == {}
 
 

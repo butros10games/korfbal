@@ -52,8 +52,11 @@ class Command(BaseCommand):
 
         """
         values: dict[str, Any] = dict(options)
-        if not 0 < values["limit"] <= MAX_LIMIT:
-            raise CommandError(f"--limit must be between 1 and {MAX_LIMIT}")
+        if not 0 < values["limit"] <= MAX_LIMIT or values["after"] < 0:
+            raise CommandError(
+                f"--limit must be between 1 and {MAX_LIMIT}; "
+                "--after must be nonnegative"
+            )
         try:
             report = run(
                 RepairOptions(

@@ -20,6 +20,8 @@ from apps.schedule.domain.competition_context import (
 class Season(models.Model):
     """Model for a season."""
 
+    objects: ClassVar[models.Manager[Season]]
+
     id_uuid: models.UUIDField[str, str] = models.UUIDField(
         primary_key=True,
         default=uuidv7,
@@ -62,9 +64,26 @@ class Season(models.Model):
         default=False,
         db_default=False,
         help_text=(
-            "No source supplies this season's matches. Teams and clubs with data "
-            "before and after it list it as a season without data."
+            "Legacy no-data marker for older clients; available fixtures remain "
+            "browsable even when discovery coverage is incomplete."
         ),
+    )
+    data_coverage = models.CharField(
+        max_length=12,
+        default="unknown",
+        db_default="unknown",
+        choices=[
+            (value, value)
+            for value in ("unknown", "partial", "complete", "unavailable")
+        ],
+        help_text="Source-result coverage; complete requires reviewed schedule proof.",
+    )
+    coverage_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        help_text="Public explanation of the coverage evidence and its scope.",
     )
 
     class Meta:

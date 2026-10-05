@@ -280,8 +280,9 @@ def test_same_local_team_can_link_across_imported_seasons(
         start_date=season.start_date - timedelta(days=365),
         end_date=season.end_date - timedelta(days=365),
     )
-    Importer(old_season, timezone.now()).apply(
-        "club_teams", "DTS", {"ClubTeam": [row["HomeTeam"], row["AwayTeam"]]}
+    row["MatchDateTime"] = (graph["source"].starts_at - timedelta(days=365)).isoformat()
+    Importer(old_season, timezone.now(), discover=False).apply(
+        "club_results", "DTS", {"MatchResult": [row]}
     )
     reconcile(apply=True, overrides=graph["overrides"])
     assert set(

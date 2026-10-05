@@ -29,6 +29,8 @@ DEFAULT_UPCOMING_LIMIT = 5
 MINIMUM_LIMIT = 1
 SCHEDULE_PAGE_SIZE = 25
 MAX_SCHEDULE_PAGE_SIZE = 200
+# Page count, native summaries and one selected-page source-result query.
+UPCOMING_PAGE_QUERIES = 3
 pytestmark = pytest.mark.django_db
 
 
@@ -362,7 +364,7 @@ def test_upcoming_pages_are_bounded_complete_and_eager(
     seen: list[str] = []
     page_count = (len(expected) + SCHEDULE_PAGE_SIZE - 1) // SCHEDULE_PAGE_SIZE
     for page in range(1, page_count + 1):
-        with django_assert_num_queries(2):
+        with django_assert_num_queries(UPCOMING_PAGE_QUERIES):
             response = client.get(
                 "/api/matches/upcoming-page/", {"page": page, "page_size": 25}
             )
@@ -370,12 +372,14 @@ def test_upcoming_pages_are_bounded_complete_and_eager(
         payload = response.json()
         assert payload["count"] == len(expected)
         assert len(payload["results"]) <= SCHEDULE_PAGE_SIZE
+        assert all(match["source_result"] is None for match in payload["results"])
         assert bool(payload["next"]) == (page < page_count)
         seen.extend(match["id_uuid"] for match in payload["results"])
     assert seen == expected
     assert client.get("/api/matches/next/").json()["id_uuid"] == expected[0]
     assert len(client.get("/api/matches/upcoming/").json()) == DEFAULT_UPCOMING_LIMIT
-    with django_assert_num_queries(2):
+    # The 200-row page uses the same budget as the 25-row pages above.
+    with django_assert_num_queries(UPCOMING_PAGE_QUERIES):
         oversized = client.get("/api/matches/upcoming-page/", {"page_size": 9999})
     assert len(oversized.json()["results"]) == MAX_SCHEDULE_PAGE_SIZE
     assert (

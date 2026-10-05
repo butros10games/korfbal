@@ -38,7 +38,7 @@ from apps.club.services.join_requests import (
     pending_member_requests,
 )
 from apps.competition.queries.club_info import club_info
-from apps.game_tracker.queries.match_summaries import build_match_summaries
+from apps.game_tracker.composition import build_match_summaries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.kwt_common.api.params import UUID_URL_REGEX
 from apps.kwt_common.api.permissions import IsStaffOrReadOnly

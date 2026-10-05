@@ -9,13 +9,26 @@ from typing import Any
 from django.db import transaction
 
 from apps.competition.domain.allocations import parse_allocations
-from apps.competition.domain.classification import classify, level
+from apps.competition.domain.classification import classify
 from apps.competition.models import Allocation, AllocationSource, Pool, PoolEntry
-from apps.competition.services.classification import map_pool, resolve_class
+from apps.competition.services.class_alignment import (
+    allocation_class,
+    realign_pool_allocations,
+)
+from apps.competition.services.classification import map_pool
+from apps.competition.services.competition_periods import resolve_pool_periods
 from apps.competition.services.reconciliation import normalized
-from apps.competition.services.seasons import INDOOR, OUTDOOR, target_season
 from apps.schedule.models import Season
 from apps.schedule.queries.seasons import season_edition
+
+
+__all__ = [
+    "allocation_class",
+    "import_allocations",
+    "pool_key",
+    "realign_pool_allocations",
+    "team_key",
+]
 
 
 @transaction.atomic
@@ -51,7 +64,9 @@ def import_allocations(
             digest=digest,
             defaults={"label": label, "published_on": published},
         )
-        source = AllocationSource.objects.select_for_update().get(pk=source.pk)
+        source = AllocationSource.objects.select_for_update(no_key=True).get(
+            pk=source.pk
+        )
     existing = (
         {
             (item.row_number, item.column): item
@@ -80,14 +95,14 @@ def import_allocations(
             "link_status": status,
         }
         if apply:
+            if entry:
+                resolve_allocation_period(entry, affected)
             values["competition_class_id"] = allocation_class(
                 season,
                 values["classification"],
                 classes,
                 phase=entry.pool.phase if entry else "",
             )
-            if entry:
-                affected[entry.pool_id] = entry.pool
         old = existing.get((row.row_number, row.column))
         changed += save_allocation(source, old, values, gender, apply=apply)
         decisions.append({
@@ -114,6 +129,19 @@ def import_allocations(
         "changed": changed,
         "decisions": decisions,
     }
+
+
+def resolve_allocation_period(entry: PoolEntry, affected: dict[int, Pool]) -> None:
+    """Resolve each linked whole-pool period once before aligning file classes."""
+    if entry.pool_id not in affected:
+        if not entry.pool.phase:
+            resolve_pool_periods([entry.pool_id])
+            entry.pool.refresh_from_db(
+                fields=("phase", "competition_part", "phase_evidence")
+            )
+        affected[entry.pool_id] = entry.pool
+    else:
+        entry.pool = affected[entry.pool_id]
 
 
 def save_allocation(
@@ -143,37 +171,6 @@ def save_allocation(
             Allocation.objects.filter(pk=old.pk).update(**values)
         return 1
     return 0
-
-
-def allocation_class(
-    season: Season, values: dict[str, str], classes: dict, *, phase: str = ""
-) -> int:
-    """Resolve each distinct source context once per file.
-
-    ``phase`` is the linked poule's competition period: its class lives in the
-    native season that period publishes into, like the poule's own class.
-
-    Raises:
-        ValueError: A source context contradicts the season-specific rules.
-
-    """
-    key = (*sorted(values.items()), ("phase", phase))
-    if key not in classes:
-        context, issues = classify("", "", season_edition(season), values)
-        if any(not issue.startswith("missing_") for issue in issues):
-            raise ValueError(f"Conflicting allocation classification: {issues}")
-        native_season = target_season(
-            season,
-            {"indoor": INDOOR, "outdoor": OUTDOOR}.get(context.discipline, ""),
-            phase,
-        )
-        if native_season is None:
-            raise ValueError("Allocation discipline has no native season mapping")
-        classes[key] = resolve_class(
-            native_season,
-            {"classification": asdict(context), "level": level(context, issues)},
-        ).pk
-    return classes[key]
 
 
 def pool_key(value: str) -> str:
@@ -210,32 +207,3 @@ def matching_entries(
             if normalized(entry.team.club.city) == normalized(city)
         ]
     return matches
-
-
-def realign_pool_allocations(pool: Pool) -> int:
-    """Move a poule's linked allocations to the class of its resolved period.
-
-    Returns:
-        The number of allocations whose class changed.
-
-    """
-    changed = 0
-    classes: dict = {}
-    for allocation in Allocation.objects.filter(entry__pool=pool).select_related(
-        "source__season"
-    ):
-        try:
-            class_id = allocation_class(
-                allocation.source.season,
-                allocation.classification,
-                classes,
-                phase=pool.phase,
-            )
-        except ValueError:
-            continue
-        if allocation.competition_class_id != class_id:
-            Allocation.objects.filter(pk=allocation.pk).update(
-                competition_class_id=class_id
-            )
-            changed += 1
-    return changed

@@ -59,6 +59,7 @@ def test_club_feeds_are_discovered_and_imported(season: Season) -> None:
         "website": "http://www.club.example",
         "founded": "1918-11-10",
         "facility": {
+            "id": "F1",
             "name": "Sportpark Voorbeeld",
             "address": "Voorbeeldlaan 3",
             "postal_code": "0000AA",

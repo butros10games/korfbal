@@ -5,6 +5,7 @@ from typing import Any
 from django.db.models import FETCH_RAISE
 
 from apps.competition.models import Club, Match
+from apps.competition.services.match_details import component_state
 from apps.schedule.models import Match as NativeMatch
 
 
@@ -77,8 +78,18 @@ def match_info(match: NativeMatch) -> dict[str, Any]:
     source = (
         Match.objects
         .filter(local_match=match)
-        .select_related("home_team__club", "away_team__club")
+        .select_related("home_team__club", "away_team__club", "pool")
         .only(
+            "external_id",
+            "home_team_id",
+            "starts_at",
+            "pool_id",
+            "metadata_observations",
+            "facility_observed_at",
+            "rules_observed_at",
+            "pool__class_name",
+            "pool__sport",
+            "pool__source_context",
             "facility_details",
             "match_rules",
             "home_team__club__colors",
@@ -90,8 +101,12 @@ def match_info(match: NativeMatch) -> dict[str, Any]:
     if source is None:
         return {"venue": None, "sections": [], "kits": {"home": [], "away": []}}
     return {
-        "venue": _venue(source.facility_details),
-        "sections": _sections(source.match_rules),
+        "venue": _venue(source.facility_details)
+        if component_state(source, "match_facility") == "available"
+        else None,
+        "sections": _sections(source.match_rules)
+        if component_state(source, "match_rules") == "available"
+        else [],
         "kits": {
             "home": kit(source.home_team.club),
             "away": kit(source.away_team.club),

@@ -20,6 +20,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.importer import Importer
 from apps.competition.services.polling import (
+    MetadataPlanner,
     PollJob,
     PollPlanner,
     mark_checked,
@@ -486,3 +487,74 @@ def test_not_modified_standings_confirm_the_result_change_without_repeat_reads(
     planner.completed(job, checked=checked)
     assert planner.next_job() is None
     assert PollPlanner(season, timezone.now()).next_job() is None
+
+
+@pytest.mark.django_db
+def test_due_roster_refresh_outranks_routine_feeds_before_players_expire(
+    season: Season,
+) -> None:
+    """Rosters refresh before the 8-day visibility boundary without retry resets."""
+    now = timezone.now()
+    week = timedelta(days=7)
+    SyncResource.objects.create(
+        season=season,
+        kind="club_program",
+        source_id="C1",
+        fetched_at=now - timedelta(days=2),
+        next_sync_at=now - timedelta(hours=1),
+    )
+    roster = SyncResource.objects.create(
+        season=season,
+        kind="team_roster",
+        source_id="T1",
+        fetched_at=now - week - timedelta(hours=1),
+        next_sync_at=now - timedelta(hours=1),
+    )
+    planner = PollPlanner(season, now)
+    priorities = {job.resource.kind: job.priority for job in planner.candidate_jobs()}
+    assert priorities == {"club_program": 3, "team_roster": 1}
+    assert not planner.urgent_due()
+    job = planner.next_job()
+    assert job is not None
+    assert job.resource.pk == roster.pk
+    roster.fetched_at = now - week - timedelta(hours=13)
+    roster.save()
+    assert PollPlanner(season, now).urgent_due()
+    # A failing roster keeps its backoff and failure count.
+    SyncResource.objects.filter(pk=roster.pk).update(
+        failures=2, next_sync_at=now + timedelta(hours=1)
+    )
+    planner = PollPlanner(season, now)
+    assert not planner.urgent_due()
+    assert [job.resource.kind for job in planner.candidate_jobs()] == ["club_program"]
+    roster.refresh_from_db()
+    assert roster.failures == len(["first", "second"])
+
+
+@pytest.mark.django_db
+def test_metadata_planner_selects_requested_kinds_and_sources(season: Season) -> None:
+    """Scoped detail runs never spend requests outside their selection."""
+    now = timezone.now()
+    Importer(season, now - timedelta(days=1)).apply(
+        "club_results", "CT1", {"MatchResult": [match_payload()]}
+    )
+    Match.objects.update(
+        facility_observed_at=None, rules_observed_at=None, playing_time_observed_at=now
+    )
+    source = Match.objects.get().external_id
+    for kind in ("match_facility", "match_rules"):
+        SyncResource.objects.get_or_create(
+            season=season, kind=kind, source_id=source, defaults={"next_sync_at": now}
+        )
+    SyncResource.objects.filter(kind__in=("match_facility", "match_rules")).update(
+        next_sync_at=now
+    )
+    planner = MetadataPlanner(season, now, kinds=("match_rules",))
+    assert [job.resource.kind for job in planner.candidate_jobs()] == ["match_rules"]
+    planner = MetadataPlanner(season, now, source_ids=("other",))
+    assert planner.candidate_jobs() == []
+    planner = MetadataPlanner(season, now)
+    assert {job.resource.kind for job in planner.candidate_jobs()} == {
+        "match_facility",
+        "match_rules",
+    }

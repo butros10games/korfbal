@@ -152,9 +152,18 @@ def repair_matches(
 def repair_allocations(scope: Season, blocked: list[dict], changed: Counter) -> None:
     """Align stored allocation classes without changing their file provenance."""
     classes = {}
-    for allocation in Allocation.objects.filter(source__season=scope):
+    for allocation in Allocation.objects.filter(source__season=scope).select_related(
+        "entry__pool"
+    ):
         try:
-            class_id = allocation_class(scope, allocation.classification, classes)
+            class_id = allocation_class(
+                scope,
+                allocation.classification,
+                classes,
+                phase=allocation.entry.pool.phase
+                if allocation.entry is not None
+                else "",
+            )
         except ValueError:
             blocked.append({
                 "kind": "allocation",

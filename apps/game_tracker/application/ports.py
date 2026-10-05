@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from apps.game_tracker.domain.source_results import SourceResult
 from apps.game_tracker.realtime.contracts import LiveResource
 
 
@@ -83,6 +84,13 @@ class MatchForecaster(Protocol):
         """Return the public prediction payload for a native match."""
 
 
+class SourceResultReader(Protocol):
+    """Read provider observations for only the selected native matches."""
+
+    def __call__(self, match_ids: Iterable[str]) -> dict[str, SourceResult]:
+        """Return public projections keyed by native match ID."""
+
+
 class PublicLiveStoreError(Exception):
     """Shared snapshot storage is temporarily unavailable."""
 
@@ -114,3 +122,4 @@ class PublicMatchReadRuntime:
 
     store: PublishedLiveStore
     forecast: MatchForecaster
+    source_results: SourceResultReader | None = None

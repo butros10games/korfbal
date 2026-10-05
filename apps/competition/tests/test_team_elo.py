@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
+from uuid import UUID
 
 from django.core.cache import cache
 from django.db import connection
@@ -22,7 +23,14 @@ from apps.competition.domain.team_elo import (
     outcome_probabilities,
     replay,
 )
-from apps.competition.models import Match, MatchRating, TeamRating
+from apps.competition.models import (
+    Match,
+    MatchRating,
+    Pool,
+    Team,
+    TeamGroup,
+    TeamRating,
+)
 from apps.competition.services.match_prediction import match_prediction
 from apps.competition.services.publishing import publish_catalogue
 from apps.competition.services.team_elo import (
@@ -32,6 +40,7 @@ from apps.competition.services.team_elo import (
 from apps.competition.tests.fakes import RecordingScheduleChanges
 from apps.competition.tests.test_rating_preview import create_baseline
 from apps.schedule.models import Season
+from apps.team.models import Team as NativeTeam
 
 
 START = datetime(2026, 9, 5, 12, tzinfo=UTC)
@@ -148,6 +157,36 @@ def test_resuming_from_stored_states_reproduces_a_full_replay() -> None:
     assert resumed.teams == full.teams
 
 
+@pytest.mark.parametrize(
+    "window",
+    [
+        [],
+        [replace(result(5, "b", "c", (0, 0)), home_score=None, away_score=None)],
+        [result(5, "b", "c", (10, 8))],
+        [result(5, "c", "e", (12, 8))],
+    ],
+    ids=["idle", "unplayed", "same-group", "merge-groups"],
+)
+def test_resuming_preserves_groups_whose_roots_are_outside_the_window(
+    window: list[Fixture],
+) -> None:
+    """A bounded resume keeps historical group IDs without loading root ratings."""
+    history = [
+        result(1, "a", "b", (12, 8)),
+        result(2, "a", "c", (9, 11)),
+        result(3, "d", "e", (10, 8)),
+        result(4, "d", "f", (7, 7)),
+    ]
+    prefix = replay(history)
+    initial = {team: prefix.teams[team] for team in ("b", "c", "e", "f")}
+    original = {team: replace(value) for team, value in initial.items()}
+    full = replay([*history, *window])
+    resumed = replay(window, initial=initial, members=membership([*history, *window]))
+    assert resumed.matches == full.matches[len(history) :]
+    assert resumed.teams == {team: full.teams[team] for team in initial}
+    assert initial == original
+
+
 def test_teams_that_never_met_have_separate_comparison_groups() -> None:
     """Rankings across disconnected schedules would compare unrelated ratings."""
     state = replay([result(1, "a", "b", (10, 8)), result(2, "c", "d", (7, 9))])
@@ -199,6 +238,69 @@ def test_incremental_refresh_equals_a_full_replay(predicted_match: Match) -> Non
     incremental = stored()
     full = refresh_team_ratings(full=True)
     assert full["status"] == "full"
+    assert (full["matches_updated"], full["teams_updated"]) == (0, 0)
+    assert stored() == incremental
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("no_overlap")
+def test_incremental_refresh_with_a_group_root_in_an_earlier_poule(
+    predicted_match: Match,
+) -> None:
+    """A historical opponent outside the resumed poules remains the group root."""
+    root_team, active = sorted(
+        (predicted_match.home_team, predicted_match.away_team),
+        key=lambda team: str(team.group.local_team_id),
+    )
+    native = NativeTeam.objects.create(
+        id_uuid=UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+        name="Third J1",
+        club=root_team.group.local_team.club,
+    )
+    group = TeamGroup.objects.create(
+        season=predicted_match.season,
+        club=root_team.club,
+        name=native.name,
+        normalized_name="third j1",
+        local_team=native,
+    )
+    third = Team.objects.create(
+        season=predicted_match.season,
+        external_id="third",
+        club=root_team.club,
+        group=group,
+        name=native.name,
+        sport=root_team.sport,
+    )
+    Match.objects.create(
+        season=predicted_match.season,
+        external_id="historical-root",
+        pool=predicted_match.pool,
+        home_team=root_team,
+        away_team=third,
+        starts_at=predicted_match.starts_at + timedelta(days=1),
+        status="FINAL",
+        home_score=12,
+        away_score=8,
+    )
+    refresh_team_ratings()
+    root_id = str(root_team.group.local_team_id)
+    assert set(TeamRating.objects.values_list("comparison_group", flat=True)) == {
+        root_id
+    }
+    later = later_result(predicted_match, 1, (12, 8))
+    later.pool = Pool.objects.create(
+        season=predicted_match.season, external_id="later-poule"
+    )
+    later.home_team, later.away_team = active, third
+    later.save()
+    refreshed = refresh_team_ratings()
+    assert (refreshed["status"], refreshed["matches_created"]) == ("incremental", 1)
+    incremental = stored()
+    assert set(TeamRating.objects.values_list("comparison_group", flat=True)) == {
+        root_id
+    }
+    full = refresh_team_ratings(full=True)
     assert (full["matches_updated"], full["teams_updated"]) == (0, 0)
     assert stored() == incremental
 

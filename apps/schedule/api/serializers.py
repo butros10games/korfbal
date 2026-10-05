@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
+from django.db import models
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.competition.services.classification import pool_classification
+from apps.game_tracker.composition import read_source_results
+from apps.game_tracker.domain.source_results import SourceResult
 from apps.game_tracker.services.event_editor import (
     UNSET,
     CreateGoalEvent,
@@ -36,15 +41,49 @@ from apps.team.models.team import Team
 MIN_POOL_TEAMS = 2
 
 
+class SourceScoreSerializer(serializers.Serializer):
+    """Preserve independently unknown provider score sides."""
+
+    home = serializers.IntegerField(min_value=0, allow_null=True)
+    away = serializers.IntegerField(min_value=0, allow_null=True)
+
+
+class SourceResultSerializer(serializers.Serializer):
+    """Document source state without extending the native tracker FSM."""
+
+    status = serializers.ChoiceField(
+        choices=("scheduled", "final", "suspended", "postponed", "cancelled", "unknown")
+    )
+    score = SourceScoreSerializer()
+    is_final = serializers.BooleanField()
+    source = serializers.ChoiceField(choices=("knkv", "archive"))
+    display_authority = serializers.ChoiceField(choices=("provider", "local"))
+
+
+class MatchListSerializer(serializers.ListSerializer):
+    """Batch source reads after native pagination, never once per fixture."""
+
+    def to_representation(
+        self, data: models.Manager[Match] | Iterable[Match]
+    ) -> list[dict[str, Any]]:
+        """Read only this selected page's source observations."""
+        matches = list(data.all() if isinstance(data, models.Manager) else data)
+        child = cast("MatchSerializer", self.child)
+        child._source_results = read_source_results(str(match.pk) for match in matches)
+        return super().to_representation(matches)
+
+
 class MatchSerializer(serializers.ModelSerializer):
     """Serializer for match data exposed to the frontend."""
 
+    _source_results: dict[str, SourceResult] | None = None
     home_team = TeamSerializer(read_only=True)
     away_team = TeamSerializer(read_only=True)
     location = serializers.SerializerMethodField()
     competition = serializers.SerializerMethodField()
     discipline = serializers.SerializerMethodField()
     broadcast_url = serializers.SerializerMethodField()
+    source_result = serializers.SerializerMethodField()
     season_id = serializers.UUIDField(read_only=True)
     pool_id = serializers.UUIDField(read_only=True, allow_null=True)
     pool_name = serializers.CharField(
@@ -57,6 +96,7 @@ class MatchSerializer(serializers.ModelSerializer):
         """Meta options for the match serializer."""
 
         model = Match
+        list_serializer_class = MatchListSerializer
         fields: ClassVar[list[str]] = [
             "id_uuid",
             "start_time",
@@ -69,8 +109,17 @@ class MatchSerializer(serializers.ModelSerializer):
             "competition",
             "discipline",
             "broadcast_url",
+            "source_result",
         ]
         read_only_fields: ClassVar[list[str]] = fields
+
+    @extend_schema_field(SourceResultSerializer(allow_null=True))
+    def get_source_result(self, obj: Match) -> SourceResult | None:
+        """Expose source state and precedence for this bounded public fixture."""
+        projections = self._source_results
+        if projections is None:
+            projections = read_source_results([str(obj.pk)])
+        return projections.get(str(obj.pk))
 
     def get_location(self, obj: Match) -> str:
         """Return a friendly location for the match.

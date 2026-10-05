@@ -1,13 +1,16 @@
 """Cache provider club badges and publish them without replacing user uploads."""
 
 import base64
+from datetime import datetime
 from io import BytesIO
 import re
 from typing import Any
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
+from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from PIL import Image
 
 from apps.club.models import Club as AppClub
@@ -34,19 +37,58 @@ def logo_name(bucket: str, digest: str) -> str:
     return f"club_pictures/knkv/{bucket}/{digest.upper()}.png"
 
 
-def discover_logo(club: Club, reference: object, season: Season) -> None:
-    """Retain valid logo references and enqueue only missing or changed images."""
+def _logo_reference(reference: object) -> tuple[str, str, str] | None:
     if not isinstance(reference, dict):
-        return
-    bucket, digest = str(reference.get("Bucket", "")), str(reference.get("Hash", ""))
+        return None
+    bucket, digest = reference.get("Bucket", ""), reference.get("Hash", "")
+    if not isinstance(bucket, str) or not isinstance(digest, str):
+        return None
     try:
         name = logo_name(bucket, digest)
     except ValueError:
+        return None
+    return bucket, digest, name
+
+
+@transaction.atomic
+def discover_logo(
+    club: Club,
+    reference: object,
+    season: Season,
+    *,
+    observed_at: datetime | None = None,
+    fill_only: bool = False,
+) -> None:
+    """Retain valid logo references and enqueue only missing or changed images."""
+    validated = _logo_reference(reference)
+    if validated is None:
+        return
+    bucket, digest, name = validated
+    locked = Club.objects.select_for_update(no_key=True).get(pk=club.pk)
+    club.logo_bucket, club.logo_hash = locked.logo_bucket, locked.logo_hash
+    club.cached_logo = locked.cached_logo
+    club.metadata_observations = locked.metadata_observations
+    if fill_only and (club.logo_bucket or club.logo_hash):
+        return
+    observed_at = observed_at or timezone.now()
+    previous = parse_datetime(club.metadata_observations.get("logo", ""))
+    if (
+        previous is not None
+        and not timezone.is_naive(previous)
+        and previous > observed_at
+    ):
         return
     changed = (club.logo_bucket, club.logo_hash) != (bucket, digest)
+    fields = []
     if changed:
         club.logo_bucket, club.logo_hash = bucket, digest
-        club.save(update_fields=("logo_bucket", "logo_hash"))
+        fields.extend(("logo_bucket", "logo_hash"))
+    observations = {**club.metadata_observations, "logo": observed_at.isoformat()}
+    if observations != club.metadata_observations:
+        club.metadata_observations = observations
+        fields.append("metadata_observations")
+    if fields:
+        club.save(update_fields=fields)
     if club.cached_logo == name:
         return
     resource, created = SyncResource.objects.get_or_create(
@@ -75,10 +117,15 @@ def cache_logo(source_id: str, data: dict[str, Any]) -> None:
         raise ValueError("Stale club logo response")
     storage = AppClub().logo.storage
     name = store_image(storage, name, data)
-    club.cached_logo = name
-    club.save(update_fields=("cached_logo",))
-    if club.local_club_id:
-        publish_logo(club)
+    with transaction.atomic():
+        club = Club.objects.select_for_update(no_key=True).get(external_id=source_id)
+        if name != logo_name(club.logo_bucket, club.logo_hash):
+            raise ValueError("Stale club logo response")
+        if club.cached_logo != name:
+            club.cached_logo = name
+            club.save(update_fields=("cached_logo",))
+        if club.local_club_id:
+            publish_logo(club)
 
 
 def publish_logo(club: Club) -> None:

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from django.utils.timezone import localtime
 
+from apps.game_tracker.application.ports import SourceResultReader
 from apps.game_tracker.domain.match_clock import format_part_length
 from apps.game_tracker.models import MatchData
 from apps.game_tracker.services.match_scores import compute_scores_for_matchdata_ids
@@ -16,7 +17,9 @@ from apps.game_tracker.services.match_scores import compute_scores_for_matchdata
 MatchSummary = dict[str, Any]
 
 
-def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]:
+def build_match_summaries(
+    match_data: Iterable[MatchData], *, source_results: SourceResultReader | None = None
+) -> list[MatchSummary]:
     """Serialize match data rows into a lightweight summary payload.
 
     Returns:
@@ -24,6 +27,11 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
 
     """
     entries = list(match_data)
+    projections = (
+        source_results(str(entry.match_link_id) for entry in entries)
+        if source_results is not None
+        else {}
+    )
 
     # Active matches should show the current score, which is derived from shots.
     active_match_data_ids: list[UUID] = [
@@ -56,6 +64,7 @@ def build_match_summaries(match_data: Iterable[MatchData]) -> list[MatchSummary]
             "match_data_id": str(entry_uuid),
             "start_time": localtime(match.start_time).isoformat(),
             "status": entry.status,
+            "source_result": projections.get(str(entry.match_link_id)),
             "competition": match.season.name,
             # Structured context: clients never infer the discipline from names.
             "discipline": match.season.discipline or None,

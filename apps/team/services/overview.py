@@ -9,12 +9,18 @@ from typing import Any
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from apps.competition.domain.rosters import ROSTER_FRESHNESS
+from apps.competition.domain.rosters import (
+    ROSTER_FRESHNESS,
+    RosterPeriod,
+    roster_target,
+)
 from apps.competition.models import (
     MatchMembership,
     RosterMembership,
     Team as SourceTeam,
+    TeamParticipation,
 )
+from apps.game_tracker.application.ports import SourceResultReader
 from apps.game_tracker.models import MatchData, StartingPlayerAssignment
 from apps.game_tracker.queries.match_summaries import build_match_summaries
 from apps.game_tracker.services.player_statistics import build_player_stats
@@ -42,6 +48,7 @@ class TeamOverviewOptions:
     viewer_can_manage_goal_songs: bool
     fallback_goal_song_audio_urls: list[str]
     team_payload: Mapping[str, object]
+    source_results: SourceResultReader | None = None
 
 
 def build_team_overview_payload(
@@ -58,11 +65,13 @@ def build_team_overview_payload(
         match_data_qs.filter(status__in=["upcoming", "active"]).order_by(
             "match_link__start_time",
         )[:10],
+        source_results=options.source_results,
     )
     recent_matches = build_match_summaries(
         match_data_qs.filter(status="finished").order_by("-match_link__start_time")[
             :10
         ],
+        source_results=options.source_results,
     )
 
     finished_matches = match_data_qs.filter(status="finished")
@@ -267,13 +276,45 @@ def _match_roles(
 
 def _private_roster_counts(team: Team, season: Season | None) -> dict:
     """Keep anonymous totals season-scoped; never sum unidentifiable variants."""
-    counts = list(
-        SourceTeam.objects.filter(
-            local_team_data__team=team,
-            local_team_data__season=season,
-            roster_observed_at__gte=timezone.now() - ROSTER_FRESHNESS,
-        ).values_list("private_roster_counts", flat=True)
+    target_ids = set(
+        TeamData.objects.filter(team=team, season=season).values_list("pk", flat=True)
     )
+    relevant_participations = TeamParticipation.objects.filter(
+        team_data_id__in=target_ids
+    )
+    sources = list(
+        SourceTeam.objects.filter(
+            Q(local_team_data_id__in=target_ids)
+            | Q(pk__in=relevant_participations.values("team_id")),
+            roster_observed_at__gte=timezone.now() - ROSTER_FRESHNESS,
+        ).only("pk", "local_team_data", "roster_observed_at", "private_roster_counts")
+    )
+    # Load every period for only the selected variants: a spring observation must
+    # not fall back to autumn merely because the request selected autumn.
+    periods: dict[int, list[RosterPeriod]] = {}
+    for participation in TeamParticipation.objects.filter(
+        team_id__in=[source.pk for source in sources]
+    ).select_related("team_data__season"):
+        periods.setdefault(participation.team_id, []).append(
+            RosterPeriod(
+                team_data_id=participation.team_data_id,
+                start_date=participation.team_data.season.start_date,
+                end_date=participation.team_data.season.end_date,
+                phase=participation.phase,
+                order=participation.pk,
+            )
+        )
+    counts = [
+        source.private_roster_counts
+        for source in sources
+        if source.roster_observed_at is not None
+        and roster_target(
+            source.roster_observed_at,
+            periods.get(source.pk, []),
+            source.local_team_data_id,
+        )
+        in target_ids
+    ]
     players = max((row.get("players", 0) for row in counts), default=0)
     staff = max((row.get("staff", 0) for row in counts), default=0)
     return {

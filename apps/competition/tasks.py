@@ -23,6 +23,7 @@ from apps.competition.models import (
     SyncLease,
     SyncResource,
 )
+from apps.competition.services.catalog_metadata import enrichment_waiting
 from apps.competition.services.history_editions import (
     current_edition,
     recheck_edition,
@@ -278,9 +279,15 @@ def _provider_turn(season: Season | None) -> dict[str, object]:
         key="sportlink", expires_at__gt=timezone.now()
     ).exists():
         return {"status": "busy_or_cooldown", "http_requests": 0}
-    if not history_pending() and (
-        season is None
-        or not preview_sync(season, budget=None)["candidate_feed_requests"]
+    if (
+        not history_pending()
+        and (
+            season is None
+            or not preview_sync(season, budget=None)["candidate_feed_requests"]
+        )
+        and not enrichment_waiting(
+            season, budget=settings.SPORTLINK_ENRICHMENT_MAX_REQUESTS
+        )
     ):
         return {"status": "idle", "http_requests": 0}
     options = TurnOptions(
@@ -288,6 +295,8 @@ def _provider_turn(season: Season | None) -> dict[str, object]:
         live_budget=settings.SPORTLINK_SYNC_MAX_REQUESTS or None,
         history_budget=settings.SPORTLINK_HISTORY_MAX_REQUESTS,
         history_share=settings.SPORTLINK_HISTORY_SHARE,
+        enrichment_budget=settings.SPORTLINK_ENRICHMENT_MAX_REQUESTS,
+        enrichment_share=settings.SPORTLINK_ENRICHMENT_SHARE,
     )
     try:
         result = ProviderTurn(season, _provider_clients, options).run()

@@ -1,5 +1,6 @@
 """Synthetic allocation spreadsheets cover encoding, two-column layout and linking."""
 
+from collections import Counter
 from decimal import Decimal
 
 import pytest
@@ -13,8 +14,15 @@ from apps.competition.models import (
     PoolEntry,
     Team,
 )
-from apps.competition.services.allocations import import_allocations, pool_key, team_key
+from apps.competition.services.allocations import (
+    allocation_class,
+    import_allocations,
+    pool_key,
+    team_key,
+)
 from apps.competition.services.classification import map_pool
+from apps.competition.services.rating_preview import exclusion
+from apps.competition.services.season_repair import repair_allocations
 from apps.schedule.models import Season
 
 
@@ -86,7 +94,11 @@ def test_staging_exact_links_and_idempotency(season: Season) -> None:
         sport="KORFBALL-VE-BK",
     )
     pool = Pool.objects.create(
-        season=season, external_id="P1", name="Ge4-001", sport="KORFBALL-VE-BK"
+        season=season,
+        external_id="P1",
+        name="Ge4-001",
+        sport="KORFBALL-VE-BK",
+        phase="autumn",
     )
     entry = PoolEntry.objects.create(pool=pool, team=team)
     report = import_allocations(
@@ -161,3 +173,101 @@ def test_verified_pool_aliases_keep_classes_separate() -> None:
     assert pool_key("Ge4-001") != pool_key("Ge-4001")
     assert team_key("t Capproen J1") == team_key("'t Capproen J1")
     assert team_key("Example J1") != team_key("Example J2")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("phase", ["full_season", ""])
+def test_linked_allocation_follows_full_season_without_mutating_provenance(
+    season: Season,
+    phase: str,
+) -> None:
+    """Worksheet autumn cannot replace a full-year or unresolved pool period."""
+    club = Club.objects.create(
+        external_id="continuous", name="Voorbéeld", city="Teststad"
+    )
+    team = Team.objects.create(
+        season=season,
+        external_id="continuous",
+        club=club,
+        name="Voorbéeld J1",
+        sport="KORFBALL-VE-BK",
+    )
+    pool = Pool.objects.create(
+        season=season,
+        external_id="continuous",
+        name="Ge4-001",
+        sport="KORFBALL-VE-BK",
+        phase=phase,
+    )
+    entry = PoolEntry.objects.create(pool=pool, team=team)
+    import_allocations(CSV, season, apply=True, label="Synthetic", gender="mixed")
+    allocation = Allocation.objects.get(entry=entry)
+    pool.refresh_from_db()
+    assert allocation.classification["phase"] == "autumn"
+    assert allocation.competition_class.edition.phase == (phase or "unknown")
+    assert pool.phase == phase
+    assert pool.competition_class_id == allocation.competition_class_id
+
+    original_class = allocation.competition_class_id
+    blocked: list[dict] = []
+    repair_allocations(season, blocked, Counter())
+    allocation.refresh_from_db()
+    assert allocation.competition_class_id == original_class
+    assert not blocked
+    expected_exclusion = "" if phase else "unresolved_context"
+    assert exclusion(allocation) == expected_exclusion
+
+
+@pytest.mark.django_db
+def test_a_allocation_without_points_is_not_a_missing_baseline(season: Season) -> None:
+    """Only B baselines need supplied source points; A/top omissions stay null."""
+    club = Club.objects.create(external_id="withoutpoints", name="Example")
+    team = Team.objects.create(
+        season=season,
+        external_id="withoutpoints",
+        club=club,
+        name="Example 1",
+        sport="KORFBALL-VE-WK",
+    )
+    pool = Pool.objects.create(
+        season=season,
+        external_id="withoutpoints",
+        class_name="gemengd senioren 1e klasse",
+        sport="KORFBALL-VE-WK",
+        phase="autumn",
+    )
+    entry = PoolEntry.objects.create(pool=pool, team=team)
+    source = AllocationSource.objects.create(
+        season=season,
+        digest="points",
+        label="Synthetic",
+        published_on=season.start_date,
+    )
+    context = {
+        "discipline": "outdoor",
+        "phase": "autumn",
+        "gender": "mixed",
+        "code": "class_1",
+        "category": "a",
+        "age_group": "senior",
+        "team_kind": "standard",
+        "playing_format": "eight",
+    }
+    allocation = Allocation.objects.create(
+        source=source,
+        row_number=1,
+        column=1,
+        section="Synthetic",
+        pool_name="P",
+        team_name="Example 1",
+        city="",
+        classification=context,
+        entry=entry,
+        link_status="matched",
+        competition_class_id=allocation_class(season, context, {}, phase="autumn"),
+    )
+    map_pool(pool)
+    allocation.refresh_from_db()
+    assert allocation.knkv_points is None
+    assert allocation.average_age is None
+    assert not exclusion(allocation)

@@ -15,13 +15,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.competition.adapters.outbound.history import HistoryClient
+from apps.competition.application.ports import CompetitionClient
 from apps.competition.composition import (
     competition_client,
     schedule_change_dispatcher,
 )
 from apps.competition.models import HistoricalResource
 from apps.competition.services.computed_standings import refresh_edition_standings
-from apps.competition.services.history import progress, seed
+from apps.competition.services.history import PROVIDERS, progress, seed
 from apps.competition.services.history_archive import import_archive
 from apps.competition.services.history_editions import (
     LOG_FIELDS,
@@ -31,14 +32,16 @@ from apps.competition.services.history_editions import (
     recheck_edition,
     seed_edition,
 )
+from apps.competition.services.history_recovery import apply_recovery, plan_recovery
 from apps.competition.services.history_sites import (
     KORFBALNL,
     UITSLAGEN,
     seed_site,
     site_summary,
 )
-from apps.competition.services.history_worker import run_history
+from apps.competition.services.history_worker import current_work_due, run_history
 from apps.competition.services.lineup_plan import plan_lineups
+from apps.competition.services.provider_scheduler import ProviderTurn, TurnOptions
 from apps.competition.services.site_repair import repair_site
 from apps.schedule.models import Season
 
@@ -56,6 +59,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "action",
             choices=(
+                "plan",
+                "apply-plan",
                 "edition",
                 "site",
                 "site-repair",
@@ -105,7 +110,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--season", help="Existing season name; dates are never guessed"
         )
-        parser.add_argument("--provider", choices=("app", "dataservice"), default="app")
+        parser.add_argument("--provider", choices=sorted(PROVIDERS), default="app")
         parser.add_argument(
             "--kind", choices=("match", "pool", "window"), default="match"
         )
@@ -130,6 +135,32 @@ class Command(BaseCommand):
             "--file", type=Path, help="Normalized, attributed archive JSON"
         )
         parser.add_argument("--no-publish", action="store_true")
+        parser.add_argument(
+            "--manifest",
+            type=Path,
+            help="Reviewed recovery JSON; plan writes, apply-plan reads",
+        )
+        parser.add_argument(
+            "--ids", type=int, nargs="+", help="Explicit historical checkpoint IDs"
+        )
+        parser.add_argument(
+            "--source-ids", nargs="+", help="Explicit public provider identities"
+        )
+        parser.add_argument(
+            "--reasons", nargs="+", help="Exact checkpoint reason selection"
+        )
+        parser.add_argument(
+            "--kinds", nargs="+", help="Checkpoint kind selection for a recovery plan"
+        )
+        parser.add_argument(
+            "--after", type=int, default=0, help="Stable exclusive checkpoint PK cursor"
+        )
+        parser.add_argument("--limit", type=int, default=20)
+        parser.add_argument(
+            "--drain",
+            action="store_true",
+            help="Apply-plan: fetch only reviewed IDs under the shared provider turn",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         """Report structured coverage and credential-free operational errors.
@@ -139,7 +170,11 @@ class Command(BaseCommand):
 
         """
         try:
-            result = self.execute_action(options)
+            result = (
+                recovery_action(str(options["action"]), options)
+                if options["action"] in {"plan", "apply-plan"}
+                else self.execute_action(options)
+            )
         except (ValueError, OSError, TypeError, KeyError, Season.DoesNotExist) as exc:
             raise CommandError(
                 "Invalid history configuration or input; check season, dates, IDs "
@@ -302,3 +337,59 @@ def write_log(edition: int, output: Path) -> dict:
             writer.writerow(row)
             count += 1
     return {"edition": edition, "rows": count, "output": str(output)}
+
+
+def recovery_action(action: str, options: dict[str, Any]) -> dict[str, Any]:
+    """Preview without HTTP or apply a reviewed selection with a scoped provider turn.
+
+    Raises:
+        ValueError: A manifest path or valid scoped selection is missing.
+
+    """
+    path = options.get("manifest")
+    if path is None:
+        raise ValueError("Recovery requires a manifest path")
+    if action == "plan":
+        manifest = plan_recovery(
+            editions=options.get("edition") or [],
+            provider=options.get("provider"),
+            kinds=options.get("kinds") or [],
+            reasons=options.get("reasons") or [],
+            resource_ids=options.get("ids") or [],
+            source_ids=options.get("source_ids") or [],
+            cursor=options["after"],
+            limit=options["limit"],
+            max_requests=options["max_requests"],
+        )
+        path.write_text(
+            json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        return {
+            "selected": len(manifest["rows"]),
+            "next_cursor": manifest["next_cursor"],
+            "max_requests": manifest["max_requests"],
+            "manifest": str(path),
+        }
+    result = apply_recovery(json.loads(path.read_text(encoding="utf-8")))
+    if not options.get("drain") or not result["resource_ids"]:
+        return result
+    if current_work_due():
+        return {**result, "drain": {"http_requests": 0, "reason": "current_work_due"}}
+
+    def clients() -> tuple[CompetitionClient | None, HistoryClient]:
+        history = history_client(options)
+        return history.app, history
+
+    drained = ProviderTurn(
+        None,
+        clients,
+        TurnOptions(
+            schedule_changes=None,
+            publish=False,
+            history_share=1,
+            history_budget=result["max_requests"],
+            history_resource_ids=frozenset(result["resource_ids"]),
+            stop=current_work_due,
+        ),
+    ).run()
+    return {**result, "drain": drained}

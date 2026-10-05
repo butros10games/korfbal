@@ -26,7 +26,11 @@ from apps.competition.services.seasons import (
     native_pool_filter,
     native_team_filter,
 )
-from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_entries
+from apps.competition.services.standings import (
+    STANDINGS_PAGE_SIZE,
+    fallback_table_digests,
+    visible_standing_entries,
+)
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
 from apps.player.models.player import Player
 from apps.schedule.models import Season
@@ -201,15 +205,16 @@ class PoolViewSet(CatalogueViewSet):
         rows = self.get_queryset().prefetch_related(
             Prefetch(
                 "entries",
-                queryset=standing_entries().filter(pool__results_filtered=False)[
-                    : STANDINGS_PAGE_SIZE + 1
-                ],
+                queryset=visible_standing_entries()[: STANDINGS_PAGE_SIZE + 1],
                 to_attr="standing_rows",
             )
         )
         page = self.paginate_queryset(rows)
+        assert page is not None
         return self.get_paginated_response(
-            CompetitionPoolStandingsSerializer(page, many=True).data
+            CompetitionPoolStandingsSerializer(
+                page, many=True, context={"table_digests": fallback_table_digests(page)}
+            ).data
         )
 
     @extend_schema(responses={200: OBJECT_LIST_SCHEMA})
@@ -230,9 +235,7 @@ class PoolViewSet(CatalogueViewSet):
     def standings(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Return official positions, retaining missing values."""
         pool = self.get_object()
-        rows = standing_entries().filter(pool=pool)
-        if pool.results_filtered:
-            rows = rows.none()
+        rows = visible_standing_entries().filter(pool=pool)
         page = self.paginate_queryset(rows)
         return self.get_paginated_response(
             CompetitionPoolEntrySerializer(page, many=True).data

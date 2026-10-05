@@ -99,6 +99,12 @@ def create_baseline(season: Season, sport: str = "KORFBALL-VE-BK") -> Allocation
         b"2;Other J2;Za;10,4;60;Teststad;;;;;;;;;\n"
     )
     import_allocations(csv, season, apply=True, label="Synthetic", gender="mixed")
+    pool.refresh_from_db()
+    assert pool.phase == "autumn"
+    assert pool.mapping_status == "mapped"
+    assert set(Allocation.objects.values_list("competition_class_id", flat=True)) == {
+        pool.competition_class_id
+    }
     return AllocationSource.objects.get()
 
 

@@ -11,7 +11,7 @@ from django.utils import timezone
 import pytest
 
 from apps.competition.adapters.outbound.history import LOOKBACK_WEEKS, HistoryClient
-from apps.competition.application.ports import FetchResult, TransportError
+from apps.competition.application.ports import FetchResult, RequestGate, TransportError
 from apps.competition.models import (
     Club,
     HistoricalDiscovery,
@@ -76,7 +76,7 @@ class FakeClient:
         self.replies = iter(replies)
         self.calls = []
 
-    def fetch(self, resource: HistoricalResource, gate: object) -> FetchResult:
+    def fetch(self, resource: HistoricalResource, gate: RequestGate) -> FetchResult:
         """Replay one counted provider response."""
         gate.before_request()
         self.calls.append(resource.kind)
@@ -119,7 +119,9 @@ def test_seed_deduplicates_and_retains_provenance(old_season: Season) -> None:
     assert a.pk == b.pk
     assert b.state == "fetched"
     assert HistoricalDiscovery.objects.count() == len(["first", "second"])
-    assert a.discoveries.filter(reference="https://example.org/archive").exists()
+    assert HistoricalDiscovery.objects.filter(
+        resource=a, reference="https://example.org/archive"
+    ).exists()
 
 
 @pytest.mark.django_db
@@ -155,6 +157,13 @@ def test_pool_coverage_never_assumes_complete(old_season: Season, change: str) -
         data["PoolStanding"]["PoolStandingTeam"][0]["TotalMatches"] = 2
     if change == "unknown_count":
         data["PoolStanding"]["PoolStandingTeam"][0].pop("TotalMatches")
+        with pytest.raises(ValueError, match="TotalMatches"):
+            checkpoint(resource, data)
+        resource.refresh_from_db()
+        assert (resource.state, resource.coverage) == ("pending", "unknown")
+        assert not Match.objects.exists()
+        assert not Pool.objects.exists()
+        return
     checkpoint(resource, data)
     resource.refresh_from_db()
     assert resource.coverage == "partial"
@@ -167,8 +176,15 @@ def test_empty_pool_does_not_publish_undated_standings(old_season: Season) -> No
     data = old_pool()
     data["MatchResult"] = []
     checkpoint(resource, data)
-    assert resource.coverage == "empty"
+    assert resource.coverage == "partial"
+    assert resource.reason == "standings_without_dated_results"
+    assert len(resource.evidence["official_table"]["PoolStandingTeam"]) == len({
+        "T1",
+        "T2",
+    })
     assert not Pool.objects.exists()
+    assert not Match.objects.exists()
+    assert not Club.objects.exists()
 
 
 @pytest.mark.django_db

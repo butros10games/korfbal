@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.game_tracker.queries.match_summaries import build_match_summaries
+from apps.game_tracker.composition import build_match_summaries, read_source_results
 from apps.game_tracker.services.match_impact import (
     LATEST_MATCH_IMPACT_ALGORITHM_VERSION,
     round_js_1dp,
@@ -109,6 +109,7 @@ class TeamOverviewActions(viewsets.GenericViewSet):
             seasons=seasons_qs,
             unavailable=gaps,
             options=TeamOverviewOptions(
+                source_results=read_source_results,
                 include_stats=include_stats,
                 include_roster=include_roster,
                 viewer_player=viewer_player(request),

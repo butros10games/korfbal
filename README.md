@@ -954,6 +954,98 @@ New or untouched scheduled matches can receive official scores in `MatchData` wi
 manual score changes stop provider updates to that match's local score. Source
 score corrections remain available in the provider revision history.
 
+### Import integrity and recovery
+
+Imports retain validated, versioned public source context on teams, poules and
+fixtures. Club metadata records per-field observations; thin historical rows do
+not erase richer contact, facility, sport or colour information. Current directory
+evidence is required before discovering the isolated Club v1 detail endpoint.
+Native uploads and local edits keep their precedence, and dissolved clubs are
+published as dissolved without inferring a reopening from a missing flag.
+
+Official table JSON remains in `PoolEntry.standing`. Generated values live in
+`computed_standing`, with `Pool.standings_provenance`; they are provisional and
+have unknown deductions and unknown or partial fixture coverage. A closed season,
+a sync timestamp or all stored fixtures being final does not prove a final table.
+Official penalty points are exposed separately but are already included in the
+reported points. History's legacy `position` is null until final official evidence
+exists; `observed_position` supplies the current rank, and no champion title is
+inferred from rank one. Numeric tier ladders are limited to verified 2026–27
+contexts; earlier or incompatible ladders expose a reason instead of an invented
+level. Allocation phase labels remain provenance while resolved whole-poule
+periods decide their classification.
+
+Public match reads add `source_result` with provider status, nullable scores,
+finality and display authority. An untouched suspended match can display its
+observed score and “Onderbroken” while its native tracker status remains unchanged.
+Local scores and tracker activity retain authority. Provider-only changes refresh
+through bounded reads and the existing 30-second live cache/poll interval; this
+does not promise an immediate SSE event for an import.
+
+`Season.data_coverage` distinguishes unknown, partial, complete and unavailable
+source coverage. A season with stored fixtures stays usable when its legacy
+`data_unavailable` flag was set. Only an explicitly reviewed schedule proof should
+mark coverage complete; an empty response or a limited identifier sample cannot.
+
+The following commands preview bounded selections without provider HTTP or
+database writes. Run from the repository root; names and IDs below are examples.
+JSON manifests contain public fixture/checkpoint identifiers, so keep them in an
+operator-owned location rather than committing production exports.
+
+```bash
+uv run python apps/django_projects/korfbal/manage.py import_competition_history plan \
+    --edition 2023 --limit 20 --max-requests 20 --manifest /tmp/history-recovery.json
+uv run python apps/django_projects/korfbal/manage.py repair_competition_standings \
+    --edition 2023 --stage blank-closed --limit 20 --manifest /tmp/standings-recovery.json
+uv run python apps/django_projects/korfbal/manage.py review_competition_match_linkage \
+    --edition 2023 --limit 20 --manifest /tmp/fixture-recovery.json
+uv run python apps/django_projects/korfbal/manage.py queue_competition_rosters \
+    --season 2026-2027 --limit 20
+uv run python apps/django_projects/korfbal/manage.py update_competition_match_details \
+    --season 2026-2027 --dry-run --component match_facility --state unobserved --limit 20
+uv run python apps/django_projects/korfbal/manage.py probe_competition_sources --edition 2023
+uv run python apps/django_projects/korfbal/manage.py preview_historical_photos
+```
+
+Review each manifest before its matching explicit apply action. History
+`apply-plan --manifest …` queues only the selected checkpoints; adding `--drain`
+fetches only those IDs under the shared provider lease, quota and request budget,
+yielding to urgent live work. Standings `--apply --stage … --manifest …` and fixture
+linkage `--apply --manifest …` recheck fingerprints under non-key row locks.
+Changed candidates are skipped for renewed review. Official standings recovery
+precedes a generated blank-table fallback. Legacy computed tables convert with
+`--stage convert-legacy` before the separate `clear-legacy` stage; preserve a
+database rollback point before clearing the old representation. Participant,
+season or duplicate conflicts with native dependencies remain manual review.
+
+Metadata components distinguish unobserved, available, empty, stale and unsupported.
+Responses are fenced by fixture context captured before I/O; a delayed response
+cannot certify changed participants, periods or classification. Empty components
+are deferred for later rechecking. Archive and Dataservice fixtures without a
+supported endpoint are reported as unsupported rather than endlessly queued.
+
+Source probing with `--probe` requires explicit checkpoint/source IDs and
+`--max-requests` (at most 100 wire requests). It never mutates domain data or
+checkpoints, but uses operational lease/quota/OAuth writes to preserve provider
+safety. Bootstrap, OAuth and retries count against the same budget. Aggregate
+previews alone cannot establish that missing 2023–24 or spring fixtures are
+recoverable; retain those gaps until a supported source demonstrates them.
+
+Historical photo/club enrichment uses the existing provider turn and shared quota;
+it creates no new beat task. `SPORTLINK_ENRICHMENT_MAX_REQUESTS=0` keeps it disabled
+by default. Before a small pilot, review distinct-person photo counts, current
+privacy/freshness, native uploads, retry ceilings and live-owned exclusions, then
+set the per-turn cap and optional daily limit. Photos deduplicate across seasons
+by person/current reference. Eligible existing roster feeds gain priority at seven
+days and become urgent before their eight-day visibility boundary. The bounded
+period backlog is separately opt-in via `SPORTLINK_CONTEXT_BACKLOG_LIMIT=0`.
+
+Roll out additive migrations and both importer/API code before running reviewed
+repairs; deploy the shared client schema/UI together. Preview each cohort again
+after rollout, apply small batches, and compare checkpoints and source/native
+links before widening limits. No recovery command supplies missing players,
+private identities, deductions, scores or historical rules by inference.
+
 After migrating, create/select a `schedule.Season` with the current season dates.
 Run a bounded import from the repository root:
 

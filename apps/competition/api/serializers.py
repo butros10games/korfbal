@@ -3,6 +3,15 @@
 from rest_framework import serializers
 
 from apps.competition.domain.classification import designation
+from apps.competition.domain.standings_provenance import (
+    COMPUTED,
+    fixture_coverage,
+    generated_standing,
+    is_official_standing,
+    table_digest,
+    table_status,
+    table_values,
+)
 from apps.competition.models import (
     Allocation,
     Club,
@@ -16,7 +25,7 @@ from apps.competition.models import (
 )
 from apps.competition.services.classification import pool_classification
 from apps.competition.services.seasons import SeasonResolver
-from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_values
+from apps.competition.services.standings import STANDINGS_PAGE_SIZE, pool_table_source
 from apps.schedule.models import Season
 from apps.schedule.queries.seasons import season_edition
 
@@ -116,6 +125,7 @@ class CompetitionPoolSerializer(NativeSeasonSerializer):
             "name",
             "class_name",
             "classification",
+            "competition_part",
             "teams",
             "sport",
             "local_pool",
@@ -162,8 +172,20 @@ class CompetitionPoolEntrySerializer(serializers.ModelSerializer):
     values = serializers.SerializerMethodField()
 
     def get_values(self, obj: PoolEntry) -> dict[str, int | None]:
-        """Keep absent/unusable values unknown, and preserve zero and penalties."""
-        return standing_values(obj.standing)
+        """Keep absent/unusable values unknown, and preserve zero and penalties.
+
+        The poule's authority decides which table every row reads, so official
+        and generated values never share a table. ``penalty_points`` is already
+        included in ``points``.
+        """
+        official = getattr(obj, "pool_official", None)
+        if official is None:
+            official = is_official_standing(obj.standing)
+        if official:
+            values = obj.standing if is_official_standing(obj.standing) else {}
+        else:
+            values = generated_standing(obj.standing, obj.computed_standing)
+        return table_values(values)
 
     class Meta:
         """Declare storage or serialization metadata."""
@@ -204,6 +226,10 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
     teams = None
     standings = serializers.SerializerMethodField()
     standings_computed = serializers.SerializerMethodField()
+    table_source = serializers.SerializerMethodField()
+    table_status = serializers.SerializerMethodField()
+    fixture_coverage = serializers.SerializerMethodField()
+    table_digest = serializers.SerializerMethodField()
 
     def get_standings(self, obj: Pool) -> dict:
         """Detect the next page with one extra prefetched row, without a count query."""
@@ -214,13 +240,31 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
             "has_more": len(obj.standing_rows) > STANDINGS_PAGE_SIZE,
         }
 
-    def get_standings_computed(self, obj: Pool) -> bool:
-        """Tell a table computed from site results apart from an official one.
+    def get_table_source(self, obj: Pool) -> str:
+        """Decide from the whole poule, never from one row.
 
-        computed_standings.py marks every row it writes, and an official provider
-        table replaces the whole standing, so the first rows decide.
+        Official rows sort first and every row knows whether its poule has any,
+        so the prefetched first page decides.
         """
-        return any(row.standing.get("Computed") is True for row in obj.standing_rows)
+        return pool_table_source(obj)
+
+    def get_standings_computed(self, obj: Pool) -> bool:
+        """Keep the older flag for clients that predate ``table_source``."""
+        return self.get_table_source(obj) == COMPUTED
+
+    def get_table_status(self, obj: Pool) -> str:
+        """Report final only with recorded evidence, never for a synced table."""
+        return table_status(self.get_table_source(obj), obj.standings_provenance)
+
+    def get_fixture_coverage(self, obj: Pool) -> str:
+        """Report recorded coverage; a generated table is never complete."""
+        return fixture_coverage(self.get_table_source(obj), obj.standings_provenance)
+
+    def get_table_digest(self, obj: Pool) -> str | None:
+        """Return a whole-table content key, including changes beyond the first page."""
+        source = self.get_table_source(obj)
+        fallback = self.context.get("table_digests", {}).get(obj.pk, {}).get(source)
+        return table_digest(source, obj.standings_provenance, fallback)
 
     class Meta:
         """Declare the public response fields."""
@@ -234,6 +278,10 @@ class CompetitionPoolStandingsSerializer(CompetitionPoolSerializer):
             ),
             "standings",
             "standings_computed",
+            "table_source",
+            "table_status",
+            "fixture_coverage",
+            "table_digest",
         )
 
 

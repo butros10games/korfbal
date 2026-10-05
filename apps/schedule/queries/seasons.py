@@ -10,6 +10,7 @@ from django.db.models import Max, Min, Q
 from django.utils import timezone
 
 from apps.schedule.models import Match, Season
+from apps.schedule.services.season_coverage import coverage_payload
 
 
 # A korfbal year runs from July to June and holds up to four playing seasons.
@@ -250,7 +251,7 @@ def _same_discipline(first: Season, second: Season) -> bool:
 
 
 def unavailable_seasons(seasons: list[Season]) -> list[Season]:
-    """Return finished seasons without source data inside this history.
+    """Return incomplete or unknown periods bounded by this entity's history.
 
     A team or club lists such a season only between seasons of the same
     discipline it has data in, and only when none of its data overlaps it, so a
@@ -260,9 +261,20 @@ def unavailable_seasons(seasons: list[Season]) -> list[Season]:
         return []
     known = {season.pk for season in seasons}
     gaps = []
-    for gap in Season.objects.filter(
-        data_unavailable=True, end_date__lt=timezone.localdate()
-    ).order_by("-start_date", "name"):
+    for gap in (
+        Season.objects
+        .filter(
+            start_date__gt=min(season.end_date for season in seasons),
+            end_date__lt=min(
+                timezone.localdate(), max(season.start_date for season in seasons)
+            ),
+        )
+        .filter(
+            Q(data_coverage__in=("unknown", "partial", "unavailable"))
+            | Q(data_unavailable=True)
+        )
+        .order_by("-start_date", "name")
+    ):
         if gap.pk in known:
             continue
         related = [season for season in seasons if _same_discipline(gap, season)]
@@ -275,7 +287,16 @@ def unavailable_seasons(seasons: list[Season]) -> list[Season]:
             )
         ):
             gaps.append(gap)
-    return gaps
+    half_editions = {
+        season_edition(gap) for gap in gaps if season_kind(gap) in {AUTUMN, SPRING}
+    }
+    # A full-year period belongs to continuous poules; its overlapping halves
+    # are the shared history choices when either half is already represented.
+    return [
+        gap
+        for gap in gaps
+        if not (season_kind(gap) == FULL_YEAR and season_edition(gap) in half_editions)
+    ]
 
 
 def season_options_payload(
@@ -283,7 +304,7 @@ def season_options_payload(
 ) -> list[dict[str, object]]:
     """Serialize season choices consistently across overview endpoints.
 
-    ``unavailable`` seasons join the choices with ``data_unavailable`` set.
+    Gap choices carry their scoped coverage; partial and unknown stay browsable.
     """
     if not seasons:
         return []
@@ -311,7 +332,7 @@ def season_options_payload(
             "kind": season.context.kind,
             "discipline": season.context.discipline,
             "phase": season.context.phase,
-            "data_unavailable": season.pk in gaps,
+            **coverage_payload(season, has_entity_data=season.pk not in gaps),
         }
         for season in choices
     ]

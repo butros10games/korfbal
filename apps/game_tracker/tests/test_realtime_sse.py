@@ -170,6 +170,7 @@ async def test_committed_goal_delivers_public_snapshot_without_viewer_read() -> 
             == event["revision"]
         )
         assert event["live"]["score"] == {"home": 0, "away": 0}
+        assert event["live"]["source_result"] is None
         assert set(event["public_reads"]) == set(event["resources"]) & {
             "summary",
             "stats",
@@ -193,6 +194,7 @@ async def test_committed_goal_delivers_public_snapshot_without_viewer_read() -> 
             "score",
             "last_changed_at",
             "live_revision",
+            "source_result",
         }
     finally:
         await communicator.send_input({"type": "http.disconnect"})

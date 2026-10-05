@@ -94,6 +94,7 @@ def test_standings_preserve_unknown_values_and_hide_filtered_results(
         "position": 1,
         "played": 0,
         "points": -1,
+        "penalty_points": None,
         "won": None,
         "drawn": None,
         "lost": None,
@@ -134,7 +135,7 @@ def test_official_positions_sort_numerically_before_pagination(season: Season) -
 @pytest.mark.django_db
 def test_team_standings_are_bounded_and_constant_query_count(season: Season) -> None:
     """Batch pools without N+1 reads or fetching every team's full standings."""
-    expected_batch_queries = 5
+    expected_batch_queries = 6
     expected_page_queries = 4
     standings_page_size = 100
     native_club = NativeClub.objects.create(name="Synthetic")
@@ -201,6 +202,17 @@ def test_team_standings_are_bounded_and_constant_query_count(season: Season) -> 
                     row["values"]["position"] for row in standings["results"]
                 ] == list(range(1, 101))
                 assert "standing" not in standings["results"][0]
+
+    before_digest = rows[0]["table_digest"]
+    # Updating a later page changes the complete table key without a sync timestamp.
+    PoolEntry.objects.filter(pool=pools[0], standing__Position="102").update(
+        standing={"Position": "103", "Computed": True}
+    )
+    refreshed = client.get(f"{url}&page_size=12")
+    assert refreshed.data["results"][0]["table_digest"] != before_digest
+    PoolEntry.objects.filter(pool=pools[0], standing__Position="103").update(
+        standing={"Position": "102", "Computed": True}
+    )
 
     with CaptureQueriesContext(connection) as queries:
         later = client.get(

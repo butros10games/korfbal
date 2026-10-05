@@ -262,12 +262,29 @@ def test_site_poule_gets_standings_computed_from_its_results() -> None:
     """A site has results but no table; the poule page still shows a ranking."""
     import_club(site_match("1001"), site_match("1002", "2024-11-16T14:00:00.000Z"))
     pool = Pool.objects.get()
-    assert pool.results_filtered is False
-    assert pool.standings_synced_at is not None
-    rows = {
-        entry.team.name: entry.standing
-        for entry in PoolEntry.objects.select_related("team")
+    # Generated authority does not claim that an official feed was unfiltered.
+    assert pool.results_filtered is True
+    # A generated table is not an official synchronization.
+    assert pool.standings_synced_at is None
+    assert pool.standings_provenance["computed"] | {
+        "digest": "",
+        "computed_at": "",
+    } == {
+        "calculation": "computed-v2",
+        "reason": "archive_results",
+        "status": "provisional",
+        "coverage": "unknown",
+        "deductions": "unknown",
+        "results": 2,
+        "digest": "",
+        "computed_at": "",
     }
+    entries = {
+        entry.team.name: entry for entry in PoolEntry.objects.select_related("team")
+    }
+    # The official standings stay empty; generated rows never enter them.
+    assert all(entry.standing == {} for entry in entries.values())
+    rows = {name: entry.computed_standing for name, entry in entries.items()}
     assert rows["Example T1"] == {
         "TotalMatches": 2,
         "Won": 2,
@@ -278,7 +295,6 @@ def test_site_poule_gets_standings_computed_from_its_results() -> None:
         "GoalsAgainst": 36,
         "GoalsDifference": 4,
         "Position": 1,
-        "Computed": True,
     }
     assert (rows["Example T2"]["Position"], rows["Example T2"]["Lost"]) == (2, 2)
 

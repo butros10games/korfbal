@@ -11,6 +11,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.game_tracker.composition import read_source_results
 from apps.kwt_common.api.base import KorfbalAPIView
 from apps.kwt_common.api.params import uuid_query_values
 from apps.player.services.player_overview import (
@@ -69,6 +70,7 @@ class PlayerOverviewAPIView(KorfbalAPIView):
                 season=selection.season,
                 seasons=seasons,
                 selection=selection,
+                source_results=read_source_results,
             )
         )
 
@@ -129,6 +131,7 @@ class PlayerConnectedClubRecentResultsAPIView(KorfbalAPIView):
                 limit=limit,
                 days=days,
                 season_id=season_id,
+                source_results=read_source_results,
             )
         )
 
@@ -167,7 +170,10 @@ class PlayerStatsAPIView(KorfbalAPIView):
             return invalid_season_response()
         return Response(
             build_player_stats_payload(
-                player=player, season=selection.season, selection=selection
+                player=player,
+                season=selection.season,
+                selection=selection,
+                source_results=read_source_results,
             )
         )
 

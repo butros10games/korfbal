@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, date, datetime
 import json
 from typing import Any
 
@@ -163,7 +163,9 @@ def test_batches_resume_after_the_last_poule() -> None:
     """A bounded batch reports where the next one continues."""
     scope = legacy_scope()
     first = run(RepairOptions(scope=scope, split_outdoor=True, limit=1))
-    assert first.next_after == Pool.objects.order_by("pk").first().pk
+    first_pool = Pool.objects.order_by("pk").first()
+    assert first_pool is not None
+    assert first.next_after == first_pool.pk
     second = run(
         RepairOptions(
             scope=scope, split_outdoor=True, limit=1, after=first.next_after or 0
@@ -187,3 +189,68 @@ def test_command_requires_explicit_scope_and_defaults_to_preview(
     payload = json.loads(capsys.readouterr().out)
     assert payload["applied"] is False
     assert snapshot() == before
+
+
+def test_self_routed_season_disagreement_is_review_only() -> None:
+    """A full-year poule found in an autumn season needs routing review first."""
+    scope = playing_season("autumn", 2026)
+    importer = Importer(scope, timezone.now(), discover=False)
+    # Source rows are synthetic; a historical correction exposed the spring half.
+    first = fixture("CONT-A1", "2026-09-05T13:30:00+0200", 90)
+    importer.match(first, result=True)
+    pool = Pool.objects.get(external_id="90")
+    source = SourceMatch.objects.get(external_id="CONT-A1")
+    SourceMatch.objects.create(
+        season=scope,
+        external_id="CONT-A2",
+        pool=pool,
+        starts_at=datetime(2026, 9, 12, tzinfo=UTC),
+        home_team=source.home_team,
+        away_team=source.away_team,
+        status="FINAL",
+    )
+    for number, day in enumerate((3, 10), start=1):
+        SourceMatch.objects.create(
+            season=scope,
+            external_id=f"CONT-S{number}",
+            pool=pool,
+            starts_at=datetime(2027, 4, day, tzinfo=UTC),
+            home_team=source.home_team,
+            away_team=source.away_team,
+            status="FINAL",
+        )
+    before = snapshot()
+    report = run(RepairOptions(scope=scope, apply=True))
+    assert snapshot() == before
+    assert report.counts["season_phase_mismatch"] == 1
+    assert report.pools[0]["routing_review"] == "full_year_repair"
+    assert report.pools[0]["proposed_phase"] == "full_season"
+    assert (
+        report.pools[0]["classification"]["after"]["classification"]["phase"]
+        == "full_season"
+    )
+
+
+def test_classification_preview_reports_all_dependent_impacts() -> None:
+    """The preview uses the proposed context, including its untracked rule effect."""
+    scope = legacy_scope()
+    Pool.objects.filter(external_id="10").update(
+        class_name="gemengd senioren 1e klasse", competition_class=None
+    )
+    before = snapshot()
+    report = run(RepairOptions(scope=scope))
+    assert snapshot() == before
+    item = next(
+        item
+        for item in report.pools
+        if item["pool"] == Pool.objects.get(external_id="10").pk
+    )
+    assert item["classification"]["after"]["classification"]["category"] == "a"
+    assert item["impacts"]["automatic_substitutions"] == {
+        "before": False,
+        "after": True,
+        "requires_team_opt_in": True,
+    }
+    assert item["impacts"]["published_rating_cache"] == "content_fingerprint"
+    assert report.counts["category_a_enter"] == 1
+    assert any(item["after_rules"]["periods"] == [30, 30] for item in report.timing)

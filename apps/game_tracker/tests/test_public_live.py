@@ -32,7 +32,8 @@ pytestmark = [
     pytest.mark.django_db(transaction=True),
     pytest.mark.service_backed,
 ]
-MAX_COLD_SELECTS = 5
+# One bounded source-result read joins the existing score/clock/history reads.
+MAX_COLD_SELECTS = 6
 
 
 @pytest.mark.parametrize("state", ["upcoming", "active", "paused", "finished"])

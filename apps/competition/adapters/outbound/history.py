@@ -23,6 +23,7 @@ from apps.competition.services.history import (
     SITE_PROVIDERS,
     HistoryUnavailableError,
 )
+from apps.schedule.queries.seasons import season_edition
 
 
 LOOKBACK_WEEKS = 52
@@ -183,9 +184,17 @@ class HistoryClient:
         if resource.etag:
             headers["If-None-Match"] = resource.etag
         params = {parameter: resource.source_id, "v": str(version)}
-        if resource.kind in EDITION_KINDS:
-            # The app's season selector; old poules are empty without it.
-            params["SeasonId"] = str(resource.season.start_date.year)
+        if resource.kind in EDITION_KINDS or (
+            resource.kind == "pool" and resource.season.end_date < timezone.localdate()
+        ):
+            # Spring belongs to the edition that began the previous July.
+            edition = season_edition(resource.season)
+            if edition is None:
+                if resource.kind in EDITION_KINDS:
+                    edition = resource.season.start_date.year
+                else:
+                    raise HistoryUnavailableError("season_edition_unknown")
+            params["SeasonId"] = str(edition)
         response = self.app._get(
             BASE_URL + path, params=params, headers=headers, gate=gate
         )

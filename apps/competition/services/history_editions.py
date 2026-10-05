@@ -17,10 +17,15 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from apps.competition.domain.history_scopes import (
+    ARCHIVE_PREFIX,
+    full_year_name,
+    season_names,
+)
 from apps.competition.models import (
     HistoricalDiscovery,
     HistoricalResource,
@@ -33,16 +38,25 @@ from apps.competition.services.competition_periods import (
     decide_pool_period,
     resolve_pool_periods,
 )
+from apps.competition.services.computed_standings import refresh_generated_standings
 from apps.competition.services.history import (
-    ARCHIVE_PREFIX,
     EDITION_KINDS,
+    HistoryUnavailableError,
     reference_label,
+    refresh_app_pool_coverage,
     resource_key,
     validate_identity,
 )
-from apps.competition.services.importer import Importer
+from apps.competition.services.history_integrity import (
+    fixture_coverage,
+    is_self_fixture,
+    standing_projection,
+    unique_matches,
+    unique_standings,
+)
+from apps.competition.services.importer import Importer, lock_fixture_pools
 from apps.competition.services.lineup_plan import assign_cohorts, plan_cohort
-from apps.competition.services.seasons import INDOOR, OUTDOOR
+from apps.competition.services.seasons import INDOOR, OUTDOOR, edition_scopes
 from apps.schedule.domain.competition_context import (
     AUTUMN,
     FULL_SEASON,
@@ -52,6 +66,7 @@ from apps.schedule.domain.competition_context import (
     edition_for_day,
 )
 from apps.schedule.models import Season
+from apps.schedule.queries.seasons import season_edition
 from apps.schedule.services.season_context import edition_season
 
 
@@ -91,20 +106,6 @@ class EditionSeasons:
         if sport == OUTDOOR:
             return self.autumn if day.month >= AUTUMN_FIRST_MONTH else self.spring
         return None
-
-
-def season_names(edition: int) -> tuple[str, str, str]:
-    """Name the autumn outdoor, indoor and spring outdoor seasons of an edition."""
-    return (
-        f"Voor seizoen {edition}",
-        f"Zaal seizoen {edition}-{edition + 1}",
-        f"Na seizoen {edition + 1}",
-    )
-
-
-def full_year_name(edition: int) -> str:
-    """Name the outdoor season of poules that play both halves of an edition."""
-    return f"Veld seizoen {edition}-{edition + 1}"
 
 
 def full_year_season(edition: int) -> Season:
@@ -184,7 +185,7 @@ def prepare_edition(edition: int) -> EditionSeasons:
 
 def edition_seasons(resource: HistoricalResource) -> EditionSeasons:
     """Load the playing seasons of an edition checkpoint's anchor season."""
-    edition = resource.season.start_date.year
+    edition = season_edition(resource.season) or resource.season.start_date.year
     autumn, indoor, spring = season_names(edition)
     return EditionSeasons(
         edition,
@@ -192,14 +193,6 @@ def edition_seasons(resource: HistoricalResource) -> EditionSeasons:
         indoor=edition_season(edition, INDOOR_PHASE, indoor, None),
         spring=edition_season(edition, SPRING, spring, None),
     )
-
-
-def edition_scopes(edition: int) -> list[Season]:
-    """Return the existing playing seasons of one edition."""
-    query = Q(edition=edition, phase__in=(AUTUMN, INDOOR_PHASE, SPRING, FULL_SEASON))
-    for name in (*season_names(edition), full_year_name(edition)):
-        query |= Q(name__iexact=name)
-    return list(Season.objects.filter(query))
 
 
 def seed_many(
@@ -509,7 +502,9 @@ def apply_team(
     scan: bool,
 ) -> None:
     """Queue a team's poules, including play-off poules missing from Pool[]."""
-    unbound = (data.get("UnboundMatchResults") or {}).get("MatchResult") or []
+    unbound = unique_matches(
+        (data.get("UnboundMatchResults") or {}).get("MatchResult") or []
+    )
     pools = {
         str(row["PoolId"]): resource.sport
         for row in [
@@ -547,19 +542,46 @@ def apply_pool(
         ValueError: A result names another poule.
 
     """
-    rows = data["MatchResult"]
+    rows = unique_matches(data["MatchResult"])
+    duplicates = len(data["MatchResult"]) - len(rows)
+    table = standing_projection(data.get("PoolStanding"))
+    if table is None:
+        table = standing_projection(resource.evidence.get("official_table"))
+    standing = (table or {}).get("PoolStandingTeam") or []
     for row in rows:
         if row.get("Pool") and str(row["Pool"]["PoolId"]) != resource.source_id:
             raise ValueError("Unexpected poule identity")
+        if not row.get("Pool"):
+            row["Pool"] = {"PoolId": resource.source_id}
     if not rows:
-        resource.coverage, resource.reason = "empty", "no_season_data"
-        resource.evidence = {"edition": seasons.edition, "matches": 0}
+        summary = import_standings_only(seasons, resource, table, data)
+        if not standing:
+            resource.coverage, resource.reason = "empty", "no_season_data"
+            resource.evidence = {"edition": seasons.edition, "matches": 0}
+            return
+        if marker is not None:
+            summary["scan_queued"] = extend_scan(marker, resource)
+        else:
+            seed_many(
+                resource.season,
+                "edition_team",
+                {
+                    str(team["PublicTeamId"]): team["SportId"]
+                    for team in standing
+                    if team.get("SportId") in SPORTS
+                },
+                parent=resource,
+                reference=f"resource/{resource.pk}",
+            )
+        resource.coverage, resource.reason = (
+            "partial",
+            "standings_without_dated_results",
+        )
+        resource.evidence = {"edition": seasons.edition, "matches": 0, **summary}
         return
-    standing = (data.get("PoolStanding") or {}).get("PoolStandingTeam") or []
     filtered = data.get("ResultsFiltered") is not False
-    summary = import_rows(
-        seasons, resource, rows, standing=data.get("PoolStanding"), filtered=filtered
-    )
+    summary = import_rows(seasons, resource, rows, standing=table, filtered=filtered)
+    summary["duplicate_matches"] = duplicates
     if marker is not None:
         summary["scan_queued"] = extend_scan(marker, resource)
     else:
@@ -579,37 +601,114 @@ def apply_pool(
             parent=resource,
             reference=f"resource/{resource.pk}",
         )
-    complete, played = pool_complete(rows, standing, filtered=filtered)
-    complete = complete and not summary["skipped"]
+    accepted = Match.objects.filter(
+        pk__in=summary["persisted_match_ids"]
+    ).select_related("home_team", "away_team")
+    complete, played = fixture_coverage(
+        (
+            (
+                match.home_team.external_id,
+                match.away_team.external_id,
+                match.status == "FINAL"
+                and match.home_score is not None
+                and match.away_score is not None,
+            )
+            for match in accepted
+        ),
+        {str(team["PublicTeamId"]): team["TotalMatches"] for team in standing},
+        members=set(
+            Pool.objects.filter(
+                season__in=edition_scopes(seasons.edition),
+                external_id=resource.source_id,
+            ).values_list("entries__team__external_id", flat=True)
+        )
+        - {None},
+        unfiltered=not filtered,
+        accounted=not summary["skipped"],
+    )
     resource.coverage = "complete" if complete else "partial"
     resource.reason = "" if complete else "standings_results_disagree"
-    resource.evidence = {"edition": seasons.edition, **summary, **played}
+    resource.evidence = {
+        "edition": seasons.edition,
+        **summary,
+        **played,
+        "results_filtered": filtered,
+        "official_table": table
+        if table is not None
+        else resource.evidence.get("official_table"),
+    }
 
 
 def pool_complete(
     rows: list[dict], standing: list[dict], *, filtered: bool
-) -> tuple[bool, dict[str, dict]]:
+) -> tuple[bool, dict[str, Any]]:
     """Require each team's official played count to equal its scored finals."""
-    observed: Counter[str] = Counter()
-    for row in rows:
-        if final_score(row) is not None:
-            for side in ("HomeTeam", "AwayTeam"):
-                observed[str(row[side]["PublicTeamId"])] += 1
-    expected = {str(row["PublicTeamId"]): row.get("TotalMatches") for row in standing}
-    complete = (
-        not filtered
-        and bool(expected)
-        and set(observed) <= set(expected)
-        and all(observed[team] == total for team, total in expected.items())
+    accepted = unique_matches(rows)
+    teams = unique_standings(standing)
+    expected = {str(row["PublicTeamId"]): row["TotalMatches"] for row in teams}
+    return fixture_coverage(
+        (
+            (
+                str(row["HomeTeam"]["PublicTeamId"]),
+                str(row["AwayTeam"]["PublicTeamId"]),
+                final_score(row) is not None,
+            )
+            for row in accepted
+        ),
+        expected,
+        members=set(expected),
+        unfiltered=not filtered,
     )
-    return complete, {"expected_played": expected, "observed_played": dict(observed)}
+
+
+def import_standings_only(
+    seasons: EditionSeasons,
+    resource: HistoricalResource,
+    table: dict | None,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Route an undated table only through established or proven indoor context."""
+    targets = list(
+        Pool.objects.filter(
+            season__in=edition_scopes(seasons.edition),
+            external_id=resource.source_id,
+        ).select_related("season")
+    )
+    rows = (table or {}).get("PoolStandingTeam") or []
+    sports = {row.get("SportId") for row in rows}
+    target = targets[0].season if len(targets) == 1 else None
+    if not targets and sports == {INDOOR} and resource.sport in {"", INDOOR}:
+        target = seasons.indoor
+    if target is not None and table is not None:
+        importer = Importer(target, timezone.now(), discover=False)
+        importer.pool(
+            {"PoolId": resource.source_id}, next(iter(sports), resource.sport)
+        )
+        importer.apply(
+            "pool_results",
+            resource.source_id,
+            {
+                "MatchResult": [],
+                "PoolStanding": table,
+                "ResultsFiltered": data.get("ResultsFiltered") is not False,
+            },
+        )
+    return {
+        "official_table": table,
+        "standings_routed_to": str(target.pk) if target is not None else None,
+        "results_filtered": data.get("ResultsFiltered") is not False,
+    }
 
 
 def final_score(row: dict[str, Any]) -> tuple[int, int] | None:
     """Return the final score, or None for unplayed or unscored rows."""
     home = (row.get("HomeResult") or {}).get("Score")
     away = (row.get("AwayResult") or {}).get("Score")
-    if row.get("Status") != "FINAL" or home is None or away is None:
+    if row.get("Status") != "FINAL":
+        return None
+    if isinstance(home, bool) or not isinstance(home, int) or home < 0:
+        return None
+    if isinstance(away, bool) or not isinstance(away, int) or away < 0:
         return None
     return home, away
 
@@ -694,6 +793,130 @@ def pool_phases(
     return phases
 
 
+def apply_edition_match(resource: HistoricalResource, data: dict[str, Any]) -> None:
+    """Route a consumed detail through its edition and preserve nonfinal outcomes.
+
+    Raises:
+        ValueError: The response names another match.
+        HistoryUnavailableError: The detail cannot be routed to a playing season.
+
+    """
+    if str(data["PublicMatchId"]) != resource.source_id:
+        raise ValueError("Unexpected match identity")
+    summary = import_rows(edition_seasons(resource), resource, [data])
+    if summary["skipped"]:
+        raise HistoryUnavailableError("detail_routing_failed")
+    match = Match.objects.get(pk=summary["persisted_match_ids"][0])
+    resource.coverage = (
+        "complete"
+        if match.status == "FINAL"
+        and match.home_score is not None
+        and match.away_score is not None
+        else "partial"
+    )
+    resource.evidence = {
+        **resource.evidence,
+        "detail_attempted": True,
+        "match": match.pk,
+        "status": match.status,
+    }
+
+
+def locked_row_phases(
+    seasons: EditionSeasons,
+    scopes: list[Season],
+    pool: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Lock the rows' poules, then return the period that routes each poule.
+
+    Poules are locked before relocation and import lock any fixture, the
+    order publication uses, so a parallel publication pass cannot deadlock.
+    """
+    lock_fixture_pools(
+        scopes,
+        [
+            {**row, "Pool": {**(row.get("Pool") or {}), "PoolId": pool}}
+            if pool
+            else row
+            for row in rows
+        ],
+    )
+    return row_phases(seasons, scopes, pool, rows)
+
+
+def row_phases(
+    seasons: EditionSeasons,
+    scopes: list[Season],
+    pool: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Return the period that routes each poule's rows.
+
+    A poule response holds the whole competition; club rows and single-match
+    details hold only some of a poule's fixtures, so they follow the poule's
+    established period and otherwise keep date routing.
+    """
+    if not pool:
+        return established_phases(scopes, rows)
+    return pool_phases(
+        seasons,
+        [{**row, "Pool": {**(row.get("Pool") or {}), "PoolId": pool}} for row in rows],
+    )
+
+
+def established_phases(
+    scopes: list[Season], rows: list[dict[str, Any]]
+) -> dict[str, str]:
+    """Return the period of each named poule already imported in this edition.
+
+    A decided phase wins; otherwise the playing season holding the poule names
+    its period. A poule found in two different periods is ambiguous and absent.
+    """
+    pool_ids = {
+        str(pool["PoolId"])
+        for row in rows
+        if (pool := row.get("Pool") or {}).get("PoolId")
+    }
+    if not pool_ids:
+        return {}
+    found: dict[str, set[str]] = defaultdict(set)
+    for external_id, phase, season_phase in Pool.objects.filter(
+        season__in=scopes, external_id__in=pool_ids
+    ).values_list("external_id", "phase", "season__phase"):
+        period = phase or season_phase
+        if period in {AUTUMN, SPRING, FULL_SEASON}:
+            found[external_id].add(period)
+    return {key: next(iter(value)) for key, value in found.items() if len(value) == 1}
+
+
+def relocate_matches(
+    target: Season, scopes: list[Season], identifiers: list[str]
+) -> None:
+    """Keep one source fixture when its corrected timestamp changes playing season.
+
+    Raises:
+        ValueError: More than one season already holds this source identity.
+
+    """
+    for existing in (
+        Match.objects
+        .select_for_update(no_key=True)
+        .filter(
+            season__in=scopes,
+            external_id__in=identifiers,
+        )
+        .exclude(season=target)
+    ):
+        if Match.objects.filter(
+            season=target, external_id=existing.external_id
+        ).exists():
+            raise ValueError("Ambiguous historical match identity across seasons")
+        existing.season = target
+        existing.save(update_fields=("season",))
+
+
+@transaction.atomic
 def import_rows(
     seasons: EditionSeasons,
     resource: HistoricalResource,
@@ -708,26 +931,32 @@ def import_rows(
         Imported counts per season name and skipped counts per reason.
 
     """
-    unique = {str(row["PublicMatchId"]): row for row in rows}
+    raw_count = len(rows)
+    unique = {str(row["PublicMatchId"]): row for row in unique_matches(rows)}
+    standing = standing_projection(
+        standing if standing is not None else resource.evidence.get("official_table")
+    )
+    scopes = edition_scopes(seasons.edition)
+    touched_pools = set(
+        Match.objects
+        .filter(
+            season__in=scopes,
+            external_id__in=unique,
+        )
+        .exclude(pool=None)
+        .values_list("pool__external_id", flat=True)
+    )
     groups: dict[Any, tuple[Season, list[dict]]] = {}
-    skipped: list[tuple[dict, str]] = []
+    skipped: list[tuple[dict, str]] = [
+        (row, "self_fixture") for row in unique.values() if is_self_fixture(row)
+    ]
+    eligible = [row for row in unique.values() if not is_self_fixture(row)]
     latest: tuple[date, Any] | None = None
     pool = resource.source_id if resource.kind == "edition_pool" else ""
-    # A poule response holds the whole competition; club rows can hold only some
-    # of a poule's fixtures, so they keep date routing.
-    phases = (
-        pool_phases(
-            seasons,
-            [
-                {**row, "Pool": {**(row.get("Pool") or {}), "PoolId": pool}}
-                for row in unique.values()
-            ],
-        )
-        if pool
-        else {}
-    )
-    for row in unique.values():
-        target, day, reason = route(seasons, row, phases.get(pool))
+    phases = locked_row_phases(seasons, scopes, pool, eligible)
+    for row in eligible:
+        pool_id = pool or str((row.get("Pool") or {}).get("PoolId") or "")
+        target, day, reason = route(seasons, row, phases.get(pool_id))
         if target is None or day is None:
             skipped.append((row, reason))
             continue
@@ -743,6 +972,7 @@ def import_rows(
         if latest is not None and latest[1] in {seasons.autumn.pk, seasons.spring.pk}:
             latest = (latest[0], whole.pk)
     imported: dict[Any, dict[str, Match]] = {}
+    persisted_ids: set[int] = set()
     now = timezone.now()
     for key, (target, group) in groups.items():
         # Fixtures follow their poule: a rescheduled one may fall outside the
@@ -750,6 +980,7 @@ def import_rows(
         importer = Importer(
             target, now, discover=False, window=edition_bounds(seasons.edition)
         )
+        relocate_matches(target, scopes, [str(row["PublicMatchId"]) for row in group])
         if pool:
             # Final standings belong to the season of the poule's last match.
             final = latest is not None and latest[1] == key
@@ -766,7 +997,15 @@ def import_rows(
             )
         else:
             importer.apply("club_results", "", {"MatchResult": group})
-        supersede_archive(target, [str(row["PublicMatchId"]) for row in group])
+        persisted_ids.update(importer.observed_match_ids)
+        accepted = {
+            match.external_id
+            for match in Match.objects.filter(pk__in=importer.observed_match_ids)
+        }
+        missing = [row for row in group if str(row["PublicMatchId"]) not in accepted]
+        skipped.extend((row, "not_persisted") for row in missing)
+        group[:] = [row for row in group if str(row["PublicMatchId"]) in accepted]
+        supersede_archive(target, sorted(accepted))
         if pool:
             resolve_pool_periods(
                 Pool.objects.filter(season=target, external_id=pool).values_list(
@@ -777,15 +1016,90 @@ def import_rows(
             match.external_id: match
             for match in Match.objects.filter(
                 season=target,
-                external_id__in=[str(row["PublicMatchId"]) for row in group],
+                pk__in=importer.observed_match_ids,
             )
         }
     log_matches(seasons, resource, groups, imported, skipped)
+    touched_pools.update(
+        Match.objects
+        .filter(pk__in=persisted_ids)
+        .exclude(pool=None)
+        .values_list("pool__external_id", flat=True)
+    )
+    refresh_edition_pool_coverage(seasons.edition, touched_pools, exclude=resource.pk)
     return {
         "matches": len(unique),
+        "duplicate_matches": raw_count - len(unique),
+        "accepted_match_ids": [
+            str(row["PublicMatchId"]) for _, group in groups.values() for row in group
+        ],
+        "persisted_match_ids": sorted(persisted_ids),
         "imported": {target.name: len(group) for target, group in groups.values()},
         "skipped": dict(Counter(reason for _, reason in skipped)),
     }
+
+
+def refresh_edition_pool_coverage(
+    edition: int,
+    identifiers: set[str],
+    *,
+    exclude: int | None = None,
+) -> None:
+    """Re-evaluate both old and new pool proofs after a routed fixture correction."""
+    if not identifiers:
+        return
+    scopes = edition_scopes(edition)
+    for scope in scopes:
+        refresh_app_pool_coverage(scope, identifiers)
+    resources = HistoricalResource.objects.filter(
+        season__in=scopes,
+        provider="app",
+        kind="edition_pool",
+        source_id__in=identifiers,
+        state="fetched",
+    )
+    if exclude is not None:
+        resources = resources.exclude(pk=exclude)
+    for resource in resources:
+        evidence = resource.evidence
+        accepted = set(evidence.get("accepted_match_ids") or [])
+        matches = list(
+            Match.objects.filter(
+                season__in=scopes,
+                pool__external_id=resource.source_id,
+            ).select_related("home_team", "away_team")
+        )
+        members = set(
+            Pool.objects.filter(
+                season__in=scopes,
+                external_id=resource.source_id,
+            ).values_list("entries__team__external_id", flat=True)
+        ) - {None}
+        complete, proof = fixture_coverage(
+            (
+                (
+                    match.home_team.external_id,
+                    match.away_team.external_id,
+                    final_score({
+                        "Status": match.status,
+                        "HomeResult": {"Score": match.home_score},
+                        "AwayResult": {"Score": match.away_score},
+                    })
+                    is not None,
+                )
+                for match in matches
+            ),
+            evidence.get("expected_played") or {},
+            members=members,
+            unfiltered=evidence.get("results_filtered") is False,
+            accounted=evidence.get("source_accounted") is True
+            and len(matches) == len(accepted)
+            and {match.external_id for match in matches} == accepted,
+        )
+        resource.coverage = "complete" if complete else "partial"
+        resource.reason = "" if complete else "standings_results_disagree"
+        resource.evidence = {**evidence, **proof}
+        resource.save(update_fields=("coverage", "reason", "evidence"))
 
 
 def supersede_archive(target: Season, identifiers: list[str]) -> int:
@@ -800,9 +1114,15 @@ def supersede_archive(target: Season, identifiers: list[str]) -> int:
         The number of archive records removed.
 
     """
-    fields = ("pk", "home_team__group_id", "away_team__group_id", "starts_at")
+    fields = (
+        "pk",
+        "home_team__group_id",
+        "away_team__group_id",
+        "starts_at",
+        "pool_id",
+    )
     delivered = {
-        tuple(row[1:]): row[0]
+        tuple(row[1:4]): (row[0], row[4])
         for row in Match.objects.filter(
             season=target, external_id__in=identifiers, local_match=None
         ).values_list(*fields)
@@ -810,6 +1130,7 @@ def supersede_archive(target: Season, identifiers: list[str]) -> int:
     if not delivered:
         return 0
     removed = 0
+    touched: set[int] = set()
     # These rows are deleted, so acquire the full lock before retiring their IDs.
     for twin in (
         Match.objects
@@ -824,17 +1145,22 @@ def supersede_archive(target: Season, identifiers: list[str]) -> int:
         key = (twin.home_team.group_id, twin.away_team.group_id, twin.starts_at)
         if None in key or key not in delivered:
             continue
-        successor = delivered.pop(key)
+        successor, successor_pool_id = delivered.pop(key)
+        touched.update(pk for pk in (twin.pool_id, successor_pool_id) if pk is not None)
         link = {
             "local_match_id": twin.local_match_id,
             "local_created": twin.local_created,
             "published_state": twin.published_state,
+            "published_schedule": twin.published_schedule,
+            "schedule_notification_id": twin.schedule_notification_id,
         }
         twin.delete()
         removed += 1
         if link["local_match_id"] is not None:
             # Unpublished again: the next pass adopts the fixture for the provider.
             Match.objects.filter(pk=successor).update(**link, published_at=None)
+    if touched:
+        refresh_generated_standings(touched)
     return removed
 
 
@@ -849,7 +1175,7 @@ def log_matches(
     now = timezone.now()
     pool = resource.source_id if resource.kind == "edition_pool" else ""
 
-    def entry(
+    def log_entry(
         season: Season,
         row: dict,
         outcome: tuple[str, str, str],
@@ -871,7 +1197,7 @@ def log_matches(
             coverage=coverage,
             reason=reason,
             evidence={"edition": seasons.edition, "pool": pool, **evidence},
-            fetched_at=now,
+            fetched_at=now if coverage == "complete" else None,
         )
 
     entries = []
@@ -880,12 +1206,12 @@ def log_matches(
             match = imported[key].get(str(row["PublicMatchId"]))
             score = final_score(row)
             outcome = (
-                "fetched",
+                "fetched" if score and match else "pending",
                 "complete" if score and match else "partial",
                 "" if match else "not_imported",
             )
             entries.append(
-                entry(
+                log_entry(
                     target,
                     row,
                     outcome,
@@ -898,7 +1224,7 @@ def log_matches(
             )
     # Skipped rows have no playing season; the edition anchor keeps their log.
     entries.extend(
-        entry(
+        log_entry(
             resource.season,
             row,
             ("blocked", "inaccessible", reason),
@@ -907,6 +1233,25 @@ def log_matches(
         for row, reason in skipped
     )
     entries = [row for row in entries if is_match_identity(row.source_id)]
+    existing = {
+        row.key: row
+        for row in HistoricalResource.objects.select_for_update(no_key=True).filter(
+            key__in=[entry.key for entry in entries]
+        )
+    }
+    for entry in entries:
+        previous = existing.get(entry.key)
+        if previous is not None:
+            # Summary observation never re-arms a consumed or backed-off detail attempt.
+            summary = entry.evidence
+            entry.evidence = {**previous.evidence, "summary": summary}
+            if entry.coverage != "complete" or (
+                previous.state == "pending" and previous.fetched_at is not None
+            ):
+                entry.state, entry.reason = previous.state, previous.reason
+                entry.fetched_at = previous.fetched_at
+        else:
+            entry.evidence = {**entry.evidence, "summary_observed_at": now.isoformat()}
     HistoricalResource.objects.bulk_create(
         entries,
         update_conflicts=True,
@@ -1105,3 +1450,6 @@ def edition_log(edition: int) -> Iterator[dict[str, Any]]:
             "logged_at": entry.fetched_at.isoformat() if entry.fetched_at else "",
         })
     yield from sorted(rows, key=lambda row: (str(row["date"]), row["match_id"]))
+
+
+__all__ = ["edition_scopes", "full_year_name", "season_names"]

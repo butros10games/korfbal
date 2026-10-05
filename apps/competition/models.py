@@ -95,6 +95,13 @@ class Club(models.Model):
     # date and main venue. ClubSports: the club's sport descriptions.
     contact = models.JSONField(default=dict, blank=True)
     sports = models.JSONField(default=list, blank=True)
+    sport_definitions = models.JSONField(
+        default=list, blank=True, db_default=Value([], output_field=models.JSONField())
+    )
+    current_directory_observed_at = models.DateTimeField(null=True, blank=True)
+    metadata_observations = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
     logo_bucket = models.CharField(max_length=80, blank=True)
     logo_hash = models.CharField(max_length=64, blank=True)
     cached_logo = models.CharField(max_length=1024, blank=True)
@@ -225,6 +232,9 @@ class Team(SeasonalIdentity):
 
     roster_observed_at = models.DateTimeField(null=True)
     private_roster_counts = models.JSONField(default=dict)
+    source_context = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
 
     local_team_data = models.ForeignKey(
         "team.TeamData",
@@ -420,6 +430,9 @@ class Pool(SeasonalIdentity):
     name = models.CharField(max_length=255, blank=True)
     class_name = models.CharField(max_length=255, blank=True)
     sport = models.CharField(max_length=80, blank=True, db_index=True)
+    source_context = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
     if TYPE_CHECKING:
         competition_class_id: int | None
         entries: RelatedManager[PoolEntry]
@@ -449,6 +462,9 @@ class Pool(SeasonalIdentity):
     )
     standings_synced_at = models.DateTimeField(null=True)
     results_filtered = models.BooleanField(default=True)
+    standings_provenance = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
     local_pool = models.OneToOneField(
         "schedule.SeasonPool",
         null=True,
@@ -457,11 +473,23 @@ class Pool(SeasonalIdentity):
         related_name="competition_identity",
     )
 
+    standing_rows: list[PoolEntry]
+
+    class Meta(SeasonalIdentity.Meta):
+        """Select unattempted competition-context work without catalogue scans."""
+
+        abstract = False
+        indexes: ClassVar = [
+            models.Index(
+                fields=("id",),
+                condition=models.Q(phase="", phase_evidence={}),
+                name="competition_period_backlog",
+            ),
+        ]
+
     def __str__(self) -> str:
         """Return a recognizable poule label."""
         return f"{self.class_name} {self.name}".strip() or self.external_id
-
-    standing_rows: list[PoolEntry]
 
     @property
     def member_teams(self) -> list[Team]:
@@ -475,6 +503,7 @@ class PoolEntry(models.Model):
     pool = models.ForeignKey(Pool, on_delete=models.CASCADE, related_name="entries")
     team = models.ForeignKey(Team, on_delete=models.PROTECT)
     standing = models.JSONField(default=dict)
+    computed_standing = models.JSONField(null=True, blank=True, default=None)
 
     if TYPE_CHECKING:
         pool_id: int
@@ -501,6 +530,7 @@ class Match(SeasonalIdentity):
         away_team_id: int
         local_match_id: UUID | None
         revisions: RelatedManager[ResultRevision]
+        lineup: RelatedManager[MatchMembership]
 
     pool = models.ForeignKey(Pool, null=True, on_delete=models.PROTECT)
     home_team = models.ForeignKey(
@@ -528,6 +558,12 @@ class Match(SeasonalIdentity):
     facility_observed_at = models.DateTimeField(null=True)
     match_rules = models.JSONField(default=dict)
     rules_observed_at = models.DateTimeField(null=True)
+    source_context = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
+    metadata_observations = models.JSONField(
+        default=dict, blank=True, db_default=Value({}, output_field=models.JSONField())
+    )
     reporting_delay_seconds = models.PositiveIntegerField(null=True)
     local_match = models.OneToOneField(
         "schedule.Match",
@@ -590,6 +626,11 @@ class SyncResource(models.Model):
     class Meta:
         """Declare storage or serialization metadata."""
 
+        indexes: ClassVar = [
+            models.Index(
+                fields=("kind", "source_id"), name="competition_resource_identity"
+            ),
+        ]
         constraints: ClassVar = [
             models.UniqueConstraint(
                 fields=("season", "kind", "source_id"), name="competition_resource_once"

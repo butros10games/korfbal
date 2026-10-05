@@ -22,6 +22,7 @@ from apps.competition.models import HistoricalResource, Match
 SAMPLE_SIZE = 20
 HELD = "awaiting_class_sample"
 UNSERVED = "class_unserved"
+UNAVAILABLE = "lineup_unavailable"
 # Samples sort before released lineups; held lineups are never ready.
 SAMPLE_AT = datetime(2000, 1, 1, tzinfo=UTC)
 HOLD = timedelta(days=3650)
@@ -71,19 +72,30 @@ def plan_cohort(cohort: str) -> str:
     members = lineups().filter(cohort=cohort)
     pending = members.filter(state="pending")
     fetched = members.filter(state="fetched").exists()
-    tried = members.exclude(state="pending").exclude(reason=UNSERVED).count()
     if fetched:
         pending.filter(reason=HELD).update(reason="", next_attempt_at=timezone.now())
         return "released"
-    if tried >= SAMPLE_SIZE:
+    sample = list(
+        members
+        .exclude(reason=UNSERVED)
+        .order_by("pk")
+        .values_list("pk", flat=True)[:SAMPLE_SIZE]
+    )
+    # Only the endpoint's semantic missing-lineup response proves capability.
+    # Authentication, malformed envelopes and exhausted transport retries stay
+    # failed samples; they must neither suppress the class nor expand its sample.
+    unavailable = members.filter(
+        pk__in=sample, state="blocked", reason=UNAVAILABLE
+    ).count()
+    if unavailable >= SAMPLE_SIZE:
         pending.update(
             state="blocked", coverage="inaccessible", reason=UNSERVED, etag=""
         )
         return "unserved"
-    sample = list(
-        pending.order_by("pk").values_list("pk", flat=True)[: SAMPLE_SIZE - tried]
+    # Preserve a sampled request's transport backoff once it has been attempted.
+    pending.filter(pk__in=sample, attempts=0).update(
+        reason="", next_attempt_at=SAMPLE_AT
     )
-    pending.filter(pk__in=sample).update(reason="", next_attempt_at=SAMPLE_AT)
     pending.exclude(pk__in=sample).update(
         reason=HELD, next_attempt_at=timezone.now() + HOLD
     )

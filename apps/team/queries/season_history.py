@@ -2,10 +2,14 @@
 
 The history pages compare seasons, so each read covers all of a team's
 seasons at once. Results are aggregated in the database per team and season;
-poule positions come from the official (or computed) standings of linked
+poule positions come from the official (or generated) standings of linked
 competition poules, and the end-of-season Elo from the stored match ratings.
 Fixtures are only read through their teams' indexed foreign keys, never by
 scanning a season or the catalogue.
+
+A first place is not a championship: the legacy ``position`` field is only set
+for a proven final official position (older apps label position 1 a champion),
+while ``observed_position`` carries the shown table's rank with its provenance.
 """
 
 from __future__ import annotations
@@ -17,9 +21,22 @@ import re
 from typing import Any
 from uuid import UUID
 
-from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Count, F, Q, Sum
 
+from apps.competition.domain.classification import Classification, ladder_context
+from apps.competition.domain.standings_provenance import (
+    COMPUTED,
+    FINAL,
+    OFFICIAL,
+    fixture_coverage,
+    generated_standing,
+    is_official_standing,
+    position,
+    safe_integer,
+    table_source,
+    table_status,
+    tied,
+)
 from apps.competition.models import MatchRating, PoolEntry
 from apps.game_tracker.models import MatchData
 from apps.schedule.models import Season
@@ -29,6 +46,15 @@ from apps.team.models.team import Team
 
 Key = tuple[UUID, UUID]
 RESULT_FIELDS = ("played", "won", "drawn", "lost", "goals_for", "goals_against")
+CLASS_FIELDS = (
+    "code",
+    "category",
+    "age_group",
+    "team_kind",
+    "colour",
+    "playing_format",
+)
+EDITION_FIELDS = ("discipline", "phase", "gender")
 
 
 def _results(team_ids: Iterable[UUID]) -> dict[Key, dict[str, int]]:
@@ -66,31 +92,23 @@ def _results(team_ids: Iterable[UUID]) -> dict[Key, dict[str, int]]:
 
 
 def _poules(team_ids: Iterable[UUID]) -> dict[Key, list[dict[str, Any]]]:
-    """Return the class and final position of each team's linked poules.
+    """Return the class and observed table position of each team's linked poules.
 
+    Each poule's whole table decides its authority (official or generated, never
+    mixed) through one uncorrelated read of the selected poules' memberships.
     Poules whose results are filtered to one club have no reliable table, so
     they keep their class but report no position.
     """
-    pool_size = (
-        PoolEntry.objects
-        .filter(pool_id=OuterRef("pool_id"))
-        .order_by()
-        .values("pool_id")
-        .annotate(size=Count("pk"))
-        .values("size")
-    )
-    entries = (
+    entries = list(
         PoolEntry.objects
         .filter(
             team__group__local_team_id__in=list(team_ids),
             pool__local_pool__isnull=False,
         )
-        .annotate(
-            pool_size=Coalesce(Subquery(pool_size, output_field=IntegerField()), 0)
-        )
         .values(
+            "pool_id",
             "standing",
-            "pool_size",
+            "computed_standing",
             local_team=F("team__group__local_team_id"),
             season=F("pool__local_pool__season_id"),
             local_pool=F("pool__local_pool_id"),
@@ -98,9 +116,26 @@ def _poules(team_ids: Iterable[UUID]) -> dict[Key, list[dict[str, Any]]]:
             class_name=F("pool__class_name"),
             level=F("pool__competition_class__level"),
             results_filtered=F("pool__results_filtered"),
+            provenance=F("pool__standings_provenance"),
+            competition_part=F("pool__competition_part"),
+            mapping_issues=F("pool__mapping_issues"),
+            class_id=F("pool__competition_class_id"),
+            **{
+                f"class_{field}": F(f"pool__competition_class__{field}")
+                for field in CLASS_FIELDS
+            },
+            **{
+                f"edition_{field}": F(f"pool__competition_class__edition__{field}")
+                for field in EDITION_FIELDS
+            },
         )
         .order_by("pool__class_name", "pool__name", "pool_id")
     )
+    tables: dict[int, list[tuple[Any, Any]]] = defaultdict(list)
+    for pool_id, standing, computed in PoolEntry.objects.filter(
+        pool_id__in={entry["pool_id"] for entry in entries}
+    ).values_list("pool_id", "standing", "computed_standing"):
+        tables[pool_id].append((standing, computed))
     poules: dict[Key, list[dict[str, Any]]] = defaultdict(list)
     seen: set[tuple[UUID, UUID]] = set()
     for entry in entries:
@@ -111,17 +146,89 @@ def _poules(team_ids: Iterable[UUID]) -> dict[Key, list[dict[str, Any]]]:
         ):
             continue
         seen.add((entry["local_team"], entry["local_pool"]))
-        position = str(entry["standing"].get("Position", ""))
-        ranked = not entry["results_filtered"] and position.isdigit()
         poules[entry["local_team"], entry["season"]].append({
             "id": str(entry["local_pool"]),
             "name": entry["pool_name"],
             "class_name": entry["class_name"],
             "level": entry["level"],
-            "position": int(position) if ranked else None,
-            "teams": entry["pool_size"] if ranked else None,
+            **_table_position(entry, tables[entry["pool_id"]]),
+            "competition_part": entry["competition_part"],
+            "class_code": entry["class_code"],
+            "_class": entry,
         })
     return poules
+
+
+def _table_position(entry: dict[str, Any], rows: list[tuple[Any, Any]]) -> dict:
+    """Return one team's place in its poule's table with that table's provenance."""
+    official = [standing for standing, _ in rows if is_official_standing(standing)]
+    generated = [
+        values
+        for standing, computed in rows
+        if (values := generated_standing(standing, computed)) is not None
+    ]
+    source = table_source(
+        official=bool(official),
+        generated=bool(generated),
+        results_filtered=entry["results_filtered"],
+    )
+    own: dict[str, Any] | None = None
+    table: list[Any] = []
+    if source == OFFICIAL and is_official_standing(entry["standing"]):
+        own, table = entry["standing"], official
+    elif source == COMPUTED:
+        own = generated_standing(entry["standing"], entry["computed_standing"])
+        table = generated
+    status = table_status(source, entry["provenance"])
+    observed = position(own)
+    return {
+        # Older apps call position 1 a champion: only a proven final official
+        # position may appear here.
+        "position": observed if source == OFFICIAL and status == FINAL else None,
+        "observed_position": observed,
+        "teams": len(table) if observed is not None else None,
+        "table_source": source,
+        "table_status": status,
+        "fixture_coverage": fixture_coverage(source, entry["provenance"]),
+        # Official points already include the deduction; never subtract it again.
+        "penalty_points": (
+            safe_integer(own.get("PenaltyPoints"))
+            if own is not None and source == OFFICIAL
+            else None
+        ),
+        "tied": own is not None and tied(source, own, table),
+        # Only a sourced title rule may claim a championship; none is modelled.
+        "is_champion": False,
+    }
+
+
+def _ladder(entry: dict[str, Any], edition: int | None) -> dict[str, Any]:
+    """Return the class's ladder lane for comparisons, as the poule API does."""
+    if entry["class_id"] is None:
+        return {"ladder_id": None, "hierarchy_revision": None, "level_reason": None}
+    value = Classification(
+        **{field: entry[f"class_{field}"] for field in CLASS_FIELDS},
+        **{field: entry[f"edition_{field}"] for field in EDITION_FIELDS},
+    )
+    context = ladder_context(value, list(entry["mapping_issues"] or []), edition)
+    return {
+        field: context[field]
+        for field in ("ladder_id", "hierarchy_revision", "level_reason")
+    }
+
+
+def _poule_seasons(team_ids: Iterable[UUID]) -> set[Key]:
+    """Return the seasons in which each team has a labelled linked poule."""
+    return set(
+        PoolEntry.objects
+        .filter(
+            team__group__local_team_id__in=list(team_ids),
+            pool__local_pool__isnull=False,
+        )
+        .exclude(pool__name="", pool__class_name="")
+        .values_list("team__group__local_team_id", "pool__local_pool__season_id")
+        .distinct()
+    )
 
 
 def _ratings(team_ids: Iterable[UUID]) -> dict[Key, dict[str, float]]:
@@ -159,13 +266,18 @@ def _ratings(team_ids: Iterable[UUID]) -> dict[Key, dict[str, float]]:
     return seasons
 
 
-def team_season_rows(team_ids: Iterable[UUID]) -> dict[UUID, list[dict[str, Any]]]:
-    """Return each team's seasons, newest first, with results, poules and Elo."""
+def team_season_rows(
+    team_ids: Iterable[UUID], *, with_poules: bool = True
+) -> dict[UUID, list[dict[str, Any]]]:
+    """Return each team's seasons, newest first, with results, poules and Elo.
+
+    Summaries that only count seasons skip the poule tables (``with_poules``).
+    """
     ids = list(team_ids)
     results = _results(ids)
-    poules = _poules(ids)
+    poules = _poules(ids) if with_poules else {}
     ratings = _ratings(ids)
-    keys = set(results) | set(poules)
+    keys = set(results) | (set(poules) if with_poules else _poule_seasons(ids))
     seasons = {
         season.pk: season
         for season in Season.objects.filter(pk__in={season for _, season in keys})
@@ -174,15 +286,23 @@ def team_season_rows(team_ids: Iterable[UUID]) -> dict[UUID, list[dict[str, Any]
     for team, season_id in keys:
         season = seasons[season_id]
         rating = ratings.get((team, season_id))
+        edition = season_edition(season)
         rows[team].append({
             "season": str(season.pk),
             "season_name": season.name,
             "start_date": season.start_date.isoformat(),
-            "edition": season_edition(season),
+            "edition": edition,
             "discipline": season.discipline or None,
+            "phase": season.phase or None,
             "kind": season_kind(season),
             **results.get((team, season_id), dict.fromkeys(RESULT_FIELDS, 0)),
-            "poules": poules.get((team, season_id), []),
+            "poules": [
+                {
+                    **{key: value for key, value in poule.items() if key != "_class"},
+                    **_ladder(poule["_class"], edition),
+                }
+                for poule in poules.get((team, season_id), [])
+            ],
             "rating": round(rating["end"], 1) if rating else None,
             "rating_change": (
                 round(rating["end"] - rating["start"], 1) if rating else None
@@ -223,7 +343,7 @@ def club_season_history(club_id: UUID) -> dict[str, Any]:
         team.pk: team
         for team in Team.objects.filter(club_id=club_id).only("id_uuid", "name")
     }
-    rows = team_season_rows(teams)
+    rows = team_season_rows(teams, with_poules=False)
     editions: dict[str, dict[str, Any]] = {}
     for team_id, team_rows in rows.items():
         for row in team_rows:

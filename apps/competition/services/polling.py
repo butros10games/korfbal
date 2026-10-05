@@ -10,9 +10,10 @@ from typing import Any
 from django.db.models import F, Max, Q
 from django.utils import timezone
 
+from apps.competition.domain.rosters import ROSTER_FRESHNESS, ROSTER_REFRESH_INTERVAL
 from apps.competition.domain.timing import expected_finish
 from apps.competition.models import Match, Pool, ResultRevision, SyncResource
-from apps.competition.services.match_details import DETAIL_FIELDS, source_matches
+from apps.competition.services.match_details import DETAIL_FIELDS, detail_candidates
 from apps.competition.services.resources import MAX_FEED_FAILURES
 from apps.schedule.models import Season
 
@@ -30,6 +31,17 @@ IMMINENT_SCHEDULE_INTERVAL = timedelta(minutes=15)
 # Schedule checks this close to kickoff (before or after) are time-critical.
 KICKOFF_WINDOW = timedelta(hours=1)
 MINIMUM_REPORTING_SAMPLES = 12
+# Players leave Player.objects eight days after their last roster observation.
+# A weekly refresh that is due outranks routine feeds, and within half a day of
+# that boundary it pre-empts background lanes; retry state is never reset.
+ROSTER_URGENT_AGE = ROSTER_FRESHNESS - timedelta(hours=12)
+ROUTINE_METADATA_KINDS = {
+    "player_photo",
+    "club_details",
+    "club_contact",
+    "club_sports",
+    "club_logo",
+}
 
 
 MATCH_FIELDS = (
@@ -122,32 +134,44 @@ class PollJob:
     schedule_matches: set[int] = field(default_factory=set)
     covered_matches: set[int] = field(default_factory=set)
     urgent_matches: set[int] = field(default_factory=set)
+    # Metadata endpoints: the fixture context captured immediately before I/O.
+    metadata_context: str | None = None
 
 
 class MetadataPlanner:
     """Drain a due metadata snapshot without loading the match polling graph."""
 
-    def __init__(self, season: Season, now: datetime) -> None:
-        """Filter missing components in SQL and order the queue once per run."""
+    def __init__(
+        self,
+        season: Season,
+        now: datetime,
+        *,
+        kinds: tuple[str, ...] | None = None,
+        source_ids: tuple[str, ...] | None = None,
+    ) -> None:
+        """Filter missing, stale and due empty components in SQL once per run."""
         missing = Q(pk__in=[])
-        for kind, stamp in DETAIL_FIELDS.items():
-            missing |= Q(
-                kind=kind,
-                source_id__in=source_matches(season)
-                .filter(**{stamp + "__isnull": True})
-                .values("external_id"),
-            )
+        for kind in DETAIL_FIELDS if kinds is None else kinds:
+            if kind in DETAIL_FIELDS:
+                missing |= Q(
+                    kind=kind,
+                    source_id__in=detail_candidates(season, kind, now).values(
+                        "external_id"
+                    ),
+                )
+        resources = SyncResource.objects.filter(
+            missing,
+            season=season,
+            failures__lt=MAX_FEED_FAILURES,
+            next_sync_at__lte=now,
+        )
+        if source_ids is not None:
+            resources = resources.filter(source_id__in=source_ids)
         self.jobs = deque(
             PollJob(resource, set(), 2)
-            for resource in SyncResource.objects
-            .filter(
-                missing,
-                season=season,
-                failures__lt=MAX_FEED_FAILURES,
-                next_sync_at__lte=now,
+            for resource in resources.select_related("season").order_by(
+                "next_sync_at", "pk"
             )
-            .select_related("season")
-            .order_by("next_sync_at", "pk")
         )
         self.checked: set[int] = set()
         self.schedule_checked: set[int] = set()
@@ -299,8 +323,11 @@ class PollPlanner:
         if resource.pk in self.attempted:
             return False
         if resource.kind in DETAIL_FIELDS:
+            # Selected components can carry an older (empty or stale) stamp;
+            # only an observation made during this run completes them.
             fixture = self.current_by_source.get(resource.source_id)
-            if fixture and fixture[DETAIL_FIELDS[resource.kind]]:
+            stamp = fixture[DETAIL_FIELDS[resource.kind]] if fixture else None
+            if stamp is not None and stamp >= self.snapshot_at:
                 return False
         if resource.failures and resource.next_sync_at > self.now:
             return False
@@ -368,13 +395,18 @@ class PollPlanner:
         """Tell whether time-critical work waits, without selecting or marking it.
 
         Fresh results, schedule checks within ``KICKOFF_WINDOW`` of kickoff and
-        never-fetched feeds pre-empt backfills. Routine refreshes, including
+        never-fetched competition feeds pre-empt backfills. Routine metadata and
+        refreshes, including
         hourly schedule checks two days ahead, do not.
         """
         self.now = max(self.now, timezone.now())
         return any(
             job.urgent_matches
-            or job.resource.fetched_at is None
+            or (
+                job.resource.fetched_at is None
+                and job.resource.kind not in ROUTINE_METADATA_KINDS
+            )
+            or self._roster_expiring(job.resource)
             or any(
                 abs(self.row_by_id[match]["starts_at"] - self.now) <= KICKOFF_WINDOW
                 for match in job.schedule_matches
@@ -385,9 +417,7 @@ class PollPlanner:
     def candidate_jobs(self, *, include_metadata: bool = True) -> list[PollJob]:
         """Collect eligible feeds in one pass without selecting or marking work."""
         jobs = {
-            resource.pk: PollJob(
-                resource, set(), 2 if resource.fetched_at is None else 3
-            )
+            resource.pk: PollJob(resource, set(), self._feed_priority(resource))
             for resource in self.resources.values()
             if self._available(resource) and resource.next_sync_at <= self.now
         }
@@ -412,6 +442,25 @@ class PollPlanner:
             [job for job in self.metadata.jobs if self._available(job.resource)]
             if include_metadata
             else []
+        )
+
+    def _feed_priority(self, resource: SyncResource) -> int:
+        """Discovery first, then due roster refreshes, then routine audits."""
+        if resource.fetched_at is None:
+            return 2
+        if (
+            resource.kind == "team_roster"
+            and resource.fetched_at + ROSTER_REFRESH_INTERVAL <= self.now
+        ):
+            return 1
+        return 3
+
+    def _roster_expiring(self, resource: SyncResource) -> bool:
+        """Tell whether a roster's players are about to leave Player.objects."""
+        return (
+            resource.kind == "team_roster"
+            and resource.fetched_at is not None
+            and resource.fetched_at + ROSTER_URGENT_AGE <= self.now
         )
 
     def next_job(self) -> PollJob | None:

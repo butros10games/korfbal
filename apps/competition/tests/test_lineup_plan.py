@@ -1,6 +1,6 @@
 """Historical lineups are sampled per season and class before the rest is sent."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.utils import timezone
 import pytest
@@ -92,6 +92,68 @@ def test_an_unserved_sample_skips_the_rest_without_requests(season: Season) -> N
         "blocked/lineup_unavailable": SAMPLE_SIZE,
         f"blocked/{UNSERVED}": EXTRA,
     }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        ("blocked", "reauth_required"),
+        ("blocked", "access_denied"),
+        ("blocked", "historical_resource_unavailable"),
+        ("blocked", "lineup_invalid"),
+        ("failed", "invalid_response_or_transport"),
+    ],
+)
+def test_failure_samples_do_not_prove_unserved_class(
+    season: Season, state: str, reason: str
+) -> None:
+    """Auth, transport and invalid responses neither suppress nor expand a sample."""
+    rows = queue(season, SAMPLE_SIZE + EXTRA)
+    plan_cohort(COHORT)
+    HistoricalResource.objects.filter(
+        pk__in=[row.pk for row in rows[:SAMPLE_SIZE]]
+    ).update(state=state, reason=reason)
+    assert plan_cohort(COHORT) == "sampling"
+    assert states() == {
+        f"{state}/{reason}": SAMPLE_SIZE,
+        f"pending/{HELD}": EXTRA,
+    }
+
+
+@pytest.mark.django_db
+def test_mixed_semantic_and_failed_samples_do_not_suppress_class(
+    season: Season,
+) -> None:
+    """One malformed sample cannot complete an endpoint-unavailable proof."""
+    rows = queue(season, SAMPLE_SIZE + EXTRA)
+    plan_cohort(COHORT)
+    HistoricalResource.objects.filter(
+        pk__in=[row.pk for row in rows[: SAMPLE_SIZE - 1]]
+    ).update(state="blocked", reason="lineup_unavailable")
+    HistoricalResource.objects.filter(pk=rows[SAMPLE_SIZE - 1].pk).update(
+        state="blocked", reason="lineup_invalid"
+    )
+    assert plan_cohort(COHORT) == "sampling"
+    assert not HistoricalResource.objects.filter(reason=UNSERVED).exists()
+    assert states()[f"pending/{HELD}"] == EXTRA
+
+
+@pytest.mark.django_db
+def test_replanning_preserves_attempted_sample_backoff(season: Season) -> None:
+    """A repeated planning pass cannot pull a failed sample's retry forward."""
+    rows = queue(season, SAMPLE_SIZE + EXTRA)
+    plan_cohort(COHORT)
+    future = timezone.now() + timedelta(hours=3)
+    HistoricalResource.objects.filter(pk=rows[0].pk).update(
+        attempts=1, reason="invalid_response_or_transport", next_attempt_at=future
+    )
+    plan_cohort(COHORT)
+    rows[0].refresh_from_db()
+    assert rows[0].next_attempt_at == future
+    assert rows[0].attempts == 1
+    assert rows[0].reason == "invalid_response_or_transport"
+    assert states()[f"pending/{HELD}"] == EXTRA
 
 
 @pytest.mark.django_db

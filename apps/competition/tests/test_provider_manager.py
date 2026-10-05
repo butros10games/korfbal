@@ -176,7 +176,7 @@ def manager(recorder: Recorder, *, stop_after: int = 1) -> tuple[ProviderManager
     return ProviderManager(wiring, stopping=stopping, wait=Mock()), publication
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_manager_idles_without_opening_a_session(season: Season) -> None:
     """No due feed and no history: wait, without credentials."""
     recorder = Recorder()
@@ -187,7 +187,7 @@ def test_manager_idles_without_opening_a_session(season: Season) -> None:
     clients.assert_not_called()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_manager_turn_requests_publication_instead_of_publishing() -> None:
     """Requests never wait for publication; the publication pool is asked."""
     history_pools(2)
@@ -198,7 +198,7 @@ def test_manager_turn_requests_publication_instead_of_publishing() -> None:
     publication.assert_called_once()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_manager_runs_turns_back_to_back(settings: object, live_season: Season) -> None:
     """With work left at a turn's end, the next turn starts at once."""
     settings.SPORTLINK_SYNC_SEASON = live_season.name
