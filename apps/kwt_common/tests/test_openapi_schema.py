@@ -29,6 +29,10 @@ def test_openapi_schema_has_no_warnings_or_errors(tmp_path: Path) -> None:
     assert upcoming["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/PaginatedMatchList"
     }
+    # Home's lists answer with arrays; a generated client must not expect an object.
+    for path in ("/api/matches/live-now/", "/api/competition/pools/home-standings/"):
+        response = paths[path]["get"]["responses"]["200"]
+        assert response["content"]["application/json"]["schema"]["type"] == "array"
     teams = paths["/api/tournaments/{tournament_id}/teams/"]
     assert (
         teams["get"]["responses"]["200"]["content"]["application/json"]["schema"][

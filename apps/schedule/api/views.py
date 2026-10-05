@@ -60,6 +60,14 @@ from .tracker_access import TrackerAccessActionsMixin
 from .validation import match_summary_limit, match_summary_offset
 
 
+# A match counts as live for half a day after its kick-off at most, and a
+# tracker opened early only shortly before it.
+LIVE_MATCH_WINDOW = timedelta(hours=12)
+LIVE_MATCH_EARLY_START = timedelta(hours=2)
+# Scores change per goal; ten seconds bounds the score queries on busy match days.
+LIVE_MATCHES_CACHE_SECONDS = 10
+
+
 def _uuid_path_parameter(name: str) -> OpenApiParameter:
     return OpenApiParameter(name, OpenApiTypes.UUID, OpenApiParameter.PATH)
 
@@ -463,6 +471,58 @@ class MatchViewSet(
         )
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "limit",
+                OpenApiTypes.INT,
+                description="Result count (1-200; default 6).",
+            ),
+        ],
+        # Match summaries, not the `Match` representation of the other lists.
+        responses={
+            200: {
+                "type": "array",
+                "items": {"type": "object", "additionalProperties": True},
+            }
+        },
+    )
+    # Not "live": that name is one match's live state (`/matches/<id>/live/`).
+    @action(detail=False, methods=("GET",), url_path="live-now")
+    def live_matches(self, request: Request) -> Response:
+        """Return the matches being played now as summaries with their score.
+
+        The list is the same for every caller, so Home can show it to anonymous
+        visitors. A tracker left running long after its match, or started for
+        a match on a later day, is not live.
+        """
+        limit = match_summary_limit(request.query_params.get("limit"), default=6)
+        cache_key = f"korfbal:schedule:live:{limit}"
+        cache_miss = object()
+        cached_payload = cache.get(cache_key, cache_miss)
+        if cached_payload is not cache_miss:
+            return Response(cached_payload)
+
+        now = timezone.now()
+        match_data = (
+            MatchData.objects
+            .select_related(
+                "match_link",
+                "match_link__home_team__club",
+                "match_link__away_team__club",
+                "match_link__season",
+            )
+            .filter(
+                status="active",
+                match_link__start_time__gte=now - LIVE_MATCH_WINDOW,
+                match_link__start_time__lte=now + LIVE_MATCH_EARLY_START,
+            )
+            .order_by("match_link__start_time", "match_link_id")[:limit]
+        )
+        summaries = build_match_summaries(list(match_data))
+        cache.set(cache_key, summaries, timeout=LIVE_MATCHES_CACHE_SECONDS)
+        return Response(summaries)
 
     @action(detail=False, methods=("GET",), url_path="finished")
     def finished(

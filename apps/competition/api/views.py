@@ -20,6 +20,7 @@ from apps.competition.models import (
     Team,
     TeamGroup,
 )
+from apps.competition.services.home_standings import home_team_standings
 from apps.competition.services.seasons import (
     native_match_filter,
     native_pool_filter,
@@ -27,6 +28,7 @@ from apps.competition.services.seasons import (
 )
 from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_entries
 from apps.kwt_common.api.pagination import StandardResultsSetPagination
+from apps.player.models.player import Player
 from apps.schedule.models import Season
 
 from .serializers import (
@@ -43,6 +45,13 @@ from .serializers import (
     CompetitionTeamSerializer,
     TeamStandingsFilters,
 )
+
+
+# Standings rows are built by a query service, not a model serializer.
+OBJECT_LIST_SCHEMA = {
+    "type": "array",
+    "items": {"type": "object", "additionalProperties": True},
+}
 
 
 class CatalogueViewSet(viewsets.ReadOnlyModelViewSet):
@@ -202,6 +211,19 @@ class PoolViewSet(CatalogueViewSet):
         return self.get_paginated_response(
             CompetitionPoolStandingsSerializer(page, many=True).data
         )
+
+    @extend_schema(responses={200: OBJECT_LIST_SCHEMA})
+    @action(
+        detail=False,
+        methods=("get",),
+        url_path="home-standings",
+        filter_backends=(),
+        pagination_class=None,
+    )
+    def home_standings(self, request: Request) -> Response:
+        """Return position, form and next opponent of the caller's own teams."""
+        player = Player.objects.filter(user_id=request.user.pk).first()
+        return Response(home_team_standings(player) if player else [])
 
     @extend_schema(responses=CompetitionPoolEntrySerializer(many=True))
     @action(detail=True, methods=("get",), filter_backends=())

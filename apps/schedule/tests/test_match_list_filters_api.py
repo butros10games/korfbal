@@ -591,3 +591,46 @@ def test_match_search_matches_teams_clubs_and_pools(
     assert response.status_code == HTTPStatus.OK
     found = {row["id_uuid"] for row in response.json()["results"]}
     assert found == {str(matches[name].id_uuid) for name in expected}
+
+
+def test_match_live_lists_matches_being_played_with_their_score(
+    client: Client,
+) -> None:
+    """Home's live list holds running matches only, oldest kick-off first."""
+    today = timezone.now().date()
+    season = Season.objects.create(name="2025", start_date=today, end_date=today)
+    club = Club.objects.create(name="Club")
+    team = Team.objects.create(name="Team", club=club)
+    opponent = Team.objects.create(name="Opponent", club=club)
+    now = timezone.now()
+
+    def match_with(status: str, start: timedelta) -> Match:
+        match = Match.objects.create(
+            home_team=team, away_team=opponent, season=season, start_time=now + start
+        )
+        MatchData.objects.filter(match_link=match).update(status=status)
+        return match
+
+    later = match_with("active", timedelta(minutes=-10))
+    earlier = match_with("active", timedelta(minutes=-50))
+    match_with("finished", timedelta(hours=-3))
+    match_with("upcoming", timedelta(hours=2))
+    # A tracker nobody stopped must not stay on Home for days.
+    match_with("active", timedelta(days=-2))
+    # Nor does a tracker opened for a match that is weeks away.
+    match_with("active", timedelta(days=30))
+
+    response = client.get("/api/matches/live-now/")
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert [row["id_uuid"] for row in payload] == [
+        str(earlier.id_uuid),
+        str(later.id_uuid),
+    ]
+    assert {row["status"] for row in payload} == {"active"}
+    assert payload[0]["score"] == {"home": 0, "away": 0}
+
+    cache.clear()
+    limited = client.get("/api/matches/live-now/", {"limit": "1"}).json()
+    assert [row["id_uuid"] for row in limited] == [str(earlier.id_uuid)]

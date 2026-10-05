@@ -1,7 +1,5 @@
 """Public competition fields only; no upstream session or player records."""
 
-from decimal import Decimal, InvalidOperation
-
 from rest_framework import serializers
 
 from apps.competition.domain.classification import designation
@@ -18,12 +16,9 @@ from apps.competition.models import (
 )
 from apps.competition.services.classification import pool_classification
 from apps.competition.services.seasons import SeasonResolver
-from apps.competition.services.standings import STANDINGS_PAGE_SIZE
+from apps.competition.services.standings import STANDINGS_PAGE_SIZE, standing_values
 from apps.schedule.models import Season
 from apps.schedule.queries.seasons import season_edition
-
-
-MAX_SAFE_INTEGER = 9007199254740991
 
 
 class CompetitionClubSerializer(serializers.ModelSerializer):
@@ -168,31 +163,7 @@ class CompetitionPoolEntrySerializer(serializers.ModelSerializer):
 
     def get_values(self, obj: PoolEntry) -> dict[str, int | None]:
         """Keep absent/unusable values unknown, and preserve zero and penalties."""
-        fields = {
-            "position": "Position",
-            "played": "TotalMatches",
-            "won": "Won",
-            "drawn": "Draw",
-            "lost": "Lost",
-            "points": "TotalPoints",
-            "goals_for": "GoalsFor",
-            "goals_against": "GoalsAgainst",
-        }
-        values: dict[str, int | None] = {}
-        for name, source in fields.items():
-            raw = obj.standing.get(source)
-            try:
-                number = Decimal(str(raw))
-                values[name] = (
-                    int(number)
-                    if number.is_finite()
-                    and abs(number) <= MAX_SAFE_INTEGER
-                    and number == number.to_integral_value()
-                    else None
-                )
-            except (InvalidOperation, ValueError, OverflowError):
-                values[name] = None
-        return values
+        return standing_values(obj.standing)
 
     class Meta:
         """Declare storage or serialization metadata."""
